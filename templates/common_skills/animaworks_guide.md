@@ -149,7 +149,7 @@ AnimaWorks は以下のCLIコマンドで操作される（上司が使うもの
 | コマンド | 説明 |
 |---------|------|
 | `animaworks init` | ランタイムディレクトリの初期化 |
-| `animaworks start` | システム起動（Gateway + Worker） |
+| `animaworks start` | サーバー起動 |
 | `animaworks chat {名前} "メッセージ"` | 社員にメッセージ送信 |
 | `animaworks send {送信者} {宛先} "メッセージ"` | 社員間メッセージ |
 | `animaworks heartbeat {名前}` | 手動ハートビート起動 |

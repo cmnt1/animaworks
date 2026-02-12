@@ -70,13 +70,12 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(f"Runtime directory initialized: {data_dir}")
 
 
-# ── Legacy standalone mode ─────────────────────────────────
+# ── Server ────────────────────────────────────────────────
 
 
-def cmd_serve(args: argparse.Namespace) -> None:
-    """Start the daemon (FastAPI + APScheduler) — legacy standalone mode."""
+def cmd_start(args: argparse.Namespace) -> None:
+    """Start the AnimaWorks server."""
     import uvicorn
-
     from server.app import create_app
 
     ensure_runtime_dir()
@@ -84,93 +83,22 @@ def cmd_serve(args: argparse.Namespace) -> None:
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
-# ── Integrated start mode ──────────────────────────────────
+def cmd_serve(args: argparse.Namespace) -> None:
+    """Start the server (alias for 'start')."""
+    cmd_start(args)
 
 
-def cmd_start(args: argparse.Namespace) -> None:
-    """Start gateway with integrated worker management (supervisor)."""
-    import uvicorn
-
-    from core.config import load_config
-    from gateway.app import GatewayConfig, create_gateway_app
-
-    ensure_runtime_dir()
-    cfg = load_config()
-    gw = cfg.system.gateway
-    redis_url = args.redis_url or os.environ.get("ANIMAWORKS_REDIS_URL") or gw.redis_url
-    host = args.host if args.host != "0.0.0.0" else gw.host
-    port = args.port if args.port != 18500 else gw.port
-    config = GatewayConfig(
-        redis_url=redis_url,
-        host=host,
-        port=port,
-        supervisor_enabled=True,
-        supervisor_auto_restart=not args.no_auto_restart,
-    )
-    app = create_gateway_app(config)
-    uvicorn.run(app, host=config.host, port=config.port, log_level="info")
-
-
-# ── Gateway mode ───────────────────────────────────────────
+# ── Deprecated modes ──────────────────────────────────────
 
 
 def cmd_gateway(args: argparse.Namespace) -> None:
-    """Start the gateway process (no supervisor — for Docker/remote)."""
-    import uvicorn
-
-    from core.config import load_config
-    from gateway.app import GatewayConfig, create_gateway_app
-
-    cfg = load_config()
-    gw = cfg.system.gateway
-    redis_url = args.redis_url or os.environ.get("ANIMAWORKS_REDIS_URL") or gw.redis_url
-    host = args.host if args.host != "0.0.0.0" else gw.host
-    port = args.port if args.port != 18500 else gw.port
-    config = GatewayConfig(redis_url=redis_url, host=host, port=port)
-    app = create_gateway_app(config)
-    uvicorn.run(app, host=config.host, port=config.port, log_level="info")
-
-
-# ── Worker mode ────────────────────────────────────────────
+    print("Error: 'gateway' mode has been deprecated. Use 'animaworks start' instead.")
+    sys.exit(1)
 
 
 def cmd_worker(args: argparse.Namespace) -> None:
-    """Start a worker process."""
-    from core.config import load_config
-    from worker.app import WorkerConfig, run_worker
-
-    ensure_runtime_dir()
-    cfg = load_config()
-    wk = cfg.system.worker
-    persons_dir = get_persons_dir()
-    shared_dir = get_shared_dir()
-
-    worker_id = args.worker_id or os.environ.get(
-        "ANIMAWORKS_WORKER_ID", "worker-default"
-    )
-    person_names = args.persons or os.environ.get(
-        "ANIMAWORKS_PERSON_NAMES", ""
-    ).split(",")
-    person_dirs = [
-        persons_dir / name.strip() for name in person_names if name.strip()
-    ]
-    gateway_url = args.gateway_url or os.environ.get(
-        "ANIMAWORKS_GATEWAY_URL"
-    ) or wk.gateway_url
-    redis_url = args.redis_url or os.environ.get("ANIMAWORKS_REDIS_URL") or wk.redis_url
-    listen_port = args.port or int(
-        os.environ.get("ANIMAWORKS_LISTEN_PORT", "0")
-    ) or wk.listen_port
-
-    config = WorkerConfig(
-        worker_id=worker_id,
-        person_dirs=person_dirs,
-        shared_dir=shared_dir,
-        gateway_url=gateway_url,
-        redis_url=redis_url,
-        listen_port=listen_port,
-    )
-    asyncio.run(run_worker(config))
+    print("Error: 'worker' mode has been deprecated. Use 'animaworks start' instead.")
+    sys.exit(1)
 
 
 # ── Chat ───────────────────────────────────────────────────
@@ -300,27 +228,20 @@ def _list_local() -> None:
 
 
 def cmd_status(args: argparse.Namespace) -> None:
-    """Show system status from gateway."""
+    """Show system status."""
     import httpx
-
-    gateway = args.gateway_url or os.environ.get(
+    url = args.gateway_url or os.environ.get(
         "ANIMAWORKS_GATEWAY_URL", "http://localhost:18500"
     )
     try:
-        resp = httpx.get(f"{gateway}/api/system/status", timeout=10.0)
+        resp = httpx.get(f"{url}/api/system/status", timeout=10.0)
         data = resp.json()
         print(f"Persons: {data.get('persons', 0)}")
-        print(f"Workers: {data.get('workers', 0)}")
-        print(f"Broker:  {data.get('broker_connected', False)}")
-        for w in data.get("workers_detail", []):
-            print(f"  Worker {w['worker_id']}: {w['person_names']} ({w['status']})")
-        if data.get("supervisor_enabled"):
-            print(f"Supervisor: enabled")
-            for mw in data.get("managed_workers", []):
-                pid = mw.get("pid") or "-"
-                print(f"  [{mw['status']}] {mw['worker_id']} (PID {pid}, port {mw['port']})")
+        print(f"Scheduler: {'running' if data.get('scheduler_running') else 'stopped'}")
+        for j in data.get("jobs", []):
+            print(f"  [{j['id']}] {j['name']} -> next: {j['next_run']}")
     except httpx.ConnectError:
-        print(f"Cannot connect to gateway at {gateway}.")
+        print(f"Cannot connect to server at {url}.")
         sys.exit(1)
 
 
@@ -352,40 +273,24 @@ def cli_main() -> None:
     )
     p_init.set_defaults(func=cmd_init)
 
-    # Start (integrated mode with supervisor)
-    p_start = sub.add_parser("start", help="Start gateway + auto-managed workers")
+    # Start
+    p_start = sub.add_parser("start", help="Start the AnimaWorks server")
     p_start.add_argument("--host", default="0.0.0.0")
     p_start.add_argument("--port", type=int, default=18500)
-    p_start.add_argument("--redis-url", default=None, help="Redis URL")
-    p_start.add_argument(
-        "--no-auto-restart",
-        action="store_true",
-        help="Disable auto-restart of crashed workers",
-    )
     p_start.set_defaults(func=cmd_start)
 
-    # Legacy standalone
-    p_serve = sub.add_parser("serve", help="Standalone mode (legacy)")
+    # Serve (alias)
+    p_serve = sub.add_parser("serve", help="Start the server (alias for start)")
     p_serve.add_argument("--host", default="0.0.0.0")
     p_serve.add_argument("--port", type=int, default=18500)
     p_serve.set_defaults(func=cmd_serve)
 
-    # Gateway
-    p_gw = sub.add_parser("gateway", help="Start gateway process")
-    p_gw.add_argument("--host", default="0.0.0.0")
-    p_gw.add_argument("--port", type=int, default=18500)
-    p_gw.add_argument("--redis-url", default=None, help="Redis URL")
+    # Gateway (deprecated)
+    p_gw = sub.add_parser("gateway", help=argparse.SUPPRESS)
     p_gw.set_defaults(func=cmd_gateway)
 
-    # Worker
-    p_wk = sub.add_parser("worker", help="Start worker process")
-    p_wk.add_argument("--worker-id", default=None, help="Unique worker ID")
-    p_wk.add_argument(
-        "--persons", nargs="+", default=None, help="Person names to host"
-    )
-    p_wk.add_argument("--port", type=int, default=None, help="Listen port")
-    p_wk.add_argument("--redis-url", default=None, help="Redis URL")
-    p_wk.add_argument("--gateway-url", default=None, help="Gateway URL")
+    # Worker (deprecated)
+    p_wk = sub.add_parser("worker", help=argparse.SUPPRESS)
     p_wk.set_defaults(func=cmd_worker)
 
     # Chat

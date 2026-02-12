@@ -41,20 +41,13 @@
 
 5. 作成したファイルの内容を依頼者に報告し、修正があれば対応する
 
-6. Gateway の Supervisor API を呼び出してワーカーを起動する:
+6. サーバーに新社員を読み込ませる:
 
    ```bash
-   curl -s -X POST http://localhost:18500/api/workers/spawn \
-     -H "Content-Type: application/json" \
-     -d '{"person_names": ["{英名}"]}'
+   curl -s -X POST http://localhost:18500/api/system/reload | python3 -m json.tool
    ```
 
-   起動を確認する:
-   ```bash
-   curl -s http://localhost:18500/api/workers/worker-{英名} | python3 -m json.tool
-   ```
-
-   ※ Gateway が supervisor モードでない場合は、依頼者に「サーバーを再起動してください」と伝える
+   `added` リストに新社員名が含まれていれば成功。サーバー再起動は不要。
 
 7. 自分の `episodes/` に「新社員{名前}を作成した」とログを残す
 
@@ -200,6 +193,6 @@ python main.py config list --section persons.{英名}
 
 ## 注意事項
 
-- Gateway が supervisor モードで起動中であれば、Spawn API で即時起動できる（手順6参照）
-- supervisor モードでない場合は、ファイルを作成しただけでは起動しない。依頼者に「サーバーを再起動してください」と伝えること
+- サーバーが起動中であれば、reload API で即時反映できる（手順6参照）
+- サーバーが停止中の場合は、ファイルを作成しただけでは起動しない。依頼者に「サーバーを起動してください」と伝えること
 - 社員の英名はディレクトリ名になるため、半角英数小文字のみを使用すること

@@ -22,6 +22,8 @@ logger = logging.getLogger("animaworks.config")
 
 
 class GatewaySystemConfig(BaseModel):
+    """Deprecated: Gateway configuration retained for config.json compatibility."""
+
     host: str = "0.0.0.0"
     port: int = 18500
     redis_url: str | None = None
@@ -29,6 +31,8 @@ class GatewaySystemConfig(BaseModel):
 
 
 class WorkerSystemConfig(BaseModel):
+    """Deprecated: Worker configuration retained for config.json compatibility."""
+
     gateway_url: str = "http://localhost:18500"
     redis_url: str | None = None
     listen_port: int = 18501
@@ -36,7 +40,7 @@ class WorkerSystemConfig(BaseModel):
 
 
 class SystemConfig(BaseModel):
-    mode: str = "standalone"
+    mode: str = "server"
     log_level: str = "INFO"
     gateway: GatewaySystemConfig = GatewaySystemConfig()
     worker: WorkerSystemConfig = WorkerSystemConfig()
