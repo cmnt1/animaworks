@@ -12,6 +12,7 @@ logger = logging.getLogger("animaworks.routes")
 
 class ChatRequest(BaseModel):
     message: str
+    from_person: str = "human"
 
 
 class ChatResponse(BaseModel):
@@ -58,7 +59,7 @@ def create_router() -> APIRouter:
             {"type": "person.status", "data": {"name": name, "status": "thinking"}}
         )
 
-        response = await person.process_message(body.message, from_person="human")
+        response = await person.process_message(body.message, from_person=body.from_person)
 
         await ws.broadcast(
             {"type": "person.status", "data": {"name": name, "status": "idle"}}
@@ -85,7 +86,7 @@ def create_router() -> APIRouter:
                 )
 
                 async for chunk in person.process_message_stream(
-                    body.message, from_person="human"
+                    body.message, from_person=body.from_person
                 ):
                     event_type = chunk.get("type", "unknown")
 

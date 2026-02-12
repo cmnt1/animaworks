@@ -116,7 +116,9 @@ def cmd_chat(args: argparse.Namespace) -> None:
             sys.exit(1)
 
         person = DigitalPerson(person_dir, get_shared_dir())
-        response = asyncio.run(person.process_message(args.message))
+        response = asyncio.run(
+            person.process_message(args.message, from_person=args.from_person)
+        )
         print(response)
     else:
         import httpx
@@ -127,7 +129,7 @@ def cmd_chat(args: argparse.Namespace) -> None:
         try:
             resp = httpx.post(
                 f"{gateway}/api/persons/{args.person}/chat",
-                json={"message": args.message},
+                json={"message": args.message, "from_person": args.from_person},
                 timeout=300.0,
             )
             data = resp.json()
@@ -299,6 +301,10 @@ def cli_main() -> None:
     p_chat.add_argument("message", help="Message to send")
     p_chat.add_argument(
         "--local", action="store_true", help="Direct mode (no gateway)"
+    )
+    p_chat.add_argument(
+        "--from", dest="from_person", default="human",
+        help="Sender name (default: human)",
     )
     p_chat.set_defaults(func=cmd_chat)
 
