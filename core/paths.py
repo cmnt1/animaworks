@@ -39,6 +39,10 @@ def get_company_dir() -> Path:
     return get_data_dir() / "company"
 
 
+def get_common_skills_dir() -> Path:
+    return get_data_dir() / "common_skills"
+
+
 def get_tmp_dir() -> Path:
     return get_data_dir() / "tmp"
 

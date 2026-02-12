@@ -1,0 +1,224 @@
+"""Central configuration module for AnimaWorks.
+
+Defines Pydantic models for the unified config.json and provides
+load / save / resolve helpers with a module-level singleton cache.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
+
+logger = logging.getLogger("animaworks.config")
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+
+
+class GatewaySystemConfig(BaseModel):
+    host: str = "0.0.0.0"
+    port: int = 18500
+    redis_url: str | None = None
+    worker_heartbeat_timeout: int = 45
+
+
+class WorkerSystemConfig(BaseModel):
+    gateway_url: str = "http://localhost:18500"
+    redis_url: str | None = None
+    listen_port: int = 18501
+    heartbeat_interval: int = 15
+
+
+class SystemConfig(BaseModel):
+    mode: str = "standalone"
+    log_level: str = "INFO"
+    gateway: GatewaySystemConfig = GatewaySystemConfig()
+    worker: WorkerSystemConfig = WorkerSystemConfig()
+
+
+class CredentialConfig(BaseModel):
+    api_key: str = ""
+    base_url: str | None = None
+
+
+class PersonModelConfig(BaseModel):
+    """Per-person overrides.  All fields are optional (None = use default)."""
+
+    model: str | None = None
+    fallback_model: str | None = None
+    max_tokens: int | None = None
+    max_turns: int | None = None
+    credential: str | None = None
+    context_threshold: float | None = None
+    max_chains: int | None = None
+
+
+class PersonDefaults(BaseModel):
+    """Concrete defaults applied when a per-person field is None."""
+
+    model: str = "claude-sonnet-4-20250514"
+    fallback_model: str | None = None
+    max_tokens: int = 4096
+    max_turns: int = 20
+    credential: str = "anthropic"
+    context_threshold: float = 0.50
+    max_chains: int = 2
+
+
+class AnimaWorksConfig(BaseModel):
+    version: int = 1
+    system: SystemConfig = SystemConfig()
+    credentials: dict[str, CredentialConfig] = {"anthropic": CredentialConfig()}
+    person_defaults: PersonDefaults = PersonDefaults()
+    persons: dict[str, PersonModelConfig] = {}
+
+
+# ---------------------------------------------------------------------------
+# Singleton cache
+# ---------------------------------------------------------------------------
+
+_config: AnimaWorksConfig | None = None
+_config_path: Path | None = None
+
+
+def invalidate_cache() -> None:
+    """Reset the module-level singleton cache."""
+    global _config, _config_path
+    _config = None
+    _config_path = None
+
+
+# ---------------------------------------------------------------------------
+# Path helpers
+# ---------------------------------------------------------------------------
+
+
+def get_config_path(data_dir: Path | None = None) -> Path:
+    """Return the path to config.json inside *data_dir*.
+
+    If *data_dir* is not given, it is resolved via ``core.paths.get_data_dir``
+    (imported lazily to avoid circular imports).
+    """
+    if data_dir is None:
+        from core.paths import get_data_dir
+
+        data_dir = get_data_dir()
+    return data_dir / "config.json"
+
+
+# ---------------------------------------------------------------------------
+# Load / Save
+# ---------------------------------------------------------------------------
+
+
+def load_config(path: Path | None = None) -> AnimaWorksConfig:
+    """Load configuration from disk, returning cached instance when possible.
+
+    If *path* is ``None``, :func:`get_config_path` determines the location.
+    When the file does not exist the default configuration is returned.
+    """
+    global _config, _config_path
+
+    if path is None:
+        path = get_config_path()
+
+    # Return cached instance if same path was already loaded.
+    if _config is not None and _config_path == path:
+        return _config
+
+    if path.is_file():
+        logger.debug("Loading config from %s", path)
+        try:
+            raw_text = path.read_text(encoding="utf-8")
+            data: dict[str, Any] = json.loads(raw_text)
+            config = AnimaWorksConfig.model_validate(data)
+        except json.JSONDecodeError as exc:
+            logger.error("Failed to parse %s: %s", path, exc)
+            raise
+        except Exception as exc:
+            logger.error("Failed to load config from %s: %s", path, exc)
+            raise
+    else:
+        logger.info("Config file not found at %s; using defaults", path)
+        config = AnimaWorksConfig()
+
+    _config = config
+    _config_path = path
+    return config
+
+
+def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
+    """Persist *config* to disk as pretty-printed JSON (mode 0o600).
+
+    Updates the module-level singleton cache so subsequent :func:`load_config`
+    calls return the freshly saved config.
+    """
+    global _config, _config_path
+
+    if path is None:
+        path = get_config_path()
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = config.model_dump(mode="json")
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    path.write_text(text, encoding="utf-8")
+
+    # Restrict permissions — the file may contain API keys.
+    os.chmod(path, 0o600)
+
+    logger.debug("Config saved to %s", path)
+
+    _config = config
+    _config_path = path
+
+
+# ---------------------------------------------------------------------------
+# Resolution helpers
+# ---------------------------------------------------------------------------
+
+
+def resolve_person_config(
+    config: AnimaWorksConfig,
+    person_name: str,
+) -> tuple[PersonDefaults, CredentialConfig]:
+    """Merge per-person overrides with *person_defaults* and resolve the credential.
+
+    For each field in :class:`PersonModelConfig`, the person's value is used
+    when it is not ``None``; otherwise the corresponding default is used.
+
+    Returns:
+        A ``(resolved_defaults, credential)`` tuple.
+
+    Raises:
+        KeyError: If the resolved credential name is not in
+            ``config.credentials``.
+    """
+    person = config.persons.get(person_name, PersonModelConfig())
+    defaults = config.person_defaults
+
+    # Build a dict with resolved values: person override wins when not None.
+    resolved: dict[str, Any] = {}
+    for field_name in PersonModelConfig.model_fields:
+        person_value = getattr(person, field_name)
+        resolved[field_name] = (
+            person_value if person_value is not None else getattr(defaults, field_name)
+        )
+
+    resolved_defaults = PersonDefaults.model_validate(resolved)
+
+    credential_name = resolved_defaults.credential
+    if credential_name not in config.credentials:
+        raise KeyError(
+            f"Credential '{credential_name}' (for person '{person_name}') "
+            f"not found in config.credentials"
+        )
+
+    credential = config.credentials[credential_name]
+    return resolved_defaults, credential

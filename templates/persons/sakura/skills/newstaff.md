@@ -28,7 +28,6 @@
    - identity.md
    - injection.md
    - permissions.md
-   - config.md
    - heartbeat.md
    - cron.md
 
@@ -42,7 +41,22 @@
 
 5. 作成したファイルの内容を依頼者に報告し、修正があれば対応する
 
-6. 自分の `episodes/` に「新社員{名前}を作成した」とログを残す
+6. Gateway の Supervisor API を呼び出してワーカーを起動する:
+
+   ```bash
+   curl -s -X POST http://localhost:18500/api/workers/spawn \
+     -H "Content-Type: application/json" \
+     -d '{"person_names": ["{英名}"]}'
+   ```
+
+   起動を確認する:
+   ```bash
+   curl -s http://localhost:18500/api/workers/worker-{英名} | python3 -m json.tool
+   ```
+
+   ※ Gateway が supervisor モードでない場合は、依頼者に「サーバーを再起動してください」と伝える
+
+7. 自分の `episodes/` に「新社員{名前}を作成した」とログを残す
 
 ## テンプレート
 
@@ -129,23 +143,26 @@ Read, Write, Edit, Bash, Grep, Glob
 rm -rf, システム設定の変更
 ```
 
-### config.md
+### config.json への設定追加
 
-```markdown
-# Config: {英名}
+新しい社員のモデル設定は統合設定ファイル（config.json）に追加する。
+Bash ツールで以下のコマンドを実行:
 
-## モデル設定
+```bash
+# 使用モデルを設定（デフォルトから変える場合のみ）
+python main.py config set persons.{英名}.model claude-sonnet-4-20250514
 
-- model: claude-sonnet-4-20250514
-- fallback_model: claude-haiku-4-20250414
-- max_tokens: 4096
-- max_turns: 20
-
-## API接続
-
-- api_key_env: ANTHROPIC_API_KEY
-- api_base_url:
+# 使用するクレデンシャルを設定（デフォルトから変える場合のみ）
+python main.py config set persons.{英名}.credential anthropic
 ```
+
+設定が正しく追加されたか確認:
+```bash
+python main.py config list --section persons.{英名}
+```
+
+※ 大半のケースではデフォルト設定（person_defaults）が適用されるため、
+特別な設定が不要であればこの手順はスキップしてよい。
 
 ### heartbeat.md
 
@@ -183,6 +200,6 @@ rm -rf, システム設定の変更
 
 ## 注意事項
 
-- ファイルを作成しただけでは新しい社員はまだ起動しない。サーバーの再起動が必要
-- 作成後、依頼者に「サーバーを再起動してください」と伝えること
+- Gateway が supervisor モードで起動中であれば、Spawn API で即時起動できる（手順6参照）
+- supervisor モードでない場合は、ファイルを作成しただけでは起動しない。依頼者に「サーバーを再起動してください」と伝えること
 - 社員の英名はディレクトリ名になるため、半角英数小文字のみを使用すること

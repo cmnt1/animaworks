@@ -57,14 +57,19 @@ def cmd_start(args: argparse.Namespace) -> None:
     """Start gateway with integrated worker management (supervisor)."""
     import uvicorn
 
+    from core.config import load_config
     from gateway.app import GatewayConfig, create_gateway_app
 
     ensure_runtime_dir()
-    redis_url = args.redis_url or os.environ.get("ANIMAWORKS_REDIS_URL")
+    cfg = load_config()
+    gw = cfg.system.gateway
+    redis_url = args.redis_url or os.environ.get("ANIMAWORKS_REDIS_URL") or gw.redis_url
+    host = args.host if args.host != "0.0.0.0" else gw.host
+    port = args.port if args.port != 18500 else gw.port
     config = GatewayConfig(
         redis_url=redis_url,
-        host=args.host,
-        port=args.port,
+        host=host,
+        port=port,
         supervisor_enabled=True,
         supervisor_auto_restart=not args.no_auto_restart,
     )
@@ -79,10 +84,15 @@ def cmd_gateway(args: argparse.Namespace) -> None:
     """Start the gateway process (no supervisor — for Docker/remote)."""
     import uvicorn
 
+    from core.config import load_config
     from gateway.app import GatewayConfig, create_gateway_app
 
-    redis_url = args.redis_url or os.environ.get("ANIMAWORKS_REDIS_URL")
-    config = GatewayConfig(redis_url=redis_url, host=args.host, port=args.port)
+    cfg = load_config()
+    gw = cfg.system.gateway
+    redis_url = args.redis_url or os.environ.get("ANIMAWORKS_REDIS_URL") or gw.redis_url
+    host = args.host if args.host != "0.0.0.0" else gw.host
+    port = args.port if args.port != 18500 else gw.port
+    config = GatewayConfig(redis_url=redis_url, host=host, port=port)
     app = create_gateway_app(config)
     uvicorn.run(app, host=config.host, port=config.port, log_level="info")
 
@@ -92,9 +102,12 @@ def cmd_gateway(args: argparse.Namespace) -> None:
 
 def cmd_worker(args: argparse.Namespace) -> None:
     """Start a worker process."""
+    from core.config import load_config
     from worker.app import WorkerConfig, run_worker
 
     ensure_runtime_dir()
+    cfg = load_config()
+    wk = cfg.system.worker
     persons_dir = get_persons_dir()
     shared_dir = get_shared_dir()
 
@@ -108,12 +121,12 @@ def cmd_worker(args: argparse.Namespace) -> None:
         persons_dir / name.strip() for name in person_names if name.strip()
     ]
     gateway_url = args.gateway_url or os.environ.get(
-        "ANIMAWORKS_GATEWAY_URL", "http://localhost:18500"
-    )
-    redis_url = args.redis_url or os.environ.get("ANIMAWORKS_REDIS_URL")
+        "ANIMAWORKS_GATEWAY_URL"
+    ) or wk.gateway_url
+    redis_url = args.redis_url or os.environ.get("ANIMAWORKS_REDIS_URL") or wk.redis_url
     listen_port = args.port or int(
-        os.environ.get("ANIMAWORKS_LISTEN_PORT", "18501")
-    )
+        os.environ.get("ANIMAWORKS_LISTEN_PORT", "0")
+    ) or wk.listen_port
 
     config = WorkerConfig(
         worker_id=worker_id,
@@ -366,9 +379,44 @@ def cli_main() -> None:
     )
     p_list.set_defaults(func=cmd_list)
 
-    # Status (new)
+    # Status
     p_status = sub.add_parser("status", help="Show system status from gateway")
     p_status.set_defaults(func=cmd_status)
+
+    # Config management
+    from core.config_cli import (
+        cmd_config_dispatch,
+        cmd_config_get,
+        cmd_config_list,
+        cmd_config_set,
+    )
+
+    p_config = sub.add_parser("config", help="Manage configuration")
+    p_config.add_argument(
+        "--interactive", "-i", action="store_true",
+        help="Interactive setup wizard",
+    )
+    p_config.set_defaults(func=cmd_config_dispatch, config_parser=p_config)
+    config_sub = p_config.add_subparsers(dest="config_command")
+
+    p_cfg_get = config_sub.add_parser("get", help="Get a config value")
+    p_cfg_get.add_argument("key", help="Dot-notation key (e.g. system.gateway.port)")
+    p_cfg_get.add_argument(
+        "--show-secrets", action="store_true", help="Show API key values",
+    )
+    p_cfg_get.set_defaults(func=cmd_config_get)
+
+    p_cfg_set = config_sub.add_parser("set", help="Set a config value")
+    p_cfg_set.add_argument("key", help="Dot-notation key")
+    p_cfg_set.add_argument("value", help="Value to set")
+    p_cfg_set.set_defaults(func=cmd_config_set)
+
+    p_cfg_list = config_sub.add_parser("list", help="List all config values")
+    p_cfg_list.add_argument("--section", default=None, help="Filter by section")
+    p_cfg_list.add_argument(
+        "--show-secrets", action="store_true", help="Show API key values",
+    )
+    p_cfg_list.set_defaults(func=cmd_config_list)
 
     args = parser.parse_args()
 

@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 from core.memory import MemoryManager
-from core.paths import PROJECT_DIR, load_prompt
+from core.paths import PROJECT_DIR, get_data_dir, load_prompt
 from core.shortterm_memory import ShortTermMemory
 
 logger = logging.getLogger("animaworks.prompt_builder")
@@ -39,15 +39,27 @@ def build_system_prompt(memory: MemoryManager) -> str:
     """Construct the full system prompt from Markdown files.
 
     System prompt =
-        identity.md (who you are)
+        environment (guardrails, folder structure, boundaries)
+        + company vision
+        + identity.md (who you are)
         + injection.md (role/philosophy)
         + permissions.md (what you can do)
         + state/current_task.md (what you're doing now)
         + memory directory guide
+        + personal skills + common skills
         + behavior rules (search-before-decide)
         + messaging instructions
     """
     parts: list[str] = []
+
+    # Environment guardrails (always first)
+    pd = memory.person_dir
+    data_dir = get_data_dir()
+    parts.append(load_prompt(
+        "environment",
+        data_dir=data_dir,
+        person_name=pd.name,
+    ))
 
     company_vision = memory.read_company_vision()
     if company_vision:
@@ -74,12 +86,15 @@ def build_system_prompt(memory: MemoryManager) -> str:
         parts.append(f"## 未完了タスク\n\n{pending}")
 
     # Memory directory guide
-    pd = memory.person_dir
     knowledge_list = ", ".join(memory.list_knowledge_files()) or "(なし)"
     episode_list = ", ".join(memory.list_episode_files()[:7]) or "(なし)"
     procedure_list = ", ".join(memory.list_procedure_files()) or "(なし)"
     skill_summaries = memory.list_skill_summaries()
-    skill_names = ", ".join(s[0] for s in skill_summaries) or "(なし)"
+    common_skill_summaries = memory.list_common_skill_summaries()
+    all_skill_names = [s[0] for s in skill_summaries] + [
+        f"{s[0]}(共通)" for s in common_skill_summaries
+    ]
+    skill_names = ", ".join(all_skill_names) or "(なし)"
 
     parts.append(load_prompt(
         "memory_guide",
@@ -90,6 +105,7 @@ def build_system_prompt(memory: MemoryManager) -> str:
         skill_names=skill_names,
     ))
 
+    # Personal skills
     if skill_summaries:
         skill_lines = "\n".join(
             f"| {name} | {desc} |" for name, desc in skill_summaries
@@ -99,6 +115,19 @@ def build_system_prompt(memory: MemoryManager) -> str:
             person_dir=pd,
             skill_lines=skill_lines,
         ))
+
+    # Common skills (shared across all persons)
+    if common_skill_summaries:
+        common_skill_lines = "\n".join(
+            f"| {name} | {desc} |" for name, desc in common_skill_summaries
+        )
+        common_skills_dir = memory.common_skills_dir
+        parts.append(
+            f"## 共通スキル\n\n"
+            f"以下は全社員共通のスキルです。使用する際は "
+            f"`{common_skills_dir}/{{スキル名}}.md` をReadで読んでから実行してください。\n\n"
+            f"| スキル名 | 概要 |\n|---------|------|\n{common_skill_lines}"
+        )
 
     parts.append(load_prompt("behavior_rules"))
 

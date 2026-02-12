@@ -35,9 +35,9 @@ class AgentCore:
         self._sdk_available = self._check_sdk()
 
         logger.info(
-            "AgentCore: model=%s, api_key_env=%s, base_url=%s",
+            "AgentCore: model=%s, api_key=%s, base_url=%s",
             self.model_config.model,
-            self.model_config.api_key_env,
+            "direct" if self.model_config.api_key else f"env:{self.model_config.api_key_env}",
             self.model_config.api_base_url or "(default)",
         )
 
@@ -165,7 +165,9 @@ class AgentCore:
         )
 
     def _resolve_api_key(self) -> str | None:
-        """Resolve the actual API key from the configured environment variable."""
+        """Resolve the actual API key (direct value from config.json, then env var)."""
+        if self.model_config.api_key:
+            return self.model_config.api_key
         return os.environ.get(self.model_config.api_key_env)
 
     # ── Agent SDK path ──────────────────────────────────────
