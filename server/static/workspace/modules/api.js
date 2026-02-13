@@ -111,3 +111,27 @@ export function reloadSystem() {
 export function triggerHeartbeat(name) {
   return post(`/api/persons/${encodeURIComponent(name)}/trigger`, {});
 }
+
+// ── Assets ──────────────────────
+
+export function assetUrl(name, filename) {
+  return `/api/persons/${encodeURIComponent(name)}/assets/${encodeURIComponent(filename)}`;
+}
+
+export function fetchAssets(name) {
+  return request(`/api/persons/${encodeURIComponent(name)}/assets`);
+}
+
+/**
+ * Check if an asset exists by issuing a HEAD request.
+ * Returns the URL if it exists, or null otherwise.
+ */
+export async function probeAsset(name, filename) {
+  const url = assetUrl(name, filename);
+  try {
+    const res = await fetch(url, { method: "HEAD" });
+    return res.ok ? url : null;
+  } catch {
+    return null;
+  }
+}

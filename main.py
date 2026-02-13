@@ -649,7 +649,7 @@ def cli_main() -> None:
     )
     init_mode.add_argument(
         "--template", metavar="NAME",
-        help="Non-interactive: create person from template (e.g. sakura)",
+        help="Non-interactive: create person from named template",
     )
     init_mode.add_argument(
         "--from-md", metavar="PATH",
@@ -679,7 +679,7 @@ def cli_main() -> None:
     )
     p_create.add_argument(
         "--template", default=None,
-        help="Create from a named template (e.g. sakura)",
+        help="Create from a named template",
     )
     p_create.add_argument(
         "--from-md", default=None, metavar="PATH",

@@ -4,6 +4,11 @@
 // and manages state-driven animation transitions.
 
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { probeAsset } from "./api.js";
+
+/** Shared GLTFLoader instance. */
+const _gltfLoader = new GLTFLoader();
 
 // ── Constants ──────────────────────
 
@@ -813,15 +818,15 @@ export function initCharacters(scene) {
 }
 
 /**
- * Create a procedural SD character and add it to the scene.
- * Looks up the name in CHARACTER_PROFILES; falls back to deterministic
- * random pastel colors for unknown names.
+ * Create a character and add it to the scene.
+ * Tries to load a GLB model from the assets API first.
+ * Falls back to procedural SD character on failure or if no asset exists.
  *
  * @param {string} name     - Person name (key in CHARACTER_PROFILES or dynamic).
  * @param {THREE.Vector3} position - World position to place the character.
- * @returns {THREE.Group}   The character's root Group.
+ * @returns {Promise<THREE.Group>}   The character's root Group.
  */
-export function createCharacter(name, position) {
+export async function createCharacter(name, position) {
   if (!_scene) {
     throw new Error("character.js: initCharacters() must be called before createCharacter().");
   }
@@ -831,6 +836,103 @@ export function createCharacter(name, position) {
     removeCharacter(name);
   }
 
+  // ── Try GLB model first ──────────
+  const glbUrl = await probeAsset(name, "avatar_chibi.glb");
+  if (glbUrl) {
+    try {
+      return await _createGLBCharacter(name, position, glbUrl);
+    } catch (err) {
+      console.warn(`character.js: GLB load failed for "${name}", falling back to procedural.`, err);
+    }
+  }
+
+  // ── Fallback: procedural SD character ──────────
+  return _createProceduralCharacter(name, position);
+}
+
+/**
+ * Load a GLB model and register it as a character.
+ * @param {string} name
+ * @param {THREE.Vector3} position
+ * @param {string} url
+ * @returns {Promise<THREE.Group>}
+ */
+function _createGLBCharacter(name, position, url) {
+  return new Promise((resolve, reject) => {
+    _gltfLoader.load(
+      url,
+      (gltf) => {
+        const group = new THREE.Group();
+        group.name = `character_${name}`;
+
+        const model = gltf.scene;
+        // Normalise scale: fit model into ~0.7 units tall
+        const box = new THREE.Box3().setFromObject(model);
+        const height = box.max.y - box.min.y;
+        const targetHeight = 0.7;
+        const scale = height > 0 ? targetHeight / height : 1;
+        model.scale.setScalar(scale);
+
+        // Center the model horizontally & place feet at y=0
+        const scaledBox = new THREE.Box3().setFromObject(model);
+        model.position.x -= (scaledBox.min.x + scaledBox.max.x) / 2;
+        model.position.y -= scaledBox.min.y;
+
+        group.add(model);
+
+        // Tag for raycasting
+        group.traverse((child) => { child.userData.personName = name; });
+
+        group.position.copy(position);
+        group.userData._baseX = position.x;
+        group.userData._baseY = position.y;
+        group.userData._baseZ = position.z;
+
+        _scene.add(group);
+
+        // AnimationMixer if the model has animations
+        let mixer = null;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixer = new THREE.AnimationMixer(model);
+          const clip = gltf.animations[0];
+          mixer.clipAction(clip).play();
+        }
+
+        const profile = CHARACTER_PROFILES[name] || _generateProfile(name);
+
+        /** @type {CharacterRecord} */
+        const record = {
+          name,
+          group,
+          state: "idle",
+          prevState: "idle",
+          transitionT: 1.0,
+          parts: {},          // no procedural parts
+          profile,
+          faceTextures: {},   // no face textures
+          statusSprite: null,
+          particles: [],
+          particleAge: 0,
+          _isGLB: true,
+          _mixer: mixer,
+        };
+
+        _characters.set(name, record);
+        resolve(group);
+      },
+      undefined,
+      (err) => reject(err),
+    );
+  });
+}
+
+/**
+ * Create a procedural SD character (original implementation).
+ * @param {string} name
+ * @param {THREE.Vector3} position
+ * @returns {THREE.Group}
+ */
+function _createProceduralCharacter(name, position) {
   const profile = CHARACTER_PROFILES[name] || _generateProfile(name);
   const { group, parts, faceTextures } = _buildCharacterMesh(name, profile);
 
@@ -936,6 +1038,19 @@ export function updateCharacterState(name, state) {
  */
 export function updateAllCharacters(deltaTime, elapsedTime) {
   for (const rec of _characters.values()) {
+    // GLB model: update AnimationMixer + simple idle bob
+    if (rec._isGLB) {
+      if (rec._mixer) {
+        rec._mixer.update(deltaTime);
+      }
+      // Simple idle bob for GLB models too
+      const baseY = rec.group.userData._baseY;
+      rec.group.position.y = baseY + Math.sin(elapsedTime * 1.5) * 0.02;
+      rec.group.rotation.y = Math.sin(elapsedTime * 0.3) * 0.1;
+      continue;
+    }
+
+    // Procedural model: full animation system
     // Advance transition
     if (rec.transitionT < 1.0) {
       rec.transitionT = Math.min(1.0, rec.transitionT + deltaTime / TRANSITION_DURATION);
@@ -952,10 +1067,6 @@ export function updateAllCharacters(deltaTime, elapsedTime) {
 
     // During transition, lerp between rest and animated pose
     if (rec.transitionT < 1.0) {
-      // We use the transition factor to smoothly blend.
-      // Since we applied the full animation above, we lerp group-level
-      // properties toward the animated values. This provides a smooth
-      // visual blend without needing to store two full pose snapshots.
       const t = _easeInOutCubic(rec.transitionT);
       const baseY = rec.group.userData._baseY;
       const currentY = rec.group.position.y;

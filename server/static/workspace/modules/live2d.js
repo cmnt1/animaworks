@@ -1,6 +1,9 @@
 // ── Live2D Bust-up Module ──────────────────────
 // Canvas 2D character bust-up renderer with expressions, lip-sync, and blinking.
+// Supports AI-generated bust-up image when available via assets API.
 // Placeholder for real Live2D integration — same export API for seamless swap.
+
+import { probeAsset } from "./api.js";
 
 // ── Character Profiles ──────────────────────
 
@@ -54,6 +57,12 @@ let _prevExpression = "normal";
 
 /** @type {number} */
 let _expressionTransitionStart = 0;
+
+/** @type {boolean} — true when showing AI-generated bust-up image instead of Canvas */
+let _imageMode = false;
+
+/** @type {HTMLImageElement|null} — bust-up image element (shown when _imageMode=true) */
+let _bustupImg = null;
 
 /** @type {boolean} */
 let _isTalking = false;
@@ -1421,18 +1430,26 @@ export function disposeBustup() {
   _prevExpression = "normal";
   _isTalking = false;
   _clickCallback = null;
+  _imageMode = false;
+
+  if (_bustupImg) {
+    _bustupImg.removeEventListener("click", handleClick);
+    _bustupImg.remove();
+    _bustupImg = null;
+  }
 }
 
 /**
  * Switch the displayed character by name.
- * Known names use predefined colour profiles; unknown names generate a
- * deterministic profile from a hash of the name string.
+ * If an AI-generated bust-up image exists, display it instead of the Canvas
+ * procedural drawing.  Falls back to Canvas rendering when no image is available.
  * @param {string} name - Character name (e.g. "sakura", "kotoha")
  */
-export function setCharacter(name) {
+export async function setCharacter(name) {
   if (!name || typeof name !== "string") {
     _characterName = null;
     _profile = null;
+    _switchToCanvasMode();
     return;
   }
 
@@ -1443,6 +1460,53 @@ export function setCharacter(name) {
   // Reset expression
   _expression = "normal";
   _prevExpression = "normal";
+
+  // Check for AI-generated bust-up image
+  try {
+    const url = await probeAsset(key, "avatar_bustup.png");
+    if (url) {
+      _switchToImageMode(url);
+      return;
+    }
+  } catch {
+    // probe failed — fall through to Canvas
+  }
+  _switchToCanvasMode();
+}
+
+/**
+ * Switch to image mode: hide Canvas, show `<img>` with bust-up asset.
+ * @param {string} url
+ */
+function _switchToImageMode(url) {
+  _imageMode = true;
+
+  if (_canvas) _canvas.style.display = "none";
+
+  const parent = _canvas?.parentElement;
+  if (!parent) return;
+
+  if (!_bustupImg) {
+    _bustupImg = document.createElement("img");
+    _bustupImg.className = "bustup-image";
+    _bustupImg.style.cssText =
+      "width:100%;height:100%;object-fit:contain;cursor:pointer;display:block;";
+    _bustupImg.addEventListener("click", handleClick);
+    parent.appendChild(_bustupImg);
+  }
+
+  _bustupImg.src = url;
+  _bustupImg.style.display = "block";
+}
+
+/**
+ * Switch back to Canvas procedural rendering (when no bust-up image exists).
+ */
+function _switchToCanvasMode() {
+  _imageMode = false;
+
+  if (_bustupImg) _bustupImg.style.display = "none";
+  if (_canvas) _canvas.style.display = "";
 }
 
 /**

@@ -16,6 +16,7 @@ dynamically and executed here.
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("animaworks.external_tools")
@@ -306,5 +307,79 @@ def _execute(mod: Any, *, schema_name: str, args: dict[str, Any]) -> Any:
             base=args.get("base", "main"),
             draft=args.get("draft", False),
         )
+
+    # ── image_gen ─────────────────────────────────────────
+    if schema_name == "generate_character_assets":
+        person_dir = Path(args.pop("person_dir", ""))
+        pipeline = mod.ImageGenPipeline(person_dir)
+        result = pipeline.generate_all(
+            prompt=args["prompt"],
+            negative_prompt=args.get("negative_prompt", ""),
+            skip_existing=args.get("skip_existing", True),
+            steps=args.get("steps"),
+        )
+        return result.to_dict()
+    if schema_name == "generate_fullbody":
+        person_dir = Path(args.pop("person_dir", ""))
+        assets_dir = person_dir / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        client = mod.NovelAIClient()
+        img = client.generate_fullbody(
+            prompt=args["prompt"],
+            negative_prompt=args.get("negative_prompt", ""),
+            width=args.get("width", 1024),
+            height=args.get("height", 1536),
+            seed=args.get("seed"),
+        )
+        out = assets_dir / "avatar_fullbody.png"
+        out.write_bytes(img)
+        return {"path": str(out), "size": len(img)}
+    if schema_name == "generate_bustup":
+        person_dir = Path(args.pop("person_dir", ""))
+        assets_dir = person_dir / "assets"
+        ref_path = assets_dir / "avatar_fullbody.png"
+        if not ref_path.exists():
+            return {"error": "No full-body reference image found"}
+        client = mod.FluxKontextClient()
+        img = client.generate_from_reference(
+            reference_image=ref_path.read_bytes(),
+            prompt=args.get("prompt", mod._BUSTUP_PROMPT),
+            aspect_ratio="3:4",
+        )
+        out = assets_dir / "avatar_bustup.png"
+        out.write_bytes(img)
+        return {"path": str(out), "size": len(img)}
+    if schema_name == "generate_chibi":
+        person_dir = Path(args.pop("person_dir", ""))
+        assets_dir = person_dir / "assets"
+        ref_path = assets_dir / "avatar_fullbody.png"
+        if not ref_path.exists():
+            return {"error": "No full-body reference image found"}
+        client = mod.FluxKontextClient()
+        img = client.generate_from_reference(
+            reference_image=ref_path.read_bytes(),
+            prompt=args.get("prompt", mod._CHIBI_PROMPT),
+            aspect_ratio="1:1",
+        )
+        out = assets_dir / "avatar_chibi.png"
+        out.write_bytes(img)
+        return {"path": str(out), "size": len(img)}
+    if schema_name == "generate_3d_model":
+        person_dir = Path(args.pop("person_dir", ""))
+        assets_dir = person_dir / "assets"
+        chibi_path = assets_dir / "avatar_chibi.png"
+        if not chibi_path.exists():
+            return {"error": "No chibi image found for 3D conversion"}
+        client = mod.MeshyClient()
+        task_id = client.create_task(
+            chibi_path.read_bytes(),
+            ai_model=args.get("ai_model", "meshy-6"),
+            target_polycount=args.get("target_polycount", 30000),
+        )
+        task = client.poll_task(task_id)
+        glb = client.download_model(task, fmt="glb")
+        out = assets_dir / "avatar_chibi.glb"
+        out.write_bytes(glb)
+        return {"path": str(out), "size": len(glb), "task_id": task_id}
 
     raise ValueError(f"No handler for tool schema: {schema_name}")

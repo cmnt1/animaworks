@@ -19,6 +19,7 @@ TOOL_MODULES = {
     "transcribe": "core.tools.transcribe",
     "aws_collector": "core.tools.aws_collector",
     "github": "core.tools.github",
+    "image_gen": "core.tools.image_gen",
 }
 
 

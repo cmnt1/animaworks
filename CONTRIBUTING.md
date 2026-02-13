@@ -9,10 +9,7 @@ Contributor License Agreement.
 
 ### Why a CLA?
 
-AnimaWorks uses a dual-license model:
-
-- **AGPL-3.0** for `core/` and `server/` (framework core and server)
-- **MIT** for `main.py` and `templates/` (CLI and templates)
+AnimaWorks is licensed under **AGPL-3.0-or-later** for the entire codebase.
 
 The CLA allows the project maintainers to offer commercial licenses to
 organizations that cannot use AGPL-licensed software. Without a CLA,
@@ -43,7 +40,7 @@ pip install -e ".[all-tools,test]"
 
 ## License Headers
 
-Files under `core/` and `server/` must include the AGPL header:
+All source files must include the AGPL header:
 
 ```python
 # AnimaWorks - Digital Person Framework

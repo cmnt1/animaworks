@@ -124,7 +124,7 @@ async function initOfficeIfNeeded() {
       const deskKey = deskKeys[i % deskKeys.length];
       const deskPos = desks[deskKey];
       if (deskPos) {
-        const group = createCharacter(p.name, { x: deskPos.x, y: deskPos.y + 0.4, z: deskPos.z - 0.3 });
+        const group = await createCharacter(p.name, { x: deskPos.x, y: deskPos.y + 0.4, z: deskPos.z - 0.3 });
         if (group) {
           group.traverse((child) => {
             if (child.isMesh) {
@@ -172,7 +172,7 @@ function mapPersonStatusToAnim(status) {
 let bustupInitialized = false;
 let convStreamController = null;
 
-function openConversation(personName) {
+async function openConversation(personName) {
   if (!dom.convOverlay) return;
 
   setState({ conversationOpen: true, conversationPerson: personName });
@@ -195,8 +195,8 @@ function openConversation(personName) {
     });
   }
 
-  // Set character and expression
-  setCharacter(personName);
+  // Set character (may load AI-generated bust-up image) and expression
+  await setCharacter(personName);
   setExpression("normal");
 
   // Load and render chat history
@@ -603,11 +603,9 @@ async function onPersonSelected(name) {
     highlightDesk(name);
   }
 
-  // Open conversation panel
-  openConversation(name);
-
-  // Load memory + sessions in parallel
+  // Open conversation panel + load memory/sessions in parallel
   await Promise.all([
+    openConversation(name),
     loadMemoryTab(getState().activeMemoryTab),
     loadSessions(),
   ]);

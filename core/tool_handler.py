@@ -100,8 +100,9 @@ class ToolHandler:
         if name == "execute_command":
             return self._handle_execute_command(args)
 
-        # External tool dispatch
-        result = self._external.dispatch(name, args)
+        # External tool dispatch — inject person_dir for tools that need it
+        ext_args = {**args, "person_dir": str(self._person_dir)}
+        result = self._external.dispatch(name, ext_args)
         if result is not None:
             return result
 

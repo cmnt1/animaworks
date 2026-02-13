@@ -15,3 +15,6 @@ Read, Write, Edit, Bash, Grep, Glob
 
 ## 実行できないコマンド
 rm -rf, システム設定の変更
+
+## 外部ツール
+- image_gen: NO

@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger("animaworks.routes")
@@ -533,6 +534,89 @@ def create_router() -> APIRouter:
             "removed": removed,
             "total": len(persons),
         }
+
+    # ── Assets ─────────────────────────────────────────────
+
+    _ASSET_CONTENT_TYPES = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".glb": "model/gltf-binary",
+        ".gltf": "model/gltf+json",
+    }
+
+    @api.get("/persons/{name}/assets")
+    async def list_assets(name: str, request: Request):
+        """List available assets for a person."""
+        person = request.app.state.persons.get(name)
+        if not person:
+            return JSONResponse({"error": "Person not found"}, status_code=404)
+        assets_dir = person.person_dir / "assets"
+        if not assets_dir.exists():
+            return {"assets": []}
+        return {
+            "assets": [
+                {"name": f.name, "size": f.stat().st_size}
+                for f in sorted(assets_dir.iterdir())
+                if f.is_file()
+            ]
+        }
+
+    @api.get("/persons/{name}/assets/{filename}")
+    async def get_asset(name: str, filename: str, request: Request):
+        """Serve a static asset file from a person's assets directory."""
+        person = request.app.state.persons.get(name)
+        if not person:
+            return JSONResponse({"error": "Person not found"}, status_code=404)
+
+        # Validate filename (prevent path traversal)
+        safe_name = Path(filename).name
+        if safe_name != filename or ".." in filename:
+            return JSONResponse({"error": "Invalid filename"}, status_code=400)
+
+        file_path = person.person_dir / "assets" / safe_name
+        if not file_path.exists() or not file_path.is_file():
+            return JSONResponse({"error": "Asset not found"}, status_code=404)
+
+        suffix = file_path.suffix.lower()
+        content_type = _ASSET_CONTENT_TYPES.get(suffix, "application/octet-stream")
+        return FileResponse(
+            file_path,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    class AssetGenerateRequest(BaseModel):
+        prompt: str | None = None
+        negative_prompt: str = ""
+        steps: list[str] | None = None
+        skip_existing: bool = True
+
+    @api.post("/persons/{name}/assets/generate")
+    async def generate_assets(
+        name: str, body: AssetGenerateRequest, request: Request,
+    ):
+        """Trigger character asset generation pipeline."""
+        person = request.app.state.persons.get(name)
+        if not person:
+            return JSONResponse({"error": "Person not found"}, status_code=404)
+
+        prompt = body.prompt
+        if not prompt:
+            return JSONResponse(
+                {"error": "prompt is required"}, status_code=400,
+            )
+
+        from core.tools.image_gen import ImageGenPipeline
+
+        pipeline = ImageGenPipeline(person.person_dir)
+        result = pipeline.generate_all(
+            prompt=prompt,
+            negative_prompt=body.negative_prompt,
+            skip_existing=body.skip_existing,
+            steps=body.steps,
+        )
+        return result.to_dict()
 
     # ── WebSocket ─────────────────────────────────────────
 

@@ -28,7 +28,7 @@ def ensure_runtime_dir(*, skip_persons: bool = False) -> Path:
     Args:
         skip_persons: If True (used by interactive init), only copy
             infrastructure templates.  If False (default for server startup),
-            fall back to legacy behaviour that creates sakura from template
+            fall back to legacy behaviour that creates a blank default person
             when no persons exist yet.
 
     Returns the runtime data directory path.
@@ -61,7 +61,7 @@ def ensure_runtime_dir(*, skip_persons: bool = False) -> Path:
     _ensure_runtime_only_dirs(data_dir)
 
     # Legacy fallback: if not skipping persons and no persons exist,
-    # copy the sakura template so cmd_start() works out of the box.
+    # create a blank default person so cmd_start() works out of the box.
     if not skip_persons:
         persons_dir = data_dir / "persons"
         if not persons_dir.exists() or not any(persons_dir.iterdir()):
@@ -91,16 +91,16 @@ def _copy_infrastructure(data_dir: Path) -> None:
 
 
 def _legacy_copy_default_person(data_dir: Path) -> None:
-    """Legacy fallback: copy sakura template when auto-initialising for server."""
-    from core.person_factory import create_from_template
+    """Legacy fallback: create a blank person when auto-initialising for server."""
+    from core.person_factory import create_blank
 
     persons_dir = data_dir / "persons"
     persons_dir.mkdir(parents=True, exist_ok=True)
     try:
-        create_from_template(persons_dir, "sakura")
-        logger.info("Legacy fallback: created default person 'sakura'")
+        create_blank(persons_dir, "sakura")
+        logger.info("Legacy fallback: created blank default person 'sakura'")
     except Exception:
-        logger.warning("Could not create default person from template", exc_info=True)
+        logger.warning("Could not create default person", exc_info=True)
 
 
 def merge_templates(data_dir: Path) -> list[str]:

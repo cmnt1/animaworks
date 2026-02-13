@@ -52,7 +52,7 @@ def create_from_template(
 
     Args:
         persons_dir: Runtime persons directory (~/.animaworks/persons/).
-        template_name: Template directory name (e.g. "sakura").
+        template_name: Template directory name under person_templates/.
         person_name: Override the directory name.  Defaults to template_name.
 
     Returns:
@@ -80,6 +80,7 @@ def create_blank(persons_dir: Path, name: str) -> Path:
     """Create a blank person with skeleton files.
 
     The {name} placeholder in skeleton files is replaced with the actual name.
+    Copies the entire _blank template tree (including subdirectories like skills/).
 
     Args:
         persons_dir: Runtime persons directory.
@@ -92,15 +93,17 @@ def create_blank(persons_dir: Path, name: str) -> Path:
     if person_dir.exists():
         raise FileExistsError(f"Person already exists: {name}")
 
-    person_dir.mkdir(parents=True, exist_ok=True)
-
-    # Copy and fill blank template files
     if BLANK_TEMPLATE_DIR.exists():
-        for src in BLANK_TEMPLATE_DIR.iterdir():
-            if src.is_file():
-                content = src.read_text(encoding="utf-8")
-                content = content.replace("{name}", name)
-                (person_dir / src.name).write_text(content, encoding="utf-8")
+        shutil.copytree(BLANK_TEMPLATE_DIR, person_dir)
+        # Replace {name} placeholder in all markdown files
+        for md_file in person_dir.rglob("*.md"):
+            content = md_file.read_text(encoding="utf-8")
+            if "{name}" in content:
+                md_file.write_text(
+                    content.replace("{name}", name), encoding="utf-8"
+                )
+    else:
+        person_dir.mkdir(parents=True, exist_ok=True)
 
     _ensure_runtime_subdirs(person_dir)
     _init_state_files(person_dir)

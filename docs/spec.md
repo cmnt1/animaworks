@@ -88,7 +88,7 @@ animaworks/
 │       └── workspace/         # インタラクティブWorkspace
 ├── templates/
 │   ├── prompts/               # プロンプトテンプレート
-│   ├── person_templates/      # Person雛形（sakura, _blank）
+│   ├── person_templates/      # Person雛形（_blank）
 │   └── company/               # 組織ビジョンテンプレート
 ├── main.py                    # CLIエントリポイント
 └── tests/                     # テストスイート
