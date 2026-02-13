@@ -227,6 +227,7 @@ class TestModeA2Live:
     @pytest.mark.timeout(60)
     async def test_live_basic_response(self, make_agent_core):
         """Live A2: real LiteLLM call with a non-Claude model."""
+        pytest.importorskip("litellm")
         agent = make_agent_core(
             name="a2-live",
             model="claude-sonnet-4-20250514",
@@ -255,6 +256,7 @@ class TestModeA2AzureLive:
 
     async def test_live_azure_basic_response(self, make_agent_core):
         """Live A2: Azure OpenAI gpt-4.1 call via LiteLLM."""
+        pytest.importorskip("litellm")
         import os
 
         agent = make_agent_core(

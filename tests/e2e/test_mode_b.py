@@ -109,6 +109,7 @@ class TestModeBLive:
     @pytest.mark.timeout(60)
     async def test_live_basic_response(self, make_agent_core):
         """Live Mode B: real LLM call produces a response and records an episode."""
+        pytest.importorskip("litellm")
         agent = make_agent_core(
             name="b-live",
             model="claude-sonnet-4-20250514",
@@ -135,6 +136,7 @@ class TestModeBOllamaLive:
     @pytest.mark.timeout(120)
     async def test_live_ollama_basic_response(self, make_agent_core):
         """Live Mode B: Ollama model produces an assisted response."""
+        pytest.importorskip("litellm")
         import os
 
         agent = make_agent_core(
@@ -161,6 +163,7 @@ class TestModeBAzureLive:
     @pytest.mark.timeout(60)
     async def test_live_azure_assisted_response(self, make_agent_core):
         """Live Mode B: Azure OpenAI gpt-4.1 in assisted mode."""
+        pytest.importorskip("litellm")
         import os
 
         agent = make_agent_core(

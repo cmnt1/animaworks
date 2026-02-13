@@ -72,29 +72,28 @@ def make_tool_call(
 def patch_litellm(*responses: MagicMock):
     """Patch ``litellm.acompletion`` with a sequence of mock responses.
 
-    Injects a mock ``litellm`` module into ``sys.modules`` so the patch
-    works even when litellm is not installed.
+    Injects a mock ``litellm`` module into ``sys.modules`` so that lazy
+    ``import litellm`` in production code resolves without the real package.
 
     Usage::
 
         with patch_litellm(resp1, resp2, resp3):
             result = await agent.run_cycle("hello")
     """
-    mock = AsyncMock(side_effect=list(responses))
+    mock_fn = AsyncMock(side_effect=list(responses))
 
-    # Ensure litellm is present in sys.modules (it may not be installed)
+    mock_module = MagicMock()
+    mock_module.acompletion = mock_fn
+
     saved = sys.modules.get("litellm")
-    if saved is None:
-        mock_mod = MagicMock()
-        mock_mod.acompletion = mock
-        sys.modules["litellm"] = mock_mod
-
     try:
-        with patch("litellm.acompletion", mock):
-            yield mock
+        sys.modules["litellm"] = mock_module
+        yield mock_fn
     finally:
         if saved is None:
             sys.modules.pop("litellm", None)
+        else:
+            sys.modules["litellm"] = saved
 
 
 # ── claude_agent_sdk mocks ────────────────────────────────
