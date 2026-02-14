@@ -15,8 +15,10 @@ or hits the iteration limit.  Session chaining is handled inline when the
 context threshold is crossed mid-conversation.
 """
 
+import asyncio
 import json as _json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -29,13 +31,53 @@ from core.prompt.builder import build_system_prompt
 from core.schemas import ModelConfig
 from core.memory.shortterm import ShortTermMemory
 from core.tooling.handler import ToolHandler
-from core.tooling.guide import load_tool_schemas
 from core.tooling.schemas import (
     build_tool_list,
+    load_external_schemas,
     to_litellm_format,
 )
 
 logger = logging.getLogger("animaworks.execution.litellm_loop")
+
+# Tools that perform writes — same-path writes must be serialised.
+_WRITE_TOOLS = frozenset({"write_file", "edit_file", "write_memory_file"})
+
+# Thread-pool for running synchronous tool handlers concurrently.
+_tool_executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _partition_tool_calls(
+    tool_calls: list,
+) -> tuple[list, list[list]]:
+    """Split tool_calls into parallel-safe and serial batches.
+
+    Returns:
+        (parallel_batch, serial_batches)
+        - parallel_batch: tool_calls safe to run concurrently
+        - serial_batches: groups of same-path writes that must run sequentially
+    """
+    parallel: list = []
+    serial_by_path: dict[str, list] = {}
+
+    for tc in tool_calls:
+        fn_name = tc.function.name
+        if fn_name in _WRITE_TOOLS:
+            try:
+                args = _json.loads(tc.function.arguments)
+            except _json.JSONDecodeError:
+                parallel.append(tc)
+                continue
+            path = args.get("path", "")
+            if path in serial_by_path:
+                serial_by_path[path].append(tc)
+            else:
+                serial_by_path[path] = []
+                parallel.append(tc)  # first write to each path is parallel-safe
+        else:
+            parallel.append(tc)
+
+    serial_batches = [calls for calls in serial_by_path.values() if calls]
+    return parallel, serial_batches
 
 
 class LiteLLMExecutor(BaseExecutor):
@@ -60,12 +102,12 @@ class LiteLLMExecutor(BaseExecutor):
         self._memory = memory
         self._personal_tools = personal_tools or {}
 
-    def _build_tools(self) -> list[dict[str, Any]]:
-        """Build the LiteLLM-format tool list."""
-        external = load_tool_schemas(self._tool_registry, self._personal_tools)
+    def _build_base_tools(self) -> list[dict[str, Any]]:
+        """Build the base LiteLLM-format tool list (no external tools)."""
         canonical = build_tool_list(
             include_file_tools=True,
-            external_schemas=external,
+            include_search_tools=True,
+            include_discovery_tools=True,
         )
         return to_litellm_format(canonical)
 
@@ -82,6 +124,40 @@ class LiteLLMExecutor(BaseExecutor):
             kwargs["api_base"] = self._model_config.api_base_url
         return kwargs
 
+    def _list_tool_categories(self) -> str:
+        """Return a summary of available external tool categories."""
+        if not self._tool_registry:
+            return "No external tool categories available."
+        from core.tools import TOOL_MODULES
+        lines = ["Available tool categories:"]
+        for cat in sorted(self._tool_registry):
+            if cat in TOOL_MODULES:
+                lines.append(f"- {cat}")
+        if self._personal_tools:
+            for cat in sorted(self._personal_tools):
+                lines.append(f"- {cat} (personal)")
+        return "\n".join(lines)
+
+    def _activate_category(self, category: str) -> list[dict[str, Any]]:
+        """Load and return canonical schemas for a tool category."""
+        # Check personal tools first
+        if category in self._personal_tools:
+            from core.tooling.schemas import load_personal_tool_schemas
+            return load_personal_tool_schemas({category: self._personal_tools[category]})
+        # Then core tools
+        return load_external_schemas([category])
+
+    async def _execute_tool_call(self, tc, fn_args: dict[str, Any]) -> dict[str, Any]:
+        """Execute a single tool call, offloading sync work to a thread."""
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            _tool_executor,
+            self._tool_handler.handle,
+            tc.function.name,
+            fn_args,
+        )
+        return {"role": "tool", "tool_call_id": tc.id, "content": result}
+
     async def execute(
         self,
         prompt: str,
@@ -96,7 +172,8 @@ class LiteLLMExecutor(BaseExecutor):
         """
         import litellm
 
-        tools = self._build_tools()
+        tools = self._build_base_tools()
+        active_categories: set[str] = set()
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
@@ -139,6 +216,7 @@ class LiteLLMExecutor(BaseExecutor):
                         self._memory,
                         tool_registry=self._tool_registry,
                         personal_tools=self._personal_tools,
+                        execution_mode="a2",
                     ),
                     max_chains=self._model_config.max_chains,
                     chain_count=chain_count,
@@ -173,20 +251,99 @@ class LiteLLMExecutor(BaseExecutor):
             )
             messages.append(message.model_dump())
 
+            # Phase 1: Parse arguments and handle discover_tools / JSON errors
+            pending_calls: list[tuple] = []  # (tc, fn_args)
             for tc in tool_calls:
                 fn_name = tc.function.name
+
+                # JSON parse with structured error on failure
                 try:
                     fn_args = _json.loads(tc.function.arguments)
-                except _json.JSONDecodeError:
-                    fn_args = {}
+                except _json.JSONDecodeError as e:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": _json.dumps({
+                            "status": "error",
+                            "error_type": "InvalidArguments",
+                            "message": f"Failed to parse tool arguments: {e}",
+                            "context": {"raw_arguments": tc.function.arguments[:500]},
+                            "suggestion": "Ensure arguments are valid JSON",
+                        }, ensure_ascii=False),
+                    })
+                    continue
 
-                result = self._tool_handler.handle(fn_name, fn_args)
+                # Handle discover_tools inline
+                if fn_name == "discover_tools":
+                    category = fn_args.get("category")
+                    if category is None:
+                        result = self._list_tool_categories()
+                    elif category not in active_categories:
+                        new_schemas = self._activate_category(category)
+                        if new_schemas:
+                            tools.extend(to_litellm_format(new_schemas))
+                            active_categories.add(category)
+                            result = f"Activated {len(new_schemas)} tools for '{category}'"
+                        else:
+                            result = f"No tools found for category '{category}'"
+                    else:
+                        result = f"Category '{category}' is already active"
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    })
+                    continue
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
-                })
+                pending_calls.append((tc, fn_args))
+
+            # Phase 2: Execute remaining tool calls with parallelism
+            if pending_calls:
+                parallel, serial_batches = _partition_tool_calls(
+                    [tc for tc, _ in pending_calls],
+                )
+                # Build args lookup by tool_call_id
+                args_map = {tc.id: fn_args for tc, fn_args in pending_calls}
+
+                # Parallel batch
+                if parallel:
+                    coros = [
+                        self._execute_tool_call(tc, args_map[tc.id])
+                        for tc in parallel
+                    ]
+                    results = await asyncio.gather(*coros, return_exceptions=True)
+                    for i, r in enumerate(results):
+                        if isinstance(r, Exception):
+                            logger.warning("Parallel tool execution error: %s", r)
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": parallel[i].id,
+                                "content": _json.dumps({
+                                    "status": "error",
+                                    "error_type": "ExecutionError",
+                                    "message": str(r),
+                                }, ensure_ascii=False),
+                            })
+                        else:
+                            messages.append(r)
+
+                # Serial batches (same-path writes)
+                for batch in serial_batches:
+                    for tc in batch:
+                        try:
+                            r = await self._execute_tool_call(tc, args_map[tc.id])
+                            messages.append(r)
+                        except Exception as e:
+                            logger.warning("Serial tool execution error: %s", e)
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": _json.dumps({
+                                    "status": "error",
+                                    "error_type": "ExecutionError",
+                                    "message": str(e),
+                                }, ensure_ascii=False),
+                            })
 
         logger.warning("A2 max iterations (%d) reached", max_iterations)
         return ExecutionResult(

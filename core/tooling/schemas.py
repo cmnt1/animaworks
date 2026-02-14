@@ -143,6 +143,84 @@ FILE_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+SEARCH_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "search_code",
+        "description": (
+            "Search for a text pattern in files using regex. "
+            "Returns matching lines with file paths and line numbers. "
+            "Use this instead of execute_command with grep."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern to search for",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Directory or file path to search in (default: person_dir)",
+                },
+                "glob": {
+                    "type": "string",
+                    "description": "File glob filter (e.g. '*.py', '*.md')",
+                },
+            },
+            "required": ["pattern"],
+        },
+    },
+    {
+        "name": "list_directory",
+        "description": (
+            "List files and directories at a given path. "
+            "Supports glob patterns for filtering. "
+            "Use this instead of execute_command with ls or find."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Directory path (default: person_dir)",
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern filter (e.g. '**/*.py')",
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "description": "Include subdirectories (default: false)",
+                },
+            },
+        },
+    },
+]
+
+DISCOVERY_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "discover_tools",
+        "description": (
+            "Discover available external tools. "
+            "Call without arguments to list available categories. "
+            "Call with a category name to activate that category's tools."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": (
+                        "Tool category to activate "
+                        "(e.g. 'chatwork', 'slack', 'gmail'). "
+                        "Omit to list all available categories."
+                    ),
+                },
+            },
+        },
+    },
+]
+
 # ── Format converters ────────────────────────────────────────
 
 
@@ -179,12 +257,16 @@ def to_litellm_format(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def build_tool_list(
     *,
     include_file_tools: bool = False,
+    include_search_tools: bool = False,
+    include_discovery_tools: bool = False,
     external_schemas: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Assemble a tool list from canonical definitions.
 
     Args:
         include_file_tools: Include file/command operation tools (for A2 mode).
+        include_search_tools: Include search_code/list_directory tools.
+        include_discovery_tools: Include discover_tools tool.
         external_schemas: Additional tool schemas in canonical format.
 
     Returns:
@@ -193,6 +275,10 @@ def build_tool_list(
     tools: list[dict[str, Any]] = list(MEMORY_TOOLS)
     if include_file_tools:
         tools.extend(FILE_TOOLS)
+    if include_search_tools:
+        tools.extend(SEARCH_TOOLS)
+    if include_discovery_tools:
+        tools.extend(DISCOVERY_TOOLS)
     if external_schemas:
         tools.extend(external_schemas)
     return tools

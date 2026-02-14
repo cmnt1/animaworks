@@ -5,8 +5,10 @@ from unittest.mock import MagicMock, patch
 
 import core.tools
 from core.tooling.schemas import (
+    DISCOVERY_TOOLS,
     FILE_TOOLS,
     MEMORY_TOOLS,
+    SEARCH_TOOLS,
     build_tool_list,
     load_external_schemas,
     to_anthropic_format,
@@ -71,6 +73,33 @@ class TestFileTools:
         schema = next(t for t in FILE_TOOLS if t["name"] == "execute_command")
         assert "command" in schema["parameters"]["properties"]
         assert "timeout" in schema["parameters"]["properties"]
+
+
+class TestSearchTools:
+    def test_search_tools_is_list(self):
+        assert isinstance(SEARCH_TOOLS, list)
+        assert len(SEARCH_TOOLS) == 2
+
+    def test_search_code_schema(self):
+        schema = next(t for t in SEARCH_TOOLS if t["name"] == "search_code")
+        assert "pattern" in schema["parameters"]["properties"]
+        assert "pattern" in schema["parameters"]["required"]
+
+    def test_list_directory_schema(self):
+        schema = next(t for t in SEARCH_TOOLS if t["name"] == "list_directory")
+        assert "path" in schema["parameters"]["properties"]
+        assert "recursive" in schema["parameters"]["properties"]
+
+
+class TestDiscoveryTools:
+    def test_discovery_tools_is_list(self):
+        assert isinstance(DISCOVERY_TOOLS, list)
+        assert len(DISCOVERY_TOOLS) == 1
+
+    def test_discover_tools_schema(self):
+        schema = DISCOVERY_TOOLS[0]
+        assert schema["name"] == "discover_tools"
+        assert "category" in schema["parameters"]["properties"]
 
 
 # ── Format converters ─────────────────────────────────────────
@@ -156,6 +185,32 @@ class TestBuildToolList:
         assert "search_memory" in names
         assert "read_file" in names
         assert "ext1" in names
+
+    def test_include_search_tools(self):
+        result = build_tool_list(include_search_tools=True)
+        names = [t["name"] for t in result]
+        assert "search_code" in names
+        assert "list_directory" in names
+        # Should NOT include file tools unless requested
+        assert "read_file" not in names
+
+    def test_include_discovery_tools(self):
+        result = build_tool_list(include_discovery_tools=True)
+        names = [t["name"] for t in result]
+        assert "discover_tools" in names
+
+    def test_all_flags_combined(self):
+        result = build_tool_list(
+            include_file_tools=True,
+            include_search_tools=True,
+            include_discovery_tools=True,
+        )
+        names = [t["name"] for t in result]
+        # 4 memory + 4 file + 2 search + 1 discovery = 11
+        assert len(result) == 11
+        assert "search_code" in names
+        assert "list_directory" in names
+        assert "discover_tools" in names
 
     def test_does_not_mutate_memory_tools(self):
         original_len = len(MEMORY_TOOLS)

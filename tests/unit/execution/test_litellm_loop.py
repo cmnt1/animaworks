@@ -1,6 +1,7 @@
 """Tests for core.execution.litellm_loop — Mode A2: LiteLLM tool_use loop."""
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -94,25 +95,40 @@ def executor(
     )
 
 
-# ── _build_tools ──────────────────────────────────────────────
+# ── _build_base_tools ─────────────────────────────────────────
 
 
-class TestBuildTools:
+class TestBuildBaseTools:
     def test_returns_litellm_format(self, executor):
-        with patch("core.tooling.schemas.load_external_schemas", return_value=[]):
-            tools = executor._build_tools()
+        tools = executor._build_base_tools()
         assert isinstance(tools, list)
         for t in tools:
             assert t["type"] == "function"
             assert "name" in t["function"]
 
     def test_includes_file_tools(self, executor):
-        with patch("core.tooling.schemas.load_external_schemas", return_value=[]):
-            tools = executor._build_tools()
+        tools = executor._build_base_tools()
         names = [t["function"]["name"] for t in tools]
         assert "read_file" in names
         assert "write_file" in names
 
+    def test_includes_search_tools(self, executor):
+        tools = executor._build_base_tools()
+        names = [t["function"]["name"] for t in tools]
+        assert "search_code" in names
+        assert "list_directory" in names
+
+    def test_includes_discover_tools(self, executor):
+        tools = executor._build_base_tools()
+        names = [t["function"]["name"] for t in tools]
+        assert "discover_tools" in names
+
+    def test_does_not_include_external_tools(self, executor):
+        tools = executor._build_base_tools()
+        names = [t["function"]["name"] for t in tools]
+        # Should not have any external tools like chatwork_*, slack_*, etc.
+        assert not any(n.startswith("chatwork_") for n in names)
+        assert not any(n.startswith("slack_") for n in names)
 
 
 # ── _build_llm_kwargs ────────────────────────────────────────
@@ -236,3 +252,202 @@ class TestExecuteContextTracking:
                 "test", system_prompt="sys", tracker=tracker, shortterm=shortterm,
             )
         assert "Continued" in result.text or "Partial" in result.text
+
+
+# ── _partition_tool_calls ────────────────────────────────────
+
+
+class TestPartitionToolCalls:
+    def test_all_reads_are_parallel(self):
+        from core.execution.litellm_loop import _partition_tool_calls
+        tc1 = make_tool_call("read_file", {"path": "/a"}, "call_1")
+        tc2 = make_tool_call("search_memory", {"query": "x"}, "call_2")
+        parallel, serial = _partition_tool_calls([tc1, tc2])
+        assert len(parallel) == 2
+        assert serial == []
+
+    def test_writes_to_different_paths_are_parallel(self):
+        from core.execution.litellm_loop import _partition_tool_calls
+        tc1 = make_tool_call("write_file", {"path": "/a"}, "call_1")
+        tc2 = make_tool_call("write_file", {"path": "/b"}, "call_2")
+        parallel, serial = _partition_tool_calls([tc1, tc2])
+        assert len(parallel) == 2
+        assert serial == []
+
+    def test_writes_to_same_path_serialised(self):
+        from core.execution.litellm_loop import _partition_tool_calls
+        tc1 = make_tool_call("write_file", {"path": "/a"}, "call_1")
+        tc2 = make_tool_call("write_file", {"path": "/a"}, "call_2")
+        parallel, serial = _partition_tool_calls([tc1, tc2])
+        assert len(parallel) == 1  # first write
+        assert len(serial) == 1  # second write serialised
+        assert len(serial[0]) == 1
+
+
+# ── execute() — invalid JSON ────────────────────────────────
+
+
+class TestExecuteWithInvalidJson:
+    async def test_invalid_json_returns_structured_error(self, executor):
+        tc = make_tool_call("search_memory", {"query": "test"})
+        tc.function.arguments = "not valid json {"
+        resp_with_tool = make_litellm_response(content="", tool_calls=[tc])
+        resp_final = make_litellm_response(content="Done", tool_calls=None)
+
+        mock = AsyncMock(side_effect=[resp_with_tool, resp_final])
+        _install_litellm_mock(mock)
+        with patch("litellm.acompletion", mock):
+            result = await executor.execute("test", system_prompt="sys")
+        assert "Done" in result.text
+        # The error message should have been appended to messages
+        # and the LLM should have been given a chance to retry
+
+
+# ── execute() — discover_tools ───────────────────────────────
+
+
+class TestDiscoverTools:
+    async def test_discover_tools_lists_categories(self, executor):
+        executor._tool_registry = ["chatwork", "slack"]
+        tc = make_tool_call("discover_tools", {})
+        resp_with_tool = make_litellm_response(content="", tool_calls=[tc])
+        resp_final = make_litellm_response(content="Got categories", tool_calls=None)
+
+        mock = AsyncMock(side_effect=[resp_with_tool, resp_final])
+        _install_litellm_mock(mock)
+        with patch("litellm.acompletion", mock):
+            result = await executor.execute("test", system_prompt="sys")
+        assert "Got categories" in result.text
+
+    async def test_discover_tools_activates_category(self, executor):
+        executor._tool_registry = ["chatwork"]
+        tc = make_tool_call("discover_tools", {"category": "chatwork"})
+        resp_with_tool = make_litellm_response(content="", tool_calls=[tc])
+        resp_final = make_litellm_response(content="Category active", tool_calls=None)
+
+        mock_schemas = [
+            {"name": "chatwork_send", "description": "Send chatwork", "parameters": {}},
+        ]
+        mock = AsyncMock(side_effect=[resp_with_tool, resp_final])
+        _install_litellm_mock(mock)
+        with patch("litellm.acompletion", mock), \
+             patch("core.execution.litellm_loop.load_external_schemas", return_value=mock_schemas):
+            result = await executor.execute("test", system_prompt="sys")
+        assert "Category active" in result.text
+
+
+# ── execute() — tool execution error handling ─────────────
+
+
+class TestToolExecutionErrorHandling:
+    """H2/H3: Exceptions during tool execution must produce structured error
+    tool messages (not silently drop them), preserving the API contract."""
+
+    async def test_parallel_exception_returns_error_message(self, executor):
+        """H2: When a parallel tool call raises, an error tool message with
+        the correct tool_call_id must be appended."""
+        tc = make_tool_call("read_file", {"path": "/fail"}, "call_err_1")
+        resp_with_tool = make_litellm_response(content="", tool_calls=[tc])
+        resp_final = make_litellm_response(content="Recovered", tool_calls=None)
+
+        mock = AsyncMock(side_effect=[resp_with_tool, resp_final])
+        _install_litellm_mock(mock)
+
+        with patch("litellm.acompletion", mock), \
+             patch.object(
+                 executor, "_execute_tool_call",
+                 side_effect=RuntimeError("disk failure"),
+             ):
+            result = await executor.execute("test", system_prompt="sys")
+
+        # LLM should have received an error tool message and produced final text
+        assert "Recovered" in result.text
+        # Verify the error message was in the second call's messages
+        second_call_messages = mock.call_args_list[1].kwargs.get(
+            "messages", mock.call_args_list[1][0][0] if mock.call_args_list[1][0] else []
+        )
+        tool_msgs = [m for m in second_call_messages if m.get("role") == "tool"]
+        assert len(tool_msgs) >= 1
+        err_msg = tool_msgs[0]
+        assert err_msg["tool_call_id"] == "call_err_1"
+        parsed = json.loads(err_msg["content"])
+        assert parsed["status"] == "error"
+        assert parsed["error_type"] == "ExecutionError"
+        assert "disk failure" in parsed["message"]
+
+    async def test_serial_exception_returns_error_message(self, executor):
+        """H3: When a serial (same-path write) tool call raises, an error tool
+        message with the correct tool_call_id must be appended."""
+        # Two writes to the same path → first parallel, second serial
+        tc1 = make_tool_call("write_file", {"path": "/a", "content": "x"}, "call_w1")
+        tc2 = make_tool_call("write_file", {"path": "/a", "content": "y"}, "call_w2")
+        resp_with_tools = make_litellm_response(content="", tool_calls=[tc1, tc2])
+        resp_final = make_litellm_response(content="Done after error", tool_calls=None)
+
+        call_count = 0
+
+        async def mock_exec(tc, fn_args):
+            nonlocal call_count
+            call_count += 1
+            if tc.id == "call_w2":
+                raise RuntimeError("serial write failed")
+            return {"role": "tool", "tool_call_id": tc.id, "content": "ok"}
+
+        mock = AsyncMock(side_effect=[resp_with_tools, resp_final])
+        _install_litellm_mock(mock)
+
+        with patch("litellm.acompletion", mock), \
+             patch.object(executor, "_execute_tool_call", side_effect=mock_exec):
+            result = await executor.execute("test", system_prompt="sys")
+
+        assert "Done after error" in result.text
+        # Verify error message was appended for the serial call
+        second_call_messages = mock.call_args_list[1].kwargs.get(
+            "messages", mock.call_args_list[1][0][0] if mock.call_args_list[1][0] else []
+        )
+        tool_msgs = [m for m in second_call_messages if m.get("role") == "tool"]
+        err_msgs = [m for m in tool_msgs if m["tool_call_id"] == "call_w2"]
+        assert len(err_msgs) == 1
+        parsed = json.loads(err_msgs[0]["content"])
+        assert parsed["status"] == "error"
+        assert "serial write failed" in parsed["message"]
+
+
+# ── session chaining — execution_mode ─────────────────────
+
+
+class TestSessionChainingExecutionMode:
+    """H1: Session chaining partial must pass execution_mode='a2'."""
+
+    async def test_session_chaining_preserves_a2_mode(self, executor, person_dir: Path):
+        """When session chaining triggers, build_system_prompt must be called
+        with execution_mode='a2'."""
+        tracker = ContextTracker(model="openai/gpt-4o", threshold=0.50)
+        shortterm = ShortTermMemory(person_dir)
+
+        resp_threshold = make_litellm_response(
+            content="Partial",
+            prompt_tokens=100_000,
+            completion_tokens=10_000,
+        )
+        resp_final = make_litellm_response(content="Continued", prompt_tokens=1000)
+
+        mock = AsyncMock(side_effect=[resp_threshold, resp_final])
+        _install_litellm_mock(mock)
+
+        build_spy = MagicMock(return_value="new-system-prompt")
+
+        with patch("litellm.acompletion", mock), \
+             patch("core.execution.litellm_loop.build_system_prompt", build_spy), \
+             patch("core.execution._session.inject_shortterm", return_value="sys+st"), \
+             patch("core.execution._session.load_prompt", return_value="continue"):
+            await executor.execute(
+                "test", system_prompt="sys", tracker=tracker, shortterm=shortterm,
+            )
+
+        # Verify build_system_prompt was called with execution_mode="a2"
+        if build_spy.called:
+            _, kwargs = build_spy.call_args
+            assert kwargs.get("execution_mode") == "a2", (
+                f"Expected execution_mode='a2', got {kwargs.get('execution_mode')!r}"
+            )

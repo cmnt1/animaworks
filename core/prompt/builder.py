@@ -70,11 +70,21 @@ def _build_messaging_section(person_dir: Path, other_persons: list[str]) -> str:
     )
 
 
+def _load_a2_reflection() -> str:
+    """Load the A2 reflection/retry prompt template."""
+    try:
+        return load_prompt("a2_reflection")
+    except Exception:
+        logger.debug("a2_reflection template not found, skipping")
+        return ""
+
+
 def build_system_prompt(
     memory: MemoryManager,
     tool_registry: list[str] | None = None,
     personal_tools: dict[str, str] | None = None,
     priming_section: str = "",
+    execution_mode: str = "a1",
 ) -> str:
     """Construct the full system prompt from Markdown files.
 
@@ -184,10 +194,30 @@ def build_system_prompt(
 
     # Inject dynamically generated external tools guide (filtered by registry)
     if permissions and "外部ツール" in permissions and (tool_registry or personal_tools):
-        from core.tooling.guide import build_tools_guide
-        tools_guide = build_tools_guide(tool_registry or [], personal_tools)
-        if tools_guide:
-            parts.append(tools_guide)
+        if execution_mode == "a2":
+            # A2: guide users to discover_tools instead of CLI guide
+            categories = ", ".join(sorted(tool_registry or []))
+            if personal_tools:
+                personal_cats = ", ".join(sorted(personal_tools.keys()))
+                categories = f"{categories}, {personal_cats}" if categories else personal_cats
+            parts.append(
+                f"## 外部ツール\n\n"
+                f"外部ツールを使うには `discover_tools` を呼んでください。\n"
+                f"利用可能なカテゴリ: {categories}\n"
+                f"カテゴリを指定して呼ぶとそのツール群が使えるようになります。"
+            )
+        else:
+            # A1/B: CLI guide via animaworks-tool
+            from core.tooling.guide import build_tools_guide
+            tools_guide = build_tools_guide(tool_registry or [], personal_tools)
+            if tools_guide:
+                parts.append(tools_guide)
+
+    # A2 reflection prompt for self-correction
+    if execution_mode == "a2":
+        reflection = _load_a2_reflection()
+        if reflection:
+            parts.append(reflection)
 
     # Emotion metadata instruction for bustup expression
     parts.append(EMOTION_INSTRUCTION)

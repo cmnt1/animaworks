@@ -35,6 +35,27 @@ OnMessageSentFn = Callable[[str, str, str], None]
 _SHELL_METACHAR_RE = re.compile(r"[;&|`$(){}]")
 
 
+def _error_result(
+    error_type: str,
+    message: str,
+    *,
+    context: dict[str, Any] | None = None,
+    suggestion: str = "",
+) -> str:
+    """Build a structured error response for LLM consumption."""
+    import json as _json
+    result: dict[str, Any] = {
+        "status": "error",
+        "error_type": error_type,
+        "message": message,
+    }
+    if context:
+        result["context"] = context
+    if suggestion:
+        result["suggestion"] = suggestion
+    return _json.dumps(result, ensure_ascii=False)
+
+
 class ToolHandler:
     """Dispatches tool calls to the appropriate handler.
 
@@ -112,6 +133,12 @@ class ToolHandler:
         if name == "execute_command":
             return self._handle_execute_command(args)
 
+        # Search tools
+        if name == "search_code":
+            return self._handle_search_code(args)
+        if name == "list_directory":
+            return self._handle_list_directory(args)
+
         # External tool dispatch -- inject person_dir for tools that need it
         ext_args = {**args, "person_dir": str(self._person_dir)}
         result = self._external.dispatch(name, ext_args)
@@ -188,15 +215,15 @@ class ToolHandler:
             return err
         path = Path(path_str)
         if not path.exists():
-            return f"File not found: {path_str}"
+            return _error_result("FileNotFound", f"File not found: {path_str}", suggestion="Use list_directory to find the correct path")
         if not path.is_file():
-            return f"Not a file: {path_str}"
+            return _error_result("InvalidArguments", f"Not a file: {path_str}", suggestion="Provide a file path, not a directory")
         try:
             content = path.read_text(encoding="utf-8")
             logger.info("read_file path=%s len=%d", path_str, len(content))
             return content[:100_000]  # cap at 100k chars
         except Exception as e:
-            return f"Error reading {path_str}: {e}"
+            return _error_result("ReadError", f"Error reading {path_str}: {e}")
 
     def _handle_write_file(self, args: dict[str, Any]) -> str:
         path_str = args.get("path", "")
@@ -210,7 +237,7 @@ class ToolHandler:
             logger.info("write_file path=%s", path_str)
             return f"Written to {path_str}"
         except Exception as e:
-            return f"Error writing {path_str}: {e}"
+            return _error_result("WriteError", f"Error writing {path_str}: {e}")
 
     def _handle_edit_file(self, args: dict[str, Any]) -> str:
         path_str = args.get("path", "")
@@ -219,25 +246,22 @@ class ToolHandler:
             return err
         path = Path(path_str)
         if not path.exists():
-            return f"File not found: {path_str}"
+            return _error_result("FileNotFound", f"File not found: {path_str}", suggestion="Use list_directory to find the correct path")
         try:
             content = path.read_text(encoding="utf-8")
             old = args.get("old_string", "")
             new = args.get("new_string", "")
             if old not in content:
-                return f"old_string not found in {path_str}"
+                return _error_result("StringNotFound", f"old_string not found in {path_str}", suggestion="Use search_code to find the exact string")
             count = content.count(old)
             if count > 1:
-                return (
-                    f"old_string matches {count} locations "
-                    "-- provide more context to make it unique"
-                )
+                return _error_result("AmbiguousMatch", f"old_string matches {count} locations", context={"match_count": count}, suggestion="Provide more surrounding context to make it unique")
             content = content.replace(old, new, 1)
             path.write_text(content, encoding="utf-8")
             logger.info("edit_file path=%s", path_str)
             return f"Edited {path_str}"
         except Exception as e:
-            return f"Error editing {path_str}: {e}"
+            return _error_result("EditError", f"Error editing {path_str}: {e}")
 
     def _handle_execute_command(self, args: dict[str, Any]) -> str:
         command = args.get("command", "")
@@ -248,7 +272,7 @@ class ToolHandler:
         try:
             argv = shlex.split(command)
         except ValueError as e:
-            return f"Error parsing command: {e}"
+            return _error_result("InvalidArguments", f"Error parsing command: {e}")
         try:
             proc = subprocess.run(
                 argv,
@@ -266,9 +290,134 @@ class ToolHandler:
             )
             return output[:50_000] or f"(exit code {proc.returncode})"
         except subprocess.TimeoutExpired:
-            return f"Command timed out after {timeout}s"
+            return _error_result("Timeout", f"Command timed out after {timeout}s", suggestion="Increase timeout or break the command into smaller steps")
         except Exception as e:
-            return f"Error executing command: {e}"
+            return _error_result("ExecutionError", f"Error executing command: {e}")
+
+    # ── Search tool handlers ──────────────────────────────────
+
+    def _handle_search_code(self, args: dict[str, Any]) -> str:
+        import re as _re
+
+        pattern_str = args.get("pattern", "")
+        if not pattern_str:
+            return _error_result(
+                "InvalidArguments", "pattern is required",
+                suggestion="Provide a regex pattern to search for",
+            )
+
+        try:
+            regex = _re.compile(pattern_str)
+        except _re.error as e:
+            return _error_result(
+                "InvalidArguments", f"Invalid regex: {e}",
+                suggestion="Use a valid Python regex pattern",
+            )
+
+        search_path_str = args.get("path", "")
+        if search_path_str:
+            search_path = Path(search_path_str)
+            err = self._check_file_permission(search_path_str)
+            if err:
+                return err
+        else:
+            search_path = self._person_dir
+
+        if not search_path.exists():
+            return _error_result(
+                "FileNotFound", f"Path not found: {search_path}",
+                suggestion="Use list_directory to find the correct path",
+            )
+
+        glob_pattern = args.get("glob", "")
+        matches: list[str] = []
+        max_matches = 50
+
+        if search_path.is_file():
+            files = [search_path]
+        elif glob_pattern:
+            files = list(search_path.rglob(glob_pattern))
+        else:
+            files = list(search_path.rglob("*"))
+
+        for fpath in files:
+            if not fpath.is_file():
+                continue
+            if len(matches) >= max_matches:
+                break
+            try:
+                for line_num, line in enumerate(
+                    fpath.read_text(encoding="utf-8", errors="replace").splitlines(),
+                    start=1,
+                ):
+                    if regex.search(line):
+                        rel = fpath.relative_to(search_path) if search_path.is_dir() else fpath.name
+                        matches.append(f"{rel}:{line_num}: {line.rstrip()}")
+                        if len(matches) >= max_matches:
+                            break
+            except (OSError, UnicodeDecodeError):
+                continue
+
+        logger.info("search_code pattern=%s matches=%d", pattern_str, len(matches))
+        if not matches:
+            return f"No matches for pattern '{pattern_str}'"
+        result = "\n".join(matches)
+        if len(matches) == max_matches:
+            result += f"\n(truncated at {max_matches} matches)"
+        return result
+
+    def _handle_list_directory(self, args: dict[str, Any]) -> str:
+        dir_path_str = args.get("path", "")
+        if dir_path_str:
+            dir_path = Path(dir_path_str)
+            err = self._check_file_permission(dir_path_str)
+            if err:
+                return err
+        else:
+            dir_path = self._person_dir
+
+        if not dir_path.exists():
+            return _error_result(
+                "FileNotFound", f"Directory not found: {dir_path}",
+                suggestion="Check the path and try again",
+            )
+        if not dir_path.is_dir():
+            return _error_result(
+                "InvalidArguments", f"Not a directory: {dir_path}",
+                suggestion="Provide a directory path, not a file path",
+            )
+
+        pattern = args.get("pattern", "")
+        recursive = args.get("recursive", False)
+
+        entries: list[str] = []
+        max_entries = 200
+
+        if pattern:
+            if recursive:
+                items = list(dir_path.rglob(pattern))
+            else:
+                items = list(dir_path.glob(pattern))
+        elif recursive:
+            items = list(dir_path.rglob("*"))
+        else:
+            items = list(dir_path.iterdir())
+
+        for item in sorted(items)[:max_entries]:
+            suffix = "/" if item.is_dir() else ""
+            try:
+                rel = item.relative_to(dir_path)
+            except ValueError:
+                rel = item
+            entries.append(f"{rel}{suffix}")
+
+        logger.info("list_directory path=%s entries=%d", dir_path, len(entries))
+        if not entries:
+            return "(empty directory)"
+        result = "\n".join(entries)
+        if len(items) > max_entries:
+            result += f"\n(truncated at {max_entries} entries, total: {len(items)})"
+        return result
 
     # ── Permission checks ────────────────────────────────────
 
@@ -320,7 +469,7 @@ class ToolHandler:
 
         permissions = self._memory.read_permissions()
         if "ファイル操作" not in permissions:
-            return "Permission denied: file operations not enabled in permissions.md"
+            return _error_result("PermissionDenied", "File operations not enabled in permissions.md")
 
         # Parse allowed directory whitelist from permissions.md
         raw_items = self._parse_permission_section("ファイル操作")
@@ -329,19 +478,13 @@ class ToolHandler:
         ]
 
         if not allowed_dirs:
-            return (
-                "Permission denied: no allowed paths listed under ファイル操作. "
-                "Add directory paths (e.g. '- /path/to/dir/') to permissions.md."
-            )
+            return _error_result("PermissionDenied", "No allowed paths listed under ファイル操作", suggestion="Add directory paths to permissions.md")
 
         for allowed in allowed_dirs:
             if resolved.is_relative_to(allowed):
                 return None
 
-        return (
-            f"Permission denied: '{path}' is not under any allowed directory. "
-            f"Allowed: {[str(d) for d in allowed_dirs]}"
-        )
+        return _error_result("PermissionDenied", f"'{path}' is not under any allowed directory", context={"allowed_dirs": [str(d) for d in allowed_dirs]})
 
     def _check_command_permission(self, command: str) -> str | None:
         """Check if the command is in the allowed list from permissions.md.
@@ -350,25 +493,21 @@ class ToolHandler:
         Rejects commands containing shell metacharacters to prevent injection.
         """
         if not command or not command.strip():
-            return "Permission denied: empty command"
+            return _error_result("PermissionDenied", "Empty command")
 
         # Reject shell metacharacters regardless of permissions
         if _SHELL_METACHAR_RE.search(command):
-            return (
-                "Permission denied: command contains shell metacharacters "
-                f"({_SHELL_METACHAR_RE.pattern}). "
-                "Use separate tool calls instead of chaining commands."
-            )
+            return _error_result("PermissionDenied", f"Command contains shell metacharacters ({_SHELL_METACHAR_RE.pattern})", suggestion="Use separate tool calls instead of chaining commands")
 
         permissions = self._memory.read_permissions()
         if "コマンド実行" not in permissions:
-            return "Permission denied: command execution not enabled in permissions.md"
+            return _error_result("PermissionDenied", "Command execution not enabled in permissions.md")
 
         # Parse the command safely
         try:
             argv = shlex.split(command)
         except ValueError as e:
-            return f"Permission denied: invalid command syntax: {e}"
+            return _error_result("PermissionDenied", f"Invalid command syntax: {e}")
 
         if not argv:
             return "Permission denied: empty command after parsing"
@@ -380,5 +519,5 @@ class ToolHandler:
 
         cmd_base = argv[0]
         if cmd_base not in allowed:
-            return f"Permission denied: command '{cmd_base}' not in allowed list {allowed}"
+            return _error_result("PermissionDenied", f"Command '{cmd_base}' not in allowed list", context={"allowed_commands": allowed})
         return None

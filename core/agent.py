@@ -381,6 +381,7 @@ class AgentCore:
             tool_registry=self._tool_registry,
             personal_tools=self._personal_tools,
             priming_section=priming_section,
+            execution_mode=mode,
         )
         logger.debug("System prompt assembled, length=%d", len(system_prompt))
         if shortterm.has_pending():
@@ -460,6 +461,7 @@ class AgentCore:
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
                     priming_section=priming_section,  # Reuse priming from initial session
+                    execution_mode=mode,
                 ),
                 shortterm,
             )
@@ -544,6 +546,7 @@ class AgentCore:
             tool_registry=self._tool_registry,
             personal_tools=self._personal_tools,
             priming_section=priming_section,
+            execution_mode=mode,
         )
         if shortterm.has_pending():
             system_prompt = inject_shortterm(system_prompt, shortterm)
@@ -605,6 +608,7 @@ class AgentCore:
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
                     priming_section=priming_section,  # Reuse priming from initial session
+                    execution_mode=mode,
                 ),
                 shortterm,
             )

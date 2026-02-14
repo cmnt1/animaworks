@@ -229,6 +229,69 @@ class TestBuildSystemPrompt:
             assert "未完了タスク" in result
             assert "task 1" in result
 
+    def test_a2_mode_injects_discover_tools_guide(self, tmp_path, data_dir):
+        person_dir = tmp_path / "persons" / "alice"
+        person_dir.mkdir(parents=True)
+        (person_dir / "identity.md").write_text("I am Alice", encoding="utf-8")
+
+        memory = MagicMock()
+        memory.person_dir = person_dir
+        memory.read_company_vision.return_value = ""
+        memory.read_identity.return_value = ""
+        memory.read_injection.return_value = ""
+        memory.read_permissions.return_value = "## 外部ツール\n- chatwork: OK"
+        memory.read_current_state.return_value = ""
+        memory.read_pending.return_value = ""
+        memory.read_bootstrap.return_value = ""
+        memory.list_knowledge_files.return_value = []
+        memory.list_episode_files.return_value = []
+        memory.list_procedure_files.return_value = []
+        memory.list_skill_summaries.return_value = []
+        memory.list_common_skill_summaries.return_value = []
+        memory.common_skills_dir = data_dir / "common_skills"
+        memory.list_shared_users.return_value = []
+
+        with patch("core.prompt.builder.load_prompt", return_value="section"):
+            result = build_system_prompt(
+                memory,
+                tool_registry=["chatwork", "slack"],
+                execution_mode="a2",
+            )
+            assert "discover_tools" in result
+            assert "chatwork" in result
+
+    def test_a1_mode_uses_cli_guide(self, tmp_path, data_dir):
+        person_dir = tmp_path / "persons" / "alice"
+        person_dir.mkdir(parents=True)
+        (person_dir / "identity.md").write_text("I am Alice", encoding="utf-8")
+
+        memory = MagicMock()
+        memory.person_dir = person_dir
+        memory.read_company_vision.return_value = ""
+        memory.read_identity.return_value = ""
+        memory.read_injection.return_value = ""
+        memory.read_permissions.return_value = "## 外部ツール\n- chatwork: OK"
+        memory.read_current_state.return_value = ""
+        memory.read_pending.return_value = ""
+        memory.read_bootstrap.return_value = ""
+        memory.list_knowledge_files.return_value = []
+        memory.list_episode_files.return_value = []
+        memory.list_procedure_files.return_value = []
+        memory.list_skill_summaries.return_value = []
+        memory.list_common_skill_summaries.return_value = []
+        memory.common_skills_dir = data_dir / "common_skills"
+        memory.list_shared_users.return_value = []
+
+        with patch("core.prompt.builder.load_prompt", return_value="section"), \
+             patch("core.tooling.guide.build_tools_guide", return_value="CLI guide") as mock_guide:
+            result = build_system_prompt(
+                memory,
+                tool_registry=["chatwork"],
+                execution_mode="a1",
+            )
+            # A1 mode should call the CLI guide builder
+            mock_guide.assert_called_once()
+
 
 # ── inject_shortterm ──────────────────────────────────────
 

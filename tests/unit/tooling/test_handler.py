@@ -1,12 +1,13 @@
 """Tests for core.tooling.handler — ToolHandler permission and dispatch."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.tooling.handler import ToolHandler, _SHELL_METACHAR_RE
+from core.tooling.handler import ToolHandler, _SHELL_METACHAR_RE, _error_result
 
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -187,11 +188,13 @@ class TestFileOperations:
 
     def test_read_file_not_found(self, handler: ToolHandler, person_dir: Path):
         result = handler.handle("read_file", {"path": str(person_dir / "missing.txt")})
-        assert "File not found" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "FileNotFound"
 
     def test_read_file_not_a_file(self, handler: ToolHandler, person_dir: Path):
         result = handler.handle("read_file", {"path": str(person_dir)})
-        assert "Not a file" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "InvalidArguments"
 
     def test_read_file_truncated_at_100k(self, handler: ToolHandler, person_dir: Path):
         big_content = "x" * 200_000
@@ -201,7 +204,8 @@ class TestFileOperations:
 
     def test_read_file_permission_denied(self, handler: ToolHandler):
         result = handler.handle("read_file", {"path": "/etc/passwd"})
-        assert "Permission denied" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
 
     def test_write_file_in_person_dir(self, handler: ToolHandler, person_dir: Path):
         path = person_dir / "output.txt"
@@ -211,7 +215,8 @@ class TestFileOperations:
 
     def test_write_file_permission_denied(self, handler: ToolHandler):
         result = handler.handle("write_file", {"path": "/etc/no", "content": "data"})
-        assert "Permission denied" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
 
     def test_edit_file_success(self, handler: ToolHandler, person_dir: Path):
         path = person_dir / "code.py"
@@ -230,7 +235,8 @@ class TestFileOperations:
             "edit_file",
             {"path": str(path), "old_string": "NOTEXIST", "new_string": "new"},
         )
-        assert "old_string not found" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "StringNotFound"
 
     def test_edit_file_ambiguous_match(self, handler: ToolHandler, person_dir: Path):
         path = person_dir / "code.py"
@@ -239,14 +245,17 @@ class TestFileOperations:
             "edit_file",
             {"path": str(path), "old_string": "pass", "new_string": "new"},
         )
-        assert "matches 2 locations" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "AmbiguousMatch"
+        assert parsed["context"]["match_count"] == 2
 
     def test_edit_file_not_found(self, handler: ToolHandler, person_dir: Path):
         result = handler.handle(
             "edit_file",
             {"path": str(person_dir / "missing.py"), "old_string": "x", "new_string": "y"},
         )
-        assert "File not found" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "FileNotFound"
 
 
 # ── Command execution ─────────────────────────────────────────
@@ -255,16 +264,20 @@ class TestFileOperations:
 class TestExecuteCommand:
     def test_command_denied_without_permission(self, handler: ToolHandler):
         result = handler.handle("execute_command", {"command": "ls"})
-        assert "Permission denied" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
 
     def test_empty_command_denied(self, handler: ToolHandler):
         result = handler.handle("execute_command", {"command": ""})
-        assert "Permission denied" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
 
     def test_shell_metachar_rejected(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## コマンド実行\n- ls: OK"
         result = handler.handle("execute_command", {"command": "ls; rm -rf /"})
-        assert "metacharacters" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "metacharacters" in parsed["message"]
 
     def test_command_allowed(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## コマンド実行\n- echo: OK"
@@ -274,7 +287,8 @@ class TestExecuteCommand:
     def test_command_not_in_allowed_list(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## コマンド実行\n- git: OK"
         result = handler.handle("execute_command", {"command": "rm -rf /"})
-        assert "Permission denied" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
 
     def test_no_explicit_command_list_allows_all(self, handler: ToolHandler, memory: MagicMock):
         # Section exists but no command entries
@@ -287,7 +301,8 @@ class TestExecuteCommand:
         result = handler.handle(
             "execute_command", {"command": "sleep 999", "timeout": 1},
         )
-        assert "timed out" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "Timeout"
 
 
 # ── File permission checks ────────────────────────────────────
@@ -301,12 +316,14 @@ class TestFilePermissions:
     def test_denied_without_file_section(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "# Some other section"
         result = handler._check_file_permission("/tmp/outside.txt")
-        assert "Permission denied" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
 
     def test_denied_empty_allowed_dirs(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## ファイル操作\nno paths listed"
         result = handler._check_file_permission("/tmp/outside.txt")
-        assert "no allowed paths" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
 
     def test_allowed_path_in_whitelist(
         self, handler: ToolHandler, memory: MagicMock, tmp_path: Path,
@@ -320,15 +337,17 @@ class TestFilePermissions:
     def test_denied_path_not_in_whitelist(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## ファイル操作\n- /opt/safe: OK"
         result = handler._check_file_permission("/tmp/not_safe/file.txt")
-        assert "Permission denied" in result
-        assert "not under any allowed" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "not under any allowed" in parsed["message"]
 
     def test_file_section_ends_at_next_header(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = (
             "## ファイル操作\n- /opt/safe: OK\n## コマンド実行\n- /opt/also: not a path"
         )
         result = handler._check_file_permission("/opt/also/file.txt")
-        assert "Permission denied" in result
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
 
 
 # ── Command permission checks ─────────────────────────────────
@@ -336,30 +355,54 @@ class TestFilePermissions:
 
 class TestCommandPermissions:
     def test_empty_command(self, handler: ToolHandler):
-        assert "empty command" in handler._check_command_permission("")
+        result = handler._check_command_permission("")
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "Empty" in parsed["message"]
 
     def test_whitespace_only(self, handler: ToolHandler):
-        assert "empty command" in handler._check_command_permission("   ")
+        result = handler._check_command_permission("   ")
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "Empty" in parsed["message"]
 
     def test_metachar_semicolon(self, handler: ToolHandler):
-        assert "metacharacters" in handler._check_command_permission("ls; echo hi")
+        result = handler._check_command_permission("ls; echo hi")
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "metacharacters" in parsed["message"]
 
     def test_metachar_pipe(self, handler: ToolHandler):
-        assert "metacharacters" in handler._check_command_permission("ls | grep foo")
+        result = handler._check_command_permission("ls | grep foo")
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "metacharacters" in parsed["message"]
 
     def test_metachar_backtick(self, handler: ToolHandler):
-        assert "metacharacters" in handler._check_command_permission("echo `whoami`")
+        result = handler._check_command_permission("echo `whoami`")
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "metacharacters" in parsed["message"]
 
     def test_metachar_dollar(self, handler: ToolHandler):
-        assert "metacharacters" in handler._check_command_permission("echo $HOME")
+        result = handler._check_command_permission("echo $HOME")
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "metacharacters" in parsed["message"]
 
     def test_no_command_section(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "nothing relevant"
-        assert "not enabled" in handler._check_command_permission("git status")
+        result = handler._check_command_permission("git status")
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "not enabled" in parsed["message"]
 
     def test_invalid_syntax(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## コマンド実行\n- git: OK"
-        assert "invalid command syntax" in handler._check_command_permission("git 'unclosed")
+        result = handler._check_command_permission("git 'unclosed")
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert "Invalid command syntax" in parsed["message"]
 
 
 # ── Shell metachar regex ──────────────────────────────────────
@@ -375,3 +418,160 @@ class TestShellMetacharRe:
 
     def test_safe_command_with_quotes(self):
         assert _SHELL_METACHAR_RE.search("echo 'hello world'") is None
+
+
+# ── _error_result ────────────────────────────────────────────
+
+
+class TestErrorResult:
+    def test_basic_error(self):
+        result = _error_result("TestError", "Something went wrong")
+        parsed = json.loads(result)
+        assert parsed["status"] == "error"
+        assert parsed["error_type"] == "TestError"
+        assert parsed["message"] == "Something went wrong"
+        assert "context" not in parsed
+        assert "suggestion" not in parsed
+
+    def test_with_suggestion(self):
+        result = _error_result("FileNotFound", "not found", suggestion="Use list_directory")
+        parsed = json.loads(result)
+        assert parsed["suggestion"] == "Use list_directory"
+
+    def test_with_context(self):
+        result = _error_result("AmbiguousMatch", "matches 3", context={"match_count": 3})
+        parsed = json.loads(result)
+        assert parsed["context"]["match_count"] == 3
+
+    def test_with_all_fields(self):
+        result = _error_result(
+            "PermissionDenied", "denied",
+            context={"allowed_dirs": ["/tmp"]},
+            suggestion="Check permissions",
+        )
+        parsed = json.loads(result)
+        assert parsed["status"] == "error"
+        assert parsed["context"]["allowed_dirs"] == ["/tmp"]
+        assert parsed["suggestion"] == "Check permissions"
+
+
+# ── search_code handler ──────────────────────────────────────
+
+
+class TestSearchCode:
+    def test_search_code_basic(self, handler: ToolHandler, person_dir: Path):
+        (person_dir / "test.py").write_text("def hello():\n    return 42\n", encoding="utf-8")
+        result = handler.handle("search_code", {"pattern": "hello"})
+        assert "test.py:1" in result
+        assert "def hello" in result
+
+    def test_search_code_no_matches(self, handler: ToolHandler, person_dir: Path):
+        (person_dir / "test.py").write_text("def foo():\n    pass\n", encoding="utf-8")
+        result = handler.handle("search_code", {"pattern": "nonexistent"})
+        assert "No matches" in result
+
+    def test_search_code_with_glob(self, handler: ToolHandler, person_dir: Path):
+        (person_dir / "test.py").write_text("hello\n", encoding="utf-8")
+        (person_dir / "test.md").write_text("hello\n", encoding="utf-8")
+        result = handler.handle("search_code", {"pattern": "hello", "glob": "*.py"})
+        assert "test.py" in result
+        # md file should not be included
+        assert "test.md" not in result
+
+    def test_search_code_invalid_regex(self, handler: ToolHandler):
+        result = handler.handle("search_code", {"pattern": "[invalid"})
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "InvalidArguments"
+
+    def test_search_code_empty_pattern(self, handler: ToolHandler):
+        result = handler.handle("search_code", {"pattern": ""})
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "InvalidArguments"
+
+    def test_search_code_permission_denied(self, handler: ToolHandler):
+        result = handler.handle("search_code", {"pattern": "test", "path": "/etc"})
+        assert "error" in result.lower() or "permission" in result.lower()
+
+
+# ── list_directory handler ───────────────────────────────────
+
+
+class TestListDirectory:
+    def test_list_directory_basic(self, handler: ToolHandler, person_dir: Path):
+        (person_dir / "file1.txt").write_text("a", encoding="utf-8")
+        (person_dir / "file2.txt").write_text("b", encoding="utf-8")
+        (person_dir / "subdir").mkdir()
+        result = handler.handle("list_directory", {})
+        assert "file1.txt" in result
+        assert "file2.txt" in result
+        assert "subdir/" in result
+
+    def test_list_directory_with_pattern(self, handler: ToolHandler, person_dir: Path):
+        (person_dir / "test.py").write_text("", encoding="utf-8")
+        (person_dir / "test.md").write_text("", encoding="utf-8")
+        result = handler.handle("list_directory", {"pattern": "*.py"})
+        assert "test.py" in result
+        assert "test.md" not in result
+
+    def test_list_directory_not_found(self, handler: ToolHandler, person_dir: Path):
+        result = handler.handle("list_directory", {"path": str(person_dir / "nonexistent")})
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "FileNotFound"
+
+    def test_list_directory_not_a_dir(self, handler: ToolHandler, person_dir: Path):
+        (person_dir / "file.txt").write_text("x", encoding="utf-8")
+        result = handler.handle("list_directory", {"path": str(person_dir / "file.txt")})
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "InvalidArguments"
+
+    def test_list_directory_empty(self, handler: ToolHandler, person_dir: Path):
+        empty_dir = person_dir / "empty"
+        empty_dir.mkdir()
+        result = handler.handle("list_directory", {"path": str(empty_dir)})
+        assert "empty" in result.lower()
+
+
+# ── Structured errors in existing handlers ───────────────────
+
+
+class TestStructuredErrors:
+    def test_read_file_not_found_structured(self, handler: ToolHandler, person_dir: Path):
+        result = handler.handle("read_file", {"path": str(person_dir / "missing.txt")})
+        parsed = json.loads(result)
+        assert parsed["status"] == "error"
+        assert parsed["error_type"] == "FileNotFound"
+
+    def test_edit_file_string_not_found_structured(self, handler: ToolHandler, person_dir: Path):
+        path = person_dir / "code.py"
+        path.write_text("def foo():\n    pass\n", encoding="utf-8")
+        result = handler.handle(
+            "edit_file",
+            {"path": str(path), "old_string": "NOTEXIST", "new_string": "new"},
+        )
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "StringNotFound"
+        assert "suggestion" in parsed
+
+    def test_edit_file_ambiguous_structured(self, handler: ToolHandler, person_dir: Path):
+        path = person_dir / "code.py"
+        path.write_text("pass\npass\n", encoding="utf-8")
+        result = handler.handle(
+            "edit_file",
+            {"path": str(path), "old_string": "pass", "new_string": "new"},
+        )
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "AmbiguousMatch"
+        assert parsed["context"]["match_count"] == 2
+
+    def test_command_timeout_structured(self, handler: ToolHandler, memory: MagicMock):
+        memory.read_permissions.return_value = "## コマンド実行\n- sleep: OK"
+        result = handler.handle(
+            "execute_command", {"command": "sleep 999", "timeout": 1},
+        )
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "Timeout"
+
+    def test_permission_denied_structured(self, handler: ToolHandler):
+        result = handler.handle("read_file", {"path": "/etc/passwd"})
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
