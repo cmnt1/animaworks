@@ -99,6 +99,9 @@ class RAGConfig(BaseModel):
     enable_spreading_activation: bool = True
     max_graph_hops: int = 2
     enable_file_watcher: bool = True
+    graph_cache_enabled: bool = True
+    implicit_link_threshold: float = 0.75
+    spreading_memory_types: list[str] = ["knowledge", "episodes"]
 
 
 class PrimingConfig(BaseModel):

@@ -7,17 +7,20 @@ from __future__ import annotations
 
 Implements:
 - Graph construction from markdown links and vector similarity
-- Personalized PageRank for multi-hop activation
-- Spreading activation to expand search results
+- Personalized PageRank for multi-hop activation (edge-weighted)
+- Spreading activation to expand search results with real content
+- Graph persistence (JSON) and incremental updates
 
 Based on: docs/design/priming-layer-design.md Phase 3
 """
 
+import json
 import logging
 import re
 from pathlib import Path
 
 import networkx as nx
+from networkx.readwrite import json_graph
 
 logger = logging.getLogger("animaworks.rag.graph")
 
@@ -34,6 +37,9 @@ PAGERANK_TOL = 1e-6
 # Spreading activation parameters
 MAX_HOPS = 2  # Maximum hops for spreading activation
 
+# Graph cache filename
+GRAPH_CACHE_FILE = "knowledge_graph.json"
+
 
 # ── KnowledgeGraph ──────────────────────────────────────────────────
 
@@ -45,7 +51,8 @@ class KnowledgeGraph:
     - Nodes = knowledge files
     - Edges = explicit links (Markdown [[filename]]) + implicit links (vector similarity)
 
-    Provides Personalized PageRank for multi-hop activation.
+    Provides Personalized PageRank (edge-weighted) for multi-hop activation.
+    Supports JSON persistence and incremental graph updates.
     """
 
     def __init__(
@@ -81,12 +88,14 @@ class KnowledgeGraph:
 
         if not knowledge_dir.is_dir():
             logger.warning("Knowledge directory not found: %s", knowledge_dir)
+            self.graph = graph
             return graph
 
         # Collect all markdown files
         md_files = sorted(knowledge_dir.glob("*.md"))
         if not md_files:
             logger.warning("No markdown files found in %s", knowledge_dir)
+            self.graph = graph
             return graph
 
         # Add nodes
@@ -109,7 +118,11 @@ class KnowledgeGraph:
 
                     # Only add edge if target node exists
                     if target_id in graph:
-                        graph.add_edge(source_id, target_id, link_type="explicit")
+                        graph.add_edge(
+                            source_id, target_id,
+                            link_type="explicit",
+                            similarity=1.0,  # Explicit links get max weight
+                        )
                         logger.debug("Explicit link: %s -> %s", source_id, target_id)
 
             except Exception as e:
@@ -215,6 +228,198 @@ class KnowledgeGraph:
 
         return added_count
 
+    # ── Graph persistence ───────────────────────────────────────────
+
+    def save_graph(self, cache_dir: Path) -> None:
+        """Persist graph to JSON file.
+
+        Args:
+            cache_dir: Directory to save the cache file
+        """
+        if self.graph is None:
+            logger.warning("No graph to save")
+            return
+
+        cache_path = cache_dir / GRAPH_CACHE_FILE
+        data = json_graph.node_link_data(self.graph)
+
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        logger.info(
+            "Graph saved: %d nodes, %d edges -> %s",
+            self.graph.number_of_nodes(),
+            self.graph.number_of_edges(),
+            cache_path,
+        )
+
+    def load_graph(self, cache_dir: Path) -> bool:
+        """Load graph from JSON cache.
+
+        Args:
+            cache_dir: Directory containing the cache file
+
+        Returns:
+            True if cache loaded successfully, False otherwise
+        """
+        cache_path = cache_dir / GRAPH_CACHE_FILE
+        if not cache_path.exists():
+            logger.debug("No graph cache found at %s", cache_path)
+            return False
+
+        try:
+            with open(cache_path, encoding="utf-8") as f:
+                data = json.load(f)
+
+            self.graph = json_graph.node_link_graph(data, directed=True)
+
+            logger.info(
+                "Graph loaded from cache: %d nodes, %d edges",
+                self.graph.number_of_nodes(),
+                self.graph.number_of_edges(),
+            )
+            return True
+
+        except Exception as e:
+            logger.warning("Failed to load graph cache: %s", e)
+            return False
+
+    # ── Incremental update ──────────────────────────────────────────
+
+    def update_graph_incremental(
+        self,
+        changed_files: list[Path],
+        person_name: str,
+    ) -> None:
+        """Update graph incrementally for changed files.
+
+        Steps:
+        1. Remove nodes and edges for changed files
+        2. Re-add nodes for changed files (if file still exists)
+        3. Re-scan explicit links for changed files
+        4. Re-compute implicit links for changed files
+
+        Args:
+            changed_files: List of changed file paths
+            person_name: Person name for collection selection
+        """
+        if self.graph is None:
+            logger.warning("No graph to update incrementally")
+            return
+
+        changed_node_ids = {f.stem for f in changed_files}
+        logger.info("Incremental graph update for %d files: %s", len(changed_files), changed_node_ids)
+
+        # 1. Remove nodes (and their edges) for changed files
+        for node_id in changed_node_ids:
+            if node_id in self.graph:
+                self.graph.remove_node(node_id)
+                logger.debug("Removed node: %s", node_id)
+
+        # Also remove edges from other nodes pointing to changed files
+        # (already handled by remove_node above)
+
+        # 2. Re-add nodes for files that still exist
+        for file_path in changed_files:
+            if file_path.exists():
+                node_id = file_path.stem
+                self.graph.add_node(node_id, path=str(file_path))
+                logger.debug("Re-added node: %s", node_id)
+
+        # 3. Re-scan explicit links for changed files
+        for file_path in changed_files:
+            if not file_path.exists():
+                continue
+
+            source_id = file_path.stem
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                explicit_links = self._extract_markdown_links(content)
+
+                for target in explicit_links:
+                    target_id = target.replace(".md", "")
+                    if target_id in self.graph:
+                        self.graph.add_edge(
+                            source_id, target_id,
+                            link_type="explicit",
+                            similarity=1.0,
+                        )
+
+            except Exception as e:
+                logger.warning("Failed to extract links from %s: %s", file_path, e)
+
+        # Re-scan explicit links from OTHER nodes that might point to changed files
+        for node_id in list(self.graph.nodes()):
+            if node_id in changed_node_ids:
+                continue  # Already handled above
+
+            node_path = Path(self.graph.nodes[node_id].get("path", ""))
+            if not node_path.exists():
+                continue
+
+            try:
+                content = node_path.read_text(encoding="utf-8")
+                explicit_links = self._extract_markdown_links(content)
+
+                for target in explicit_links:
+                    target_id = target.replace(".md", "")
+                    if target_id in changed_node_ids and target_id in self.graph:
+                        if not self.graph.has_edge(node_id, target_id):
+                            self.graph.add_edge(
+                                node_id, target_id,
+                                link_type="explicit",
+                                similarity=1.0,
+                            )
+
+            except Exception as e:
+                logger.warning("Failed to re-scan links from %s: %s", node_path, e)
+
+        # 4. Re-compute implicit links for changed files
+        collection_name = f"{person_name}_knowledge"
+        for file_path in changed_files:
+            if not file_path.exists():
+                continue
+
+            node_id = file_path.stem
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                embedding = self.indexer._generate_embeddings([content])[0]
+
+                results = self.vector_store.query(
+                    collection=collection_name,
+                    embedding=embedding,
+                    top_k=5,
+                )
+
+                for result in results:
+                    doc_id_parts = result.id.split("/")
+                    if len(doc_id_parts) >= 3:
+                        filename_with_chunk = doc_id_parts[2]
+                        target_filename = filename_with_chunk.split("#")[0]
+                        target_id = Path(target_filename).stem
+
+                        if (
+                            target_id in self.graph
+                            and target_id != node_id
+                            and result.score >= IMPLICIT_LINK_THRESHOLD
+                            and not self.graph.has_edge(node_id, target_id)
+                        ):
+                            self.graph.add_edge(
+                                node_id, target_id,
+                                link_type="implicit",
+                                similarity=result.score,
+                            )
+
+            except Exception as e:
+                logger.warning("Failed to add implicit links for %s: %s", node_id, e)
+
+        logger.info(
+            "Incremental update complete: %d nodes, %d edges",
+            self.graph.number_of_nodes(),
+            self.graph.number_of_edges(),
+        )
+
     # ── Personalized PageRank ───────────────────────────────────────
 
     def personalized_pagerank(
@@ -222,7 +427,10 @@ class KnowledgeGraph:
         query_nodes: list[str],
         alpha: float = PAGERANK_ALPHA,
     ) -> dict[str, float]:
-        """Compute Personalized PageRank scores.
+        """Compute Personalized PageRank scores with edge weights.
+
+        Uses edge attribute "similarity" as weight. Explicit links have
+        weight 1.0 (maximum), implicit links use their similarity score.
 
         Args:
             query_nodes: Starting nodes (files related to query)
@@ -256,13 +464,14 @@ class KnowledgeGraph:
         )
 
         try:
-            # Compute Personalized PageRank
+            # Compute Personalized PageRank with edge weights
             scores = nx.pagerank(
                 self.graph,
                 alpha=alpha,
                 personalization=personalization,
                 max_iter=PAGERANK_MAX_ITER,
                 tol=PAGERANK_TOL,
+                weight="similarity",  # Use edge "similarity" as weight
             )
 
             logger.debug("PageRank computed for %d nodes", len(scores))
@@ -288,8 +497,10 @@ class KnowledgeGraph:
     ) -> list:
         """Expand search results using spreading activation.
 
+        Activated nodes fetch real file content instead of placeholders.
+
         Args:
-            initial_results: Initial retrieval results (from hybrid search)
+            initial_results: Initial retrieval results
             max_hops: Maximum hops for expansion (default: 2)
 
         Returns:
@@ -333,7 +544,10 @@ class KnowledgeGraph:
             return initial_results
 
         # Find activated nodes (top K by PageRank score, excluding initial results)
-        initial_node_ids = {Path(result.doc_id.split("/")[2].split("#")[0]).stem for result in initial_results if "/" in result.doc_id}
+        initial_node_ids = {
+            Path(result.doc_id.split("/")[2].split("#")[0]).stem
+            for result in initial_results if "/" in result.doc_id
+        }
 
         activated_nodes = []
         for node_id, score in pagerank_scores.items():
@@ -346,22 +560,22 @@ class KnowledgeGraph:
 
         logger.debug("Found %d activated nodes, adding top %d", len(activated_nodes), len(top_activated))
 
-        # Convert activated nodes to RetrievalResult format
-        # Note: This is a simplified implementation
-        # In production, you'd fetch actual content from vector store
+        # Convert activated nodes to RetrievalResult format with real content
         from core.memory.rag.retriever import RetrievalResult
 
         expanded_results = list(initial_results)
 
         for node_id, score in top_activated:
-            node_path = self.graph.nodes[node_id].get("path", "")
+            node_path_str = self.graph.nodes[node_id].get("path", "")
+            node_path = Path(node_path_str)
 
-            # Create pseudo result
-            # In real implementation, fetch actual chunk from vector store
+            # Fetch real content from file
+            content = self._fetch_node_content(node_id, node_path)
+
             expanded_results.append(
                 RetrievalResult(
                     doc_id=f"{self.indexer.person_name}/knowledge/{node_id}.md#0",
-                    content=f"[Activated node: {node_id}]",  # Placeholder
+                    content=content,
                     score=score * 0.5,  # Reduce score for activated nodes
                     metadata={
                         "source_file": f"knowledge/{node_id}.md",
@@ -381,6 +595,44 @@ class KnowledgeGraph:
         )
 
         return expanded_results
+
+    def _fetch_node_content(self, node_id: str, node_path: Path) -> str:
+        """Fetch real content for an activated node.
+
+        Tries file read first, falls back to vector store chunk retrieval.
+
+        Args:
+            node_id: Node identifier (filename stem)
+            node_path: Path to the knowledge file
+
+        Returns:
+            File content string
+        """
+        # Try reading from file
+        if node_path.exists():
+            try:
+                return node_path.read_text(encoding="utf-8")
+            except Exception as e:
+                logger.warning("Failed to read file %s: %s", node_path, e)
+
+        # Fallback: try fetching from vector store
+        try:
+            collection_name = f"{self.indexer.person_name}_knowledge"
+            # Use a dummy embedding to search by doc_id pattern
+            # This is a best-effort fallback
+            doc_id_prefix = f"{self.indexer.person_name}/knowledge/{node_id}.md"
+            embedding = self.indexer._generate_embeddings([node_id])[0]
+            results = self.vector_store.query(
+                collection=collection_name,
+                embedding=embedding,
+                top_k=1,
+            )
+            if results:
+                return results[0].document.content
+        except Exception as e:
+            logger.warning("Failed to fetch content from vector store for %s: %s", node_id, e)
+
+        return f"[Content unavailable: {node_id}]"
 
 
 # ── Public API ──────────────────────────────────────────────────────

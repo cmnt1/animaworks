@@ -77,15 +77,21 @@ class FileWatcher:
         self,
         person_dir: Path,
         indexer,  # MemoryIndexer instance
+        knowledge_graph=None,  # KnowledgeGraph instance (optional)
+        person_name: str | None = None,
     ) -> None:
         """Initialize file watcher.
 
         Args:
             person_dir: Path to person's memory directory
             indexer: MemoryIndexer instance for indexing operations
+            knowledge_graph: Optional KnowledgeGraph for incremental updates
+            person_name: Person name (required if knowledge_graph is provided)
         """
         self.person_dir = person_dir
         self.indexer = indexer
+        self.knowledge_graph = knowledge_graph
+        self.person_name = person_name
         self.observer: Observer | None = None
         self._running = False
 
@@ -205,11 +211,13 @@ class FileWatcher:
         logger.debug("Queue processor stopped")
 
     async def _process_batch(self, files: list[tuple[Path, str]]) -> None:
-        """Process a batch of files for indexing.
+        """Process a batch of files for indexing and graph update.
 
         Args:
             files: List of (file_path, memory_type) tuples
         """
+        knowledge_changed_files: list[Path] = []
+
         # Index files sequentially (could be parallelized in future)
         for file_path, memory_type in files:
             if not file_path.exists():
@@ -228,8 +236,36 @@ class FileWatcher:
                 )
                 logger.debug("Indexed file: %s (type=%s)", file_path, memory_type)
 
+                # Track changed knowledge files for graph update
+                if memory_type == "knowledge":
+                    knowledge_changed_files.append(file_path)
+
             except Exception as e:
                 logger.error("Failed to index file %s: %s", file_path, e)
+
+        # Update knowledge graph incrementally if available
+        if knowledge_changed_files and self.knowledge_graph and self.person_name:
+            try:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None,
+                    self.knowledge_graph.update_graph_incremental,
+                    knowledge_changed_files,
+                    self.person_name,
+                )
+                # Save updated graph
+                cache_dir = self.person_dir / "vectordb"
+                await loop.run_in_executor(
+                    None,
+                    self.knowledge_graph.save_graph,
+                    cache_dir,
+                )
+                logger.debug(
+                    "Graph incrementally updated and saved for %d knowledge files",
+                    len(knowledge_changed_files),
+                )
+            except Exception as e:
+                logger.error("Failed to update knowledge graph: %s", e)
 
     def _get_memory_type(self, file_path: Path) -> str | None:
         """Determine memory type from file path.
@@ -263,14 +299,21 @@ class FileWatcher:
 # ── Public API ──────────────────────────────────────────────────────
 
 
-def create_file_watcher(person_dir: Path, indexer) -> FileWatcher:
+def create_file_watcher(
+    person_dir: Path,
+    indexer,
+    knowledge_graph=None,
+    person_name: str | None = None,
+) -> FileWatcher:
     """Create a file watcher for a person's memory directory.
 
     Args:
         person_dir: Path to person directory
         indexer: MemoryIndexer instance
+        knowledge_graph: Optional KnowledgeGraph for incremental updates
+        person_name: Person name (required if knowledge_graph is provided)
 
     Returns:
         FileWatcher instance (not started)
     """
-    return FileWatcher(person_dir, indexer)
+    return FileWatcher(person_dir, indexer, knowledge_graph, person_name)

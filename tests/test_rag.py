@@ -324,15 +324,15 @@ def test_indexer_metadata_extraction(temp_person_dir, temp_vector_store):
     assert important_chunks[0].document.metadata["importance"] == "important"
 
 
-# ── HybridRetriever Tests ───────────────────────────────────────────
+# ── MemoryRetriever Tests ──────────────────────────────────────────
 
 
-def test_hybrid_retriever_vector_search(temp_person_dir, temp_vector_store):
-    """Test vector-only search component."""
+def test_memory_retriever_vector_search(temp_person_dir, temp_vector_store):
+    """Test vector search component of MemoryRetriever."""
     pytest.importorskip("sentence_transformers")
 
     from core.memory.rag.indexer import MemoryIndexer
-    from core.memory.rag.retriever import HybridRetriever
+    from core.memory.rag.retriever import MemoryRetriever
 
     # Index knowledge files
     indexer = MemoryIndexer(
@@ -343,7 +343,7 @@ def test_hybrid_retriever_vector_search(temp_person_dir, temp_vector_store):
     indexer.index_directory(knowledge_dir, "knowledge")
 
     # Create retriever
-    retriever = HybridRetriever(
+    retriever = MemoryRetriever(
         temp_vector_store,
         indexer,
         knowledge_dir,
@@ -362,112 +362,13 @@ def test_hybrid_retriever_vector_search(temp_person_dir, temp_vector_store):
     assert any("chatwork" in r[0].lower() for r in results)
 
 
-def test_hybrid_retriever_bm25_search(temp_person_dir, temp_vector_store):
-    """Test BM25 keyword search component."""
-    pytest.importorskip("sentence_transformers")
-
-    from core.memory.rag.indexer import MemoryIndexer
-    from core.memory.rag.retriever import HybridRetriever
-
-    indexer = MemoryIndexer(
-        temp_vector_store, "test_person", temp_person_dir
-    )
-
-    knowledge_dir = temp_person_dir / "knowledge"
-
-    retriever = HybridRetriever(
-        temp_vector_store,
-        indexer,
-        knowledge_dir,
-    )
-
-    # Search for specific keyword
-    results = retriever._bm25_search(
-        query="山田 重要",
-        memory_type="knowledge",
-        top_k=3,
-    )
-
-    # Should find chatwork-policy.md (contains 山田)
-    if results:  # BM25 requires ripgrep, may not be available
-        assert any("chatwork" in r[0].lower() for r in results)
-
-
-def test_hybrid_retriever_full_search(temp_person_dir, temp_vector_store):
-    """Test full hybrid search (vector + BM25 + RRF + temporal decay)."""
-    pytest.importorskip("sentence_transformers")
-
-    from core.memory.rag.indexer import MemoryIndexer
-    from core.memory.rag.retriever import HybridRetriever
-
-    # Index knowledge files
-    indexer = MemoryIndexer(
-        temp_vector_store, "test_person", temp_person_dir
-    )
-
-    knowledge_dir = temp_person_dir / "knowledge"
-    indexer.index_directory(knowledge_dir, "knowledge")
-
-    # Create retriever
-    retriever = HybridRetriever(
-        temp_vector_store,
-        indexer,
-        knowledge_dir,
-    )
-
-    # Perform hybrid search
-    results = retriever.search(
-        query="Chatwork での山田さんからの依頼対応",
-        person_name="test_person",
-        memory_type="knowledge",
-        top_k=3,
-    )
-
-    assert len(results) > 0
-    # Should find chatwork-policy.md as top result
-    assert results[0].score > 0
-    assert "chatwork" in results[0].doc_id.lower()
-
-
-def test_rrf_combination(temp_person_dir, temp_vector_store):
-    """Test RRF (Reciprocal Rank Fusion) score combination."""
-    from core.memory.rag.retriever import HybridRetriever
-
-    indexer = None  # Not needed for this test
-    retriever = HybridRetriever(
-        temp_vector_store,
-        indexer,
-        temp_person_dir / "knowledge",
-    )
-
-    vector_results = [
-        ("doc1", "vector result 1", 0.9, {}),
-        ("doc2", "vector result 2", 0.7, {}),
-        ("doc3", "vector result 3", 0.5, {}),
-    ]
-
-    bm25_results = [
-        ("doc2", "bm25 result 1", 5.0, {}),
-        ("doc1", "bm25 result 2", 3.0, {}),
-        ("doc4", "bm25 result 3", 2.0, {}),
-    ]
-
-    combined = retriever._combine_with_rrf(vector_results, bm25_results)
-
-    # doc1 and doc2 appear in both lists - should have higher RRF scores
-    doc1_result = next(r for r in combined if r.doc_id == "doc1")
-    doc3_result = next(r for r in combined if r.doc_id == "doc3")
-
-    assert doc1_result.score > doc3_result.score
-
-
 def test_temporal_decay(temp_person_dir, temp_vector_store):
     """Test temporal decay scoring."""
     from datetime import datetime, timedelta
-    from core.memory.rag.retriever import HybridRetriever, RetrievalResult
+    from core.memory.rag.retriever import MemoryRetriever, RetrievalResult
 
     indexer = None
-    retriever = HybridRetriever(
+    retriever = MemoryRetriever(
         temp_vector_store,
         indexer,
         temp_person_dir / "knowledge",
@@ -504,12 +405,49 @@ def test_temporal_decay(temp_person_dir, temp_vector_store):
     assert recent_result.score > old_result.score
 
 
+def test_memory_retriever_search_with_temporal_decay(temp_person_dir, temp_vector_store):
+    """Test full search pipeline: Vector + temporal decay integration."""
+    pytest.importorskip("sentence_transformers")
+
+    from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.retriever import MemoryRetriever
+
+    # Index knowledge files
+    indexer = MemoryIndexer(
+        temp_vector_store, "test_person", temp_person_dir
+    )
+
+    knowledge_dir = temp_person_dir / "knowledge"
+    indexer.index_directory(knowledge_dir, "knowledge")
+
+    # Create retriever
+    retriever = MemoryRetriever(
+        temp_vector_store,
+        indexer,
+        knowledge_dir,
+    )
+
+    # Perform search
+    results = retriever.search(
+        query="Chatwork での山田さんからの依頼対応",
+        person_name="test_person",
+        memory_type="knowledge",
+        top_k=3,
+    )
+
+    assert len(results) > 0
+    # Results should have both vector and recency scores
+    assert results[0].score > 0
+    assert "vector" in results[0].source_scores
+    assert "recency" in results[0].source_scores
+
+
 # ── Integration Tests ───────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_priming_with_hybrid_search(temp_person_dir, temp_vector_store):
-    """Test priming layer with hybrid search integration."""
+async def test_priming_with_vector_search(temp_person_dir, temp_vector_store):
+    """Test priming layer with vector search integration."""
     pytest.importorskip("sentence_transformers")
 
     from core.memory.priming import PrimingEngine
@@ -523,8 +461,14 @@ async def test_priming_with_hybrid_search(temp_person_dir, temp_vector_store):
     knowledge_dir = temp_person_dir / "knowledge"
     indexer.index_directory(knowledge_dir, "knowledge")
 
-    # Create priming engine
+    # Create priming engine and inject retriever using the same vector store
     engine = PrimingEngine(temp_person_dir)
+
+    from core.memory.rag.retriever import MemoryRetriever
+
+    engine._retriever = MemoryRetriever(
+        temp_vector_store, indexer, temp_person_dir / "knowledge"
+    )
 
     # Prime memories
     result = await engine.prime_memories(

@@ -488,11 +488,11 @@ class ConsolidationEngine:
             List of (file1, file2, similarity_score) tuples, sorted by similarity desc.
         """
         try:
-            from core.memory.rag import HybridRetriever
+            from core.memory.rag import MemoryRetriever
             from core.memory.rag.store import ChromaVectorStore
 
             vector_store = ChromaVectorStore()
-            retriever = HybridRetriever(vector_store, self.person_name, self.person_dir)
+            retriever = MemoryRetriever(vector_store, self.person_name, self.person_dir)
 
             # Get all knowledge files
             knowledge_files = self._list_knowledge_files()

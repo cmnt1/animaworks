@@ -90,7 +90,7 @@ class PrimingEngine:
     Executes 4-channel parallel memory retrieval:
       A. Sender profile (direct file read)
       B. Recent episodes (last 2 days)
-      C. Related knowledge (BM25 keyword search)
+      C. Related knowledge (dense vector search)
       D. Skill matching (filename pattern match)
     """
 
@@ -252,27 +252,25 @@ class PrimingEngine:
         return result
 
     async def _channel_c_related_knowledge(self, keywords: list[str]) -> str:
-        """Channel C: Related knowledge search (Hybrid search for Phase 2).
+        """Channel C: Related knowledge search (vector search).
 
-        Uses hybrid retrieval (vector + BM25 + RRF) if available,
-        falls back to BM25-only (ripgrep) if RAG not initialized.
+        Uses dense vector retrieval via MemoryRetriever.
         """
         if not self.knowledge_dir.is_dir() or not keywords:
             logger.debug("Channel C: No knowledge dir or no keywords")
             return ""
 
-        # Try hybrid search first (Phase 2)
         try:
-            from core.memory.rag import HybridRetriever
+            from core.memory.rag import MemoryRetriever
             from core.memory.rag.store import ChromaVectorStore
             from core.memory.rag.indexer import MemoryIndexer
 
             # Initialize RAG components if not already done
-            if not hasattr(self, "_hybrid_retriever"):
+            if not hasattr(self, "_retriever"):
                 vector_store = ChromaVectorStore()
                 person_name = self.person_dir.name
                 indexer = MemoryIndexer(vector_store, person_name, self.person_dir)
-                self._hybrid_retriever = HybridRetriever(
+                self._retriever = MemoryRetriever(
                     vector_store, indexer, self.knowledge_dir
                 )
 
@@ -280,8 +278,8 @@ class PrimingEngine:
             query = " ".join(keywords[:5])
             person_name = self.person_dir.name
 
-            # Perform hybrid search
-            results = self._hybrid_retriever.search(
+            # Vector search
+            results = self._retriever.search(
                 query=query,
                 person_name=person_name,
                 memory_type="knowledge",
@@ -298,110 +296,21 @@ class PrimingEngine:
 
                 output = "\n".join(parts)
                 logger.debug(
-                    "Channel C: Hybrid search returned %d results (%d chars)",
+                    "Channel C: Vector search returned %d results (%d chars)",
                     len(results),
                     len(output),
                 )
                 return output
             else:
-                logger.debug("Channel C: Hybrid search found no results")
+                logger.debug("Channel C: Vector search found no results")
                 return ""
 
         except ImportError:
-            logger.debug("Channel C: RAG not installed, falling back to BM25-only")
-        except Exception as e:
-            logger.warning("Channel C: Hybrid search failed, falling back to BM25: %s", e)
-
-        # Fallback to BM25-only (Phase 1 implementation)
-        return await self._bm25_only_search(keywords)
-
-    async def _bm25_only_search(self, keywords: list[str]) -> str:
-        """BM25-only search using ripgrep (Phase 1 fallback)."""
-        # Build ripgrep pattern (OR of all keywords)
-        # Escape special regex chars
-        escaped_keywords = [re.escape(kw) for kw in keywords[:5]]  # Limit to top 5
-        pattern = "|".join(escaped_keywords)
-
-        try:
-            # Run ripgrep asynchronously to avoid blocking the event loop
-            proc = await asyncio.create_subprocess_exec(
-                "rg",
-                "--ignore-case",
-                "--context", "2",  # Include 2 lines before/after match
-                "--max-count", "3",  # Max 3 matches per file
-                "--no-heading",
-                "--with-filename",
-                pattern,
-                str(self.knowledge_dir),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            try:
-                stdout, _ = await asyncio.wait_for(
-                    proc.communicate(), timeout=2.0,
-                )
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-                logger.warning("Channel C: ripgrep timeout")
-                return ""
-
-            if proc.returncode == 0 and stdout:
-                output = stdout.decode("utf-8", errors="replace")
-                logger.debug(
-                    "Channel C: Found BM25 matches (%d chars)", len(output)
-                )
-                return output
-            else:
-                logger.debug("Channel C: No BM25 matches found")
-                return ""
-
-        except FileNotFoundError:
-            logger.warning("Channel C: ripgrep not found, falling back to Python search")
-            return await self._fallback_knowledge_search(keywords)
-        except Exception as e:
-            logger.warning("Channel C: ripgrep failed: %s", e)
+            logger.debug("Channel C: RAG not installed")
             return ""
-
-    async def _fallback_knowledge_search(self, keywords: list[str]) -> str:
-        """Fallback knowledge search using Python (when ripgrep unavailable)."""
-        if not self.knowledge_dir.is_dir():
-            return ""
-
-        results: list[str] = []
-        keywords_lower = [kw.lower() for kw in keywords[:5]]
-
-        try:
-            for md_file in self.knowledge_dir.glob("*.md"):
-                content = md_file.read_text(encoding="utf-8")
-                content_lower = content.lower()
-
-                # Check if any keyword matches
-                if any(kw in content_lower for kw in keywords_lower):
-                    # Extract matching lines with context
-                    lines = content.splitlines()
-                    matching_lines = []
-                    for i, line in enumerate(lines):
-                        if any(kw in line.lower() for kw in keywords_lower):
-                            # Add line with context (±2 lines)
-                            start = max(0, i - 2)
-                            end = min(len(lines), i + 3)
-                            matching_lines.extend(lines[start:end])
-                            matching_lines.append("---")
-
-                    if matching_lines:
-                        results.append(
-                            f"{md_file.name}:\n" + "\n".join(matching_lines[:20])
-                        )
-
-                if len(results) >= 3:  # Limit to 3 files
-                    break
-
         except Exception as e:
-            logger.warning("Fallback knowledge search failed: %s", e)
-
-        return "\n\n".join(results) if results else ""
+            logger.warning("Channel C: Vector search failed: %s", e)
+            return ""
 
     async def _channel_d_skill_match(self, keywords: list[str]) -> list[str]:
         """Channel D: Skill filename matching.
