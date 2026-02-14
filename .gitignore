@@ -16,6 +16,6 @@ build/
 # Project
 site/
 site-docs/
-mkdocs.yml
+# mkdocs.yml は管理対象
 .env
 tmp/
