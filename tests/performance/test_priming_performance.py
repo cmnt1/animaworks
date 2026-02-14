@@ -36,7 +36,7 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
 try:
-    from core.memory.rag import MemoryIndexer, HybridRetriever
+    from core.memory.rag import MemoryIndexer, MemoryRetriever
     RAG_AVAILABLE = True
 except ImportError:
     RAG_AVAILABLE = False
@@ -245,7 +245,7 @@ def test_search_latency_comparison(large_knowledge_base):
     - Latencies are in expected ranges
     - Consistent performance across queries
     """
-    from core.memory.rag import MemoryIndexer, HybridRetriever
+    from core.memory.rag import MemoryIndexer, MemoryRetriever
     from core.memory.rag.store import ChromaVectorStore
 
     # Create temporary Person directory
@@ -267,7 +267,7 @@ def test_search_latency_comparison(large_knowledge_base):
         indexer.index_file(file_path, memory_type="knowledge")
 
     # Create retriever
-    retriever = HybridRetriever(
+    retriever = MemoryRetriever(
         vector_store=vector_store,
         indexer=indexer,
         knowledge_dir=person_dir / "knowledge",
@@ -432,7 +432,7 @@ def test_large_dataset_scalability(tmp_path):
 
     Note: This test is marked as 'slow' and may be skipped in CI.
     """
-    from core.memory.rag import MemoryIndexer, HybridRetriever
+    from core.memory.rag import MemoryIndexer, MemoryRetriever
     from core.memory.rag.store import ChromaVectorStore
 
     # Create 1000 knowledge files
@@ -472,7 +472,7 @@ def test_large_dataset_scalability(tmp_path):
     assert indexing_time < 120, f"Indexing took {indexing_time:.2f}s (> 120s target)"
 
     # Create retriever
-    retriever = HybridRetriever(
+    retriever = MemoryRetriever(
         vector_store=vector_store,
         indexer=indexer,
         knowledge_dir=knowledge_dir,
