@@ -19,3 +19,13 @@ site-docs/
 # mkdocs.yml は管理対象
 .env
 tmp/
+
+# Evaluation framework - generated data (excluded from repo)
+tests/evaluation/datasets/
+tests/evaluation/scenarios/
+tests/evaluation/ground_truth/
+tests/evaluation/_datasets/
+tests/evaluation/_experiment_data/
+
+# Evaluation results - tracked in repo for reproducibility
+# tests/evaluation/results/ is committed
