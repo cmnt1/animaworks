@@ -9,6 +9,7 @@ import json
 import logging
 from pathlib import Path
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable, Union
 
 logger = logging.getLogger(__name__)
@@ -16,13 +17,13 @@ logger = logging.getLogger(__name__)
 
 # ── Protocol Types ──────────────────────────────────────────────────
 
+@dataclass
 class IPCRequest:
     """IPC request from parent to child process."""
 
-    def __init__(self, id: str, method: str, params: dict[str, Any]):
-        self.id = id
-        self.method = method
-        self.params = params
+    id: str
+    method: str
+    params: dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> str:
         """Serialize to JSON line."""
@@ -43,24 +44,16 @@ class IPCRequest:
         )
 
 
+@dataclass
 class IPCResponse:
     """IPC response from child to parent process."""
 
-    def __init__(
-        self,
-        id: str,
-        result: dict[str, Any] | None = None,
-        error: dict[str, Any] | None = None,
-        stream: bool = False,
-        chunk: str | None = None,
-        done: bool = False
-    ):
-        self.id = id
-        self.result = result
-        self.error = error
-        self.stream = stream
-        self.chunk = chunk
-        self.done = done
+    id: str
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+    stream: bool = False
+    chunk: str | None = None
+    done: bool = False
 
     def to_json(self) -> str:
         """Serialize to JSON line."""
@@ -95,12 +88,12 @@ class IPCResponse:
         )
 
 
+@dataclass
 class IPCEvent:
     """Asynchronous event from child to parent (no request ID)."""
 
-    def __init__(self, event: str, data: dict[str, Any]):
-        self.event = event
-        self.data = data
+    event: str
+    data: dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> str:
         """Serialize to JSON line."""
@@ -161,7 +154,7 @@ class IPCServer:
             self._handle_connection,
             path=str(self.socket_path)
         )
-        logger.info(f"IPC server started on {self.socket_path}")
+        logger.info("IPC server started on %s", self.socket_path)
 
     async def _handle_connection(
         self,
@@ -170,7 +163,7 @@ class IPCServer:
     ) -> None:
         """Handle a single client connection."""
         peer = writer.get_extra_info("peername", "unknown")
-        logger.debug(f"IPC connection from {peer}")
+        logger.debug("IPC connection from %s", peer)
 
         try:
             while True:
@@ -185,7 +178,7 @@ class IPCServer:
 
                 try:
                     request = IPCRequest.from_json(line)
-                    logger.debug(f"IPC request: {request.method} (id={request.id})")
+                    logger.debug("IPC request: %s (id=%s)", request.method, request.id)
 
                     handler_result = await self.request_handler(request)
 
@@ -201,7 +194,7 @@ class IPCServer:
                         await writer.drain()
 
                 except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON in IPC request: {e}")
+                    logger.error("Invalid JSON in IPC request: %s", e)
                     error_response = IPCResponse(
                         id="unknown",
                         error={"code": "INVALID_JSON", "message": str(e)}
@@ -209,7 +202,7 @@ class IPCServer:
                     writer.write((error_response.to_json() + "\n").encode("utf-8"))
                     await writer.drain()
                 except Exception as e:
-                    logger.exception(f"Error handling IPC request: {e}")
+                    logger.exception("Error handling IPC request: %s", e)
                     error_response = IPCResponse(
                         id=request.id if "request" in locals() else "unknown",
                         error={"code": "HANDLER_ERROR", "message": str(e)}
@@ -220,11 +213,11 @@ class IPCServer:
         except asyncio.CancelledError:
             logger.info("IPC connection cancelled")
         except Exception as e:
-            logger.exception(f"IPC connection error: {e}")
+            logger.exception("IPC connection error: %s", e)
         finally:
             writer.close()
             await writer.wait_closed()
-            logger.debug(f"IPC connection closed: {peer}")
+            logger.debug("IPC connection closed: %s", peer)
 
     async def stop(self) -> None:
         """Stop the server."""
@@ -259,7 +252,7 @@ class IPCClient:
             self.reader, self.writer = await asyncio.open_unix_connection(
                 path=str(self.socket_path)
             )
-            logger.debug(f"IPC client connected to {self.socket_path}")
+            logger.debug("IPC client connected to %s", self.socket_path)
 
     async def send_request(
         self,
@@ -288,7 +281,7 @@ class IPCClient:
             request_line = request.to_json() + "\n"
             self.writer.write(request_line.encode("utf-8"))
             await self.writer.drain()
-            logger.debug(f"IPC request sent: {request.method} (id={request.id})")
+            logger.debug("IPC request sent: %s (id=%s)", request.method, request.id)
 
             # Wait for response
             async with asyncio.timeout(timeout):
@@ -298,7 +291,7 @@ class IPCClient:
 
                 response_line = response_line_bytes.decode("utf-8").strip()
                 response = IPCResponse.from_json(response_line)
-                logger.debug(f"IPC response received: id={response.id}")
+                logger.debug("IPC response received: id=%s", response.id)
 
                 return response
 
@@ -333,7 +326,7 @@ class IPCClient:
             request_line = request.to_json() + "\n"
             self.writer.write(request_line.encode("utf-8"))
             await self.writer.drain()
-            logger.debug(f"IPC stream request sent: {request.method} (id={request.id})")
+            logger.debug("IPC stream request sent: %s (id=%s)", request.method, request.id)
 
             # Read streaming responses until done
             async with asyncio.timeout(timeout):
@@ -364,4 +357,4 @@ class IPCClient:
         if self.writer:
             self.writer.close()
             await self.writer.wait_closed()
-            logger.debug(f"IPC client disconnected from {self.socket_path}")
+            logger.debug("IPC client disconnected from %s", self.socket_path)

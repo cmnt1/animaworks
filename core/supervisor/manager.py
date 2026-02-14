@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from core.supervisor.ipc import IPCResponse
 from core.supervisor.process_handle import ProcessHandle, ProcessState
@@ -82,7 +82,7 @@ class ProcessSupervisor:
         Args:
             person_names: List of person names to start
         """
-        logger.info(f"Starting {len(person_names)} Person processes")
+        logger.info("Starting %d Person processes", len(person_names))
 
         # Create socket directory
         socket_dir = self.run_dir / "sockets"
@@ -102,7 +102,7 @@ class ProcessSupervisor:
     async def start_person(self, person_name: str) -> None:
         """Start a single Person process."""
         if person_name in self.processes:
-            logger.warning(f"Process already exists: {person_name}")
+            logger.warning("Process already exists: %s", person_name)
             return
 
         socket_dir = self.run_dir / "sockets"
@@ -120,26 +120,26 @@ class ProcessSupervisor:
         try:
             await handle.start()
             self.processes[person_name] = handle
-            logger.info(f"Person process started: {person_name} (PID {handle.get_pid()})")
+            logger.info("Person process started: %s (PID %s)", person_name, handle.get_pid())
 
         except Exception as e:
-            logger.error(f"Failed to start process {person_name}: {e}")
+            logger.error("Failed to start process %s: %s", person_name, e)
             raise
 
     async def stop_person(self, person_name: str) -> None:
         """Stop a single Person process."""
         handle = self.processes.get(person_name)
         if not handle:
-            logger.warning(f"Process not found: {person_name}")
+            logger.warning("Process not found: %s", person_name)
             return
 
         await handle.stop(timeout=10.0)
         del self.processes[person_name]
-        logger.info(f"Person process stopped: {person_name}")
+        logger.info("Person process stopped: %s", person_name)
 
     async def restart_person(self, person_name: str) -> None:
         """Restart a Person process."""
-        logger.info(f"Restarting process: {person_name}")
+        logger.info("Restarting process: %s", person_name)
 
         # Stop existing process
         if person_name in self.processes:
@@ -174,7 +174,7 @@ class ProcessSupervisor:
         self,
         person_name: str,
         method: str,
-        params: dict,
+        params: dict[str, Any],
         timeout: float = 60.0
     ) -> dict:
         """
@@ -211,7 +211,7 @@ class ProcessSupervisor:
         self,
         person_name: str,
         method: str,
-        params: dict,
+        params: dict[str, Any],
         timeout: float = 120.0
     ) -> AsyncIterator[IPCResponse]:
         """
@@ -265,7 +265,7 @@ class ProcessSupervisor:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in health check loop: {e}")
+                logger.error("Error in health check loop: %s", e)
 
         logger.info("Health check loop stopped")
 
@@ -277,13 +277,13 @@ class ProcessSupervisor:
         """Check health of a single process."""
         # Skip if currently streaming (IPC lock held, ping would block)
         if handle._streaming:
-            logger.debug(f"Skipping health check for {person_name} (streaming)")
+            logger.debug("Skipping health check for %s (streaming)", person_name)
             return
 
         # Skip if in startup grace period
         uptime = (datetime.now() - handle.stats.started_at).total_seconds()
         if uptime < self.health_config.startup_grace_sec:
-            logger.debug(f"Skipping health check for {person_name} (startup grace)")
+            logger.debug("Skipping health check for %s (startup grace)", person_name)
             return
 
         # Reset restart counter after stable uptime
@@ -291,15 +291,15 @@ class ProcessSupervisor:
             if self._restart_counts.get(person_name, 0) > 0:
                 self._restart_counts[person_name] = 0
                 logger.info(
-                    f"Restart counter reset for {person_name} "
-                    f"(stable for {uptime:.0f}s)"
+                    "Restart counter reset for %s (stable for %.0fs)",
+                    person_name, uptime
                 )
 
         # Check if process is alive
         if not handle.is_alive():
             logger.error(
-                f"Process exited unexpectedly: {person_name} "
-                f"(exit_code={handle.stats.exit_code})"
+                "Process exited unexpectedly: %s (exit_code=%s)",
+                person_name, handle.stats.exit_code
             )
             asyncio.create_task(self._handle_process_failure(person_name, handle))
             return
@@ -310,20 +310,20 @@ class ProcessSupervisor:
         if success:
             # Ping successful
             if handle.stats.missed_pings > 0:
-                logger.info(f"Process recovered: {person_name}")
+                logger.info("Process recovered: %s", person_name)
             return
 
         # Ping failed
         logger.warning(
-            f"Health check failed: {person_name} "
-            f"(missed={handle.stats.missed_pings}/{self.health_config.max_missed_pings})"
+            "Health check failed: %s (missed=%d/%d)",
+            person_name, handle.stats.missed_pings, self.health_config.max_missed_pings
         )
 
         # Check if hang threshold exceeded
         if handle.stats.missed_pings >= self.health_config.max_missed_pings:
             logger.error(
-                f"Process hang detected: {person_name} "
-                f"(PID {handle.get_pid()})"
+                "Process hang detected: %s (PID %s)",
+                person_name, handle.get_pid()
             )
             asyncio.create_task(self._handle_process_hang(person_name, handle))
 
@@ -346,8 +346,8 @@ class ProcessSupervisor:
             count = self._restart_counts.get(person_name, 0)
             if count >= self.restart_policy.max_retries:
                 logger.error(
-                    f"Max restart retries exceeded for {person_name}. "
-                    f"Manual intervention required."
+                    "Max restart retries exceeded for %s. Manual intervention required.",
+                    person_name
                 )
                 handle.state = ProcessState.FAILED
                 return
@@ -359,9 +359,8 @@ class ProcessSupervisor:
             )
 
             logger.info(
-                f"Scheduling restart for {person_name} "
-                f"(retry {count + 1}/{self.restart_policy.max_retries}, "
-                f"delay={backoff:.1f}s)"
+                "Scheduling restart for %s (retry %d/%d, delay=%.1fs)",
+                person_name, count + 1, self.restart_policy.max_retries, backoff
             )
 
             # Wait and restart
@@ -371,13 +370,13 @@ class ProcessSupervisor:
             await self.restart_person(person_name)
 
             logger.info(
-                f"Process restarted: {person_name} "
-                f"(PID {self.processes[person_name].get_pid()}, "
-                f"retry={count + 1}/{self.restart_policy.max_retries})"
+                "Process restarted: %s (PID %s, retry=%d/%d)",
+                person_name, self.processes[person_name].get_pid(),
+                count + 1, self.restart_policy.max_retries
             )
 
         except Exception as e:
-            logger.error(f"Failed to restart {person_name}: {e}")
+            logger.error("Failed to restart %s: %s", person_name, e)
             handle.state = ProcessState.FAILED
         finally:
             self._restarting.discard(person_name)
@@ -388,7 +387,7 @@ class ProcessSupervisor:
         handle: ProcessHandle
     ) -> None:
         """Handle hung process (kill and restart)."""
-        logger.warning(f"Killing hung process: {person_name}")
+        logger.warning("Killing hung process: %s", person_name)
 
         # Kill process
         await handle.kill()

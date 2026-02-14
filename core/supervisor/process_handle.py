@@ -99,8 +99,8 @@ class ProcessHandle:
             "--log-dir", str(self.log_dir) if self.log_dir else "/tmp"
         ]
 
-        logger.info(f"Starting process: {self.person_name}")
-        logger.debug(f"Command: {' '.join(cmd)}")
+        logger.info("Starting process: %s", self.person_name)
+        logger.debug("Command: %s", " ".join(cmd))
 
         try:
             # Redirect stderr to a log file for post-mortem debugging;
@@ -120,7 +120,7 @@ class ProcessHandle:
                 stdout=subprocess.DEVNULL,
                 stderr=self._stderr_file if self._stderr_file else subprocess.DEVNULL,
             )
-            logger.info(f"Process started: {self.person_name} (PID {self.process.pid})")
+            logger.info("Process started: %s (PID %s)", self.person_name, self.process.pid)
 
             # Wait for socket to be created
             await self._wait_for_socket(timeout=30.0)
@@ -130,14 +130,14 @@ class ProcessHandle:
             await self.ipc_client.connect(timeout=5.0)
 
             self.state = ProcessState.RUNNING
-            logger.info(f"Process running: {self.person_name}")
+            logger.info("Process running: %s", self.person_name)
 
         except Exception as e:
-            logger.error(f"Failed to start process {self.person_name}: {e}")
+            logger.error("Failed to start process %s: %s", self.person_name, e)
 
             # Log stderr file location for debugging
             if stderr_path and stderr_path.exists():
-                logger.error(f"Subprocess stderr log: {stderr_path}")
+                logger.error("Subprocess stderr log: %s", stderr_path)
 
             self.state = ProcessState.FAILED
             await self._cleanup()
@@ -149,7 +149,7 @@ class ProcessHandle:
         deadline = loop.time() + timeout
         while loop.time() < deadline:
             if self.socket_path.exists():
-                logger.debug(f"Socket file created: {self.socket_path}")
+                logger.debug("Socket file created: %s", self.socket_path)
                 return
             await asyncio.sleep(0.1)
 
@@ -188,7 +188,11 @@ class ProcessHandle:
             params=params
         )
 
-        return await self.ipc_client.send_request(request, timeout=timeout)
+        try:
+            return await self.ipc_client.send_request(request, timeout=timeout)
+        except RuntimeError:
+            self.state = ProcessState.FAILED
+            raise
 
     async def send_request_stream(
         self,
@@ -229,6 +233,9 @@ class ProcessHandle:
                 request, timeout=timeout
             ):
                 yield response
+        except RuntimeError:
+            self.state = ProcessState.FAILED
+            raise
         finally:
             self._streaming = False
 
@@ -245,7 +252,7 @@ class ProcessHandle:
         try:
             response = await self.send_request("ping", {}, timeout=timeout)
             if response.error:
-                logger.warning(f"Ping failed for {self.person_name}: {response.error}")
+                logger.warning("Ping failed for %s: %s", self.person_name, response.error)
                 self.stats.missed_pings += 1
                 return False
 
@@ -254,11 +261,11 @@ class ProcessHandle:
             return True
 
         except asyncio.TimeoutError:
-            logger.warning(f"Ping timeout for {self.person_name}")
+            logger.warning("Ping timeout for %s", self.person_name)
             self.stats.missed_pings += 1
             return False
         except Exception as e:
-            logger.error(f"Ping error for {self.person_name}: {e}")
+            logger.error("Ping error for %s: %s", self.person_name, e)
             self.stats.missed_pings += 1
             return False
 
@@ -275,11 +282,11 @@ class ProcessHandle:
             timeout: Total timeout in seconds for graceful shutdown
         """
         if self.state in (ProcessState.STOPPED, ProcessState.FAILED):
-            logger.debug(f"Process already stopped: {self.person_name}")
+            logger.debug("Process already stopped: %s", self.person_name)
             return
 
         self.state = ProcessState.STOPPING
-        logger.info(f"Stopping process: {self.person_name}")
+        logger.info("Stopping process: %s", self.person_name)
 
         if not self.process:
             self.state = ProcessState.STOPPED
@@ -288,10 +295,10 @@ class ProcessHandle:
 
         # Step 1: Send IPC shutdown request
         try:
-            logger.debug(f"Sending shutdown request to {self.person_name}")
+            logger.debug("Sending shutdown request to %s", self.person_name)
             await self.send_request("shutdown", {}, timeout=5.0)
         except Exception as e:
-            logger.warning(f"Shutdown request failed for {self.person_name}: {e}")
+            logger.warning("Shutdown request failed for %s: %s", self.person_name, e)
 
         # Step 2: Wait for graceful exit
         try:
@@ -301,11 +308,11 @@ class ProcessHandle:
                     await asyncio.sleep(0.1)
 
             self.stats.exit_code = self.process.returncode
-            logger.info(f"Process exited gracefully: {self.person_name} (code={self.stats.exit_code})")
+            logger.info("Process exited gracefully: %s (code=%s)", self.person_name, self.stats.exit_code)
 
         except asyncio.TimeoutError:
             # Step 3: Send SIGTERM
-            logger.warning(f"Process did not exit gracefully, sending SIGTERM: {self.person_name}")
+            logger.warning("Process did not exit gracefully, sending SIGTERM: %s", self.person_name)
             try:
                 self.process.terminate()
                 async with asyncio.timeout(timeout / 2):
@@ -313,11 +320,11 @@ class ProcessHandle:
                         await asyncio.sleep(0.1)
 
                 self.stats.exit_code = self.process.returncode
-                logger.info(f"Process terminated: {self.person_name} (code={self.stats.exit_code})")
+                logger.info("Process terminated: %s (code=%s)", self.person_name, self.stats.exit_code)
 
             except asyncio.TimeoutError:
                 # Step 4: Force SIGKILL
-                logger.error(f"Process did not respond to SIGTERM, sending SIGKILL: {self.person_name}")
+                logger.error("Process did not respond to SIGTERM, sending SIGKILL: %s", self.person_name)
                 await self.kill()
 
         self.state = ProcessState.STOPPED
@@ -329,7 +336,7 @@ class ProcessHandle:
         if not self.process:
             return
 
-        logger.warning(f"Killing process: {self.person_name} (PID {self.process.pid})")
+        logger.warning("Killing process: %s (PID %s)", self.person_name, self.process.pid)
         self.process.kill()
         await asyncio.get_running_loop().run_in_executor(None, self.process.wait)
         self.stats.exit_code = self.process.returncode
@@ -351,7 +358,7 @@ class ProcessHandle:
 
         if self.socket_path.exists():
             self.socket_path.unlink()
-            logger.debug(f"Socket file removed: {self.socket_path}")
+            logger.debug("Socket file removed: %s", self.socket_path)
 
     def is_alive(self) -> bool:
         """Check if process is alive."""

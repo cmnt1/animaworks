@@ -16,10 +16,11 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
-from collections.abc import AsyncIterator
-from typing import Union
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, Union
 
 from core.person import DigitalPerson
 from core.supervisor.ipc import IPCServer, IPCRequest, IPCResponse
@@ -52,6 +53,7 @@ class PersonRunner:
         self.ipc_server: IPCServer | None = None
         self.inbox_watcher_task: asyncio.Task | None = None
         self.shutdown_event = asyncio.Event()
+        self._started_at = datetime.now()
 
     async def run(self) -> None:
         """
@@ -60,7 +62,7 @@ class PersonRunner:
         Initializes DigitalPerson, starts IPC server, and runs until shutdown.
         """
         try:
-            logger.info(f"Initializing Person: {self.person_name}")
+            logger.info("Initializing Person: %s", self.person_name)
 
             # Initialize DigitalPerson
             person_dir = self.persons_dir / self.person_name
@@ -81,15 +83,15 @@ class PersonRunner:
                 self._inbox_watcher_loop()
             )
 
-            logger.info(f"Person process ready: {self.person_name}")
+            logger.info("Person process ready: %s", self.person_name)
 
             # Wait for shutdown signal
             await self.shutdown_event.wait()
 
-            logger.info(f"Shutting down: {self.person_name}")
+            logger.info("Shutting down: %s", self.person_name)
 
         except Exception as e:
-            logger.exception(f"Fatal error in PersonRunner: {e}")
+            logger.exception("Fatal error in PersonRunner: %s", e)
             sys.exit(1)
 
         finally:
@@ -127,7 +129,7 @@ class PersonRunner:
             return IPCResponse(id=request.id, result=result)
 
         except Exception as e:
-            logger.exception(f"Error handling request {request.method}: {e}")
+            logger.exception("Error handling request %s: %s", request.method, e)
             return IPCResponse(
                 id=request.id,
                 error={
@@ -136,7 +138,7 @@ class PersonRunner:
                 }
             )
 
-    def _get_handler(self, method: str):
+    def _get_handler(self, method: str) -> Callable[..., Awaitable[dict[str, Any]]] | None:
         """Get handler for method."""
         handlers = {
             "process_message": self._handle_process_message,
@@ -148,7 +150,7 @@ class PersonRunner:
         }
         return handlers.get(method)
 
-    async def _handle_process_message(self, params: dict) -> dict:
+    async def _handle_process_message(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle non-streaming process_message request."""
         if not self.person:
             raise RuntimeError("Person not initialized")
@@ -243,7 +245,7 @@ class PersonRunner:
             )
 
         except Exception as e:
-            logger.exception(f"Error in streaming process_message: {e}")
+            logger.exception("Error in streaming process_message: %s", e)
             yield IPCResponse(
                 id=request.id,
                 error={
@@ -252,7 +254,7 @@ class PersonRunner:
                 }
             )
 
-    async def _handle_run_heartbeat(self, params: dict) -> dict:
+    async def _handle_run_heartbeat(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle run_heartbeat request."""
         if not self.person:
             raise RuntimeError("Person not initialized")
@@ -261,7 +263,7 @@ class PersonRunner:
 
         return {"status": "completed"}
 
-    async def _handle_run_cron_task(self, params: dict) -> dict:
+    async def _handle_run_cron_task(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle run_cron_task request."""
         if not self.person:
             raise RuntimeError("Person not initialized")
@@ -276,27 +278,28 @@ class PersonRunner:
 
         return {"status": "completed"}
 
-    async def _handle_get_status(self, params: dict) -> dict:
+    async def _handle_get_status(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle get_status request."""
         if not self.person:
             raise RuntimeError("Person not initialized")
 
-        # TODO: Get actual status from Person
         return {
-            "status": "idle",
-            "current_task": None
+            "status": self.person._status,
+            "current_task": self.person._current_task or None,
         }
 
-    async def _handle_ping(self, params: dict) -> dict:
+    async def _handle_ping(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle ping request."""
+        uptime = (datetime.now() - self._started_at).total_seconds()
         return {
             "status": "ok",
-            "person": self.person_name
+            "person": self.person_name,
+            "uptime_sec": round(uptime, 1),
         }
 
-    async def _handle_shutdown(self, params: dict) -> dict:
+    async def _handle_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle shutdown request."""
-        logger.info(f"Shutdown requested for {self.person_name}")
+        logger.info("Shutdown requested for %s", self.person_name)
         self.shutdown_event.set()
         return {"status": "shutting_down"}
 
@@ -309,7 +312,7 @@ class PersonRunner:
         if not self.person:
             return
 
-        logger.info(f"Inbox watcher started for {self.person_name}")
+        logger.info("Inbox watcher started for %s", self.person_name)
 
         while not self.shutdown_event.is_set():
             try:
@@ -323,8 +326,8 @@ class PersonRunner:
 
                     if unread_messages:
                         logger.info(
-                            f"New messages detected for {self.person_name}: "
-                            f"{len(unread_messages)} messages"
+                            "New messages detected for %s: %d messages",
+                            self.person_name, len(unread_messages)
                         )
                         # Trigger heartbeat to process messages
                         await self.person.run_heartbeat()
@@ -334,10 +337,10 @@ class PersonRunner:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in inbox watcher for {self.person_name}: {e}")
+                logger.error("Error in inbox watcher for %s: %s", self.person_name, e)
                 await asyncio.sleep(2.0)
 
-        logger.info(f"Inbox watcher stopped for {self.person_name}")
+        logger.info("Inbox watcher stopped for %s", self.person_name)
 
     async def _cleanup(self) -> None:
         """Clean up resources."""
@@ -353,7 +356,7 @@ class PersonRunner:
         if self.ipc_server:
             await self.ipc_server.stop()
 
-        logger.info(f"Cleanup completed for {self.person_name}")
+        logger.info("Cleanup completed for %s", self.person_name)
 
 
 # ── CLI Entry Point ────────────────────────────────────────────────
