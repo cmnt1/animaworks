@@ -4,8 +4,8 @@ Memory Performance Evaluation - Phase 5: Experiment Execution
 
 Runs 4-condition comparison experiment on AnimaWorks memory system:
   - Condition A: BM25 only (ripgrep)
-  - Condition B: TF-IDF similarity search (TF-IDF + cosine similarity)
-  - Condition C: Hybrid search (BM25 + TF-IDF + temporal decay + RRF)
+  - Condition B: Dense vector search (ChromaDB + multilingual-e5-small)
+  - Condition C: Hybrid search (BM25 + Dense vector + temporal decay + RRF)
   - Condition D: Hybrid + Priming (4-channel parallel retrieval)
 
 Each condition: N=30 trials, 50 scenarios per trial.
@@ -89,52 +89,83 @@ SIZE = "small"  # Primary experiment size
 # Condition names to directory names
 CONDITION_DIRS = {
     "A": "condition_a_bm25",
-    "B": "condition_b_tfidf",
+    "B": "condition_b_vector",
     "C": "condition_c_hybrid",
     "D": "condition_d_hybrid_priming",
 }
 
 
-# ── TF-IDF Vector Search Fallback ────────────────────────────────────────────
+# ── Dense Vector Search (ChromaDB + multilingual-e5-small) ───────────────────
 
 
-class TfIdfVectorSearch:
-    """TF-IDF-based vector search fallback for when ChromaDB is unavailable.
+class DenseVectorSearch:
+    """Dense vector search using ChromaDB + multilingual-e5-small.
 
-    Provides text-similarity-based search using scikit-learn TfidfVectorizer.
-    This is a reasonable approximation of semantic search for evaluation
-    purposes, superior to random baseline.
+    Provides semantic similarity search using dense embeddings from
+    the intfloat/multilingual-e5-small model (384 dimensions).
+    Uses ChromaDB's in-memory ephemeral client for experiment isolation.
     """
 
-    def __init__(self) -> None:
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.metrics.pairwise import cosine_similarity
+    _model = None  # Shared model singleton across all instances
 
-        self._vectorizer = TfidfVectorizer(
-            max_features=5000,
-            analyzer="char_wb",
-            ngram_range=(2, 4),
-            sublinear_tf=True,
+    @classmethod
+    def _get_model(cls):
+        """Get or initialize the shared embedding model."""
+        if cls._model is None:
+            from sentence_transformers import SentenceTransformer
+
+            logger.info("Loading embedding model: intfloat/multilingual-e5-small...")
+            cls._model = SentenceTransformer("intfloat/multilingual-e5-small")
+            logger.info("Embedding model loaded (dimension=384)")
+        return cls._model
+
+    def __init__(self) -> None:
+        import chromadb
+
+        self._client = chromadb.EphemeralClient()
+        self._collection = self._client.get_or_create_collection(
+            name="experiment_docs",
+            metadata={"hnsw:space": "cosine"},
         )
-        self._cosine_similarity = cosine_similarity
         self._documents: list[dict[str, Any]] = []
-        self._tfidf_matrix = None
-        self._is_fitted = False
+        self._model_instance = self._get_model()
 
     def index_documents(self, documents: list[dict[str, Any]]) -> None:
-        """Index a list of documents for search.
+        """Index documents with dense embeddings in ChromaDB.
 
         Args:
             documents: List of dicts with 'id', 'content', 'path' keys
         """
         self._documents = documents
-        texts = [doc["content"] for doc in documents]
-        if texts:
-            self._tfidf_matrix = self._vectorizer.fit_transform(texts)
-            self._is_fitted = True
+        if not documents:
+            return
+
+        # e5 models expect "passage: " prefix for documents
+        texts = [f"passage: {doc['content']}" for doc in documents]
+        embeddings = self._model_instance.encode(
+            texts, convert_to_numpy=True, show_progress_bar=False,
+        )
+
+        ids = [str(i) for i in range(len(documents))]
+        raw_texts = [doc["content"] for doc in documents]
+        metadatas = [
+            {"path": str(doc.get("path", "")), "doc_id": str(doc.get("id", ""))}
+            for doc in documents
+        ]
+
+        # Batch upsert (ChromaDB limits batch size)
+        batch_size = 5000
+        for start in range(0, len(ids), batch_size):
+            end = min(start + batch_size, len(ids))
+            self._collection.upsert(
+                ids=ids[start:end],
+                documents=raw_texts[start:end],
+                embeddings=embeddings[start:end].tolist(),
+                metadatas=metadatas[start:end],
+            )
 
     def search(self, query: str, top_k: int = 3) -> list[dict[str, Any]]:
-        """Search for documents similar to query.
+        """Search for documents similar to query using dense embeddings.
 
         Args:
             query: Search query text
@@ -143,23 +174,36 @@ class TfIdfVectorSearch:
         Returns:
             List of dicts with 'id', 'content', 'path', 'score' keys
         """
-        if not self._is_fitted or not self._documents:
+        if not self._documents:
             return []
 
-        query_vec = self._vectorizer.transform([query])
-        similarities = self._cosine_similarity(query_vec, self._tfidf_matrix).flatten()
+        # e5 models expect "query: " prefix for queries
+        query_embedding = self._model_instance.encode(
+            [f"query: {query}"], convert_to_numpy=True, show_progress_bar=False,
+        )
 
-        # Get top-k indices
-        top_indices = np.argsort(similarities)[::-1][:top_k]
+        n_results = min(top_k, len(self._documents))
+        results = self._collection.query(
+            query_embeddings=query_embedding.tolist(),
+            n_results=n_results,
+        )
 
-        results = []
-        for idx in top_indices:
-            if similarities[idx] > 0:
-                doc = self._documents[idx].copy()
-                doc["score"] = float(similarities[idx])
-                results.append(doc)
+        search_results = []
+        if results["ids"] and results["ids"][0]:
+            for i, doc_idx_str in enumerate(results["ids"][0]):
+                doc_idx = int(doc_idx_str)
+                if doc_idx < len(self._documents):
+                    doc = self._documents[doc_idx]
+                    distance = results["distances"][0][i]
+                    score = max(0.0, 1.0 - distance)  # Convert distance to similarity
+                    search_results.append({
+                        "id": doc["id"],
+                        "content": doc["content"],
+                        "path": doc["path"],
+                        "score": score,
+                    })
 
-        return results
+        return search_results
 
 
 # ── BM25 Search (ripgrep-based) ──────────────────────────────────────────────
@@ -318,15 +362,15 @@ RECENCY_HALF_LIFE_DAYS = 30.0
 
 
 class HybridSearch:
-    """Hybrid search combining BM25 + Vector + temporal decay via RRF.
+    """Hybrid search combining BM25 + Dense Vector + temporal decay via RRF.
 
     Mirrors the logic of core/memory/rag/retriever.py HybridRetriever,
-    but uses TF-IDF vector search fallback when ChromaDB is unavailable.
+    using ChromaDB + multilingual-e5-small for dense vector search.
     """
 
     def __init__(self, search_dir: Path) -> None:
         self.bm25 = Bm25Search(search_dir)
-        self.vector = TfIdfVectorSearch()
+        self.vector = DenseVectorSearch()
         self._document_dates: dict[str, datetime] = {}
 
     def index_documents(self, documents: list[dict[str, Any]]) -> None:
@@ -554,7 +598,7 @@ async def run_single_search(
     """Run a single search and measure metrics.
 
     Args:
-        searcher: Search engine (Bm25Search, TfIdfVectorSearch, HybridSearch, PrimingSearchWrapper)
+        searcher: Search engine (Bm25Search, DenseVectorSearch, HybridSearch, PrimingSearchWrapper)
         query: Search query
         relevant_paths: Ground truth relevant file paths
         top_k: Number of results to retrieve
@@ -806,7 +850,7 @@ async def run_scalability_test(
 
     results: dict[str, list[dict[str, float]]] = {
         "bm25": [],
-        "tfidf": [],
+        "vector": [],
         "hybrid": [],
         "hybrid_priming": [],
     }
@@ -856,15 +900,15 @@ async def run_scalability_test(
         # Run each condition
         for cond_name, cond_key in [
             ("A", "bm25"),
-            ("B", "tfidf"),
+            ("B", "vector"),
             ("C", "hybrid"),
             ("D", "hybrid_priming"),
         ]:
             if cond_key == "bm25":
                 searcher = Bm25Search(search_dir)
                 searcher.index_documents(documents)
-            elif cond_key == "tfidf":
-                searcher = TfIdfVectorSearch()
+            elif cond_key == "vector":
+                searcher = DenseVectorSearch()
                 searcher.index_documents(documents)
             elif cond_key == "hybrid":
                 searcher = HybridSearch(search_dir)
@@ -1148,14 +1192,14 @@ def _run_h3_consolidation_experiment(
 
     # Step 2: Search BEFORE consolidation (episodes only)
     logger.info("  H3: Measuring precision before consolidation...")
-    tfidf_before = TfIdfVectorSearch()
-    tfidf_before.index_documents(all_episode_docs)
+    vector_before = DenseVectorSearch()
+    vector_before.index_documents(all_episode_docs)
 
     precision_before_list: list[float] = []
     recall_before_list: list[float] = []
 
     for qm in query_map:
-        results = tfidf_before.search(qm["query"], top_k=TOP_K)
+        results = vector_before.search(qm["query"], top_k=TOP_K)
         retrieved_ids = {str(r.get("path", r.get("id", ""))) for r in results}
         relevant_ids = {qm["episode_path"]}
 
@@ -1173,14 +1217,14 @@ def _run_h3_consolidation_experiment(
     # Step 4: Search AFTER consolidation (episodes + knowledge)
     logger.info("  H3: Measuring precision after consolidation...")
     all_docs_after = all_episode_docs + knowledge_docs
-    tfidf_after = TfIdfVectorSearch()
-    tfidf_after.index_documents(all_docs_after)
+    vector_after = DenseVectorSearch()
+    vector_after.index_documents(all_docs_after)
 
     precision_after_list: list[float] = []
     recall_after_list: list[float] = []
 
     for qm in query_map:
-        results = tfidf_after.search(qm["query"], top_k=TOP_K)
+        results = vector_after.search(qm["query"], top_k=TOP_K)
         retrieved_ids = {str(r.get("path", r.get("id", ""))) for r in results}
 
         # After consolidation, both episode and knowledge files are relevant
@@ -1444,7 +1488,7 @@ def generate_figures(
     }
     condition_labels = {
         "A": "BM25",
-        "B": "TF-IDF",
+        "B": "Vector",
         "C": "Hybrid",
         "D": "Hybrid+Priming",
     }
@@ -1560,7 +1604,7 @@ def generate_figures(
 
         cond_key_map = {
             "bm25": ("A", "BM25"),
-            "tfidf": ("B", "TF-IDF"),
+            "vector": ("B", "Vector"),
             "hybrid": ("C", "Hybrid"),
             "hybrid_priming": ("D", "Hybrid+Priming"),
         }
@@ -1710,8 +1754,8 @@ def generate_figures(
     if h2 and "mean_precision" in h2:
         precs = h2["mean_precision"]
         bars = ax2.bar(
-            ["BM25", "TF-IDF", "Hybrid"],
-            [precs["bm25"], precs["tfidf"], precs["hybrid"]],
+            ["BM25", "Vector", "Hybrid"],
+            [precs["bm25"], precs["vector"], precs["hybrid"]],
             color=[condition_colors["A"], condition_colors["B"], condition_colors["C"]],
         )
         p_text = f"p={h2['p_value']:.4f}" if "p_value" in h2 else ""
@@ -1886,8 +1930,8 @@ async def main() -> None:
 
     conditions = [
         ("A", "BM25 Only"),
-        ("B", "TF-IDF Similarity"),
-        ("C", "Hybrid Search (BM25 + TF-IDF + Temporal Decay + RRF)"),
+        ("B", "Dense Vector (e5-small)"),
+        ("C", "Hybrid Search (BM25 + Vector + Temporal Decay + RRF)"),
         ("D", "Hybrid + Priming (4-channel parallel)"),
     ]
 
@@ -1947,7 +1991,7 @@ async def main() -> None:
                 searcher = Bm25Search(search_dir)
                 searcher.index_documents(documents)
             elif cond_label == "B":
-                searcher = TfIdfVectorSearch()
+                searcher = DenseVectorSearch()
                 searcher.index_documents(documents)
             elif cond_label == "C":
                 searcher = HybridSearch(search_dir)

@@ -82,13 +82,7 @@ class MemoryIndexer:
 
     def _init_embedding_model(self) -> None:
         """Initialize sentence-transformers model."""
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError as e:
-            raise ImportError(
-                "sentence-transformers not installed. "
-                "Run: pip install sentence-transformers"
-            ) from e
+        from sentence_transformers import SentenceTransformer
 
         logger.info("Loading embedding model: %s", self.embedding_model_name)
 

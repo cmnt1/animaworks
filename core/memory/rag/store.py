@@ -113,12 +113,7 @@ class ChromaVectorStore(VectorStore):
             persist_dir: Directory for ChromaDB persistence
                         (defaults to ~/.animaworks/vectordb)
         """
-        try:
-            import chromadb
-        except ImportError as e:
-            raise ImportError(
-                "chromadb not installed. Run: pip install chromadb"
-            ) from e
+        import chromadb
 
         if persist_dir is None:
             from core.paths import get_data_dir

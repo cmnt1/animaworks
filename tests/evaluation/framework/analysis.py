@@ -151,7 +151,7 @@ class StatisticalAnalyzer:
         all_values = list(precision_bm25) + list(precision_vector) + list(precision_hybrid)
         all_labels = (
             ["bm25"] * len(precision_bm25)
-            + ["tfidf"] * len(precision_vector)
+            + ["vector"] * len(precision_vector)
             + ["hybrid"] * len(precision_hybrid)
         )
 
@@ -197,12 +197,12 @@ class StatisticalAnalyzer:
             "significant": bool(p_value < self.alpha),
             "mean_precision": {
                 "bm25": float(np.mean(precision_bm25)),
-                "tfidf": float(np.mean(precision_vector)),
+                "vector": float(np.mean(precision_vector)),
                 "hybrid": float(np.mean(precision_hybrid)),
             },
             "sample_sizes": {
                 "bm25": len(precision_bm25),
-                "tfidf": len(precision_vector),
+                "vector": len(precision_vector),
                 "hybrid": len(precision_hybrid),
             },
         }
