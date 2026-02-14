@@ -350,10 +350,8 @@ class AgentCore:
             trigger, len(prompt), mode,
         )
 
-        # ── Priming: Automatic memory retrieval ────────────────
-        priming_section = await self._run_priming(prompt, trigger)
-
         # ── Mode B: assisted (1-shot, no tools) ──────────
+        # Early return before priming to avoid unnecessary I/O and ripgrep
         if mode == "b":
             result = await self._executor.execute(prompt=prompt, trigger=trigger)
             duration_ms = int((time.monotonic() - start) * 1000)
@@ -367,6 +365,9 @@ class AgentCore:
                 summary=result.text,
                 duration_ms=duration_ms,
             )
+
+        # ── Priming: Automatic memory retrieval ────────────────
+        priming_section = await self._run_priming(prompt, trigger)
 
         shortterm = ShortTermMemory(self.person_dir)
         tracker = ContextTracker(

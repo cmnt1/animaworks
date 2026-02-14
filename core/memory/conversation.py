@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
@@ -338,25 +337,25 @@ class ConversationMemory:
             lines.append(f"[{t.timestamp}] {role}: {t.content}")
         return "\n\n".join(lines)
 
+    async def _call_llm(self, system: str, user_content: str, max_tokens: int = 1000) -> str:
+        """Common LLM helper using litellm for provider-agnostic calls."""
+        import litellm
+
+        model = self.model_config.fallback_model or self.model_config.model
+        response = await litellm.acompletion(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+            max_tokens=max_tokens,
+        )
+        return response.choices[0].message.content or ""
+
     async def _call_compression_llm(
         self, old_summary: str, new_turns: str
     ) -> str:
         """Call the LLM to produce a compressed conversation summary."""
-        import anthropic
-
-        model = self.model_config.fallback_model or self.model_config.model
-        api_key = self.model_config.api_key
-        if not api_key:
-            api_key = os.environ.get(self.model_config.api_key_env)
-
-        client_kwargs: dict[str, str] = {}
-        if api_key:
-            client_kwargs["api_key"] = api_key
-        if self.model_config.api_base_url:
-            client_kwargs["base_url"] = self.model_config.api_base_url
-
-        client = anthropic.AsyncAnthropic(**client_kwargs)
-
         system = (
             "あなたは会話の要約者です。以下の会話を簡潔に要約してください。\n"
             "保持すべき情報:\n"
@@ -379,20 +378,13 @@ class ConversationMemory:
         user_content += f"## 新しい会話ターン\n\n{new_turns}\n\n"
         user_content += "上記を統合した新しい要約を作成してください。"
 
-        response = await client.messages.create(
-            model=model,
-            max_tokens=2000,
-            system=system,
-            messages=[{"role": "user", "content": user_content}],
-        )
-
-        return "\n".join(b.text for b in response.content if b.type == "text")
+        return await self._call_llm(system, user_content, max_tokens=2000)
 
     # ── Session finalization (automatic episode recording) ─────
 
     async def finalize_session(
         self,
-        min_turns: int = 2,
+        min_turns: int = 3,
     ) -> bool:
         """Finalize the current conversation session.
 
@@ -431,11 +423,12 @@ class ConversationMemory:
         timestamp = datetime.now()
         time_str = timestamp.strftime("%H:%M")
 
-        # Extract title from summary (first line, up to 50 chars)
-        summary_lines = summary.strip().splitlines()
-        title = summary_lines[0][:50] if summary_lines else "会話"
+        # Extract title (first line) and body (rest) from summary
+        lines = summary.strip().splitlines()
+        title = lines[0][:50] if lines else "会話"
+        body = "\n".join(lines[1:]).strip() if len(lines) > 1 else summary
 
-        episode_entry = f"## {time_str} — {title}\n\n{summary}\n"
+        episode_entry = f"## {time_str} — {title}\n\n{body}\n"
         memory_mgr.append_episode(episode_entry)
 
         logger.info(
@@ -452,27 +445,13 @@ class ConversationMemory:
         Uses a cheap model (fallback_model or main model) to generate
         a structured summary of the conversation.
         """
-        import anthropic
-
-        model = self.model_config.fallback_model or self.model_config.model
-        api_key = self.model_config.api_key
-        if not api_key:
-            api_key = os.environ.get(self.model_config.api_key_env)
-
-        client_kwargs: dict[str, str] = {}
-        if api_key:
-            client_kwargs["api_key"] = api_key
-        if self.model_config.api_base_url:
-            client_kwargs["base_url"] = self.model_config.api_base_url
-
-        client = anthropic.AsyncAnthropic(**client_kwargs)
-
         # Format turns for summarization
         conversation_text = self._format_turns_for_compression(turns)
 
         system = (
             "あなたは会話記録の要約者です。以下の会話をエピソード記憶として記録するための要約を作成してください。\n\n"
-            "出力形式:\n"
+            "出力形式（最初の行はタイトルとして使います）:\n"
+            "{会話の要約タイトル（20文字以内）}\n\n"
             "**相手**: {相手の名前}\n"
             "**トピック**: {主なトピック、カンマ区切り}\n"
             "**要点**:\n"
@@ -483,11 +462,4 @@ class ConversationMemory:
             "日本語で、簡潔に、事実を中心に記述してください。"
         )
 
-        response = await client.messages.create(
-            model=model,
-            max_tokens=1000,
-            system=system,
-            messages=[{"role": "user", "content": conversation_text}],
-        )
-
-        return "\n".join(b.text for b in response.content if b.type == "text")
+        return await self._call_llm(system, conversation_text)

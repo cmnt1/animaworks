@@ -275,26 +275,27 @@ def patch_agent_sdk_streaming(
                 sys.modules[key] = saved_modules[key]
 
 
-# ── anthropic mocks (for conversation compression) ────────
+# ── conversation compression mocks ────────────────────────
 
 
 @contextmanager
 def patch_anthropic_compression(summary_text: str = "Compressed summary."):
-    """Patch ``anthropic.AsyncAnthropic`` for conversation compression tests."""
-    mock_text_block = MagicMock()
-    mock_text_block.type = "text"
-    mock_text_block.text = summary_text
+    """Patch ``litellm.acompletion`` for conversation compression tests.
 
-    mock_response = MagicMock()
-    mock_response.content = [mock_text_block]
+    Now uses litellm instead of anthropic.AsyncAnthropic.
+    """
+    mock_response = make_litellm_response(content=summary_text)
+    mock_acompletion = AsyncMock(return_value=mock_response)
 
-    mock_messages = AsyncMock()
-    mock_messages.create = AsyncMock(return_value=mock_response)
+    saved = sys.modules.get("litellm")
+    if saved is None:
+        mock_mod = MagicMock()
+        mock_mod.acompletion = mock_acompletion
+        sys.modules["litellm"] = mock_mod
 
-    mock_client = MagicMock()
-    mock_client.messages = mock_messages
-
-    mock_constructor = MagicMock(return_value=mock_client)
-
-    with patch("anthropic.AsyncAnthropic", mock_constructor):
-        yield mock_constructor
+    try:
+        with patch("litellm.acompletion", mock_acompletion):
+            yield mock_acompletion
+    finally:
+        if saved is None:
+            sys.modules.pop("litellm", None)

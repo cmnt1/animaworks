@@ -17,10 +17,11 @@ Based on: docs/design/priming-layer-design.md Phase 1
 import asyncio
 import logging
 import re
-import subprocess
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
+
+from core.tools._async_compat import run_sync
 
 logger = logging.getLogger("animaworks.priming")
 
@@ -106,7 +107,7 @@ class PrimingEngine:
         message: str,
         sender_name: str = "human",
         channel: str = "chat",
-        enable_dynamic_budget: bool = True,
+        enable_dynamic_budget: bool = False,
     ) -> PrimingResult:
         """Prime memories based on incoming message.
 
@@ -164,9 +165,9 @@ class PrimingEngine:
         budget_skills = int(_BUDGET_SKILL_MATCH * (token_budget / _DEFAULT_MAX_PRIMING_TOKENS))
 
         result = PrimingResult(
-            sender_profile=self._truncate(sender_profile, budget_profile),
-            recent_episodes=self._truncate(recent_episodes, budget_episodes),
-            related_knowledge=self._truncate(related_knowledge, budget_knowledge),
+            sender_profile=self._truncate_head(sender_profile, budget_profile),
+            recent_episodes=self._truncate_tail(recent_episodes, budget_episodes),
+            related_knowledge=self._truncate_head(related_knowledge, budget_knowledge),
             matched_skills=matched_skills[:max(1, budget_skills // 50)],  # ~50 tokens per skill name
         )
 
@@ -200,7 +201,7 @@ class PrimingEngine:
             return ""
 
         try:
-            content = profile_path.read_text(encoding="utf-8")
+            content = await run_sync(profile_path.read_text, encoding="utf-8")
             logger.debug(
                 "Channel A: Loaded sender profile for %s (%d chars)",
                 sender_name,
@@ -232,7 +233,7 @@ class PrimingEngine:
                 continue
 
             try:
-                content = path.read_text(encoding="utf-8")
+                content = await run_sync(path.read_text, encoding="utf-8")
                 # Take last N lines (most recent)
                 lines = content.strip().splitlines()
                 # Limit to ~30 lines per day to avoid overwhelming
@@ -322,35 +323,40 @@ class PrimingEngine:
         pattern = "|".join(escaped_keywords)
 
         try:
-            # Run ripgrep with context lines
-            result = subprocess.run(
-                [
-                    "rg",
-                    "--ignore-case",
-                    "--context", "2",  # Include 2 lines before/after match
-                    "--max-count", "3",  # Max 3 matches per file
-                    "--no-heading",
-                    "--with-filename",
-                    pattern,
-                    str(self.knowledge_dir),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=2.0,  # 2 second timeout
+            # Run ripgrep asynchronously to avoid blocking the event loop
+            proc = await asyncio.create_subprocess_exec(
+                "rg",
+                "--ignore-case",
+                "--context", "2",  # Include 2 lines before/after match
+                "--max-count", "3",  # Max 3 matches per file
+                "--no-heading",
+                "--with-filename",
+                pattern,
+                str(self.knowledge_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
 
-            if result.returncode == 0 and result.stdout:
-                logger.debug(
-                    "Channel C: Found BM25 matches (%d chars)", len(result.stdout)
+            try:
+                stdout, _ = await asyncio.wait_for(
+                    proc.communicate(), timeout=2.0,
                 )
-                return result.stdout
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                logger.warning("Channel C: ripgrep timeout")
+                return ""
+
+            if proc.returncode == 0 and stdout:
+                output = stdout.decode("utf-8", errors="replace")
+                logger.debug(
+                    "Channel C: Found BM25 matches (%d chars)", len(output)
+                )
+                return output
             else:
                 logger.debug("Channel C: No BM25 matches found")
                 return ""
 
-        except subprocess.TimeoutExpired:
-            logger.warning("Channel C: ripgrep timeout")
-            return ""
         except FileNotFoundError:
             logger.warning("Channel C: ripgrep not found, falling back to Python search")
             return await self._fallback_knowledge_search(keywords)
@@ -401,32 +407,56 @@ class PrimingEngine:
         """Channel D: Skill filename matching.
 
         Returns list of skill names (not full content) that match keywords.
+        Searches both personal skills/ and common_skills/ directories.
         """
-        if not self.skills_dir.is_dir() or not keywords:
+        if not keywords:
             return []
+
+        from core.paths import get_common_skills_dir
 
         matched: list[str] = []
         keywords_lower = [kw.lower() for kw in keywords]
 
+        # Collect skill directories to search
+        skill_dirs: list[Path] = []
+        if self.skills_dir.is_dir():
+            skill_dirs.append(self.skills_dir)
+        common_dir = get_common_skills_dir()
+        if common_dir.is_dir():
+            skill_dirs.append(common_dir)
+
+        if not skill_dirs:
+            return []
+
         try:
-            for skill_file in self.skills_dir.glob("*.md"):
-                skill_name = skill_file.stem
+            for skills_dir in skill_dirs:
+                for skill_file in skills_dir.glob("*.md"):
+                    skill_name = skill_file.stem
 
-                # Match against filename
-                if any(kw in skill_name.lower() for kw in keywords_lower):
-                    matched.append(skill_name)
-                    continue
+                    # Skip duplicates (personal skills take precedence)
+                    if skill_name in matched:
+                        continue
 
-                # Match against first few lines of file
-                try:
-                    content = skill_file.read_text(encoding="utf-8")
-                    first_lines = "\n".join(content.splitlines()[:10]).lower()
-                    if any(kw in first_lines for kw in keywords_lower):
+                    # Match against filename
+                    if any(kw in skill_name.lower() for kw in keywords_lower):
                         matched.append(skill_name)
-                except Exception:
-                    pass
+                        continue
 
-                if len(matched) >= 5:  # Limit to 5 skills
+                    # Match against first few lines of file
+                    try:
+                        content = await run_sync(
+                            skill_file.read_text, encoding="utf-8",
+                        )
+                        first_lines = "\n".join(content.splitlines()[:10]).lower()
+                        if any(kw in first_lines for kw in keywords_lower):
+                            matched.append(skill_name)
+                    except Exception:
+                        pass
+
+                    if len(matched) >= 5:  # Limit to 5 skills
+                        break
+
+                if len(matched) >= 5:
                     break
 
         except Exception as e:
@@ -504,7 +534,11 @@ class PrimingEngine:
     # ── Helpers ──────────────────────────────────────────────────
 
     def _extract_keywords(self, message: str) -> list[str]:
-        """Extract keywords from message (simple rule-based for Phase 1).
+        """Extract keywords from message with 3-stage extraction.
+
+        1. Proper noun patterns (katakana sequences, capitalized English words)
+        2. Known entity matching (knowledge/ filenames)
+        3. General keywords (stopword-filtered)
 
         Future: Use morphological analysis (MeCab/Sudachi) for better quality.
         """
@@ -519,21 +553,46 @@ class PrimingEngine:
             "do", "does", "did", "will", "would", "should", "could",
         }
 
+        # 1. Proper nouns: katakana sequences (2+ chars)
+        katakana_words = re.findall(r"[\u30A0-\u30FF]{2,}", message)
+
+        # 2. Known entities: match against knowledge/ filenames
+        known_entities: set[str] = set()
+        if self.knowledge_dir.is_dir():
+            known_entities = {f.stem.lower() for f in self.knowledge_dir.glob("*.md")}
+
         # Split on whitespace and punctuation, keep alphanumeric + Japanese
         words = re.findall(r"[\w\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+", message)
 
         # Filter stopwords and short words
-        keywords = [
+        general_keywords = [
             w for w in words
             if len(w) >= 2 and w.lower() not in stopwords
         ]
 
-        # Return top 10 by length (heuristic: longer words = more specific)
-        keywords.sort(key=len, reverse=True)
-        return keywords[:10]
+        # Entity matches from general keywords
+        entity_matches = [w for w in general_keywords if w.lower() in known_entities]
 
-    def _truncate(self, text: str, max_tokens: int) -> str:
-        """Truncate text to stay within token budget."""
+        # Sort general keywords by length (longer = more specific)
+        general_keywords.sort(key=len, reverse=True)
+
+        # Combine: entity_matches + katakana_words + general keywords (deduplicated)
+        seen: set[str] = set()
+        combined: list[str] = []
+        for w in entity_matches + katakana_words + general_keywords:
+            w_lower = w.lower()
+            if w_lower not in seen:
+                seen.add(w_lower)
+                combined.append(w)
+
+        return combined[:10]
+
+    def _truncate_head(self, text: str, max_tokens: int) -> str:
+        """Truncate text keeping the head (front), cutting from the tail.
+
+        Suitable for sender profiles (basic info at the top) and
+        ripgrep results (best matches first).
+        """
         max_chars = max_tokens * _CHARS_PER_TOKEN
         if len(text) <= max_chars:
             return text
@@ -549,6 +608,24 @@ class PrimingEngine:
             return truncated[:last_period + 1]
 
         return truncated + "..."
+
+    def _truncate_tail(self, text: str, max_tokens: int) -> str:
+        """Truncate text keeping the tail (end), cutting from the head.
+
+        Suitable for recent episodes where newest entries are most relevant.
+        """
+        max_chars = max_tokens * _CHARS_PER_TOKEN
+        if len(text) <= max_chars:
+            return text
+
+        # Keep the tail portion
+        truncated = text[-max_chars:]
+        # Try to start at a clean boundary
+        first_newline = truncated.find("\n")
+        if first_newline != -1 and first_newline < max_chars * 0.2:
+            return truncated[first_newline + 1:]
+
+        return "..." + truncated
 
 
 # ── Public API ──────────────────────────────────────────────────

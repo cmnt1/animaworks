@@ -162,6 +162,9 @@ class DigitalPerson:
                     conv_memory.append_turn("assistant", result.summary)
                     conv_memory.save()
 
+                    # Fire-and-forget: episode recording
+                    asyncio.create_task(conv_memory.finalize_session(min_turns=3))
+
                     logger.info(
                         "[%s] process_message END duration_ms=%d",
                         self.name, result.duration_ms,
@@ -215,6 +218,12 @@ class DigitalPerson:
                             conv_memory.append_turn("human", content)
                             conv_memory.append_turn("assistant", summary)
                             conv_memory.save()
+
+                            # Fire-and-forget: episode recording
+                            asyncio.create_task(
+                                conv_memory.finalize_session(min_turns=3)
+                            )
+
                             logger.info(
                                 "[%s] process_message_stream END",
                                 self.name,

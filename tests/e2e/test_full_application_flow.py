@@ -194,8 +194,34 @@ merged-knowledge.md
 Combined content from both files with duplicates removed.
 """
             elif "圧縮" in prompt or "要約" in prompt:
-                # Episode compression response
-                content = """## 要約
+                # Episode/session summary response
+                # Check user content for topic-specific keywords
+                user_content = messages[-1].get("content", "") if len(messages) > 1 else ""
+                if "microservices" in user_content.lower() or "architecture" in user_content.lower():
+                    content = """マイクロサービスアーキテクチャの進捗確認
+
+**相手**: developer
+**トピック**: microservices, architecture, FastAPI, PostgreSQL
+**要点**:
+- マイクロサービスアーキテクチャの進捗は順調
+- FastAPI + PostgreSQL + Redis を使用
+**決定事項**: なし
+**未解決**: なし
+"""
+                elif "task x" in user_content.lower() or "help" in user_content.lower():
+                    content = """タスクXのサポート依頼
+
+**相手**: human
+**トピック**: task X, help
+**要点**:
+- タスクXについてサポート依頼があった
+- 手順のガイドを提供した
+**決定事項**: なし
+**未解決**: なし
+"""
+                else:
+                    content = """会話の要約
+
 - Completed main tasks
 - Attended meetings
 - Updated documentation
@@ -325,16 +351,17 @@ Senior Software Engineer
     # Verify prompt contains conversation context
     assert prompt != ""
 
-    # Step 4: Simulate agent response
+    # Step 4: Simulate agent response (3+ turns needed for finalize_session)
     conv_memory.append_turn("human", message)
     conv_memory.append_turn(
         "assistant",
         "The microservices architecture is progressing well. "
         "We're using FastAPI with PostgreSQL and Redis."
     )
+    conv_memory.append_turn("human", "What about the PostgreSQL migration?")
     conv_memory.save()
 
-    # Step 5: Finalize session (triggers encoding)
+    # Step 5: Finalize session (triggers encoding; min_turns=3 by default)
     await conv_memory.finalize_session()
 
     # Step 6: Verify encoding to episodes
@@ -1044,7 +1071,7 @@ async def test_consolidation_with_insufficient_episodes(full_person_environment,
 
 
 @pytest.mark.asyncio
-async def test_conversation_finalization_creates_episode(full_person_environment):
+async def test_conversation_finalization_creates_episode(full_person_environment, mock_llm):
     """Test that conversation finalization creates episode entry."""
     env = full_person_environment
     person_dir = env["person_dir"]

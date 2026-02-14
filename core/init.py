@@ -131,7 +131,9 @@ def merge_templates(data_dir: Path) -> list[str]:
         if rel.name == "bootstrap.md" and len(parts) == 1:
             continue
         dest = data_dir / rel
-        if not dest.exists():
+        # prompts/ files are always overwritten to keep them in sync
+        is_prompt = parts[0] == "prompts"
+        if is_prompt or not dest.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
             added.append(str(rel))

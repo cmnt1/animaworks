@@ -184,6 +184,7 @@ class TestProcessMessage:
              patch("core.person.ConversationMemory") as MockConv:
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
+            MockConv.return_value.finalize_session = AsyncMock(return_value=False)
             MockConv.return_value.build_chat_prompt.return_value = "prompt"
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
@@ -206,6 +207,7 @@ class TestProcessMessage:
              patch("core.person.ConversationMemory") as MockConv:
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
+            MockConv.return_value.finalize_session = AsyncMock(return_value=False)
             MockConv.return_value.build_chat_prompt.return_value = "prompt"
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
@@ -234,6 +236,7 @@ class TestProcessMessage:
              patch("core.person.ConversationMemory") as MockConv:
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
+            MockConv.return_value.finalize_session = AsyncMock(return_value=False)
             MockConv.return_value.build_chat_prompt.return_value = "prompt"
 
             from core.person import DigitalPerson
