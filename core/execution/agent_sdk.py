@@ -71,6 +71,7 @@ class AgentSDKExecutor(BaseExecutor):
         """
         env: dict[str, str] = {
             "ANIMAWORKS_PERSON_DIR": str(self._person_dir),
+            "CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT": "true",
         }
         api_key = self._resolve_api_key()
         if api_key:

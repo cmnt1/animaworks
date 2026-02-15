@@ -77,6 +77,13 @@ class TestAgentSDKExecutor:
             assert env["ANTHROPIC_API_KEY"] == "sk-test"
             assert env["ANTHROPIC_BASE_URL"] == "https://custom.api"
 
+    def test_build_env_disables_skill_improvement(self, model_config, person_dir):
+        with patch_agent_sdk():
+            from core.execution.agent_sdk import AgentSDKExecutor
+            executor = AgentSDKExecutor(model_config=model_config, person_dir=person_dir)
+            env = executor._build_env()
+            assert env.get("CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT") == "true"
+
     def test_build_env_no_api_key(self, person_dir):
         config = ModelConfig(model="test", api_key=None, api_key_env="NONEXISTENT_XYZ")
         with patch_agent_sdk():

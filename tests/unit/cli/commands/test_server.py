@@ -180,8 +180,64 @@ class TestCmdStart:
         cmd_start(args)
 
         mock_uvicorn.assert_called_once_with(
-            mock_app, host="0.0.0.0", port=18500, log_level="info"
+            mock_app,
+            host="0.0.0.0",
+            port=18500,
+            log_level="info",
+            timeout_keep_alive=65,
+            ws_ping_interval=25,
+            ws_ping_timeout=5,
         )
+
+
+    @patch("cli.commands.server._remove_pid_file")
+    @patch("uvicorn.run")
+    @patch("server.app.create_app")
+    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
+    @patch("core.paths.get_persons_dir", return_value=Path("/tmp/persons"))
+    @patch("core.init.ensure_runtime_dir")
+    @patch("cli.commands.server._write_pid_file")
+    @patch("cli.commands.server._read_pid", return_value=None)
+    def test_uvicorn_timeout_keep_alive(
+        self, mock_pid, mock_write_pid,
+        mock_ensure, mock_persons, mock_shared, mock_create, mock_uvicorn,
+        mock_remove,
+    ):
+        from cli.commands.server import cmd_start
+
+        mock_app = MagicMock()
+        mock_create.return_value = mock_app
+
+        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        cmd_start(args)
+
+        call_kwargs = mock_uvicorn.call_args
+        assert call_kwargs.kwargs.get("timeout_keep_alive") == 65
+
+    @patch("cli.commands.server._remove_pid_file")
+    @patch("uvicorn.run")
+    @patch("server.app.create_app")
+    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
+    @patch("core.paths.get_persons_dir", return_value=Path("/tmp/persons"))
+    @patch("core.init.ensure_runtime_dir")
+    @patch("cli.commands.server._write_pid_file")
+    @patch("cli.commands.server._read_pid", return_value=None)
+    def test_uvicorn_ws_ping_settings(
+        self, mock_pid, mock_write_pid,
+        mock_ensure, mock_persons, mock_shared, mock_create, mock_uvicorn,
+        mock_remove,
+    ):
+        from cli.commands.server import cmd_start
+
+        mock_app = MagicMock()
+        mock_create.return_value = mock_app
+
+        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        cmd_start(args)
+
+        call_kwargs = mock_uvicorn.call_args
+        assert call_kwargs.kwargs.get("ws_ping_interval") == 25
+        assert call_kwargs.kwargs.get("ws_ping_timeout") == 5
 
 
 # ── cmd_serve ────────────────────────────────────────────

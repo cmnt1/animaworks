@@ -146,7 +146,15 @@ def cmd_start(args: argparse.Namespace) -> None:
 
     try:
         app = create_app(get_persons_dir(), get_shared_dir())
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            log_level="info",
+            timeout_keep_alive=65,
+            ws_ping_interval=25,
+            ws_ping_timeout=5,
+        )
     finally:
         _remove_pid_file()
 
