@@ -264,12 +264,12 @@ class PrimingEngine:
 
         try:
             from core.memory.rag import MemoryRetriever
-            from core.memory.rag.store import ChromaVectorStore
+            from core.memory.rag.singleton import get_vector_store
             from core.memory.rag.indexer import MemoryIndexer
 
             # Initialize RAG components if not already done
             if not hasattr(self, "_retriever"):
-                vector_store = ChromaVectorStore()
+                vector_store = get_vector_store()
                 person_name = self.person_dir.name
                 indexer = MemoryIndexer(vector_store, person_name, self.person_dir)
                 self._retriever = MemoryRetriever(

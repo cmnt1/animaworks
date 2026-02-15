@@ -57,13 +57,15 @@ class MemoryManager:
         """Initialize RAG indexer if dependencies are available.
 
         Called lazily by ``_get_indexer()`` on first access.
+        Uses process-level singletons for ChromaVectorStore and embedding
+        model to avoid costly repeated initialization.
         """
         self._indexer_initialized = True
         try:
             from core.memory.rag import MemoryIndexer
-            from core.memory.rag.store import ChromaVectorStore
+            from core.memory.rag.singleton import get_vector_store
 
-            vector_store = ChromaVectorStore()
+            vector_store = get_vector_store()
             person_name = self.person_dir.name
             self._indexer = MemoryIndexer(vector_store, person_name, self.person_dir)
             logger.debug("RAG indexer initialized for person=%s", person_name)
