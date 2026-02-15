@@ -27,10 +27,13 @@ export function renderChat() {
       } else if (m.streaming) {
         content = '<span class="cursor-blink"></span>';
       }
+      const bootstrapHtml = m.bootstrapping
+        ? `<div class="bootstrap-indicator"><span class="tool-spinner"></span>初期化中...</div>`
+        : "";
       const toolHtml = m.activeTool
         ? `<div class="tool-indicator"><span class="tool-spinner"></span>${escapeHtml(m.activeTool)} を実行中...</div>`
         : "";
-      return `<div class="chat-bubble assistant${streamClass}">${content}${toolHtml}</div>`;
+      return `<div class="chat-bubble assistant${streamClass}">${content}${bootstrapHtml}${toolHtml}</div>`;
     }
     return `<div class="chat-bubble user">${escapeHtml(m.text)}</div>`;
   }).join("");
@@ -81,6 +84,10 @@ function renderStreamingBubble(msg) {
     }
   } else {
     html = '<span class="cursor-blink"></span>';
+  }
+
+  if (msg.bootstrapping) {
+    html += `<div class="bootstrap-indicator"><span class="tool-spinner"></span>初期化中...</div>`;
   }
 
   if (msg.activeTool) {
@@ -149,6 +156,22 @@ export async function sendChat(message) {
           case "tool_end":
             streamingMsg.activeTool = null;
             renderStreamingBubble(streamingMsg);
+            break;
+
+          case "bootstrap":
+            if (evt.data.status === "started") {
+              streamingMsg.bootstrapping = true;
+              renderStreamingBubble(streamingMsg);
+            } else if (evt.data.status === "completed") {
+              streamingMsg.bootstrapping = false;
+              renderStreamingBubble(streamingMsg);
+            } else if (evt.data.status === "busy") {
+              streamingMsg.text = evt.data.message || "現在初期化中です。しばらくお待ちください。";
+              streamingMsg.streaming = false;
+              streamingMsg.bootstrapping = false;
+              renderChat();
+              addActivity("system", name, "ブートストラップ中のため応答保留");
+            }
             break;
 
           case "chain_start":

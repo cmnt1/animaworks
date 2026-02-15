@@ -252,3 +252,17 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── Bootstrap Indicator ─────────────────── */
+
+.bootstrap-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  background: #dbeafe;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: #1e40af;
+}

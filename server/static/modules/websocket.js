@@ -102,6 +102,49 @@ function handleWsMessage(raw) {
       break;
     }
 
+    case "chat.response": {
+      const personName = data.person || data.name;
+      const response = data.response || data.message;
+      if (personName && response) {
+        if (state.chatHistories[personName]) {
+          const history = state.chatHistories[personName];
+          const isStreaming = history.some((m) => m.streaming);
+          if (isStreaming) break;
+          const thinkIdx = history.findIndex((m) => m.role === "thinking");
+          if (thinkIdx !== -1) history.splice(thinkIdx, 1);
+          const last = history[history.length - 1];
+          if (!last || last.text !== response) {
+            history.push({ role: "assistant", text: response });
+          }
+          if (personName === state.selectedPerson) renderChat();
+        }
+        addActivity("chat", personName, `応答: ${response.slice(0, 100)}`);
+      }
+      break;
+    }
+
+    case "person.bootstrap": {
+      const personName = data.name;
+      const bsStatus = data.status;
+      if (personName) {
+        if (bsStatus === "started") {
+          const existing = state.persons.find((p) => p.name === personName);
+          if (existing) existing.status = "bootstrapping";
+          renderPersonDropdown();
+          addActivity("system", personName, "ブートストラップ開始");
+        } else if (bsStatus === "completed") {
+          const existing = state.persons.find((p) => p.name === personName);
+          if (existing) existing.status = "idle";
+          renderPersonDropdown();
+          addActivity("system", personName, "ブートストラップ完了");
+          if (personName === state.selectedPerson) {
+            refreshSelectedPerson();
+          }
+        }
+      }
+      break;
+    }
+
     case "person.assets_updated": {
       const personName = data.name;
       if (personName) {

@@ -202,7 +202,20 @@ class PersonRunner:
         from_person = request.params.get("from_person", "human")
         full_response = ""
 
+        # Track bootstrap state to detect completion
+        was_bootstrapping = self.person.needs_bootstrap
+
         try:
+            # Emit bootstrap_start if person needs bootstrap
+            if was_bootstrapping:
+                yield IPCResponse(
+                    id=request.id,
+                    stream=True,
+                    chunk=json.dumps(
+                        {"type": "bootstrap_start"}, ensure_ascii=False,
+                    ),
+                )
+
             async for chunk in self.person.process_message_stream(
                 message, from_person=from_person
             ):
@@ -220,6 +233,18 @@ class PersonRunner:
                 elif event_type == "cycle_done":
                     cycle_result = chunk.get("cycle_result", {})
                     full_response = cycle_result.get("summary", full_response)
+
+                    # Emit bootstrap_complete if bootstrap just finished
+                    if was_bootstrapping and not self.person.needs_bootstrap:
+                        yield IPCResponse(
+                            id=request.id,
+                            stream=True,
+                            chunk=json.dumps(
+                                {"type": "bootstrap_complete"},
+                                ensure_ascii=False,
+                            ),
+                        )
+
                     yield IPCResponse(
                         id=request.id,
                         stream=True,
@@ -231,6 +256,14 @@ class PersonRunner:
                         }
                     )
                     return
+
+                elif event_type == "bootstrap_busy":
+                    # Person is already bootstrapping — forward as-is
+                    yield IPCResponse(
+                        id=request.id,
+                        stream=True,
+                        chunk=json.dumps(chunk, ensure_ascii=False),
+                    )
 
                 elif event_type == "error":
                     yield IPCResponse(

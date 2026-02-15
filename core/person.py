@@ -200,7 +200,21 @@ class DigitalPerson:
         """Streaming version of process_message.
 
         Yields stream event dicts. The lock is held for the entire duration.
+        If bootstrapping is in progress (lock held + needs_bootstrap), yields
+        an immediate "initializing" message instead of waiting.
         """
+        # ── Bootstrap guard: return immediately if bootstrap is running ──
+        if self.needs_bootstrap and self._lock.locked():
+            logger.info(
+                "[%s] process_message_stream REJECTED (bootstrapping) from=%s",
+                self.name, from_person,
+            )
+            yield {
+                "type": "bootstrap_busy",
+                "message": "現在初期化中です。しばらくお待ちください。",
+            }
+            return
+
         logger.info(
             "[%s] process_message_stream WAITING from=%s content_len=%d",
             self.name, from_person, len(content),

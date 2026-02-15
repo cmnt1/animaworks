@@ -73,8 +73,18 @@ def extract_emotion(response_text: str) -> tuple[str, str]:
         return clean_text, "neutral"
 
 
-def _handle_chunk(chunk: dict[str, Any]) -> tuple[str | None, str]:
+def _handle_chunk(
+    chunk: dict[str, Any],
+    *,
+    request: Request | None = None,
+    person_name: str | None = None,
+) -> tuple[str | None, str]:
     """Map a stream chunk to an SSE event name and extract response text.
+
+    Args:
+        chunk: Stream chunk dictionary.
+        request: FastAPI Request (optional, for emitting WebSocket events).
+        person_name: Person name (optional, for WebSocket event data).
 
     Returns:
         Tuple of (sse_frame_or_None, accumulated_response_text).
@@ -98,6 +108,30 @@ def _handle_chunk(chunk: dict[str, Any]) -> tuple[str | None, str]:
 
     if event_type == "chain_start":
         return _format_sse("chain_start", {"chain": chunk["chain"]}), ""
+
+    if event_type == "bootstrap_start":
+        if request and person_name:
+            import asyncio
+            asyncio.ensure_future(emit(
+                request, "person.bootstrap",
+                {"name": person_name, "status": "started"},
+            ))
+        return _format_sse("bootstrap", {"status": "started"}), ""
+
+    if event_type == "bootstrap_complete":
+        if request and person_name:
+            import asyncio
+            asyncio.ensure_future(emit(
+                request, "person.bootstrap",
+                {"name": person_name, "status": "completed"},
+            ))
+        return _format_sse("bootstrap", {"status": "completed"}), ""
+
+    if event_type == "bootstrap_busy":
+        return _format_sse("bootstrap", {
+            "status": "busy",
+            "message": chunk.get("message", "初期化中です"),
+        }), ""
 
     if event_type == "cycle_done":
         cycle_result = chunk.get("cycle_result", {})
@@ -130,7 +164,9 @@ async def _stream_events(
         async for chunk in person.process_message_stream(
             body.message, from_person=body.from_person
         ):
-            frame, response_text = _handle_chunk(chunk)
+            frame, response_text = _handle_chunk(
+                chunk, request=request, person_name=name,
+            )
             if response_text:
                 full_response = response_text
             if frame:
@@ -256,7 +292,11 @@ def create_chat_router() -> APIRouter:
                         # Parse the chunk JSON from the IPC layer
                         try:
                             chunk_data = json.loads(ipc_response.chunk)
-                            frame, response_text = _handle_chunk(chunk_data)
+                            frame, response_text = _handle_chunk(
+                                chunk_data,
+                                request=request,
+                                person_name=name,
+                            )
                             if response_text:
                                 full_response = response_text
                             if frame:

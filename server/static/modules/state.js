@@ -48,7 +48,7 @@ export function statusClass(status) {
   if (!status) return "status-offline";
   const s = status.toLowerCase();
   if (s === "idle" || s === "running") return "status-idle";
-  if (s === "thinking" || s === "processing" || s === "busy") return "status-thinking";
+  if (s === "thinking" || s === "processing" || s === "busy" || s === "bootstrapping") return "status-thinking";
   if (s === "error") return "status-error";
   return "status-offline";
 }
