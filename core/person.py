@@ -214,14 +214,17 @@ class DigitalPerson:
                 await conv_memory.compress_if_needed()
                 prompt = conv_memory.build_chat_prompt(content, from_person)
 
+                # Pre-save: persist user input before agent execution
+                conv_memory.append_turn("human", content)
+                conv_memory.save()
+
                 try:
                     result = await self.agent.run_cycle(
                         prompt, trigger=f"message:{from_person}"
                     )
                     self._last_activity = datetime.now()
 
-                    # Record the exchange in conversation memory
-                    conv_memory.append_turn("human", content)
+                    # Record assistant response in conversation memory
                     conv_memory.append_turn("assistant", result.summary)
                     conv_memory.save()
 
@@ -235,6 +238,11 @@ class DigitalPerson:
                     return result.summary
                 except Exception:
                     logger.exception("[%s] process_message FAILED", self.name)
+                    # Save error marker so the failed exchange is visible
+                    conv_memory.append_turn(
+                        "assistant", "[ERROR: エージェント実行中にエラーが発生しました]"
+                    )
+                    conv_memory.save()
                     raise
                 finally:
                     self._status = "idle"
@@ -283,16 +291,26 @@ class DigitalPerson:
                 await conv_memory.compress_if_needed()
                 prompt = conv_memory.build_chat_prompt(content, from_person)
 
+                # Pre-save: persist user input before agent execution
+                conv_memory.append_turn("human", content)
+                conv_memory.save()
+
+                partial_response = ""
+                cycle_done = False
+
                 try:
                     async for chunk in self.agent.run_cycle_streaming(
                         prompt, trigger=f"message:{from_person}"
                     ):
+                        if chunk.get("type") == "text_delta":
+                            partial_response += chunk.get("text", "")
+
                         if chunk.get("type") == "cycle_done":
+                            cycle_done = True
                             self._last_activity = datetime.now()
-                            # Record the exchange in conversation memory
+                            # Record assistant response in conversation memory
                             cycle_result = chunk.get("cycle_result", {})
                             summary = cycle_result.get("summary", "")
-                            conv_memory.append_turn("human", content)
                             conv_memory.append_turn("assistant", summary)
                             conv_memory.save()
 
@@ -308,6 +326,14 @@ class DigitalPerson:
                         yield chunk
                 except Exception:
                     logger.exception("[%s] process_message_stream FAILED", self.name)
+                    # Save partial response if available and cycle not completed
+                    if not cycle_done:
+                        error_content = partial_response or ""
+                        if error_content:
+                            error_content += "\n"
+                        error_content += "[ERROR: ストリーミング中にエラーが発生しました]"
+                        conv_memory.append_turn("assistant", error_content)
+                        conv_memory.save()
                     yield {"type": "error", "message": "Internal error"}
                 finally:
                     self._status = "idle"
@@ -356,6 +382,8 @@ class DigitalPerson:
             self._status = "greeting"
             self._current_task = "Greeting user"
 
+            conv_memory = ConversationMemory(self.person_dir, self.model_config)
+
             try:
                 result = await self.agent.run_cycle(
                     prompt, trigger="greet:user",
@@ -380,7 +408,6 @@ class DigitalPerson:
                     emotion = "neutral"
 
                 # Record only assistant turn in conversation memory
-                conv_memory = ConversationMemory(self.person_dir, self.model_config)
                 conv_memory.append_turn("assistant", clean_text)
                 conv_memory.save()
 
@@ -400,6 +427,11 @@ class DigitalPerson:
                 }
             except Exception:
                 logger.exception("[%s] process_greet FAILED", self.name)
+                # Save error marker in conversation memory
+                conv_memory.append_turn(
+                    "assistant", "[ERROR: 挨拶生成中にエラーが発生しました]"
+                )
+                conv_memory.save()
                 raise
             finally:
                 self._status = prev_status
