@@ -384,9 +384,9 @@ class ConsolidationEngine:
 
         try:
             from core.memory.rag import MemoryIndexer
-            from core.memory.rag.store import ChromaVectorStore
+            from core.memory.rag.singleton import get_vector_store
 
-            vector_store = ChromaVectorStore()
+            vector_store = get_vector_store()
             indexer = MemoryIndexer(vector_store, self.person_name, self.person_dir)
 
             for filename in filenames:
@@ -489,9 +489,9 @@ class ConsolidationEngine:
         """
         try:
             from core.memory.rag import MemoryRetriever
-            from core.memory.rag.store import ChromaVectorStore
+            from core.memory.rag.singleton import get_vector_store
 
-            vector_store = ChromaVectorStore()
+            vector_store = get_vector_store()
             retriever = MemoryRetriever(vector_store, self.person_name, self.person_dir)
 
             # Get all knowledge files
@@ -737,9 +737,9 @@ class ConsolidationEngine:
         """Rebuild RAG index for all knowledge and episode files."""
         try:
             from core.memory.rag import MemoryIndexer
-            from core.memory.rag.store import ChromaVectorStore
+            from core.memory.rag.singleton import get_vector_store
 
-            vector_store = ChromaVectorStore()
+            vector_store = get_vector_store()
             indexer = MemoryIndexer(vector_store, self.person_name, self.person_dir)
 
             # Re-index all knowledge files

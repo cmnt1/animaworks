@@ -58,9 +58,10 @@ class MemoryIndexer:
         vector_store,  # VectorStore instance
         person_name: str,
         person_dir: Path,
-        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+        embedding_model_name: str = DEFAULT_EMBEDDING_MODEL,
         *,
         collection_prefix: str | None = None,
+        embedding_model: object | None = None,
     ) -> None:
         """Initialize indexer.
 
@@ -68,42 +69,36 @@ class MemoryIndexer:
             vector_store: VectorStore instance (e.g., ChromaVectorStore)
             person_name: Person name (for collection naming)
             person_dir: Path to person's memory directory
-            embedding_model: Sentence-transformers model name
+            embedding_model_name: Sentence-transformers model name
             collection_prefix: Override for collection name prefix.
                 Defaults to person_name.  Use ``"shared"`` for
                 common_knowledge indexing so collection becomes
                 ``shared_common_knowledge``.
+            embedding_model: Pre-initialized SentenceTransformer instance.
+                When provided, ``_init_embedding_model()`` is skipped,
+                avoiding redundant model loading.
         """
         self.vector_store = vector_store
         self.person_name = person_name
         self.person_dir = person_dir
         self.collection_prefix = collection_prefix or person_name
-        self.embedding_model_name = embedding_model
+        self.embedding_model_name = embedding_model_name
 
-        # Initialize embedding model
-        self._init_embedding_model()
+        # Use injected embedding model or initialize via singleton
+        if embedding_model is not None:
+            self.embedding_model = embedding_model
+        else:
+            self._init_embedding_model()
 
         # Load index metadata
         self.meta_path = person_dir / INDEX_META_FILE
         self.index_meta = self._load_index_meta()
 
     def _init_embedding_model(self) -> None:
-        """Initialize sentence-transformers model."""
-        from sentence_transformers import SentenceTransformer
+        """Initialize sentence-transformers model via process-level singleton."""
+        from core.memory.rag.singleton import get_embedding_model
 
-        logger.info("Loading embedding model: %s", self.embedding_model_name)
-
-        # Cache model in ~/.animaworks/models/
-        from core.paths import get_data_dir
-
-        cache_dir = get_data_dir() / "models"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        self.embedding_model = SentenceTransformer(
-            self.embedding_model_name,
-            cache_folder=str(cache_dir),
-        )
-        logger.info("Embedding model loaded (dimension=%d)", EMBEDDING_DIMENSION)
+        self.embedding_model = get_embedding_model(self.embedding_model_name)
 
     def _load_index_meta(self) -> dict[str, dict[str, str]]:
         """Load index metadata (file hashes and timestamps)."""

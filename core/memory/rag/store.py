@@ -122,7 +122,7 @@ class ChromaVectorStore(VectorStore):
 
         persist_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Initializing ChromaDB at %s", persist_dir)
+        logger.debug("Initializing ChromaDB at %s", persist_dir)
         self.client = chromadb.PersistentClient(path=str(persist_dir))
         self.persist_dir = persist_dir
 

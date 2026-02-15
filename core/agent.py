@@ -278,8 +278,9 @@ class AgentCore:
         message = self._extract_message_from_prompt(prompt)
 
         try:
-            engine = PrimingEngine(self.person_dir)
-            result = await engine.prime_memories(message, sender_name)
+            if not hasattr(self, "_priming_engine"):
+                self._priming_engine = PrimingEngine(self.person_dir)
+            result = await self._priming_engine.prime_memories(message, sender_name)
 
             if result.is_empty():
                 logger.debug("Priming: No memories found")
