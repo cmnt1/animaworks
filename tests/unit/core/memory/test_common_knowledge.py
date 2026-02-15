@@ -113,7 +113,10 @@ class TestMemoryIndexerCollectionPrefix:
         )
 
         test_file = person_dir / "knowledge" / "doc.md"
-        test_file.write_text("# Title\n\nContent here", encoding="utf-8")
+        test_file.write_text(
+            "# Title\n\n## Section One\n\nContent here for testing.",
+            encoding="utf-8",
+        )
 
         indexer.index_file(test_file, "common_knowledge", force=True)
 
