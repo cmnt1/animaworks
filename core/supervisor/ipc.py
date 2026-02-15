@@ -31,7 +31,7 @@ class IPCRequest:
             "id": self.id,
             "method": self.method,
             "params": self.params
-        })
+        }, default=str)
 
     @classmethod
     def from_json(cls, line: str) -> IPCRequest:
@@ -72,7 +72,7 @@ class IPCResponse:
         elif self.result is not None:
             data["result"] = self.result
 
-        return json.dumps(data)
+        return json.dumps(data, default=str)
 
     @classmethod
     def from_json(cls, line: str) -> IPCResponse:
@@ -100,7 +100,7 @@ class IPCEvent:
         return json.dumps({
             "event": self.event,
             "data": self.data
-        })
+        }, default=str)
 
     @classmethod
     def from_json(cls, line: str) -> IPCEvent:

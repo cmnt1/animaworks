@@ -532,7 +532,7 @@ class AgentCore:
             yield {"type": "text_delta", "text": cycle.summary}
             yield {
                 "type": "cycle_done",
-                "cycle_result": cycle.model_dump(),
+                "cycle_result": cycle.model_dump(mode="json"),
             }
             return
 
@@ -660,5 +660,5 @@ class AgentCore:
                 context_usage_ratio=tracker.usage_ratio,
                 session_chained=session_chained,
                 total_turns=total_turns,
-            ).model_dump(),
+            ).model_dump(mode="json"),
         }
