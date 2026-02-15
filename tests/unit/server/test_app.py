@@ -114,6 +114,47 @@ class TestCreateApp:
 
         assert app.state.person_names == []
 
+    @patch("core.paths.get_data_dir")
+    @patch("server.app.load_config")
+    @patch("server.app.ProcessSupervisor")
+    @patch("server.app.WebSocketManager")
+    def test_create_app_skips_disabled_person(
+        self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path
+    ):
+        """Person with status.json enabled:false is excluded from person_names."""
+        import json
+        from server.app import create_app
+
+        persons_dir = tmp_path / "persons"
+        persons_dir.mkdir()
+        shared_dir = tmp_path / "shared"
+
+        # Enabled person
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir()
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (alice_dir / "status.json").write_text(
+            json.dumps({"enabled": True}), encoding="utf-8"
+        )
+
+        # Disabled person
+        bob_dir = persons_dir / "bob"
+        bob_dir.mkdir()
+        (bob_dir / "identity.md").write_text("# Bob", encoding="utf-8")
+        (bob_dir / "status.json").write_text(
+            json.dumps({"enabled": False}), encoding="utf-8"
+        )
+
+        mock_ws_cls.return_value = MagicMock()
+        mock_sup_cls.return_value = MagicMock()
+        mock_load_config.return_value = MagicMock(setup_complete=True)
+        mock_get_data_dir.return_value = tmp_path
+
+        app = create_app(persons_dir, shared_dir)
+
+        assert "alice" in app.state.person_names
+        assert "bob" not in app.state.person_names
+
 
 # ── lifespan ─────────────────────────────────────────────
 

@@ -29,6 +29,20 @@ logger = logging.getLogger("animaworks.server")
 async def lifespan(app: FastAPI):
     # Only start person processes when setup is complete
     if app.state.setup_complete:
+        # Register person lifecycle callbacks for reconciliation
+        def _on_person_added(name: str) -> None:
+            if name not in app.state.person_names:
+                app.state.person_names.append(name)
+                logger.info("Person added via reconciliation: %s", name)
+
+        def _on_person_removed(name: str) -> None:
+            if name in app.state.person_names:
+                app.state.person_names.remove(name)
+                logger.info("Person removed via reconciliation: %s", name)
+
+        app.state.supervisor.on_person_added = _on_person_added
+        app.state.supervisor.on_person_removed = _on_person_removed
+
         await app.state.supervisor.start_all(app.state.person_names)
         logger.info("Server started with process isolation")
     else:
@@ -63,11 +77,16 @@ def create_app(persons_dir: Path, shared_dir: Path) -> FastAPI:
         ws_manager=ws_manager,
     )
 
-    # Discover person names from disk
+    # Discover person names from disk (respect status.json)
+    from core.supervisor.manager import ProcessSupervisor as _PS
+
     person_names: list[str] = []
     if persons_dir.exists():
         for person_dir in sorted(persons_dir.iterdir()):
             if person_dir.is_dir() and (person_dir / "identity.md").exists():
+                if not _PS.read_person_enabled(person_dir):
+                    logger.info("Skipping disabled person: %s", person_dir.name)
+                    continue
                 person_names.append(person_dir.name)
                 logger.info("Discovered person: %s", person_dir.name)
 
