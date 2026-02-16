@@ -55,6 +55,8 @@ class Messenger:
         filepath = target_dir / f"{msg.id}.json"
         filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
         logger.info("Message sent: %s -> %s (%s)", self.person_name, to, msg.id)
+        # Append to shared message log for activity timeline
+        self._append_message_log(msg)
         return msg
 
     def reply(self, original: Message, content: str) -> Message:
@@ -65,6 +67,27 @@ class Messenger:
             thread_id=original.thread_id or original.id,
             reply_to=original.id,
         )
+
+    def _append_message_log(self, msg: Message) -> None:
+        """Append message event to shared activity log."""
+        from datetime import date
+        log_dir = self.shared_dir / "message_log"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"{date.today().isoformat()}.jsonl"
+        entry = json.dumps({
+            "timestamp": msg.timestamp.isoformat(),
+            "from_person": msg.from_person,
+            "to_person": msg.to_person,
+            "type": msg.type,
+            "summary": msg.content[:200],
+            "message_id": msg.id,
+            "thread_id": msg.thread_id,
+        }, ensure_ascii=False)
+        try:
+            with log_file.open("a", encoding="utf-8") as f:
+                f.write(entry + "\n")
+        except OSError:
+            logger.warning("Failed to append message log: %s", log_file)
 
     def receive(self) -> list[Message]:
         messages: list[Message] = []

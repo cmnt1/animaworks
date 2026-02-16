@@ -3,10 +3,12 @@
 import { dom, nowTimeStr, escapeHtml } from "./state.js";
 
 const TYPE_ICONS = {
-  heartbeat: "\uD83D\uDC93",   // heart
-  cron: "\u23F0",               // alarm clock
-  chat: "\uD83D\uDCAC",        // speech bubble
-  system: "\u2699\uFE0F",      // gear
+  message: "\uD83D\uDCE9",     // 📩 envelope
+  heartbeat: "\uD83D\uDC93",   // 💓 heart
+  cron: "\u23F0",               // ⏰ alarm clock
+  chat: "\uD83D\uDCAC",        // 💬 speech bubble
+  notification: "\uD83D\uDD14", // 🔔 bell
+  system: "\u2699\uFE0F",      // ⚙️ gear
 };
 
 let activityEmpty = true;

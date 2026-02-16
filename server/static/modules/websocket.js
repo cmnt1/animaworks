@@ -207,6 +207,16 @@ function handleWsMessage(raw) {
       break;
     }
 
+    case "person.interaction": {
+      const fromPerson = data.from_person || "";
+      const toPerson = data.to_person || "";
+      if (fromPerson || toPerson) {
+        const label = `${fromPerson} → ${toPerson}`;
+        addActivity("message", label, data.summary || "メッセージ送信");
+      }
+      break;
+    }
+
     default:
       if (data.name || data.person) {
         addActivity("system", data.name || data.person, JSON.stringify(data).slice(0, 120));

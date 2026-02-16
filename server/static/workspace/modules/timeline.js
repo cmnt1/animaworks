@@ -34,7 +34,7 @@ const TYPE_ICONS = {
 /** @type {TimelineEvent[]} */
 const _events = [];
 
-const MAX_EVENTS = 500;
+const MAX_EVENTS = 200;
 
 /** @type {string} current filter — "all" or a type */
 let _currentFilter = "all";
@@ -56,6 +56,15 @@ let _interactionManager = null;
 
 /** @type {boolean} */
 let _expanded = false;
+
+/** @type {number} current offset for pagination */
+let _currentOffset = 0;
+
+/** @type {boolean} whether there are more events to load */
+let _hasMore = false;
+
+/** @type {number} total count from server */
+let _totalCount = 0;
 
 // ── Highlight helper (imported lazily from office3d) ──
 
@@ -137,8 +146,17 @@ function _buildDOM(officePanel) {
   list.className = "ws-timeline-list";
   list.id = "wsTimelineList";
 
+  // Load-more button
+  const loadMoreBtn = document.createElement("button");
+  loadMoreBtn.className = "tl-load-more";
+  loadMoreBtn.id = "wsTimelineLoadMore";
+  loadMoreBtn.textContent = "もっと読み込む";
+  loadMoreBtn.style.cssText = "display:none; width:100%; padding:0.5rem; margin-top:0.5rem; background:var(--bg-secondary, #f3f4f6); border:1px solid var(--border-color, #e5e7eb); border-radius:6px; cursor:pointer; color:var(--text-secondary, #666); font-size:0.8rem;";
+  loadMoreBtn.addEventListener("click", () => _loadMore());
+
   body.appendChild(filters);
   body.appendChild(list);
+  body.appendChild(loadMoreBtn);
 
   timeline.appendChild(bar);
   timeline.appendChild(body);
@@ -332,15 +350,18 @@ export function addTimelineEvent(event) {
  * Load historical events from the backend.
  * @param {number} hours — how many hours of history (default 24)
  */
-export async function loadHistory(hours = 24) {
+export async function loadHistory(hours = 48) {
   try {
-    const res = await fetch(`/api/activity/recent?hours=${hours}`);
+    const res = await fetch(`/api/activity/recent?hours=${hours}&limit=200&offset=0`);
     if (!res.ok) return;
     const data = await res.json();
     const events = data.events || [];
 
+    _currentOffset = events.length;
+    _hasMore = data.has_more || false;
+    _totalCount = data.total || 0;
+
     for (const evt of events) {
-      // Assign an ID if missing
       if (!evt.id) {
         evt.id = evt.timestamp || Date.now().toString();
       }
@@ -370,12 +391,71 @@ export async function loadHistory(hours = 24) {
     }
 
     if (_countEl) {
-      _countEl.textContent = _events.length.toString();
+      _countEl.textContent = _totalCount > 0 ? `${_events.length}/${_totalCount}` : _events.length.toString();
     }
 
+    _updateLoadMoreButton();
     _renderList();
   } catch (err) {
     console.warn("[timeline] Failed to load history:", err);
+  }
+}
+
+async function _loadMore() {
+  const btn = document.getElementById("wsTimelineLoadMore");
+  if (btn) {
+    btn.textContent = "読み込み中...";
+    btn.disabled = true;
+  }
+  try {
+    const res = await fetch(`/api/activity/recent?hours=168&limit=200&offset=${_currentOffset}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const newEvents = data.events || [];
+
+    _hasMore = data.has_more || false;
+    _totalCount = data.total || 0;
+    _currentOffset += newEvents.length;
+
+    for (const evt of newEvents) {
+      if (!evt.id) {
+        evt.id = evt.timestamp || Date.now().toString();
+      }
+      _events.push(evt);
+    }
+
+    // De-duplicate
+    const seen = new Set();
+    for (let i = _events.length - 1; i >= 0; i--) {
+      if (seen.has(_events[i].id)) {
+        _events.splice(i, 1);
+      } else {
+        seen.add(_events[i].id);
+      }
+    }
+
+    _events.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
+
+    if (_countEl) {
+      _countEl.textContent = _totalCount > 0 ? `${_events.length}/${_totalCount}` : _events.length.toString();
+    }
+
+    _updateLoadMoreButton();
+    _renderList();
+  } catch (err) {
+    console.warn("[timeline] Failed to load more:", err);
+  } finally {
+    if (btn) {
+      btn.textContent = "もっと読み込む";
+      btn.disabled = false;
+    }
+  }
+}
+
+function _updateLoadMoreButton() {
+  const btn = document.getElementById("wsTimelineLoadMore");
+  if (btn) {
+    btn.style.display = _hasMore ? "block" : "none";
   }
 }
 

@@ -164,9 +164,11 @@ async function _loadActivity() {
   if (!timeline) return;
 
   const TYPE_ICONS = {
+    message: "\uD83D\uDCE9",
     heartbeat: "\uD83D\uDC93",
     cron: "\u23F0",
     chat: "\uD83D\uDCAC",
+    notification: "\uD83D\uDD14",
     system: "\u2699\uFE0F",
     startup: "\uD83D\uDE80",
     shutdown: "\u26D4",
@@ -181,21 +183,46 @@ async function _loadActivity() {
       return;
     }
 
-    const latest = events.slice(0, 20);
-    timeline.innerHTML = latest.map(evt => {
-      const icon = TYPE_ICONS[evt.type] || TYPE_ICONS.system;
-      const ts = timeStr(evt.timestamp);
-      const person = evt.person || evt.name || "";
-      const summary = evt.summary || evt.message || JSON.stringify(evt).slice(0, 100);
-      return `
-        <div style="display:flex; align-items:flex-start; gap:0.5rem; padding:0.4rem 0; border-bottom:1px solid var(--border-color, #eee);">
-          <span style="flex-shrink:0;">${icon}</span>
-          <span style="color:var(--text-secondary, #666); flex-shrink:0; min-width:3rem;">${escapeHtml(ts)}</span>
-          <span style="font-weight:500; flex-shrink:0;">${escapeHtml(person)}</span>
-          <span style="color:var(--text-secondary, #666);">${escapeHtml(summary)}</span>
-        </div>
-      `;
-    }).join("");
+    // Filter buttons
+    const types = ["all", "message", "heartbeat", "cron", "chat"];
+    const filterLabels = { all: "All", message: "\uD83D\uDCE9", heartbeat: "\uD83D\uDC93", cron: "\u23F0", chat: "\uD83D\uDCAC" };
+    const filterHtml = types.map(t =>
+      `<button class="btn-secondary home-activity-filter${t === "all" ? " active" : ""}" data-filter="${t}" style="padding:0.2rem 0.6rem; font-size:0.8rem; margin-right:0.3rem;">${filterLabels[t]}</button>`
+    ).join("");
+
+    const latest = events.slice(0, 100);
+
+    const renderEvents = (filter) => latest
+      .filter(evt => filter === "all" || evt.type === filter)
+      .map(evt => {
+        const icon = TYPE_ICONS[evt.type] || TYPE_ICONS.system;
+        const ts = timeStr(evt.timestamp);
+        const persons = (evt.persons || []).join(", ") || evt.person || evt.name || "";
+        const summary = evt.summary || evt.message || JSON.stringify(evt).slice(0, 100);
+        return `
+          <div style="display:flex; align-items:flex-start; gap:0.5rem; padding:0.4rem 0; border-bottom:1px solid var(--border-color, #eee);">
+            <span style="flex-shrink:0;">${icon}</span>
+            <span style="color:var(--text-secondary, #666); flex-shrink:0; min-width:3rem;">${escapeHtml(ts)}</span>
+            <span style="font-weight:500; flex-shrink:0; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(persons)}</span>
+            <span style="color:var(--text-secondary, #666); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(summary)}</span>
+          </div>
+        `;
+      }).join("");
+
+    timeline.innerHTML = `
+      <div style="margin-bottom:0.5rem;">${filterHtml}</div>
+      <div id="homeActivityEvents">${renderEvents("all")}</div>
+    `;
+
+    // Filter click handlers
+    for (const btn of timeline.querySelectorAll(".home-activity-filter")) {
+      btn.addEventListener("click", () => {
+        for (const b of timeline.querySelectorAll(".home-activity-filter")) b.classList.remove("active");
+        btn.classList.add("active");
+        const eventsEl = document.getElementById("homeActivityEvents");
+        if (eventsEl) eventsEl.innerHTML = renderEvents(btn.dataset.filter);
+      });
+    }
   } catch (err) {
     timeline.innerHTML = `<div class="loading-placeholder">アクティビティ取得失敗: ${escapeHtml(err.message)}</div>`;
   }

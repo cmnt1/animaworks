@@ -201,7 +201,12 @@ def create_system_router() -> APIRouter:
 
     @router.get("/activity/recent")
     async def get_recent_activity(
-        request: Request, hours: int = 24, person: str | None = None,
+        request: Request,
+        hours: int = 48,
+        person: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+        event_type: str | None = None,
     ):
         """Return recent activity events aggregated across persons."""
         from datetime import date as date_type
@@ -212,9 +217,19 @@ def create_system_router() -> APIRouter:
         from core.memory.shortterm import ShortTermMemory
 
         persons_dir = request.app.state.persons_dir
+        shared_dir = request.app.state.shared_dir
         person_names = request.app.state.person_names
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         events: list[dict] = []
+
+        # Clamp limit
+        limit = max(1, min(limit, 500))
+        offset = max(0, offset)
+
+        # Parse event_type filter (comma-separated)
+        type_filter: set[str] | None = None
+        if event_type:
+            type_filter = {t.strip() for t in event_type.split(",") if t.strip()}
 
         target_names = (
             [person] if person and person in person_names else person_names
@@ -224,7 +239,6 @@ def create_system_router() -> APIRouter:
             person_dir = persons_dir / name
             if not person_dir.exists():
                 continue
-
 
             # Short-term memory archives (session history)
             stm = ShortTermMemory(person_dir)
@@ -242,7 +256,7 @@ def create_system_router() -> APIRouter:
                             datetime.fromisoformat(ts_str) if ts_str else None
                         )
                         if ts and ts.replace(tzinfo=timezone.utc) < cutoff:
-                            break  # Archive is descending; older entries follow
+                            break
                         events.append({
                             "type": "session",
                             "persons": [name],
@@ -345,8 +359,59 @@ def create_system_router() -> APIRouter:
                 except Exception:
                     logger.warning("Failed to load cron logs for %s", name, exc_info=True)
 
-        # Sort descending by timestamp, cap at 200 items
+        # Inter-person message logs (shared across all persons)
+        msg_log_dir = shared_dir / "message_log"
+        if msg_log_dir.exists():
+            person_filter = set(target_names)
+            try:
+                for log_file in sorted(msg_log_dir.glob("*.jsonl"), reverse=True):
+                    for line in log_file.read_text(encoding="utf-8").strip().splitlines():
+                        try:
+                            entry = json.loads(line)
+                            ts_str = entry.get("timestamp", "")
+                            ts = datetime.fromisoformat(ts_str) if ts_str else None
+                            if ts and ts.replace(tzinfo=timezone.utc) < cutoff:
+                                continue
+                            from_p = entry.get("from_person", "")
+                            to_p = entry.get("to_person", "")
+                            # Include if either sender or receiver matches person filter
+                            if person and from_p not in person_filter and to_p not in person_filter:
+                                continue
+                            events.append({
+                                "type": "message",
+                                "persons": [from_p, to_p],
+                                "timestamp": ts_str,
+                                "summary": f"{from_p} → {to_p}: {entry.get('summary', '')[:60]}",
+                                "metadata": {
+                                    "from_person": from_p,
+                                    "to_person": to_p,
+                                    "message_id": entry.get("message_id", ""),
+                                    "thread_id": entry.get("thread_id", ""),
+                                    "text": entry.get("summary", ""),
+                                },
+                            })
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            continue
+            except Exception:
+                logger.warning("Failed to load message logs", exc_info=True)
+
+        # Sort descending by timestamp
         events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
-        return {"events": events[:200]}
+
+        # Apply type filter
+        if type_filter:
+            events = [e for e in events if e["type"] in type_filter]
+
+        # Pagination
+        total = len(events)
+        paginated = events[offset:offset + limit]
+
+        return {
+            "events": paginated,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": (offset + limit) < total,
+        }
 
     return router
