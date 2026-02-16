@@ -233,6 +233,13 @@ def cli_main() -> None:
     )
     p_logs.set_defaults(func=_lazy_logs)
 
+    # ── Migrate Cron ─────────────────────────────────────────
+    p_migrate_cron = sub.add_parser(
+        "migrate-cron",
+        help="Migrate cron.md files from Japanese format to standard cron expressions",
+    )
+    p_migrate_cron.set_defaults(func=_lazy_migrate_cron)
+
     # ── Optimize Assets ──────────────────────────────────────
     from cli.commands import optimize_assets
 
@@ -353,3 +360,15 @@ def _lazy_status(args: argparse.Namespace) -> None:
     from cli.commands.messaging import cmd_status
 
     cmd_status(args)
+
+
+def _lazy_migrate_cron(args: argparse.Namespace) -> None:
+    from core.config.migrate import migrate_all_cron
+    from core.paths import get_data_dir
+
+    persons_dir = get_data_dir() / "persons"
+    count = migrate_all_cron(persons_dir)
+    if count:
+        print(f"Migrated {count} person(s) to standard cron format.")
+    else:
+        print("No migration needed — all cron.md files are already in standard format.")

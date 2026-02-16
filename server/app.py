@@ -120,6 +120,16 @@ def create_app(persons_dir: Path, shared_dir: Path) -> FastAPI:
 
     ensure_send_scripts(persons_dir)
 
+    # Auto-migrate old Japanese cron.md format to standard cron expressions
+    try:
+        from core.config.migrate import migrate_all_cron
+
+        migrated = migrate_all_cron(persons_dir)
+        if migrated:
+            logger.info("Auto-migrated %d person(s) cron.md to standard cron format", migrated)
+    except Exception:
+        logger.exception("Cron format auto-migration failed")
+
     # Discover person names from disk (respect status.json)
     from core.supervisor.manager import ProcessSupervisor as _PS
 
