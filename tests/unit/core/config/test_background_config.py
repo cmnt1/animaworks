@@ -14,9 +14,10 @@ from core.config.models import (
 
 class TestServerConfig:
     def test_server_config_defaults(self):
-        """ServerConfig defaults to ipc_stream_timeout=300."""
+        """ServerConfig defaults to ipc_stream_timeout=60 and keepalive_interval=30."""
         sc = ServerConfig()
-        assert sc.ipc_stream_timeout == 300
+        assert sc.ipc_stream_timeout == 60
+        assert sc.keepalive_interval == 30
 
 
 # ── BackgroundTaskConfig ─────────────────────────────────────
@@ -61,7 +62,8 @@ class TestAnimaWorksConfigBackground:
         """AnimaWorksConfig includes server field with correct type."""
         config = AnimaWorksConfig()
         assert isinstance(config.server, ServerConfig)
-        assert config.server.ipc_stream_timeout == 300
+        assert config.server.ipc_stream_timeout == 60
+        assert config.server.keepalive_interval == 30
 
     def test_animaworks_config_has_background_task(self):
         """AnimaWorksConfig includes background_task field with correct type."""

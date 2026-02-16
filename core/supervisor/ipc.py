@@ -254,7 +254,7 @@ class IPCClient:
             config = load_config()
             return float(config.server.ipc_stream_timeout)
         except Exception:
-            return 300.0
+            return 60.0
 
     async def connect(self, timeout: float = 5.0) -> None:
         """Connect to the Unix socket."""
@@ -319,9 +319,9 @@ class IPCClient:
 
         Args:
             request: The request to send
-            timeout: Total timeout in seconds for the entire stream.
+            timeout: Per-chunk timeout in seconds. Resets on each received chunk.
                 If None, reads from ``config.json server.ipc_stream_timeout``
-                (default 300s).
+                (default 60s).
 
         Yields:
             IPCResponse objects (chunks and final result)
@@ -343,28 +343,30 @@ class IPCClient:
             logger.debug("IPC stream request sent: %s (id=%s)", request.method, request.id)
 
             # Read streaming responses until done
-            async with asyncio.timeout(timeout):
-                while True:
-                    response_line_bytes = await self.reader.readline()
-                    if not response_line_bytes:
-                        raise RuntimeError("Connection closed during stream")
+            while True:
+                response_line_bytes = await asyncio.wait_for(
+                    self.reader.readline(),
+                    timeout=timeout,
+                )
+                if not response_line_bytes:
+                    raise RuntimeError("Connection closed during stream")
 
-                    response_line = response_line_bytes.decode("utf-8").strip()
-                    if not response_line:
-                        continue
+                response_line = response_line_bytes.decode("utf-8").strip()
+                if not response_line:
+                    continue
 
-                    response = IPCResponse.from_json(response_line)
+                response = IPCResponse.from_json(response_line)
 
-                    # Non-streaming response (error or unexpected)
-                    if not response.stream:
-                        yield response
-                        return
-
+                # Non-streaming response (error or unexpected)
+                if not response.stream:
                     yield response
+                    return
 
-                    # Final chunk with done=True ends the stream
-                    if response.done:
-                        return
+                yield response
+
+                # Final chunk with done=True ends the stream
+                if response.done:
+                    return
 
     async def close(self) -> None:
         """Close the connection."""

@@ -334,6 +334,10 @@ def create_chat_router() -> APIRouter:
             try:
                 await emit(request, "person.status", {"name": name, "status": "thinking"})
 
+                from core.config import load_config
+                _config = load_config()
+                _timeout = float(_config.server.ipc_stream_timeout)
+
                 async for ipc_response in supervisor.send_request_stream(
                     person_name=name,
                     method="process_message",
@@ -342,7 +346,7 @@ def create_chat_router() -> APIRouter:
                         "from_person": body.from_person,
                         "stream": True,
                     },
-                    timeout=120.0,
+                    timeout=_timeout,
                 ):
                     if ipc_response.done:
                         # Final response with full result
@@ -362,6 +366,12 @@ def create_chat_router() -> APIRouter:
                         # Parse the chunk JSON from the IPC layer
                         try:
                             chunk_data = json.loads(ipc_response.chunk)
+
+                            # Keep-alive chunks → SSE comment (invisible to client parser)
+                            if chunk_data.get("type") == "keepalive":
+                                yield ": keepalive\n\n"
+                                continue
+
                             frame, response_text = _handle_chunk(
                                 chunk_data,
                                 request=request,

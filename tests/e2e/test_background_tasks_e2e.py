@@ -552,7 +552,7 @@ class TestIPCTimeoutConfigurable:
         assert timeout == 600.0
 
     def test_returns_default_when_config_unavailable(self) -> None:
-        """_resolve_ipc_timeout falls back to 300.0 when config loading fails."""
+        """_resolve_ipc_timeout falls back to 60.0 when config loading fails."""
         from core.supervisor.ipc import IPCClient
 
         # load_config is imported inside _resolve_ipc_timeout, so patch at source
@@ -562,16 +562,16 @@ class TestIPCTimeoutConfigurable:
         ):
             timeout = IPCClient._resolve_ipc_timeout()
 
-        assert timeout == 300.0
+        assert timeout == 60.0
 
     def test_returns_default_server_value(self, data_dir: Path) -> None:
-        """Without explicit server config, the default ipc_stream_timeout is 300."""
+        """Without explicit server config, the default ipc_stream_timeout is 60."""
         from core.config import invalidate_cache
         invalidate_cache()
 
         from core.supervisor.ipc import IPCClient
         timeout = IPCClient._resolve_ipc_timeout()
-        assert timeout == 300.0
+        assert timeout == 60.0
 
 
 # ── 7. Background task cleanup ───────────────────────────────

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -191,3 +191,74 @@ class TestStreamErrorCodes:
         error_events = [e for e in events if e["event"] == "error"]
         assert len(error_events) >= 1
         assert error_events[0]["data"]["code"] == "LLM_ERROR"
+
+
+# ── Keep-alive handling ─────────────────────────────────────────
+
+
+class TestStreamKeepalive:
+    @patch("core.config.load_config")
+    async def test_keepalive_chunk_becomes_sse_comment(self, mock_load_config):
+        """Keep-alive chunks should be emitted as SSE comments, not events."""
+        mock_config = MagicMock()
+        mock_config.server.ipc_stream_timeout = 60
+        mock_load_config.return_value = mock_config
+
+        async def _stream_with_keepalive(*args, **kwargs):
+            yield IPCResponse(
+                id="test",
+                stream=True,
+                chunk=json.dumps({"type": "keepalive", "elapsed_s": 30}),
+            )
+            yield IPCResponse(
+                id="test",
+                stream=True,
+                done=True,
+                result={"response": "hello", "cycle_result": {"summary": "hello"}},
+            )
+
+        sup = _make_supervisor()
+        sup.send_request_stream = _stream_with_keepalive
+        app = _make_test_app(supervisor=sup)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/persons/alice/chat/stream",
+                json={"message": "hi"},
+            )
+
+        body = resp.text
+        # SSE comment line is present
+        assert ": keepalive" in body
+        # Keep-alive must NOT appear as a named SSE event
+        assert "event: keepalive" not in body
+        # Normal done event is still emitted
+        assert "event: done" in body
+
+    @patch("core.config.load_config")
+    async def test_keepalive_not_rendered_as_event(self, mock_load_config):
+        """Parsed SSE events should never contain a keep-alive entry."""
+        mock_config = MagicMock()
+        mock_config.server.ipc_stream_timeout = 60
+        mock_load_config.return_value = mock_config
+
+        async def _stream_keepalive_only(*args, **kwargs):
+            yield IPCResponse(
+                id="test",
+                stream=True,
+                chunk=json.dumps({"type": "keepalive", "elapsed_s": 10}),
+            )
+
+        sup = _make_supervisor()
+        sup.send_request_stream = _stream_keepalive_only
+        app = _make_test_app(supervisor=sup)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/persons/alice/chat/stream",
+                json={"message": "hi"},
+            )
+
+        events = _parse_sse_events(resp.text)
+        keepalive_events = [e for e in events if e.get("event") == "keepalive"]
+        assert keepalive_events == []

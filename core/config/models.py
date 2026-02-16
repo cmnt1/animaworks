@@ -159,7 +159,8 @@ class HumanNotificationConfig(BaseModel):
 class ServerConfig(BaseModel):
     """Server runtime configuration."""
 
-    ipc_stream_timeout: int = 300  # seconds (default raised from 120)
+    ipc_stream_timeout: int = 60  # per-chunk timeout in seconds
+    keepalive_interval: int = 30  # keep-alive emission interval in seconds
 
 
 class BackgroundToolConfig(BaseModel):
