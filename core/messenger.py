@@ -83,6 +83,7 @@ class Messenger:
             "summary": msg.content[:200],
             "message_id": msg.id,
             "thread_id": msg.thread_id,
+            "source": msg.source,
         }, ensure_ascii=False)
         try:
             with log_file.open("a", encoding="utf-8") as f:
@@ -145,6 +146,39 @@ class Messenger:
 
     def unread_count(self) -> int:
         return len(list(self.inbox_dir.glob("*.json")))
+
+    def receive_external(
+        self,
+        content: str,
+        source: str,
+        source_message_id: str = "",
+        external_user_id: str = "",
+        external_channel_id: str = "",
+    ) -> Message:
+        """Receive a message from an external platform and place it in inbox.
+
+        Creates a Message with external source metadata and writes it to the
+        anima's inbox directory.
+        """
+        msg = Message(
+            from_person=f"{source}:{external_user_id}" if external_user_id else source,
+            to_person=self.anima_name,
+            content=content,
+            source=source,
+            source_message_id=source_message_id,
+            external_user_id=external_user_id,
+            external_channel_id=external_channel_id,
+        )
+        if not msg.thread_id:
+            msg.thread_id = msg.id
+        filepath = self.inbox_dir / f"{msg.id}.json"
+        filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
+        logger.info(
+            "External message received: %s -> %s (source=%s, id=%s)",
+            msg.from_person, self.anima_name, source, msg.id,
+        )
+        self._append_message_log(msg)
+        return msg
 
     async def send_async(
         self,

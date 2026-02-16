@@ -88,6 +88,12 @@ class Message(BaseModel):
     attachments: list[str] = []
     timestamp: datetime = Field(default_factory=datetime.now)
 
+    # External messaging integration
+    source: str = "anima"  # "anima" | "human" | "slack" | "chatwork"
+    source_message_id: str = ""  # message ID on external platform
+    external_user_id: str = ""  # user ID on external platform
+    external_channel_id: str = ""  # channel/room ID on external platform
+
 
 class CycleResult(BaseModel):
     trigger: str

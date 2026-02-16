@@ -14,6 +14,7 @@ from server.routes.memory_routes import create_memory_router
 from server.routes.animas import create_animas_router
 from server.routes.sessions import create_sessions_router
 from server.routes.system import create_system_router
+from server.routes.webhooks import create_webhooks_router
 from server.routes.websocket_route import create_websocket_router
 
 
@@ -30,6 +31,7 @@ def create_router() -> APIRouter:
     api.include_router(create_logs_router())
     api.include_router(create_assets_router())
     api.include_router(create_internal_router())
+    api.include_router(create_webhooks_router())
 
     router.include_router(api)
     router.include_router(create_websocket_router())

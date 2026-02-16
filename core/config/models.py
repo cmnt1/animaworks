@@ -157,6 +157,20 @@ class HumanNotificationConfig(BaseModel):
     channels: list[NotificationChannelConfig] = []
 
 
+class ExternalMessagingChannelConfig(BaseModel):
+    """Configuration for a single external messaging platform webhook."""
+
+    enabled: bool = False
+    anima_mapping: dict[str, str] = {}  # channel_id → anima_name
+
+
+class ExternalMessagingConfig(BaseModel):
+    """Configuration for external messaging webhook integration."""
+
+    slack: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
+    chatwork: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
+
+
 class ServerConfig(BaseModel):
     """Server runtime configuration."""
 
@@ -215,6 +229,7 @@ class AnimaWorksConfig(BaseModel):
     image_gen: ImageGenConfig = ImageGenConfig()
     human_notification: HumanNotificationConfig = HumanNotificationConfig()
     server: ServerConfig = ServerConfig()
+    external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
     background_task: BackgroundTaskConfig = BackgroundTaskConfig()
 
 
