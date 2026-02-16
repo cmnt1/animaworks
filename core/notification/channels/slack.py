@@ -60,6 +60,12 @@ class SlackChannel(NotificationChannel):
 
         return await self._send_via_webhook(webhook_url, subject, body, priority, person_name)
 
+    @staticmethod
+    def _build_text(subject: str, body: str, priority: str, person_name: str) -> str:
+        prefix = f"[{priority.upper()}] " if priority in ("high", "urgent") else ""
+        sender = f" (from {person_name})" if person_name else ""
+        return f"{prefix}*{subject}*{sender}\n{body}"[:40000]
+
     async def _send_via_bot(
         self,
         bot_token: str,
@@ -72,9 +78,7 @@ class SlackChannel(NotificationChannel):
         if not channel:
             return "slack: ERROR - channel not configured for bot token mode"
 
-        prefix = f"[{priority.upper()}] " if priority in ("high", "urgent") else ""
-        sender = f" (from {person_name})" if person_name else ""
-        text = f"{prefix}*{subject}*{sender}\n{body}"[:40000]
+        text = self._build_text(subject, body, priority, person_name)
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -95,10 +99,9 @@ class SlackChannel(NotificationChannel):
             msg = f"slack: ERROR - HTTP {e.response.status_code}"
             logger.error(msg)
             return msg
-        except Exception as e:
-            msg = f"slack: ERROR - {e}"
-            logger.error(msg)
-            return msg
+        except Exception:
+            logger.exception("Slack bot API request failed for: %s", subject[:50])
+            return "slack: ERROR - request failed"
 
     async def _send_via_webhook(
         self,
@@ -108,9 +111,7 @@ class SlackChannel(NotificationChannel):
         priority: str,
         person_name: str,
     ) -> str:
-        prefix = f"[{priority.upper()}] " if priority in ("high", "urgent") else ""
-        sender = f" (from {person_name})" if person_name else ""
-        text = f"{prefix}*{subject}*{sender}\n{body}"[:40000]
+        text = self._build_text(subject, body, priority, person_name)
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -122,7 +123,6 @@ class SlackChannel(NotificationChannel):
             msg = f"slack: ERROR - HTTP {e.response.status_code}"
             logger.error(msg)
             return msg
-        except Exception as e:
-            msg = f"slack: ERROR - {e}"
-            logger.error(msg)
-            return msg
+        except Exception:
+            logger.exception("Slack webhook request failed for: %s", subject[:50])
+            return "slack: ERROR - request failed"

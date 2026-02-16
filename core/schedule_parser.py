@@ -141,7 +141,13 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
         elif stripped.startswith("tool:"):
             tool = stripped[5:].strip()
         elif stripped.startswith("skip_pattern:"):
-            skip_pattern = stripped[len("skip_pattern:"):].strip()
+            val = stripped[len("skip_pattern:"):].strip()
+            if val:
+                try:
+                    re.compile(val)
+                    skip_pattern = val
+                except re.error as e:
+                    logger.warning("Invalid skip_pattern for task %s: %s", name, e)
         elif stripped.startswith("args:"):
             # Parse YAML args block (indented lines following "args:")
             yaml_lines = [line]

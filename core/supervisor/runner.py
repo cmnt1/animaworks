@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import sys
 import time
 from datetime import datetime
@@ -296,15 +297,24 @@ class PersonRunner:
                 if stdout and result.get("exit_code", 0) == 0:
                     # Check skip_pattern: if stdout matches, suppress heartbeat
                     if task.skip_pattern:
-                        import re as _re
-                        if _re.search(task.skip_pattern, stdout):
-                            logger.info(
-                                "Cron command '%s' output matched skip_pattern, "
-                                "suppressing heartbeat for %s",
-                                task.name, self.person_name,
+                        try:
+                            if re.search(task.skip_pattern, stdout):
+                                logger.info(
+                                    "Cron command '%s' output matched skip_pattern, "
+                                    "suppressing heartbeat for %s",
+                                    task.name, self.person_name,
+                                )
+                                return
+                        except re.error as e:
+                            logger.warning(
+                                "Invalid skip_pattern '%s' for task '%s': %s — "
+                                "continuing without skip",
+                                task.skip_pattern, task.name, e,
                             )
-                            return
 
+                    # NOTE: update_pending() overwrites the file. If multiple
+                    # command-type cron tasks run concurrently, only the last
+                    # result is retained.
                     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
                     pending = (
                         f"## cron結果: {task.name} ({ts})\n\n"

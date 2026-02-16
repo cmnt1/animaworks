@@ -317,3 +317,83 @@ class TestParseHeartbeatConfig:
         """Parse custom interval."""
         interval, _, _ = parse_heartbeat_config("15分間隔")
         assert interval == 15
+
+
+# ── skip_pattern tests ───────────────────────────────────
+
+
+class TestSkipPattern:
+    """Tests for skip_pattern directive parsing."""
+
+    def test_skip_pattern_parsed(self):
+        """skip_pattern directive is correctly parsed."""
+        content = """\
+## Check
+schedule: */5 * * * *
+type: command
+tool: check_something
+skip_pattern: ^\\[\\s*\\]$
+args:
+  sync: true
+"""
+        tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].skip_pattern == "^\\[\\s*\\]$"
+
+    def test_skip_pattern_none_when_absent(self):
+        """skip_pattern is None when not specified."""
+        content = """\
+## Simple
+schedule: 0 9 * * *
+type: command
+tool: simple_tool
+"""
+        tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].skip_pattern is None
+
+    def test_empty_skip_pattern_normalized_to_none(self):
+        """Empty skip_pattern: line (no value) is normalized to None."""
+        content = """\
+## Empty
+schedule: 0 9 * * *
+type: command
+tool: some_tool
+skip_pattern:
+"""
+        tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].skip_pattern is None
+
+    def test_invalid_regex_skip_pattern_normalized_to_none(self, caplog):
+        """Invalid regex in skip_pattern is warned and set to None."""
+        content = """\
+## Bad Regex
+schedule: 0 9 * * *
+type: command
+tool: some_tool
+skip_pattern: [unterminated
+"""
+        with caplog.at_level(logging.WARNING):
+            tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].skip_pattern is None
+        assert "Invalid skip_pattern" in caplog.text
+
+    def test_skip_pattern_with_tool_and_args(self):
+        """skip_pattern works alongside tool and args."""
+        content = """\
+## Full
+schedule: */5 * * * *
+type: command
+tool: chatwork_unreplied
+skip_pattern: ^\\[\\s*\\]$
+args:
+  sync: true
+  sync_limit: 10
+"""
+        tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].tool == "chatwork_unreplied"
+        assert tasks[0].skip_pattern == "^\\[\\s*\\]$"
+        assert tasks[0].args == {"sync": True, "sync_limit": 10}
