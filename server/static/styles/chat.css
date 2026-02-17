@@ -411,3 +411,20 @@
     opacity: 0;
   }
 }
+
+/* ── Infinite Scroll (Chat History Pagination) ── */
+
+.chat-load-sentinel {
+  height: 1px;
+  width: 100%;
+}
+
+.chat-load-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  color: #9ca3af;
+  font-size: 0.8rem;
+}

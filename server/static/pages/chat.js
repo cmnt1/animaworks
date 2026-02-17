@@ -17,6 +17,10 @@ let _activeRightTab = "state";
 let _activeMemoryTab = "episodes";
 let _intervals = [];
 let _boundListeners = [];
+let _paginationState = {};  // Per-anima: { totalRaw, hasMore, loading }
+let _chatObserver = null;
+let _isChatStreaming = false;
+const _PAGE_SIZE = 20;
 
 // ── DOM refs (local) ───────────────────────
 
@@ -29,6 +33,7 @@ export function render(container) {
   _animas = [];
   _selectedAnima = null;
   _chatHistories = {};
+  _paginationState = {};
   _animaDetail = null;
   _activeRightTab = "state";
   _activeMemoryTab = "episodes";
@@ -140,10 +145,12 @@ export function destroy() {
     el.removeEventListener(event, handler);
   }
   _boundListeners = [];
+  if (_chatObserver) { _chatObserver.disconnect(); _chatObserver = null; }
   _container = null;
   _animas = [];
   _selectedAnima = null;
   _chatHistories = {};
+  _paginationState = {};
   _animaDetail = null;
 }
 
@@ -224,6 +231,9 @@ function _bindEvents() {
     if (detail) detail.style.display = "none";
     if (list) list.style.display = "";
   });
+
+  // Infinite scroll observer
+  _setupChatObserver();
 }
 
 function _addListener(id, event, handler) {
@@ -281,19 +291,27 @@ async function _selectAnima(name) {
   // Load conversation history + anima detail in parallel
   const needConv = !_chatHistories[name] || _chatHistories[name].length === 0;
   const convPromise = needConv
-    ? api(`/api/animas/${encodeURIComponent(name)}/conversation/full?limit=20`).catch(() => null)
+    ? api(`/api/animas/${encodeURIComponent(name)}/conversation/full?limit=${_PAGE_SIZE}`).catch(() => null)
     : Promise.resolve(null);
   const detailPromise = api(`/api/animas/${encodeURIComponent(name)}`).catch(() => null);
 
   const [conv, detail] = await Promise.all([convPromise, detailPromise]);
 
-  // Apply conversation history
+  // Apply conversation history + pagination state
   if (conv && conv.turns && conv.turns.length > 0) {
     _chatHistories[name] = conv.turns.map(t => ({
       role: t.role === "human" ? "user" : "assistant",
       text: t.content,
       timestamp: t.timestamp || "",
     }));
+    const totalRaw = conv.raw_turns || 0;
+    _paginationState[name] = {
+      totalRaw,
+      hasMore: _chatHistories[name].length < totalRaw,
+      loading: false,
+    };
+  } else if (needConv) {
+    _paginationState[name] = { totalRaw: 0, hasMore: false, loading: false };
   }
 
   _renderChat();
@@ -340,19 +358,30 @@ async function _updateAvatar() {
 
 // ── Chat Rendering ─────────────────────────
 
-function _renderChat() {
+function _renderChat(scrollToBottom = true) {
   const messagesEl = _$("chatPageMessages");
   if (!messagesEl) return;
 
   const name = _selectedAnima;
   const history = _chatHistories[name] || [];
+  const pag = _paginationState[name] || { totalRaw: 0, hasMore: false, loading: false };
 
   if (history.length === 0) {
     messagesEl.innerHTML = '<div class="chat-empty">メッセージはまだありません</div>';
     return;
   }
 
-  messagesEl.innerHTML = history.map(m => {
+  // Sentinel for infinite scroll
+  let topHtml = "";
+  if (pag.hasMore) {
+    if (pag.loading) {
+      topHtml += '<div class="chat-load-indicator"><span class="tool-spinner"></span> 読み込み中...</div>';
+    }
+    topHtml += '<div class="chat-load-sentinel"></div>';
+  }
+
+  const prevScrollHeight = messagesEl.scrollHeight;
+  messagesEl.innerHTML = topHtml + history.map(m => {
     const ts = m.timestamp ? smartTimestamp(m.timestamp) : "";
     const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
 
@@ -374,7 +403,15 @@ function _renderChat() {
     }
     return `<div class="chat-bubble user">${escapeHtml(m.text)}${tsHtml}</div>`;
   }).join("");
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  if (scrollToBottom) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  } else {
+    const newScrollHeight = messagesEl.scrollHeight;
+    messagesEl.scrollTop += (newScrollHeight - prevScrollHeight);
+  }
+
+  _observeChatSentinel();
 }
 
 // ── SSE Streaming Chat ─────────────────────
@@ -405,6 +442,70 @@ function _renderStreamingBubble(msg) {
 
   bubble.innerHTML = html;
   messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// ── Infinite Scroll ─────────────────────────────
+
+function _setupChatObserver() {
+  if (_chatObserver) _chatObserver.disconnect();
+  const messagesEl = _$("chatPageMessages");
+  if (!messagesEl) return;
+
+  _chatObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) _loadOlderMessages();
+      }
+    },
+    { root: messagesEl, rootMargin: "200px 0px 0px 0px" },
+  );
+}
+
+function _observeChatSentinel() {
+  if (!_chatObserver) return;
+  const messagesEl = _$("chatPageMessages");
+  if (!messagesEl) return;
+  const sentinel = messagesEl.querySelector(".chat-load-sentinel");
+  if (sentinel) _chatObserver.observe(sentinel);
+}
+
+async function _loadOlderMessages() {
+  const name = _selectedAnima;
+  if (!name) return;
+  const pag = _paginationState[name];
+  if (!pag || !pag.hasMore || pag.loading) return;
+  if (_isChatStreaming) return;
+
+  pag.loading = true;
+  _renderChat(false);
+
+  try {
+    const history = _chatHistories[name] || [];
+    const offset = history.length;
+    const data = await api(`/api/animas/${encodeURIComponent(name)}/conversation/full?limit=${_PAGE_SIZE}&offset=${offset}`);
+
+    if (data.turns && data.turns.length > 0) {
+      const older = data.turns.map(t => ({
+        role: t.role === "human" ? "user" : "assistant",
+        text: t.content,
+        timestamp: t.timestamp || "",
+      }));
+      _chatHistories[name] = [...older, ..._chatHistories[name]];
+      _paginationState[name] = {
+        totalRaw: data.raw_turns || 0,
+        hasMore: data.turns.length >= _PAGE_SIZE && _chatHistories[name].length < (data.raw_turns || 0),
+        loading: false,
+      };
+    } else {
+      pag.hasMore = false;
+      pag.loading = false;
+    }
+  } catch (err) {
+    logger.error("Failed to load older messages", { error: err.message });
+    pag.loading = false;
+  }
+
+  _renderChat(false);
 }
 
 function _submitChat() {
@@ -448,6 +549,7 @@ async function _sendChat(message) {
   const sendBtn = _$("chatPageSendBtn");
   if (input) input.disabled = true;
   if (sendBtn) sendBtn.disabled = true;
+  _isChatStreaming = true;
 
   _addLocalActivity("chat", name, `ユーザー: ${message}`);
 
@@ -518,6 +620,7 @@ async function _sendChat(message) {
     streamingMsg.activeTool = null;
     _renderChat();
   } finally {
+    _isChatStreaming = false;
     if (input) { input.disabled = false; input.focus(); }
     if (sendBtn) sendBtn.disabled = false;
   }

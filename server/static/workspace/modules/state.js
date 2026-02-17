@@ -7,6 +7,7 @@ let state = {
   selectedAnima: null,
   animaDetail: null,
   chatMessages: [],
+  chatPagination: { totalRaw: 0, hasMore: false, loading: false },
   wsConnected: false,
   activeRightTab: "state",
   activeMemoryTab: "episodes",

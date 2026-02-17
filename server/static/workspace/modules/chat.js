@@ -13,12 +13,14 @@ const logger = createLogger("ws-chat");
 
 const EMPTY_MSG = "メッセージはまだありません";
 const PLACEHOLDER_DEFAULT = "Animaを選択してください";
+const PAGE_SIZE = 30;
 
 // ── DOM References ──────────────────────────────
 
 let messagesEl = null;
 let inputEl = null;
 let sendBtnEl = null;
+let _scrollObserver = null;
 
 // ── Render Helpers ──────────────────────────────
 
@@ -44,21 +46,40 @@ function renderBubble(msg) {
   return `<div class="chat-bubble assistant${streamClass}">${content}${toolHtml}</div>`;
 }
 
-function renderAllMessages() {
+function renderAllMessages(scrollToBottom = true) {
   if (!messagesEl) return;
 
-  const { chatMessages } = getState();
+  const { chatMessages, chatPagination } = getState();
 
   if (chatMessages.length === 0) {
     messagesEl.innerHTML = `<div class="chat-empty">${EMPTY_MSG}</div>`;
     return;
   }
 
-  messagesEl.innerHTML = chatMessages.map(renderBubble).join("");
-  requestAnimationFrame(() => {
-    const last = messagesEl.lastElementChild;
-    if (last) last.scrollIntoView({ block: "end", behavior: "instant" });
-  });
+  // Sentinel for infinite scroll (older messages)
+  let topHtml = "";
+  if (chatPagination.hasMore) {
+    if (chatPagination.loading) {
+      topHtml += '<div class="chat-load-indicator"><span class="tool-spinner"></span> 読み込み中...</div>';
+    }
+    topHtml += '<div class="chat-load-sentinel"></div>';
+  }
+
+  const prevScrollHeight = messagesEl.scrollHeight;
+  messagesEl.innerHTML = topHtml + chatMessages.map(renderBubble).join("");
+
+  if (scrollToBottom) {
+    requestAnimationFrame(() => {
+      const last = messagesEl.lastElementChild;
+      if (last) last.scrollIntoView({ block: "end", behavior: "instant" });
+    });
+  } else {
+    // Maintain scroll position after prepending older messages
+    const newScrollHeight = messagesEl.scrollHeight;
+    messagesEl.scrollTop += (newScrollHeight - prevScrollHeight);
+  }
+
+  _observeSentinel();
 }
 
 // ── Streaming update with rAF throttle ──────────────────────
@@ -106,6 +127,67 @@ function updateStreamingBubble(msg) {
   requestAnimationFrame(() => {
     bubble.scrollIntoView({ block: "end", behavior: "instant" });
   });
+}
+
+// ── Infinite Scroll ─────────────────────────────
+
+function _setupScrollObserver() {
+  if (_scrollObserver) _scrollObserver.disconnect();
+  if (!messagesEl) return;
+
+  _scrollObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) _loadOlderMessages();
+      }
+    },
+    { root: messagesEl, rootMargin: "200px 0px 0px 0px" },
+  );
+}
+
+function _observeSentinel() {
+  if (!_scrollObserver || !messagesEl) return;
+  const sentinel = messagesEl.querySelector(".chat-load-sentinel");
+  if (sentinel) _scrollObserver.observe(sentinel);
+}
+
+async function _loadOlderMessages() {
+  const { selectedAnima, chatPagination, chatMessages } = getState();
+  if (!selectedAnima || !chatPagination.hasMore || chatPagination.loading) return;
+  if (_isSseStreaming) return;
+
+  setState({ chatPagination: { ...chatPagination, loading: true } });
+  renderAllMessages(false);
+
+  try {
+    const offset = chatMessages.length;
+    const data = await fetchConversationFull(selectedAnima, PAGE_SIZE, offset);
+    const { chatMessages: current, chatPagination: pag } = getState();
+
+    if (data.turns && data.turns.length > 0) {
+      const older = data.turns.map((t) => ({
+        role: t.role === "human" ? "user" : "assistant",
+        text: t.content || "",
+      }));
+      const merged = [...older, ...current];
+      setState({
+        chatMessages: merged,
+        chatPagination: {
+          totalRaw: data.raw_turns,
+          hasMore: data.turns.length >= PAGE_SIZE && merged.length < data.raw_turns,
+          loading: false,
+        },
+      });
+    } else {
+      setState({ chatPagination: { ...pag, hasMore: false, loading: false } });
+    }
+  } catch (err) {
+    logger.error("Failed to load older messages", { error: err.message });
+    const { chatPagination: pag } = getState();
+    setState({ chatPagination: { ...pag, loading: false } });
+  }
+
+  renderAllMessages(false);
 }
 
 function updateInputState() {
@@ -156,6 +238,8 @@ export function initChat(container) {
   }
 
   if (!inputEl || !sendBtnEl) return;
+
+  _setupScrollObserver();
 
   // Auto-resize textarea (100px on mobile, 200px on desktop)
   inputEl.addEventListener("input", () => {
@@ -331,23 +415,39 @@ export async function loadConversation() {
   const { selectedAnima } = getState();
   if (!selectedAnima) return;
 
+  setState({ chatPagination: { totalRaw: 0, hasMore: false, loading: false } });
+
   try {
-    const data = await fetchConversationFull(selectedAnima);
+    const data = await fetchConversationFull(selectedAnima, PAGE_SIZE);
     if (data.turns && data.turns.length > 0) {
       const messages = data.turns.map((t) => ({
         role: t.role === "human" ? "user" : "assistant",
         text: t.content || "",
       }));
-      setState({ chatMessages: messages });
+      const totalRaw = data.raw_turns || 0;
+      setState({
+        chatMessages: messages,
+        chatPagination: {
+          totalRaw,
+          hasMore: messages.length < totalRaw,
+          loading: false,
+        },
+      });
     } else {
-      setState({ chatMessages: [] });
+      setState({
+        chatMessages: [],
+        chatPagination: { totalRaw: 0, hasMore: false, loading: false },
+      });
     }
   } catch (err) {
     logger.error("Failed to load conversation", { anima: selectedAnima, error: err.message });
-    setState({ chatMessages: [] });
+    setState({
+      chatMessages: [],
+      chatPagination: { totalRaw: 0, hasMore: false, loading: false },
+    });
   }
 
-  renderAllMessages();
+  renderAllMessages(true);
   updateInputState();
 }
 

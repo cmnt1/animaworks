@@ -101,8 +101,8 @@ export function fetchSession(name, sessionId) {
   return request(`/api/animas/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}`);
 }
 
-export function fetchConversationFull(name, limit = 50) {
-  return request(`/api/animas/${encodeURIComponent(name)}/conversation/full?limit=${limit}`);
+export function fetchConversationFull(name, limit = 50, offset = 0) {
+  return request(`/api/animas/${encodeURIComponent(name)}/conversation/full?limit=${limit}&offset=${offset}`);
 }
 
 export function fetchTranscript(name, date) {
