@@ -11,11 +11,10 @@ def cmd_anima_restart(args: argparse.Namespace) -> None:
     """Restart a specific anima process."""
     import requests
 
-    from core.paths import get_data_dir, get_run_dir
+    from core.paths import get_data_dir
 
     # Check if server is running
-    run_dir = get_run_dir()
-    pid_file = run_dir / "server.pid"
+    pid_file = get_data_dir() / "server.pid"
 
     if not pid_file.exists():
         print("Error: Server is not running")
@@ -42,11 +41,10 @@ def cmd_anima_status(args: argparse.Namespace) -> None:
     """Show status of anima processes."""
     import requests
 
-    from core.paths import get_run_dir
+    from core.paths import get_data_dir
 
     # Check if server is running
-    run_dir = get_run_dir()
-    pid_file = run_dir / "server.pid"
+    pid_file = get_data_dir() / "server.pid"
 
     if not pid_file.exists():
         print("Server is not running")
