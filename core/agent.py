@@ -81,6 +81,9 @@ class AgentCore:
         )
         self._executor = self._create_executor()
 
+        # Streaming journal (injected by DigitalAnima for crash recovery)
+        self._streaming_journal: Any = None
+
         mode = self._resolve_execution_mode()
         logger.info(
             "AgentCore: model=%s, mode=%s, api_key=%s, base_url=%s",
@@ -97,6 +100,14 @@ class AgentCore:
     def set_on_schedule_changed(self, fn: Callable[[str], Any] | None) -> None:
         """Inject a callback invoked when heartbeat.md or cron.md is modified."""
         self._tool_handler.on_schedule_changed = fn
+
+    def set_streaming_journal(self, journal: Any) -> None:
+        """Inject a StreamingJournal for the current streaming cycle."""
+        self._streaming_journal = journal
+
+    def clear_streaming_journal(self) -> None:
+        """Remove the journal reference after the cycle ends."""
+        self._streaming_journal = None
 
     def drain_notifications(self) -> list[dict[str, Any]]:
         """Return and clear pending notification events from ToolHandler."""
@@ -776,10 +787,21 @@ class AgentCore:
                             accumulated_text="\n".join(full_text_parts),
                             retry_count=retry_count,
                         ))
+                        # Streaming journal: record tool completion
+                        if self._streaming_journal:
+                            self._streaming_journal.write_tool_end(
+                                tool=chunk.get("tool_name", ""),
+                                result_summary=chunk.get("tool_name", ""),
+                            )
                         yield chunk
                     else:
                         if chunk["type"] == "text_delta":
                             text_parts_this_attempt.append(chunk.get("text", ""))
+                        elif chunk["type"] == "tool_start" and self._streaming_journal:
+                            self._streaming_journal.write_tool_start(
+                                tool=chunk.get("tool_name", ""),
+                                args_summary=chunk.get("tool_name", ""),
+                            )
                         yield chunk
 
             except Exception as e:
