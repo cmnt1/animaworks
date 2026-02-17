@@ -510,6 +510,22 @@ class ProcessSupervisor:
         handle: ProcessHandle
     ) -> None:
         """Check health of a single process."""
+        # Detect handles stuck in STOPPING state (e.g. after failed shutdown)
+        if handle.state == ProcessState.STOPPING:
+            stopping_duration = (
+                datetime.now() - handle.stats.started_at
+            ).total_seconds()
+            if stopping_duration > 30:
+                logger.error(
+                    "Process stuck in STOPPING state: %s (%.0fs)",
+                    anima_name, stopping_duration,
+                )
+                handle.state = ProcessState.FAILED
+                asyncio.create_task(
+                    self._handle_process_failure(anima_name, handle)
+                )
+            return
+
         # During streaming: skip ping (IPC lock held) but still check
         # process liveness and streaming duration timeout.
         if handle._streaming:

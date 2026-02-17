@@ -348,7 +348,6 @@ class ProcessHandle:
             logger.debug("Process already stopped: %s", self.anima_name)
             return
 
-        self.state = ProcessState.STOPPING
         logger.info("Stopping process: %s", self.anima_name)
 
         if not self.process:
@@ -356,12 +355,16 @@ class ProcessHandle:
             await self._cleanup()
             return
 
-        # Step 1: Send IPC shutdown request
-        try:
-            logger.debug("Sending shutdown request to %s", self.anima_name)
-            await self.send_request("shutdown", {}, timeout=5.0)
-        except Exception as e:
-            logger.warning("Shutdown request failed for %s: %s", self.anima_name, e)
+        # Step 1: Send IPC shutdown request BEFORE changing state
+        # (send_request requires state == RUNNING)
+        if self.state == ProcessState.RUNNING:
+            try:
+                logger.debug("Sending shutdown request to %s", self.anima_name)
+                await self.send_request("shutdown", {}, timeout=5.0)
+            except Exception as e:
+                logger.warning("Shutdown request failed for %s: %s", self.anima_name, e)
+
+        self.state = ProcessState.STOPPING
 
         # Step 2: Wait for graceful exit
         try:

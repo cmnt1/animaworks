@@ -525,6 +525,7 @@ def create_chat_router() -> APIRouter:
         async def _ipc_stream_events() -> AsyncIterator[str]:
             """Async generator that converts IPC stream to SSE frames."""
             full_response = ""
+            stream_done = False
             try:
                 await emit(request, "anima.status", {"name": name, "status": "thinking"})
 
@@ -559,6 +560,7 @@ def create_chat_router() -> APIRouter:
                         cycle_result["emotion"] = emotion
                         full_response = clean_text
                         yield registry.format_sse(stream, "done", cycle_result or {"summary": clean_text, "emotion": emotion})
+                        stream_done = True
                         break
 
                     if ipc_response.chunk:
@@ -581,6 +583,7 @@ def create_chat_router() -> APIRouter:
                                 evt_name, evt_payload = result
                                 if evt_name == "done":
                                     full_response = evt_payload.get("summary", full_response)
+                                    stream_done = True
                                 yield registry.format_sse(stream, evt_name, evt_payload)
                         except json.JSONDecodeError:
                             # Raw text chunk fallback
@@ -599,7 +602,16 @@ def create_chat_router() -> APIRouter:
                         cycle_result["emotion"] = emotion
                         full_response = clean_text
                         yield registry.format_sse(stream, "done", cycle_result or {"summary": clean_text, "emotion": emotion})
+                        stream_done = True
                         break
+
+                # Fallback: stream ended without done event
+                if not stream_done:
+                    logger.warning("Stream ended without done event for anima=%s", name)
+                    yield registry.format_sse(stream, "error", {
+                        "code": "STREAM_INCOMPLETE",
+                        "message": "ストリームが予期せず終了しました。再試行してください。",
+                    })
 
             except ValueError as e:
                 logger.error("IPC stream error for anima=%s: %s", name, e)
