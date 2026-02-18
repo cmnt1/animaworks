@@ -1387,8 +1387,9 @@ class ConsolidationEngine:
         # Iterate through episode files
         for episode_file in sorted(self.episodes_dir.glob("*.md")):
             try:
-                # Parse date from filename (format: YYYY-MM-DD.md)
-                date_str = episode_file.stem
+                # Parse date from filename — support both YYYY-MM-DD.md and YYYY-MM-DD_xxx.md
+                stem = episode_file.stem
+                date_str = stem[:10]  # Extract YYYY-MM-DD prefix
                 file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
                 # Skip if within retention period
@@ -1431,6 +1432,11 @@ class ConsolidationEngine:
                 summary = response.choices[0].message.content or ""
 
                 if summary.strip():
+                    # Backup original before compression
+                    backup_dir = self.anima_dir / "archive" / "episodes"
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(episode_file), str(backup_dir / episode_file.name))
+
                     # Replace original file with compressed version
                     compressed_header = f"# {date_str}\n\n[COMPRESSED: {datetime.now().strftime('%Y-%m-%d %H:%M')}]\n\n"
                     episode_file.write_text(

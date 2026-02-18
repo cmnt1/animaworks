@@ -387,6 +387,9 @@ class BackgroundTaskManager:
     def cleanup_old_tasks(self, max_age_hours: int = 24) -> int:
         """Remove completed/failed tasks older than max_age_hours.
 
+        Also cleans up stale running tasks (crash orphans) that have been
+        in running state for more than 48 hours.
+
         Returns the number of tasks removed.
         """
         cutoff = time.time() - (max_age_hours * 3600)
@@ -400,6 +403,18 @@ class BackgroundTaskManager:
                     path.unlink()
                     self._tasks.pop(data.get("task_id", ""), None)
                     removed += 1
+                # Clean up stale running tasks (crash orphans)
+                if status == "running":
+                    created = data.get("created_at")
+                    stale_cutoff = time.time() - (48 * 3600)  # 48 hours
+                    if created and created < stale_cutoff:
+                        path.unlink()
+                        self._tasks.pop(data.get("task_id", ""), None)
+                        removed += 1
+                        logger.info(
+                            "Cleaned up stale running task: %s",
+                            data.get("task_id", path.stem),
+                        )
             except (json.JSONDecodeError, OSError):
                 continue
         if removed:

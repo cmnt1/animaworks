@@ -318,6 +318,11 @@ class ForgettingEngine:
                         self._index_merged_chunk(
                             merged_content, chunk_a, memory_type,
                         )
+                        # Sync source files on disk so next RAG re-index
+                        # reflects the merge instead of restoring originals
+                        self._sync_merged_source_files(
+                            chunk_a, chunk_b, merged_content,
+                        )
                         total_merged += 1
                         merged_pairs.append(
                             f"{chunk_a['id']} + {chunk_b['id']}"
@@ -478,6 +483,78 @@ class ForgettingEngine:
         except Exception as e:
             logger.warning("Failed to index merged chunk: %s", e)
 
+    def _sync_merged_source_files(
+        self,
+        chunk_a: dict,
+        chunk_b: dict,
+        merged_content: str,
+    ) -> None:
+        """Update source .md files on disk after a neurogenesis merge.
+
+        Without this step, the next ``_rebuild_rag_index()`` would re-index
+        the original (pre-merge) files and the merged chunks would reappear
+        as duplicates.
+
+        Steps:
+          1. Archive both original source files to ``archive/merged/``.
+          2. Write the merged content to the primary source file (from chunk_a).
+          3. Remove the secondary source file (from chunk_b) if it differs
+             from the primary.
+
+        Args:
+            chunk_a: First chunk dict (kept as primary).
+            chunk_b: Second chunk dict (secondary, may be removed).
+            merged_content: LLM-merged text to write.
+        """
+        source_a = (chunk_a.get("metadata") or {}).get("source_file", "")
+        source_b = (chunk_b.get("metadata") or {}).get("source_file", "")
+
+        # Guard: skip if source_file values are missing/empty or "merged"
+        if not source_a or source_a == "merged":
+            return
+
+        primary_path = self.anima_dir / source_a
+        secondary_path = (self.anima_dir / source_b) if source_b and source_b != "merged" else None
+
+        # Archive directory for merged originals
+        archive_dir = self.anima_dir / "archive" / "merged"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Archive primary original
+        if primary_path.exists():
+            dest = archive_dir / f"{primary_path.stem}_{timestamp}{primary_path.suffix}"
+            try:
+                shutil.copy2(str(primary_path), str(dest))
+                logger.debug("Archived merged source (primary): %s -> %s", source_a, dest.name)
+            except Exception as e:
+                logger.warning("Failed to archive primary source %s: %s", source_a, e)
+
+        # Archive secondary original (if different from primary)
+        if secondary_path and secondary_path != primary_path and secondary_path.exists():
+            dest = archive_dir / f"{secondary_path.stem}_{timestamp}{secondary_path.suffix}"
+            try:
+                shutil.copy2(str(secondary_path), str(dest))
+                logger.debug("Archived merged source (secondary): %s -> %s", source_b, dest.name)
+            except Exception as e:
+                logger.warning("Failed to archive secondary source %s: %s", source_b, e)
+
+        # Write merged content to primary source file
+        try:
+            primary_path.parent.mkdir(parents=True, exist_ok=True)
+            primary_path.write_text(merged_content, encoding="utf-8")
+            logger.debug("Wrote merged content to %s", source_a)
+        except Exception as e:
+            logger.warning("Failed to write merged content to %s: %s", source_a, e)
+
+        # Remove secondary source file if different from primary
+        if secondary_path and secondary_path != primary_path and secondary_path.exists():
+            try:
+                secondary_path.unlink()
+                logger.debug("Removed secondary source file: %s", source_b)
+            except Exception as e:
+                logger.warning("Failed to remove secondary source %s: %s", source_b, e)
+
     # ── Stage 3: Complete Forgetting (Monthly) ─────────────────────
 
     def complete_forgetting(self) -> dict[str, Any]:
@@ -529,12 +606,8 @@ class ForgettingEngine:
                     if source_file and source_file != "merged":
                         source_files_to_archive.add(source_file)
 
-            # Archive source files
-            for source_file in source_files_to_archive:
-                self._archive_source_file(source_file)
-                archived_files.append(source_file)
-
-            # Delete from vector index
+            # Delete from vector index FIRST — if this fails, skip archiving
+            # to avoid orphaned state (files archived but chunks still present)
             if ids_to_delete:
                 try:
                     store.delete_documents(collection_name, ids_to_delete)
@@ -547,6 +620,12 @@ class ForgettingEngine:
                     logger.warning(
                         "Failed to delete chunks from %s: %s", collection_name, e,
                     )
+                    continue  # Skip archiving if vector deletion failed
+
+            # Archive source files AFTER successful vector deletion
+            for source_file in source_files_to_archive:
+                self._archive_source_file(source_file)
+                archived_files.append(source_file)
 
         result = {
             "forgotten_chunks": total_forgotten,
