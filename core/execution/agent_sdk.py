@@ -17,6 +17,7 @@ execution, plus a ``PostToolUse`` hook for context monitoring.
 import logging
 import os
 import re
+import shutil
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -135,6 +136,98 @@ def _check_a1_bash_command(command: str, anima_dir: Path) -> str | None:
                 pass
 
     return None
+
+
+# ── A1 output guard ──────────────────────────────────────────
+
+_BASH_TRUNCATE_BYTES = 10_000   # 10 KB
+_BASH_HEAD_BYTES = 5_000        # head display
+_BASH_TAIL_BYTES = 3_000        # tail display
+_READ_DEFAULT_LIMIT = 500       # lines
+_GREP_DEFAULT_HEAD_LIMIT = 200  # entries
+_GLOB_DEFAULT_HEAD_LIMIT = 500  # entries
+
+
+def _build_output_guard(
+    tool_name: str,
+    tool_input: dict[str, Any],
+    anima_dir: Path,
+) -> dict[str, Any] | None:
+    """Build updatedInput for output size control.
+
+    Returns modified tool_input dict, or None if no modification needed.
+    """
+    if tool_name == "Bash":
+        return _guard_bash(tool_input, anima_dir)
+    if tool_name == "Read":
+        return _guard_read(tool_input)
+    if tool_name == "Grep":
+        return _guard_grep(tool_input)
+    if tool_name == "Glob":
+        return _guard_glob(tool_input)
+    return None
+
+
+def _guard_bash(tool_input: dict[str, Any], anima_dir: Path) -> dict[str, Any]:
+    """Wrap bash command to save full output to file and truncate display."""
+    command = tool_input.get("command", "")
+    if not command:
+        return tool_input
+
+    out_dir = anima_dir / "shortterm" / "tool_outputs"
+
+    wrapped = (
+        f'_OUTDIR="{out_dir}"\n'
+        f'mkdir -p "$_OUTDIR"\n'
+        f'_OUTF="$_OUTDIR/bash_$(date +%s%N).txt"\n'
+        f'{{ {command} ; }} > "$_OUTF" 2>&1\n'
+        f'_EC=$?\n'
+        f'_SZ=$(wc -c < "$_OUTF")\n'
+        f'if [ "$_SZ" -gt {_BASH_TRUNCATE_BYTES} ]; then\n'
+        f'  head -c {_BASH_HEAD_BYTES} "$_OUTF"\n'
+        f'  echo ""\n'
+        f'  echo "... [truncated: $_SZ bytes total] ..."\n'
+        f'  echo ""\n'
+        f'  tail -c {_BASH_TAIL_BYTES} "$_OUTF"\n'
+        f'  echo ""\n'
+        f'  echo "[Full output saved: $_OUTF]"\n'
+        f'  echo "[Use Read tool with file_path=$_OUTF to view full content]"\n'
+        f'else\n'
+        f'  cat "$_OUTF"\n'
+        f'  rm -f "$_OUTF"\n'
+        f'fi\n'
+        f'exit $_EC'
+    )
+    return {**tool_input, "command": wrapped}
+
+
+def _guard_read(tool_input: dict[str, Any]) -> dict[str, Any] | None:
+    """Inject default limit for Read if not specified."""
+    if "limit" in tool_input and tool_input["limit"] is not None:
+        return None  # agent explicitly specified -> pass through
+    return {**tool_input, "limit": _READ_DEFAULT_LIMIT}
+
+
+def _guard_grep(tool_input: dict[str, Any]) -> dict[str, Any] | None:
+    """Inject default head_limit for Grep if not specified."""
+    if "head_limit" in tool_input and tool_input["head_limit"] is not None:
+        return None
+    return {**tool_input, "head_limit": _GREP_DEFAULT_HEAD_LIMIT}
+
+
+def _guard_glob(tool_input: dict[str, Any]) -> dict[str, Any] | None:
+    """Inject default head_limit for Glob if not specified."""
+    if "head_limit" in tool_input and tool_input["head_limit"] is not None:
+        return None
+    return {**tool_input, "head_limit": _GLOB_DEFAULT_HEAD_LIMIT}
+
+
+def _cleanup_tool_outputs(anima_dir: Path) -> None:
+    """Remove temporary tool output files created during the session."""
+    tool_output_dir = anima_dir / "shortterm" / "tool_outputs"
+    if tool_output_dir.exists():
+        shutil.rmtree(tool_output_dir, ignore_errors=True)
+        logger.debug("Cleaned up tool output directory: %s", tool_output_dir)
 
 
 class AgentSDKExecutor(BaseExecutor):
@@ -336,6 +429,17 @@ class AgentSDKExecutor(BaseExecutor):
                         )
                     )
 
+            # ── Output guard ──
+            updated = _build_output_guard(tool_name, tool_input, self._anima_dir)
+            if updated is not None:
+                return SyncHookJSONOutput(
+                    hookSpecificOutput=PreToolUseHookSpecificOutput(
+                        hookEventName="PreToolUse",
+                        permissionDecision="allow",
+                        updatedInput=updated,
+                    )
+                )
+
             return SyncHookJSONOutput()
 
         options = ClaudeAgentOptions(
@@ -349,7 +453,7 @@ class AgentSDKExecutor(BaseExecutor):
             max_buffer_size=_SDK_MAX_BUFFER_SIZE,
             hooks={
                 "PreToolUse": [HookMatcher(
-                    matcher="Write|Edit|Bash|Read",
+                    matcher="Write|Edit|Bash|Read|Grep|Glob",
                     hooks=[_pre_tool_hook],
                 )],
                 "PostToolUse": [HookMatcher(matcher=None, hooks=[_post_tool_hook])],
@@ -376,6 +480,8 @@ class AgentSDKExecutor(BaseExecutor):
             return ExecutionResult(
                 text="\n".join(response_text) or f"[Agent SDK Error: {e}]",
             )
+        finally:
+            _cleanup_tool_outputs(self._anima_dir)
 
         logger.debug(
             "Agent SDK completed, messages=%d text_blocks=%d",
@@ -511,6 +617,17 @@ class AgentSDKExecutor(BaseExecutor):
                         )
                     )
 
+            # ── Output guard ──
+            updated = _build_output_guard(tool_name, tool_input, self._anima_dir)
+            if updated is not None:
+                return SyncHookJSONOutput(
+                    hookSpecificOutput=PreToolUseHookSpecificOutput(
+                        hookEventName="PreToolUse",
+                        permissionDecision="allow",
+                        updatedInput=updated,
+                    )
+                )
+
             return SyncHookJSONOutput()
 
         options = ClaudeAgentOptions(
@@ -525,7 +642,7 @@ class AgentSDKExecutor(BaseExecutor):
             include_partial_messages=True,
             hooks={
                 "PreToolUse": [HookMatcher(
-                    matcher="Write|Edit|Bash|Read",
+                    matcher="Write|Edit|Bash|Read|Grep|Glob",
                     hooks=[_pre_tool_hook],
                 )],
                 "PostToolUse": [HookMatcher(matcher=None, hooks=[_post_tool_hook])],
@@ -585,6 +702,8 @@ class AgentSDKExecutor(BaseExecutor):
                 f"Agent SDK stream error: {e}",
                 partial_text=partial,
             ) from e
+        finally:
+            _cleanup_tool_outputs(self._anima_dir)
 
         logger.debug(
             "Agent SDK streaming completed, messages=%d text_blocks=%d",
