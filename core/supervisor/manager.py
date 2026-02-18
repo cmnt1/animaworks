@@ -907,6 +907,30 @@ class ProcessSupervisor:
             )
             logger.info("System cron: Weekly integration on %s at %s:%s JST", day_of_week, time_parts[0], time_parts[1])
 
+        # Monthly forgetting
+        monthly_enabled = True
+        monthly_time = "1:04:00"
+        if consolidation_cfg:
+            monthly_enabled = getattr(consolidation_cfg, "monthly_enabled", True)
+            monthly_time = getattr(consolidation_cfg, "monthly_time", "1:04:00")
+
+        if monthly_enabled:
+            parts = monthly_time.split(":")
+            day_of_month = int(parts[0]) if len(parts) == 3 else 1
+            time_parts = parts[-2:]
+            hour, minute = int(time_parts[0]), int(time_parts[1])
+            self.scheduler.add_job(
+                self._run_monthly_forgetting,
+                CronTrigger(day=day_of_month, hour=hour, minute=minute),
+                id="system_monthly_forgetting",
+                name="System: Monthly Forgetting",
+                replace_existing=True,
+            )
+            logger.info(
+                "System cron: Monthly forgetting on day %d at %02d:%02d JST",
+                day_of_month, hour, minute,
+            )
+
     def _iter_consolidation_targets(self) -> list[tuple[str, Path]]:
         """Return (anima_name, anima_dir) for all initialized and enabled animas.
 
@@ -1018,6 +1042,36 @@ class ProcessSupervisor:
                     )
             except Exception:
                 logger.exception("Weekly integration failed for %s", anima_name)
+
+    async def _run_monthly_forgetting(self) -> None:
+        """Run monthly forgetting for all animas."""
+        logger.info("Starting system-wide monthly forgetting")
+
+        for anima_name, anima_dir in self._iter_consolidation_targets():
+            try:
+                from core.memory.consolidation import ConsolidationEngine
+
+                engine = ConsolidationEngine(
+                    anima_dir=anima_dir,
+                    anima_name=anima_name,
+                )
+
+                result = await engine.monthly_forget()
+
+                logger.info(
+                    "Monthly forgetting for %s: forgotten=%d, archived=%d files",
+                    anima_name,
+                    result.get("forgotten_chunks", 0),
+                    len(result.get("archived_files", [])),
+                )
+
+                if not result.get("skipped"):
+                    await self._broadcast_event(
+                        "system.consolidation",
+                        {"anima": anima_name, "type": "monthly_forgetting", "result": result},
+                    )
+            except Exception:
+                logger.exception("Monthly forgetting failed for %s", anima_name)
 
     # ── Status ───────────────────────────────────────────────────
 

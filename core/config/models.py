@@ -131,6 +131,8 @@ class ConsolidationConfig(BaseModel):
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
     duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
     episode_retention_days: int = 30  # Days to retain uncompressed episodes
+    monthly_enabled: bool = True  # Monthly forgetting toggle
+    monthly_time: str = "1:04:00"  # Format: day:HH:MM (day of month)
 
 
 class ImageGenConfig(BaseModel):
