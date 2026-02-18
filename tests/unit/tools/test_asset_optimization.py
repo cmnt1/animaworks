@@ -400,3 +400,23 @@ class TestOptimizeAssetsCommand:
 
         args = parser.parse_args(["optimize-assets", "--skip-backup"])
         assert args.skip_backup is True
+
+    def test_nonexistent_anima_exits_early(self, tmp_path, capsys):
+        """Should print error and return when specified anima does not exist."""
+        from cli.commands.optimize_assets import _run
+
+        args = argparse.Namespace(
+            anima="nonexistent_anima",
+            dry_run=False,
+            simplify=None,
+            texture_compress=False,
+            texture_resize=None,
+            apply_all=False,
+            skip_backup=True,
+        )
+
+        with patch("core.paths.get_animas_dir", return_value=tmp_path):
+            _run(args)
+
+        captured = capsys.readouterr()
+        assert "Anima not found: nonexistent_anima" in captured.out

@@ -83,7 +83,11 @@ def _run(args: argparse.Namespace) -> None:
     texture_resolution = args.texture_resize or 1024
 
     if args.anima:
-        anima_dirs = [animas_dir / args.anima]
+        anima_dir = animas_dir / args.anima
+        if not anima_dir.is_dir():
+            print(f"Anima not found: {args.anima}")
+            return
+        anima_dirs = [anima_dir]
     else:
         anima_dirs = sorted(
             d for d in animas_dir.iterdir()

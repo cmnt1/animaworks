@@ -948,14 +948,14 @@ const { prune } = require("@gltf-transform/functions");
     script_path = None
     try:
         node_modules = _ensure_gltf_transform_modules()
-        fd = tempfile.NamedTemporaryFile(
+        with tempfile.NamedTemporaryFile(
             mode="w", suffix=".cjs", delete=False,
-        )
-        fd.write(script)
-        fd.close()
-        script_path = fd.name
+        ) as fd:
+            fd.write(script)
+            script_path = fd.name
 
-        env = {**__import__("os").environ, "NODE_PATH": str(node_modules)}
+        import os
+        env = {**os.environ, "NODE_PATH": str(node_modules)}
         subprocess.run(
             [node, script_path, str(glb_path)],
             check=True, capture_output=True, timeout=120, env=env,
@@ -1015,12 +1015,12 @@ def simplify_glb(glb_path: Path, target_ratio: float = 0.27, error_threshold: fl
         tmp_path.unlink(missing_ok=True)
 
 
-def compress_textures(glb_path: Path, fmt: str = "webp", resolution: int = 1024) -> bool:
+def compress_textures(glb_path: Path, resolution: int = 1024) -> bool:
     """Resize textures and convert to WebP format using gltf-transform.
 
     Applies two-step optimization:
     1. Resize all textures to ``resolution x resolution``
-    2. Convert textures to ``fmt`` (default: WebP)
+    2. Convert textures to WebP
 
     Returns True on success, False if skipped or failed.
     """
@@ -1040,8 +1040,8 @@ def compress_textures(glb_path: Path, fmt: str = "webp", resolution: int = 1024)
         ):
             tmp_path.unlink(missing_ok=True)
             logger.info(
-                "Compressed textures in %s to %s@%d (now %d bytes)",
-                glb_path, fmt, resolution, glb_path.stat().st_size,
+                "Compressed textures in %s to webp@%d (now %d bytes)",
+                glb_path, resolution, glb_path.stat().st_size,
             )
             return True
         # resize succeeded but webp failed — keep resized version
