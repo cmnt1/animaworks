@@ -31,14 +31,14 @@ class TestInboxReadCounts:
         state_dir.mkdir()
         counts_path = state_dir / "inbox_read_counts.json"
 
-        # Simulate what run_heartbeat does
+        # Simulate what run_heartbeat does (uses filename-only keys)
         inbox_items_paths = [tmp_path / "msg1.json", tmp_path / "msg2.json"]
         for p in inbox_items_paths:
             p.write_text("{}", encoding="utf-8")
 
         _read_counts: dict[str, int] = {}
         for p in inbox_items_paths:
-            key = str(p)
+            key = p.name
             _read_counts[key] = _read_counts.get(key, 0) + 1
 
         counts_path.write_text(
@@ -47,8 +47,8 @@ class TestInboxReadCounts:
 
         assert counts_path.exists()
         data = json.loads(counts_path.read_text(encoding="utf-8"))
-        assert data[str(inbox_items_paths[0])] == 1
-        assert data[str(inbox_items_paths[1])] == 1
+        assert data["msg1.json"] == 1
+        assert data["msg2.json"] == 1
 
     def test_increments_on_subsequent_reads(self, tmp_path):
         """Counter increments when the same file is presented again."""
@@ -58,7 +58,7 @@ class TestInboxReadCounts:
 
         msg_path = tmp_path / "msg1.json"
         msg_path.write_text("{}", encoding="utf-8")
-        key = str(msg_path)
+        key = msg_path.name  # filename-only key
 
         # First heartbeat
         _read_counts: dict[str, int] = {}
@@ -79,21 +79,24 @@ class TestInboxReadCounts:
         state_dir.mkdir()
         counts_path = state_dir / "inbox_read_counts.json"
 
-        existing = tmp_path / "exists.json"
+        # Simulate inbox directory with one existing and one gone file
+        inbox_dir = tmp_path / "inbox"
+        inbox_dir.mkdir()
+        existing = inbox_dir / "exists.json"
         existing.write_text("{}", encoding="utf-8")
-        gone = tmp_path / "gone.json"  # does not exist
+        # "gone.json" does not exist in inbox_dir
 
-        _read_counts = {str(existing): 3, str(gone): 5}
-        # Prune
+        _read_counts = {"exists.json": 3, "gone.json": 5}
+        # Prune using inbox_dir (matching production logic)
         _read_counts = {
             k: v for k, v in _read_counts.items()
-            if Path(k).exists()
+            if (inbox_dir / k).exists()
         }
         counts_path.write_text(json.dumps(_read_counts), encoding="utf-8")
 
         data = json.loads(counts_path.read_text(encoding="utf-8"))
-        assert str(existing) in data
-        assert str(gone) not in data
+        assert "exists.json" in data
+        assert "gone.json" not in data
 
     def test_corrupted_json_resets(self, tmp_path):
         """Corrupted counts file is handled gracefully (reset to empty)."""

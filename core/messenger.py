@@ -60,7 +60,7 @@ class Messenger:
         skip_logging: bool = False,
     ) -> Message:
         # ── Conversation depth check (internal Anima only) ──
-        if msg_type not in ("ack", "error"):
+        if msg_type not in ("ack", "error", "system_alert", "board_mention"):
             from core.paths import get_animas_dir
             animas_dir = get_animas_dir()
             is_internal = (animas_dir / to).is_dir() if animas_dir.exists() else False

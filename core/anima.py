@@ -889,13 +889,14 @@ class DigitalAnima:
                         _read_counts = {}
 
                     for item in inbox_items:
-                        key = str(item.path)
+                        key = item.path.name
                         _read_counts[key] = _read_counts.get(key, 0) + 1
 
-                    # Prune entries for files that no longer exist
+                    # Prune entries for inbox files that no longer exist
+                    inbox_dir = self.anima_dir.parent.parent / "shared" / "inbox" / self.name
                     _read_counts = {
                         k: v for k, v in _read_counts.items()
-                        if Path(k).exists()
+                        if (inbox_dir / k).exists()
                     }
 
                     try:
@@ -910,7 +911,7 @@ class DigitalAnima:
                     lines: list[str] = []
                     for item in inbox_items:
                         m = item.msg
-                        count = _read_counts.get(str(item.path), 1)
+                        count = _read_counts.get(item.path.name, 1)
                         if count >= 2:
                             prefix = f"- {m.from_person} [⚠️ 未返信{count}回目]: "
                         else:

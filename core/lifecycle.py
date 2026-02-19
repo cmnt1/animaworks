@@ -155,6 +155,10 @@ class LifecycleManager:
             return
 
         # ── Cascade detection for scheduled heartbeats ──
+        # NOTE: TOCTOU — inbox is peeked here and re-read inside run_heartbeat().
+        # Messages may arrive between the two reads. This is acceptable because
+        # the depth limiter at Messenger.send() is the primary defense; this
+        # check is a best-effort supplementary layer.
         cascade_suppressed: set[str] = set()
         senders: set[str] = set()
         try:
