@@ -28,6 +28,13 @@ from core.schemas import CycleResult, AnimaStatus, VALID_EMOTIONS
 
 logger = logging.getLogger("animaworks.anima")
 
+# Maximum time (seconds) an unreplied message stays in inbox before
+# force-archival.  Prevents re-processing storms when replied_to tracking
+# fails (e.g. agent replies via board post instead of DM).
+# With a typical heartbeat interval of 5 min, a message gets ~2 chances
+# to be replied to before force-archival.
+_STALE_MESSAGE_TIMEOUT_SEC = 600
+
 
 class DigitalAnima:
     """A Digital Anima: encapsulates identity, memory, agent, and communication.
@@ -1015,22 +1022,26 @@ class DigitalAnima:
                             if item not in items_to_archive
                         ]
 
-                        # Safety: force-archive messages older than 10 min
-                        # to prevent re-processing storms even if replied_to
+                        # Safety: force-archive messages that have been sitting
+                        # in inbox longer than _STALE_MESSAGE_TIMEOUT_SEC to
+                        # prevent re-processing storms even if replied_to
                         # tracking fails.
                         if items_to_keep:
-                            import time
                             now = time.time()
-                            stale = [
-                                item for item in items_to_keep
-                                if item.path.exists()
-                                and (now - item.path.stat().st_mtime) > 600
-                            ]
+                            stale: list[InboxItem] = []
+                            for item in items_to_keep:
+                                try:
+                                    mtime = item.path.stat().st_mtime
+                                    if (now - mtime) > _STALE_MESSAGE_TIMEOUT_SEC:
+                                        stale.append(item)
+                                except FileNotFoundError:
+                                    continue  # already archived/deleted
                             if stale:
                                 logger.warning(
                                     "[%s] Force-archiving %d stale unreplied "
-                                    "messages (>10 min old)",
+                                    "messages (>%ds old)",
                                     self.name, len(stale),
+                                    _STALE_MESSAGE_TIMEOUT_SEC,
                                 )
                                 items_to_archive.extend(stale)
                                 items_to_keep = [

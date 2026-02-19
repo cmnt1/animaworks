@@ -42,6 +42,9 @@ def _persist_replied_to_for_a1(to: str) -> None:
     called.  This function bridges the gap by writing to the same
     ``{anima_dir}/run/replied_to.jsonl`` file that the Agent SDK executor
     reads after the subprocess finishes.
+
+    Only writes when ``ANIMAWORKS_ANIMA_DIR`` is set (i.e. running inside an
+    Agent SDK subprocess).  No-op otherwise.
     """
     import json as _json
     from pathlib import Path
