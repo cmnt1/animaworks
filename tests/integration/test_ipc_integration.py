@@ -107,9 +107,10 @@ async def test_process_message(data_dir: Path, make_anima):
 
 
 @pytest.mark.asyncio
+@pytest.mark.live
 @pytest.mark.timeout(90)
 async def test_heartbeat_request(data_dir: Path, make_anima):
-    """Test run_heartbeat IPC request."""
+    """Test run_heartbeat IPC request (requires API key for LLM execution)."""
     make_anima("test-anima")
 
     supervisor = ProcessSupervisor(

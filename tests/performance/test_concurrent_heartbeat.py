@@ -16,8 +16,10 @@ from core.supervisor.manager import ProcessSupervisor
 
 
 @pytest.mark.asyncio
+@pytest.mark.live
+@pytest.mark.timeout(120)
 async def test_concurrent_heartbeat_no_deadlock(data_dir: Path, make_anima):
-    """Test multiple animas running heartbeat concurrently without deadlock."""
+    """Test multiple animas running heartbeat concurrently without deadlock (requires API key)."""
     # Create multiple animas
     anima_names = ["alice", "bob", "charlie"]
     for name in anima_names:

@@ -507,11 +507,11 @@ def test_e2e_priming_integration(anima_dir, vector_store, indexer):
     assert not result.is_empty(), "Priming result should not be empty"
 
     # At least one channel should have produced output
-    has_episodes = bool(result.recent_episodes)
+    has_activity = bool(result.recent_activity)
     has_knowledge = bool(result.related_knowledge)
     has_skills = bool(result.matched_skills)
 
-    assert has_episodes or has_knowledge or has_skills, (
+    assert has_activity or has_knowledge or has_skills, (
         "At least one priming channel should return content"
     )
 
@@ -524,8 +524,8 @@ def test_e2e_priming_integration(anima_dir, vector_store, indexer):
     )
 
     # Verify structural sections exist based on what was primed
-    if has_episodes:
-        assert "直近の出来事" in formatted
+    if has_activity:
+        assert "直近のアクティビティ" in formatted
     if has_knowledge:
         assert "関連する知識" in formatted
     if has_skills:

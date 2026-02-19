@@ -893,8 +893,12 @@ class TestClusterActivities:
         assert len(clusters) == 1
         assert len(clusters[0]) == 5
 
-    def test_different_tools_separate_clusters(self, distiller) -> None:
-        """Different tools should produce separate clusters."""
+    @patch(
+        "core.memory.distillation.ProceduralDistiller._cluster_activities_vector",
+        side_effect=ImportError("RAG unavailable in test"),
+    )
+    def test_different_tools_separate_clusters(self, _mock_vector, distiller) -> None:
+        """Different tools should produce separate clusters (text-based fallback)."""
         entries = (
             [{"type": "tool_use", "tool": "github", "summary": f"gh{i}"} for i in range(4)]
             + [{"type": "tool_use", "tool": "slack", "summary": f"sl{i}"} for i in range(4)]
