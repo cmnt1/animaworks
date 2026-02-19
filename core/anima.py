@@ -780,7 +780,7 @@ class DigitalAnima:
                 # and priming Channel E. No separate heartbeat injection needed.
 
                 # Read unread messages but do NOT archive yet.
-                # Messages stay in inbox until the agent replies to each sender.
+                # Archiving happens after agent processing (or on crash).
                 unread_count = 0
                 inbox_items: list[InboxItem] = []
                 senders: set[str] = set()
@@ -995,43 +995,63 @@ class DigitalAnima:
                         except Exception:
                             logger.debug("[%s] Failed to record heartbeat episode", self.name, exc_info=True)
 
-                    # Archive all messages that were injected into the prompt.
-                    # In A1 mode agents send replies via Bash (not the
-                    # send_message tool), so ToolHandler.replied_to may be
-                    # incomplete.  Keeping unarchived messages causes
-                    # re-processing and heartbeat cascade loops.
-                    #
-                    # NOTE: Message content has already been recorded to
-                    # episodes above (before agent processing).  If that
-                    # recording failed, the messages will still be archived
-                    # here to prevent re-processing loops.  A warning is
-                    # logged so operators can investigate.
+                    # Archive messages from senders the agent replied to.
+                    # In A1 mode, replied_to is tracked via the persistent
+                    # file written by cli/commands/messaging.py.
+                    # Messages from unreplied senders stay in inbox for
+                    # the next heartbeat — but a safety limit prevents
+                    # infinite re-processing loops.
                     if unread_count > 0:
                         replied_to = self.agent.replied_to
                         unreplied = senders - replied_to
 
-                        # Only archive messages from senders that were replied to
                         items_to_archive = [
                             item for item in inbox_items
                             if item.msg.from_person in replied_to
-                            or item.msg.from_person not in senders  # system messages etc.
+                            or item.msg.from_person not in senders  # system msgs
                         ]
                         items_to_keep = [
                             item for item in inbox_items
                             if item not in items_to_archive
                         ]
 
-                        if unreplied:
+                        # Safety: force-archive messages older than 10 min
+                        # to prevent re-processing storms even if replied_to
+                        # tracking fails.
+                        if items_to_keep:
+                            import time
+                            now = time.time()
+                            stale = [
+                                item for item in items_to_keep
+                                if item.path.exists()
+                                and (now - item.path.stat().st_mtime) > 600
+                            ]
+                            if stale:
+                                logger.warning(
+                                    "[%s] Force-archiving %d stale unreplied "
+                                    "messages (>10 min old)",
+                                    self.name, len(stale),
+                                )
+                                items_to_archive.extend(stale)
+                                items_to_keep = [
+                                    i for i in items_to_keep if i not in stale
+                                ]
+
+                        if unreplied and items_to_keep:
                             logger.warning(
-                                "[%s] Unreplied messages from %s will remain in inbox "
-                                "for next heartbeat cycle",
+                                "[%s] Unreplied messages from %s will remain "
+                                "in inbox for next heartbeat cycle",
                                 self.name, ", ".join(unreplied),
                             )
 
-                        total_archived = self.messenger.archive_paths(items_to_archive)
+                        total_archived = self.messenger.archive_paths(
+                            items_to_archive
+                        )
                         logger.info(
-                            "[%s] Archived %d/%d messages (kept %d unreplied in inbox)",
-                            self.name, total_archived, len(inbox_items), len(items_to_keep),
+                            "[%s] Archived %d/%d messages "
+                            "(kept %d unreplied in inbox)",
+                            self.name, total_archived, len(inbox_items),
+                            len(items_to_keep),
                         )
 
                     logger.info(
@@ -1046,6 +1066,20 @@ class DigitalAnima:
                     return result
                 except Exception as exc:
                     logger.exception("[%s] run_heartbeat FAILED", self.name)
+                    # Archive inbox messages even on crash to prevent
+                    # re-processing storms on next heartbeat.
+                    if inbox_items:
+                        try:
+                            crash_archived = self.messenger.archive_paths(inbox_items)
+                            logger.info(
+                                "[%s] Crash-archived %d/%d inbox messages",
+                                self.name, crash_archived, len(inbox_items),
+                            )
+                        except Exception:
+                            logger.warning(
+                                "[%s] Failed to crash-archive inbox messages",
+                                self.name, exc_info=True,
+                            )
                     # Activity log: error
                     try:
                         activity = ActivityLogger(self.anima_dir)
