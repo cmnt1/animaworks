@@ -158,6 +158,33 @@ def cli_main() -> None:
     p_send.add_argument("--reply-to", default=None, help="Reply to message ID")
     p_send.set_defaults(func=_lazy_send)
 
+    # ── Board ─────────────────────────────────────────────
+    p_board = sub.add_parser("board", help="Board shared channel operations")
+    board_sub = p_board.add_subparsers(dest="board_command")
+
+    # board read
+    p_board_read = board_sub.add_parser("read", help="Read channel messages")
+    p_board_read.add_argument("channel", help="Channel name (e.g. general, ops)")
+    p_board_read.add_argument("--limit", type=int, default=20, help="Max messages")
+    p_board_read.add_argument(
+        "--human-only", action="store_true", help="Show human messages only",
+    )
+    p_board_read.set_defaults(func=_lazy_board_read)
+
+    # board post
+    p_board_post = board_sub.add_parser("post", help="Post to channel")
+    p_board_post.add_argument("from_anima", help="Sender anima name")
+    p_board_post.add_argument("channel", help="Channel name")
+    p_board_post.add_argument("text", help="Message text")
+    p_board_post.set_defaults(func=_lazy_board_post)
+
+    # board dm-history
+    p_board_dm = board_sub.add_parser("dm-history", help="Read DM history with peer")
+    p_board_dm.add_argument("from_anima", help="Self anima name")
+    p_board_dm.add_argument("peer", help="Peer anima name")
+    p_board_dm.add_argument("--limit", type=int, default=20, help="Max messages")
+    p_board_dm.set_defaults(func=_lazy_board_dm_history)
+
     # ── List ──────────────────────────────────────────────
     p_list = sub.add_parser("list", help="List all animas")
     p_list.add_argument(
@@ -481,3 +508,21 @@ def _lazy_anima_list(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_list
 
     cmd_anima_list(args)
+
+
+def _lazy_board_read(args: argparse.Namespace) -> None:
+    from cli.commands.board import cmd_board_read
+
+    cmd_board_read(args)
+
+
+def _lazy_board_post(args: argparse.Namespace) -> None:
+    from cli.commands.board import cmd_board_post
+
+    cmd_board_post(args)
+
+
+def _lazy_board_dm_history(args: argparse.Namespace) -> None:
+    from cli.commands.board import cmd_board_dm_history
+
+    cmd_board_dm_history(args)

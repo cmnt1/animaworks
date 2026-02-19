@@ -244,6 +244,11 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
 
     ensure_send_scripts(animas_dir)
 
+    # Ensure every anima has the board wrapper script
+    from core.anima_factory import ensure_board_scripts
+
+    ensure_board_scripts(animas_dir)
+
     # Auto-migrate old Japanese cron.md format to standard cron expressions
     try:
         from core.config.migrate import migrate_all_cron
