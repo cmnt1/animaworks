@@ -722,6 +722,22 @@ class DigitalAnima:
                 checklist = hb_config or load_prompt("heartbeat_default_checklist")
                 parts = [load_prompt("heartbeat", checklist=checklist)]
 
+                # ── Recovery note from previous failed heartbeat ──
+                recovery_note_path = self.anima_dir / "state" / "recovery_note.md"
+                if recovery_note_path.exists():
+                    try:
+                        recovery_content = recovery_note_path.read_text(encoding="utf-8")
+                        parts.append(
+                            "## ⚠️ 前回のハートビート障害情報\n\n"
+                            "前回のハートビートが中断しました。以下の情報を確認し、"
+                            "未完了のタスクを優先的に処理してください。\n\n"
+                            + recovery_content
+                        )
+                        recovery_note_path.unlink(missing_ok=True)
+                        logger.info("[%s] Recovery note loaded and removed", self.name)
+                    except Exception:
+                        logger.debug("[%s] Failed to read recovery note", self.name, exc_info=True)
+
                 # Inject pending background task notifications
                 bg_notifications = self.drain_background_notifications()
                 if bg_notifications:
@@ -760,6 +776,9 @@ class DigitalAnima:
                 except Exception:
                     logger.debug("[%s] Failed to load dialogue context for heartbeat", self.name, exc_info=True)
 
+                # NOTE: Task queue is injected via builder.py (system prompt)
+                # and priming Channel E. No separate heartbeat injection needed.
+
                 # Read unread messages but do NOT archive yet.
                 # Messages stay in inbox until the agent replies to each sender.
                 unread_count = 0
@@ -770,6 +789,59 @@ class DigitalAnima:
                     messages = [item.msg for item in inbox_items]
                     unread_count = len(messages)
                     senders = {m.from_person for m in messages}
+
+                    # ── Message deduplication (Phase 4) ──
+                    try:
+                        from core.memory.dedup import MessageDeduplicator
+                        dedup = MessageDeduplicator(self.anima_dir)
+
+                        # Load previously deferred messages and prepend to inbox
+                        deferred_raw = dedup.load_deferred()
+                        if deferred_raw:
+                            from core.schemas import Message as _Msg
+                            for raw in deferred_raw:
+                                try:
+                                    deferred_msg = _Msg(
+                                        from_person=raw.get("from", "unknown"),
+                                        to_person=self.name,
+                                        content=raw.get("content", ""),
+                                        type=raw.get("type", "message"),
+                                    )
+                                    messages.append(deferred_msg)
+                                except Exception:
+                                    logger.debug("[%s] Skipping invalid deferred message", self.name)
+                            logger.info("[%s] Restored %d deferred messages", self.name, len(deferred_raw))
+
+                        # Apply rate limiting first (before consolidation)
+                        messages, rate_deferred = dedup.apply_rate_limit(messages)
+                        if rate_deferred:
+                            dedup.archive_suppressed(rate_deferred)
+
+                        # Consolidate same-sender messages
+                        messages, consolidated_suppressed = dedup.consolidate_messages(messages)
+                        if consolidated_suppressed:
+                            dedup.archive_suppressed(consolidated_suppressed)
+
+                        # Suppress resolved topics
+                        try:
+                            resolutions = self.memory.read_resolutions(days=7)
+                        except Exception:
+                            resolutions = []
+                        if resolutions:
+                            filtered = []
+                            for m in messages:
+                                if dedup.is_resolved_topic(m.content, resolutions):
+                                    dedup.archive_suppressed([m])
+                                else:
+                                    filtered.append(m)
+                            messages = filtered
+
+                        # Update counts after dedup
+                        unread_count = len(messages)
+                        senders = {m.from_person for m in messages}
+                    except Exception:
+                        logger.debug("[%s] Message dedup failed, using original messages", self.name, exc_info=True)
+
                     logger.info(
                         "[%s] Processing %d unread messages in heartbeat (senders: %s)",
                         self.name, unread_count, ", ".join(senders),
@@ -820,6 +892,20 @@ class DigitalAnima:
                     )
                 else:
                     self._heartbeat_context = "定期巡回中"
+
+                # ── Heartbeat Checkpoint ──
+                checkpoint_path = self.anima_dir / "state" / "heartbeat_checkpoint.json"
+                try:
+                    checkpoint_data = {
+                        "ts": datetime.now().isoformat(),
+                        "trigger": "heartbeat",
+                        "unread_count": unread_count,
+                    }
+                    checkpoint_path.write_text(
+                        json.dumps(checkpoint_data, ensure_ascii=False), encoding="utf-8",
+                    )
+                except Exception:
+                    logger.debug("[%s] Failed to write heartbeat checkpoint", self.name, exc_info=True)
 
                 try:
                     # Reset reply tracking before the cycle
@@ -952,6 +1038,11 @@ class DigitalAnima:
                         "[%s] run_heartbeat END duration_ms=%d unread_processed=%d",
                         self.name, result.duration_ms, unread_count,
                     )
+                    # Heartbeat completed successfully — remove checkpoint
+                    try:
+                        checkpoint_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
                     return result
                 except Exception as exc:
                     logger.exception("[%s] run_heartbeat FAILED", self.name)
@@ -965,6 +1056,20 @@ class DigitalAnima:
                         )
                     except Exception:
                         pass
+                    # ── Save recovery note for next heartbeat ──
+                    try:
+                        recovery_path = self.anima_dir / "state" / "recovery_note.md"
+                        recovery_content = (
+                            f"### エラー情報\n\n"
+                            f"- エラー種別: {type(exc).__name__}\n"
+                            f"- エラー内容: {str(exc)[:200]}\n"
+                            f"- 発生日時: {datetime.now().isoformat()}\n"
+                            f"- 未処理メッセージ数: {unread_count}\n"
+                        )
+                        recovery_path.write_text(recovery_content, encoding="utf-8")
+                        logger.info("[%s] Recovery note saved", self.name)
+                    except Exception:
+                        logger.debug("[%s] Failed to save recovery note", self.name, exc_info=True)
                     # Send sentinel to close the relay queue on error
                     queue = self._heartbeat_stream_queue
                     if queue is not None:

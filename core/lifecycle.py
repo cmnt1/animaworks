@@ -382,11 +382,31 @@ class LifecycleManager:
             self._pending_triggers.discard(name)
             return
 
-        # Peek at inbox senders for cascade detection
-        senders = {m.from_person for m in anima.messenger.receive()}
+        # Peek at inbox senders for cascade detection and rate limiting
+        inbox_messages = anima.messenger.receive()
+        senders = {m.from_person for m in inbox_messages}
         if senders and self._check_cascade(name, senders):
             self._pending_triggers.discard(name)
             return
+
+        # ── Per-sender rate limiting (Phase 4) ──
+        # If a single sender has 5+ pending messages, skip message-triggered
+        # heartbeat and let the next scheduled heartbeat handle them with dedup.
+        try:
+            sender_counts: dict[str, int] = {}
+            for m in inbox_messages:
+                sender_counts[m.from_person] = sender_counts.get(m.from_person, 0) + 1
+            for sender, count in sender_counts.items():
+                if count >= 5:
+                    logger.info(
+                        "Per-sender rate limit: %s has %d messages for %s, "
+                        "deferring to scheduled heartbeat",
+                        sender, count, name,
+                    )
+                    self._pending_triggers.discard(name)
+                    return
+        except Exception:
+            logger.debug("Per-sender rate limit check failed for %s", name, exc_info=True)
 
         try:
             logger.info("Message-triggered heartbeat: %s", name)

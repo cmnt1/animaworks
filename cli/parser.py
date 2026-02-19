@@ -345,6 +345,11 @@ def cli_main() -> None:
 
     remake_cmd.register(sub)
 
+    # ── Task Queue ───────────────────────────────────────────
+    from cli.commands.task_cmd import register_task_command
+
+    register_task_command(sub)
+
     args = parser.parse_args()
 
     # Apply --data-dir override before any command
