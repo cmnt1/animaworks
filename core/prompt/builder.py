@@ -181,7 +181,7 @@ def _build_full_org_tree(
     return "\n".join(lines)
 
 
-def _build_org_context(anima_name: str, other_animas: list[str]) -> str:
+def _build_org_context(anima_name: str, other_animas: list[str], execution_mode: str = "a1") -> str:
     """Build organisation context section from supervisor chain.
 
     Reads config.json to derive each Anima's relationship
@@ -214,7 +214,8 @@ def _build_org_context(anima_name: str, other_animas: list[str]) -> str:
             ),
         ]
         if other_animas:
-            parts.append(load_prompt("communication_rules"))
+            cr_template = "communication_rules_a1" if execution_mode == "a1" else "communication_rules"
+            parts.append(load_prompt(cr_template))
         return "\n\n".join(parts)
 
     # Non-top-level: existing logic
@@ -262,7 +263,8 @@ def _build_org_context(anima_name: str, other_animas: list[str]) -> str:
 
     # Communication rules: only when there are other animas
     if other_animas:
-        parts.append(load_prompt("communication_rules"))
+        cr_template = "communication_rules_a1" if execution_mode == "a1" else "communication_rules"
+        parts.append(load_prompt(cr_template))
 
     return "\n\n".join(parts)
 
@@ -580,7 +582,7 @@ def build_system_prompt(
 
     parts.append(load_prompt("behavior_rules"))
 
-    org_context = _build_org_context(pd.name, other_animas)
+    org_context = _build_org_context(pd.name, other_animas, execution_mode)
     if org_context:
         parts.append(org_context)
 
