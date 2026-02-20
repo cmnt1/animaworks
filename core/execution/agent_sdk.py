@@ -437,10 +437,10 @@ class AgentSDKExecutor(BaseExecutor):
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PATH": f"{self._anima_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
             "CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT": "true",
+            # Block API key leaking from parent (load_dotenv) — force Max plan auth.
+            "ANTHROPIC_API_KEY": "",
         }
-        # Do NOT pass ANTHROPIC_API_KEY — let Claude Code use its own
-        # subscription auth.  Only pass ANTHROPIC_BASE_URL if a custom
-        # endpoint is configured (e.g. proxy).
+        # Only pass ANTHROPIC_BASE_URL if a custom endpoint is configured.
         if self._model_config.api_base_url:
             env["ANTHROPIC_BASE_URL"] = self._model_config.api_base_url
         return env
