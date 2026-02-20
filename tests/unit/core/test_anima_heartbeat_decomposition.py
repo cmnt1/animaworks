@@ -1153,11 +1153,10 @@ class TestHandleHeartbeatFailure:
             error = TypeError("type issue")
             dp._heartbeat_stream_queue = None
 
-            with patch("core.anima.ActivityLogger") as MockAL:
-                mock_activity = MockAL.return_value
-                mock_activity.log = MagicMock()
+            mock_activity = MagicMock()
+            dp._activity = mock_activity
 
-                await dp._handle_heartbeat_failure(error, [], unread_count=0)
+            await dp._handle_heartbeat_failure(error, [], unread_count=0)
 
             mock_activity.log.assert_called_once()
             call_args = mock_activity.log.call_args

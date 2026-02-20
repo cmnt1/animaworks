@@ -84,6 +84,7 @@ def _write_skill(base_dir: Path, name: str, description: str, body: str) -> Path
 
 def test_knowledge_lifecycle_report_and_protection(anima_dir):
     """Full lifecycle: create → report success → verify protection from forgetting."""
+    from core.memory.activity import ActivityLogger
     from core.memory.forgetting import ForgettingEngine
     from core.memory.manager import MemoryManager
     from core.memory.rag.indexer import MemoryIndexer
@@ -106,6 +107,7 @@ def test_knowledge_lifecycle_report_and_protection(anima_dir):
     handler._memory = mm
     from unittest.mock import MagicMock
     handler._model_config = MagicMock()
+    handler._activity = ActivityLogger(anima_dir)
 
     for _ in range(2):
         result = handler._handle_report_knowledge_outcome({
@@ -309,6 +311,7 @@ def test_channel_d_vector_search_integration(anima_dir, monkeypatch):
 
 def test_backward_compatibility_legacy_knowledge(anima_dir):
     """Knowledge files without new metadata fields should work without errors."""
+    from core.memory.activity import ActivityLogger
     from core.memory.forgetting import ForgettingEngine
     from core.memory.manager import MemoryManager
     from core.tooling.handler import ToolHandler
@@ -339,6 +342,7 @@ def test_backward_compatibility_legacy_knowledge(anima_dir):
     handler._anima_dir = anima_dir
     handler._memory = mm
     handler._model_config = MagicMock()
+    handler._activity = ActivityLogger(anima_dir)
 
     result = handler._handle_report_knowledge_outcome({
         "path": "knowledge/legacy_partial.md",

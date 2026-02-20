@@ -82,6 +82,7 @@ class DigitalAnima:
     def __init__(self, anima_dir: Path, shared_dir: Path) -> None:
         self.anima_dir = anima_dir
         self.name = anima_dir.name
+        self._activity = ActivityLogger(anima_dir)
 
         self.memory = MemoryManager(anima_dir)
         self.model_config = self.memory.read_model_config()
@@ -259,8 +260,7 @@ class DigitalAnima:
         activity log is empty (migration period).
         """
         try:
-            activity = ActivityLogger(self.anima_dir)
-            entries = activity.recent(
+            entries = self._activity.recent(
                 days=2,
                 types=["heartbeat_end"],
                 limit=self._HEARTBEAT_HISTORY_N,
@@ -291,8 +291,7 @@ class DigitalAnima:
     def _load_recent_reflections(self) -> str:
         """Load recent heartbeat reflections from unified activity log."""
         try:
-            activity = ActivityLogger(self.anima_dir)
-            entries = activity.recent(
+            entries = self._activity.recent(
                 days=3,
                 types=["heartbeat_reflection"],
                 limit=self._RECENT_REFLECTIONS_N,
@@ -410,11 +409,7 @@ class DigitalAnima:
                 conv_memory.save()
 
                 # Activity log: message received
-                try:
-                    activity = ActivityLogger(self.anima_dir)
-                    activity.log("message_received", content=content, summary=content[:100], from_person=from_person, channel="chat")
-                except Exception:
-                    pass
+                self._activity.log("message_received", content=content, summary=content[:100], from_person=from_person, channel="chat")
 
                 try:
                     result = await self.agent.run_cycle(
@@ -428,11 +423,7 @@ class DigitalAnima:
                     conv_memory.save()
 
                     # Activity log: response sent
-                    try:
-                        activity = ActivityLogger(self.anima_dir)
-                        activity.log("response_sent", content=result.summary, to_person=from_person, channel="chat")
-                    except Exception:
-                        pass
+                    self._activity.log("response_sent", content=result.summary, to_person=from_person, channel="chat")
 
                     logger.info(
                         "[%s] process_message END duration_ms=%d",
@@ -442,15 +433,11 @@ class DigitalAnima:
                 except Exception as exc:
                     logger.exception("[%s] process_message FAILED", self.name)
                     # Activity log: error
-                    try:
-                        activity = ActivityLogger(self.anima_dir)
-                        activity.log(
-                            "error",
-                            summary=f"process_messageエラー: {type(exc).__name__}",
-                            meta={"phase": "process_message", "error": str(exc)[:200]},
-                        )
-                    except Exception:
-                        pass
+                    self._activity.log(
+                        "error",
+                        summary=f"process_messageエラー: {type(exc).__name__}",
+                        meta={"phase": "process_message", "error": str(exc)[:200]},
+                    )
                     # Save error marker so the failed exchange is visible
                     conv_memory.append_turn(
                         "assistant", "[ERROR: エージェント実行中にエラーが発生しました]"
@@ -556,11 +543,7 @@ class DigitalAnima:
                 conv_memory.save()
 
                 # Activity log: message received
-                try:
-                    activity = ActivityLogger(self.anima_dir)
-                    activity.log("message_received", content=content, summary=content[:100], from_person=from_person, channel="chat")
-                except Exception:
-                    pass
+                self._activity.log("message_received", content=content, summary=content[:100], from_person=from_person, channel="chat")
 
                 # Streaming journal: write-ahead log for crash recovery
                 journal = StreamingJournal(self.anima_dir)
@@ -603,11 +586,7 @@ class DigitalAnima:
                             conv_memory.save()
 
                             # Activity log: response sent
-                            try:
-                                activity = ActivityLogger(self.anima_dir)
-                                activity.log("response_sent", content=summary, to_person=from_person, channel="chat")
-                            except Exception:
-                                pass
+                            self._activity.log("response_sent", content=summary, to_person=from_person, channel="chat")
 
                             # Finalize streaming journal (deletes the file)
                             journal.finalize(summary=summary[:500])
@@ -636,15 +615,11 @@ class DigitalAnima:
                     else:
                         error_code = "STREAM_ERROR"
                     # Activity log: error
-                    try:
-                        activity = ActivityLogger(self.anima_dir)
-                        activity.log(
-                            "error",
-                            summary=f"process_message_streamエラー: {type(exc).__name__}",
-                            meta={"phase": "process_message_stream", "error_code": error_code, "error": str(exc)[:200]},
-                        )
-                    except Exception:
-                        pass
+                    self._activity.log(
+                        "error",
+                        summary=f"process_message_streamエラー: {type(exc).__name__}",
+                        meta={"phase": "process_message_stream", "error_code": error_code, "error": str(exc)[:200]},
+                    )
                     yield {
                         "type": "error",
                         "code": error_code,
@@ -1033,12 +1008,8 @@ class DigitalAnima:
                 )
 
         # Activity log: DM received (full content, summary truncated)
-        try:
-            activity = ActivityLogger(self.anima_dir)
-            for _m in _recordable[:50]:
-                activity.log("dm_received", content=_m.content, summary=_m.content[:200], from_person=_m.from_person, to_person=self.name)
-        except Exception:
-            pass
+        for _m in _recordable[:50]:
+            self._activity.log("dm_received", content=_m.content, summary=_m.content[:200], from_person=_m.from_person, to_person=self.name)
 
         return InboxResult(
             inbox_items=inbox_items,
@@ -1130,11 +1101,7 @@ class DigitalAnima:
             self._last_activity = now_jst()
 
             # Activity log: heartbeat end
-            try:
-                activity = ActivityLogger(self.anima_dir)
-                activity.log("heartbeat_end", summary=result.summary)
-            except Exception:
-                pass
+            self._activity.log("heartbeat_end", summary=result.summary)
 
             # Session boundary: finalize pending conversation turns
             try:
@@ -1161,18 +1128,11 @@ class DigitalAnima:
                     episode_entry += (
                         f"\n\n[REFLECTION]\n{reflection_text}\n[/REFLECTION]"
                     )
-                    try:
-                        activity = ActivityLogger(self.anima_dir)
-                        activity.log(
-                            "heartbeat_reflection",
-                            content=reflection_text,
-                            summary=reflection_text[:200],
-                        )
-                    except Exception:
-                        logger.debug(
-                            "[%s] Failed to log heartbeat reflection",
-                            self.name, exc_info=True,
-                        )
+                    self._activity.log(
+                        "heartbeat_reflection",
+                        content=reflection_text,
+                        summary=reflection_text[:200],
+                    )
 
                 try:
                     self.memory.append_episode(episode_entry)
@@ -1284,15 +1244,11 @@ class DigitalAnima:
                 )
 
         # Activity log: error
-        try:
-            activity = ActivityLogger(self.anima_dir)
-            activity.log(
-                "error",
-                summary=f"run_heartbeatエラー: {type(error).__name__}",
-                meta={"phase": "run_heartbeat", "error": str(error)[:200]},
-            )
-        except Exception:
-            pass
+        self._activity.log(
+            "error",
+            summary=f"run_heartbeatエラー: {type(error).__name__}",
+            meta={"phase": "run_heartbeat", "error": str(error)[:200]},
+        )
 
         # ── Save recovery note for next heartbeat ──
         try:
@@ -1354,11 +1310,7 @@ class DigitalAnima:
                 unread_count = 0
 
                 # Activity log: heartbeat start
-                try:
-                    activity = ActivityLogger(self.anima_dir)
-                    activity.log("heartbeat_start", summary="定期巡回開始")
-                except Exception:
-                    pass
+                self._activity.log("heartbeat_start", summary="定期巡回開始")
 
                 try:
                     # 1. Build prompt parts
@@ -1436,19 +1388,15 @@ class DigitalAnima:
                     )
 
                     # Activity log: cron executed
-                    try:
-                        activity = ActivityLogger(self.anima_dir)
-                        activity.log(
-                            "cron_executed",
-                            summary=f"タスク: {task_name}",
-                            content=result.summary[:500] if result else "",
-                            meta={
-                                "task_name": task_name,
-                                "duration_ms": result.duration_ms if result else 0,
-                            },
-                        )
-                    except Exception:
-                        pass
+                    self._activity.log(
+                        "cron_executed",
+                        summary=f"タスク: {task_name}",
+                        content=result.summary[:500] if result else "",
+                        meta={
+                            "task_name": task_name,
+                            "duration_ms": result.duration_ms if result else 0,
+                        },
+                    )
 
                     logger.info(
                         "[%s] run_cron_task END task=%s duration_ms=%d",
@@ -1460,15 +1408,11 @@ class DigitalAnima:
                         "[%s] run_cron_task FAILED task=%s", self.name, task_name,
                     )
                     # Activity log: error
-                    try:
-                        activity = ActivityLogger(self.anima_dir)
-                        activity.log(
-                            "error",
-                            summary=f"run_cron_taskエラー: {type(exc).__name__}",
-                            meta={"phase": "run_cron_task", "error": str(exc)[:200]},
-                        )
-                    except Exception:
-                        pass
+                    self._activity.log(
+                        "error",
+                        summary=f"run_cron_taskエラー: {type(exc).__name__}",
+                        meta={"phase": "run_cron_task", "error": str(exc)[:200]},
+                    )
                     raise
                 finally:
                     self._status = "idle"
@@ -1542,15 +1486,11 @@ class DigitalAnima:
                         "[%s] run_cron_command FAILED task=%s", self.name, task_name
                     )
                     # Activity log: error
-                    try:
-                        activity = ActivityLogger(self.anima_dir)
-                        activity.log(
-                            "error",
-                            summary=f"run_cron_commandエラー: {type(exc).__name__}",
-                            meta={"phase": "run_cron_command", "error": str(exc)[:200]},
-                        )
-                    except Exception:
-                        pass
+                    self._activity.log(
+                        "error",
+                        summary=f"run_cron_commandエラー: {type(exc).__name__}",
+                        meta={"phase": "run_cron_command", "error": str(exc)[:200]},
+                    )
                 finally:
                     self._status = "idle"
                     self._current_task = ""
@@ -1569,15 +1509,11 @@ class DigitalAnima:
             # Activity log: cron command executed (intentionally logs even on
             # failure — exit_code captures the error state, unlike run_cron_task
             # which re-raises and never reaches this point on error)
-            try:
-                activity = ActivityLogger(self.anima_dir)
-                activity.log(
-                    "cron_executed",
-                    summary=f"コマンド: {task_name}",
-                    meta={"task_name": task_name, "exit_code": exit_code, "command": command or "", "tool": tool or ""},
-                )
-            except Exception:
-                pass
+            self._activity.log(
+                "cron_executed",
+                summary=f"コマンド: {task_name}",
+                meta={"task_name": task_name, "exit_code": exit_code, "command": command or "", "tool": tool or ""},
+            )
 
             logger.info(
                 "[%s] run_cron_command END task=%s exit_code=%d duration_ms=%d",

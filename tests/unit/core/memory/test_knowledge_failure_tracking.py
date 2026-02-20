@@ -134,6 +134,7 @@ class TestReportKnowledgeOutcome:
 
     def _make_handler(self, anima_dir: Path):
         """Create a minimal ToolHandler for testing."""
+        from core.memory.activity import ActivityLogger
         from core.memory.manager import MemoryManager
         from core.tooling.handler import ToolHandler
 
@@ -142,6 +143,7 @@ class TestReportKnowledgeOutcome:
         handler._anima_dir = anima_dir
         handler._memory = mm
         handler._model_config = MagicMock()
+        handler._activity = ActivityLogger(anima_dir)
         return handler
 
     def test_success_increments_count(self, anima_dir: Path) -> None:

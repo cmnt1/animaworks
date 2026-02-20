@@ -21,6 +21,7 @@ import shlex
 import subprocess
 import uuid
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -274,6 +275,7 @@ class ToolHandler:
         self._pending_notifications: list[dict[str, Any]] = []
         self._replied_to: set[str] = set()
         self._session_id: str = uuid.uuid4().hex[:12]
+        self._activity = ActivityLogger(self._anima_dir)
         self._external = ExternalToolDispatcher(
             tool_registry or [],
             personal_tools=personal_tools,
@@ -440,19 +442,18 @@ class ToolHandler:
     def _log_tool_activity(self, name: str, args: dict[str, Any]) -> None:
         """Record tool usage in unified activity log."""
         try:
-            activity = ActivityLogger(self._anima_dir)
             activity_type = self._ACTIVITY_TYPE_MAP.get(name)
 
             if activity_type is None:
-                activity.log("tool_use", tool=name, summary=str(args)[:200])
+                self._activity.log("tool_use", tool=name, summary=str(args)[:200])
             elif name == "post_channel":
-                activity.log(activity_type, content=args.get("text", "")[:200], channel=args.get("channel", ""))
+                self._activity.log(activity_type, content=args.get("text", "")[:200], channel=args.get("channel", ""))
             elif name == "read_channel":
-                activity.log(activity_type, channel=args.get("channel", ""), summary=f"最新{args.get('limit', 20)}件を確認")
+                self._activity.log(activity_type, channel=args.get("channel", ""), summary=f"最新{args.get('limit', 20)}件を確認")
             elif name == "read_dm_history":
-                activity.log(activity_type, channel=f"dm:{args.get('peer', '')}", summary="DM履歴を確認")
+                self._activity.log(activity_type, channel=f"dm:{args.get('peer', '')}", summary="DM履歴を確認")
             elif name == "call_human":
-                activity.log(activity_type, content=args.get("body", "")[:200], via="configured_channels")
+                self._activity.log(activity_type, content=args.get("body", "")[:200], via="configured_channels")
         except Exception as e:
             logger.warning("Activity logging failed for tool '%s': %s", name, e)
 
@@ -520,15 +521,11 @@ class ToolHandler:
         )
 
         # Activity log: memory write
-        try:
-            activity = ActivityLogger(self._anima_dir)
-            activity.log(
-                "memory_write",
-                summary=f"{rel} ({args.get('mode', 'overwrite')})",
-                meta={"path": rel, "mode": args.get("mode", "overwrite")},
-            )
-        except Exception:
-            pass
+        self._activity.log(
+            "memory_write",
+            summary=f"{rel} ({args.get('mode', 'overwrite')})",
+            meta={"path": rel, "mode": args.get("mode", "overwrite")},
+        )
 
         # Trigger schedule reload if heartbeat or cron config changed
         if args["path"] in ("heartbeat.md", "cron.md") and self._on_schedule_changed:
@@ -1125,20 +1122,16 @@ class ToolHandler:
         )
 
         # Activity log: knowledge outcome
-        try:
-            activity = ActivityLogger(self._anima_dir)
-            activity.log(
-                "knowledge_outcome",
-                summary=f"{'成功' if success else '失敗'}: {rel}",
-                meta={
-                    "path": rel,
-                    "success": success,
-                    "confidence": meta["confidence"],
-                    "notes": notes[:200] if notes else "",
-                },
-            )
-        except Exception:
-            pass
+        self._activity.log(
+            "knowledge_outcome",
+            summary=f"{'成功' if success else '失敗'}: {rel}",
+            meta={
+                "path": rel,
+                "success": success,
+                "confidence": meta["confidence"],
+                "notes": notes[:200] if notes else "",
+            },
+        )
 
         outcome_label = "成功" if success else "失敗"
         result = (
@@ -1187,15 +1180,11 @@ class ToolHandler:
             return _error_result("InvalidArguments", str(e))
 
         # Activity log: task created
-        try:
-            activity = ActivityLogger(self._anima_dir)
-            activity.log(
-                "task_created",
-                summary=f"タスク追加: {summary[:100]}",
-                meta={"task_id": entry.task_id, "source": source, "assignee": assignee},
-            )
-        except Exception:
-            pass
+        self._activity.log(
+            "task_created",
+            summary=f"タスク追加: {summary[:100]}",
+            meta={"task_id": entry.task_id, "source": source, "assignee": assignee},
+        )
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
@@ -1220,15 +1209,11 @@ class ToolHandler:
             )
 
         # Activity log: task updated
-        try:
-            activity = ActivityLogger(self._anima_dir)
-            activity.log(
-                "task_updated",
-                summary=f"タスク更新: {entry.summary[:100]} → {status}",
-                meta={"task_id": task_id, "status": status},
-            )
-        except Exception:
-            pass
+        self._activity.log(
+            "task_updated",
+            summary=f"タスク更新: {entry.summary[:100]} → {status}",
+            meta={"task_id": task_id, "status": status},
+        )
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
