@@ -538,7 +538,7 @@ class AgentSDKExecutor(BaseExecutor):
             transcript_path = input_data.get("transcript_path", "")
             _transcript_path = transcript_path or _transcript_path
             tool_output = (
-                input_data.get("tool_output")
+                input_data.get("tool_response")
                 or input_data.get("output")
                 or input_data.get("content")
                 or ""
@@ -723,7 +723,7 @@ class AgentSDKExecutor(BaseExecutor):
             transcript_path = input_data.get("transcript_path", "")
             _transcript_path = transcript_path or _transcript_path
             tool_output = (
-                input_data.get("tool_output")
+                input_data.get("tool_response")
                 or input_data.get("output")
                 or input_data.get("content")
                 or ""
