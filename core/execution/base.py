@@ -86,6 +86,7 @@ class ToolCallRecord:
     tool_id: str = ""
     input_summary: str = ""
     result_summary: str = ""
+    is_error: bool = False
 
 
 @dataclass

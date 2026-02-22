@@ -98,7 +98,7 @@ class TestAgentSDKEnvE2E:
             env = executor._build_env()
 
         assert env["ANIMAWORKS_ANIMA_DIR"] == str(anima_dir)
-        # A1 mode does NOT pass ANTHROPIC_API_KEY (uses subscription auth)
-        assert "ANTHROPIC_API_KEY" not in env
+        # A1 mode sets ANTHROPIC_API_KEY to empty string to block parent leakage
+        assert env["ANTHROPIC_API_KEY"] == ""
         assert env["ANTHROPIC_BASE_URL"] == "https://custom.api"
         assert env["CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT"] == "true"

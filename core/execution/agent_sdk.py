@@ -11,10 +11,10 @@ from __future__ import annotations
 
 Runs Claude as a fully autonomous agent with Read/Write/Edit/Bash/Grep/Glob
 tools via the Agent SDK subprocess.  Supports both blocking and streaming
-execution, plus a ``PostToolUse`` hook for context monitoring.
+execution.  Tool results are captured from UserMessage ToolResultBlock
+instead of PostToolUse hooks.
 """
 
-import json
 import logging
 import os
 import re
@@ -307,29 +307,6 @@ def _log_tool_use(
         logger.debug("Failed to log tool_use for %s", tool_name, exc_info=True)
 
 
-def _parse_tool_result_from_transcript(transcript_path: str, tool_use_id: str) -> str:
-    """Agent SDKのtranscriptからtool結果を取得するフォールバック."""
-    if not transcript_path or not Path(transcript_path).exists():
-        return ""
-    try:
-        with open(transcript_path, "r", encoding="utf-8") as f:
-            for line in reversed(f.readlines()):
-                entry = json.loads(line.strip())
-                if (entry.get("type") == "tool_result"
-                        and entry.get("tool_use_id") == tool_use_id):
-                    content = entry.get("content", "")
-                    if isinstance(content, list):
-                        # content blocksの場合はテキスト部分を結合
-                        return " ".join(
-                            b.get("text", "") for b in content
-                            if b.get("type") == "text"
-                        )
-                    return str(content)
-    except Exception:
-        return ""
-    return ""
-
-
 def _build_pre_tool_hook(
     anima_dir: Path,
 ) -> Callable:
@@ -414,12 +391,102 @@ def _build_pre_tool_hook(
     return _pre_tool_hook
 
 
+# ── Common tool record helpers ───────────────────────────────
+
+
+def _handle_tool_use_block(
+    block: Any,
+    pending_records: dict[str, ToolCallRecord],
+    journal: Any | None,
+    model: str,
+) -> ToolCallRecord:
+    """Process a ToolUseBlock from AssistantMessage.
+
+    Registers the block in ``pending_records`` and writes a WAL entry
+    via the streaming journal (if provided).
+    """
+    context_window = resolve_context_window(model)
+    record = ToolCallRecord(
+        tool_name=block.name,
+        tool_id=block.id,
+        input_summary=_truncate_for_record(
+            str(getattr(block, "input", "")),
+            tool_input_save_budget(context_window),
+        ),
+        result_summary="",
+        is_error=False,
+    )
+    pending_records[block.id] = record
+    if journal:
+        journal.write_tool_start(block.name, record.input_summary, tool_id=block.id)
+    logger.debug("ToolUseBlock registered: tool=%s id=%s", block.name, block.id)
+    return record
+
+
+def _handle_tool_result_block(
+    block: Any,
+    pending_records: dict[str, ToolCallRecord],
+    journal: Any | None,
+    model: str,
+) -> None:
+    """Process a ToolResultBlock from UserMessage.
+
+    Updates the matching entry in ``pending_records`` and writes a WAL
+    entry via the streaming journal (if provided).
+    """
+    content = block.content
+    if isinstance(content, list):
+        content = " ".join(
+            str(c.get("text", "")) for c in content if isinstance(c, dict)
+        )
+    content_str = str(content) if content else ""
+    is_error = block.is_error if block.is_error is not None else False
+
+    record = pending_records.get(block.tool_use_id)
+    if record:
+        context_window = resolve_context_window(model)
+        record.result_summary = _truncate_for_record(
+            content_str,
+            tool_result_save_budget(record.tool_name, context_window),
+        )
+        record.is_error = is_error
+        logger.info(
+            "ToolResult captured: tool=%s id=%s result_len=%d is_error=%s",
+            record.tool_name, block.tool_use_id, len(content_str), is_error,
+        )
+    else:
+        logger.warning("ToolResultBlock for unknown tool_use_id=%s", block.tool_use_id)
+
+    if journal:
+        tool_name = record.tool_name if record else "unknown"
+        journal.write_tool_end(tool_name, content_str[:500], tool_id=block.tool_use_id)
+
+
+def _finalize_pending_records(
+    pending_records: dict[str, ToolCallRecord],
+) -> list[ToolCallRecord]:
+    """Collect all tool records after the message loop ends.
+
+    Marks any record that never received a result as an error.
+    """
+    records: list[ToolCallRecord] = []
+    for tool_id, record in pending_records.items():
+        if not record.result_summary:
+            record.is_error = True
+            logger.warning(
+                "ToolCallRecord without result: tool=%s id=%s",
+                record.tool_name, tool_id,
+            )
+        records.append(record)
+    return records
+
+
 class AgentSDKExecutor(BaseExecutor):
     """Execute via Claude Agent SDK (Mode A1).
 
     The SDK spawns a subprocess where Claude has full tool access.
-    Context monitoring is handled via a PostToolUse hook that fires
-    when token usage crosses the configured threshold.
+    Tool results are captured from UserMessage ToolResultBlock content
+    via ``_handle_tool_result_block``.
     """
 
     def __init__(
@@ -511,83 +578,15 @@ class AgentSDKExecutor(BaseExecutor):
         from claude_agent_sdk import (
             AssistantMessage,
             ClaudeAgentOptions,
+            ClaudeSDKClient,
             HookMatcher,
             ResultMessage,
             SystemMessage,
             TextBlock,
             ToolResultBlock,
+            ToolUseBlock,
             UserMessage,
-            query,
         )
-        from claude_agent_sdk.types import (
-            HookContext,
-            HookInput,
-            PostToolUseHookSpecificOutput,
-            SyncHookJSONOutput,
-        )
-
-        threshold = self._model_config.context_threshold
-        _transcript_path = ""
-        _tool_results_cache: dict[str, str] = {}
-        _reminder_queue = self.reminder_queue
-
-        async def _post_tool_hook(
-            input_data: HookInput,
-            tool_use_id: str | None,
-            context: HookContext,
-        ) -> SyncHookJSONOutput:
-            logger.info("PostToolUse ENTERED tool_use_id=%s", tool_use_id)
-            try:
-                nonlocal _transcript_path
-                # ── Capture tool result into cache ──
-                transcript_path = input_data.get("transcript_path", "")
-                _transcript_path = transcript_path or _transcript_path
-                logger.info(
-                    "PostToolUse input_data keys=%s, tool_use_id=%s",
-                    list(input_data.keys()), tool_use_id,
-                )
-                tool_output = (
-                    input_data.get("tool_response")
-                    or input_data.get("output")
-                    or input_data.get("content")
-                    or ""
-                )
-                if not tool_output and tool_use_id and _transcript_path:
-                    tool_output = _parse_tool_result_from_transcript(
-                        _transcript_path, tool_use_id,
-                    )
-                logger.info(
-                    "PostToolUse tool_output length=%d, transcript_path=%s",
-                    len(str(tool_output)), _transcript_path,
-                )
-                if tool_output and tool_use_id:
-                    _tool_results_cache[tool_use_id] = str(tool_output)
-            except Exception:
-                logger.exception("PostToolUse hook error")
-                return SyncHookJSONOutput()
-
-            # ── P1-1: Context threshold check → push to queue ──
-            if tracker is not None:
-                ratio = tracker.estimate_from_transcript(transcript_path)
-                try:
-                    ratio_f = float(ratio)
-                except (TypeError, ValueError):
-                    ratio_f = 0.0
-                if ratio_f >= threshold:
-                    _reminder_queue.push_sync(
-                        MSG_CONTEXT_THRESHOLD.format(ratio=ratio_f)
-                    )
-
-            # ── Drain reminder queue ──
-            reminder = _reminder_queue.drain_sync()
-            if reminder:
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PostToolUseHookSpecificOutput(
-                        hookEventName="PostToolUse",
-                        additionalContext=reminder,
-                    )
-                )
-            return SyncHookJSONOutput()
 
         options = ClaudeAgentOptions(
             system_prompt=system_prompt,
@@ -606,81 +605,67 @@ class AgentSDKExecutor(BaseExecutor):
                     "env": self._build_mcp_env(),
                 },
             },
+            # NOTE: PostToolUse hook (context threshold monitoring) was removed
+            # because it cannot reliably capture tool results via the SDK.
+            # Context threshold monitoring needs reimplementation — see separate issue.
             hooks={
                 "PreToolUse": [HookMatcher(
                     matcher="Write|Edit|Bash|Read|Grep|Glob",
                     hooks=[_build_pre_tool_hook(self._anima_dir)],
                 )],
-                "PostToolUse": [HookMatcher(matcher=None, hooks=[_post_tool_hook])],
             },
         )
 
         response_text: list[str] = []
-        all_tool_records: list[ToolCallRecord] = []
+        pending_records: dict[str, ToolCallRecord] = {}
         result_message: ResultMessage | None = None
         message_count = 0
 
         try:
-            async for message in query(prompt=prompt, options=options):
-                if isinstance(message, ResultMessage):
-                    result_message = message
-                    if tracker:
-                        tracker.update_from_result_message(message.usage)
-                elif isinstance(message, AssistantMessage):
-                    message_count += 1
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            response_text.append(block.text)
-                        elif hasattr(block, 'name') and hasattr(block, 'id'):
-                            # ToolUseBlock from Agent SDK
-                            context_window = resolve_context_window(
-                                self._model_config.model,
-                            )
-                            result_text = _tool_results_cache.pop(block.id, "")
-                            all_tool_records.append(ToolCallRecord(
-                                tool_name=block.name,
-                                tool_id=block.id,
-                                input_summary=_truncate_for_record(
-                                    str(getattr(block, 'input', '')),
-                                    tool_input_save_budget(context_window),
-                                ),
-                                result_summary=_truncate_for_record(
-                                    result_text,
-                                    tool_result_save_budget(block.name, context_window),
-                                ),
-                            ))
-                elif isinstance(message, UserMessage):
-                    if hasattr(message, "content") and isinstance(
-                        message.content, list
-                    ):
+            logger.info("ClaudeSDKClient connecting (blocking mode)")
+            async with ClaudeSDKClient(options=options) as client:
+                logger.info("ClaudeSDKClient connected")
+                await client.query(prompt)
+                async for message in client.receive_response():
+                    if isinstance(message, ResultMessage):
+                        result_message = message
+                        if tracker:
+                            tracker.update_from_result_message(message.usage)
+                    elif isinstance(message, AssistantMessage):
+                        message_count += 1
                         for block in message.content:
-                            if isinstance(block, ToolResultBlock):
-                                content = block.content
-                                if isinstance(content, list):
-                                    content = " ".join(
-                                        str(c.get("text", ""))
-                                        for c in content
-                                        if isinstance(c, dict)
-                                    )
-                                if content and block.tool_use_id:
-                                    _tool_results_cache[block.tool_use_id] = str(
-                                        content
-                                    )
-                elif isinstance(message, SystemMessage):
-                    if message.subtype == "init" and message.data:
-                        mcp_servers = message.data.get("mcp_servers", [])
-                        for srv in mcp_servers:
-                            name = srv.get("name", "unknown")
-                            status = srv.get("status", "unknown")
-                            if status != "connected":
-                                logger.error(
-                                    "MCP server '%s' failed to connect: status=%s",
-                                    name, status,
+                            if isinstance(block, TextBlock):
+                                response_text.append(block.text)
+                            elif isinstance(block, ToolUseBlock):
+                                _handle_tool_use_block(
+                                    block, pending_records, None,
+                                    self._model_config.model,
                                 )
-                            else:
-                                logger.info("MCP server '%s' connected successfully", name)
+                    elif isinstance(message, UserMessage):
+                        if isinstance(message.content, list):
+                            for block in message.content:
+                                if isinstance(block, ToolResultBlock):
+                                    _handle_tool_result_block(
+                                        block, pending_records, None,
+                                        self._model_config.model,
+                                    )
+                    elif isinstance(message, SystemMessage):
+                        if message.subtype == "init" and message.data:
+                            mcp_servers = message.data.get("mcp_servers", [])
+                            for srv in mcp_servers:
+                                name = srv.get("name", "unknown")
+                                status = srv.get("status", "unknown")
+                                if status != "connected":
+                                    logger.error(
+                                        "MCP server '%s' failed to connect: status=%s",
+                                        name, status,
+                                    )
+                                else:
+                                    logger.info("MCP server '%s' connected successfully", name)
+            logger.debug("ClaudeSDKClient disconnected")
         except Exception as e:
             logger.exception("Agent SDK execution error")
+            all_tool_records = _finalize_pending_records(pending_records)
             return ExecutionResult(
                 text="\n".join(response_text) or f"[Agent SDK Error: {e}]",
                 tool_call_records=all_tool_records,
@@ -688,9 +673,10 @@ class AgentSDKExecutor(BaseExecutor):
         finally:
             _cleanup_tool_outputs(self._anima_dir)
 
+        all_tool_records = _finalize_pending_records(pending_records)
         logger.debug(
-            "Agent SDK completed, messages=%d text_blocks=%d",
-            message_count, len(response_text),
+            "Agent SDK completed, messages=%d text_blocks=%d tools=%d",
+            message_count, len(response_text), len(all_tool_records),
         )
         replied_to = self._read_replied_to_file()
         return ExecutionResult(
@@ -726,6 +712,7 @@ class AgentSDKExecutor(BaseExecutor):
         from claude_agent_sdk import (
             AssistantMessage,
             ClaudeAgentOptions,
+            ClaudeSDKClient,
             HookMatcher,
             ResultMessage,
             SystemMessage,
@@ -733,78 +720,8 @@ class AgentSDKExecutor(BaseExecutor):
             ToolResultBlock,
             ToolUseBlock,
             UserMessage,
-            query,
         )
-        from claude_agent_sdk.types import (
-            HookContext,
-            HookInput,
-            PostToolUseHookSpecificOutput,
-            StreamEvent,
-            SyncHookJSONOutput,
-        )
-
-        threshold = self._model_config.context_threshold
-        _transcript_path = ""
-        _tool_results_cache: dict[str, str] = {}
-        _reminder_queue = self.reminder_queue
-
-        async def _post_tool_hook(
-            input_data: HookInput,
-            tool_use_id: str | None,
-            context: HookContext,
-        ) -> SyncHookJSONOutput:
-            logger.info("PostToolUse(stream) ENTERED tool_use_id=%s", tool_use_id)
-            try:
-                nonlocal _transcript_path
-                # ── Capture tool result into cache ──
-                transcript_path = input_data.get("transcript_path", "")
-                _transcript_path = transcript_path or _transcript_path
-                logger.info(
-                    "PostToolUse(stream) input_data keys=%s, tool_use_id=%s",
-                    list(input_data.keys()), tool_use_id,
-                )
-                tool_output = (
-                    input_data.get("tool_response")
-                    or input_data.get("output")
-                    or input_data.get("content")
-                    or ""
-                )
-                if not tool_output and tool_use_id and _transcript_path:
-                    tool_output = _parse_tool_result_from_transcript(
-                        _transcript_path, tool_use_id,
-                    )
-                logger.info(
-                    "PostToolUse(stream) tool_output length=%d, transcript=%s",
-                    len(str(tool_output)), _transcript_path,
-                )
-                if tool_output and tool_use_id:
-                    _tool_results_cache[tool_use_id] = str(tool_output)
-            except Exception:
-                logger.exception("PostToolUse(stream) hook error")
-                return SyncHookJSONOutput()
-
-            # ── P1-1: Context threshold check → push to queue ──
-            if tracker is not None:
-                ratio = tracker.estimate_from_transcript(transcript_path)
-                try:
-                    ratio_f = float(ratio)
-                except (TypeError, ValueError):
-                    ratio_f = 0.0
-                if ratio_f >= threshold:
-                    _reminder_queue.push_sync(
-                        MSG_CONTEXT_THRESHOLD.format(ratio=ratio_f)
-                    )
-
-            # ── Drain reminder queue ──
-            reminder = _reminder_queue.drain_sync()
-            if reminder:
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PostToolUseHookSpecificOutput(
-                        hookEventName="PostToolUse",
-                        additionalContext=reminder,
-                    )
-                )
-            return SyncHookJSONOutput()
+        from claude_agent_sdk.types import StreamEvent
 
         options = ClaudeAgentOptions(
             system_prompt=system_prompt,
@@ -824,115 +741,98 @@ class AgentSDKExecutor(BaseExecutor):
                     "env": self._build_mcp_env(),
                 },
             },
+            # NOTE: PostToolUse hook (context threshold monitoring) was removed
+            # because it cannot reliably capture tool results via the SDK.
+            # Context threshold monitoring needs reimplementation — see separate issue.
             hooks={
                 "PreToolUse": [HookMatcher(
                     matcher="Write|Edit|Bash|Read|Grep|Glob",
                     hooks=[_build_pre_tool_hook(self._anima_dir)],
                 )],
-                "PostToolUse": [HookMatcher(matcher=None, hooks=[_post_tool_hook])],
             },
         )
 
         response_text: list[str] = []
-        all_tool_records: list[ToolCallRecord] = []
+        pending_records: dict[str, ToolCallRecord] = {}
         result_message: ResultMessage | None = None
         active_tool_ids: set[str] = set()
-        # Track tool names from content_block_start for streaming records
-        active_tool_names: dict[str, str] = {}
         message_count = 0
 
         try:
-            async for message in query(prompt=prompt, options=options):
-                if isinstance(message, StreamEvent):
-                    event = message.event
-                    event_type = event.get("type", "")
+            logger.info("ClaudeSDKClient connecting (streaming mode)")
+            async with ClaudeSDKClient(options=options) as client:
+                logger.info("ClaudeSDKClient connected")
+                await client.query(prompt)
+                async for message in client.receive_messages():
+                    if isinstance(message, StreamEvent):
+                        event = message.event
+                        event_type = event.get("type", "")
 
-                    if event_type == "content_block_start":
-                        block = event.get("content_block", {})
-                        if block.get("type") == "tool_use":
-                            tool_id = block.get("id", "")
-                            tool_name = block.get("name", "")
-                            active_tool_ids.add(tool_id)
-                            active_tool_names[tool_id] = tool_name
-                            yield {
-                                "type": "tool_start",
-                                "tool_name": tool_name,
-                                "tool_id": tool_id,
-                            }
-
-                    elif event_type == "content_block_delta":
-                        delta = event.get("delta", {})
-                        if delta.get("type") == "text_delta":
-                            text = delta.get("text", "")
-                            if text:
-                                yield {"type": "text_delta", "text": text}
-
-                elif isinstance(message, AssistantMessage):
-                    message_count += 1
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            response_text.append(block.text)
-                        elif isinstance(block, ToolUseBlock):
-                            context_window = resolve_context_window(
-                                self._model_config.model,
-                            )
-                            result_text = _tool_results_cache.pop(block.id, "")
-                            all_tool_records.append(ToolCallRecord(
-                                tool_name=block.name,
-                                tool_id=block.id,
-                                input_summary=_truncate_for_record(
-                                    str(getattr(block, 'input', '')),
-                                    tool_input_save_budget(context_window),
-                                ),
-                                result_summary=_truncate_for_record(
-                                    result_text,
-                                    tool_result_save_budget(block.name, context_window),
-                                ),
-                            ))
-                            if block.id in active_tool_ids:
-                                active_tool_ids.discard(block.id)
+                        if event_type == "content_block_start":
+                            block = event.get("content_block", {})
+                            if block.get("type") == "tool_use":
+                                tool_id = block.get("id", "")
+                                tool_name = block.get("name", "")
+                                active_tool_ids.add(tool_id)
                                 yield {
-                                    "type": "tool_end",
-                                    "tool_id": block.id,
-                                    "tool_name": block.name,
+                                    "type": "tool_start",
+                                    "tool_name": tool_name,
+                                    "tool_id": tool_id,
                                 }
 
-                elif isinstance(message, UserMessage):
-                    # Extract tool results from UserMessage content
-                    if hasattr(message, "content") and isinstance(
-                        message.content, list
-                    ):
+                        elif event_type == "content_block_delta":
+                            delta = event.get("delta", {})
+                            if delta.get("type") == "text_delta":
+                                text = delta.get("text", "")
+                                if text:
+                                    yield {"type": "text_delta", "text": text}
+
+                    elif isinstance(message, AssistantMessage):
+                        message_count += 1
                         for block in message.content:
-                            if isinstance(block, ToolResultBlock):
-                                content = block.content
-                                if isinstance(content, list):
-                                    content = " ".join(
-                                        str(c.get("text", ""))
-                                        for c in content
-                                        if isinstance(c, dict)
-                                    )
-                                if content and block.tool_use_id:
-                                    _tool_results_cache[block.tool_use_id] = str(
-                                        content
-                                    )
-
-                elif isinstance(message, ResultMessage):
-                    result_message = message
-                    tracker.update_from_result_message(message.usage)
-
-                elif isinstance(message, SystemMessage):
-                    if message.subtype == "init" and message.data:
-                        mcp_servers = message.data.get("mcp_servers", [])
-                        for srv in mcp_servers:
-                            name = srv.get("name", "unknown")
-                            status = srv.get("status", "unknown")
-                            if status != "connected":
-                                logger.error(
-                                    "MCP server '%s' failed to connect: status=%s",
-                                    name, status,
+                            if isinstance(block, TextBlock):
+                                response_text.append(block.text)
+                            elif isinstance(block, ToolUseBlock):
+                                _handle_tool_use_block(
+                                    block, pending_records, None,
+                                    self._model_config.model,
                                 )
-                            else:
-                                logger.info("MCP server '%s' connected successfully", name)
+                                if block.id in active_tool_ids:
+                                    active_tool_ids.discard(block.id)
+                                    yield {
+                                        "type": "tool_end",
+                                        "tool_id": block.id,
+                                        "tool_name": block.name,
+                                    }
+
+                    elif isinstance(message, UserMessage):
+                        if isinstance(message.content, list):
+                            for block in message.content:
+                                if isinstance(block, ToolResultBlock):
+                                    _handle_tool_result_block(
+                                        block, pending_records, None,
+                                        self._model_config.model,
+                                    )
+
+                    elif isinstance(message, ResultMessage):
+                        result_message = message
+                        tracker.update_from_result_message(message.usage)
+                        break  # receive_messages() does not auto-stop on ResultMessage
+
+                    elif isinstance(message, SystemMessage):
+                        if message.subtype == "init" and message.data:
+                            mcp_servers = message.data.get("mcp_servers", [])
+                            for srv in mcp_servers:
+                                name = srv.get("name", "unknown")
+                                status = srv.get("status", "unknown")
+                                if status != "connected":
+                                    logger.error(
+                                        "MCP server '%s' failed to connect: status=%s",
+                                        name, status,
+                                    )
+                                else:
+                                    logger.info("MCP server '%s' connected successfully", name)
+            logger.debug("ClaudeSDKClient disconnected")
         except Exception as e:
             logger.exception("Agent SDK streaming error")
             partial = "\n".join(response_text)
@@ -943,9 +843,10 @@ class AgentSDKExecutor(BaseExecutor):
         finally:
             _cleanup_tool_outputs(self._anima_dir)
 
+        all_tool_records = _finalize_pending_records(pending_records)
         logger.debug(
-            "Agent SDK streaming completed, messages=%d text_blocks=%d",
-            message_count, len(response_text),
+            "Agent SDK streaming completed, messages=%d text_blocks=%d tools=%d",
+            message_count, len(response_text), len(all_tool_records),
         )
         full_text = "\n".join(response_text) or "(no response)"
         replied_to = self._read_replied_to_file()

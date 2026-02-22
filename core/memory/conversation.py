@@ -90,6 +90,7 @@ class ToolRecord:
     tool_id: str = ""
     input_summary: str = ""   # max _MAX_TOOL_INPUT_SUMMARY chars
     result_summary: str = ""  # max _MAX_TOOL_RESULT_SUMMARY chars
+    is_error: bool = False
 
     def __post_init__(self) -> None:
         if len(self.input_summary) > _MAX_TOOL_INPUT_SUMMARY:
@@ -105,6 +106,7 @@ class ToolRecord:
             tool_id=d.get("tool_id", ""),
             input_summary=d.get("input_summary", ""),
             result_summary=d.get("result_summary", ""),
+            is_error=d.get("is_error", False),
         )
 
 
