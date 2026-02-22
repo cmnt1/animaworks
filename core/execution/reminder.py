@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 # Maximum queued reminders before oldest are dropped
 _MAX_QUEUE_SIZE = 10
 
+# ── Standard reminder messages ──────────────────────────────
+MSG_CONTEXT_THRESHOLD = "コンテキスト使用量: {ratio:.0%}。出力を簡潔にし、重要な状態をセッション状態に保存せよ。"
+MSG_OUTPUT_TRUNCATED = "出力がmax_tokensで途切れた。残りの内容を小さく分割して続行せよ。"
+
 
 class SystemReminderQueue:
     """Thread-safe queue for system-reminder injection into execution loops.

@@ -201,7 +201,6 @@ class TestSectionConditions:
             "communication_rules_a1",
             "communication_rules",
             "emotion_instruction",
-            "session_continuation",
             "a2_reflection",
             "hiring_context",
         }

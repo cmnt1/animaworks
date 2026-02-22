@@ -27,7 +27,7 @@ from typing import Any
 from core.prompt.context import ContextTracker, resolve_context_window
 from core.exceptions import ExecutionError, LLMAPIError, MemoryWriteError  # noqa: F401
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
-from core.execution.reminder import SystemReminderQueue
+from core.execution.reminder import MSG_CONTEXT_THRESHOLD
 from core.schemas import ModelConfig
 from core.memory.shortterm import ShortTermMemory
 from pathlib import Path
@@ -575,7 +575,7 @@ class AgentSDKExecutor(BaseExecutor):
                     ratio_f = 0.0
                 if ratio_f >= threshold:
                     _reminder_queue.push_sync(
-                        f"コンテキスト使用量: {ratio_f:.0%}。session_state.md にセッション状態を保存せよ。"
+                        MSG_CONTEXT_THRESHOLD.format(ratio=ratio_f)
                     )
 
             # ── Drain reminder queue ──
@@ -784,15 +784,16 @@ class AgentSDKExecutor(BaseExecutor):
                 return SyncHookJSONOutput()
 
             # ── P1-1: Context threshold check → push to queue ──
-            ratio = tracker.estimate_from_transcript(transcript_path)
-            try:
-                ratio_f = float(ratio)
-            except (TypeError, ValueError):
-                ratio_f = 0.0
-            if ratio_f >= threshold:
-                _reminder_queue.push_sync(
-                    f"コンテキスト使用量: {ratio_f:.0%}。session_state.md にセッション状態を保存せよ。"
-                )
+            if tracker is not None:
+                ratio = tracker.estimate_from_transcript(transcript_path)
+                try:
+                    ratio_f = float(ratio)
+                except (TypeError, ValueError):
+                    ratio_f = 0.0
+                if ratio_f >= threshold:
+                    _reminder_queue.push_sync(
+                        MSG_CONTEXT_THRESHOLD.format(ratio=ratio_f)
+                    )
 
             # ── Drain reminder queue ──
             reminder = _reminder_queue.drain_sync()

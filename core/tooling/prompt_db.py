@@ -412,7 +412,6 @@ SECTION_CONDITIONS: dict[str, str | None] = {
     "communication_rules_a1": "mode:a1",
     "communication_rules": "mode:non_a1",
     "emotion_instruction": None,
-    "session_continuation": None,
     "a2_reflection": "mode:a2",
     "hiring_context": "solo_top_level",
 }

@@ -45,7 +45,6 @@ def _ensure_tool_prompt_db(data_dir: Path) -> None:
         "messaging": "messaging.md",
         "communication_rules_a1": "communication_rules_a1.md",
         "communication_rules": "communication_rules.md",
-        "session_continuation": "session_continuation.md",
         "a2_reflection": "a2_reflection.md",
         "hiring_context": "hiring_context.md",
     }

@@ -34,7 +34,7 @@ from core.execution._streaming import (
     stream_error_boundary,
 )
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
-from core.execution.reminder import SystemReminderQueue
+from core.execution.reminder import MSG_CONTEXT_THRESHOLD, MSG_OUTPUT_TRUNCATED, SystemReminderQueue
 from core.memory import MemoryManager
 from core.prompt.builder import build_system_prompt
 from core.schemas import ModelConfig
@@ -375,7 +375,7 @@ class LiteLLMExecutor(BaseExecutor):
                     except (TypeError, ValueError):
                         ratio = 0.0
                     self.reminder_queue.push_sync(
-                        f"コンテキスト使用量: {ratio:.0%}。出力を簡潔にし、重要な状態をセッション状態に保存せよ。"
+                        MSG_CONTEXT_THRESHOLD.format(ratio=ratio)
                     )
 
                 current_text = message.content or ""
@@ -412,9 +412,7 @@ class LiteLLMExecutor(BaseExecutor):
 
             # ── P1-2: output truncation reminder ─────────────────
             if choice.finish_reason == "length":
-                self.reminder_queue.push_sync(
-                    "出力がmax_tokensで途切れた。残りの内容を小さく分割して続行せよ。"
-                )
+                self.reminder_queue.push_sync(MSG_OUTPUT_TRUNCATED)
 
             # ── Check for tool calls ──────────────────────────
             tool_calls = message.tool_calls
@@ -422,6 +420,10 @@ class LiteLLMExecutor(BaseExecutor):
                 final_text = message.content or ""
                 all_response_text.append(final_text)
                 logger.debug("A2 final response at iteration=%d", iteration)
+                # ── Final drain: deliver any undelivered reminders ──
+                final_reminder = self.reminder_queue.drain_formatted()
+                if final_reminder:
+                    all_response_text.append(final_reminder)
                 return ExecutionResult(
                     text="\n".join(all_response_text),
                     tool_call_records=all_tool_records,
@@ -616,14 +618,12 @@ class LiteLLMExecutor(BaseExecutor):
                         except (TypeError, ValueError):
                             ratio = 0.0
                         self.reminder_queue.push_sync(
-                            f"コンテキスト使用量: {ratio:.0%}。出力を簡潔にし、重要な状態をセッション状態に保存せよ。"
+                            MSG_CONTEXT_THRESHOLD.format(ratio=ratio)
                         )
 
                 # P1-2: output truncation reminder
                 if finish_reason == "length":
-                    self.reminder_queue.push_sync(
-                        "出力がmax_tokensで途切れた。残りの内容を小さく分割して続行せよ。"
-                    )
+                    self.reminder_queue.push_sync(MSG_OUTPUT_TRUNCATED)
 
                 iter_text = "".join(iter_text_parts)
                 if iter_text:
@@ -780,14 +780,12 @@ class LiteLLMExecutor(BaseExecutor):
                         except (TypeError, ValueError):
                             ratio = 0.0
                         self.reminder_queue.push_sync(
-                            f"コンテキスト使用量: {ratio:.0%}。出力を簡潔にし、重要な状態をセッション状態に保存せよ。"
+                            MSG_CONTEXT_THRESHOLD.format(ratio=ratio)
                         )
 
                 # P1-2: output truncation reminder
                 if choice.finish_reason == "length":
-                    self.reminder_queue.push_sync(
-                        "出力がmax_tokensで途切れた。残りの内容を小さく分割して続行せよ。"
-                    )
+                    self.reminder_queue.push_sync(MSG_OUTPUT_TRUNCATED)
 
                 # ── Yield iteration text ──
                 iter_text = message.content or ""

@@ -26,7 +26,7 @@ from core.prompt.context import ContextTracker, resolve_context_window
 from core.execution._session import build_continuation_prompt, handle_session_chaining
 from core.execution._streaming import stream_error_boundary
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
-from core.execution.reminder import SystemReminderQueue
+from core.execution.reminder import MSG_CONTEXT_THRESHOLD, MSG_OUTPUT_TRUNCATED, SystemReminderQueue
 from core.memory import MemoryManager
 from core.prompt.builder import build_system_prompt
 from core.schemas import ModelConfig
@@ -213,7 +213,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     except (TypeError, ValueError):
                         ratio = 0.0
                     self.reminder_queue.push_sync(
-                        f"コンテキスト使用量: {ratio:.0%}。出力を簡潔にし、重要な状態をセッション状態に保存せよ。"
+                        MSG_CONTEXT_THRESHOLD.format(ratio=ratio)
                     )
 
                 current_text = "\n".join(
@@ -250,9 +250,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
 
             # ── P1-2: output truncation reminder ─────────────────
             if response.stop_reason == "max_tokens":
-                self.reminder_queue.push_sync(
-                    "出力がmax_tokensで途切れた。残りの内容を小さく分割して続行せよ。"
-                )
+                self.reminder_queue.push_sync(MSG_OUTPUT_TRUNCATED)
 
             # ── Check for tool use ────────────────────────────
             tool_uses = [b for b in response.content if b.type == "tool_use"]
@@ -262,6 +260,10 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     b.text for b in response.content if b.type == "text"
                 )
                 all_response_text.append(final_text)
+                # ── Final drain: deliver any undelivered reminders ──
+                final_reminder = self.reminder_queue.drain_formatted()
+                if final_reminder:
+                    all_response_text.append(final_reminder)
                 return ExecutionResult(
                     text="\n".join(all_response_text),
                     tool_call_records=all_tool_records,
@@ -397,14 +399,12 @@ class AnthropicFallbackExecutor(BaseExecutor):
                         except (TypeError, ValueError):
                             ratio = 0.0
                         self.reminder_queue.push_sync(
-                            f"コンテキスト使用量: {ratio:.0%}。出力を簡潔にし、重要な状態をセッション状態に保存せよ。"
+                            MSG_CONTEXT_THRESHOLD.format(ratio=ratio)
                         )
 
                 # P1-2: output truncation reminder
                 if final_message and getattr(final_message, "stop_reason", None) == "max_tokens":
-                    self.reminder_queue.push_sync(
-                        "出力がmax_tokensで途切れた。残りの内容を小さく分割して続行せよ。"
-                    )
+                    self.reminder_queue.push_sync(MSG_OUTPUT_TRUNCATED)
 
                 # ── Check for tool use ────────────────────────
                 tool_uses = [

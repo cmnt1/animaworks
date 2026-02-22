@@ -34,7 +34,7 @@ from typing import Any
 
 from core.exceptions import LLMAPIError, ToolExecutionError, ConfigError  # noqa: F401
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
-from core.execution.reminder import SystemReminderQueue
+from core.execution.reminder import MSG_OUTPUT_TRUNCATED, SystemReminderQueue
 from core.execution._streaming import stream_error_boundary
 from core.memory import MemoryManager
 from core.messenger import Messenger
@@ -367,9 +367,7 @@ class AssistedExecutor(BaseExecutor):
 
             # P1-2: output truncation reminder
             if choice.finish_reason == "length":
-                self.reminder_queue.push_sync(
-                    "出力がmax_tokensで途切れた。残りの内容を小さく分割して続行せよ。"
-                )
+                self.reminder_queue.push_sync(MSG_OUTPUT_TRUNCATED)
 
             # ── 3. Extract tool call ─────────────────────────
             tool_call = extract_tool_call(content)
@@ -451,6 +449,10 @@ class AssistedExecutor(BaseExecutor):
                 "Mode B max iterations (%d) reached", max_iterations,
             )
 
+        # ── Final drain: deliver any undelivered reminders ──
+        final_reminder = self.reminder_queue.drain_formatted()
+        if final_reminder:
+            all_response_text.append(final_reminder)
         final_text = "\n".join(filter(None, all_response_text))
         logger.info("Mode B text-loop END total_len=%d", len(final_text))
         return ExecutionResult(
@@ -530,9 +532,7 @@ class AssistedExecutor(BaseExecutor):
 
                 # P1-2: output truncation reminder
                 if choice.finish_reason == "length":
-                    self.reminder_queue.push_sync(
-                        "出力がmax_tokensで途切れた。残りの内容を小さく分割して続行せよ。"
-                    )
+                    self.reminder_queue.push_sync(MSG_OUTPUT_TRUNCATED)
 
                 # ── 3. Extract tool call ─────────────────────
                 tool_call = extract_tool_call(content)

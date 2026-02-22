@@ -17,6 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from core.tooling.prompt_db import (
     DEFAULT_DESCRIPTIONS,
     DEFAULT_GUIDES,
+    SECTION_CONDITIONS,
     ToolPromptStore,
 )
 
@@ -574,3 +575,162 @@ class TestStoreUnavailable:
                     json={"anima_name": "nonexistent"},
                 )
         assert resp.status_code == 404
+
+
+# ── Sections API ────────────────────────────────────────────
+
+
+class TestSectionsAPI:
+    """Tests for /api/tool-prompts/sections endpoints."""
+
+    async def test_list_sections(self, tmp_path: Path):
+        db_path = tmp_path / "tool_prompts.sqlite3"
+        store = ToolPromptStore(db_path)
+        store.seed_defaults(
+            sections={
+                "behavior_rules": ("Test behavior rules content", SECTION_CONDITIONS.get("behavior_rules")),
+                "environment": ("Test environment content", SECTION_CONDITIONS.get("environment")),
+                "a2_reflection": ("Test A2 reflection content", SECTION_CONDITIONS.get("a2_reflection")),
+            },
+        )
+
+        app, _ = _create_app(db_path)
+        transport = ASGITransport(app=app)
+        with patch(
+            "server.routes.tool_prompts.get_prompt_store", return_value=store,
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/tool-prompts/sections")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "sections" in data
+        sections = data["sections"]
+        keys = [s["key"] for s in sections]
+        assert "behavior_rules" in keys
+        assert "environment" in keys
+        assert "a2_reflection" in keys
+        assert len(sections) == 3
+
+    async def test_get_single_section(self, tmp_path: Path):
+        db_path = tmp_path / "tool_prompts.sqlite3"
+        store = ToolPromptStore(db_path)
+        store.seed_defaults(
+            sections={
+                "a2_reflection": ("Test A2 reflection content", SECTION_CONDITIONS.get("a2_reflection")),
+            },
+        )
+
+        app, _ = _create_app(db_path)
+        transport = ASGITransport(app=app)
+        with patch(
+            "server.routes.tool_prompts.get_prompt_store", return_value=store,
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/tool-prompts/sections/a2_reflection")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["key"] == "a2_reflection"
+        assert "content" in data
+        assert data["content"] == "Test A2 reflection content"
+        assert data["condition"] == "mode:a2"
+
+    async def test_get_missing_section(self, tmp_path: Path):
+        db_path = tmp_path / "tool_prompts.sqlite3"
+        store = ToolPromptStore(db_path)
+
+        app, _ = _create_app(db_path)
+        transport = ASGITransport(app=app)
+        with patch(
+            "server.routes.tool_prompts.get_prompt_store", return_value=store,
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/tool-prompts/sections/nonexistent")
+
+        assert resp.status_code == 404
+
+    async def test_update_section(self, tmp_path: Path):
+        db_path = tmp_path / "tool_prompts.sqlite3"
+        store = ToolPromptStore(db_path)
+        store.seed_defaults(
+            sections={
+                "behavior_rules": ("Original content", SECTION_CONDITIONS.get("behavior_rules")),
+            },
+        )
+
+        app, _ = _create_app(db_path)
+        transport = ASGITransport(app=app)
+        with patch(
+            "server.routes.tool_prompts.get_prompt_store", return_value=store,
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                new_content = "Updated behavior rules content"
+                resp = await client.put(
+                    "/api/tool-prompts/sections/behavior_rules",
+                    json={"content": new_content, "condition": None},
+                )
+                assert resp.status_code == 200
+                result = resp.json()
+                assert result["key"] == "behavior_rules"
+                assert result["content"] == new_content
+
+                # Confirm via GET
+                resp2 = await client.get("/api/tool-prompts/sections/behavior_rules")
+                assert resp2.status_code == 200
+                assert resp2.json()["content"] == new_content
+
+    async def test_update_empty_content_rejected(self, tmp_path: Path):
+        db_path = tmp_path / "tool_prompts.sqlite3"
+        store = ToolPromptStore(db_path)
+        store.seed_defaults(
+            sections={
+                "behavior_rules": ("Original content", SECTION_CONDITIONS.get("behavior_rules")),
+            },
+        )
+
+        app, _ = _create_app(db_path)
+        transport = ASGITransport(app=app)
+        with patch(
+            "server.routes.tool_prompts.get_prompt_store", return_value=store,
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.put(
+                    "/api/tool-prompts/sections/behavior_rules",
+                    json={"content": "", "condition": None},
+                )
+
+        assert resp.status_code == 400
+
+    async def test_list_after_update(self, tmp_path: Path):
+        db_path = tmp_path / "tool_prompts.sqlite3"
+        store = ToolPromptStore(db_path)
+        store.seed_defaults(
+            sections={
+                "behavior_rules": ("Original content", SECTION_CONDITIONS.get("behavior_rules")),
+                "environment": ("Environment content", SECTION_CONDITIONS.get("environment")),
+            },
+        )
+
+        app, _ = _create_app(db_path)
+        transport = ASGITransport(app=app)
+        with patch(
+            "server.routes.tool_prompts.get_prompt_store", return_value=store,
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # Update one section
+                new_content = "Updated behavior rules"
+                resp = await client.put(
+                    "/api/tool-prompts/sections/behavior_rules",
+                    json={"content": new_content, "condition": None},
+                )
+                assert resp.status_code == 200
+
+                # List all and verify the update is reflected
+                resp2 = await client.get("/api/tool-prompts/sections")
+                assert resp2.status_code == 200
+                sections = resp2.json()["sections"]
+                assert len(sections) == 2
+                by_key = {s["key"]: s for s in sections}
+                assert by_key["behavior_rules"]["content"] == new_content
+                assert by_key["environment"]["content"] == "Environment content"

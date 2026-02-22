@@ -26,6 +26,9 @@ class SectionUpdate(BaseModel):
     condition: str | None = None
 
 
+_MAX_SECTION_CONTENT_LENGTH = 51200  # 50 KB
+
+
 class SchemaPreviewRequest(BaseModel):
     mode: str = "anthropic"  # "anthropic", "litellm", "text"
 
@@ -131,6 +134,8 @@ def create_tool_prompts_router() -> APIRouter:
             raise HTTPException(500, "Tool prompt DB not available")
         if not body.content.strip():
             raise HTTPException(400, "Content cannot be empty")
+        if len(body.content) > _MAX_SECTION_CONTENT_LENGTH:
+            raise HTTPException(400, f"Content too large (max {_MAX_SECTION_CONTENT_LENGTH} bytes)")
         result = store.set_section(key, body.content.strip(), body.condition)
         return result
 
