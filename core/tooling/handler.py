@@ -310,6 +310,8 @@ class ToolHandler:
             "list_directory": self._handle_list_directory,
             "call_human": self._handle_call_human,
             "create_anima": self._handle_create_anima,
+            "disable_subordinate": self._handle_disable_subordinate,
+            "enable_subordinate": self._handle_enable_subordinate,
             "refresh_tools": self._handle_refresh_tools,
             "share_tool": self._handle_share_tool,
             "report_procedure_outcome": self._handle_report_procedure_outcome,
@@ -971,6 +973,153 @@ class ToolHandler:
 
         logger.info("create_anima: created '%s' at %s", anima_dir.name, anima_dir)
         return f"Anima '{anima_dir.name}' created successfully at {anima_dir}. Reload the server to activate."
+
+    # ── Supervisor tool handlers ─────────────────────────────
+
+    def _check_subordinate(self, target_name: str) -> str | None:
+        """Verify that *target_name* is a direct subordinate of this anima.
+
+        Returns ``None`` if allowed, or an error JSON string if denied.
+        """
+        from core.config.models import load_config
+
+        if target_name == self._anima_name:
+            return _error_result(
+                "PermissionDenied",
+                "自分自身を操作することはできません",
+            )
+
+        try:
+            config = load_config()
+        except Exception as e:
+            return _error_result("ConfigError", f"設定読み込みに失敗: {e}")
+
+        target_cfg = config.animas.get(target_name)
+        if target_cfg is None:
+            return _error_result(
+                "AnimaNotFound",
+                f"Anima '{target_name}' は存在しません",
+            )
+
+        if target_cfg.supervisor != self._anima_name:
+            return _error_result(
+                "PermissionDenied",
+                f"'{target_name}' はあなたの直属部下ではありません",
+                context={"supervisor": target_cfg.supervisor or "(なし)"},
+            )
+
+        return None
+
+    def _handle_disable_subordinate(self, args: dict[str, Any]) -> str:
+        """Disable a subordinate anima (set enabled=false in status.json).
+
+        The Reconciliation loop will stop the process within 30 seconds.
+        """
+        target_name = args.get("name", "")
+        reason = args.get("reason", "")
+
+        if not target_name:
+            return _error_result("InvalidArguments", "name is required")
+
+        # Permission check: must be direct subordinate
+        err = self._check_subordinate(target_name)
+        if err:
+            return err
+
+        # Read-modify-write status.json
+        from core.paths import get_animas_dir
+
+        target_dir = get_animas_dir() / target_name
+        status_file = target_dir / "status.json"
+
+        existing: dict[str, Any] = {}
+        if status_file.exists():
+            try:
+                existing = _json.loads(status_file.read_text(encoding="utf-8"))
+            except (_json.JSONDecodeError, OSError):
+                pass
+
+        if not existing.get("enabled", True):
+            return f"'{target_name}' は既に休止中です"
+
+        existing["enabled"] = False
+        status_file.write_text(
+            _json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        # Activity log
+        log_summary = f"{target_name} を休止"
+        if reason:
+            log_summary += f" (理由: {reason})"
+        self._activity.log(
+            "tool_use",
+            tool="disable_subordinate",
+            summary=log_summary,
+            meta={"target": target_name, "reason": reason},
+        )
+
+        logger.info(
+            "disable_subordinate: %s disabled %s (reason=%s)",
+            self._anima_name, target_name, reason or "(none)",
+        )
+
+        result = f"'{target_name}' を休止にしました。Reconciliation が30秒以内にプロセスを停止します。"
+        if reason:
+            result += f"\n理由: {reason}"
+        return result
+
+    def _handle_enable_subordinate(self, args: dict[str, Any]) -> str:
+        """Enable a subordinate anima (set enabled=true in status.json).
+
+        The Reconciliation loop will start the process within 30 seconds.
+        """
+        target_name = args.get("name", "")
+
+        if not target_name:
+            return _error_result("InvalidArguments", "name is required")
+
+        # Permission check: must be direct subordinate
+        err = self._check_subordinate(target_name)
+        if err:
+            return err
+
+        # Read-modify-write status.json
+        from core.paths import get_animas_dir
+
+        target_dir = get_animas_dir() / target_name
+        status_file = target_dir / "status.json"
+
+        existing: dict[str, Any] = {}
+        if status_file.exists():
+            try:
+                existing = _json.loads(status_file.read_text(encoding="utf-8"))
+            except (_json.JSONDecodeError, OSError):
+                pass
+
+        if existing.get("enabled", True):
+            return f"'{target_name}' は既に有効です"
+
+        existing["enabled"] = True
+        status_file.write_text(
+            _json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        # Activity log
+        self._activity.log(
+            "tool_use",
+            tool="enable_subordinate",
+            summary=f"{target_name} を復帰",
+            meta={"target": target_name},
+        )
+
+        logger.info(
+            "enable_subordinate: %s enabled %s",
+            self._anima_name, target_name,
+        )
+
+        return f"'{target_name}' を有効にしました。Reconciliation が30秒以内にプロセスを起動します。"
 
     # ── Tool management handlers ─────────────────────────────
 

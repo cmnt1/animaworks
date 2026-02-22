@@ -443,6 +443,47 @@ ADMIN_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+SUPERVISOR_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "disable_subordinate",
+        "description": (
+            "部下のAnimaを休止させる（プロセス停止 + 自動復帰防止）。"
+            "自分の直属部下のみ操作可能。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "休止させる部下のAnima名（例: hinata）",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "休止理由（activity_logに記録される）",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "enable_subordinate",
+        "description": (
+            "休止中の部下のAnimaを復帰させる。"
+            "自分の直属部下のみ操作可能。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "復帰させる部下のAnima名（例: hinata）",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+]
+
 PROCEDURE_TOOLS: list[dict[str, Any]] = [
     {
         "name": "report_procedure_outcome",
@@ -675,6 +716,7 @@ def build_tool_list(
     include_discovery_tools: bool = False,
     include_notification_tools: bool = False,
     include_admin_tools: bool = False,
+    include_supervisor_tools: bool = False,
     include_tool_management: bool = False,
     include_task_tools: bool = False,
     external_schemas: list[dict[str, Any]] | None = None,
@@ -687,6 +729,7 @@ def build_tool_list(
         include_discovery_tools: Include discover_tools tool.
         include_notification_tools: Include call_human tool (for top-level Animas).
         include_admin_tools: Include admin tools (create_anima etc.).
+        include_supervisor_tools: Include supervisor tools (disable/enable subordinate).
         include_tool_management: Include refresh_tools/share_tool tools.
         include_task_tools: Include task queue tools (add_task, update_task, list_tasks).
         external_schemas: Additional tool schemas in canonical format.
@@ -711,6 +754,8 @@ def build_tool_list(
         tools.extend(NOTIFICATION_TOOLS)
     if include_admin_tools:
         tools.extend(ADMIN_TOOLS)
+    if include_supervisor_tools:
+        tools.extend(SUPERVISOR_TOOLS)
     if include_tool_management:
         tools.extend(TOOL_MANAGEMENT_TOOLS)
     if include_task_tools:

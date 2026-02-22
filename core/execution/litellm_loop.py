@@ -166,10 +166,24 @@ class LiteLLMExecutor(BaseExecutor):
             include_discovery_tools=True,
             include_notification_tools=self._tool_handler._human_notifier is not None,
             include_admin_tools=(self._anima_dir / "skills" / "newstaff.md").exists(),
+            include_supervisor_tools=self._has_subordinates(),
             include_tool_management=True,
             include_task_tools=True,
         )
         return to_litellm_format(canonical)
+
+    def _has_subordinates(self) -> bool:
+        """Check if this anima has any subordinates (is a supervisor)."""
+        try:
+            from core.config.models import load_config
+            config = load_config()
+            my_name = self._anima_dir.name
+            return any(
+                cfg.supervisor == my_name
+                for cfg in config.animas.values()
+            )
+        except Exception:
+            return False
 
     def _build_llm_kwargs(self) -> dict[str, Any]:
         """Credential + model kwargs for ``litellm.acompletion``."""

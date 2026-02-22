@@ -61,6 +61,8 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset({
     "report_procedure_outcome",
     "report_knowledge_outcome",
     "discover_tools",
+    "disable_subordinate",
+    "enable_subordinate",
 })
 
 
@@ -77,6 +79,7 @@ def _build_mcp_tools() -> list[Tool]:
         MEMORY_TOOLS,
         NOTIFICATION_TOOLS,
         PROCEDURE_TOOLS,
+        SUPERVISOR_TOOLS,
         TASK_TOOLS,
     )
 
@@ -88,6 +91,7 @@ def _build_mcp_tools() -> list[Tool]:
         *PROCEDURE_TOOLS,
         *KNOWLEDGE_TOOLS,
         *DISCOVERY_TOOLS,
+        *SUPERVISOR_TOOLS,
     ]
 
     tools: list[Tool] = []

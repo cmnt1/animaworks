@@ -510,7 +510,6 @@ class AgentSDKExecutor(BaseExecutor):
         from claude_agent_sdk import (
             AssistantMessage,
             ClaudeAgentOptions,
-            HookMatcher,
             ResultMessage,
             SystemMessage,
             TextBlock,
@@ -537,6 +536,10 @@ class AgentSDKExecutor(BaseExecutor):
             # ── Capture tool result into cache ──
             transcript_path = input_data.get("transcript_path", "")
             _transcript_path = transcript_path or _transcript_path
+            logger.info(
+                "PostToolUse input_data keys=%s, tool_use_id=%s",
+                list(input_data.keys()), tool_use_id,
+            )
             tool_output = (
                 input_data.get("tool_response")
                 or input_data.get("output")
@@ -547,6 +550,10 @@ class AgentSDKExecutor(BaseExecutor):
                 tool_output = _parse_tool_result_from_transcript(
                     _transcript_path, tool_use_id,
                 )
+            logger.info(
+                "PostToolUse tool_output length=%d, transcript_path=%s",
+                len(str(tool_output)), _transcript_path,
+            )
             if tool_output and tool_use_id:
                 _tool_results_cache[tool_use_id] = str(tool_output)
 
@@ -591,11 +598,11 @@ class AgentSDKExecutor(BaseExecutor):
                 },
             },
             hooks={
-                "PreToolUse": [HookMatcher(
-                    matcher="Write|Edit|Bash|Read|Grep|Glob",
-                    hooks=[_build_pre_tool_hook(self._anima_dir)],
-                )],
-                "PostToolUse": [HookMatcher(matcher=None, hooks=[_post_tool_hook])],
+                "PreToolUse": [{
+                    "matcher": "Write|Edit|Bash|Read|Grep|Glob",
+                    "hooks": [_build_pre_tool_hook(self._anima_dir)],
+                }],
+                "PostToolUse": [{"matcher": None, "hooks": [_post_tool_hook]}],
             },
         )
 
@@ -693,7 +700,6 @@ class AgentSDKExecutor(BaseExecutor):
         from claude_agent_sdk import (
             AssistantMessage,
             ClaudeAgentOptions,
-            HookMatcher,
             ResultMessage,
             SystemMessage,
             TextBlock,
@@ -722,6 +728,10 @@ class AgentSDKExecutor(BaseExecutor):
             # ── Capture tool result into cache ──
             transcript_path = input_data.get("transcript_path", "")
             _transcript_path = transcript_path or _transcript_path
+            logger.info(
+                "PostToolUse(stream) input_data keys=%s, tool_use_id=%s",
+                list(input_data.keys()), tool_use_id,
+            )
             tool_output = (
                 input_data.get("tool_response")
                 or input_data.get("output")
@@ -732,6 +742,10 @@ class AgentSDKExecutor(BaseExecutor):
                 tool_output = _parse_tool_result_from_transcript(
                     _transcript_path, tool_use_id,
                 )
+            logger.info(
+                "PostToolUse(stream) tool_output length=%d, transcript=%s",
+                len(str(tool_output)), _transcript_path,
+            )
             if tool_output and tool_use_id:
                 _tool_results_cache[tool_use_id] = str(tool_output)
 
@@ -775,11 +789,11 @@ class AgentSDKExecutor(BaseExecutor):
                 },
             },
             hooks={
-                "PreToolUse": [HookMatcher(
-                    matcher="Write|Edit|Bash|Read|Grep|Glob",
-                    hooks=[_build_pre_tool_hook(self._anima_dir)],
-                )],
-                "PostToolUse": [HookMatcher(matcher=None, hooks=[_post_tool_hook])],
+                "PreToolUse": [{
+                    "matcher": "Write|Edit|Bash|Read|Grep|Glob",
+                    "hooks": [_build_pre_tool_hook(self._anima_dir)],
+                }],
+                "PostToolUse": [{"matcher": None, "hooks": [_post_tool_hook]}],
             },
         )
 
