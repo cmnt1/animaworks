@@ -732,6 +732,137 @@ class AgentSDKExecutor(BaseExecutor):
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
 
+    # ── SDK helpers (shared by execute / execute_streaming) ──
+
+    def _build_sdk_options(
+        self,
+        system_prompt: str,
+        max_turns: int,
+        context_window: int,
+        session_stats: dict[str, Any],
+        *,
+        resume: str | None = None,
+        include_partial_messages: bool = False,
+    ) -> "ClaudeAgentOptions":
+        """Construct ``ClaudeAgentOptions`` for the Agent SDK client.
+
+        Shared by both ``execute()`` and ``execute_streaming()`` (initial
+        and retry attempts).  All SDK-specific lazy imports live here so
+        callers need not repeat them.
+        """
+        from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
+
+        _cw = context_window
+        kwargs: dict[str, Any] = dict(
+            system_prompt=system_prompt,
+            allowed_tools=[
+                "Read", "Write", "Edit", "Bash", "Grep", "Glob",
+                "mcp__aw__*",
+            ],
+            permission_mode="acceptEdits",
+            cwd=str(self._anima_dir),
+            max_turns=max_turns,
+            model=self._resolve_agent_sdk_model(),
+            env=self._build_env(),
+            max_buffer_size=_SDK_MAX_BUFFER_SIZE,
+            resume=resume,
+            setting_sources=[],  # CLI内蔵hook(settings.json)の読み込みを防止
+            mcp_servers={
+                "aw": {
+                    "command": sys.executable,
+                    "args": ["-m", "core.mcp.server"],
+                    "env": self._build_mcp_env(),
+                },
+            },
+            hooks={
+                "PreToolUse": [HookMatcher(
+                    matcher=".*",
+                    hooks=[_build_pre_tool_hook(
+                        self._anima_dir,
+                        max_tokens=self._model_config.max_tokens or 4096,
+                        context_window=_cw,
+                        session_stats=session_stats,
+                    )],
+                )],
+            },
+        )
+        if include_partial_messages:
+            kwargs["include_partial_messages"] = True
+        return ClaudeAgentOptions(**kwargs)
+
+    async def _process_blocking_messages(
+        self,
+        client: "ClaudeSDKClient",
+        prompt: str,
+        response_text: list[str],
+        pending_records: dict[str, ToolCallRecord],
+        session_stats: dict[str, Any],
+        tracker: ContextTracker | None,
+    ) -> "ResultMessage | None":
+        """Run query + message loop for blocking (non-streaming) execution.
+
+        Sends *prompt* via ``client.query()``, then iterates
+        ``client.receive_response()`` to collect assistant text, tool
+        records and the final ``ResultMessage``.  Returns the
+        ``ResultMessage`` (or ``None`` if the loop ended without one).
+        """
+        from claude_agent_sdk import (
+            AssistantMessage,
+            ResultMessage,
+            SystemMessage,
+            TextBlock,
+            ToolResultBlock,
+            ToolUseBlock,
+            UserMessage,
+        )
+
+        result_message: ResultMessage | None = None
+
+        await client.query(prompt)
+        async for message in client.receive_response():
+            if isinstance(message, ResultMessage):
+                result_message = message
+                if message.session_id:
+                    _save_session_id(self._anima_dir, message.session_id)
+                if tracker:
+                    tracker.update_from_result_message(message.usage)
+            elif isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        response_text.append(block.text)
+                    elif isinstance(block, ToolUseBlock):
+                        _handle_tool_use_block(
+                            block, pending_records, None,
+                            self._model_config.model,
+                        )
+            elif isinstance(message, UserMessage):
+                if isinstance(message.content, list):
+                    for block in message.content:
+                        if isinstance(block, ToolResultBlock):
+                            session_stats["total_result_bytes"] += (
+                                _tool_result_content_len(block)
+                            )
+                            _handle_tool_result_block(
+                                block, pending_records, None,
+                                self._model_config.model,
+                                anima_dir=self._anima_dir,
+                            )
+            elif isinstance(message, SystemMessage):
+                if message.subtype == "init" and message.data:
+                    mcp_servers = message.data.get("mcp_servers", [])
+                    for srv in mcp_servers:
+                        name = srv.get("name", "unknown")
+                        status = srv.get("status", "unknown")
+                        if status != "connected":
+                            logger.error(
+                                "MCP server '%s' failed to connect: status=%s",
+                                name, status,
+                            )
+                        else:
+                            logger.info("MCP server '%s' connected successfully", name)
+
+        return result_message
+
     # ── Blocking execution ───────────────────────────────────
 
     async def execute(
@@ -756,22 +887,13 @@ class AgentSDKExecutor(BaseExecutor):
         """
         if images:
             logger.warning(
-                "Agent SDK (Mode A1) does not support multimodal image input; "
+                "Agent SDK (Mode S) does not support multimodal image input; "
                 "images will be ignored"
             )
         from claude_agent_sdk import (
-            AssistantMessage,
-            ClaudeAgentOptions,
             ClaudeSDKClient,
             ClaudeSDKError,
-            HookMatcher,
             ProcessError,
-            ResultMessage,
-            SystemMessage,
-            TextBlock,
-            ToolResultBlock,
-            ToolUseBlock,
-            UserMessage,
         )
 
         # ── Session stats: shared between PreToolUse hook closure and this
@@ -780,6 +902,7 @@ class AgentSDKExecutor(BaseExecutor):
         #    updates total_result_bytes after each ToolResultBlock.
         #    Both run in the same async task — no concurrent access.
         _cw = resolve_context_window(self._model_config.model)
+        _max_turns = max_turns_override or self._model_config.max_turns
         session_stats: dict[str, Any] = {
             "tool_call_count": 0,
             "total_result_bytes": 0,
@@ -790,41 +913,14 @@ class AgentSDKExecutor(BaseExecutor):
 
         session_id_to_resume = _load_session_id(self._anima_dir)
 
-        options = ClaudeAgentOptions(
-            system_prompt=system_prompt,
-            allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob",
-                           "mcp__aw__*"],
-            permission_mode="acceptEdits",
-            cwd=str(self._anima_dir),
-            max_turns=max_turns_override or self._model_config.max_turns,
-            model=self._resolve_agent_sdk_model(),
-            env=self._build_env(),
-            max_buffer_size=_SDK_MAX_BUFFER_SIZE,
-            resume=session_id_to_resume,  # Resume prior SDK session if available
-            setting_sources=[],  # CLI内蔵hook(settings.json)の読み込みを防止
-            mcp_servers={
-                "aw": {
-                    "command": sys.executable,
-                    "args": ["-m", "core.mcp.server"],
-                    "env": self._build_mcp_env(),
-                },
-            },
-            hooks={
-                "PreToolUse": [HookMatcher(
-                    matcher=".*",
-                    hooks=[_build_pre_tool_hook(
-                        self._anima_dir,
-                        max_tokens=self._model_config.max_tokens or 4096,
-                        context_window=_cw,
-                        session_stats=session_stats,
-                    )],
-                )],
-            },
+        options = self._build_sdk_options(
+            system_prompt, _max_turns, _cw, session_stats,
+            resume=session_id_to_resume,
         )
 
         response_text: list[str] = []
         pending_records: dict[str, ToolCallRecord] = {}
-        result_message: ResultMessage | None = None
+        result_message = None
         message_count = 0
 
         try:
@@ -834,49 +930,10 @@ class AgentSDKExecutor(BaseExecutor):
             )
             async with ClaudeSDKClient(options=options) as client:
                 logger.info("ClaudeSDKClient connected")
-                await client.query(prompt)
-                async for message in client.receive_response():
-                    if isinstance(message, ResultMessage):
-                        result_message = message
-                        if message.session_id:
-                            _save_session_id(self._anima_dir, message.session_id)
-                        if tracker:
-                            tracker.update_from_result_message(message.usage)
-                    elif isinstance(message, AssistantMessage):
-                        message_count += 1
-                        for block in message.content:
-                            if isinstance(block, TextBlock):
-                                response_text.append(block.text)
-                            elif isinstance(block, ToolUseBlock):
-                                _handle_tool_use_block(
-                                    block, pending_records, None,
-                                    self._model_config.model,
-                                )
-                    elif isinstance(message, UserMessage):
-                        if isinstance(message.content, list):
-                            for block in message.content:
-                                if isinstance(block, ToolResultBlock):
-                                    session_stats["total_result_bytes"] += (
-                                        _tool_result_content_len(block)
-                                    )
-                                    _handle_tool_result_block(
-                                        block, pending_records, None,
-                                        self._model_config.model,
-                                        anima_dir=self._anima_dir,
-                                    )
-                    elif isinstance(message, SystemMessage):
-                        if message.subtype == "init" and message.data:
-                            mcp_servers = message.data.get("mcp_servers", [])
-                            for srv in mcp_servers:
-                                name = srv.get("name", "unknown")
-                                status = srv.get("status", "unknown")
-                                if status != "connected":
-                                    logger.error(
-                                        "MCP server '%s' failed to connect: status=%s",
-                                        name, status,
-                                    )
-                                else:
-                                    logger.info("MCP server '%s' connected successfully", name)
+                result_message = await self._process_blocking_messages(
+                    client, prompt, response_text, pending_records,
+                    session_stats, tracker,
+                )
             logger.debug("ClaudeSDKClient disconnected")
         except (ProcessError, ClaudeSDKError) as e:
             if session_id_to_resume:
@@ -887,83 +944,17 @@ class AgentSDKExecutor(BaseExecutor):
                 )
                 _clear_session_id(self._anima_dir)
                 # Retry without resume
-                options = ClaudeAgentOptions(
-                    system_prompt=system_prompt,
-                    allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob",
-                                   "mcp__aw__*"],
-                    permission_mode="acceptEdits",
-                    cwd=str(self._anima_dir),
-                    max_turns=max_turns_override or self._model_config.max_turns,
-                    model=self._resolve_agent_sdk_model(),
-                    env=self._build_env(),
-                    max_buffer_size=_SDK_MAX_BUFFER_SIZE,
+                options = self._build_sdk_options(
+                    system_prompt, _max_turns, _cw, session_stats,
                     resume=None,
-                    setting_sources=[],
-                    mcp_servers={
-                        "aw": {
-                            "command": sys.executable,
-                            "args": ["-m", "core.mcp.server"],
-                            "env": self._build_mcp_env(),
-                        },
-                    },
-                    hooks={
-                        "PreToolUse": [HookMatcher(
-                            matcher=".*",
-                            hooks=[_build_pre_tool_hook(
-                                self._anima_dir,
-                                max_tokens=self._model_config.max_tokens or 4096,
-                                context_window=_cw,
-                                session_stats=session_stats,
-                            )],
-                        )],
-                    },
                 )
                 try:
                     async with ClaudeSDKClient(options=options) as client:
                         logger.info("ClaudeSDKClient connected (fresh session retry)")
-                        await client.query(prompt)
-                        async for message in client.receive_response():
-                            if isinstance(message, ResultMessage):
-                                result_message = message
-                                if message.session_id:
-                                    _save_session_id(self._anima_dir, message.session_id)
-                                if tracker:
-                                    tracker.update_from_result_message(message.usage)
-                            elif isinstance(message, AssistantMessage):
-                                message_count += 1
-                                for block in message.content:
-                                    if isinstance(block, TextBlock):
-                                        response_text.append(block.text)
-                                    elif isinstance(block, ToolUseBlock):
-                                        _handle_tool_use_block(
-                                            block, pending_records, None,
-                                            self._model_config.model,
-                                        )
-                            elif isinstance(message, UserMessage):
-                                if isinstance(message.content, list):
-                                    for block in message.content:
-                                        if isinstance(block, ToolResultBlock):
-                                            session_stats["total_result_bytes"] += (
-                                                _tool_result_content_len(block)
-                                            )
-                                            _handle_tool_result_block(
-                                                block, pending_records, None,
-                                                self._model_config.model,
-                                                anima_dir=self._anima_dir,
-                                            )
-                            elif isinstance(message, SystemMessage):
-                                if message.subtype == "init" and message.data:
-                                    mcp_servers = message.data.get("mcp_servers", [])
-                                    for srv in mcp_servers:
-                                        name = srv.get("name", "unknown")
-                                        status = srv.get("status", "unknown")
-                                        if status != "connected":
-                                            logger.error(
-                                                "MCP server '%s' failed to connect: status=%s",
-                                                name, status,
-                                            )
-                                        else:
-                                            logger.info("MCP server '%s' connected successfully", name)
+                        result_message = await self._process_blocking_messages(
+                            client, prompt, response_text, pending_records,
+                            session_stats, tracker,
+                        )
                 except Exception as retry_exc:
                     logger.exception("Agent SDK execution error (fresh session retry)")
                     all_tool_records = _finalize_pending_records(pending_records)
@@ -1027,15 +1018,13 @@ class AgentSDKExecutor(BaseExecutor):
         """
         if images:
             logger.warning(
-                "Agent SDK (Mode A1) streaming does not support multimodal "
+                "Agent SDK (Mode S) streaming does not support multimodal "
                 "image input; images will be ignored"
             )
         from claude_agent_sdk import (
             AssistantMessage,
-            ClaudeAgentOptions,
             ClaudeSDKClient,
             ClaudeSDKError,
-            HookMatcher,
             ProcessError,
             ResultMessage,
             SystemMessage,
@@ -1049,6 +1038,7 @@ class AgentSDKExecutor(BaseExecutor):
         # ── Session stats: shared between PreToolUse hook closure and this
         #    outer message loop (see execute() for detailed comment).
         _cw = resolve_context_window(self._model_config.model)
+        _max_turns = max_turns_override or self._model_config.max_turns
         session_stats: dict[str, Any] = {
             "tool_call_count": 0,
             "total_result_bytes": 0,
@@ -1059,37 +1049,10 @@ class AgentSDKExecutor(BaseExecutor):
 
         session_id_to_resume = _load_session_id(self._anima_dir)
 
-        options = ClaudeAgentOptions(
-            system_prompt=system_prompt,
-            allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob",
-                           "mcp__aw__*"],
-            permission_mode="acceptEdits",
-            cwd=str(self._anima_dir),
-            max_turns=max_turns_override or self._model_config.max_turns,
-            model=self._resolve_agent_sdk_model(),
-            env=self._build_env(),
-            max_buffer_size=_SDK_MAX_BUFFER_SIZE,
+        options = self._build_sdk_options(
+            system_prompt, _max_turns, _cw, session_stats,
+            resume=session_id_to_resume,
             include_partial_messages=True,
-            resume=session_id_to_resume,  # Resume prior SDK session if available
-            setting_sources=[],  # CLI内蔵hook(settings.json)の読み込みを防止
-            mcp_servers={
-                "aw": {
-                    "command": sys.executable,
-                    "args": ["-m", "core.mcp.server"],
-                    "env": self._build_mcp_env(),
-                },
-            },
-            hooks={
-                "PreToolUse": [HookMatcher(
-                    matcher=".*",
-                    hooks=[_build_pre_tool_hook(
-                        self._anima_dir,
-                        max_tokens=self._model_config.max_tokens or 4096,
-                        context_window=_cw,
-                        session_stats=session_stats,
-                    )],
-                )],
-            },
         )
 
         response_text: list[str] = []
@@ -1098,6 +1061,89 @@ class AgentSDKExecutor(BaseExecutor):
         active_tool_ids: set[str] = set()
         message_count = 0
 
+        # --- inline helper: streaming message loop (not extractable because
+        #     it yields from the generator) ---
+        async def _stream_messages(
+            client: ClaudeSDKClient,
+        ) -> AsyncGenerator[dict[str, Any], None]:
+            nonlocal result_message, message_count
+            await client.query(prompt)
+            async for message in client.receive_messages():
+                if isinstance(message, StreamEvent):
+                    event = message.event
+                    event_type = event.get("type", "")
+
+                    if event_type == "content_block_start":
+                        block = event.get("content_block", {})
+                        if block.get("type") == "tool_use":
+                            tool_id = block.get("id", "")
+                            tool_name = block.get("name", "")
+                            active_tool_ids.add(tool_id)
+                            yield {
+                                "type": "tool_start",
+                                "tool_name": tool_name,
+                                "tool_id": tool_id,
+                            }
+
+                    elif event_type == "content_block_delta":
+                        delta = event.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            text = delta.get("text", "")
+                            if text:
+                                yield {"type": "text_delta", "text": text}
+
+                elif isinstance(message, AssistantMessage):
+                    message_count += 1
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            response_text.append(block.text)
+                        elif isinstance(block, ToolUseBlock):
+                            _handle_tool_use_block(
+                                block, pending_records, None,
+                                self._model_config.model,
+                            )
+                            if block.id in active_tool_ids:
+                                active_tool_ids.discard(block.id)
+                                yield {
+                                    "type": "tool_end",
+                                    "tool_id": block.id,
+                                    "tool_name": block.name,
+                                }
+
+                elif isinstance(message, UserMessage):
+                    if isinstance(message.content, list):
+                        for block in message.content:
+                            if isinstance(block, ToolResultBlock):
+                                session_stats["total_result_bytes"] += (
+                                    _tool_result_content_len(block)
+                                )
+                                _handle_tool_result_block(
+                                    block, pending_records, None,
+                                    self._model_config.model,
+                                    anima_dir=self._anima_dir,
+                                )
+
+                elif isinstance(message, ResultMessage):
+                    result_message = message
+                    if message.session_id:
+                        _save_session_id(self._anima_dir, message.session_id)
+                    tracker.update_from_result_message(message.usage)
+                    break  # receive_messages() does not auto-stop on ResultMessage
+
+                elif isinstance(message, SystemMessage):
+                    if message.subtype == "init" and message.data:
+                        mcp_servers = message.data.get("mcp_servers", [])
+                        for srv in mcp_servers:
+                            name = srv.get("name", "unknown")
+                            status = srv.get("status", "unknown")
+                            if status != "connected":
+                                logger.error(
+                                    "MCP server '%s' failed to connect: status=%s",
+                                    name, status,
+                                )
+                            else:
+                                logger.info("MCP server '%s' connected successfully", name)
+
         try:
             logger.info(
                 "ClaudeSDKClient connecting (streaming mode, resume=%s)",
@@ -1105,82 +1151,8 @@ class AgentSDKExecutor(BaseExecutor):
             )
             async with ClaudeSDKClient(options=options) as client:
                 logger.info("ClaudeSDKClient connected")
-                await client.query(prompt)
-                async for message in client.receive_messages():
-                    if isinstance(message, StreamEvent):
-                        event = message.event
-                        event_type = event.get("type", "")
-
-                        if event_type == "content_block_start":
-                            block = event.get("content_block", {})
-                            if block.get("type") == "tool_use":
-                                tool_id = block.get("id", "")
-                                tool_name = block.get("name", "")
-                                active_tool_ids.add(tool_id)
-                                yield {
-                                    "type": "tool_start",
-                                    "tool_name": tool_name,
-                                    "tool_id": tool_id,
-                                }
-
-                        elif event_type == "content_block_delta":
-                            delta = event.get("delta", {})
-                            if delta.get("type") == "text_delta":
-                                text = delta.get("text", "")
-                                if text:
-                                    yield {"type": "text_delta", "text": text}
-
-                    elif isinstance(message, AssistantMessage):
-                        message_count += 1
-                        for block in message.content:
-                            if isinstance(block, TextBlock):
-                                response_text.append(block.text)
-                            elif isinstance(block, ToolUseBlock):
-                                _handle_tool_use_block(
-                                    block, pending_records, None,
-                                    self._model_config.model,
-                                )
-                                if block.id in active_tool_ids:
-                                    active_tool_ids.discard(block.id)
-                                    yield {
-                                        "type": "tool_end",
-                                        "tool_id": block.id,
-                                        "tool_name": block.name,
-                                    }
-
-                    elif isinstance(message, UserMessage):
-                        if isinstance(message.content, list):
-                            for block in message.content:
-                                if isinstance(block, ToolResultBlock):
-                                    session_stats["total_result_bytes"] += (
-                                        _tool_result_content_len(block)
-                                    )
-                                    _handle_tool_result_block(
-                                        block, pending_records, None,
-                                        self._model_config.model,
-                                        anima_dir=self._anima_dir,
-                                    )
-
-                    elif isinstance(message, ResultMessage):
-                        result_message = message
-                        if message.session_id:
-                            _save_session_id(self._anima_dir, message.session_id)
-                        tracker.update_from_result_message(message.usage)
-                        break  # receive_messages() does not auto-stop on ResultMessage
-
-                    elif isinstance(message, SystemMessage):
-                        if message.subtype == "init" and message.data:
-                            mcp_servers = message.data.get("mcp_servers", [])
-                            for srv in mcp_servers:
-                                name = srv.get("name", "unknown")
-                                status = srv.get("status", "unknown")
-                                if status != "connected":
-                                    logger.error(
-                                        "MCP server '%s' failed to connect: status=%s",
-                                        name, status,
-                                    )
-                                else:
-                                    logger.info("MCP server '%s' connected successfully", name)
+                async for event in _stream_messages(client):
+                    yield event
             logger.debug("ClaudeSDKClient disconnected")
         except (ProcessError, ClaudeSDKError) as e:
             if session_id_to_resume:
@@ -1191,111 +1163,16 @@ class AgentSDKExecutor(BaseExecutor):
                 )
                 _clear_session_id(self._anima_dir)
                 # Retry without resume
-                options = ClaudeAgentOptions(
-                    system_prompt=system_prompt,
-                    allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob",
-                                   "mcp__aw__*"],
-                    permission_mode="acceptEdits",
-                    cwd=str(self._anima_dir),
-                    max_turns=max_turns_override or self._model_config.max_turns,
-                    model=self._resolve_agent_sdk_model(),
-                    env=self._build_env(),
-                    max_buffer_size=_SDK_MAX_BUFFER_SIZE,
-                    include_partial_messages=True,
+                options = self._build_sdk_options(
+                    system_prompt, _max_turns, _cw, session_stats,
                     resume=None,
-                    setting_sources=[],
-                    mcp_servers={
-                        "aw": {
-                            "command": sys.executable,
-                            "args": ["-m", "core.mcp.server"],
-                            "env": self._build_mcp_env(),
-                        },
-                    },
-                    hooks={
-                        "PreToolUse": [HookMatcher(
-                            matcher=".*",
-                            hooks=[_build_pre_tool_hook(
-                                self._anima_dir,
-                                max_tokens=self._model_config.max_tokens or 4096,
-                                context_window=_cw,
-                                session_stats=session_stats,
-                            )],
-                        )],
-                    },
+                    include_partial_messages=True,
                 )
                 try:
                     async with ClaudeSDKClient(options=options) as client:
                         logger.info("ClaudeSDKClient connected (fresh session retry)")
-                        await client.query(prompt)
-                        async for message in client.receive_messages():
-                            if isinstance(message, StreamEvent):
-                                event = message.event
-                                event_type = event.get("type", "")
-                                if event_type == "content_block_start":
-                                    block = event.get("content_block", {})
-                                    if block.get("type") == "tool_use":
-                                        tool_id = block.get("id", "")
-                                        tool_name = block.get("name", "")
-                                        active_tool_ids.add(tool_id)
-                                        yield {
-                                            "type": "tool_start",
-                                            "tool_name": tool_name,
-                                            "tool_id": tool_id,
-                                        }
-                                elif event_type == "content_block_delta":
-                                    delta = event.get("delta", {})
-                                    if delta.get("type") == "text_delta":
-                                        text = delta.get("text", "")
-                                        if text:
-                                            yield {"type": "text_delta", "text": text}
-                            elif isinstance(message, AssistantMessage):
-                                message_count += 1
-                                for block in message.content:
-                                    if isinstance(block, TextBlock):
-                                        response_text.append(block.text)
-                                    elif isinstance(block, ToolUseBlock):
-                                        _handle_tool_use_block(
-                                            block, pending_records, None,
-                                            self._model_config.model,
-                                        )
-                                        if block.id in active_tool_ids:
-                                            active_tool_ids.discard(block.id)
-                                            yield {
-                                                "type": "tool_end",
-                                                "tool_id": block.id,
-                                                "tool_name": block.name,
-                                            }
-                            elif isinstance(message, UserMessage):
-                                if isinstance(message.content, list):
-                                    for block in message.content:
-                                        if isinstance(block, ToolResultBlock):
-                                            session_stats["total_result_bytes"] += (
-                                                _tool_result_content_len(block)
-                                            )
-                                            _handle_tool_result_block(
-                                                block, pending_records, None,
-                                                self._model_config.model,
-                                                anima_dir=self._anima_dir,
-                                            )
-                            elif isinstance(message, ResultMessage):
-                                result_message = message
-                                if message.session_id:
-                                    _save_session_id(self._anima_dir, message.session_id)
-                                tracker.update_from_result_message(message.usage)
-                                break
-                            elif isinstance(message, SystemMessage):
-                                if message.subtype == "init" and message.data:
-                                    mcp_servers = message.data.get("mcp_servers", [])
-                                    for srv in mcp_servers:
-                                        name = srv.get("name", "unknown")
-                                        status = srv.get("status", "unknown")
-                                        if status != "connected":
-                                            logger.error(
-                                                "MCP server '%s' failed to connect: status=%s",
-                                                name, status,
-                                            )
-                                        else:
-                                            logger.info("MCP server '%s' connected successfully", name)
+                        async for event in _stream_messages(client):
+                            yield event
                 except BaseException as retry_exc:
                     if isinstance(retry_exc, asyncio.CancelledError):
                         raise

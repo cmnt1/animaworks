@@ -555,6 +555,7 @@ _LEGACY_MODE_MAP: dict[str, str] = {
     "assisted": "B",
     "a1": "S",
     "a1f": "A",
+    "a1_fallback": "A",
     "a2": "A",
 }
 
@@ -590,7 +591,10 @@ def _load_models_json() -> dict[str, dict]:
         if disk_mtime == _models_json_mtime:
             return _models_json_cache
 
-    if not models_path.is_file():
+    # Capture mtime before reading to avoid TOCTOU race
+    try:
+        file_mtime = models_path.stat().st_mtime
+    except OSError:
         logger.debug("models.json not found at %s; skipping", models_path)
         _models_json_cache = {}
         _models_json_mtime = 0.0
@@ -617,10 +621,7 @@ def _load_models_json() -> dict[str, dict]:
             result[key] = value
 
     _models_json_cache = result
-    try:
-        _models_json_mtime = models_path.stat().st_mtime
-    except OSError:
-        _models_json_mtime = 0.0
+    _models_json_mtime = file_mtime
 
     logger.debug("Loaded models.json with %d entries", len(result))
     return _models_json_cache
@@ -737,6 +738,7 @@ def _normalise_mode(raw: str) -> str:
     if upper in ("S", "A", "B"):
         return upper
     # Unrecognised — return as-is (upper) for forward compat
+    logger.warning("Unrecognised execution mode '%s'; passing through as '%s'", raw, upper)
     return upper
 
 
