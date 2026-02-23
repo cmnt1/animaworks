@@ -194,6 +194,131 @@ class TestAgentSDKExecutorStreaming:
             assert last_event["type"] == "done"
             assert last_event["result_message"] is not None
 
+    async def test_streaming_skips_historical_messages_before_stream_event(
+        self, model_config, anima_dir,
+    ):
+        """セッション再開時の再送 AssistantMessage/UserMessage は
+        最初の StreamEvent が届くまでスキップされることを確認する。"""
+        import sys
+        from contextlib import contextmanager
+        from unittest.mock import MagicMock
+
+        from tests.helpers.mocks import (
+            MockAssistantMessage,
+            MockClaudeSDKClient,
+            MockResultMessage,
+            MockStreamEvent,
+            MockTextBlock,
+            MockToolResultBlock,
+            MockUserMessage,
+        )
+
+        @contextmanager
+        def _patch_with_historical_messages():
+            # 再送シーケンス: historical AssistantMessage → StreamEvent → AssistantMessage → ResultMessage
+            historical_msg = MockAssistantMessage([MockTextBlock("historical old response")])
+            historical_user = MockUserMessage([MockToolResultBlock("tu_old", "old result")])
+            stream_event = MockStreamEvent({
+                "type": "content_block_delta",
+                "delta": {"type": "text_delta", "text": "new response"},
+                "index": 0,
+            })
+            current_msg = MockAssistantMessage([MockTextBlock("new response")])
+            result_msg = MockResultMessage(usage={"input_tokens": 100, "output_tokens": 50})
+
+            messages = [historical_msg, historical_user, stream_event, current_msg, result_msg]
+
+            def _client_factory(**kwargs):
+                return MockClaudeSDKClient(messages=messages)
+
+            mock_module = MagicMock()
+            mock_module.ClaudeSDKClient = _client_factory
+            mock_module.AssistantMessage = MockAssistantMessage
+            mock_module.ResultMessage = MockResultMessage
+            mock_module.TextBlock = MockTextBlock
+            mock_module.ToolUseBlock = MagicMock
+            mock_module.ToolResultBlock = MockToolResultBlock
+            mock_module.UserMessage = MockUserMessage
+            mock_module.SystemMessage = MagicMock
+            mock_module.ClaudeAgentOptions = MagicMock
+            mock_module.HookMatcher = MagicMock
+
+            mock_types = MagicMock()
+            mock_types.StreamEvent = MockStreamEvent
+            mock_module.types = mock_types
+
+            saved_modules = {}
+            for key in ["claude_agent_sdk", "claude_agent_sdk.types"]:
+                saved_modules[key] = sys.modules.get(key)
+                sys.modules[key] = mock_types if key == "claude_agent_sdk.types" else mock_module
+            try:
+                yield mock_module
+            finally:
+                for key, saved in saved_modules.items():
+                    if saved is None:
+                        sys.modules.pop(key, None)
+                    else:
+                        sys.modules[key] = saved
+
+        from core.prompt.context import ContextTracker
+        tracker = ContextTracker(model="claude-sonnet-4-20250514")
+
+        with _patch_with_historical_messages():
+            from core.execution.agent_sdk import AgentSDKExecutor
+            executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+            events = []
+            async for event in executor.execute_streaming(
+                system_prompt="sys",
+                prompt="test",
+                tracker=tracker,
+            ):
+                events.append(event)
+
+        # text_delta は新しい応答のみ届く
+        text_events = [e for e in events if e["type"] == "text_delta"]
+        assert len(text_events) == 1
+        assert text_events[0]["text"] == "new response"
+
+        # done の full_text に historical テキストが混入しない
+        done_events = [e for e in events if e["type"] == "done"]
+        assert len(done_events) == 1
+        assert "historical" not in done_events[0]["full_text"]
+        assert "new response" in done_events[0]["full_text"]
+
+    async def test_streaming_include_partial_messages_true(self, model_config, anima_dir):
+        """execute_streaming() が _build_sdk_options に include_partial_messages=True を
+        渡すことを確認する（ストリーミング StreamEvent 発行のために必須）。"""
+        captured_kwargs: list[dict] = []
+
+        original_build = None
+
+        def _capturing_build(self_inner, *args, **kwargs):
+            captured_kwargs.append(kwargs)
+            return original_build(self_inner, *args, **kwargs)
+
+        from core.prompt.context import ContextTracker
+        tracker = ContextTracker(model="claude-sonnet-4-20250514")
+
+        with patch_agent_sdk_streaming(text_deltas=["hi"]):
+            from core.execution.agent_sdk import AgentSDKExecutor
+            executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+            original_build = AgentSDKExecutor._build_sdk_options
+
+            with patch.object(AgentSDKExecutor, "_build_sdk_options", _capturing_build):
+                async for _ in executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="test",
+                    tracker=tracker,
+                ):
+                    pass
+
+        assert len(captured_kwargs) >= 1, "build_sdk_options が呼ばれていない"
+        for call_kwargs in captured_kwargs:
+            assert call_kwargs.get("include_partial_messages") is True, (
+                f"include_partial_messages=True が渡されていない: {call_kwargs}"
+            )
+
 
 # ── ExecutionResult.unconfirmed_sends ────────────────────
 
