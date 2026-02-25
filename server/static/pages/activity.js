@@ -22,6 +22,8 @@ const GROUP_ICONS = {
   dm: "✉️",
   cron: "⏰",
   task: "📋",
+  inbox: "📬",
+  task_exec: "🔨",
 };
 
 // ── Render ─────────────────────────────────
@@ -268,6 +270,8 @@ function _createGroupHeader(grp) {
   else if (grp.type === "dm") label = `DM ${grp.summary || ""} ${timeRange}`;
   else if (grp.type === "cron") label = `Cron ${grp.summary || ""} ${timeRange}`;
   else if (grp.type === "task") label = `Task ${grp.summary || ""} ${timeRange}`;
+  else if (grp.type === "inbox") label = `Inbox処理 ${timeRange}`;
+  else if (grp.type === "task_exec") label = `タスク実行 ${grp.summary || ""} ${timeRange}`;
   else label = `${grp.type} ${timeRange}`;
 
   const openBadge = grp.is_open ? '<span class="activity-group-badge-open">(進行中)</span>' : "";

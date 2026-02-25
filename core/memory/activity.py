@@ -756,12 +756,16 @@ class ActivityLogger:
     _TRIGGER_TYPES = frozenset({
         "heartbeat_start", "message_received", "cron_executed",
         "task_created", "task_updated",
+        "inbox_processing_start", "task_exec_start",
     })
 
     _CLOSE_MAP: dict[str, frozenset[str]] = {
         "heartbeat": frozenset({"heartbeat_end"}),
         "chat": frozenset({"response_sent"}),
         "dm": frozenset({"response_sent", "message_sent", "dm_sent"}),
+        "inbox": frozenset({"inbox_processing_end"}),
+        # task_exec: no explicit close — stays open until the next trigger
+        # so that the follow-up message_sent (completion report) is absorbed.
     }
 
     @staticmethod
@@ -771,8 +775,12 @@ class ActivityLogger:
         """Group entries by trigger events for timeline display.
 
         Trigger events (heartbeat_start, message_received, cron_executed,
-        task_created) open a new group.  Subsequent events are absorbed
-        into the open group until a closing event or the next trigger.
+        task_created, inbox_processing_start, task_exec_start) open a new
+        group.  Subsequent events are absorbed into the open group until a
+        closing event or the next trigger *for the same Anima*.
+
+        Each Anima's open group is tracked independently so that
+        cross-Anima interleaving does not break grouping.
 
         tool_use / tool_result pairs are merged into a single entry
         with ``tool_result`` field attached.
@@ -782,47 +790,79 @@ class ActivityLogger:
         _AL = ActivityLogger
         paired = _AL._pair_tool_results(entries)
         groups: list[dict[str, Any]] = []
-        current: dict[str, Any] | None = None
+        current_by_anima: dict[str, dict[str, Any]] = {}
 
         for entry in paired:
             etype = entry.type
+            anima = entry._anima_name
             evt_dict = _AL._entry_to_event_dict(entry)
             is_trigger = etype in _AL._TRIGGER_TYPES
+            cur = current_by_anima.get(anima)
 
             if is_trigger:
-                if current is not None:
-                    _AL._finalize_group(current)
-                    groups.append(current)
-                current = _AL._open_group(entry, evt_dict)
+                if cur is not None:
+                    _AL._finalize_group(cur)
+                    groups.append(cur)
+                current_by_anima[anima] = _AL._open_group(entry, evt_dict)
                 continue
 
-            if etype == "heartbeat_end" and current and current["type"] == "heartbeat":
-                current["events"].append(evt_dict)
-                current["end_ts"] = entry.ts
-                current["is_open"] = False
-                if entry.summary:
-                    current["summary"] = entry.summary
-                _AL._finalize_group(current)
-                groups.append(current)
-                current = None
-                continue
+            if etype == "heartbeat_end":
+                if cur and cur["type"] == "heartbeat":
+                    cur["events"].append(evt_dict)
+                    cur["end_ts"] = entry.ts
+                    cur["is_open"] = False
+                    if entry.summary:
+                        cur["summary"] = entry.summary
+                    _AL._finalize_group(cur)
+                    groups.append(cur)
+                    del current_by_anima[anima]
+                    continue
+                # HB was interrupted (e.g. by a user chat). Retroactively
+                # append to the most recent finalized heartbeat group for
+                # this anima so the end event is not orphaned.
+                retrogrp = _AL._find_recent_group(
+                    groups, anima, "heartbeat",
+                )
+                if retrogrp is not None:
+                    retrogrp["events"].append(evt_dict)
+                    retrogrp["end_ts"] = entry.ts
+                    retrogrp["is_open"] = False
+                    if entry.summary:
+                        retrogrp["summary"] = entry.summary
+                    retrogrp["event_count"] = len(retrogrp["events"])
+                    continue
+                # No matching heartbeat at all — absorb into current if any
+                if cur is not None:
+                    cur["events"].append(evt_dict)
+                    cur["end_ts"] = entry.ts
+                    continue
 
-            if current is not None:
-                close_types = _AL._CLOSE_MAP.get(current["type"], frozenset())
-                current["events"].append(evt_dict)
-                current["end_ts"] = entry.ts
+            if cur is not None:
+                close_types = _AL._CLOSE_MAP.get(cur["type"], frozenset())
+                cur["events"].append(evt_dict)
+                cur["end_ts"] = entry.ts
                 if etype in close_types:
-                    current["is_open"] = False
-                    _AL._finalize_group(current)
-                    groups.append(current)
-                    current = None
+                    cur["is_open"] = False
+                    _AL._finalize_group(cur)
+                    groups.append(cur)
+                    del current_by_anima[anima]
+                continue
+
+            # Last resort: try to append to the most recent finalized
+            # group for this anima (catches post-close follow-up events
+            # like message_sent after task_exec_end).
+            retrogrp = _AL._find_recent_group(groups, anima)
+            if retrogrp is not None:
+                retrogrp["events"].append(evt_dict)
+                retrogrp["end_ts"] = entry.ts
+                retrogrp["event_count"] = len(retrogrp["events"])
                 continue
 
             groups.append(_AL._make_single_group(entry, evt_dict))
 
-        if current is not None:
-            _AL._finalize_group(current)
-            groups.append(current)
+        for cur in current_by_anima.values():
+            _AL._finalize_group(cur)
+            groups.append(cur)
 
         return groups
 
@@ -883,6 +923,10 @@ class ActivityLogger:
             gtype = "cron"
         elif etype in ("task_created", "task_updated"):
             gtype = "task"
+        elif etype == "inbox_processing_start":
+            gtype = "inbox"
+        elif etype == "task_exec_start":
+            gtype = "task_exec"
         else:
             gtype = "single"
 
@@ -916,6 +960,25 @@ class ActivityLogger:
             "is_open": False,
             "events": [evt_dict],
         }
+
+    @staticmethod
+    def _find_recent_group(
+        groups: list[dict[str, Any]],
+        anima: str,
+        gtype: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Find the most recently finalized group for *anima*.
+
+        Searches *groups* in reverse.  If *gtype* is given, only groups of
+        that type are considered.
+        """
+        for grp in reversed(groups):
+            if grp["anima"] != anima:
+                continue
+            if gtype is not None and grp["type"] != gtype:
+                continue
+            return grp
+        return None
 
     @staticmethod
     def _finalize_group(group: dict[str, Any]) -> None:

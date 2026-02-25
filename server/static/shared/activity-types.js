@@ -72,6 +72,9 @@ const TYPE_DEFAULTS = {
 };
 
 export function getDisplaySummary(evt) {
+  if (evt.type === "tool_use") {
+    return evt.tool || "ツール実行";
+  }
   if (evt.summary) return evt.summary;
   if (evt.content) {
     return evt.content.length > 200 ? evt.content.slice(0, 200) + "…" : evt.content;
