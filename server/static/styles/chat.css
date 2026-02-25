@@ -565,6 +565,37 @@
   border-radius: 8px;
 }
 
+/* ── Bustup Image Overlay ────────────────── */
+
+.bustup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.bustup-overlay.visible {
+  opacity: 1;
+}
+
+.bustup-overlay.hiding {
+  opacity: 0;
+}
+
+.bustup-overlay-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
 /* ── Tool Call Indicators (Collapsed) ──────── */
 
 .tool-call-row {

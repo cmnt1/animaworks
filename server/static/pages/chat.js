@@ -25,6 +25,7 @@ let _isChatStreaming = false;
 const _HISTORY_PAGE_SIZE = 50;
 const _TOOL_RESULT_TRUNCATE = 500;
 let _imageInputManager = null;
+let _bustupUrl = null;
 
 // ── DOM refs (local) ───────────────────────
 
@@ -155,6 +156,8 @@ export function destroy() {
   }
   _boundListeners = [];
   if (_chatObserver) { _chatObserver.disconnect(); _chatObserver = null; }
+  _removeBustupOverlay();
+  _bustupUrl = null;
   _container = null;
   _animas = [];
   _selectedAnima = null;
@@ -173,6 +176,15 @@ function _bindEvents() {
       _switchMobileTab(e.target.dataset.panel);
     });
   }
+
+  // Bustup overlay on avatar click
+  _addListener("chatPageAvatar", "click", () => {
+    if (_bustupUrl) _showBustupOverlay();
+  });
+
+  // Escape to dismiss bustup overlay
+  document.addEventListener("keydown", _onBustupEscape);
+  _boundListeners.push({ el: document, event: "keydown", handler: _onBustupEscape });
 
   // Anima selector
   _addListener("chatPageAnimaSelect", "change", (e) => {
@@ -360,9 +372,11 @@ async function _updateAvatar() {
   const container = _$("chatPageAvatar");
   if (!container || !_selectedAnima) {
     if (container) container.innerHTML = "";
+    _bustupUrl = null;
     return;
   }
 
+  _bustupUrl = null;
   const name = _selectedAnima;
   const candidates = ["avatar_bustup.png", "avatar_chibi.png"];
   for (const filename of candidates) {
@@ -370,12 +384,46 @@ async function _updateAvatar() {
     try {
       const resp = await fetch(url, { method: "HEAD" });
       if (resp.ok) {
+        if (filename === "avatar_bustup.png") _bustupUrl = url;
         container.innerHTML = `<img src="${escapeHtml(url)}" alt="${escapeHtml(name)}" class="anima-avatar-img">`;
+        container.style.cursor = _bustupUrl ? "pointer" : "";
         return;
       }
     } catch { /* try next */ }
   }
+  container.style.cursor = "";
   container.innerHTML = `<div class="anima-avatar-placeholder">${escapeHtml(name.charAt(0).toUpperCase())}</div>`;
+}
+
+// ── Bustup Overlay ──────────────────────────
+
+function _showBustupOverlay() {
+  if (!_bustupUrl || !_selectedAnima) return;
+  _removeBustupOverlay();
+
+  const overlay = document.createElement("div");
+  overlay.className = "bustup-overlay";
+  overlay.id = "chatBustupOverlay";
+  overlay.innerHTML = `<img class="bustup-overlay-img" src="${escapeHtml(_bustupUrl)}" alt="${escapeHtml(_selectedAnima)}">`;
+  overlay.addEventListener("click", _dismissBustupOverlay);
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add("visible"));
+}
+
+function _dismissBustupOverlay() {
+  const overlay = document.getElementById("chatBustupOverlay");
+  if (!overlay) return;
+  overlay.classList.remove("visible");
+  overlay.classList.add("hiding");
+  overlay.addEventListener("transitionend", () => overlay.remove(), { once: true });
+}
+
+function _removeBustupOverlay() {
+  document.getElementById("chatBustupOverlay")?.remove();
+}
+
+function _onBustupEscape(e) {
+  if (e.key === "Escape") _dismissBustupOverlay();
 }
 
 // ── Chat Rendering ─────────────────────────
