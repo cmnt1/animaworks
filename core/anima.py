@@ -92,11 +92,13 @@ class DigitalAnima:
             anima_dir, self.memory, self.model_config, self.messenger
         )
 
-        # Separate locks: conversation (chat/greet) vs background (HB/cron/consolidation)
+        # 3-lock structure: conversation (human chat) / inbox (Anima-to-Anima MSG) / background (HB/cron/TaskExec)
         self._conversation_lock = asyncio.Lock()
+        self._inbox_lock = asyncio.Lock()
         self._background_lock = asyncio.Lock()
-        self._status_slots: dict[str, str] = {"conversation": "idle", "background": "idle"}
-        self._task_slots: dict[str, str] = {"conversation": "", "background": ""}
+        self._state_file_lock = asyncio.Lock()  # protects current_task.md / pending.md
+        self._status_slots: dict[str, str] = {"conversation": "idle", "inbox": "idle", "background": "idle"}
+        self._task_slots: dict[str, str] = {"conversation": "", "inbox": "", "background": ""}
         self._last_heartbeat: datetime | None = None
         self._last_activity: datetime | None = None
         self._on_lock_released: Callable[[], None] | None = None
@@ -775,6 +777,148 @@ class DigitalAnima:
                 self._status_slots["conversation"] = prev_status
                 self._task_slots["conversation"] = prev_task
 
+    # ── Inbox MSG Immediate Processing ────────────────────────
+
+    async def process_inbox_message(
+        self,
+        cascade_suppressed_senders: set[str] | None = None,
+    ) -> CycleResult:
+        """Process Anima-to-Anima messages immediately under _inbox_lock.
+
+        Separated from heartbeat to provide instant response to inter-Anima
+        messages without triggering the full heartbeat observation cycle.
+        """
+        logger.info("[%s] process_inbox_message START", self.name)
+        try:
+            async with self._inbox_lock:
+                self._status_slots["inbox"] = "processing"
+
+                self._activity.log("inbox_processing_start", summary="Inbox MSG処理開始")
+
+                inbox_result: InboxResult | None = None
+                try:
+                    inbox_result = await self._process_inbox_messages(
+                        cascade_suppressed_senders,
+                    )
+
+                    if inbox_result.unread_count == 0:
+                        logger.info("[%s] process_inbox_message: no messages", self.name)
+                        return CycleResult(
+                            trigger="inbox",
+                            action="idle",
+                            summary="No unread messages",
+                        )
+
+                    senders_str = ", ".join(inbox_result.senders)
+                    trigger = f"inbox:{senders_str}"
+
+                    task_delegation_rules = load_prompt("task_delegation_rules")
+                    messages_text = "\n\n".join(inbox_result.prompt_parts)
+                    prompt = load_prompt(
+                        "inbox_message",
+                        messages=messages_text,
+                        task_delegation_rules=task_delegation_rules,
+                    )
+
+                    # Suppress board fanout when replying to board_mention
+                    has_board_mention = any(
+                        item.msg.type == "board_mention"
+                        for item in inbox_result.inbox_items
+                    )
+                    from core.tooling.handler import suppress_board_fanout, active_session_type
+                    _fanout_token = suppress_board_fanout.set(True) if has_board_mention else None
+                    _session_token = self.agent._tool_handler.set_active_session_type("inbox")
+
+                    self.agent.reset_reply_tracking(session_type="inbox")
+                    self.agent.reset_posted_channels(session_type="inbox")
+
+                    journal = StreamingJournal(self.anima_dir, session_type="inbox")
+                    journal.open(trigger=trigger, from_person=senders_str)
+
+                    accumulated_text = ""
+                    result: CycleResult | None = None
+
+                    try:
+                        async for chunk in self.agent.run_cycle_streaming(
+                            prompt, trigger=trigger,
+                        ):
+                            if chunk.get("type") == "text_delta":
+                                accumulated_text += chunk.get("text", "")
+                                journal.write_text(chunk.get("text", ""))
+
+                            if chunk.get("type") == "cycle_done":
+                                cycle_result = chunk.get("cycle_result", {})
+                                result = CycleResult(
+                                    trigger=trigger,
+                                    action=cycle_result.get("action", "responded"),
+                                    summary=cycle_result.get("summary", ""),
+                                    duration_ms=cycle_result.get("duration_ms", 0),
+                                    context_usage_ratio=cycle_result.get(
+                                        "context_usage_ratio", 0.0
+                                    ),
+                                    session_chained=cycle_result.get(
+                                        "session_chained", False
+                                    ),
+                                    total_turns=cycle_result.get("total_turns", 0),
+                                )
+                                journal.finalize(summary=result.summary[:500])
+
+                        if result is None:
+                            result = CycleResult(
+                                trigger=trigger,
+                                action="responded",
+                                summary=accumulated_text[:500] or "(no result)",
+                            )
+                    finally:
+                        journal.close()
+                        if _fanout_token is not None:
+                            suppress_board_fanout.reset(_fanout_token)
+                        active_session_type.reset(_session_token)
+
+                    self._last_activity = now_jst()
+
+                    # Archive processed messages
+                    await self._archive_processed_messages(
+                        inbox_result.inbox_items,
+                        inbox_result.senders,
+                        self.agent.replied_to,
+                    )
+
+                    self._activity.log(
+                        "inbox_processing_end",
+                        summary=result.summary[:200],
+                        meta={"senders": list(inbox_result.senders), "count": inbox_result.unread_count},
+                    )
+
+                    logger.info(
+                        "[%s] process_inbox_message END duration_ms=%d unread=%d",
+                        self.name, result.duration_ms, inbox_result.unread_count,
+                    )
+                    return result
+
+                except Exception as exc:
+                    logger.exception("[%s] process_inbox_message FAILED", self.name)
+                    # Archive on crash to prevent re-processing storms
+                    if inbox_result is not None and inbox_result.inbox_items:
+                        try:
+                            self.messenger.archive_paths(inbox_result.inbox_items)
+                        except Exception:
+                            logger.warning(
+                                "[%s] Failed to crash-archive inbox messages",
+                                self.name, exc_info=True,
+                            )
+                    self._activity.log(
+                        "error",
+                        summary=f"inbox処理エラー: {type(exc).__name__}",
+                        meta={"phase": "process_inbox_message", "error": str(exc)[:200]},
+                    )
+                    raise
+                finally:
+                    self._status_slots["inbox"] = "idle"
+                    self._task_slots["inbox"] = ""
+        finally:
+            self._notify_lock_released()
+
     # ── Heartbeat private methods ──────────────────────────
 
     def _build_prior_messages(
@@ -795,7 +939,8 @@ class DigitalAnima:
         """
         hb_config = self.memory.read_heartbeat_config()
         checklist = hb_config or load_prompt("heartbeat_default_checklist")
-        parts = [load_prompt("heartbeat", checklist=checklist)]
+        task_delegation_rules = load_prompt("task_delegation_rules")
+        parts = [load_prompt("heartbeat", checklist=checklist, task_delegation_rules=task_delegation_rules)]
 
         # ── Recovery note from previous failed heartbeat ──
         recovery_note_path = self.anima_dir / "state" / "recovery_note.md"
@@ -1329,6 +1474,22 @@ class DigitalAnima:
 
     # ── run_heartbeat orchestrator ───────────────────────────
 
+    def _trigger_pending_task_execution(self) -> None:
+        """Signal PendingTaskExecutor to check for new tasks.
+
+        Called after heartbeat completion to ensure tasks written
+        during planning phase are picked up promptly.
+        """
+        pending_dir = self.anima_dir / "state" / "pending"
+        if not pending_dir.exists():
+            return
+        task_files = list(pending_dir.glob("*.json"))
+        if task_files:
+            logger.info(
+                "[%s] %d pending tasks found after heartbeat, signaling executor",
+                self.name, len(task_files),
+            )
+
     async def run_heartbeat(
         self,
         cascade_suppressed_senders: set[str] | None = None,
@@ -1338,8 +1499,6 @@ class DigitalAnima:
             async with self._background_lock:
                 self._status_slots["background"] = "checking"
                 self._last_heartbeat = now_jst()
-                inbox_items: list[InboxItem] = []
-                unread_count = 0
 
                 # Activity log: heartbeat start
                 self._activity.log("heartbeat_start", summary="定期巡回開始")
@@ -1348,56 +1507,39 @@ class DigitalAnima:
                     # 1. Build prompt parts
                     parts = await self._build_heartbeat_prompt()
 
-                    # 2. Process inbox messages
-                    inbox_result = await self._process_inbox_messages(
-                        cascade_suppressed_senders,
-                    )
-                    inbox_items = inbox_result.inbox_items
-                    unread_count = inbox_result.unread_count
-                    parts.extend(inbox_result.prompt_parts)
+                    # 2. Warn if unread messages exist (inbox handled by Path A)
+                    if self.messenger.has_unread():
+                        logger.warning(
+                            "[%s] Unread messages found during heartbeat — "
+                            "inbox processing is handled by Path A (process_inbox_message)",
+                            self.name,
+                        )
 
-                    # 3. Execute agent cycle
-                    # Suppress board fanout when replying to board_mention
-                    # to prevent praise/acknowledgement loops.
-                    has_board_mention = any(
-                        item.msg.type == "board_mention"
-                        for item in inbox_items
-                    )
-                    from core.tooling.handler import suppress_board_fanout, active_session_type
-                    _fanout_token = suppress_board_fanout.set(True) if has_board_mention else None
+                    # 3. Execute agent cycle (plan-only, no inbox)
+                    from core.tooling.handler import active_session_type
                     _session_token = self.agent._tool_handler.set_active_session_type("background")
                     heartbeat_text = "\n\n".join(parts)
                     prior_msgs = self._build_prior_messages(heartbeat_text)
                     try:
                         result = await self._execute_heartbeat_cycle(
-                            heartbeat_text, inbox_items, unread_count,
+                            heartbeat_text, [], 0,
                             prior_messages=prior_msgs,
                         )
                     finally:
-                        if _fanout_token is not None:
-                            suppress_board_fanout.reset(_fanout_token)
                         active_session_type.reset(_session_token)
-
-                    # 4. Archive processed messages
-                    if unread_count > 0:
-                        await self._archive_processed_messages(
-                            inbox_items,
-                            inbox_result.senders,
-                            self.agent.replied_to,
-                        )
 
                     return result
 
                 except Exception as exc:
-                    await self._handle_heartbeat_failure(
-                        exc, inbox_items, unread_count,
-                    )
+                    await self._handle_heartbeat_failure(exc, [], 0)
                     raise
                 finally:
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
         finally:
             self._notify_lock_released()
+            # Signal pending task execution after heartbeat completes
+            self._trigger_pending_task_execution()
 
     # ── Consolidation helpers ──────────────────────────────────
 

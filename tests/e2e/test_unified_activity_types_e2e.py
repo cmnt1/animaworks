@@ -168,11 +168,15 @@ class TestMessageReceivedSummary:
 # ── DM Received Summary ─────────────────────────────────
 
 class TestDmReceivedSummary:
-    """Verify dm_received activity entry includes summary."""
+    """Verify dm_received activity entry includes summary.
+
+    After 3-path separation, DM processing is handled by
+    process_inbox_message() (Path A), not run_heartbeat() (Path B).
+    """
 
     @pytest.mark.asyncio
-    async def test_heartbeat_with_dm_logs_summary(self, data_dir, make_anima) -> None:
-        """run_heartbeat processing DMs should log dm_received with summary."""
+    async def test_inbox_with_dm_logs_summary(self, data_dir, make_anima) -> None:
+        """process_inbox_message processing DMs should log dm_received with summary."""
         anima_dir = make_anima("carol")
         shared_dir = data_dir / "shared"
 
@@ -189,7 +193,6 @@ class TestDmReceivedSummary:
             MockMM.return_value.append_episode = MagicMock()
             MockMsger.return_value.unread_count.return_value = 1
 
-            # Mock unread messages
             mock_msg = MagicMock()
             mock_msg.from_person = "dave"
             mock_msg.content = dm_content
@@ -215,7 +218,7 @@ class TestDmReceivedSummary:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": "inbox:dave",
                         "action": "responded",
                         "summary": "メッセージ処理完了",
                         "duration_ms": 50,
@@ -225,6 +228,7 @@ class TestDmReceivedSummary:
             mock_agent = MockAgent.return_value
             mock_agent.run_cycle_streaming = mock_stream
             mock_agent.reset_reply_tracking = MagicMock()
+            mock_agent.reset_posted_channels = MagicMock()
             mock_agent.replied_to = {"dave"}
             mock_agent.background_manager = None
             mock_agent.drain_notifications.return_value = []
@@ -232,7 +236,7 @@ class TestDmReceivedSummary:
             from core.anima import DigitalAnima
             anima = DigitalAnima(anima_dir, shared_dir)
             anima.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
-            await anima.run_heartbeat()
+            await anima.process_inbox_message()
 
             entries = _read_activity_entries(anima_dir)
             dm_entries = _find_entries_by_type(entries, "dm_received")

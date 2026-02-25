@@ -112,9 +112,9 @@ class TestStatusSlots:
     """Verify status slot system works correctly."""
 
     def test_initial_status_idle(self, anima: "DigitalAnima") -> None:
-        """Both status slots should start as idle."""
-        assert anima._status_slots == {"conversation": "idle", "background": "idle"}
-        assert anima._task_slots == {"conversation": "", "background": ""}
+        """All status slots should start as idle."""
+        assert anima._status_slots == {"conversation": "idle", "inbox": "idle", "background": "idle"}
+        assert anima._task_slots == {"conversation": "", "inbox": "", "background": ""}
 
     def test_primary_status_conversation_priority(
         self, anima: "DigitalAnima",

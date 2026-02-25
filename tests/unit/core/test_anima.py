@@ -49,8 +49,10 @@ class TestDigitalAnimaInit:
             assert dp.name == "alice"
             assert dp.anima_dir == anima_dir
             assert dp._status_slots["conversation"] == "idle"
+            assert dp._status_slots["inbox"] == "idle"
             assert dp._status_slots["background"] == "idle"
             assert dp._task_slots["conversation"] == ""
+            assert dp._task_slots["inbox"] == ""
             assert dp._task_slots["background"] == ""
             assert dp._last_heartbeat is None
             assert dp._last_activity is None

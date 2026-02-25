@@ -144,22 +144,22 @@ class InboxRateLimiter:
         if self.is_in_cooldown():
             self.schedule_deferred_trigger()
             return
-        if self._anima._background_lock.locked():
+        if self._anima._inbox_lock.locked():
             self.schedule_deferred_trigger()
             return
         self._pending_trigger = True
-        asyncio.create_task(self.message_triggered_heartbeat())
+        asyncio.create_task(self.message_triggered_inbox())
 
-    # ── Message-Triggered Heartbeat ──────────────────────────────
+    # ── Message-Triggered Inbox Processing ──────────────────────
 
-    async def message_triggered_heartbeat(self) -> None:
-        """Execute a heartbeat triggered by incoming messages."""
+    async def message_triggered_inbox(self) -> None:
+        """Execute inbox processing triggered by incoming messages."""
         if not self._anima:
             self._pending_trigger = False
             return
 
         if self._scheduler_mgr.heartbeat_running:
-            logger.info("Message-triggered heartbeat SKIPPED (already running): %s", self._anima_name)
+            logger.info("Message-triggered inbox SKIPPED (heartbeat already running): %s", self._anima_name)
             self._pending_trigger = False
             return
 
@@ -189,11 +189,11 @@ class InboxRateLimiter:
 
         self._scheduler_mgr.heartbeat_running = True
         try:
-            logger.info("Message-triggered heartbeat: %s", self._anima_name)
-            await self._anima.run_heartbeat()
+            logger.info("Message-triggered inbox: %s", self._anima_name)
+            await self._anima.process_inbox_message()
         except Exception:
             logger.exception(
-                "Message-triggered heartbeat failed: %s", self._anima_name,
+                "Message-triggered inbox failed: %s", self._anima_name,
             )
         finally:
             self._scheduler_mgr.heartbeat_running = False
@@ -227,13 +227,13 @@ class InboxRateLimiter:
                     self.schedule_deferred_trigger()
                     await asyncio.sleep(2.0)
                     continue
-                if self._anima._background_lock.locked():
+                if self._anima._inbox_lock.locked():
                     self.schedule_deferred_trigger()
                     await asyncio.sleep(2.0)
                     continue
 
                 self._pending_trigger = True
-                asyncio.create_task(self.message_triggered_heartbeat())
+                asyncio.create_task(self.message_triggered_inbox())
                 await asyncio.sleep(2.0)
 
             except asyncio.CancelledError:

@@ -357,6 +357,7 @@ class AnimaRunner:
             "greet": self._handle_greet,
             "run_bootstrap": self._handle_run_bootstrap,
             "run_heartbeat": self._handle_run_heartbeat,
+            "process_inbox": self._handle_process_inbox,
             "run_cron_task": self._handle_run_cron_task,
             "run_consolidation": self._handle_run_consolidation,
             "get_status": self._handle_get_status,
@@ -415,6 +416,13 @@ class AnimaRunner:
         await self.anima.run_heartbeat()
 
         return {"status": "completed"}
+
+    async def _handle_process_inbox(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle process_inbox IPC request."""
+        if not self.anima:
+            return {"error": "Anima not ready"}
+        result = await self.anima.process_inbox_message()
+        return result.model_dump() if hasattr(result, "model_dump") else {"action": result.action, "summary": result.summary}
 
     async def _handle_run_cron_task(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle run_cron_task request."""

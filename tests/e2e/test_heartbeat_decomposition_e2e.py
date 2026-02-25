@@ -129,15 +129,18 @@ class TestHeartbeatBasicFlow:
 # ── Test 2: Heartbeat with inbox messages ─────────────────
 
 
-class TestHeartbeatWithInboxMessages:
-    """Put messages in inbox, run heartbeat, verify processed and archived."""
+class TestInboxProcessing:
+    """Put messages in inbox, run process_inbox_message, verify processed and archived.
 
-    async def test_heartbeat_with_inbox_messages(self, data_dir, make_anima):
-        """Messages in inbox are consumed and archived during heartbeat."""
+    Since the 3-path separation, inbox processing is handled by
+    process_inbox_message() (Path A), not run_heartbeat() (Path B).
+    """
+
+    async def test_inbox_messages_processed_and_archived(self, data_dir, make_anima):
+        """Messages in inbox are consumed and archived during inbox processing."""
         alice_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        # Write messages directly to inbox (bypass CascadeLimiter singleton)
         from core.schemas import Message
         inbox_dir = shared_dir / "inbox" / "alice"
         inbox_dir.mkdir(parents=True, exist_ok=True)
@@ -150,21 +153,26 @@ class TestHeartbeatWithInboxMessages:
         (inbox_dir / "msg_bob.json").write_text(
             msg2.model_dump_json(indent=2), encoding="utf-8")
 
-        # Verify messages are in inbox before heartbeat
-        inbox_dir = shared_dir / "inbox" / "alice"
         assert len(list(inbox_dir.glob("*.json"))) == 2
 
-        dp = _make_digital_anima(alice_dir, shared_dir)
-        # Mark both senders as replied to so messages get archived
-        dp.agent.replied_to = {"mio", "bob"}
-        _attach_mock_stream(dp, {"summary": "Processed 2 messages"})
+        with patch("core.anima.AgentCore") as MockAgent, \
+             patch("core.anima.ConversationMemory") as MockConv, \
+             patch("core.anima.load_prompt", return_value="prompt"):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
 
-        result = await dp.run_heartbeat()
+            from core.anima import DigitalAnima
+            dp = DigitalAnima(alice_dir, shared_dir)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
+            dp.agent.replied_to = {"mio", "bob"}
+            dp.agent.background_manager = None
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            _attach_mock_stream(dp, {"trigger": "inbox:mio, bob", "summary": "Processed 2 messages"})
 
-        assert result.trigger == "heartbeat"
+            result = await dp.process_inbox_message()
+
         assert result.action == "responded"
 
-        # After heartbeat, inbox should be empty (messages archived)
         remaining = list(inbox_dir.glob("*.json"))
         assert len(remaining) == 0, (
             f"Expected inbox to be empty after archive, "
@@ -172,11 +180,10 @@ class TestHeartbeatWithInboxMessages:
         )
 
     async def test_inbox_messages_recorded_to_episodes(self, data_dir, make_anima):
-        """Inbox messages are recorded to episode files during heartbeat."""
+        """Inbox messages are recorded to episode files during inbox processing."""
         alice_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        # Write message directly to inbox (bypass CascadeLimiter singleton)
         from core.schemas import Message
         inbox_dir = shared_dir / "inbox" / "alice"
         inbox_dir.mkdir(parents=True, exist_ok=True)
@@ -190,7 +197,6 @@ class TestHeartbeatWithInboxMessages:
             msg.model_dump_json(indent=2), encoding="utf-8",
         )
 
-        # Keep patches active during heartbeat execution
         with patch("core.anima.AgentCore") as MockAgent, \
              patch("core.anima.ConversationMemory") as MockConv, \
              patch("core.anima.load_prompt", return_value="prompt"):
@@ -199,6 +205,7 @@ class TestHeartbeatWithInboxMessages:
             from core.anima import DigitalAnima
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = {"episode_sender"}
             dp.agent.background_manager = None
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
@@ -207,7 +214,7 @@ class TestHeartbeatWithInboxMessages:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "All systems normal",
                         "duration_ms": 50,
@@ -216,7 +223,7 @@ class TestHeartbeatWithInboxMessages:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            await dp.run_heartbeat()
+            await dp.process_inbox_message()
 
         from datetime import date
         episode_file = alice_dir / "episodes" / f"{date.today().isoformat()}.md"
@@ -224,6 +231,28 @@ class TestHeartbeatWithInboxMessages:
         content = episode_file.read_text(encoding="utf-8")
         assert "episode_senderからのメッセージ受信" in content
         assert "DB backup" in content
+
+    async def test_heartbeat_does_not_archive_inbox(self, data_dir, make_anima):
+        """Heartbeat should NOT process/archive inbox messages (3-path separation)."""
+        alice_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+
+        from core.schemas import Message
+        inbox_dir = shared_dir / "inbox" / "alice"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        msg = Message(from_person="mio", to_person="alice", content="Test msg")
+        (inbox_dir / "msg_mio.json").write_text(
+            msg.model_dump_json(indent=2), encoding="utf-8")
+
+        dp = _make_digital_anima(alice_dir, shared_dir)
+        _attach_mock_stream(dp)
+
+        await dp.run_heartbeat()
+
+        remaining = list(inbox_dir.glob("*.json"))
+        assert len(remaining) == 1, (
+            "Heartbeat should leave inbox messages for Path A (process_inbox_message)"
+        )
 
 
 # ── Test 3: Heartbeat runs concurrently with conversation ─
@@ -290,14 +319,13 @@ class TestHeartbeatFailureWritesRecoveryNote:
         assert "RuntimeError" in content
         assert "LLM timeout" in content
 
-    async def test_heartbeat_failure_crash_archives_inbox(
+    async def test_inbox_failure_crash_archives_messages(
         self, data_dir, make_anima,
     ):
-        """On failure, inbox messages are crash-archived to prevent re-processing."""
+        """On inbox processing failure, messages are crash-archived to prevent re-processing."""
         alice_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        # Write message directly to inbox (bypass CascadeLimiter singleton)
         from core.schemas import Message
         inbox_dir = shared_dir / "inbox" / "alice"
         inbox_dir.mkdir(parents=True, exist_ok=True)
@@ -306,8 +334,45 @@ class TestHeartbeatFailureWritesRecoveryNote:
         (inbox_dir / "crash_test_msg.json").write_text(
             msg.model_dump_json(indent=2), encoding="utf-8")
 
-        inbox_dir = shared_dir / "inbox" / "alice"
         assert len(list(inbox_dir.glob("*.json"))) == 1
+
+        with patch("core.anima.AgentCore") as MockAgent, \
+             patch("core.anima.ConversationMemory") as MockConv, \
+             patch("core.anima.load_prompt", return_value="prompt"):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+
+            from core.anima import DigitalAnima
+            dp = DigitalAnima(alice_dir, shared_dir)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
+            dp.agent.replied_to = set()
+            dp.agent.background_manager = None
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            _attach_failing_stream(dp, RuntimeError("Agent crash"))
+
+            with pytest.raises(RuntimeError):
+                await dp.process_inbox_message()
+
+        remaining = list(inbox_dir.glob("*.json"))
+        assert len(remaining) == 0, (
+            "Inbox should be crash-archived on failure to prevent "
+            "re-processing storms"
+        )
+
+    async def test_heartbeat_failure_does_not_touch_inbox(
+        self, data_dir, make_anima,
+    ):
+        """On heartbeat failure, inbox messages remain untouched (3-path separation)."""
+        alice_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+
+        from core.schemas import Message
+        inbox_dir = shared_dir / "inbox" / "alice"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        msg = Message(from_person="mio", to_person="alice",
+                      content="Important task: check server health.")
+        (inbox_dir / "crash_test_msg.json").write_text(
+            msg.model_dump_json(indent=2), encoding="utf-8")
 
         dp = _make_digital_anima(alice_dir, shared_dir)
         _attach_failing_stream(dp, RuntimeError("Agent crash"))
@@ -315,11 +380,9 @@ class TestHeartbeatFailureWritesRecoveryNote:
         with pytest.raises(RuntimeError):
             await dp.run_heartbeat()
 
-        # Inbox should be empty after crash-archive
         remaining = list(inbox_dir.glob("*.json"))
-        assert len(remaining) == 0, (
-            "Inbox should be crash-archived on failure to prevent "
-            "re-processing storms"
+        assert len(remaining) == 1, (
+            "Heartbeat failure should not touch inbox messages"
         )
 
 
@@ -476,22 +539,32 @@ class TestHeartbeatOrchestratorLineCount:
 # ── Test 8: Five private methods exist ────────────────────
 
 
-class TestFivePrivateMethodsExist:
-    """Verify all 5 private methods exist on DigitalAnima class."""
+class TestPrivateMethodsExist:
+    """Verify key private methods exist on DigitalAnima class.
 
-    EXPECTED_METHODS = [
+    After 3-path separation:
+    - run_heartbeat() calls _build_heartbeat_prompt, _execute_heartbeat_cycle, _handle_heartbeat_failure
+    - process_inbox_message() calls _process_inbox_messages, _archive_processed_messages
+    """
+
+    HEARTBEAT_METHODS = [
         "_build_heartbeat_prompt",
-        "_process_inbox_messages",
         "_execute_heartbeat_cycle",
-        "_archive_processed_messages",
         "_handle_heartbeat_failure",
     ]
 
-    def test_five_private_methods_exist(self):
-        """All 5 decomposed private methods must exist on DigitalAnima."""
+    INBOX_METHODS = [
+        "_process_inbox_messages",
+        "_archive_processed_messages",
+    ]
+
+    ALL_METHODS = HEARTBEAT_METHODS + INBOX_METHODS
+
+    def test_private_methods_exist(self):
+        """All decomposed private methods must exist on DigitalAnima."""
         from core.anima import DigitalAnima
 
-        for method_name in self.EXPECTED_METHODS:
+        for method_name in self.ALL_METHODS:
             assert hasattr(DigitalAnima, method_name), (
                 f"DigitalAnima is missing method: {method_name}"
             )
@@ -500,23 +573,40 @@ class TestFivePrivateMethodsExist:
                 f"{method_name} should be callable"
             )
 
+    def test_process_inbox_message_exists(self):
+        """process_inbox_message public method must exist on DigitalAnima."""
+        from core.anima import DigitalAnima
+        assert hasattr(DigitalAnima, "process_inbox_message")
+        assert inspect.iscoroutinefunction(DigitalAnima.process_inbox_message)
+
     def test_private_methods_are_coroutines(self):
-        """All 5 private methods should be async (coroutine functions)."""
+        """All private methods should be async (coroutine functions)."""
         from core.anima import DigitalAnima
 
-        for method_name in self.EXPECTED_METHODS:
+        for method_name in self.ALL_METHODS:
             method = getattr(DigitalAnima, method_name)
             assert inspect.iscoroutinefunction(method), (
                 f"{method_name} should be an async method (coroutine function)"
             )
 
-    def test_orchestrator_calls_private_methods(self):
-        """run_heartbeat source references all 5 private methods."""
+    def test_heartbeat_calls_heartbeat_methods(self):
+        """run_heartbeat source references heartbeat-specific private methods."""
         from core.anima import DigitalAnima
 
         source = inspect.getsource(DigitalAnima.run_heartbeat)
 
-        for method_name in self.EXPECTED_METHODS:
+        for method_name in self.HEARTBEAT_METHODS:
             assert f"self.{method_name}" in source, (
                 f"run_heartbeat() should call self.{method_name}"
+            )
+
+    def test_inbox_calls_inbox_methods(self):
+        """process_inbox_message source references inbox-specific private methods."""
+        from core.anima import DigitalAnima
+
+        source = inspect.getsource(DigitalAnima.process_inbox_message)
+
+        for method_name in self.INBOX_METHODS:
+            assert f"self.{method_name}" in source, (
+                f"process_inbox_message() should call self.{method_name}"
             )

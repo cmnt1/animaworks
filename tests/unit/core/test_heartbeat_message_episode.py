@@ -1,15 +1,17 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for heartbeat message episode recording.
+"""Unit tests for inbox message episode recording during process_inbox_message.
+
+Since the 3-path execution separation, inbox messages are processed by
+process_inbox_message() (Path A), not run_heartbeat() (Path B).
 
 Covers:
-- Inter-Anima messages received during heartbeat are recorded to episodic memory
+- Inter-Anima messages received during process_inbox_message are recorded to episodic memory
 - ACK messages are excluded from recording
 - Message content is truncated at 1000 chars
-- Maximum 50 messages are recorded per heartbeat
-- Heartbeat summary includes message count
-- Episode recording failures do not block heartbeat completion
+- Maximum 50 messages are recorded per inbox run
+- Episode recording failures do not block inbox processing completion
 """
 from __future__ import annotations
 
@@ -30,10 +32,10 @@ from core.tooling.handler import active_session_type
 
 
 class TestHeartbeatMessageEpisodeRecording:
-    """Tests that run_heartbeat records inter-Anima messages to episodes."""
+    """Tests that process_inbox_message records inter-Anima messages to episodes."""
 
     async def test_message_content_recorded_to_episode(self, data_dir, make_anima):
-        """When heartbeat processes 1 message, verify message content is recorded to episodes."""
+        """When process_inbox_message processes 1 message, verify message content is recorded to episodes."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
@@ -56,6 +58,7 @@ class TestHeartbeatMessageEpisodeRecording:
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -63,7 +66,7 @@ class TestHeartbeatMessageEpisodeRecording:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed messages",
                         "duration_ms": 100,
@@ -72,12 +75,10 @@ class TestHeartbeatMessageEpisodeRecording:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            result = await dp.run_heartbeat()
+            result = await dp.process_inbox_message()
 
-            # append_episode should be called at least 2 times:
-            # 1. For the message episode
-            # 2. For the heartbeat summary episode
-            assert MockMM.return_value.append_episode.call_count >= 2
+            # append_episode should be called at least once for the message episode
+            assert MockMM.return_value.append_episode.call_count >= 1
 
             # Check that one of the calls contains the message content
             all_calls = [call[0][0] for call in MockMM.return_value.append_episode.call_args_list]
@@ -87,7 +88,7 @@ class TestHeartbeatMessageEpisodeRecording:
             assert "**送信者**: mio" in message_episodes[0]
 
     async def test_multiple_messages_recorded_separately(self, data_dir, make_anima):
-        """When 3 messages from different senders arrive, each gets its own episode entry."""
+        """When process_inbox_message processes 3 messages from different senders, each gets its own episode entry."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
@@ -116,6 +117,7 @@ class TestHeartbeatMessageEpisodeRecording:
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -123,7 +125,7 @@ class TestHeartbeatMessageEpisodeRecording:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed messages",
                         "duration_ms": 100,
@@ -132,11 +134,10 @@ class TestHeartbeatMessageEpisodeRecording:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            result = await dp.run_heartbeat()
+            result = await dp.process_inbox_message()
 
-            # append_episode should be called at least 4 times:
-            # 3 for message episodes + 1 for heartbeat summary
-            assert MockMM.return_value.append_episode.call_count >= 4
+            # append_episode should be called 3 times for the 3 message episodes
+            assert MockMM.return_value.append_episode.call_count >= 3
 
             # Check that each message has its own episode
             all_calls = [call[0][0] for call in MockMM.return_value.append_episode.call_args_list]
@@ -181,6 +182,7 @@ class TestHeartbeatMessageEpisodeRecording:
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -188,7 +190,7 @@ class TestHeartbeatMessageEpisodeRecording:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed messages",
                         "duration_ms": 100,
@@ -197,9 +199,9 @@ class TestHeartbeatMessageEpisodeRecording:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            result = await dp.run_heartbeat()
+            result = await dp.process_inbox_message()
 
-            # Should only record 2 message episodes (not the ACK) + 1 heartbeat summary
+            # Should only record 2 message episodes (not the ACK)
             all_calls = [call[0][0] for call in MockMM.return_value.append_episode.call_args_list]
             message_episodes = [ep for ep in all_calls if "からのメッセージ受信" in ep]
 
@@ -213,7 +215,7 @@ class TestHeartbeatMessageEpisodeRecording:
             assert "Another regular" in all_episodes_text
 
     async def test_message_content_truncated_at_1000_chars(self, data_dir, make_anima):
-        """Message content longer than 1000 chars should be truncated in episode."""
+        """When process_inbox_message runs, message content longer than 1000 chars should be truncated in episode."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
@@ -237,6 +239,7 @@ class TestHeartbeatMessageEpisodeRecording:
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -244,7 +247,7 @@ class TestHeartbeatMessageEpisodeRecording:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed messages",
                         "duration_ms": 100,
@@ -253,7 +256,7 @@ class TestHeartbeatMessageEpisodeRecording:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            result = await dp.run_heartbeat()
+            result = await dp.process_inbox_message()
 
             # Find the message episode
             all_calls = [call[0][0] for call in MockMM.return_value.append_episode.call_args_list]
@@ -297,6 +300,7 @@ class TestHeartbeatMessageEpisodeRecording:
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -304,7 +308,7 @@ class TestHeartbeatMessageEpisodeRecording:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed messages",
                         "duration_ms": 100,
@@ -313,9 +317,9 @@ class TestHeartbeatMessageEpisodeRecording:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            result = await dp.run_heartbeat()
+            result = await dp.process_inbox_message()
 
-            # Count message episodes (excluding heartbeat summary)
+            # Count message episodes
             all_calls = [call[0][0] for call in MockMM.return_value.append_episode.call_args_list]
             message_episodes = [ep for ep in all_calls if "からのメッセージ受信" in ep]
 
@@ -332,7 +336,7 @@ class TestHeartbeatMessageEpisodeRecording:
                 assert f"Message {i}" not in all_episodes_text
 
     async def test_no_messages_no_episode_recording(self, data_dir, make_anima):
-        """When heartbeat has no unread messages, message episodes should not be recorded."""
+        """When process_inbox_message has no unread messages, message episodes should not be recorded."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
@@ -352,87 +356,17 @@ class TestHeartbeatMessageEpisodeRecording:
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
-            async def mock_stream(prompt, trigger="manual", **kwargs):
-                yield {
-                    "type": "cycle_done",
-                    "cycle_result": {
-                        "trigger": "heartbeat",
-                        "action": "checked",
-                        "summary": "HEARTBEAT_OK",
-                        "duration_ms": 50,
-                    },
-                }
+            result = await dp.process_inbox_message()
 
-            dp.agent.run_cycle_streaming = mock_stream
-
-            result = await dp.run_heartbeat()
-
-            # append_episode should NOT be called for HEARTBEAT_OK
+            # append_episode should NOT be called when there are no messages
             MockMM.return_value.append_episode.assert_not_called()
 
-    async def test_heartbeat_summary_includes_message_count(self, data_dir, make_anima):
-        """Heartbeat summary episode should include message count when messages are processed."""
-        anima_dir = make_anima("alice")
-        shared_dir = data_dir / "shared"
-
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core.anima.load_prompt", return_value="prompt"), \
-             patch("core.anima.ConversationMemory") as MockConv:
-            MockMM.return_value.read_model_config.return_value = MagicMock()
-            MockMM.return_value.read_heartbeat_config.return_value = "checklist"
-            MockMM.return_value.append_episode = MagicMock()
-            MockConv.return_value.load.return_value = MagicMock(turns=[])
-
-            # Create 3 messages
-            msg1 = Message(from_person="mio", to_person="alice", content="Message 1")
-            msg2 = Message(from_person="bob", to_person="alice", content="Message 2")
-            msg3 = Message(from_person="carol", to_person="alice", content="Message 3")
-            MockMsg.return_value.has_unread.return_value = True
-            MockMsg.return_value.receive_with_paths.return_value = [
-                InboxItem(msg=msg1, path=Path(f"/fake/{msg1.id}.json")),
-                InboxItem(msg=msg2, path=Path(f"/fake/{msg2.id}.json")),
-                InboxItem(msg=msg3, path=Path(f"/fake/{msg3.id}.json")),
-            ]
-            MockMsg.return_value.archive_paths.return_value = 3
-
-            from core.anima import DigitalAnima
-            dp = DigitalAnima(anima_dir, shared_dir)
-            dp.agent.reset_reply_tracking = MagicMock()
-            dp.agent.replied_to = set()
-            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
-
-            async def mock_stream(prompt, trigger="manual", **kwargs):
-                yield {
-                    "type": "cycle_done",
-                    "cycle_result": {
-                        "trigger": "heartbeat",
-                        "action": "responded",
-                        "summary": "Processed messages",
-                        "duration_ms": 100,
-                    },
-                }
-
-            dp.agent.run_cycle_streaming = mock_stream
-
-            result = await dp.run_heartbeat()
-
-            # Find the heartbeat summary episode (should be the last call)
-            all_calls = [call[0][0] for call in MockMM.return_value.append_episode.call_args_list]
-            # The heartbeat summary episode contains "ハートビート活動"
-            heartbeat_episodes = [ep for ep in all_calls if "ハートビート活動" in ep]
-            assert len(heartbeat_episodes) == 1
-
-            # Verify it includes the message count
-            summary_episode = heartbeat_episodes[0]
-            assert "（3件のメッセージを処理）" in summary_episode
-
-    async def test_episode_recording_failure_does_not_block_heartbeat(self, data_dir, make_anima):
-        """When append_episode raises exception, heartbeat should still complete normally."""
+    async def test_episode_recording_failure_does_not_block_inbox_processing(self, data_dir, make_anima):
+        """When append_episode raises exception, process_inbox_message should still complete normally."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
@@ -456,6 +390,7 @@ class TestHeartbeatMessageEpisodeRecording:
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -463,7 +398,7 @@ class TestHeartbeatMessageEpisodeRecording:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed messages",
                         "duration_ms": 100,
@@ -472,10 +407,10 @@ class TestHeartbeatMessageEpisodeRecording:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            # Heartbeat should complete without raising exception
-            result = await dp.run_heartbeat()
+            # process_inbox_message should complete without raising exception
+            result = await dp.process_inbox_message()
 
-            # Verify heartbeat completed successfully
+            # Verify process_inbox_message completed successfully
             assert result.summary == "Processed messages"
             assert result.action == "responded"
 

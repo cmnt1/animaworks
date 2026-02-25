@@ -363,7 +363,7 @@ class LifecycleManager:
                 if self._is_in_cooldown(name):
                     self._schedule_deferred_trigger(name)
                     continue
-                if anima._background_lock.locked():
+                if anima._inbox_lock.locked():
                     self._schedule_deferred_trigger(name)
                     continue
                 self._pending_triggers.add(name)
@@ -426,7 +426,7 @@ class LifecycleManager:
         if self._is_in_cooldown(name):
             self._schedule_deferred_trigger(name)
             return
-        if anima._background_lock.locked():
+        if anima._inbox_lock.locked():
             self._schedule_deferred_trigger(name)
             return
         self._pending_triggers.add(name)
@@ -481,8 +481,8 @@ class LifecycleManager:
             logger.debug("Per-sender rate limit check failed for %s", name, exc_info=True)
 
         try:
-            logger.info("Message-triggered heartbeat: %s", name)
-            result = await anima.run_heartbeat()
+            logger.info("Message-triggered inbox: %s", name)
+            result = await anima.process_inbox_message()
             if self._ws_broadcast:
                 await self._ws_broadcast(
                     {

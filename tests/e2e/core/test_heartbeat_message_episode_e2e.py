@@ -15,19 +15,21 @@ from core.memory.manager import MemoryManager
 from core.tooling.handler import active_session_type
 
 
-class TestHeartbeatMessageEpisodeE2E:
-    """Full integration tests for message episode recording during heartbeat."""
+class TestInboxMessageEpisodeE2E:
+    """Full integration tests for message episode recording during inbox processing.
+
+    Since the 3-path execution separation, inbox processing is handled by
+    process_inbox_message() (Path A), not run_heartbeat() (Path B).
+    """
 
     async def test_message_content_persists_in_episodes(self, data_dir, make_anima):
-        """Full integration: message sent → heartbeat → episode contains message content."""
+        """Full integration: message sent → process_inbox → episode contains message content."""
         alice_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        # Send a real message from mio to alice
         mio_messenger = Messenger(shared_dir, "mio")
         mio_messenger.send("alice", "AWS監視タスクを追加しました。30分間隔で確認してください。")
 
-        # Create DigitalAnima with real MemoryManager and Messenger, but mock AgentCore
         with patch("core.anima.AgentCore") as MockAgent, \
              patch("core.anima.ConversationMemory") as MockConv, \
              patch("core.anima.load_prompt", return_value="prompt"):
@@ -36,6 +38,7 @@ class TestHeartbeatMessageEpisodeE2E:
             from core.anima import DigitalAnima
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -43,7 +46,7 @@ class TestHeartbeatMessageEpisodeE2E:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed mio message",
                         "duration_ms": 100,
@@ -52,9 +55,8 @@ class TestHeartbeatMessageEpisodeE2E:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            await dp.run_heartbeat()
+            await dp.process_inbox_message()
 
-        # Verify episode file contains the message
         episode_file = alice_dir / "episodes" / f"{date.today().isoformat()}.md"
         assert episode_file.exists()
         content = episode_file.read_text(encoding="utf-8")
@@ -66,15 +68,12 @@ class TestHeartbeatMessageEpisodeE2E:
         alice_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        # Send a message
         mio_messenger = Messenger(shared_dir, "mio")
         mio_messenger.send("alice", "テストメッセージ: ログ確認をお願いします。")
 
-        # Verify message is in inbox before heartbeat
         inbox_dir = shared_dir / "inbox" / "alice"
         assert len(list(inbox_dir.glob("*.json"))) == 1
 
-        # Mock and run heartbeat
         with patch("core.anima.AgentCore") as MockAgent, \
              patch("core.anima.ConversationMemory") as MockConv, \
              patch("core.anima.load_prompt", return_value="prompt"):
@@ -83,6 +82,7 @@ class TestHeartbeatMessageEpisodeE2E:
             from core.anima import DigitalAnima
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -90,7 +90,7 @@ class TestHeartbeatMessageEpisodeE2E:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed message",
                         "duration_ms": 100,
@@ -99,7 +99,6 @@ class TestHeartbeatMessageEpisodeE2E:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            # Mock archive_paths to verify it's called after episode recording
             original_archive = dp.messenger.archive_paths
             archive_called = False
 
@@ -110,16 +109,14 @@ class TestHeartbeatMessageEpisodeE2E:
 
             dp.messenger.archive_paths = mock_archive
 
-            await dp.run_heartbeat()
+            await dp.process_inbox_message()
 
-            # Verify episode was created with message content
             episode_file = alice_dir / "episodes" / f"{date.today().isoformat()}.md"
             assert episode_file.exists()
             content = episode_file.read_text(encoding="utf-8")
             assert "mioからのメッセージ受信" in content
             assert "ログ確認" in content
 
-            # Verify archive was called (messages moved to processed/)
             assert archive_called
 
     async def test_ack_messages_not_in_episodes(self, data_dir, make_anima):
@@ -127,13 +124,10 @@ class TestHeartbeatMessageEpisodeE2E:
         alice_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        # Send both a normal message and an ACK message
         from core.schemas import Message
 
         mio_messenger = Messenger(shared_dir, "mio")
-        # Normal message
         mio_messenger.send("alice", "重要なタスク: DB バックアップを実行してください。")
-        # ACK message (should be filtered out)
         ack_msg = Message(
             from_person="mio",
             to_person="alice",
@@ -145,7 +139,6 @@ class TestHeartbeatMessageEpisodeE2E:
         ack_file = inbox_dir / f"ack_{date.today().isoformat()}.json"
         ack_file.write_text(ack_msg.model_dump_json(), encoding="utf-8")
 
-        # Mock and run heartbeat
         with patch("core.anima.AgentCore") as MockAgent, \
              patch("core.anima.ConversationMemory") as MockConv, \
              patch("core.anima.load_prompt", return_value="prompt"):
@@ -154,6 +147,7 @@ class TestHeartbeatMessageEpisodeE2E:
             from core.anima import DigitalAnima
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -161,7 +155,7 @@ class TestHeartbeatMessageEpisodeE2E:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed messages",
                         "duration_ms": 100,
@@ -170,18 +164,15 @@ class TestHeartbeatMessageEpisodeE2E:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            await dp.run_heartbeat()
+            await dp.process_inbox_message()
 
-        # Verify episode file contains only the normal message, not the ACK
         episode_file = alice_dir / "episodes" / f"{date.today().isoformat()}.md"
         assert episode_file.exists()
         content = episode_file.read_text(encoding="utf-8")
 
-        # Should contain the normal message
         assert "mioからのメッセージ受信" in content
         assert "DB バックアップ" in content
 
-        # Should NOT contain the ACK message content
         assert "了解しました" not in content
 
     async def test_multiple_messages_recorded_in_order(self, data_dir, make_anima):
@@ -189,7 +180,6 @@ class TestHeartbeatMessageEpisodeE2E:
         alice_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        # Send multiple messages from different senders
         mio_messenger = Messenger(shared_dir, "mio")
         mio_messenger.send("alice", "第一のタスク: ログ解析")
 
@@ -199,7 +189,6 @@ class TestHeartbeatMessageEpisodeE2E:
         charlie_messenger = Messenger(shared_dir, "charlie")
         charlie_messenger.send("alice", "第三のタスク: パフォーマンス最適化")
 
-        # Mock and run heartbeat
         with patch("core.anima.AgentCore") as MockAgent, \
              patch("core.anima.ConversationMemory") as MockConv, \
              patch("core.anima.load_prompt", return_value="prompt"):
@@ -208,6 +197,7 @@ class TestHeartbeatMessageEpisodeE2E:
             from core.anima import DigitalAnima
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -215,7 +205,7 @@ class TestHeartbeatMessageEpisodeE2E:
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed all messages",
                         "duration_ms": 100,
@@ -224,14 +214,12 @@ class TestHeartbeatMessageEpisodeE2E:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            await dp.run_heartbeat()
+            await dp.process_inbox_message()
 
-        # Verify all messages are recorded in episodes
         episode_file = alice_dir / "episodes" / f"{date.today().isoformat()}.md"
         assert episode_file.exists()
         content = episode_file.read_text(encoding="utf-8")
 
-        # Check all messages are present
         assert "mioからのメッセージ受信" in content
         assert "ログ解析" in content
         assert "bobからのメッセージ受信" in content
@@ -239,19 +227,16 @@ class TestHeartbeatMessageEpisodeE2E:
         assert "charlieからのメッセージ受信" in content
         assert "パフォーマンス最適化" in content
 
-        # Verify count - should have 3 message episodes
         assert content.count("からのメッセージ受信") == 3
 
-    async def test_episode_recording_failure_does_not_crash_heartbeat(self, data_dir, make_anima):
-        """Verify heartbeat continues even if episode recording fails."""
+    async def test_episode_recording_failure_does_not_crash_inbox(self, data_dir, make_anima):
+        """Verify inbox processing continues even if episode recording fails."""
         alice_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        # Send a message
         mio_messenger = Messenger(shared_dir, "mio")
         mio_messenger.send("alice", "テストメッセージ")
 
-        # Mock and run heartbeat with episode recording failure
         with patch("core.anima.AgentCore") as MockAgent, \
              patch("core.anima.ConversationMemory") as MockConv, \
              patch("core.anima.load_prompt", return_value="prompt"):
@@ -260,18 +245,17 @@ class TestHeartbeatMessageEpisodeE2E:
             from core.anima import DigitalAnima
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = set()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
-            # Make append_episode raise an error
-            original_append = dp.memory.append_episode
             dp.memory.append_episode = MagicMock(side_effect=OSError("Disk full"))
 
             async def mock_stream(prompt, trigger="manual", **kwargs):
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
-                        "trigger": "heartbeat",
+                        "trigger": trigger,
                         "action": "responded",
                         "summary": "Processed despite error",
                         "duration_ms": 100,
@@ -280,7 +264,48 @@ class TestHeartbeatMessageEpisodeE2E:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            # Heartbeat should not crash despite episode recording failure
-            result = await dp.run_heartbeat()
-            assert result.trigger == "heartbeat"
+            result = await dp.process_inbox_message()
             assert result.action == "responded"
+
+
+class TestHeartbeatNoInboxProcessing:
+    """Verify heartbeat no longer processes inbox messages (3-path separation)."""
+
+    async def test_heartbeat_does_not_process_inbox(self, data_dir, make_anima):
+        """Heartbeat should warn about unread messages but not process them."""
+        alice_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+
+        mio_messenger = Messenger(shared_dir, "mio")
+        mio_messenger.send("alice", "テストメッセージ")
+
+        with patch("core.anima.AgentCore") as MockAgent, \
+             patch("core.anima.ConversationMemory") as MockConv, \
+             patch("core.anima.load_prompt", return_value="prompt"):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+
+            from core.anima import DigitalAnima
+            dp = DigitalAnima(alice_dir, shared_dir)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
+            dp.agent.replied_to = set()
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+
+            async def mock_stream(prompt, trigger="manual", **kwargs):
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": {
+                        "trigger": "heartbeat",
+                        "action": "responded",
+                        "summary": "HEARTBEAT_OK",
+                        "duration_ms": 100,
+                    },
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+
+            await dp.run_heartbeat()
+
+        # Messages should still be in inbox (not archived by heartbeat)
+        inbox_dir = shared_dir / "inbox" / "alice"
+        assert len(list(inbox_dir.glob("*.json"))) == 1

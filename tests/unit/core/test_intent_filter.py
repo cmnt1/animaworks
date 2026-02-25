@@ -105,50 +105,54 @@ def _make_limiter(messages: list[Message], anima_name: str = "alice") -> InboxRa
 
 
 class TestLifecycleIntentFilter:
-    """Intent filtering in LifecycleManager._message_triggered_heartbeat."""
+    """Intent filtering in LifecycleManager._message_triggered_heartbeat.
 
-    async def test_lifecycle_delegation_triggers_heartbeat(self):
-        """Message with intent='delegation' should trigger heartbeat."""
+    After 3-path separation, _message_triggered_heartbeat calls
+    process_inbox_message() instead of run_heartbeat().
+    """
+
+    async def test_lifecycle_delegation_triggers_inbox(self):
+        """Message with intent='delegation' should trigger inbox processing."""
         messages = [_make_message(intent="delegation")]
         lm = _setup_lifecycle(messages)
 
         with patch("core.lifecycle.load_config", return_value=_default_config()):
             await lm._message_triggered_heartbeat("alice")
 
-        lm.animas["alice"].run_heartbeat.assert_called_once()
+        lm.animas["alice"].process_inbox_message.assert_called_once()
         assert "alice" not in lm._pending_triggers
 
-    async def test_lifecycle_report_triggers_heartbeat(self):
-        """Message with intent='report' should trigger heartbeat."""
+    async def test_lifecycle_report_triggers_inbox(self):
+        """Message with intent='report' should trigger inbox processing."""
         messages = [_make_message(intent="report")]
         lm = _setup_lifecycle(messages)
 
         with patch("core.lifecycle.load_config", return_value=_default_config()):
             await lm._message_triggered_heartbeat("alice")
 
-        lm.animas["alice"].run_heartbeat.assert_called_once()
+        lm.animas["alice"].process_inbox_message.assert_called_once()
         assert "alice" not in lm._pending_triggers
 
-    async def test_lifecycle_question_triggers_heartbeat(self):
-        """Message with intent='question' should trigger heartbeat."""
+    async def test_lifecycle_question_triggers_inbox(self):
+        """Message with intent='question' should trigger inbox processing."""
         messages = [_make_message(intent="question")]
         lm = _setup_lifecycle(messages)
 
         with patch("core.lifecycle.load_config", return_value=_default_config()):
             await lm._message_triggered_heartbeat("alice")
 
-        lm.animas["alice"].run_heartbeat.assert_called_once()
+        lm.animas["alice"].process_inbox_message.assert_called_once()
         assert "alice" not in lm._pending_triggers
 
-    async def test_lifecycle_empty_intent_skips_heartbeat(self):
-        """Message with intent='' should NOT trigger heartbeat (deferred)."""
+    async def test_lifecycle_empty_intent_skips_inbox(self):
+        """Message with intent='' should NOT trigger inbox processing (deferred)."""
         messages = [_make_message(intent="")]
         lm = _setup_lifecycle(messages)
 
         with patch("core.lifecycle.load_config", return_value=_default_config()):
             await lm._message_triggered_heartbeat("alice")
 
-        lm.animas["alice"].run_heartbeat.assert_not_called()
+        lm.animas["alice"].process_inbox_message.assert_not_called()
         assert "alice" not in lm._pending_triggers
 
     async def test_lifecycle_human_source_always_triggers(self):
@@ -162,11 +166,11 @@ class TestLifecycleIntentFilter:
         with patch("core.lifecycle.load_config", return_value=_default_config()):
             await lm._message_triggered_heartbeat("alice")
 
-        lm.animas["alice"].run_heartbeat.assert_called_once()
+        lm.animas["alice"].process_inbox_message.assert_called_once()
         assert "alice" not in lm._pending_triggers
 
     async def test_lifecycle_mixed_messages_actionable_wins(self):
-        """If any message has an actionable intent, heartbeat triggers."""
+        """If any message has an actionable intent, inbox processing triggers."""
         messages = [
             _make_message(intent=""),              # non-actionable
             _make_message(intent="report"),         # actionable
@@ -176,7 +180,7 @@ class TestLifecycleIntentFilter:
         with patch("core.lifecycle.load_config", return_value=_default_config()):
             await lm._message_triggered_heartbeat("alice")
 
-        lm.animas["alice"].run_heartbeat.assert_called_once()
+        lm.animas["alice"].process_inbox_message.assert_called_once()
         assert "alice" not in lm._pending_triggers
 
     async def test_lifecycle_all_ack_messages_skip(self):
@@ -191,20 +195,20 @@ class TestLifecycleIntentFilter:
         with patch("core.lifecycle.load_config", return_value=_default_config()):
             await lm._message_triggered_heartbeat("alice")
 
-        lm.animas["alice"].run_heartbeat.assert_not_called()
+        lm.animas["alice"].process_inbox_message.assert_not_called()
         assert "alice" not in lm._pending_triggers
 
 
 # ══════════════════════════════════════════════════════════
-# InboxRateLimiter — message_triggered_heartbeat
+# InboxRateLimiter — message_triggered_inbox
 # ══════════════════════════════════════════════════════════
 
 
 class TestLimiterIntentFilter:
-    """Intent filtering in InboxRateLimiter.message_triggered_heartbeat."""
+    """Intent filtering in InboxRateLimiter.message_triggered_inbox."""
 
-    async def test_limiter_delegation_triggers_heartbeat(self):
-        """Message with intent='delegation' should trigger heartbeat."""
+    async def test_limiter_delegation_triggers_inbox(self):
+        """Message with intent='delegation' should trigger inbox processing."""
         messages = [_make_message(intent="delegation")]
         limiter = _make_limiter(messages)
 
@@ -212,13 +216,13 @@ class TestLimiterIntentFilter:
             "core.supervisor.inbox_rate_limiter.load_config",
             return_value=_default_config(),
         ):
-            await limiter.message_triggered_heartbeat()
+            await limiter.message_triggered_inbox()
 
-        limiter._anima.run_heartbeat.assert_called_once()
+        limiter._anima.process_inbox_message.assert_called_once()
         assert limiter._pending_trigger is False
 
-    async def test_limiter_empty_intent_skips_heartbeat(self):
-        """Message with intent='' should NOT trigger heartbeat."""
+    async def test_limiter_empty_intent_skips_inbox(self):
+        """Message with intent='' should NOT trigger inbox processing."""
         messages = [_make_message(intent="")]
         limiter = _make_limiter(messages)
 
@@ -226,9 +230,9 @@ class TestLimiterIntentFilter:
             "core.supervisor.inbox_rate_limiter.load_config",
             return_value=_default_config(),
         ):
-            await limiter.message_triggered_heartbeat()
+            await limiter.message_triggered_inbox()
 
-        limiter._anima.run_heartbeat.assert_not_called()
+        limiter._anima.process_inbox_message.assert_not_called()
         assert limiter._pending_trigger is False
 
     async def test_limiter_human_source_always_triggers(self):
@@ -243,13 +247,13 @@ class TestLimiterIntentFilter:
             "core.supervisor.inbox_rate_limiter.load_config",
             return_value=_default_config(),
         ):
-            await limiter.message_triggered_heartbeat()
+            await limiter.message_triggered_inbox()
 
-        limiter._anima.run_heartbeat.assert_called_once()
+        limiter._anima.process_inbox_message.assert_called_once()
         assert limiter._pending_trigger is False
 
     async def test_limiter_mixed_messages_actionable_wins(self):
-        """If any message has an actionable intent, heartbeat triggers."""
+        """If any message has an actionable intent, inbox processing triggers."""
         messages = [
             _make_message(intent=""),              # non-actionable
             _make_message(intent="question"),       # actionable
@@ -260,9 +264,9 @@ class TestLimiterIntentFilter:
             "core.supervisor.inbox_rate_limiter.load_config",
             return_value=_default_config(),
         ):
-            await limiter.message_triggered_heartbeat()
+            await limiter.message_triggered_inbox()
 
-        limiter._anima.run_heartbeat.assert_called_once()
+        limiter._anima.process_inbox_message.assert_called_once()
         assert limiter._pending_trigger is False
 
     async def test_limiter_all_ack_messages_skip(self):
@@ -277,9 +281,9 @@ class TestLimiterIntentFilter:
             "core.supervisor.inbox_rate_limiter.load_config",
             return_value=_default_config(),
         ):
-            await limiter.message_triggered_heartbeat()
+            await limiter.message_triggered_inbox()
 
-        limiter._anima.run_heartbeat.assert_not_called()
+        limiter._anima.process_inbox_message.assert_not_called()
         assert limiter._pending_trigger is False
 
 

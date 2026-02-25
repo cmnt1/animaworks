@@ -207,18 +207,17 @@ class TestMessageTriggeredHeartbeatGuard:
     """Verify message-triggered heartbeat respects the guard flag."""
 
     @pytest.mark.asyncio
-    async def test_message_heartbeat_skips_when_already_running(self, tmp_path):
-        """message_triggered_heartbeat should skip when heartbeat_running is True."""
+    async def test_message_inbox_skips_when_already_running(self, tmp_path):
+        """message_triggered_inbox should skip when heartbeat_running is True."""
         mock_scheduler_mgr = MagicMock(spec=SchedulerManager)
         mock_scheduler_mgr.heartbeat_running = True
 
         limiter = _make_inbox_limiter(tmp_path, mock_scheduler_mgr)
         limiter._pending_trigger = True
 
-        await limiter.message_triggered_heartbeat()
+        await limiter.message_triggered_inbox()
 
-        limiter._anima.run_heartbeat.assert_not_called()
-        # _pending_trigger should be reset
+        limiter._anima.process_inbox_message.assert_not_called()
         assert limiter._pending_trigger is False
 
 

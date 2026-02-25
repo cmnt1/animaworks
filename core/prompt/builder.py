@@ -429,6 +429,12 @@ def build_system_prompt(
     data_dir = get_data_dir()
     tier = resolve_prompt_tier(context_window)
 
+    # ── Trigger-based section filtering ──────────────────────────
+    is_inbox = trigger.startswith("inbox:")
+    is_heartbeat = trigger == "heartbeat"
+    is_task = trigger.startswith("task:")
+    is_chat = not (is_inbox or is_heartbeat or is_task)
+
     # ── Pre-compute values needed across multiple groups ──────────
 
     # DB-first prompt store (singleton); used for system sections & tool guides
@@ -449,57 +455,64 @@ def build_system_prompt(
     # ── Group 1: 動作環境と行動ルール ─────────────────────────
     parts.append("# 1. 動作環境と行動ルール")
 
-    _env = (_prompt_store.get_section("environment") if _prompt_store else None)
-    if _env:
-        try:
-            _env = _env.format(data_dir=data_dir, anima_name=pd.name)
-        except (KeyError, IndexError):
-            pass
+    if is_task:
+        parts.append(f"Anima: {pd.name}\nData directory: {data_dir}")
     else:
-        _env = load_prompt("environment", data_dir=data_dir, anima_name=pd.name)
-    if _env:
-        if tier == TIER_LIGHT and len(_env) > 8000:
-            _env = _env[:8000]
-        elif tier == TIER_MINIMAL and len(_env) > 4800:
-            _env = _env[:4800]
-        parts.append(_env)
+        _env = (_prompt_store.get_section("environment") if _prompt_store else None)
+        if _env:
+            try:
+                _env = _env.format(data_dir=data_dir, anima_name=pd.name)
+            except (KeyError, IndexError):
+                pass
+        else:
+            _env = load_prompt("environment", data_dir=data_dir, anima_name=pd.name)
+        if _env:
+            if tier == TIER_LIGHT and len(_env) > 8000:
+                _env = _env[:8000]
+            elif tier == TIER_MINIMAL and len(_env) > 4800:
+                _env = _env[:4800]
+            parts.append(_env)
 
     current_time = now_jst().strftime("%Y-%m-%d %H:%M (%Z)")
     parts.append(f"**現在時刻**: {current_time}")
 
-    if tier in (TIER_FULL, TIER_STANDARD):
+    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
         _br = (
             _prompt_store.get_section("behavior_rules") if _prompt_store else None
         ) or load_prompt("behavior_rules")
         if _br:
             parts.append(_br)
 
-    _tdi = load_prompt("tool_data_interpretation")
-    if _tdi:
-        parts.append(_tdi)
+    if not is_task:
+        _tdi = load_prompt("tool_data_interpretation")
+        if _tdi:
+            parts.append(_tdi)
 
     # ── Group 2: あなた自身 ───────────────────────────────────
     parts.append("# 2. あなた自身")
 
-    if tier in (TIER_FULL, TIER_STANDARD):
+    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
         bootstrap = memory.read_bootstrap()
         if bootstrap:
             parts.append(bootstrap)
 
-    if tier in (TIER_FULL, TIER_STANDARD):
+    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
         company_vision = memory.read_company_vision()
         if company_vision:
             parts.append(company_vision)
 
     identity = memory.read_identity()
     if identity:
+        if is_task:
+            identity = "\n".join(identity.split("\n")[:3])
         parts.append(identity)
 
-    injection = memory.read_injection()
-    if injection:
-        parts.append(injection)
+    if not is_task:
+        injection = memory.read_injection()
+        if injection:
+            parts.append(injection)
 
-    if tier in (TIER_FULL, TIER_STANDARD):
+    if not is_inbox and not is_heartbeat and tier in (TIER_FULL, TIER_STANDARD):
         specialty = memory.read_specialty_prompt()
         if specialty:
             parts.append(specialty)
@@ -511,31 +524,36 @@ def build_system_prompt(
     # ── Group 3: 現在の状況 ───────────────────────────────────
     parts.append("# 3. 現在の状況")
 
-    # current_state with tier-dependent size limit
-    _state_max = {
-        TIER_FULL: _CURRENT_TASK_MAX_CHARS,
-        TIER_STANDARD: _CURRENT_TASK_MAX_CHARS,
-        TIER_LIGHT: 1000,
-        TIER_MINIMAL: 500,
-    }[tier]
-    state = memory.read_current_state()
-    if state and state.strip() != "status: idle":
-        if len(state) > _state_max:
-            truncated = state[-_state_max:]
-            first_nl = truncated.find("\n")
-            if first_nl != -1 and first_nl < _state_max * 0.2:
-                truncated = truncated[first_nl + 1:]
-            state = "（前半省略）\n\n" + truncated
-        parts.append(load_prompt("builder/task_in_progress", state=state))
-    elif state:
-        parts.append(f"## 現在の状態\n\n{state}")
+    # current_state: skip for task; summary (500 chars) for inbox
+    if not is_task:
+        _state_max = {
+            TIER_FULL: _CURRENT_TASK_MAX_CHARS,
+            TIER_STANDARD: _CURRENT_TASK_MAX_CHARS,
+            TIER_LIGHT: 1000,
+            TIER_MINIMAL: 500,
+        }[tier]
+        if is_inbox:
+            _state_max = min(_state_max, 500)
+        state = memory.read_current_state()
+        if state and state.strip() != "status: idle":
+            if len(state) > _state_max:
+                truncated = state[-_state_max:]
+                first_nl = truncated.find("\n")
+                if first_nl != -1 and first_nl < _state_max * 0.2:
+                    truncated = truncated[first_nl + 1:]
+                state = "（前半省略）\n\n" + truncated
+            parts.append(load_prompt("builder/task_in_progress", state=state))
+        elif state:
+            parts.append(f"## 現在の状態\n\n{state}")
 
-    pending = memory.read_pending()
-    if pending:
-        parts.append(f"## 未完了タスク\n\n{pending}")
+    # pending: skip for inbox and task
+    if not is_inbox and not is_task:
+        pending = memory.read_pending()
+        if pending:
+            parts.append(f"## 未完了タスク\n\n{pending}")
 
-    if tier in (TIER_FULL, TIER_STANDARD):
-        # Task Queue (structured persistent queue)
+    # Task Queue, Resolution Registry, Recent Outbound: skip for inbox and task
+    if not is_inbox and not is_task and tier in (TIER_FULL, TIER_STANDARD):
         try:
             from core.memory.task_queue import TaskQueueManager
             task_queue = TaskQueueManager(memory.anima_dir)
@@ -545,7 +563,6 @@ def build_system_prompt(
         except Exception:
             logger.debug("Failed to inject task queue", exc_info=True)
 
-        # Resolution registry with dedup (cross-org resolved issues)
         try:
             resolutions = memory.read_resolutions(days=7)
             if resolutions:
@@ -567,7 +584,6 @@ def build_system_prompt(
         except Exception:
             logger.debug("Failed to inject resolution registry", exc_info=True)
 
-        # Recent outbound actions (channel posts, DMs sent in last 2 hours)
         try:
             outbound_section = _build_recent_outbound_section(memory.anima_dir)
             if outbound_section:
@@ -575,12 +591,12 @@ def build_system_prompt(
         except Exception:
             logger.debug("Failed to inject recent outbound section", exc_info=True)
 
-    # Priming section (automatic memory recall)
-    if priming_section:
+    # Priming: skip for task
+    if not is_task and priming_section:
         parts.append(priming_section)
 
-    if tier in (TIER_FULL, TIER_STANDARD):
-        # Recent tool results (last few turns)
+    # Recent tool results: only for chat
+    if is_chat and tier in (TIER_FULL, TIER_STANDARD):
         try:
             _model_cfg = memory.read_model_config()
             recent_tools = _build_recent_tool_section(pd, _model_cfg)
@@ -592,7 +608,9 @@ def build_system_prompt(
     # ── Group 4: 記憶と能力 ───────────────────────────────────
     parts.append("# 4. 記憶と能力")
 
-    if tier in (TIER_FULL, TIER_STANDARD):
+    if is_task:
+        parts.append(f"Anima directory: {pd}")
+    elif tier in (TIER_FULL, TIER_STANDARD):
         # Memory directory guide
         knowledge_list = ", ".join(memory.list_knowledge_files()) or "(なし)"
         episode_list = ", ".join(memory.list_episode_files()[:7]) or "(なし)"
@@ -613,13 +631,14 @@ def build_system_prompt(
             shared_users_list=shared_users_list,
         ))
 
-    # ── Distilled Knowledge Injection ─────────────────────
-    from core.prompt.context import resolve_context_window
-
+    # ── Distilled Knowledge Injection (skip for task) ─────
     injected_knowledge_files: list[str] = []
     overflow_files: list[str] = []
 
-    if tier == TIER_FULL:
+    if is_task:
+        knowledge_budget = 0
+    elif tier == TIER_FULL:
+        from core.prompt.context import resolve_context_window
         try:
             _model_config = memory.read_model_config()
             ctx_window = resolve_context_window(_model_config.model)
@@ -652,13 +671,11 @@ def build_system_prompt(
             + "\n\n---\n\n".join(injection_parts)
         )
 
-    if tier in (TIER_FULL, TIER_STANDARD):
-        # Common knowledge reference hint
+    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
         common_knowledge_dir = data_dir / "common_knowledge"
         if common_knowledge_dir.exists() and any(common_knowledge_dir.rglob("*.md")):
             parts.append(load_prompt("builder/common_knowledge_hint"))
 
-        # Commander hiring guardrail
         has_newstaff = any(m.name == "newstaff" for m in skill_metas)
         if has_newstaff:
             if execution_mode == "s":
@@ -670,26 +687,29 @@ def build_system_prompt(
     if not _prompt_store:
         logger.warning("Tool prompt DB unavailable; using hardcoded fallback guides")
 
-    if execution_mode == "s":
-        _s_builtin = (
-            _prompt_store.get_guide("s_builtin") if _prompt_store else None
-        ) or DEFAULT_GUIDES.get("s_builtin", "")
-        if _s_builtin:
-            parts.append(_s_builtin)
-        _s_mcp = (
-            _prompt_store.get_guide("s_mcp") if _prompt_store else None
-        ) or DEFAULT_GUIDES.get("s_mcp", "")
-        if _s_mcp:
-            parts.append(_s_mcp)
+    if is_heartbeat:
+        parts.append("ツールは観察・計画に使い、実行はしないでください。")
     else:
-        _non_s = (
-            _prompt_store.get_guide("non_s") if _prompt_store else None
-        ) or DEFAULT_GUIDES.get("non_s", "")
-        if _non_s:
-            parts.append(_non_s)
+        if execution_mode == "s":
+            _s_builtin = (
+                _prompt_store.get_guide("s_builtin") if _prompt_store else None
+            ) or DEFAULT_GUIDES.get("s_builtin", "")
+            if _s_builtin:
+                parts.append(_s_builtin)
+            _s_mcp = (
+                _prompt_store.get_guide("s_mcp") if _prompt_store else None
+            ) or DEFAULT_GUIDES.get("s_mcp", "")
+            if _s_mcp:
+                parts.append(_s_mcp)
+        else:
+            _non_s = (
+                _prompt_store.get_guide("non_s") if _prompt_store else None
+            ) or DEFAULT_GUIDES.get("non_s", "")
+            if _non_s:
+                parts.append(_non_s)
 
-    # External tools guide (filtered by registry)
-    if permissions and "外部ツール" in permissions and (tool_registry or personal_tools):
+    # External tools guide (skip for heartbeat)
+    if not is_heartbeat and permissions and "外部ツール" in permissions and (tool_registry or personal_tools):
         if execution_mode == "a":
             categories = ", ".join(sorted(tool_registry or []))
             if personal_tools:
@@ -708,7 +728,8 @@ def build_system_prompt(
     # ── Group 5: 組織とコミュニケーション ─────────────────────
     parts.append("# 5. 組織とコミュニケーション")
 
-    if tier in (TIER_FULL, TIER_STANDARD):
+    # hiring_context: skip for inbox and task
+    if not is_inbox and not is_task and tier in (TIER_FULL, TIER_STANDARD):
         if not other_animas:
             try:
                 model_config = memory.read_model_config()
@@ -722,29 +743,37 @@ def build_system_prompt(
             except Exception:
                 logger.debug("Skipped hiring context injection", exc_info=True)
 
+    # org_context: skip for task
+    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
         org_context = _build_org_context(pd.name, other_animas, execution_mode)
         if org_context:
             parts.append(org_context)
 
-        parts.append(_build_messaging_section(pd, other_animas, execution_mode))
+        _msg = _build_messaging_section(pd, other_animas, execution_mode)
+        if is_heartbeat and len(_msg) > 500:
+            _msg = _msg[:500] + "\n（要約）"
+        parts.append(_msg)
 
-        try:
-            from core.config import load_config as _load_cfg
-            _cfg = _load_cfg()
-            _my_pcfg = _cfg.animas.get(pd.name)
-            _is_top_level = _my_pcfg is None or _my_pcfg.supervisor is None
-            if _is_top_level and _cfg.human_notification.enabled:
-                parts.append(_build_human_notification_guidance(execution_mode))
-        except Exception:
-            logger.debug("Skipped human notification guidance injection", exc_info=True)
-    elif tier == TIER_LIGHT:
+        # human_notification: skip for inbox and task
+        if not is_inbox:
+            try:
+                from core.config import load_config as _load_cfg
+                _cfg = _load_cfg()
+                _my_pcfg = _cfg.animas.get(pd.name)
+                _is_top_level = _my_pcfg is None or _my_pcfg.supervisor is None
+                if _is_top_level and _cfg.human_notification.enabled:
+                    parts.append(_build_human_notification_guidance(execution_mode))
+            except Exception:
+                logger.debug("Skipped human notification guidance injection", exc_info=True)
+    elif not is_task and tier == TIER_LIGHT:
         parts.append(f"あなたは{pd.name}です。他のアニマとはsend_messageで通信できます。")
         parts.append("メッセージはsend_messageツールで送信してください。")
 
     # ── Group 6: メタ設定 ─────────────────────────────────────
     parts.append("# 6. メタ設定")
 
-    if tier in (TIER_FULL, TIER_STANDARD):
+    # emotion: skip for heartbeat and task
+    if not is_heartbeat and not is_task and tier in (TIER_FULL, TIER_STANDARD):
         _ei = (
             _prompt_store.get_section("emotion_instruction")
             if _prompt_store else None
@@ -752,6 +781,8 @@ def build_system_prompt(
         if _ei:
             parts.append(_ei)
 
+    # a_reflection: skip for inbox and heartbeat
+    if not is_inbox and not is_heartbeat and tier in (TIER_FULL, TIER_STANDARD):
         if execution_mode == "a":
             _ar = (
                 _prompt_store.get_section("a_reflection")

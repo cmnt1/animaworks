@@ -387,7 +387,7 @@ class TestMessageTriggeredHeartbeat:
         lm._pending_triggers.add("alice")
 
         await lm._message_triggered_heartbeat("alice")
-        dp.run_heartbeat.assert_called_once()
+        dp.process_inbox_message.assert_called_once()
         assert "alice" not in lm._pending_triggers
 
     async def test_triggered_heartbeat_no_anima(self):
@@ -487,10 +487,9 @@ class TestTryDeferredTrigger:
         dp = MagicMock()
         dp.name = "alice"
         dp.messenger.has_unread.return_value = True
-        dp._background_lock = MagicMock()
-        dp._background_lock.locked.return_value = False
+        dp._inbox_lock = MagicMock()
+        dp._inbox_lock.locked.return_value = False
         lm.animas["alice"] = dp
-        # Set timer entry so pop works
         lm._deferred_timers["alice"] = MagicMock()
 
         with patch.object(lm, "_is_in_cooldown", return_value=False), \
@@ -514,13 +513,13 @@ class TestTryDeferredTrigger:
             assert "alice" not in lm._pending_triggers
 
     async def test_reschedules_when_lock_held(self):
-        """Re-schedules if anima lock is held."""
+        """Re-schedules if anima inbox lock is held."""
         lm = LifecycleManager()
         dp = MagicMock()
         dp.name = "alice"
         dp.messenger.has_unread.return_value = True
-        dp._background_lock = MagicMock()
-        dp._background_lock.locked.return_value = True
+        dp._inbox_lock = MagicMock()
+        dp._inbox_lock.locked.return_value = True
         lm.animas["alice"] = dp
         lm._deferred_timers["alice"] = MagicMock()
 

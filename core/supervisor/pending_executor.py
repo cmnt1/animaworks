@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _PENDING_WATCHER_POLL_INTERVAL = 3.0
+_LLM_TASK_TTL_HOURS = 24
 _PENDING_TASK_SUBPROCESS_TIMEOUT = 1800
 
 
@@ -48,6 +50,9 @@ class PendingTaskExecutor:
         """
         pending_dir = self._anima_dir / "state" / "background_tasks" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
+        # Also watch state/pending/ for LLM tasks
+        llm_pending_dir = self._anima_dir / "state" / "pending"
+        llm_pending_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info("Pending task watcher started for %s", self._anima_name)
 
@@ -75,6 +80,27 @@ class PendingTaskExecutor:
                             "Error processing pending task file: %s", path.name,
                         )
 
+                # Scan LLM pending tasks
+                for path in sorted(llm_pending_dir.glob("*.json")):
+                    try:
+                        task_desc = json.loads(path.read_text(encoding="utf-8"))
+                        path.unlink()
+                        logger.info(
+                            "Picked up LLM pending task: id=%s anima=%s",
+                            task_desc.get("task_id", "?"),
+                            self._anima_name,
+                        )
+                        await self.execute_pending_task(task_desc)
+                    except json.JSONDecodeError:
+                        logger.warning(
+                            "Invalid JSON in LLM pending task file: %s", path.name,
+                        )
+                        path.unlink(missing_ok=True)
+                    except Exception:
+                        logger.exception(
+                            "Error processing LLM pending task file: %s", path.name,
+                        )
+
                 await asyncio.sleep(_PENDING_WATCHER_POLL_INTERVAL)
             except asyncio.CancelledError:
                 break
@@ -87,11 +113,16 @@ class PendingTaskExecutor:
         logger.info("Pending task watcher stopped for %s", self._anima_name)
 
     async def execute_pending_task(self, task_desc: dict[str, Any]) -> None:
-        """Execute a pending task via BackgroundTaskManager.
+        """Execute a pending task via BackgroundTaskManager or LLM.
 
-        Constructs the CLI-equivalent arguments and dispatches through
-        ExternalToolDispatcher, running in background (outside _lock).
+        Routes by task_type: 'llm' → _execute_llm_task, else command subprocess.
         """
+        task_type = task_desc.get("task_type", "command")
+
+        if task_type == "llm":
+            await self._execute_llm_task(task_desc)
+            return
+
         if not self._anima:
             logger.warning("Cannot execute pending task: anima not initialized")
             return
@@ -155,3 +186,160 @@ class PendingTaskExecutor:
         # Submit to BackgroundTaskManager
         composite_name = f"{tool_name}:{subcommand}" if subcommand else tool_name
         bg_mgr.submit(composite_name, tool_args, _dispatch_fn)
+
+    async def _execute_llm_task(self, task_desc: dict[str, Any]) -> None:
+        """Execute an LLM task under _background_lock.
+
+        The task is executed as a minimal-context LLM session using
+        the task_exec.md template. Only task description and tools
+        are provided — no memory, no org context.
+        """
+        task_id = task_desc.get("task_id", "unknown")
+        title = task_desc.get("title", "Untitled task")
+        description = task_desc.get("description", "")
+        context = task_desc.get("context", "")
+        acceptance_criteria = task_desc.get("acceptance_criteria", [])
+        constraints = task_desc.get("constraints", [])
+        file_paths = task_desc.get("file_paths", [])
+        reply_to = task_desc.get("reply_to")
+        submitted_by = task_desc.get("submitted_by", "unknown")
+        submitted_at = task_desc.get("submitted_at", "")
+
+        # TTL check
+        if submitted_at:
+            try:
+                sub_dt = datetime.fromisoformat(submitted_at)
+                if sub_dt.tzinfo is None:
+                    sub_dt = sub_dt.replace(tzinfo=timezone.utc)
+                now_utc = datetime.now(timezone.utc)
+                age_hours = (now_utc - sub_dt).total_seconds() / 3600
+                if age_hours > _LLM_TASK_TTL_HOURS:
+                    logger.warning(
+                        "[%s] Skipping expired LLM task: %s (age=%.1fh, TTL=%dh)",
+                        self._anima_name, task_id, age_hours, _LLM_TASK_TTL_HOURS,
+                    )
+                    return
+            except (ValueError, TypeError):
+                logger.debug(
+                    "[%s] Could not parse submitted_at for task %s",
+                    self._anima_name, task_id,
+                )
+
+        logger.info(
+            "[%s] Executing LLM task: id=%s title=%s",
+            self._anima_name, task_id, title,
+        )
+
+        try:
+            async with self._anima._background_lock:
+                self._anima._status_slots["background"] = "task_exec"
+                self._anima._task_slots["background"] = task_id
+
+                from core.paths import load_prompt
+                from core.memory.streaming_journal import StreamingJournal
+                from core.memory.activity import ActivityLogger
+
+                activity = ActivityLogger(self._anima_dir)
+                activity.log(
+                    "task_exec_start",
+                    summary=f"タスク実行開始: {title}",
+                    meta={"task_id": task_id, "submitted_by": submitted_by},
+                )
+
+                criteria_text = (
+                    "\n".join(f"- {c}" for c in acceptance_criteria)
+                    if acceptance_criteria
+                    else "(なし)"
+                )
+                constraints_text = (
+                    "\n".join(f"- {c}" for c in constraints)
+                    if constraints
+                    else "(なし)"
+                )
+                paths_text = (
+                    "\n".join(f"- {p}" for p in file_paths)
+                    if file_paths
+                    else "(なし)"
+                )
+
+                prompt = load_prompt(
+                    "task_exec",
+                    task_id=task_id,
+                    title=title,
+                    submitted_by=submitted_by,
+                    description=description,
+                    context=context or "(なし)",
+                    acceptance_criteria=criteria_text,
+                    constraints=constraints_text,
+                    file_paths=paths_text,
+                )
+
+                trigger = f"task:{task_id}"
+                journal = StreamingJournal(self._anima_dir, session_type="task_exec")
+                journal.open(trigger=trigger)
+
+                self._anima.agent.reset_reply_tracking(session_type="background")
+                accumulated_text = ""
+                result_summary = ""
+
+                try:
+                    async for chunk in self._anima.agent.run_cycle_streaming(
+                        prompt, trigger=trigger,
+                    ):
+                        if chunk.get("type") == "text_delta":
+                            accumulated_text += chunk.get("text", "")
+                            journal.write_text(chunk.get("text", ""))
+
+                        if chunk.get("type") == "cycle_done":
+                            cycle_result = chunk.get("cycle_result", {})
+                            result_summary = cycle_result.get(
+                                "summary", accumulated_text[:500]
+                            )
+                            journal.finalize(summary=result_summary[:500])
+                finally:
+                    journal.close()
+
+                if not result_summary:
+                    result_summary = accumulated_text[:500] or "(タスク完了)"
+
+                activity.log(
+                    "task_exec_end",
+                    summary=f"タスク完了: {title} — {result_summary[:200]}",
+                    meta={"task_id": task_id},
+                )
+
+                # Send completion notification if reply_to is set
+                if reply_to:
+                    try:
+                        notify_text = load_prompt(
+                            "task_complete_notify",
+                            task_id=task_id,
+                            title=title,
+                            result_summary=result_summary[:1000],
+                        )
+                        self._anima.messenger.send(to=reply_to, content=notify_text)
+                        logger.info(
+                            "[%s] Task completion notification sent to %s",
+                            self._anima_name, reply_to,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "[%s] Failed to send task completion notification to %s",
+                            self._anima_name, reply_to, exc_info=True,
+                        )
+
+                self._anima._status_slots["background"] = "idle"
+                self._anima._task_slots["background"] = ""
+
+                logger.info(
+                    "[%s] LLM task completed: id=%s",
+                    self._anima_name, task_id,
+                )
+
+        except Exception:
+            logger.exception(
+                "[%s] LLM task failed: id=%s",
+                self._anima_name, task_id,
+            )
+            self._anima._status_slots["background"] = "idle"
+            self._anima._task_slots["background"] = ""
