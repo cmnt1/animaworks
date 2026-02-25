@@ -597,7 +597,15 @@ class ToolHandler:
             logger.debug("read_memory_file path=%s", rel)
             return path.read_text(encoding="utf-8")
         logger.debug("read_memory_file NOT FOUND path=%s", rel)
-        return f"File not found: {rel}"
+        parent = path.parent
+        hint = ""
+        if parent.exists() and parent.is_dir():
+            siblings = sorted(f.name for f in parent.iterdir() if f.is_file())[:20]
+            if siblings:
+                hint = f"\nAvailable files in {parent.name}/:\n" + "\n".join(
+                    f"  - {s}" for s in siblings
+                )
+        return f"File not found: {rel}{hint}"
 
     def _handle_write_memory_file(self, args: dict[str, Any]) -> str:
         rel = args["path"]
