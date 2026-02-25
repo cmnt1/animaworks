@@ -32,7 +32,7 @@ from core.schemas import CycleResult, ModelConfig
 def _make_model_config() -> ModelConfig:
     """Return a minimal ModelConfig for testing."""
     return ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=1024,
         max_turns=5,
     )

@@ -570,7 +570,7 @@ class TestConsolidationForgettingHooks:
         mock_config = MagicMock()
         mock_consolidation_cfg = MagicMock()
         mock_consolidation_cfg.weekly_enabled = True
-        mock_consolidation_cfg.llm_model = "anthropic/claude-sonnet-4-20250514"
+        mock_consolidation_cfg.llm_model = "anthropic/claude-sonnet-4-6"
         mock_consolidation_cfg.max_turns = 30
         mock_config.consolidation = mock_consolidation_cfg
 

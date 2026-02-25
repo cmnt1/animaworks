@@ -390,10 +390,10 @@ class TestAnimaConfig:
         (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
 
         mock_defaults = MagicMock()
-        mock_defaults.model = "anthropic/claude-sonnet-4-20250514"
+        mock_defaults.model = "anthropic/claude-sonnet-4-6"
         mock_defaults.execution_mode = "a1"
         mock_defaults.model_dump.return_value = {
-            "model": "anthropic/claude-sonnet-4-20250514",
+            "model": "anthropic/claude-sonnet-4-6",
             "execution_mode": "a1",
         }
         mock_credential = MagicMock()
@@ -410,7 +410,7 @@ class TestAnimaConfig:
 
         data = resp.json()
         assert data["anima"] == "alice"
-        assert data["model"] == "anthropic/claude-sonnet-4-20250514"
+        assert data["model"] == "anthropic/claude-sonnet-4-6"
         assert data["execution_mode"] == "a1"
 
     async def test_config_for_nonexistent_anima_returns_404(self, tmp_path):

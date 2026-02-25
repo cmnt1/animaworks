@@ -19,7 +19,7 @@ from core.schemas import ModelConfig
 def _make_agent(anima_dir: Path):
     """Create AgentCore with all external dependencies mocked."""
     mc = ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         resolved_mode="A2",
         api_key="test-key",
     )

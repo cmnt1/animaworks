@@ -187,10 +187,10 @@ class TestGetAnimaConfig:
         alice_dir.mkdir(parents=True)
 
         mock_resolved = MagicMock()
-        mock_resolved.model = "claude-sonnet-4-20250514"
+        mock_resolved.model = "claude-sonnet-4-6"
         mock_resolved.execution_mode = "a1"
         mock_resolved.model_dump.return_value = {
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "execution_mode": "a1",
         }
 
@@ -214,7 +214,7 @@ class TestGetAnimaConfig:
         assert resp.status_code == 200
         data = resp.json()
         assert data["anima"] == "alice"
-        assert data["model"] == "claude-sonnet-4-20250514"
+        assert data["model"] == "claude-sonnet-4-6"
         assert data["execution_mode"] == "a1"
         assert "config" in data
 

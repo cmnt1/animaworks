@@ -384,7 +384,7 @@ class TestForceChainPropagation:
 
     def test_context_tracker_threshold_hit_triggers_exceeded(self):
         """force_threshold() makes threshold_exceeded return True."""
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.5)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.5)
         assert tracker.threshold_exceeded is False
 
         tracker.force_threshold()
@@ -394,7 +394,7 @@ class TestForceChainPropagation:
         """The agent.py logic: if force_chain and not exceeded -> force_threshold()."""
         # Simulate the agent.py logic from lines ~937-942
         result = ExecutionResult(text="response", force_chain=True)
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.5)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.5)
 
         # Before: threshold not exceeded
         assert not tracker.threshold_exceeded
@@ -409,7 +409,7 @@ class TestForceChainPropagation:
     def test_force_chain_false_does_not_affect_tracker(self):
         """When force_chain is False, tracker state is unchanged."""
         result = ExecutionResult(text="response", force_chain=False)
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.5)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.5)
 
         if result.force_chain and not tracker.threshold_exceeded:
             tracker.force_threshold()
@@ -419,7 +419,7 @@ class TestForceChainPropagation:
     def test_already_exceeded_not_double_set(self):
         """When threshold is already exceeded, force_chain=True is a no-op."""
         result = ExecutionResult(text="response", force_chain=True)
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.5)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.5)
 
         # Simulate threshold already hit via normal usage
         tracker.force_threshold()
@@ -436,7 +436,7 @@ class TestForceChainPropagation:
 
     def test_context_tracker_reset_clears_threshold(self):
         """ContextTracker.reset() clears threshold set by force_threshold()."""
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.5)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.5)
         tracker.force_threshold()
         assert tracker.threshold_exceeded is True
 

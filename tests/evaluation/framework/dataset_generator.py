@@ -41,7 +41,7 @@ class DatasetGenerator:
         self,
         output_dir: Path,
         use_llm: bool = True,
-        model: str = "anthropic/claude-sonnet-4-20250514"
+        model: str = "anthropic/claude-sonnet-4-6"
     ):
         """
         Initialize dataset generator.

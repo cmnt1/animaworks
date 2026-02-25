@@ -136,7 +136,7 @@ class TestModeBLive:
         pytest.importorskip("litellm")
         agent = make_agent_core(
             name="b-live",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             execution_mode="assisted",
         )
 

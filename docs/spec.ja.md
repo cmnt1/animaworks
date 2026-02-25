@@ -177,7 +177,7 @@ animaworks/
 
 |フィールド                           |型              |デフォルト                   |説明                        |
 |---------------------------------|---------------|------------------------|--------------------------|
-|`model`                          |`str`          |`claude-sonnet-4-20250514`|使用するモデル名（bare name、プロバイダprefixなし）|
+|`model`                          |`str`          |`claude-sonnet-4-6`       |使用するモデル名（bare name、プロバイダprefixなし）|
 |`fallback_model`                 |`str \| null`  |`null`                  |フォールバックモデル                  |
 |`max_tokens`                     |`int`          |`4096`                  |1回のレスポンスの最大トークン数             |
 |`max_turns`                      |`int`          |`20`                    |1サイクルの最大ターン数                |
@@ -200,7 +200,7 @@ animaworks/
     "ollama": { "api_key": "dummy", "base_url": "http://localhost:11434/v1" }
   },
   "anima_defaults": {
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-sonnet-4-6",
     "max_tokens": 4096,
     "max_turns": 20,
     "credential": "anthropic",

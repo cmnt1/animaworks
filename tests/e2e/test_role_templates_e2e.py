@@ -150,7 +150,7 @@ class TestCreateFromMdEngineerRole:
             (anima_dir / "status.json").read_text(encoding="utf-8")
         )
         # Engineer defaults.json specifies these values
-        assert status["model"] == "claude-opus-4-20250514"
+        assert status["model"] == "claude-opus-4-6"
         assert status["max_turns"] == 200
         assert status["max_chains"] == 10
         assert status["context_threshold"] == 0.80
@@ -169,7 +169,7 @@ class TestCreateFromMdEngineerRole:
 | 項目 | 設定 |
 |------|------|
 | 英名 | testeng2 |
-| モデル | claude-sonnet-4-20250514 |
+| モデル | claude-sonnet-4-6 |
 | 上司 | (なし) |
 | 実行モード | autonomous |
 
@@ -190,7 +190,7 @@ class TestCreateFromMdEngineerRole:
             (anima_dir / "status.json").read_text(encoding="utf-8")
         )
         # Character sheet model should override role default
-        assert status["model"] == "claude-sonnet-4-20250514"
+        assert status["model"] == "claude-sonnet-4-6"
         # But other role defaults should still be applied
         assert status["max_turns"] == 200
         assert status["max_chains"] == 10
@@ -241,7 +241,7 @@ class TestCreateFromMdGeneralRole:
             (anima_dir / "status.json").read_text(encoding="utf-8")
         )
         # general defaults.json values
-        assert status["model"] == "claude-sonnet-4-20250514"
+        assert status["model"] == "claude-sonnet-4-6"
         assert status["max_turns"] == 20
         assert status["max_chains"] == 2
         assert status["context_threshold"] == 0.50
@@ -298,7 +298,7 @@ class TestThreeLayerConfigResolution:
         model_config = memory.read_model_config()
 
         # Engineer role defaults should override global defaults (max_turns: 200 vs 5)
-        assert model_config.model == "claude-opus-4-20250514"
+        assert model_config.model == "claude-opus-4-6"
         assert model_config.max_turns == 200
         assert model_config.max_chains == 10
         assert model_config.context_threshold == 0.80
@@ -317,7 +317,7 @@ class TestThreeLayerConfigResolution:
         config_path = data_dir / "config.json"
         config = load_config(config_path)
         config.animas["testeng"] = AnimaModelConfig(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_turns=50,
         )
         save_config(config, config_path)
@@ -328,7 +328,7 @@ class TestThreeLayerConfigResolution:
         model_config = memory.read_model_config()
 
         # Overridden fields from config.json (layer 1)
-        assert model_config.model == "claude-sonnet-4-20250514"
+        assert model_config.model == "claude-sonnet-4-6"
         assert model_config.max_turns == 50
         # Non-overridden fields should still come from status.json (layer 2)
         assert model_config.max_chains == 10
@@ -358,7 +358,7 @@ class TestThreeLayerConfigResolution:
         # Layer 1: config.json override
         assert resolved.max_turns == 99
         # Layer 2: status.json (engineer role defaults)
-        assert resolved.model == "claude-opus-4-20250514"
+        assert resolved.model == "claude-opus-4-6"
         assert resolved.max_chains == 10
         assert resolved.context_threshold == 0.80
         # Layer 3: global defaults (for fields not set in layer 1 or 2)

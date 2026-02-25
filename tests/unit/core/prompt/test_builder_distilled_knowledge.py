@@ -41,7 +41,7 @@ def _make_mock_memory(anima_dir: Path, data_dir: Path) -> MagicMock:
     memory.collect_distilled_knowledge.return_value = []
     # read_model_config for context window resolution
     model_cfg = MagicMock()
-    model_cfg.model = "claude-sonnet-4-20250514"
+    model_cfg.model = "claude-sonnet-4-6"
     model_cfg.supervisor = None
     memory.read_model_config.return_value = model_cfg
     return memory

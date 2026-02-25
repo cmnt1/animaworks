@@ -19,7 +19,7 @@ from core.schemas import CycleResult, ModelConfig
 
 def _make_agent(
     anima_dir: Path,
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "claude-sonnet-4-6",
     execution_mode: str | None = None,
     resolved_mode: str | None = None,
 ):
@@ -61,12 +61,12 @@ class TestResolveExecutionMode:
         assert agent._resolve_execution_mode() == "a"
 
     def test_auto_claude_without_sdk(self, tmp_path):
-        agent = _make_agent(tmp_path, model="claude-sonnet-4-20250514")
+        agent = _make_agent(tmp_path, model="claude-sonnet-4-6")
         agent._sdk_available = False
         assert agent._resolve_execution_mode() == "a"
 
     def test_auto_claude_with_sdk(self, tmp_path):
-        agent = _make_agent(tmp_path, model="claude-sonnet-4-20250514")
+        agent = _make_agent(tmp_path, model="claude-sonnet-4-6")
         agent._sdk_available = True
         assert agent._resolve_execution_mode() == "s"
 
@@ -77,7 +77,7 @@ class TestResolveExecutionMode:
 
 class TestIsClaude:
     def test_claude_prefix(self, tmp_path):
-        agent = _make_agent(tmp_path, model="claude-sonnet-4-20250514")
+        agent = _make_agent(tmp_path, model="claude-sonnet-4-6")
         assert agent._is_claude_model() is True
 
     def test_anthropic_prefix(self, tmp_path):
@@ -175,7 +175,7 @@ class TestRunCycle:
             assert result.summary == "A2 response"
 
     async def test_mode_s_returns_result(self, tmp_path):
-        agent = _make_agent(tmp_path, model="claude-sonnet-4-20250514")
+        agent = _make_agent(tmp_path, model="claude-sonnet-4-6")
         agent._sdk_available = True
         # Force mode s (SDK mode)
         agent._resolve_execution_mode = MagicMock(return_value="s")

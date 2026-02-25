@@ -30,7 +30,7 @@ from tests.helpers.mocks import (
 @pytest.fixture
 def model_config() -> ModelConfig:
     return ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         api_key="sk-test",
         max_turns=5,
         context_threshold=0.50,
@@ -199,7 +199,7 @@ class TestPromptFileCleanup:
 
         executor = _make_executor(model_config, anima_dir)
         large_prompt = "C" * 120_000
-        tracker = ContextTracker(model="claude-sonnet-4-20250514")
+        tracker = ContextTracker(model="claude-sonnet-4-6")
 
         created_files: list[Path] = []
         original_build = executor._build_sdk_options

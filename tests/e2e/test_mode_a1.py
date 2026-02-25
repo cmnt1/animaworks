@@ -29,7 +29,7 @@ class TestModeA1Mock:
         ):
             agent = make_agent_core(
                 name="a1-basic",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
             )
             # Force SDK available after patching sys.modules
             agent._sdk_available = True
@@ -47,7 +47,7 @@ class TestModeA1Mock:
         ):
             agent = make_agent_core(
                 name="a1-stream",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
             )
             agent._sdk_available = True
 
@@ -74,7 +74,7 @@ class TestModeA1Mock:
         ):
             agent = make_agent_core(
                 name="a1-chain",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 context_threshold=0.01,  # Very low to force chaining
                 max_chains=1,
             )
@@ -95,7 +95,7 @@ class TestModeA1Live:
         """Live A1: real Claude Agent SDK call."""
         agent = make_agent_core(
             name="a1-live",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
 
         if not agent._sdk_available:

@@ -49,7 +49,7 @@ def anima_dir(tmp_path: Path) -> Path:
 def model_config() -> ModelConfig:
     """Create a minimal ModelConfig for ConversationMemory."""
     return ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=4096,
         max_turns=20,
     )

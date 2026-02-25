@@ -112,7 +112,7 @@ class TestGetConfig:
         config_dir = tmp_path / ".animaworks"
         config_dir.mkdir()
         config = {
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "providers": {
                 "anthropic": {"api_key": "sk-ant-1234567890"}
             },
@@ -127,7 +127,7 @@ class TestGetConfig:
             resp = await client.get("/api/system/config")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["model"] == "claude-sonnet-4-20250514"
+        assert data["model"] == "claude-sonnet-4-6"
         # Secret should be masked
         assert data["providers"]["anthropic"]["api_key"] != "sk-ant-1234567890"
         assert "..." in data["providers"]["anthropic"]["api_key"]

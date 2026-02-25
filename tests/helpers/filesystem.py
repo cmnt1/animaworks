@@ -24,7 +24,7 @@ DEFAULT_TEST_CONFIG: dict[str, Any] = {
         "ollama": {"api_key": "", "base_url": "http://localhost:11434"},
     },
     "anima_defaults": {
-        "model": "claude-sonnet-4-20250514",
+        "model": "claude-sonnet-4-6",
         "max_tokens": 1024,
         "max_turns": 5,
         "credential": "anthropic",
@@ -84,7 +84,7 @@ def create_anima_dir(
     identity: str = "# Test Anima\nA test digital anima for E2E testing.",
     injection: str = "",
     permissions: str = "",
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "claude-sonnet-4-6",
     execution_mode: str | None = None,
     credential: str | None = None,
     supervisor: str | None = None,

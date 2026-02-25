@@ -57,7 +57,7 @@ class TestBaseExecutor:
     @pytest.fixture
     def model_config(self) -> ModelConfig:
         return ModelConfig(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             api_key="sk-test-key",
             api_key_env="ANTHROPIC_API_KEY",
         )
@@ -115,7 +115,7 @@ class TestResolveLlmTimeout:
     """Test LLM timeout resolution logic."""
 
     def test_explicit_timeout_from_config(self, tmp_path: Path):
-        config = ModelConfig(model="claude-sonnet-4-20250514", llm_timeout=120)
+        config = ModelConfig(model="claude-sonnet-4-6", llm_timeout=120)
         executor = ConcreteExecutor(model_config=config, anima_dir=tmp_path)
         assert executor._resolve_llm_timeout() == 120
 
@@ -125,7 +125,7 @@ class TestResolveLlmTimeout:
         assert executor._resolve_llm_timeout() == 300
 
     def test_api_model_default(self, tmp_path: Path):
-        config = ModelConfig(model="claude-sonnet-4-20250514", llm_timeout=None)
+        config = ModelConfig(model="claude-sonnet-4-6", llm_timeout=None)
         executor = ConcreteExecutor(model_config=config, anima_dir=tmp_path)
         assert executor._resolve_llm_timeout() == 600
 

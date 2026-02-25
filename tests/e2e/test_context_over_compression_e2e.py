@@ -45,7 +45,7 @@ from core.schemas import ModelConfig
 def _make_conv_memory(
     anima_dir: Path,
     *,
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "claude-sonnet-4-6",
     conversation_history_threshold: float = 0.30,
 ) -> ConversationMemory:
     """Create a ConversationMemory backed by a real temp directory."""
@@ -356,7 +356,7 @@ class TestBuilderRecentToolSection:
         )
         conv.save()
 
-        model_config = ModelConfig(model="claude-sonnet-4-20250514")
+        model_config = ModelConfig(model="claude-sonnet-4-6")
         section = _build_recent_tool_section(anima_dir, model_config)
 
         assert section, "Recent tool section should be non-empty"
@@ -376,7 +376,7 @@ class TestBuilderRecentToolSection:
         conv.append_turn("assistant", "Hi there!")
         conv.save()
 
-        model_config = ModelConfig(model="claude-sonnet-4-20250514")
+        model_config = ModelConfig(model="claude-sonnet-4-6")
         section = _build_recent_tool_section(anima_dir, model_config)
 
         assert section == ""
@@ -389,7 +389,7 @@ class TestBuilderRecentToolSection:
         anima_dir = tmp_path / "animas" / "builder-empty"
         (anima_dir / "state").mkdir(parents=True, exist_ok=True)
 
-        model_config = ModelConfig(model="claude-sonnet-4-20250514")
+        model_config = ModelConfig(model="claude-sonnet-4-6")
         section = _build_recent_tool_section(anima_dir, model_config)
 
         assert section == ""
@@ -418,7 +418,7 @@ class TestPromptLogExtendedFields:
             anima_dir,
             trigger="user_message",
             sender="admin",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             mode="a1",
             system_prompt="You are a helpful assistant.",
             user_message="What is the weather?",
@@ -449,7 +449,7 @@ class TestPromptLogExtendedFields:
 
         # Verify standard fields too
         assert entry["trigger"] == "user_message"
-        assert entry["model"] == "claude-sonnet-4-20250514"
+        assert entry["model"] == "claude-sonnet-4-6"
         assert entry["mode"] == "a1"
         assert entry["session_id"] == "sess-log-001"
         assert "ts" in entry
@@ -466,7 +466,7 @@ class TestPromptLogExtendedFields:
             anima_dir,
             trigger="heartbeat",
             sender="system",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             mode="a1",
             system_prompt="System prompt here.",
             user_message="Heartbeat check.",

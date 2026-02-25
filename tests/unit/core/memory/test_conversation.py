@@ -36,7 +36,7 @@ def anima_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def model_config() -> ModelConfig:
     return ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         conversation_history_threshold=0.30,
     )
 
@@ -370,7 +370,7 @@ class TestNeedsCompressionAutoScale:
     def _make_conv(self, anima_dir: Path, configured_threshold: float = 0.30) -> ConversationMemory:
         """Create a ConversationMemory with a specific configured threshold."""
         mc = ModelConfig(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             conversation_history_threshold=configured_threshold,
         )
         return ConversationMemory(anima_dir, mc)

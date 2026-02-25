@@ -7,7 +7,7 @@ from __future__ import annotations
 """E2E tests for the hardcoded model name consolidation refactoring.
 
 Verifies that all model= parameters that previously defaulted to
-``"anthropic/claude-sonnet-4-20250514"`` now default to ``""`` (empty string)
+``"anthropic/claude-sonnet-4-6"`` now default to ``""`` (empty string)
 and correctly fall back to ``ConsolidationConfig().llm_model`` or
 ``AnimaDefaults().model`` at runtime.
 
@@ -93,7 +93,7 @@ class TestContextTrackerIntegration:
         """Claude and GPT models have different context windows."""
         from core.prompt.context import ContextTracker
 
-        claude_tracker = ContextTracker(model="claude-sonnet-4-20250514")
+        claude_tracker = ContextTracker(model="claude-sonnet-4-6")
         gpt_tracker = ContextTracker(model="gpt-4o")
 
         # Claude has 200K, GPT-4o has 128K

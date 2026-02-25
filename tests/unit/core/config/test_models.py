@@ -93,7 +93,7 @@ class TestAnimaModelConfig:
 class TestAnimaDefaults:
     def test_defaults(self):
         pd = AnimaDefaults()
-        assert pd.model == "claude-sonnet-4-20250514"
+        assert pd.model == "claude-sonnet-4-6"
         assert pd.max_tokens == 4096
         assert pd.max_turns == 20
         assert pd.credential == "anthropic"
@@ -281,7 +281,7 @@ class TestLoadConfig:
             "version": 1,
             "system": {"mode": "server", "log_level": "INFO"},
             "credentials": {"anthropic": {"api_key": ""}},
-            "anima_defaults": {"model": "claude-sonnet-4-20250514", "credential": "anthropic"},
+            "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
             "animas": {"alice": {"model": "gpt-4o"}},
         }
         (data_dir / "config.json").write_text(
@@ -350,7 +350,7 @@ class TestResolveAnimaConfig:
     def test_defaults_when_no_anima_entry(self):
         config = AnimaWorksConfig()
         resolved, cred = resolve_anima_config(config, "unknown")
-        assert resolved.model == "claude-sonnet-4-20250514"
+        assert resolved.model == "claude-sonnet-4-6"
         assert resolved.credential == "anthropic"
         assert cred.api_key == ""
 
@@ -406,7 +406,7 @@ class TestPatternSpecificity:
         assert long_prefix < short_prefix
 
     def test_exact_matches_equal_tier(self):
-        a = _pattern_specificity("claude-sonnet-4-20250514")
+        a = _pattern_specificity("claude-sonnet-4-6")
         b = _pattern_specificity("openai/gpt-4o")
         # Both are exact — tier 0
         assert a[0] == 0
@@ -423,7 +423,7 @@ class TestMatchPatternTable:
 
     def test_prefix_wildcard(self):
         table = {"claude-*": "A1"}
-        assert _match_pattern_table("claude-sonnet-4-20250514", table) == "A1"
+        assert _match_pattern_table("claude-sonnet-4-6", table) == "A1"
 
     def test_suffix_wildcard(self):
         table = {"ollama/llama4:*": "A2"}
@@ -446,7 +446,7 @@ class TestMatchPatternTable:
         assert _match_pattern_table("ollama/some-other", table) == "B"
 
     def test_empty_table_returns_none(self):
-        assert _match_pattern_table("claude-sonnet-4-20250514", {}) is None
+        assert _match_pattern_table("claude-sonnet-4-6", {}) is None
 
     def test_case_normalization(self):
         table = {"claude-*": "a1"}
@@ -493,7 +493,7 @@ class TestResolveExecutionModeWildcard:
 
     def test_claude_wildcard_s(self):
         config = AnimaWorksConfig()
-        assert resolve_execution_mode(config, "claude-sonnet-4-20250514") == "S"
+        assert resolve_execution_mode(config, "claude-sonnet-4-6") == "S"
         assert resolve_execution_mode(config, "claude-opus-4-20250514") == "S"
         # Future Claude model also matches
         assert resolve_execution_mode(config, "claude-haiku-5-20260101") == "S"
@@ -534,7 +534,7 @@ class TestResolveExecutionModeWildcard:
 
     def test_empty_config_falls_through_to_code(self):
         config = AnimaWorksConfig(model_modes={})
-        assert resolve_execution_mode(config, "claude-sonnet-4-20250514") == "S"
+        assert resolve_execution_mode(config, "claude-sonnet-4-6") == "S"
         assert resolve_execution_mode(config, "openai/gpt-4.1") == "A"
         assert resolve_execution_mode(config, "ollama/qwen3:8b") == "B"
 
@@ -558,7 +558,7 @@ class TestLoadModelConfig:
         mc = load_model_config(anima_dir)
         assert isinstance(mc, ModelConfig)
         # Should use default model from anima_defaults
-        assert mc.model == "claude-sonnet-4-20250514"
+        assert mc.model == "claude-sonnet-4-6"
 
     def test_inherits_defaults(self, data_dir):
         anima_dir = data_dir / "animas" / "unknown"
@@ -578,7 +578,7 @@ class TestLoadModelConfig:
         config_data = {
             "version": 1,
             "credentials": {"anthropic": {"api_key": "sk-test"}},
-            "anima_defaults": {"model": "claude-sonnet-4-20250514", "credential": "anthropic"},
+            "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
             "animas": {"alice": {"model": "openai/gpt-4o", "max_tokens": 8192}},
         }
         (data_dir / "config.json").write_text(
@@ -604,7 +604,7 @@ class TestLoadModelConfig:
                 "anthropic": {"api_key": ""},
                 "openai": {"api_key": "sk-openai", "base_url": "https://api.openai.com"},
             },
-            "anima_defaults": {"model": "claude-sonnet-4-20250514", "credential": "anthropic"},
+            "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
             "animas": {"bob": {"credential": "openai"}},
         }
         (data_dir / "config.json").write_text(

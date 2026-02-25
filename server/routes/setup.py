@@ -23,19 +23,19 @@ AVAILABLE_PROVIDERS = [
     {
         "id": "anthropic",
         "name": "Anthropic",
-        "models": ["claude-sonnet-4-20250514", "claude-haiku-3.5-20241022"],
+        "models": ["claude-opus-4-6", "claude-sonnet-4-6"],
         "env_key": "ANTHROPIC_API_KEY",
     },
     {
         "id": "openai",
         "name": "OpenAI",
-        "models": ["openai/gpt-4o", "openai/gpt-4o-mini"],
+        "models": ["openai/gpt-4.1", "openai/gpt-4.1-mini"],
         "env_key": "OPENAI_API_KEY",
     },
     {
         "id": "google",
         "name": "Google",
-        "models": ["google/gemini-2.0-flash", "google/gemini-2.5-pro"],
+        "models": ["google/gemini-2.5-flash", "google/gemini-2.5-pro"],
         "env_key": "GOOGLE_API_KEY",
     },
     {
@@ -336,7 +336,7 @@ async def _validate_anthropic_key(api_key: str) -> dict[str, Any]:
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-haiku-3.5-20241022",
+                    "model": "claude-sonnet-4-6",
                     "max_tokens": 1,
                     "messages": [{"role": "user", "content": "hi"}],
                 },

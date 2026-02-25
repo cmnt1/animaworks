@@ -55,7 +55,7 @@ def data_dir(tmp_path, monkeypatch):
         "system": {"mode": "server", "log_level": "DEBUG"},
         "credentials": {"anthropic": {"api_key": "", "base_url": None}},
         "anima_defaults": {
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "max_tokens": 1024,
             "max_turns": 5,
             "credential": "anthropic",
@@ -64,7 +64,7 @@ def data_dir(tmp_path, monkeypatch):
             "conversation_history_threshold": 0.30,
         },
         "animas": {
-            "test-anima": {"model": "claude-sonnet-4-20250514"},
+            "test-anima": {"model": "claude-sonnet-4-6"},
         },
     }
     (d / "config.json").write_text(

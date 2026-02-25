@@ -33,7 +33,7 @@ def anima_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def model_config() -> ModelConfig:
     return ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         conversation_history_threshold=0.30,
     )
 

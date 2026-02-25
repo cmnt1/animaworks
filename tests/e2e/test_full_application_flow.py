@@ -98,7 +98,7 @@ AI Assistant for software development team.
     (anima_dir / "model_config.json").write_text(
         json.dumps({
             "provider": "anthropic",
-            "model_name": "claude-sonnet-4-20250514",
+            "model_name": "claude-sonnet-4-6",
             "mode": "A1",
             "max_tokens": 4096,
         }),
@@ -529,7 +529,7 @@ async def test_system_cron_integration(tmp_path: Path, mock_llm, mock_websocket)
     (anima_dir / "model_config.json").write_text(
         json.dumps({
             "provider": "anthropic",
-            "model_name": "claude-sonnet-4-20250514",
+            "model_name": "claude-sonnet-4-6",
             "mode": "A1",
         }),
         encoding="utf-8",

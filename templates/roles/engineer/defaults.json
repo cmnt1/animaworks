@@ -1,5 +1,5 @@
 {
-  "model": "claude-opus-4-20250514",
+  "model": "claude-opus-4-6",
   "context_threshold": 0.80,
   "max_turns": 200,
   "max_chains": 10,

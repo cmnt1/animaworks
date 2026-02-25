@@ -34,7 +34,7 @@ def conv_mem(tmp_path):
     (anima_dir / "state").mkdir()
     (anima_dir / "transcripts").mkdir()
 
-    model_config = ModelConfig(model="claude-sonnet-4-20250514")
+    model_config = ModelConfig(model="claude-sonnet-4-6")
     return ConversationMemory(anima_dir, model_config)
 
 

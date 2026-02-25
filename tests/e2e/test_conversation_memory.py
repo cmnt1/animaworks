@@ -65,12 +65,12 @@ class TestConversationMemory:
         """Conversation compression fires when threshold is exceeded."""
         anima_dir = make_anima(
             name="conv-compress",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             conversation_history_threshold=0.001,  # Very low threshold
         )
 
         model_config = ModelConfig(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             conversation_history_threshold=0.001,
         )
         conv_mem = ConversationMemory(anima_dir, model_config)

@@ -53,7 +53,7 @@ class FakeToolResultBlock:
 class TestHandleToolUseBlock:
     """Test _handle_tool_use_block() record creation and registration."""
 
-    MODEL = "claude-sonnet-4-20250514"
+    MODEL = "claude-sonnet-4-6"
 
     def test_creates_record_with_correct_fields(self):
         """Record should have correct tool_name, tool_id, and input_summary."""
@@ -107,7 +107,7 @@ class TestHandleToolUseBlock:
 class TestHandleToolResultBlock:
     """Test _handle_tool_result_block() result matching and error tracking."""
 
-    MODEL = "claude-sonnet-4-20250514"
+    MODEL = "claude-sonnet-4-6"
 
     def _make_pending(
         self, tool_name: str = "web_search", tool_id: str = "toolu_1",

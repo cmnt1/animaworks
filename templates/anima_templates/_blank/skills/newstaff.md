@@ -39,8 +39,8 @@ description: >-
 
 | レベル | 実行モード | 使用モデル例 | 特徴 | credential |
 |--------|-----------|-------------|------|------------|
-| A1 | autonomous | `claude-opus-4-20250514`, `claude-sonnet-4-20250514` | Claude Agent SDK。最も高機能 | anthropic |
-| A2 | autonomous | `openai/gpt-4o`, `google/gemini-2.5-pro` | LiteLLM経由。ツール使用可 | openai / google |
+| S | autonomous | `claude-opus-4-6`, `claude-sonnet-4-6` | Claude Agent SDK。最も高機能 | anthropic |
+| A | autonomous | `openai/gpt-4.1`, `google/gemini-2.5-pro`, `vertex_ai/gemini-2.5-flash` | LiteLLM経由。ツール使用可 | openai / google / azure / vertex |
 | B | assisted | `ollama/gemma3:27b`, `ollama/qwen2.5-coder:32b` | ツールなし。ローカル実行・低コスト | ollama |
 
 ※ 指定がなければデフォルト（claude-sonnet-4 / autonomous / anthropic）を使用。

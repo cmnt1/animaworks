@@ -35,7 +35,7 @@ from tests.helpers.mocks import (
 @pytest.fixture
 def model_config() -> ModelConfig:
     return ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         api_key="sk-test",
         max_turns=5,
         context_threshold=0.50,
@@ -63,17 +63,17 @@ class TestAgentSDKExecutor:
             )
 
     def test_resolve_agent_sdk_model_strips_prefix(self, model_config, anima_dir):
-        model_config.model = "anthropic/claude-sonnet-4-20250514"
+        model_config.model = "anthropic/claude-sonnet-4-6"
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-            assert executor._resolve_agent_sdk_model() == "claude-sonnet-4-20250514"
+            assert executor._resolve_agent_sdk_model() == "claude-sonnet-4-6"
 
     def test_resolve_agent_sdk_model_no_prefix(self, model_config, anima_dir):
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-            assert executor._resolve_agent_sdk_model() == "claude-sonnet-4-20250514"
+            assert executor._resolve_agent_sdk_model() == "claude-sonnet-4-6"
 
     def test_build_env(self, model_config, anima_dir):
         model_config.api_base_url = "https://custom.api"
@@ -133,7 +133,7 @@ class TestAgentSDKExecutor:
 
     async def test_execute_with_tracker(self, model_config, anima_dir):
         from core.prompt.context import ContextTracker
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.50)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.50)
 
         with patch_agent_sdk(
             response_text="tracked response",
@@ -151,7 +151,7 @@ class TestAgentSDKExecutor:
 class TestAgentSDKExecutorStreaming:
     async def test_streaming_yields_text_deltas(self, model_config, anima_dir):
         from core.prompt.context import ContextTracker
-        tracker = ContextTracker(model="claude-sonnet-4-20250514")
+        tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(text_deltas=["Hello ", "World"]):
             from core.execution.agent_sdk import AgentSDKExecutor
@@ -174,7 +174,7 @@ class TestAgentSDKExecutorStreaming:
 
     async def test_streaming_done_has_result_message(self, model_config, anima_dir):
         from core.prompt.context import ContextTracker
-        tracker = ContextTracker(model="claude-sonnet-4-20250514")
+        tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(
             text_deltas=["test"],
@@ -261,7 +261,7 @@ class TestAgentSDKExecutorStreaming:
                         sys.modules[key] = saved
 
         from core.prompt.context import ContextTracker
-        tracker = ContextTracker(model="claude-sonnet-4-20250514")
+        tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with _patch_with_historical_messages():
             from core.execution.agent_sdk import AgentSDKExecutor
@@ -298,7 +298,7 @@ class TestAgentSDKExecutorStreaming:
             return original_build(self_inner, *args, **kwargs)
 
         from core.prompt.context import ContextTracker
-        tracker = ContextTracker(model="claude-sonnet-4-20250514")
+        tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(text_deltas=["hi"]):
             from core.execution.agent_sdk import AgentSDKExecutor

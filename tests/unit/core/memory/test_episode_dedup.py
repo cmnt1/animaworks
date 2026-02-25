@@ -56,8 +56,8 @@ def anima_dir(data_dir):
 def model_config():
     """Basic model config for ConversationMemory."""
     return ModelConfig(
-        model="claude-sonnet-4-20250514",
-        fallback_model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
+        fallback_model="claude-sonnet-4-6",
         max_turns=5,
     )
 

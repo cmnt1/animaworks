@@ -543,7 +543,7 @@ SUPERVISOR_TOOLS: list[dict[str, Any]] = [
             "  [Mode S / Claude]\n"
             "  claude-opus-4-6            最高性能・推奨\n"
             "  claude-sonnet-4-6          バランス型・推奨\n"
-            "  claude-haiku-4-5-20251001  軽量・高速\n"
+            "  claude-haiku-4-5-20251001  軽量・高速（レガシー）\n"
             "  [Mode A / OpenAI]\n"
             "  openai/gpt-4.1             最新・コーディング強\n"
             "  openai/gpt-4.1-mini        高速・低コスト\n"

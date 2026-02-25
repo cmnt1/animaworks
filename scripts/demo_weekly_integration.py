@@ -240,7 +240,7 @@ async def main():
 
     try:
         result = await engine.weekly_integrate(
-            model="anthropic/claude-sonnet-4-20250514",
+            model="anthropic/claude-sonnet-4-6",
             duplicate_threshold=0.85,
             episode_retention_days=30,
         )

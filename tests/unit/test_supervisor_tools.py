@@ -45,7 +45,7 @@ def _setup_subordinate(
     status = {
         "enabled": enabled,
         "supervisor": supervisor,
-        "model": "claude-sonnet-4-20250514",
+        "model": "claude-sonnet-4-6",
         "role": "general",
     }
     (anima_dir / "status.json").write_text(
@@ -89,7 +89,7 @@ class TestDisableSubordinate:
         assert status["enabled"] is False
         # Other fields preserved
         assert status["supervisor"] == "sakura"
-        assert status["model"] == "claude-sonnet-4-20250514"
+        assert status["model"] == "claude-sonnet-4-6"
         assert status["role"] == "general"
 
     def test_disable_non_subordinate_rejected(self, tmp_path):
@@ -170,7 +170,7 @@ class TestEnableSubordinate:
         assert status["enabled"] is True
         # Other fields preserved
         assert status["supervisor"] == "sakura"
-        assert status["model"] == "claude-sonnet-4-20250514"
+        assert status["model"] == "claude-sonnet-4-6"
 
     def test_enable_already_enabled(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")

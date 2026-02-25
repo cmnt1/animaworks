@@ -28,8 +28,8 @@ import pytest
 # ── Expected config defaults ─────────────────────────────────────
 
 
-EXPECTED_CONSOLIDATION_MODEL = "anthropic/claude-sonnet-4-20250514"
-EXPECTED_ANIMA_DEFAULT_MODEL = "claude-sonnet-4-20250514"
+EXPECTED_CONSOLIDATION_MODEL = "anthropic/claude-sonnet-4-6"
+EXPECTED_ANIMA_DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
 # ── Fixtures ─────────────────────────────────────────────────────

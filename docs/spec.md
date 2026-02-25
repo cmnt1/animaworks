@@ -179,7 +179,7 @@ All settings are consolidated in `~/.animaworks/config.json`. Validated with the
 
 |Field                                |Type            |Default                     |Description                      |
 |-------------------------------------|----------------|----------------------------|---------------------------------|
-|`model`                              |`str`           |`claude-sonnet-4-20250514`  |Model name to use (bare name, no provider prefix)|
+|`model`                              |`str`           |`claude-sonnet-4-6`         |Model name to use (bare name, no provider prefix)|
 |`fallback_model`                     |`str \| null`   |`null`                      |Fallback model                   |
 |`max_tokens`                         |`int`           |`4096`                      |Maximum tokens per response      |
 |`max_turns`                          |`int`           |`20`                        |Maximum turns per cycle          |
@@ -202,7 +202,7 @@ All settings are consolidated in `~/.animaworks/config.json`. Validated with the
     "ollama": { "api_key": "dummy", "base_url": "http://localhost:11434/v1" }
   },
   "anima_defaults": {
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-sonnet-4-6",
     "max_tokens": 4096,
     "max_turns": 20,
     "credential": "anthropic",

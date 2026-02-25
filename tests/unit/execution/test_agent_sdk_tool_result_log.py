@@ -93,7 +93,7 @@ class TestHandleToolResultBlockWithAnimaDir:
 
         block = self._make_block(content="grep results here")
         _handle_tool_result_block(
-            block, pending, None, "claude-sonnet-4-20250514",
+            block, pending, None, "claude-sonnet-4-6",
             anima_dir=tmp_path,
         )
 
@@ -121,7 +121,7 @@ class TestHandleToolResultBlockWithAnimaDir:
 
         block = self._make_block(tool_use_id="tu_test2")
         _handle_tool_result_block(
-            block, pending, None, "claude-sonnet-4-20250514",
+            block, pending, None, "claude-sonnet-4-6",
             # anima_dir not passed (default None)
         )
 

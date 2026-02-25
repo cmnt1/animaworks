@@ -36,7 +36,7 @@ FULL_CHARACTER_SHEET = """\
 | 上司 | sakura |
 | 役割 | worker |
 | 実行モード | autonomous |
-| モデル | claude-sonnet-4-20250514 |
+| モデル | claude-sonnet-4-6 |
 | credential | anthropic |
 
 ## 人格
@@ -61,7 +61,7 @@ MINIMAL_CHARACTER_SHEET = """\
 | 上司 | (なし) |
 | 役割 | worker |
 | 実行モード | autonomous |
-| モデル | claude-sonnet-4-20250514 |
+| モデル | claude-sonnet-4-6 |
 | credential | anthropic |
 
 ## 人格
@@ -125,7 +125,7 @@ class TestCreateFromMdFullFlow:
         assert status["supervisor"] == "sakura"
         assert status["role"] == "general"
         assert status["execution_mode"] == "autonomous"
-        assert status["model"] == "claude-sonnet-4-20250514"
+        assert status["model"] == "claude-sonnet-4-6"
         assert status["credential"] == "anthropic"
 
     def test_identity_md_populated_from_personality_section(

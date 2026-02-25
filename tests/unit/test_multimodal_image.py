@@ -184,7 +184,7 @@ class TestConversationMemoryAttachments:
         transcripts_dir = anima_dir / "transcripts"
         transcripts_dir.mkdir(parents=True)
 
-        config = ModelConfig(model="claude-sonnet-4-20250514")
+        config = ModelConfig(model="claude-sonnet-4-6")
         conv = ConversationMemory(anima_dir, config)
 
         conv.append_turn("human", "look at this", attachments=["attachments/img.png"])
@@ -205,7 +205,7 @@ class TestConversationMemoryAttachments:
         (anima_dir / "state").mkdir(parents=True)
         (anima_dir / "transcripts").mkdir(parents=True)
 
-        config = ModelConfig(model="claude-sonnet-4-20250514")
+        config = ModelConfig(model="claude-sonnet-4-6")
         conv = ConversationMemory(anima_dir, config)
 
         conv.append_turn("human", "hello")
@@ -230,7 +230,7 @@ class TestConversationMemoryAttachments:
         transcripts_dir = anima_dir / "transcripts"
         transcripts_dir.mkdir(parents=True)
 
-        config = ModelConfig(model="claude-sonnet-4-20250514")
+        config = ModelConfig(model="claude-sonnet-4-6")
         conv = ConversationMemory(anima_dir, config)
 
         conv.append_turn(
@@ -262,7 +262,7 @@ class TestConversationMemoryAttachments:
         transcripts_dir = anima_dir / "transcripts"
         transcripts_dir.mkdir(parents=True)
 
-        config = ModelConfig(model="claude-sonnet-4-20250514")
+        config = ModelConfig(model="claude-sonnet-4-6")
         conv = ConversationMemory(anima_dir, config)
 
         conv.append_turn("human", "hello")

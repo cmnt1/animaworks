@@ -28,12 +28,21 @@ CHARS_PER_TOKEN = 4
 # Context window sizes per model family (input tokens).
 # Keys are matched as prefixes against the model name (after stripping provider/).
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
-    # Anthropic
+    # Anthropic (current generation)
+    "claude-opus-4-6": 1_000_000,
+    "claude-sonnet-4-6": 1_000_000,
+    # Anthropic (previous generation)
+    "claude-opus-4-5": 200_000,
+    "claude-sonnet-4-5": 200_000,
     "claude-sonnet-4": 200_000,
     "claude-sonnet-3.5": 200_000,
     "claude-opus-4": 200_000,
     "claude-haiku-3.5": 200_000,
+    "claude-haiku-4": 200_000,
     # OpenAI
+    "gpt-4.1": 1_000_000,
+    "gpt-4.1-mini": 1_000_000,
+    "gpt-4.1-nano": 1_000_000,
     "gpt-4o": 128_000,
     "gpt-4o-mini": 128_000,
     "gpt-4-turbo": 128_000,

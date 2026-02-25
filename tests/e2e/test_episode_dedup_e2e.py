@@ -86,8 +86,8 @@ class TestDifferentialFinalizationE2E:
 
         anima_dir = create_anima_dir(data_dir, "e2e-dedup")
         model_config = ModelConfig(
-            model="claude-sonnet-4-20250514",
-            fallback_model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
+            fallback_model="claude-sonnet-4-6",
         )
         conv = ConversationMemory(anima_dir, model_config)
 
@@ -159,8 +159,8 @@ class TestDifferentialFinalizationE2E:
 
         anima_dir = create_anima_dir(data_dir, "e2e-nodup")
         model_config = ModelConfig(
-            model="claude-sonnet-4-20250514",
-            fallback_model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
+            fallback_model="claude-sonnet-4-6",
         )
         conv = ConversationMemory(anima_dir, model_config)
 

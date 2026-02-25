@@ -138,7 +138,7 @@ class TestStreamRetryFullFlow:
         with patch_agent_sdk_streaming():
             agent = make_agent_core(
                 name="retry-e2e",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
             )
             agent._sdk_available = True
 
@@ -217,7 +217,7 @@ class TestStreamRetryMaxExceeded:
         with patch_agent_sdk_streaming():
             agent = make_agent_core(
                 name="retry-max",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
             )
             agent._sdk_available = True
 
@@ -287,7 +287,7 @@ class TestCheckpointClearedOnSuccess:
         with patch_agent_sdk_streaming():
             agent = make_agent_core(
                 name="retry-clean",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
             )
             agent._sdk_available = True
 
@@ -379,7 +379,7 @@ class TestCheckpointClearedOnSuccess:
         with patch_agent_sdk_streaming():
             agent = make_agent_core(
                 name="retry-tool",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
             )
             agent._sdk_available = True
 

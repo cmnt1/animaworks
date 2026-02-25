@@ -467,7 +467,7 @@ class TestReadModelConfigFromMd:
         mm = MemoryManager(anima_dir)
         mc = mm._read_model_config_from_md()
         assert isinstance(mc, ModelConfig)
-        assert mc.model == "claude-sonnet-4-20250514"
+        assert mc.model == "claude-sonnet-4-6"
 
     def test_parses_fields(self, anima_dir, data_dir):
         (anima_dir / "config.md").write_text(

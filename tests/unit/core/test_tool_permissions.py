@@ -43,7 +43,7 @@ _ALL_TOOLS_SORTED = sorted(_FAKE_TOOL_MODULES.keys())
 
 def _build_agent(tmp_path: Path, permissions_text: str) -> "AgentCore":
     """Construct AgentCore with a mocked MemoryManager returning *permissions_text*."""
-    mc = ModelConfig(model="claude-sonnet-4-20250514", api_key="test-key")
+    mc = ModelConfig(model="claude-sonnet-4-6", api_key="test-key")
     memory = MagicMock()
     memory.read_permissions.return_value = permissions_text
     memory.anima_dir = tmp_path
@@ -159,7 +159,7 @@ class TestToolPermissionsDefaultAll:
 
     def test_memory_none_returns_all(self, tmp_path: Path) -> None:
         """When memory is None, permissions is empty -> returns all tools."""
-        mc = ModelConfig(model="claude-sonnet-4-20250514", api_key="test-key")
+        mc = ModelConfig(model="claude-sonnet-4-6", api_key="test-key")
 
         with (
             patch("core.agent.ToolHandler"),

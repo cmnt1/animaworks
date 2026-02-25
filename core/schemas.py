@@ -64,7 +64,7 @@ class CronTask(BaseModel):
 class ModelConfig(BaseModel):
     """Per-anima API key, model, and endpoint configuration."""
 
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "claude-sonnet-4-6"
     fallback_model: str | None = None
     max_tokens: int = 4096
     max_turns: int = 20

@@ -4,6 +4,7 @@
   "openai/*": "A2",
   "azure/*": "A2",
   "google/*": "A2",
+  "vertex_ai/*": "A2",
   "mistral/*": "A2",
   "xai/*": "A2",
   "cohere/*": "A2",

@@ -27,7 +27,7 @@ from core.tooling.handler import ToolHandler
 @pytest.fixture
 def model_config() -> ModelConfig:
     return ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         api_key="sk-test",
         max_tokens=1024,
         max_turns=5,
@@ -247,7 +247,7 @@ class TestExecuteWithTools:
 
 class TestExecuteContextTracking:
     async def test_tracks_usage(self, executor: AnthropicFallbackExecutor):
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.50)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.50)
         resp = _make_response(
             [_make_text_block("Response")],
             input_tokens=10_000,
@@ -267,7 +267,7 @@ class TestExecuteContextTracking:
     async def test_session_chaining(
         self, executor: AnthropicFallbackExecutor, anima_dir: Path,
     ):
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.50)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.50)
         shortterm = ShortTermMemory(anima_dir)
 
         # First response crosses threshold
@@ -304,7 +304,7 @@ class TestExecuteContextTracking:
         self, executor: AnthropicFallbackExecutor, anima_dir: Path,
     ):
         executor._model_config.max_chains = 0  # No chaining allowed
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.50)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.50)
         shortterm = ShortTermMemory(anima_dir)
 
         # Response crosses threshold but chaining is not allowed
@@ -367,7 +367,7 @@ class TestAnthropicFallbackTimeout:
 
     async def test_streaming_passes_timeout(self, executor: AnthropicFallbackExecutor):
         """client.messages.stream() must receive a 'timeout' kwarg."""
-        tracker = ContextTracker(model="claude-sonnet-4-20250514", threshold=0.50)
+        tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.50)
 
         # Build a mock stream context manager
         mock_final_message = _make_response(

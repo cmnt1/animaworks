@@ -70,7 +70,7 @@ class TestAgentSDKEnvE2E:
 
         from core.schemas import ModelConfig
         config = ModelConfig(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             api_key="sk-test",
         )
 
@@ -90,7 +90,7 @@ class TestAgentSDKEnvE2E:
 
         from core.schemas import ModelConfig
         config = ModelConfig(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             api_key="sk-test-key",
             api_base_url="https://custom.api",
         )

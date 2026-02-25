@@ -20,7 +20,7 @@ class TestBuildEnvPathAndProjectDir:
     """Verify _build_env() exposes anima_dir in PATH and sets PROJECT_DIR."""
 
     def _make_executor(self, anima_dir: Path) -> AgentSDKExecutor:
-        mc = ModelConfig(model="claude-sonnet-4-20250514")
+        mc = ModelConfig(model="claude-sonnet-4-6")
         return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir)
 
     def test_anima_dir_in_path(self, tmp_path: Path) -> None:
@@ -92,7 +92,7 @@ class TestBuildMcpEnv:
     """Verify _build_mcp_env() provides correct env for MCP server subprocess."""
 
     def _make_executor(self, anima_dir: Path) -> AgentSDKExecutor:
-        mc = ModelConfig(model="claude-sonnet-4-20250514")
+        mc = ModelConfig(model="claude-sonnet-4-6")
         return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir)
 
     def test_anima_dir_set(self, tmp_path: Path) -> None:

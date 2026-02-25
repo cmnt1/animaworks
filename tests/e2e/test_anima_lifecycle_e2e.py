@@ -32,7 +32,7 @@ def anima_env(tmp_path: Path):
         "setup_complete": True,
         "animas": {},
         "anima_defaults": {
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "max_tokens": 4096,
             "max_turns": 20,
             "credential": "anthropic",

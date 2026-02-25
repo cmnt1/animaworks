@@ -566,7 +566,7 @@ class TestIsOllamaModelDetection:
     def test_anthropic_prefix_is_not_ollama(self, tmp_path: Path) -> None:
         from core.execution.litellm_loop import LiteLLMExecutor
 
-        config = ModelConfig(model="anthropic/claude-sonnet-4-20250514")
+        config = ModelConfig(model="anthropic/claude-sonnet-4-6")
         th = MagicMock()
         th._human_notifier = None
         anima_dir = tmp_path / "test"
@@ -991,7 +991,7 @@ def anthropic_fallback_executor(tmp_path: Path):
     from core.execution.anthropic_fallback import AnthropicFallbackExecutor
 
     config = ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         api_key="sk-test-anthropic",
         max_tokens=4096,
         max_turns=5,

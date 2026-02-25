@@ -37,7 +37,7 @@ SUPERVISOR_TEST_SHEET = """\
 | 上司 | sakura |
 | 役割 | worker |
 | 実行モード | autonomous |
-| モデル | claude-sonnet-4-20250514 |
+| モデル | claude-sonnet-4-6 |
 | credential | anthropic |
 
 ## 人格
@@ -62,7 +62,7 @@ SUPERVISOR_TEST_SHEET_BOSS = """\
 | 上司 | sakura |
 | 役割 | worker |
 | 実行モード | autonomous |
-| モデル | claude-sonnet-4-20250514 |
+| モデル | claude-sonnet-4-6 |
 | credential | anthropic |
 
 ## 人格
@@ -87,7 +87,7 @@ NO_SUPERVISOR_SHEET = """\
 | 上司 | (なし) |
 | 役割 | worker |
 | 実行モード | autonomous |
-| モデル | claude-sonnet-4-20250514 |
+| モデル | claude-sonnet-4-6 |
 | credential | anthropic |
 
 ## 人格
@@ -260,7 +260,7 @@ class TestReconciliationStatusGuardE2E:
             "supervisor": "",
             "role": "worker",
             "execution_mode": "autonomous",
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "credential": "anthropic",
         }
         (complete_dir / "status.json").write_text(

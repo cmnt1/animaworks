@@ -84,13 +84,13 @@ class TestSetSubordinateModelE2E:
         # Create worker anima directory
         worker_dir = animas_dir / "worker"
         worker_dir.mkdir(parents=True, exist_ok=True)
-        _write_status(worker_dir, enabled=True, supervisor="supervisor", model="claude-sonnet-4-20250514")
+        _write_status(worker_dir, enabled=True, supervisor="supervisor", model="claude-sonnet-4-6")
 
         # Register both animas in config.json via load/save
         config = load_config()
         config.animas["supervisor"] = AnimaModelConfig()
         config.animas["worker"] = AnimaModelConfig(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             supervisor="supervisor",
         )
         save_config(config)
@@ -131,13 +131,13 @@ class TestRestartSubordinateE2E:
         # Create worker anima directory with existing status.json (enabled: true)
         worker_dir = animas_dir / "worker"
         worker_dir.mkdir(parents=True, exist_ok=True)
-        _write_status(worker_dir, enabled=True, supervisor="supervisor", model="claude-sonnet-4-20250514")
+        _write_status(worker_dir, enabled=True, supervisor="supervisor", model="claude-sonnet-4-6")
 
         # Register in config.json
         config = load_config()
         config.animas["supervisor"] = AnimaModelConfig()
         config.animas["worker"] = AnimaModelConfig(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             supervisor="supervisor",
         )
         save_config(config)
@@ -179,12 +179,12 @@ class TestSetModelAndRestartSequenceE2E:
 
         worker_dir = animas_dir / "worker"
         worker_dir.mkdir(parents=True, exist_ok=True)
-        _write_status(worker_dir, enabled=True, supervisor="supervisor", model="claude-sonnet-4-20250514")
+        _write_status(worker_dir, enabled=True, supervisor="supervisor", model="claude-sonnet-4-6")
 
         config = load_config()
         config.animas["supervisor"] = AnimaModelConfig()
         config.animas["worker"] = AnimaModelConfig(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             supervisor="supervisor",
         )
         save_config(config)
@@ -246,7 +246,7 @@ class TestReconciliationRestartRequestedE2E:
             worker_dir,
             enabled=True,
             supervisor="supervisor",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             restart_requested=True,
         )
 

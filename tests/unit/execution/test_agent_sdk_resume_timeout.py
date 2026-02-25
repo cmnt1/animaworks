@@ -33,7 +33,7 @@ from core.schemas import ModelConfig
 @pytest.fixture
 def model_config() -> ModelConfig:
     return ModelConfig(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         api_key="sk-test",
         max_turns=5,
         context_threshold=0.50,
@@ -232,7 +232,7 @@ class TestResumeTimeoutGuard:
             from core.prompt.context import ContextTracker
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-            tracker = ContextTracker(model="claude-sonnet-4-20250514")
+            tracker = ContextTracker(model="claude-sonnet-4-6")
 
             with patch("asyncio.wait_for", side_effect=_spy_wait_for):
                 events = []
@@ -281,7 +281,7 @@ class TestResumeTimeoutGuard:
             from core.prompt.context import ContextTracker
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-            tracker = ContextTracker(model="claude-sonnet-4-20250514")
+            tracker = ContextTracker(model="claude-sonnet-4-6")
 
             with patch("asyncio.wait_for", side_effect=_spy_wait_for):
                 events = []
@@ -347,7 +347,7 @@ class TestResumeTimeoutGuard:
             original_clear = _clear_session_id
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-            tracker = ContextTracker(model="claude-sonnet-4-20250514")
+            tracker = ContextTracker(model="claude-sonnet-4-6")
 
             with (
                 patch("asyncio.wait_for", side_effect=_timeout_on_first_then_succeed),

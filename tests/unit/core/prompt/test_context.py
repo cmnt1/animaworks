@@ -109,7 +109,7 @@ class TestResolveContextWindowOverrides:
 class TestContextTrackerInit:
     def test_defaults(self):
         ct = ContextTracker()
-        assert ct.model == "claude-sonnet-4-20250514"
+        assert ct.model == "claude-sonnet-4-6"
         assert ct.threshold == 0.50
         assert ct.context_window_overrides == {}
 
