@@ -1,6 +1,6 @@
 """Unit tests for core/config/models.py — Model Config SSoT helpers.
 
-Tests update_injection_model and update_status_model.
+Tests update_status_model.
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -13,63 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from core.config.models import update_injection_model, update_status_model
-
-
-# ── update_injection_model ─────────────────────────────────
-
-
-class TestUpdateInjectionModel:
-    def test_updates_model_line(self, tmp_path: Path) -> None:
-        """Create injection.md with model line, call update_injection_model, verify change."""
-        anima_dir = tmp_path / "alice"
-        anima_dir.mkdir()
-        injection_path = anima_dir / "injection.md"
-        injection_path.write_text(
-            "- **モデル**: Old Model\n- **役割**: engineer\n",
-            encoding="utf-8",
-        )
-        result = update_injection_model(anima_dir, "New Model")
-        assert result is True
-        content = injection_path.read_text(encoding="utf-8")
-        assert "- **モデル**: New Model" in content
-        assert "- **役割**: engineer" in content
-
-    def test_no_matching_line_returns_false(self, tmp_path: Path) -> None:
-        """injection.md without model line → returns False, file unchanged."""
-        anima_dir = tmp_path / "alice"
-        anima_dir.mkdir()
-        original = "- **役割**: engineer\n- **上司**: bob\n"
-        injection_path = anima_dir / "injection.md"
-        injection_path.write_text(original, encoding="utf-8")
-        result = update_injection_model(anima_dir, "New Model")
-        assert result is False
-        assert injection_path.read_text(encoding="utf-8") == original
-
-    def test_no_injection_file_returns_false(self, tmp_path: Path) -> None:
-        """No injection.md → returns False."""
-        anima_dir = tmp_path / "alice"
-        anima_dir.mkdir()
-        result = update_injection_model(anima_dir, "New Model")
-        assert result is False
-
-    def test_preserves_other_content(self, tmp_path: Path) -> None:
-        """Other lines remain intact after update."""
-        anima_dir = tmp_path / "alice"
-        anima_dir.mkdir()
-        injection_path = anima_dir / "injection.md"
-        injection_path.write_text(
-            "# 役割\n\n- **モデル**: claude-sonnet\n"
-            "- **役割**: manager\n"
-            "- **上司**: bob\n",
-            encoding="utf-8",
-        )
-        result = update_injection_model(anima_dir, "openai/gpt-4o")
-        assert result is True
-        content = injection_path.read_text(encoding="utf-8")
-        assert "- **モデル**: openai/gpt-4o" in content
-        assert "- **役割**: manager" in content
-        assert "- **上司**: bob" in content
+from core.config.models import update_status_model
 
 
 # ── update_status_model ────────────────────────────────────

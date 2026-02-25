@@ -21,6 +21,8 @@ let _sidebarCollapsed = false;
 let _loadingMore = false;
 let _hasMore = false;
 let _currentOffset = 0;
+let _dmFilterAnima = "";     // "" = show all, else filter by participant name
+let _avatarCache = {};       // name -> url | null (null = no avatar)
 
 // ── DOM refs (local) ───────────────────────
 
@@ -54,7 +56,12 @@ export function render(container) {
           <div class="loading-placeholder">読み込み中...</div>
         </div>
         <div class="board-sidebar-divider"></div>
-        <div class="board-sidebar-section">DMs</div>
+        <div class="board-sidebar-section board-dm-section-header">
+          <span>DMs</span>
+          <select id="boardDmFilter" class="board-dm-filter" title="Animaで絞り込み">
+            <option value="">すべて</option>
+          </select>
+        </div>
         <div id="boardDmList">
           <div class="loading-placeholder">読み込み中...</div>
         </div>
@@ -126,6 +133,8 @@ export function destroy() {
   _loadingMore = false;
   _hasMore = false;
   _currentOffset = 0;
+  _dmFilterAnima = "";
+  _avatarCache = {};
 }
 
 // ── Event Binding ──────────────────────────
@@ -154,6 +163,13 @@ function _bindEvents() {
     }
   });
 
+  // DM filter change
+  _addListener("boardDmFilter", "change", () => {
+    const select = _$("boardDmFilter");
+    _dmFilterAnima = select ? select.value : "";
+    _renderDmList();
+  });
+
   // Mobile sidebar toggle
   _addListener("boardMobileToggle", "click", () => {
     const sidebar = _$("boardSidebar");
@@ -175,6 +191,42 @@ function _addListener(id, event, handler) {
   }
 }
 
+// ── Avatar Cache ────────────────────────────
+
+async function _resolveAvatar(name) {
+  if (name in _avatarCache) return _avatarCache[name];
+
+  const candidates = ["avatar_bustup.png", "avatar_chibi.png"];
+  for (const filename of candidates) {
+    const url = `/api/animas/${encodeURIComponent(name)}/assets/${encodeURIComponent(filename)}`;
+    try {
+      const resp = await fetch(url, { method: "HEAD" });
+      if (resp.ok) {
+        _avatarCache[name] = url;
+        return url;
+      }
+    } catch { /* try next */ }
+  }
+  _avatarCache[name] = null;
+  return null;
+}
+
+async function _preloadAvatars(names) {
+  const uncached = names.filter(n => !(n in _avatarCache));
+  if (uncached.length === 0) return;
+  await Promise.all(uncached.map(n => _resolveAvatar(n)));
+}
+
+function _avatarHtml(name, isHuman) {
+  const initial = name.charAt(0).toUpperCase();
+  const url = _avatarCache[name];
+  if (url && !isHuman) {
+    return `<div class="board-msg-avatar"><img src="${escapeHtml(url)}" alt="${escapeHtml(name)}" class="board-msg-avatar-img"></div>`;
+  }
+  const cls = isHuman ? "board-msg-avatar human" : "board-msg-avatar";
+  return `<div class="${cls}">${escapeHtml(initial)}</div>`;
+}
+
 // ── Sidebar Data Loading ───────────────────
 
 async function _loadSidebarData() {
@@ -185,6 +237,13 @@ async function _loadSidebarData() {
 
   _channels = channels || [];
   _dmPairs = dms || [];
+
+  // Preload avatars for all DM participants
+  const dmNames = new Set();
+  for (const dm of _dmPairs) {
+    for (const p of dm.participants || []) dmNames.add(p);
+  }
+  _preloadAvatars([...dmNames]);
 
   _renderChannelList();
   _renderDmList();
@@ -217,12 +276,21 @@ function _renderDmList() {
   const el = _$("boardDmList");
   if (!el) return;
 
-  if (_dmPairs.length === 0) {
-    el.innerHTML = '<div class="loading-placeholder" style="padding:8px 16px; font-size:0.82rem;">DMなし</div>';
+  // Populate filter dropdown with unique participant names
+  _populateDmFilter();
+
+  // Apply filter
+  const filtered = _dmFilterAnima
+    ? _dmPairs.filter(dm => (dm.participants || []).includes(_dmFilterAnima))
+    : _dmPairs;
+
+  if (filtered.length === 0) {
+    const msg = _dmPairs.length === 0 ? "DMなし" : "該当するDMなし";
+    el.innerHTML = `<div class="loading-placeholder" style="padding:8px 16px; font-size:0.82rem;">${msg}</div>`;
     return;
   }
 
-  el.innerHTML = _dmPairs.map(dm => {
+  el.innerHTML = filtered.map(dm => {
     const pair = dm.pair || "";
     const participants = (dm.participants || []).join(" ↔ ");
     const activeClass = _selectedType === "dm" && _selectedName === pair ? " active" : "";
@@ -235,6 +303,27 @@ function _renderDmList() {
   }).join("");
 
   _bindSidebarClicks(el);
+}
+
+function _populateDmFilter() {
+  const select = _$("boardDmFilter");
+  if (!select) return;
+
+  const names = new Set();
+  for (const dm of _dmPairs) {
+    for (const p of dm.participants || []) names.add(p);
+  }
+  const sorted = [...names].sort((a, b) => a.localeCompare(b, "ja"));
+
+  const prev = select.value;
+  const optionsHtml = ['<option value="">すべて</option>']
+    .concat(sorted.map(n => `<option value="${escapeHtml(n)}"${n === prev ? " selected" : ""}>${escapeHtml(n)}</option>`))
+    .join("");
+
+  if (select.innerHTML !== optionsHtml) {
+    select.innerHTML = optionsHtml;
+    select.value = prev || "";
+  }
 }
 
 function _bindSidebarClicks(container) {
@@ -350,6 +439,11 @@ async function _loadMessages(type, name, isPolling) {
     _messages = data.messages || [];
     _total = data.total || _messages.length;
     _hasMore = data.has_more || false;
+
+    // Preload avatars for senders, then render
+    const senders = [...new Set(_messages.map(m => m.from || "unknown"))];
+    await _preloadAvatars(senders);
+    if (type !== _selectedType || name !== _selectedName) return;
     _renderMessages();
     if (!isPolling) _scrollToBottom();
   } catch (err) {
@@ -422,16 +516,14 @@ function _renderMessages() {
 
   const msgItems = _messages.map(msg => {
     const from = msg.from || "unknown";
-    const initial = from.charAt(0).toUpperCase();
     const isHuman = msg.source === "human";
-    const avatarClass = isHuman ? "board-msg-avatar human" : "board-msg-avatar";
     const ts = msg.ts ? smartTimestamp(msg.ts) : "";
     const badge = isHuman ? '<span class="board-msg-badge">human</span>' : "";
     const text = msg.text || "";
 
     return `
       <div class="board-msg">
-        <div class="${avatarClass}">${escapeHtml(initial)}</div>
+        ${_avatarHtml(from, isHuman)}
         <div class="board-msg-body">
           <div class="board-msg-header">
             <span class="board-msg-from">${escapeHtml(from)}</span>

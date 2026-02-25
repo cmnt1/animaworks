@@ -1523,12 +1523,12 @@ class ToolHandler:
         return f"'{target_name}' を有効にしました。Reconciliation が30秒以内にプロセスを起動します。"
 
     def _handle_set_subordinate_model(self, args: dict[str, Any]) -> str:
-        """Change a subordinate anima's LLM model (updates status.json and injection.md).
+        """Change a subordinate anima's LLM model (updates status.json).
 
         Warns if the model name is not in KNOWN_MODELS but does not block.
         Process restart is required separately via restart_subordinate.
         """
-        from core.config.models import KNOWN_MODELS, update_injection_model, update_status_model
+        from core.config.models import KNOWN_MODELS, update_status_model
         from core.paths import get_data_dir
 
         target_name = args.get("name", "")
@@ -1560,7 +1560,6 @@ class ToolHandler:
 
         target_dir = get_data_dir() / "animas" / target_name
         update_status_model(target_dir, model=model)
-        update_injection_model(target_dir, model)
 
         log_summary = f"{target_name} のモデルを {model} に変更"
         if reason:

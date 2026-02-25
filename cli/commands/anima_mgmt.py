@@ -398,8 +398,8 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
 
 
 def cmd_anima_set_model(args: argparse.Namespace) -> None:
-    """Set an anima's model (updates status.json and injection.md)."""
-    from core.config.models import update_injection_model, update_status_model
+    """Set an anima's model (updates status.json)."""
+    from core.config.models import update_status_model
     from core.paths import get_data_dir
 
     try:
@@ -428,10 +428,8 @@ def cmd_anima_set_model(args: argparse.Namespace) -> None:
                     continue
                 try:
                     update_status_model(entry, model=model, credential=credential)
-                    inj_updated = update_injection_model(entry, model)
                     updated += 1
-                    inj_str = " (injection.md updated)" if inj_updated else ""
-                    print(f"  {entry.name}: model={model}{inj_str}")
+                    print(f"  {entry.name}: model={model}")
                 except Exception as e:
                     print(f"  {entry.name}: ERROR - {e}", file=sys.stderr)
             if updated == 0:
@@ -451,12 +449,7 @@ def cmd_anima_set_model(args: argparse.Namespace) -> None:
                 model=args.model,
                 credential=args.credential,
             )
-            inj_updated = update_injection_model(anima_dir, args.model)
             print(f"Model updated to '{args.model}' for '{args.anima}'")
-            if inj_updated:
-                print("  injection.md was updated")
-            else:
-                print("  injection.md: no matching line (add '- **モデル**: ...' to sync)")
 
         if pid_file.exists():
             print("  Server is running. Restart animas to apply changes (animaworks anima restart <name>).")

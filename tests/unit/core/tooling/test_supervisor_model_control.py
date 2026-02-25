@@ -85,7 +85,7 @@ class TestSetSubordinateModel:
         return d
 
     def test_set_model_success(self, tmp_path: Path):
-        """Known model name updates status.json and injection.md correctly."""
+        """Known model name updates status.json correctly."""
         handler = _make_handler(tmp_path, "manager")
 
         # Use a known model name (first entry in KNOWN_MODELS)
@@ -101,9 +101,6 @@ class TestSetSubordinateModel:
             json.dumps({"enabled": True, "supervisor": "manager"}),
             encoding="utf-8",
         )
-        # injection.md with model line for update_injection_model to update
-        injection_file = engineer_dir / "injection.md"
-        injection_file.write_text("- **モデル**: old-model\n", encoding="utf-8")
 
         with (
             patch(
@@ -122,8 +119,6 @@ class TestSetSubordinateModel:
         # status.json was updated
         updated_status = json.loads(status_file.read_text(encoding="utf-8"))
         assert updated_status["model"] == known_model
-        # injection.md was updated
-        assert known_model in injection_file.read_text(encoding="utf-8")
 
     def test_set_model_unknown_model_warns(self, tmp_path: Path, caplog):
         """Models outside KNOWN_MODELS succeed but emit a warning."""

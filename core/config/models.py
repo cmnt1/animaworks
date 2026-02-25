@@ -929,28 +929,6 @@ _NONE_SUPERVISOR_VALUES = frozenset({"なし", "(なし)", "（なし）", "-", 
 
 _PAREN_EN_NAME_RE = re.compile(r"[（(]([A-Za-z_][A-Za-z0-9_]*)[）)]")
 
-_INJECTION_MODEL_RE = re.compile(r"^(- \*\*モデル\*\*:\s*)(.+)$", re.MULTILINE)
-
-
-def update_injection_model(anima_dir: Path, model_display: str) -> bool:
-    """Update the model line in injection.md.
-
-    Replaces `- **モデル**: OLD` with `- **モデル**: NEW`.
-    Returns True if the file was updated, False if no matching line found.
-    """
-    injection_path = anima_dir / "injection.md"
-    if not injection_path.is_file():
-        return False
-    content = injection_path.read_text(encoding="utf-8")
-    safe_display = model_display.replace("\\", "\\\\").replace("&", "\\&")
-    new_content, count = _INJECTION_MODEL_RE.subn(
-        rf"\g<1>{safe_display}", content
-    )
-    if count == 0:
-        return False
-    injection_path.write_text(new_content, encoding="utf-8")
-    return True
-
 
 def update_status_model(
     anima_dir: Path,
