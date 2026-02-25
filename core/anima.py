@@ -943,16 +943,13 @@ class DigitalAnima:
         conv = ConversationMemory(self.anima_dir, self.model_config)
         return conv.build_structured_messages(prompt_text)
 
-    async def _build_heartbeat_prompt(self) -> list[str]:
-        """Build heartbeat prompt parts.
+    def _build_background_context_parts(self) -> list[str]:
+        """Build shared context parts for background-auto sessions (heartbeat/cron).
 
-        Collects: heartbeat checklist, recovery note, background task
-        notifications, heartbeat history, dialogue context, delegation check.
+        Collects: recovery note, background task notifications, heartbeat
+        history, reflections, dialogue context, subordinate check.
         """
-        hb_config = self.memory.read_heartbeat_config()
-        checklist = hb_config or load_prompt("heartbeat_default_checklist")
-        task_delegation_rules = load_prompt("task_delegation_rules")
-        parts = [load_prompt("heartbeat", checklist=checklist, task_delegation_rules=task_delegation_rules)]
+        parts: list[str] = []
 
         # ── Recovery note from previous failed heartbeat ──
         recovery_note_path = self.anima_dir / "state" / "recovery_note.md"
@@ -960,8 +957,8 @@ class DigitalAnima:
             try:
                 recovery_content = recovery_note_path.read_text(encoding="utf-8")
                 parts.append(
-                    "## ⚠️ 前回のハートビート障害情報\n\n"
-                    "前回のハートビートが中断しました。以下の情報を確認し、"
+                    "## ⚠️ 前回のバックグラウンド障害情報\n\n"
+                    "前回の自律セッションが中断しました。以下の情報を確認し、"
                     "未完了のタスクを優先的に処理してください。\n\n"
                     + recovery_content
                 )
@@ -998,7 +995,7 @@ class DigitalAnima:
                 + reflection_text
             )
 
-        # A-1: Inject recent dialogue context for cross-session continuity
+        # Inject recent dialogue context for cross-session continuity
         try:
             conv_mem = ConversationMemory(self.anima_dir, self.model_config)
             state = conv_mem.load()
@@ -1016,10 +1013,7 @@ class DigitalAnima:
                     f"{conv_summary}"
                 )
         except Exception:
-            logger.debug("[%s] Failed to load dialogue context for heartbeat", self.name, exc_info=True)
-
-        # NOTE: Task queue is injected via builder.py (system prompt)
-        # and priming Channel E. No separate heartbeat injection needed.
+            logger.debug("[%s] Failed to load dialogue context", self.name, exc_info=True)
 
         # ── Subordinate management check for animas with subordinates ──
         try:
@@ -1043,6 +1037,53 @@ class DigitalAnima:
             )
 
         return parts
+
+    async def _build_heartbeat_prompt(self) -> list[str]:
+        """Build heartbeat prompt parts.
+
+        Heartbeat-specific header + shared background context.
+        """
+        hb_config = self.memory.read_heartbeat_config()
+        checklist = hb_config or load_prompt("heartbeat_default_checklist")
+        task_delegation_rules = load_prompt("task_delegation_rules")
+        parts = [load_prompt("heartbeat", checklist=checklist, task_delegation_rules=task_delegation_rules)]
+
+        parts.extend(self._build_background_context_parts())
+
+        return parts
+
+    def _build_cron_prompt(
+        self, task_name: str, description: str, command_output: str | None = None,
+    ) -> str:
+        """Build cron task prompt with heartbeat-equivalent context.
+
+        Args:
+            task_name: Cron task name from cron.md.
+            description: Task description or instruction.
+            command_output: Optional stdout from a preceding command-type cron.
+        """
+        parts: list[str] = []
+
+        # Cron task header
+        cron_prompt = load_prompt(
+            "cron_task", task_name=task_name, description=description,
+        )
+        if cron_prompt:
+            parts.append(cron_prompt)
+
+        # Inject command output if this is a follow-up to a command cron
+        if command_output:
+            parts.append(
+                f"## コマンド実行結果\n\n"
+                f"以下はcronコマンドの実行結果です。"
+                f"この内容をもとに指示に従って対応してください。\n\n"
+                f"```\n{command_output}\n```"
+            )
+
+        # Shared background context (same as heartbeat)
+        parts.extend(self._build_background_context_parts())
+
+        return "\n\n".join(parts)
 
     async def _process_inbox_messages(
         self,
@@ -1705,8 +1746,18 @@ class DigitalAnima:
             self._notify_lock_released()
 
     async def run_cron_task(
-        self, task_name: str, description: str
+        self,
+        task_name: str,
+        description: str,
+        command_output: str | None = None,
     ) -> CycleResult:
+        """Execute a cron LLM task with heartbeat-equivalent context.
+
+        Args:
+            task_name: Cron task name from cron.md.
+            description: Task description/instruction.
+            command_output: Optional stdout from a preceding command cron.
+        """
         logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
         from core.tooling.handler import active_session_type
         try:
@@ -1715,8 +1766,8 @@ class DigitalAnima:
                 self._task_slots["background"] = task_name
                 _session_token = self.agent._tool_handler.set_active_session_type("background")
 
-                prompt = load_prompt(
-                    "cron_task", task_name=task_name, description=description
+                prompt = self._build_cron_prompt(
+                    task_name, description, command_output=command_output,
                 )
 
                 try:

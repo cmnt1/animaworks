@@ -7,6 +7,19 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-02-25
+
+### Added
+
+- Cron sessions now use heartbeat-equivalent context (full identity + memory + org); removed separate heartbeat trigger from cron
+- Chatwork outbound messaging re-enabled with `chatwork send` support
+- Subagent CLI execution skill (`common_skills/subagent-cli.md`) for delegating shell tasks to Claude Code subprocess
+
+### Fixed
+
+- Chatwork send rejects with clear error when WRITE token is not configured (previously silent failure)
+- Skill/procedure invocation instruction in `memory_guide` updated to reference `skill` tool (progressive disclosure)
+
 ## [0.4.0] - 2026-02-25
 
 ### Added
@@ -210,6 +223,7 @@ memory, and decision-making criteria.
 - Moved model mode patterns from config.json to models.json
 - Tool permissions changed from whitelist to default-allow (blacklist) model
 
-[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/xuiltul/animaworks/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/xuiltul/animaworks/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/xuiltul/animaworks/compare/v0.3.0...v0.3.1

@@ -5,9 +5,10 @@
 
 Covers:
 - 3-lock structure (_conversation_lock, _inbox_lock, _background_lock, _state_file_lock)
-- Trigger-based prompt section filtering (chat/inbox/heartbeat/task)
+- Trigger-based prompt section filtering (chat/inbox/heartbeat/cron/task)
 - New prompt template loading (inbox_message, task_exec, task_delegation_rules)
 - Heartbeat plan-focus (no inbox processing, Observe/Plan/Reflect)
+- Cron LLM sessions with heartbeat-equivalent context
 - InboxRateLimiter wiring (process_inbox_message instead of run_heartbeat)
 - PendingTaskExecutor LLM task dispatch
 - Runner IPC handler registration (process_inbox)
@@ -192,6 +193,142 @@ class TestTriggerBasedPromptFiltering:
         chat_prompt = self._build("", anima_dir)
         hb_prompt = self._build("heartbeat", anima_dir)
         assert len(hb_prompt) <= len(chat_prompt)
+
+    def test_cron_trigger_shorter_than_chat(self, data_dir, make_anima):
+        anima_dir = make_anima("filter_cron1")
+        chat_prompt = self._build("", anima_dir)
+        cron_prompt = self._build("cron:morning_plan", anima_dir)
+        assert len(cron_prompt) <= len(chat_prompt), (
+            f"cron prompt ({len(cron_prompt)}) should be <= chat ({len(chat_prompt)})"
+        )
+
+    def test_cron_trigger_similar_to_heartbeat(self, data_dir, make_anima):
+        """Cron and heartbeat should produce similar-length prompts (same context tier)."""
+        anima_dir = make_anima("filter_cron2")
+        hb_prompt = self._build("heartbeat", anima_dir)
+        cron_prompt = self._build("cron:task1", anima_dir)
+        ratio = len(cron_prompt) / max(len(hb_prompt), 1)
+        assert 0.8 < ratio < 1.2, (
+            f"cron ({len(cron_prompt)}) and heartbeat ({len(hb_prompt)}) "
+            f"should be similar length (ratio={ratio:.2f})"
+        )
+
+    def test_cron_trigger_excludes_emotion_metadata(self, data_dir, make_anima):
+        """Cron trigger should not include emotion metadata instruction."""
+        anima_dir = make_anima("filter_cron3")
+        cron_prompt = self._build("cron:test", anima_dir)
+        assert "表情メタデータ" not in cron_prompt
+
+    def test_cron_trigger_longer_than_task(self, data_dir, make_anima):
+        """Cron should have more context than task (minimal) trigger."""
+        anima_dir = make_anima("filter_cron4")
+        cron_prompt = self._build("cron:test", anima_dir)
+        task_prompt = self._build("task:test-id", anima_dir)
+        assert len(cron_prompt) > len(task_prompt), (
+            f"cron ({len(cron_prompt)}) should be longer than task ({len(task_prompt)})"
+        )
+
+
+# ── Cron LLM Session ────────────────────────────────────────
+
+
+class TestCronLLMSession:
+    """Verify cron LLM sessions have heartbeat-equivalent context."""
+
+    def test_build_cron_prompt_includes_description(self, data_dir, make_anima):
+        """_build_cron_prompt should include the task description."""
+        anima_dir = make_anima("cron_prompt1")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.anima.AgentCore"), \
+             patch("core.anima.ConversationMemory") as MockConv:
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+            dp = DigitalAnima(anima_dir, shared_dir)
+            result = dp._build_cron_prompt("morning_plan", "今日のタスクを計画する")
+            assert "morning_plan" in result
+            assert "今日のタスクを計画する" in result
+
+    def test_build_cron_prompt_includes_command_output(self, data_dir, make_anima):
+        """_build_cron_prompt should inject command output when provided."""
+        anima_dir = make_anima("cron_prompt2")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.anima.AgentCore"), \
+             patch("core.anima.ConversationMemory") as MockConv:
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+            dp = DigitalAnima(anima_dir, shared_dir)
+            result = dp._build_cron_prompt(
+                "log_check", "ログを確認して報告",
+                command_output="ERROR: disk full",
+            )
+            assert "ERROR: disk full" in result
+            assert "コマンド実行結果" in result
+
+    def test_build_cron_prompt_no_output_section_without_command(self, data_dir, make_anima):
+        """Without command_output, no command result section should appear."""
+        anima_dir = make_anima("cron_prompt3")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.anima.AgentCore"), \
+             patch("core.anima.ConversationMemory") as MockConv:
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+            dp = DigitalAnima(anima_dir, shared_dir)
+            result = dp._build_cron_prompt("weekly_review", "週次振り返り")
+            assert "コマンド実行結果" not in result
+
+    def test_build_cron_prompt_shares_background_context(self, data_dir, make_anima):
+        """_build_cron_prompt should include shared background context (e.g. recovery note)."""
+        anima_dir = make_anima("cron_prompt4")
+        shared_dir = data_dir / "shared"
+
+        recovery_path = anima_dir / "state" / "recovery_note.md"
+        recovery_path.parent.mkdir(parents=True, exist_ok=True)
+        recovery_path.write_text("前回のエラー情報", encoding="utf-8")
+
+        with patch("core.anima.AgentCore"), \
+             patch("core.anima.ConversationMemory") as MockConv:
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+            dp = DigitalAnima(anima_dir, shared_dir)
+            result = dp._build_cron_prompt("task", "説明")
+            assert "前回のエラー情報" in result
+            assert not recovery_path.exists()
+
+    async def test_run_cron_task_with_command_output(self, data_dir, make_anima):
+        """run_cron_task should pass command_output to _build_cron_prompt."""
+        anima_dir = make_anima("cron_exec1")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.anima.AgentCore"), \
+             patch("core.anima.ConversationMemory") as MockConv, \
+             patch("core.anima.load_prompt", return_value="prompt"):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+            dp = DigitalAnima(anima_dir, shared_dir)
+            dp.agent._tool_handler.set_active_session_type = \
+                lambda st: active_session_type.set(st)
+
+            captured_prompt = None
+
+            async def mock_run_cycle(prompt, trigger="manual", **kwargs):
+                nonlocal captured_prompt
+                captured_prompt = prompt
+                from core.schemas import CycleResult
+                return CycleResult(
+                    trigger=trigger, action="responded",
+                    summary="done", duration_ms=10,
+                )
+
+            dp.agent.run_cycle = mock_run_cycle
+            await dp.run_cron_task(
+                "log_check", "ログ確認",
+                command_output="no errors found",
+            )
+            assert captured_prompt is not None
+            assert "no errors found" in captured_prompt
 
 
 # ── Heartbeat Plan-Focus ────────────────────────────────────

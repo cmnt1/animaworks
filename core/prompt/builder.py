@@ -492,8 +492,10 @@ def build_system_prompt(
     # ── Trigger-based section filtering ──────────────────────────
     is_inbox = trigger.startswith("inbox:")
     is_heartbeat = trigger == "heartbeat"
+    is_cron = trigger.startswith("cron:")
     is_task = trigger.startswith("task:")
-    is_chat = not (is_inbox or is_heartbeat or is_task)
+    is_background_auto = is_heartbeat or is_cron
+    is_chat = not (is_inbox or is_background_auto or is_task)
 
     # ── Pre-compute values needed across multiple groups ──────────
 
@@ -577,7 +579,7 @@ def build_system_prompt(
         if company_vision:
             parts.append(company_vision)
 
-    if not is_inbox and not is_heartbeat and tier in (TIER_FULL, TIER_STANDARD):
+    if not is_inbox and not is_background_auto and tier in (TIER_FULL, TIER_STANDARD):
         specialty = memory.read_specialty_prompt()
         if specialty:
             parts.append(specialty)
@@ -844,7 +846,7 @@ def build_system_prompt(
             parts.append(org_context)
 
         _msg = _build_messaging_section(pd, other_animas, execution_mode)
-        if is_heartbeat and len(_msg) > 500:
+        if is_background_auto and len(_msg) > 500:
             _msg = _msg[:500] + "\n（要約）"
         parts.append(_msg)
 
@@ -866,8 +868,8 @@ def build_system_prompt(
     # ── Group 6: メタ設定 ─────────────────────────────────────
     parts.append("# 6. メタ設定")
 
-    # emotion: skip for heartbeat and task
-    if not is_heartbeat and not is_task and tier in (TIER_FULL, TIER_STANDARD):
+    # emotion: skip for background-auto (heartbeat/cron) and task
+    if not is_background_auto and not is_task and tier in (TIER_FULL, TIER_STANDARD):
         _ei = (
             _prompt_store.get_section("emotion_instruction")
             if _prompt_store else None
@@ -875,8 +877,8 @@ def build_system_prompt(
         if _ei:
             parts.append(_ei)
 
-    # a_reflection: skip for inbox and heartbeat
-    if not is_inbox and not is_heartbeat and tier in (TIER_FULL, TIER_STANDARD):
+    # a_reflection: skip for inbox and background-auto (heartbeat/cron)
+    if not is_inbox and not is_background_auto and tier in (TIER_FULL, TIER_STANDARD):
         if execution_mode == "a":
             _ar = (
                 _prompt_store.get_section("a_reflection")

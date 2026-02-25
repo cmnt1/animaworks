@@ -41,8 +41,8 @@
   2. Command型 (type: command) - 決定的なbash/tool実行
 
 ■ オプション（command型のみ）
-  skip_pattern: <正規表現>       — stdoutがマッチしたらHBスキップ
-  trigger_heartbeat: false       — 出力があってもHBをトリガーしない
+  skip_pattern: <正規表現>       — stdoutがマッチしたらLLM分析スキップ
+  trigger_heartbeat: false       — 出力があってもLLM分析をトリガーしない
 
 ■ 詳細リファレンス
   → common_skills/cron-management.md を参照

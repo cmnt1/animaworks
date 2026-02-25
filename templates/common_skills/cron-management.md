@@ -185,7 +185,7 @@ args:
 
 ### オプション: skip_pattern
 
-コマンドの標準出力が特定パターンにマッチした場合、そのタイミングでの報告をスキップする。
+コマンドの標準出力が特定パターンにマッチした場合、LLM分析セッションをスキップする。
 
 ```markdown
 ## Chatwork未返信チェック
@@ -200,7 +200,7 @@ skip_pattern: ^\[\]$
 
 ### オプション: trigger_heartbeat
 
-コマンド出力時にハートビートをトリガーするかをタスク単位で制御する。
+コマンド出力時にLLM分析セッションをトリガーするかをタスク単位で制御する。
 
 ```markdown
 ## Chatwork未返信チェック
@@ -211,11 +211,11 @@ skip_pattern: ^\[\]$
 trigger_heartbeat: false
 ```
 
-- `trigger_heartbeat: false` — 出力があってもHBトリガーとpending.md書き込みを両方スキップ
-- `trigger_heartbeat: true`（デフォルト）— 従来通り出力があればHBをトリガー
-- `false`, `no`, `0` を指定するとHB抑制。それ以外はtrue扱い
+- `trigger_heartbeat: false` — 出力があってもLLM分析セッションをスキップ
+- `trigger_heartbeat: true`（デフォルト）— 出力があればcron LLMセッションで分析・対応
+- `false`, `no`, `0` を指定するとLLM分析抑制。それ以外はtrue扱い
 - `skip_pattern` と併用可能。`trigger_heartbeat: false` は `skip_pattern` より先に評価される
-- 用途: 監視系タスクで出力は記録したいがHBは不要なケース（例: 未返信チェックで毎回HBが発動するのを防ぐ）
+- LLM分析セッションはheartbeat同等のコンテキスト（記憶・知識・組織情報）を持つ
 
 ---
 
@@ -224,7 +224,7 @@ trigger_heartbeat: false
 ### type: command を使うべきケース
 - 実行するコマンドが完全に確定している
 - パラメータが固定（リージョン、クラスタ名、プロファイル等）
-- 結果の判断はheartbeatに任せる
+- 結果の判断はcron LLMセッションに任せる
 
 ### type: llm を使うべきケース
 - 状況に応じて実行内容を変える必要がある

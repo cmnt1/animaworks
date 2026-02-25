@@ -23,7 +23,6 @@ from apscheduler.triggers.cron import CronTrigger
 from core.config.models import load_config
 from core.schedule_parser import parse_cron_md, parse_schedule, parse_heartbeat_config
 from core.schemas import CronTask
-from core.time_utils import now_jst
 
 if TYPE_CHECKING:
     from core.anima import DigitalAnima
@@ -241,27 +240,27 @@ class SchedulerManager:
                     "task_type": "command",
                     "result": result,
                 })
-                # If command produced non-empty output, write to
-                # pending.md and trigger a heartbeat so the LLM can
-                # review and act on the results.
+                # If command produced non-empty output, run a follow-up
+                # cron LLM session so the Anima can review and act on the
+                # results with full background context (heartbeat-equivalent).
                 stdout = result.get("stdout", "").strip()
                 if stdout and result.get("exit_code", 0) == 0:
-                    # Check trigger_heartbeat flag first
+                    # trigger_heartbeat=False means no follow-up analysis
                     if not task.trigger_heartbeat:
                         logger.info(
                             "Cron command '%s' trigger_heartbeat=False, "
-                            "skipping heartbeat for %s",
+                            "skipping cron LLM for %s",
                             task.name, self._anima_name,
                         )
                         return
 
-                    # Check skip_pattern: if stdout matches, suppress heartbeat
+                    # skip_pattern: if stdout matches, suppress follow-up
                     if task.skip_pattern:
                         try:
                             if re.search(task.skip_pattern, stdout):
                                 logger.info(
                                     "Cron command '%s' output matched skip_pattern, "
-                                    "suppressing heartbeat for %s",
+                                    "suppressing cron LLM for %s",
                                     task.name, self._anima_name,
                                 )
                                 return
@@ -272,19 +271,14 @@ class SchedulerManager:
                                 task.skip_pattern, task.name, e,
                             )
 
-                    ts = now_jst().strftime("%Y-%m-%d %H:%M")
-                    pending = (
-                        f"## cron結果: {task.name} ({ts})\n\n"
-                        f"{stdout}\n"
-                    )
-                    self._anima.memory.update_pending(pending)
                     logger.info(
-                        "Cron command '%s' produced output, triggering heartbeat for %s",
+                        "Cron command '%s' produced output, running cron LLM for %s",
                         task.name, self._anima_name,
                     )
-                    asyncio.create_task(
-                        self.heartbeat_tick(),
-                        name=f"cron-triggered-heartbeat-{self._anima_name}",
+                    await self._anima.run_cron_task(
+                        task.name,
+                        task.description or f"cron.mdの「{task.name}」の指示に従って処理してください。",
+                        command_output=stdout,
                     )
             else:
                 logger.warning("Unknown cron type '%s' for task '%s'", task.type, task.name)
