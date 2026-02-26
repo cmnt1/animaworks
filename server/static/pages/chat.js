@@ -549,8 +549,7 @@ function _renderStreamingBubble(msg) {
   } else if (msg.afterHeartbeatRelay && !msg.text) {
     html = '<div class="heartbeat-relay-indicator"><span class="tool-spinner"></span>応答を準備中...</div>';
   } else if (msg.text) {
-    try { html = marked.parse(msg.text, { breaks: true }); }
-    catch { html = escapeHtml(msg.text); }
+    html = renderMarkdown(msg.text);
   } else {
     html = '<span class="cursor-blink"></span>';
   }

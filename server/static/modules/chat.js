@@ -426,11 +426,7 @@ export function renderStreamingBubble(msg) {
   } else if (msg.afterHeartbeatRelay && !msg.text) {
     html = '<div class="heartbeat-relay-indicator"><span class="tool-spinner"></span>\u5FDC\u7B54\u3092\u6E96\u5099\u4E2D...</div>';
   } else if (msg.text) {
-    try {
-      html = marked.parse(msg.text, { breaks: true });
-    } catch {
-      html = escapeHtml(msg.text);
-    }
+    html = renderMarkdown(msg.text);
   } else {
     html = '<span class="cursor-blink"></span>';
   }
