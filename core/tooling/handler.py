@@ -2834,8 +2834,10 @@ class ToolHandler:
           5. Subordinate's management files -- read/write (cron.md, heartbeat.md,
              status.json, injection.md)
           6. Subordinate root dir -- read-only (for list_directory)
-          7. Paths listed under ``ファイル操作`` section in permissions.md
-          8. Everything else -- denied
+          7. Framework shared dirs -- read-only (shared/, common_knowledge/,
+             common_skills/, company/)
+          8. Paths listed under ``ファイル操作`` section in permissions.md
+          9. Everything else -- denied
         """
         if self._superuser:
             return None
@@ -2883,6 +2885,13 @@ class ToolHandler:
         if not write:
             for sub_root in self._subordinate_root_dirs:
                 if resolved == sub_root:
+                    return None
+
+        # Framework shared directories — read-only for all Animas
+        if not write:
+            from core.paths import get_shared_dir, get_common_knowledge_dir, get_common_skills_dir, get_company_dir
+            for shared_dir in (get_shared_dir(), get_common_knowledge_dir(), get_common_skills_dir(), get_company_dir()):
+                if shared_dir.exists() and resolved.is_relative_to(shared_dir.resolve()):
                     return None
 
         permissions = self._memory.read_permissions()
