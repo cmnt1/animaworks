@@ -798,8 +798,9 @@ class AgentSDKExecutor(BaseExecutor):
         anima_dir: Path,
         tool_registry: list[str] | None = None,
         personal_tools: dict[str, str] | None = None,
+        interrupt_event: asyncio.Event | None = None,
     ) -> None:
-        super().__init__(model_config, anima_dir)
+        super().__init__(model_config, anima_dir, interrupt_event=interrupt_event)
         self._tool_registry = tool_registry or []
         self._personal_tools = personal_tools or {}
 
@@ -1042,6 +1043,11 @@ class AgentSDKExecutor(BaseExecutor):
 
         await client.query(prompt)
         async for message in client.receive_response():
+            if self._check_interrupted():
+                logger.info("Agent SDK execute interrupted")
+                response_text.append("[Session interrupted by user]")
+                return result_message
+
             if isinstance(message, ResultMessage):
                 result_message = message
                 if message.session_id:
@@ -1308,6 +1314,11 @@ class AgentSDKExecutor(BaseExecutor):
             _in_thinking_block = False
             await client.query(prompt)
             async for message in client.receive_messages():
+                if self._check_interrupted():
+                    logger.info("Agent SDK streaming interrupted")
+                    yield {"type": "text_delta", "text": "[Session interrupted by user]"}
+                    return
+
                 if isinstance(message, StreamEvent):
                     got_stream_event = True
                     event = message.event

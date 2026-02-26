@@ -158,8 +158,9 @@ class AssistedExecutor(BaseExecutor):
         messenger: Messenger | None = None,
         tool_registry: list[str] | None = None,
         personal_tools: dict[str, str] | None = None,
+        interrupt_event: asyncio.Event | None = None,
     ) -> None:
-        super().__init__(model_config, anima_dir)
+        super().__init__(model_config, anima_dir, interrupt_event=interrupt_event)
         self._tool_handler = tool_handler
         self._memory = memory
         self._messenger = messenger

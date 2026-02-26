@@ -366,6 +366,7 @@ class AnimaRunner:
             "ping": self._handle_ping,
             "reload_config": self._handle_reload_config,
             "shutdown": self._handle_shutdown,
+            "interrupt": self._handle_interrupt,
         }
         return handlers.get(method)
 
@@ -501,6 +502,12 @@ class AnimaRunner:
         logger.info("Shutdown requested for %s", self.anima_name)
         self.shutdown_event.set()
         return {"status": "shutting_down"}
+
+    async def _handle_interrupt(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle interrupt request — cancel current LLM session."""
+        if not self.anima:
+            raise RuntimeError("Anima not initialized")
+        return await self.anima.interrupt()
 
     # ── Cleanup ───────────────────────────────────────────────────
 
