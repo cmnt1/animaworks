@@ -309,6 +309,25 @@ FILE_TOOLS: list[dict[str, Any]] = [
 
 SEARCH_TOOLS: list[dict[str, Any]] = [
     {
+        "name": "web_fetch",
+        "description": (
+            "Fetch content from a URL and return it as markdown. "
+            "Use this to read web pages, documentation, articles. "
+            "Content is from external sources (untrusted). "
+            "Results may be truncated for large pages."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to fetch (must be fully-formed, HTTPS preferred)",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
         "name": "search_code",
         "description": (
             "Search for a text pattern in files using regex. "
