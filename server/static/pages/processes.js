@@ -37,7 +37,6 @@ async function _loadProcesses() {
     const entries = Object.entries(processes);
 
     if (entries.length === 0) {
-      // Fallback: try anima list
       const animas = await api("/api/animas");
       if (animas.length === 0) {
         content.innerHTML = '<div class="loading-placeholder">稼働中のプロセスはありません</div>';
@@ -96,7 +95,9 @@ function _renderFromProcesses(container, entries) {
         <td>${missedPings}</td>
         <td>${escapeHtml(lastPing)}</td>
         <td>
-          <button class="btn-primary process-trigger-btn" data-name="${escapeHtml(name)}" style="font-size:0.8rem; padding:0.25rem 0.5rem;">Heartbeat</button>
+          <div class="process-actions">
+            ${_buildActionButtons(name, status)}
+          </div>
         </td>
       </tr>
     `;
@@ -104,23 +105,7 @@ function _renderFromProcesses(container, entries) {
 
   html += "</tbody></table>";
   container.innerHTML = html;
-
-  // Bind trigger buttons
-  container.querySelectorAll(".process-trigger-btn").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const name = btn.dataset.name;
-      btn.disabled = true;
-      btn.textContent = "実行中...";
-      try {
-        await fetch(`/api/animas/${encodeURIComponent(name)}/trigger`, { method: "POST" });
-        btn.textContent = "完了";
-        setTimeout(() => { btn.textContent = "Heartbeat"; btn.disabled = false; }, 2000);
-      } catch {
-        btn.textContent = "失敗";
-        setTimeout(() => { btn.textContent = "Heartbeat"; btn.disabled = false; }, 2000);
-      }
-    });
-  });
+  _bindAllButtons(container);
 }
 
 function _renderFromAnimas(container, animas) {
@@ -157,7 +142,9 @@ function _renderFromAnimas(container, animas) {
         </td>
         <td>${escapeHtml(uptime)}</td>
         <td>
-          <button class="btn-primary process-trigger-btn" data-name="${escapeHtml(p.name)}" style="font-size:0.8rem; padding:0.25rem 0.5rem;">Heartbeat</button>
+          <div class="process-actions">
+            ${_buildActionButtons(p.name, status)}
+          </div>
         </td>
       </tr>
     `;
@@ -165,22 +152,109 @@ function _renderFromAnimas(container, animas) {
 
   html += "</tbody></table>";
   container.innerHTML = html;
+  _bindAllButtons(container);
+}
 
+// ── Action Buttons ──────────────────────────
+
+function _buildActionButtons(name, status) {
+  const eName = escapeHtml(name);
+  const btnStyle = 'style="font-size:0.8rem; padding:0.25rem 0.5rem;"';
+
+  if (status === "running" || status === "idle") {
+    return `
+      <button class="btn-primary process-trigger-btn" data-name="${eName}" ${btnStyle}>Heartbeat</button>
+      <button class="btn-warning process-interrupt-btn" data-name="${eName}" ${btnStyle}>中断</button>
+      <button class="btn-warning process-restart-btn" data-name="${eName}" ${btnStyle}>再起動</button>
+      <button class="btn-danger process-stop-btn" data-name="${eName}" ${btnStyle}>停止</button>
+    `;
+  }
+
+  if (status === "stopped" || status === "not_found" || status === "offline") {
+    return `
+      <button class="btn-success process-start-btn" data-name="${eName}" ${btnStyle}>開始</button>
+    `;
+  }
+
+  if (status === "starting") {
+    return `<span style="font-size:0.8rem; color:var(--aw-color-text-muted);">起動中...</span>`;
+  }
+
+  if (status === "restarting") {
+    return `<span style="font-size:0.8rem; color:var(--aw-color-text-muted);">再起動中...</span>`;
+  }
+
+  return `<span style="font-size:0.8rem; color:var(--aw-color-text-muted);">--</span>`;
+}
+
+function _bindAllButtons(container) {
+  // Heartbeat
   container.querySelectorAll(".process-trigger-btn").forEach(btn => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", () => _handleAction(btn, "trigger", {
+      label: "Heartbeat", busyLabel: "実行中...", doneLabel: "完了",
+    }));
+  });
+
+  // Stop
+  container.querySelectorAll(".process-stop-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
       const name = btn.dataset.name;
-      btn.disabled = true;
-      btn.textContent = "実行中...";
-      try {
-        await fetch(`/api/animas/${encodeURIComponent(name)}/trigger`, { method: "POST" });
-        btn.textContent = "完了";
-        setTimeout(() => { btn.textContent = "Heartbeat"; btn.disabled = false; }, 2000);
-      } catch {
-        btn.textContent = "失敗";
-        setTimeout(() => { btn.textContent = "Heartbeat"; btn.disabled = false; }, 2000);
-      }
+      if (!confirm(`${name} を停止しますか？停止するとチャットやハートビートが停止します。`)) return;
+      _handleAction(btn, "stop", {
+        label: "停止", busyLabel: "停止中...", doneLabel: "停止完了", reload: true,
+      });
     });
   });
+
+  // Start
+  container.querySelectorAll(".process-start-btn").forEach(btn => {
+    btn.addEventListener("click", () => _handleAction(btn, "start", {
+      label: "開始", busyLabel: "起動中...", doneLabel: "起動完了", reload: true,
+    }));
+  });
+
+  // Restart
+  container.querySelectorAll(".process-restart-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const name = btn.dataset.name;
+      if (!confirm(`${name} を再起動しますか？実行中の処理は中断されます。`)) return;
+      _handleAction(btn, "restart", {
+        label: "再起動", busyLabel: "再起動中...", doneLabel: "再起動完了", reload: true,
+      });
+    });
+  });
+
+  // Interrupt
+  container.querySelectorAll(".process-interrupt-btn").forEach(btn => {
+    btn.addEventListener("click", () => _handleAction(btn, "interrupt", {
+      label: "中断", busyLabel: "中断中...", doneLabel: "中断完了", reload: true,
+    }));
+  });
+}
+
+async function _handleAction(btn, action, opts) {
+  const name = btn.dataset.name;
+  btn.disabled = true;
+  btn.textContent = opts.busyLabel;
+
+  try {
+    await fetch(`/api/animas/${encodeURIComponent(name)}/${action}`, { method: "POST" });
+    btn.textContent = opts.doneLabel;
+
+    if (opts.reload) {
+      setTimeout(_loadProcesses, 1000);
+    }
+    setTimeout(() => {
+      btn.textContent = opts.label;
+      btn.disabled = false;
+    }, 2000);
+  } catch {
+    btn.textContent = "失敗";
+    setTimeout(() => {
+      btn.textContent = opts.label;
+      btn.disabled = false;
+    }, 2000);
+  }
 }
 
 // ── Helpers ────────────────────────────────

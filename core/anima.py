@@ -95,9 +95,11 @@ class DigitalAnima:
         self.memory = MemoryManager(anima_dir)
         self.model_config = self.memory.read_model_config()
         self.messenger = Messenger(shared_dir, self.name)
+        self._interrupt_event = asyncio.Event()
         self.agent = AgentCore(
             anima_dir, self.memory, self.model_config, self.messenger
         )
+        self.agent.set_interrupt_event(self._interrupt_event)
 
         # 3-lock structure: conversation (human chat) / inbox (Anima-to-Anima MSG) / background (HB/cron/TaskExec)
         self._conversation_lock = asyncio.Lock()
@@ -159,6 +161,12 @@ class DigitalAnima:
                 logger.warning("Failed to read notification: %s", path.name)
 
         return notifications
+
+    async def interrupt(self) -> dict[str, Any]:
+        """Interrupt the current LLM session without killing the process."""
+        logger.info("Interrupt requested for anima '%s'", self.name)
+        self._interrupt_event.set()
+        return {"status": "interrupted", "name": self.name}
 
     def reload_config(self) -> dict[str, Any]:
         """Hot-reload ModelConfig from status.json without process restart."""
@@ -429,6 +437,7 @@ class DigitalAnima:
         attachment_paths: list[str] | None = None,
         intent: str = "",
     ) -> str:
+        self._interrupt_event.clear()
         logger.info(
             "[%s] process_message WAITING from=%s content_len=%d images=%d",
             self.name, from_person, len(content), len(images or []),
@@ -539,6 +548,7 @@ class DigitalAnima:
         If bootstrapping is in progress (lock held + needs_bootstrap), yields
         an immediate "initializing" message instead of waiting.
         """
+        self._interrupt_event.clear()
         # ── Bootstrap guard: return immediately if bootstrap is running ──
         if self.needs_bootstrap and self._conversation_lock.locked():
             logger.info(
@@ -818,6 +828,7 @@ class DigitalAnima:
         Separated from heartbeat to provide instant response to inter-Anima
         messages without triggering the full heartbeat observation cycle.
         """
+        self._interrupt_event.clear()
         logger.info("[%s] process_inbox_message START", self.name)
         try:
             async with self._inbox_lock:
@@ -1567,6 +1578,7 @@ class DigitalAnima:
         self,
         cascade_suppressed_senders: set[str] | None = None,
     ) -> CycleResult:
+        self._interrupt_event.clear()
         logger.info("[%s] run_heartbeat START", self.name)
         try:
             async with self._background_lock:
@@ -1776,6 +1788,7 @@ class DigitalAnima:
             description: Task description/instruction.
             command_output: Optional stdout from a preceding command cron.
         """
+        self._interrupt_event.clear()
         logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
         from core.tooling.handler import active_session_type
         try:

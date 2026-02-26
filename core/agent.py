@@ -187,6 +187,7 @@ class AgentCore:
         self.memory = memory
         self.model_config = model_config or ModelConfig()
         self.messenger = messenger
+        self._interrupt_event: asyncio.Event | None = None
         self._tool_registry = self._init_tool_registry()
         self._personal_tools = self._discover_personal_tools()
         self._sdk_available = self._check_sdk()
@@ -223,6 +224,12 @@ class AgentCore:
             "direct" if self.model_config.api_key else f"env:{self.model_config.api_key_env}",
             self.model_config.api_base_url or "(default)",
         )
+
+    def set_interrupt_event(self, event: asyncio.Event) -> None:
+        """Set interrupt event for execution cancellation."""
+        self._interrupt_event = event
+        if hasattr(self._executor, "_interrupt_event"):
+            self._executor._interrupt_event = event
 
     def set_on_message_sent(self, fn: Callable[[str, str, str], None]) -> None:
         """Inject a callback invoked after a send_message tool call."""
@@ -497,6 +504,7 @@ class AgentCore:
                     anima_dir=self.anima_dir,
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
+                    interrupt_event=self._interrupt_event,
                 )
             except ImportError:
                 logger.warning(
@@ -515,6 +523,7 @@ class AgentCore:
                     tool_registry=self._tool_registry,
                     memory=self.memory,
                     personal_tools=self._personal_tools,
+                    interrupt_event=self._interrupt_event,
                 )
             except ImportError:
                 logger.warning(
@@ -530,6 +539,7 @@ class AgentCore:
                 tool_registry=self._tool_registry,
                 memory=self.memory,
                 personal_tools=self._personal_tools,
+                interrupt_event=self._interrupt_event,
             )
 
         if mode == "c":
@@ -540,6 +550,7 @@ class AgentCore:
                     anima_dir=self.anima_dir,
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
+                    interrupt_event=self._interrupt_event,
                 )
             except ImportError:
                 logger.warning(
@@ -553,6 +564,7 @@ class AgentCore:
                     tool_registry=self._tool_registry,
                     memory=self.memory,
                     personal_tools=self._personal_tools,
+                    interrupt_event=self._interrupt_event,
                 )
 
         if mode == "a":
@@ -563,6 +575,7 @@ class AgentCore:
                 tool_registry=self._tool_registry,
                 memory=self.memory,
                 personal_tools=self._personal_tools,
+                interrupt_event=self._interrupt_event,
             )
 
         # mode == "b" (basic)
@@ -574,6 +587,7 @@ class AgentCore:
             messenger=self.messenger,
             tool_registry=self._tool_registry,
             personal_tools=self._personal_tools,
+            interrupt_event=self._interrupt_event,
         )
 
     def _resolve_api_key(self) -> str | None:
@@ -964,6 +978,7 @@ class AgentCore:
             tool_registry=self._tool_registry,
             memory=self.memory,
             personal_tools=self._personal_tools,
+            interrupt_event=self._interrupt_event,
         )
 
     # ── Public API ─────────────────────────────────────────
