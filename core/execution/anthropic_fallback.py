@@ -197,13 +197,29 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 iteration, len(messages),
             )
 
+            from core.config.models import resolve_max_tokens
+            from core.execution.base import is_adaptive_model, is_anthropic_claude, resolve_thinking_effort
+            _eff_max = resolve_max_tokens(
+                self._model_config.model,
+                self._model_config.max_tokens,
+                self._model_config.thinking,
+            )
             create_kwargs: dict[str, Any] = {
                 "model": self._model_config.model,
-                "max_tokens": self._model_config.max_tokens,
+                "max_tokens": _eff_max,
                 "system": system_prompt,
                 "messages": messages,
                 "timeout": httpx.Timeout(self._resolve_llm_timeout()),
             }
+            if self._model_config.thinking and is_anthropic_claude(self._model_config.model):
+                if is_adaptive_model(self._model_config.model):
+                    create_kwargs["thinking"] = {"type": "adaptive"}
+                    create_kwargs["reasoning_effort"] = resolve_thinking_effort(
+                        self._model_config.model, self._model_config.thinking_effort,
+                    )
+                else:
+                    create_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+                create_kwargs["temperature"] = 1
             if not is_final_iteration:
                 create_kwargs["tools"] = tools
 
@@ -392,16 +408,33 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 iteration_text_parts: list[str] = []
                 final_message = None
 
+                from core.config.models import resolve_max_tokens
+                from core.execution.base import is_adaptive_model, is_anthropic_claude, resolve_thinking_effort
+                _eff_max_s = resolve_max_tokens(
+                    self._model_config.model,
+                    self._model_config.max_tokens,
+                    self._model_config.thinking,
+                )
                 stream_kwargs: dict[str, Any] = {
                     "model": self._model_config.model,
-                    "max_tokens": self._model_config.max_tokens,
+                    "max_tokens": _eff_max_s,
                     "system": system_prompt,
                     "messages": messages,
                     "timeout": httpx.Timeout(self._resolve_llm_timeout()),
                 }
+                if self._model_config.thinking and is_anthropic_claude(self._model_config.model):
+                    if is_adaptive_model(self._model_config.model):
+                        stream_kwargs["thinking"] = {"type": "adaptive"}
+                        stream_kwargs["reasoning_effort"] = resolve_thinking_effort(
+                            self._model_config.model, self._model_config.thinking_effort,
+                        )
+                    else:
+                        stream_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+                    stream_kwargs["temperature"] = 1
                 if not is_final_iteration:
                     stream_kwargs["tools"] = tools
 
+                _in_thinking_block = False
                 async with client.messages.stream(**stream_kwargs) as stream:
                     async for event in stream:
                         # Text deltas — forward immediately
@@ -409,7 +442,11 @@ class AnthropicFallbackExecutor(BaseExecutor):
                             iteration_text_parts.append(event.text)
                             yield {"type": "text_delta", "text": event.text}
 
-                        # Content block start — detect tool_use blocks
+                        # Thinking events (Anthropic SDK stream helper)
+                        elif event.type == "thinking":
+                            yield {"type": "thinking_delta", "text": event.thinking}
+
+                        # Content block start — detect tool_use / thinking blocks
                         elif event.type == "content_block_start":
                             block = event.content_block
                             if block.type == "tool_use":
@@ -418,6 +455,14 @@ class AnthropicFallbackExecutor(BaseExecutor):
                                     "tool_name": block.name,
                                     "tool_id": block.id,
                                 }
+                            elif block.type == "thinking":
+                                _in_thinking_block = True
+                                yield {"type": "thinking_start"}
+
+                        elif event.type == "content_block_stop":
+                            if _in_thinking_block:
+                                _in_thinking_block = False
+                                yield {"type": "thinking_end"}
 
                     # After consuming the full stream, get the final message
                     final_message = await stream.get_final_message()

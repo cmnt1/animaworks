@@ -180,9 +180,16 @@ class LiteLLMExecutor(BaseExecutor):
 
     def _build_llm_kwargs(self) -> dict[str, Any]:
         """Credential + model kwargs for ``litellm.acompletion``."""
+        from core.config.models import resolve_max_tokens
+        from core.execution.base import is_adaptive_model, is_anthropic_claude, resolve_thinking_effort
+        _eff_max = resolve_max_tokens(
+            self._model_config.model,
+            self._model_config.max_tokens,
+            self._model_config.thinking,
+        )
         kwargs: dict[str, Any] = {
             "model": self._model_config.model,
-            "max_tokens": self._model_config.max_tokens,
+            "max_tokens": _eff_max,
             "timeout": self._resolve_llm_timeout(),
         }
         api_key = self._resolve_api_key()
@@ -193,9 +200,22 @@ class LiteLLMExecutor(BaseExecutor):
         self._apply_provider_kwargs(kwargs)
         # Extended thinking / reasoning control
         if self._model_config.thinking is not None:
-            if self._model_config.model.startswith("bedrock/"):
+            model = self._model_config.model
+            if model.startswith("bedrock/"):
                 if self._model_config.thinking:
-                    kwargs["reasoning_effort"] = "medium"
+                    kwargs["reasoning_effort"] = resolve_thinking_effort(
+                        model, self._model_config.thinking_effort,
+                    )
+            elif is_anthropic_claude(model):
+                if self._model_config.thinking:
+                    if is_adaptive_model(model):
+                        kwargs["thinking"] = {"type": "adaptive"}
+                        kwargs["reasoning_effort"] = resolve_thinking_effort(
+                            model, self._model_config.thinking_effort,
+                        )
+                    else:
+                        kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+                    kwargs["temperature"] = 1
             else:
                 kwargs["think"] = self._model_config.thinking
         elif self._model_config.model.startswith("ollama/"):
@@ -631,8 +651,7 @@ class LiteLLMExecutor(BaseExecutor):
                         iter_text_parts.append(delta.content)
                         yield {"type": "text_delta", "text": delta.content}
 
-                    # Fallback: capture reasoning_content as text when
-                    # content is empty (e.g. GLM thinking mode via vLLM)
+                    # Reasoning content → thinking_delta events
                     reasoning = getattr(delta, "reasoning_content", None)
                     if reasoning and not delta.content:
                         if not _reasoning_seen:
@@ -641,6 +660,8 @@ class LiteLLMExecutor(BaseExecutor):
                                 "A stream: reasoning_content detected "
                                 "(model may be in thinking mode)",
                             )
+                            yield {"type": "thinking_start"}
+                        yield {"type": "thinking_delta", "text": reasoning}
 
                     # H1: Use accumulate_tool_call_chunks return value
                     if delta.tool_calls:
@@ -667,6 +688,9 @@ class LiteLLMExecutor(BaseExecutor):
                             "input_tokens": chunk.usage.prompt_tokens or 0,
                             "output_tokens": chunk.usage.completion_tokens or 0,
                         }
+
+                if _reasoning_seen:
+                    yield {"type": "thinking_end"}
 
                 # Post-stream diagnostics
                 if not iter_text_parts and not tool_calls_acc:
