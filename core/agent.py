@@ -356,7 +356,7 @@ class AgentCore:
         return self._resolve_execution_mode()
 
     def _resolve_execution_mode(self) -> str:
-        """Determine the effective execution mode: ``s``, ``a``, or ``b``.
+        """Determine the effective execution mode: ``s``, ``c``, ``a``, or ``b``.
 
         Uses ``resolved_mode`` from config when available.
         Falls back to auto-detection for legacy config.md paths.
@@ -531,6 +531,29 @@ class AgentCore:
                 memory=self.memory,
                 personal_tools=self._personal_tools,
             )
+
+        if mode == "c":
+            try:
+                from core.execution.codex_sdk import CodexSDKExecutor
+                return CodexSDKExecutor(
+                    model_config=self.model_config,
+                    anima_dir=self.anima_dir,
+                    tool_registry=self._tool_registry,
+                    personal_tools=self._personal_tools,
+                )
+            except ImportError:
+                logger.warning(
+                    "CodexSDKExecutor unavailable (openai-codex-sdk not installed), "
+                    "falling back to LiteLLM (Mode A)"
+                )
+                return LiteLLMExecutor(
+                    model_config=self.model_config,
+                    anima_dir=self.anima_dir,
+                    tool_handler=self._tool_handler,
+                    tool_registry=self._tool_registry,
+                    memory=self.memory,
+                    personal_tools=self._personal_tools,
+                )
 
         if mode == "a":
             return LiteLLMExecutor(
@@ -959,11 +982,12 @@ class AgentCore:
         Routing:
           - Mode B (basic):      ``AssistedExecutor``  -- text-based tool loop
           - Mode A (autonomous): ``LiteLLMExecutor`` -- LiteLLM + tool_use
+          - Mode C (codex):      ``CodexSDKExecutor`` -- Codex CLI wrapper
           - Mode S (SDK):        ``AgentSDKExecutor`` -- Claude Agent SDK
 
         If the context threshold is crossed (A mode only), the session is
         externalized to short-term memory and automatically continued.
-        S mode relies on the SDK's built-in auto-compact.
+        S and C modes rely on the SDK's built-in context management.
         """
         async with self._agent_lock:
             return await self._run_cycle_inner(
@@ -1099,6 +1123,38 @@ class AgentCore:
                 action="responded",
                 summary=result.text,
                 duration_ms=duration_ms,
+                tool_call_records=_tool_records_to_dicts(result),
+            )
+
+        # ── Mode C: Codex SDK ─────────────────────────────
+        if mode == "c":
+            result = await self._executor.execute(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                tracker=tracker,
+                trigger=trigger,
+                images=images,
+                max_turns_override=max_turns_override,
+            )
+            if result.replied_to_from_transcript:
+                self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
+            _save_prompt_log_end(
+                self.anima_dir,
+                session_id=self._tool_handler.session_id,
+                tool_call_count=len(result.tool_call_records),
+            )
+            shortterm.clear()
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.info(
+                "run_cycle END (c) trigger=%s duration_ms=%d response_len=%d",
+                trigger, duration_ms, len(result.text),
+            )
+            return CycleResult(
+                trigger=trigger,
+                action="responded",
+                summary=result.text,
+                duration_ms=duration_ms,
+                context_usage_ratio=tracker.usage_ratio,
                 tool_call_records=_tool_records_to_dicts(result),
             )
 
@@ -1540,8 +1596,12 @@ class AgentCore:
                 # リトライ1回目は必ずfresh session（壊れたセッションIDを持ち越さない）
                 if retry_count == 1:
                     try:
-                        from core.execution.agent_sdk import clear_session_ids
-                        clear_session_ids(self.anima_dir)
+                        if mode == "c":
+                            from core.execution.codex_sdk import clear_codex_thread_ids
+                            clear_codex_thread_ids(self.anima_dir)
+                        else:
+                            from core.execution.agent_sdk import clear_session_ids
+                            clear_session_ids(self.anima_dir)
                         logger.info("Session IDs cleared for retry 1 (fresh session forced)")
                     except Exception as e:
                         logger.warning("Failed to clear session IDs for retry: %s", e)

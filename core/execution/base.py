@@ -141,22 +141,22 @@ class ExecutionResult:
 class BaseExecutor(ABC):
     """Abstract base for execution engines.
 
-    Each subclass implements one execution mode (S, A, B, or fallback).
+    Each subclass implements one execution mode (S, C, A, B, or fallback).
     Common credential resolution lives here.
 
     Parameter usage by mode:
 
-    +------------------+--------+--------------+---------+----------+
-    | Parameter        | S      | A            | B       | Fallback |
-    |                  | (SDK)  | (LiteLLM)    | (Asst.) | (Anthr.) |
-    +==================+========+==============+=========+==========+
-    | prompt           | YES    | YES          | YES     | YES      |
-    | system_prompt    | YES    | YES          | (own)   | YES      |
-    | tracker          | YES    | YES          | no      | YES      |
-    | shortterm        | no*    | YES          | no      | YES      |
-    +------------------+--------+--------------+---------+----------+
+    +------------------+--------+--------+--------------+---------+----------+
+    | Parameter        | S      | C      | A            | B       | Fallback |
+    |                  | (SDK)  | (Codex)| (LiteLLM)    | (Asst.) | (Anthr.) |
+    +==================+========+========+==============+=========+==========+
+    | prompt           | YES    | YES    | YES          | YES     | YES      |
+    | system_prompt    | YES    | YES    | YES          | (own)   | YES      |
+    | tracker          | YES    | YES    | YES          | no      | YES      |
+    | shortterm        | no*    | no*    | YES          | no      | YES      |
+    +------------------+--------+--------+--------------+---------+----------+
 
-    * S session chaining is managed externally by AgentCore.
+    * S and C session chaining is managed externally by AgentCore.
       A and Fallback handle session chaining inline via
       handle_session_chaining().
     """

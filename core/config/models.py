@@ -577,6 +577,9 @@ DEFAULT_MODEL_MODE_PATTERNS: dict[str, str] = {
     # ── S: Claude Agent SDK ──────────────────────────────
     "claude-*": "S",
 
+    # ── C: Codex SDK (Codex CLI wrapper) ─────────────────
+    "codex/*": "C",
+
     # ── A: Cloud API providers (LiteLLM + tool_use) ──────
     "openai/*": "A",
     "azure/*": "A",
@@ -661,6 +664,10 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "ollama/glm-4.7",               "mode": "A", "note": "ローカル・tool_use対応"},
     {"name": "ollama/qwen3:14b",             "mode": "A", "note": "ローカル中型"},
     {"name": "ollama/qwen3:32b",             "mode": "A", "note": "ローカル大型"},
+    # ── Codex (Mode C) ──────────────────────────────────────────────────────
+    {"name": "codex/o4-mini",                "mode": "C", "note": "Codex CLI経由・高速"},
+    {"name": "codex/o3",                     "mode": "C", "note": "Codex CLI経由・推論"},
+    {"name": "codex/gpt-4.1",               "mode": "C", "note": "Codex CLI経由・コーディング"},
     # ── Ollama Local (Mode B: tool_use 非対応) ────────────────────────────────
     {"name": "ollama/gemma3:4b",             "mode": "B", "note": "軽量ローカル"},
     {"name": "ollama/gemma3:12b",            "mode": "B", "note": "中型ローカル"},
@@ -855,7 +862,7 @@ def _normalise_mode(raw: str) -> str:
     if mapped:
         return mapped
     upper = raw.strip().upper()
-    if upper in ("S", "A", "B"):
+    if upper in ("S", "A", "B", "C"):
         return upper
     # Unrecognised — return as-is (upper) for forward compat
     logger.warning("Unrecognised execution mode '%s'; passing through as '%s'", raw, upper)
@@ -905,7 +912,8 @@ def resolve_execution_mode(
       5. Default ``"B"`` (safe side)
 
     Returns:
-        One of ``"S"`` (SDK), ``"A"`` (Autonomous), or ``"B"`` (Basic).
+        One of ``"S"`` (SDK), ``"C"`` (Codex), ``"A"`` (Autonomous),
+        or ``"B"`` (Basic).
     """
     # 1. Per-anima explicit override
     if explicit_override:
