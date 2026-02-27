@@ -340,6 +340,30 @@ let convStreamController = null;
 let convImageInputManager = null;
 let convPendingQueue = [];      // Array<{ text, images, displayImages }>
 
+// ── Conversation Draft Persistence ──────────
+
+function _wsDraftKey(animaName) {
+  const user = getCurrentUser() || "guest";
+  const anima = animaName || "_";
+  return `aw:draft:workspace-conv:${user}:${anima}`;
+}
+
+function _wsSaveDraft() {
+  const animaName = getState().conversationAnima;
+  if (!animaName || !dom.convInput) return;
+  localStorage.setItem(_wsDraftKey(animaName), dom.convInput.value || "");
+}
+
+function _wsLoadDraft(animaName) {
+  if (!animaName) return "";
+  return localStorage.getItem(_wsDraftKey(animaName)) || "";
+}
+
+function _wsClearDraft(animaName) {
+  if (!animaName) return;
+  localStorage.removeItem(_wsDraftKey(animaName));
+}
+
 // ── History State (Session-Aware Rendering) ──────────
 const _historyState = {};  // { [animaName]: { sessions, hasMore, nextBefore, loading } }
 const HISTORY_PAGE_SIZE = 50;
@@ -349,6 +373,7 @@ let _scrollObserver = null;
 async function openConversation(animaName) {
   if (!dom.convOverlay) return;
 
+  _wsSaveDraft();
   destroyVoiceUI();
   setState({ conversationOpen: true, conversationAnima: animaName });
 
@@ -358,6 +383,12 @@ async function openConversation(animaName) {
   // Update anima name + mobile placeholder
   if (dom.convAnimaName) dom.convAnimaName.textContent = animaName;
   updateConvInputPlaceholder();
+  if (dom.convInput) {
+    dom.convInput.value = _wsLoadDraft(animaName);
+    dom.convInput.style.height = "auto";
+    const maxH = isMobileView() ? 100 : 120;
+    dom.convInput.style.height = Math.min(dom.convInput.scrollHeight, maxH) + "px";
+  }
 
   // Reset mobile panels on conversation open
   closeMobileSidebar();
@@ -396,6 +427,7 @@ async function openConversation(animaName) {
 function closeConversation() {
   if (!dom.convOverlay) return;
 
+  _wsSaveDraft();
   // Hide conversation overlay
   dom.convOverlay.classList.add("hidden");
 
@@ -926,8 +958,6 @@ function _wsSubmitConversation() {
         images: convImageInputManager?.getPendingImages() || [],
         displayImages: convImageInputManager?.getDisplayImages() || [],
       });
-      dom.convInput.value = "";
-      dom.convInput.style.height = "auto";
       convImageInputManager?.clearImages();
     }
     if (convPendingQueue.length === 0) return;
@@ -991,6 +1021,7 @@ async function _sendConversation(text, overrideImages = null) {
   _wsUpdateSendButton(true);
 
   try {
+    let sendSucceeded = false;
     const userName = getCurrentUser() || "guest";
     const bodyObj = { message: text || "", from_person: userName };
     if (images.length > 0) {
@@ -1071,6 +1102,13 @@ async function _sendConversation(text, overrideImages = null) {
     if (!streamingMsg.text) streamingMsg.text = "(空の応答)";
     setState({ chatMessages: [...getState().chatMessages] });
     renderConvMessages();
+    sendSucceeded = true;
+
+    if (sendSucceeded && dom.convInput && dom.convInput.value.trim() === text.trim()) {
+      dom.convInput.value = "";
+      dom.convInput.style.height = "auto";
+      _wsClearDraft(animaName);
+    }
   } catch (err) {
     if (err.name === "AbortError") {
       streamingMsg.streaming = false;
@@ -1091,6 +1129,7 @@ async function _sendConversation(text, overrideImages = null) {
   } finally {
     convStreamController = null;
     _wsUpdateSendButton(false);
+    _wsSaveDraft();
     dom.convInput?.focus();
 
     if (convPendingQueue.length > 0) {
@@ -1978,6 +2017,7 @@ async function startDashboard() {
     dom.convInput.style.height = "auto";
     const maxH = isMobileView() ? 100 : 120;
     dom.convInput.style.height = Math.min(dom.convInput.scrollHeight, maxH) + "px";
+    _wsSaveDraft();
     _wsUpdateSendButton(!!convStreamController);
   });
 

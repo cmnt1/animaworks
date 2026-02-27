@@ -31,6 +31,29 @@ let _bustupUrl = null;
 let _pendingQueue = [];       // Array<{ text, images, displayImages }>
 let _chatAbortController = null;
 
+// ── Chat Draft Persistence ───────────────────
+
+function _getDraftKey(animaName) {
+  const user = localStorage.getItem("animaworks_user") || "guest";
+  const anima = animaName || "_";
+  return `aw:draft:dashboard-chat:${user}:${anima}`;
+}
+
+function _saveDraft(animaName, text) {
+  if (!animaName) return;
+  localStorage.setItem(_getDraftKey(animaName), text || "");
+}
+
+function _loadDraft(animaName) {
+  if (!animaName) return "";
+  return localStorage.getItem(_getDraftKey(animaName)) || "";
+}
+
+function _clearDraft(animaName) {
+  if (!animaName) return;
+  localStorage.removeItem(_getDraftKey(animaName));
+}
+
 // ── DOM refs (local) ───────────────────────
 
 function _$(id) { return document.getElementById(id); }
@@ -110,7 +133,7 @@ export function render(container) {
           <button class="right-tab" data-tab="history" id="chatTabHistory">${t("chat.history_conversation")}</button>
         </nav>
 
-        <div id="chatRightTabContent" style="flex:1; overflow-y:auto; padding:0.75rem;">
+        <div id="chatRightTabContent" style="padding:0.75rem;">
           <!-- State pane (default) -->
           <div id="chatPaneState">
             <pre class="state-content" id="chatAnimaState" style="white-space:pre-wrap; word-break:break-word; margin:0;">${t("chat.anima_select_first")}</pre>
@@ -132,22 +155,22 @@ export function render(container) {
               <div id="chatHistoryConversation" style="max-height:400px; overflow-y:auto;"></div>
             </div>
           </div>
-        </div>
 
-        <!-- Memory Browser -->
-        <div class="chat-memory-section">
-          <nav class="memory-tabs" style="display:flex; border-bottom:1px solid var(--border-color, #eee);">
-            <button class="memory-tab active" data-tab="episodes">${t("chat.memory_episodes")}</button>
-            <button class="memory-tab" data-tab="knowledge">${t("chat.memory_knowledge")}</button>
-            <button class="memory-tab" data-tab="procedures">${t("chat.memory_procedures")}</button>
-          </nav>
-          <div id="chatMemoryFileList" class="memory-file-list" style="overflow-y:auto; padding:0.5rem;">
-            <div class="loading-placeholder">Animaを選択してください</div>
-          </div>
-          <div id="chatMemoryContentArea" style="display:none; flex:1; overflow-y:auto; padding:0.5rem;">
-            <button class="memory-back-btn" id="chatMemoryBackBtn">&larr; 一覧に戻る</button>
-            <h3 id="chatMemoryContentTitle" style="margin:0.5rem 0;"></h3>
-            <pre id="chatMemoryContentBody" class="memory-content-body" style="white-space:pre-wrap; word-break:break-word;"></pre>
+          <!-- Memory Browser (inside scrollable area) -->
+          <div class="chat-memory-section">
+            <nav class="memory-tabs" style="display:flex; border-bottom:1px solid var(--border-color, #eee);">
+              <button class="memory-tab active" data-tab="episodes">${t("chat.memory_episodes")}</button>
+              <button class="memory-tab" data-tab="knowledge">${t("chat.memory_knowledge")}</button>
+              <button class="memory-tab" data-tab="procedures">${t("chat.memory_procedures")}</button>
+            </nav>
+            <div id="chatMemoryFileList" class="memory-file-list" style="padding:0.5rem;">
+              <div class="loading-placeholder">${t("chat.anima_select")}</div>
+            </div>
+            <div id="chatMemoryContentArea" style="display:none; padding:0.5rem;">
+              <button class="memory-back-btn" id="chatMemoryBackBtn">&larr; ${t("chat.memory_back")}</button>
+              <h3 id="chatMemoryContentTitle" style="margin:0.5rem 0;"></h3>
+              <pre id="chatMemoryContentBody" class="memory-content-body" style="white-space:pre-wrap; word-break:break-word;"></pre>
+            </div>
           </div>
         </div>
       </div>
@@ -241,6 +264,7 @@ function _bindEvents() {
     if (el) {
       el.style.height = "auto";
       el.style.height = Math.min(el.scrollHeight, 200) + "px";
+      _saveDraft(_selectedAnima, el.value || "");
     }
     _updateSendButton();
   });
@@ -331,13 +355,13 @@ function _renderAnimaDropdown() {
   const select = _$("chatPageAnimaSelect");
   if (!select) return;
 
-  let html = '<option value="" disabled>Animaを選択...</option>';
+  let html = `<option value="" disabled>${t("chat.anima_select")}</option>`;
   for (const p of _animas) {
     const selected = p.name === _selectedAnima ? " selected" : "";
     if (p.status === "bootstrapping" || p.bootstrapping) {
-      html += `<option value="${escapeHtml(p.name)}"${selected} disabled>\u23F3 ${escapeHtml(p.name)} (制作中...)</option>`;
+      html += `<option value="${escapeHtml(p.name)}"${selected} disabled>\u23F3 ${escapeHtml(p.name)} (${escapeHtml(p.status || "bootstrapping")})</option>`;
     } else if (p.status === "not_found" || p.status === "stopped") {
-      html += `<option value="${escapeHtml(p.name)}"${selected}>\uD83D\uDCA4 ${escapeHtml(p.name)} (停止中)</option>`;
+      html += `<option value="${escapeHtml(p.name)}"${selected}>\uD83D\uDCA4 ${escapeHtml(p.name)} (${escapeHtml(p.status || "stopped")})</option>`;
     } else {
       const statusLabel = p.status ? ` (${p.status})` : "";
       html += `<option value="${escapeHtml(p.name)}"${selected}>${escapeHtml(p.name)}${statusLabel}</option>`;
@@ -347,6 +371,12 @@ function _renderAnimaDropdown() {
 }
 
 async function _selectAnima(name) {
+  const prevAnima = _selectedAnima;
+  const currentInput = _$("chatPageInput");
+  if (prevAnima && currentInput) {
+    _saveDraft(prevAnima, currentInput.value || "");
+  }
+
   _selectedAnima = name;
   _pendingQueue = [];
   _hidePendingIndicator();
@@ -359,6 +389,12 @@ async function _selectAnima(name) {
   const sendBtn = _$("chatPageSendBtn");
   if (input) { input.disabled = false; input.placeholder = t("chat.message_to", { name }); }
   if (sendBtn) sendBtn.disabled = false;
+  if (input) {
+    input.value = _loadDraft(name);
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 200) + "px";
+  }
+  _updateSendButton();
 
   // Load conversation history (activity_log API) + anima detail in parallel
   const needConv = !_historyState[name] || _historyState[name].sessions.length === 0;
@@ -798,8 +834,6 @@ function _submitChat() {
         images: _imageInputManager?.getPendingImages() || [],
         displayImages: _imageInputManager?.getDisplayImages() || [],
       });
-      input.value = "";
-      input.style.height = "auto";
       _imageInputManager?.clearImages();
     }
     if (_pendingQueue.length === 0) return;
@@ -869,7 +903,7 @@ async function _sendChat(message, overrideImages = null) {
   _isChatStreaming = true;
   _chatAbortController = new AbortController();
   _updateSendButton();
-  if (input) input.placeholder = `${name} が応答中... メッセージを入力して送信待ちにできます`;
+  if (input) input.placeholder = t("chat.message_to", { name });
 
   if (!overrideImages) {
     _imageInputManager?.clearImages();
@@ -878,6 +912,7 @@ async function _sendChat(message, overrideImages = null) {
   _addLocalActivity("chat", name, `${t("chat.user_prefix")} ${message}`);
 
   try {
+    let sendSucceeded = false;
     const currentUser = localStorage.getItem("animaworks_user") || "human";
     const bodyObj = { message, from_person: currentUser };
     if (images.length > 0) {
@@ -912,7 +947,7 @@ async function _sendChat(message, overrideImages = null) {
         streamingMsg.heartbeatText = "";
         streamingMsg.text = "";
         _renderStreamingBubble(streamingMsg);
-        _addLocalActivity("system", name, `ハートビート中継: ${message}`);
+        _addLocalActivity("system", name, `${t("chat.heartbeat_relay")}: ${message}`);
       },
       onHeartbeatRelay: ({ text }) => {
         streamingMsg.heartbeatText = (streamingMsg.heartbeatText || "") + text;
@@ -975,6 +1010,14 @@ async function _sendChat(message, overrideImages = null) {
       _renderChat();
     }
     logger.debug(`_sendChat: stream completed for ${name}`);
+    sendSucceeded = true;
+
+    const input = _$("chatPageInput");
+    if (sendSucceeded && input && input.value.trim() === message.trim()) {
+      input.value = "";
+      input.style.height = "auto";
+      _clearDraft(name);
+    }
   } catch (err) {
     if (err.name === "AbortError") {
       streamingMsg.streaming = false;
@@ -993,6 +1036,7 @@ async function _sendChat(message, overrideImages = null) {
     _chatAbortController = null;
     if (input) {
       input.placeholder = t("chat.message_to", { name });
+      _saveDraft(name, input.value || "");
       input.focus();
     }
     _updateSendButton();
@@ -1038,10 +1082,10 @@ function _showPendingIndicator() {
   if (label) label.textContent = `${t("chat.queue_label")} (${_pendingQueue.length})`;
   list.innerHTML = _pendingQueue.map((p, i) => {
     const txt = escapeHtml(p.text.length > 60 ? p.text.slice(0, 60) + "…" : p.text);
-    const img = p.images?.length ? ` <span style="opacity:0.6">(+${p.images.length}画像)</span>` : "";
+    const img = p.images?.length ? ` <span style="opacity:0.6">(+${p.images.length} images)</span>` : "";
     return `<div class="pending-queue-item" data-idx="${i}">` +
       `<span class="pending-queue-item-num">${i + 1}.</span>` +
-      `<span class="pending-queue-item-text">${txt || "(画像のみ)"}${img}</span>` +
+      `<span class="pending-queue-item-text">${txt || "(images only)"}${img}</span>` +
       `<button class="pending-queue-item-del" data-idx="${i}" type="button">✕</button>` +
       `</div>`;
   }).join("");
@@ -1219,7 +1263,7 @@ async function _loadActivity() {
     if (!feed) return;
 
     if (events.length === 0) {
-      feed.innerHTML = '<div class="activity-empty">アクティビティなし</div>';
+      feed.innerHTML = `<div class="activity-empty">${t("activity.empty")}</div>`;
       return;
     }
 
@@ -1247,7 +1291,7 @@ async function _loadActivity() {
 async function _loadSessionList() {
   const list = _$("chatHistorySessionList");
   if (!list || !_selectedAnima) {
-    if (list) list.innerHTML = '<div class="loading-placeholder">Animaを選択してください</div>';
+    if (list) list.innerHTML = `<div class="loading-placeholder">${t("chat.anima_select_first")}</div>`;
     return;
   }
 
@@ -1292,7 +1336,7 @@ async function _loadSessionList() {
         html += `
           <div class="session-item" data-type="transcript" data-date="${escapeHtml(t.date)}">
             <div class="session-item-title">${escapeHtml(t.date)}</div>
-            <div class="session-item-meta">${t.message_count}メッセージ</div>
+            <div class="session-item-meta">${t.message_count} messages</div>
           </div>`;
       }
     }
@@ -1470,7 +1514,7 @@ async function _loadMemoryTab() {
   if (!fileList) return;
 
   if (!_selectedAnima) {
-    fileList.innerHTML = '<div class="loading-placeholder">Animaを選択してください</div>';
+    fileList.innerHTML = `<div class="loading-placeholder">${t("chat.anima_select_first")}</div>`;
     return;
   }
 
@@ -1482,7 +1526,7 @@ async function _loadMemoryTab() {
     const data = await api(endpoint);
     const files = data.files || [];
     if (files.length === 0) {
-      fileList.innerHTML = '<div class="loading-placeholder">ファイルがありません</div>';
+      fileList.innerHTML = `<div class="loading-placeholder">${t("memory.no_files")}</div>`;
       return;
     }
 
