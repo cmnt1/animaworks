@@ -496,6 +496,58 @@ def _cache_subordinate_paths(
     return sub_activity_dirs, sub_mgmt_files
 
 
+def _intercept_task_to_pending(
+    anima_dir: Path,
+    tool_input: dict[str, Any],
+    tool_use_id: str | None,
+) -> str:
+    """Convert a Task tool call into a pending LLM task JSON.
+
+    Writes a task descriptor to ``state/pending/`` so that
+    ``PendingTaskExecutor`` picks it up and runs it as an independent
+    minimal-context LLM session.  Returns the generated task_id.
+    """
+    import uuid as _uuid
+    from datetime import timezone as _tz
+
+    task_id = _uuid.uuid4().hex[:12]
+    description = tool_input.get("description", "Background task")
+    prompt = tool_input.get("prompt", description)
+
+    task_desc = {
+        "task_type": "llm",
+        "task_id": task_id,
+        "title": description,
+        "description": prompt,
+        "context": "",
+        "acceptance_criteria": [],
+        "constraints": [],
+        "file_paths": [],
+        "submitted_by": "self_task_intercept",
+        "submitted_at": datetime.now(_tz.utc).isoformat(),
+    }
+
+    pending_dir = anima_dir / "state" / "pending"
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    task_path = pending_dir / f"{task_id}.json"
+    task_path.write_text(
+        json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    _log_tool_use(
+        anima_dir, "Task", tool_input, tool_use_id=tool_use_id,
+        blocked=True,
+        block_reason=f"Intercepted → pending LLM task {task_id}",
+    )
+
+    logger.info(
+        "Task tool intercepted → pending LLM task: id=%s title=%s",
+        task_id, description,
+    )
+    return task_id
+
+
 def _build_pre_tool_hook(
     anima_dir: Path,
     *,
@@ -503,6 +555,7 @@ def _build_pre_tool_hook(
     context_window: int = 200_000,
     session_stats: dict[str, Any] | None = None,
     superuser: bool = False,
+    on_task_intercepted: Callable[[], None] | None = None,
 ) -> Callable:
     """Build a PreToolUse hook with security checks, output guards, and tool logging.
 
@@ -558,6 +611,29 @@ def _build_pre_tool_hook(
                         f"remaining {remaining} — SDK managing"
                     ),
                 )
+
+        # Task tool intercept → pending LLM task
+        if tool_name == "Task":
+            task_id = _intercept_task_to_pending(
+                anima_dir, tool_input, tool_use_id,
+            )
+            if on_task_intercepted is not None:
+                try:
+                    on_task_intercepted()
+                except Exception:
+                    logger.debug("on_task_intercepted callback failed", exc_info=True)
+            return SyncHookJSONOutput(
+                hookSpecificOutput=PreToolUseHookSpecificOutput(
+                    hookEventName="PreToolUse",
+                    permissionDecision="deny",
+                    permissionDecisionReason=(
+                        f"タスクをバックグラウンド実行キューに投入しました "
+                        f"(task_id: {task_id}). "
+                        f"PendingTaskExecutorが数秒以内に独立LLMセッションで"
+                        f"実行を開始します。あなたはすぐにユーザーへ応答を返してください。"
+                    ),
+                )
+            )
 
         # Write / Edit: check file path
         if tool_name in ("Write", "Edit"):
