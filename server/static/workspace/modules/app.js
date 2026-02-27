@@ -1269,7 +1269,6 @@ async function _sendConversation(text, overrideImages = null) {
       onHeartbeatRelayStart: ({ message }) => {
         streamingMsg.heartbeatRelay = true;
         streamingMsg.heartbeatText = "";
-        streamingMsg.text = "";
         scheduleStreamingUpdate(streamingMsg);
       },
       onHeartbeatRelay: ({ text }) => {
@@ -1506,7 +1505,8 @@ function scheduleStreamingUpdate(msg) {
 
 function updateStreamingBubble(msg) {
   if (!dom.convMessages) return;
-  const bubble = dom.convMessages.querySelector(".chat-bubble.assistant.streaming");
+  const bubbles = dom.convMessages.querySelectorAll(".chat-bubble.assistant.streaming");
+  const bubble = bubbles[bubbles.length - 1];
   if (!bubble) return;
 
   let mainHtml = "";

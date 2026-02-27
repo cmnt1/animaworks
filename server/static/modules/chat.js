@@ -407,7 +407,8 @@ export function renderChat() {
 export function renderStreamingBubble(msg) {
   const chatMessages = dom.chatMessages || document.getElementById("chatMessages");
   if (!chatMessages) return;
-  const bubble = chatMessages.querySelector(".chat-bubble.assistant.streaming");
+  const bubbles = chatMessages.querySelectorAll(".chat-bubble.assistant.streaming");
+  const bubble = bubbles[bubbles.length - 1];
   if (!bubble) return;
 
   let html = "";
@@ -531,7 +532,6 @@ export async function sendChat(message) {
         logger.debug(`onHeartbeatRelayStart: ${message}`);
         streamingMsg.heartbeatRelay = true;
         streamingMsg.heartbeatText = "";
-        streamingMsg.text = "";
         renderStreamingBubble(streamingMsg);
         addActivity("system", name, `\u30CF\u30FC\u30C8\u30D3\u30FC\u30C8\u4E2D\u7D99: ${message}`);
       },

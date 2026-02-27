@@ -268,15 +268,15 @@ export function render(container) {
     <div class="chat-page-layout">
       <!-- Left: Chat Panel -->
       <div class="chat-page-main">
-        <!-- Anima Selector -->
-        <div style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem; border-bottom:1px solid var(--border-color, #eee);">
-          <div id="chatPageAvatar" class="anima-avatar-container"></div>
-          <select id="chatPageAnimaSelect" class="anima-dropdown" style="flex:1;">
-            <option value="" disabled selected>${t("chat.anima_select")}</option>
-          </select>
+        <div class="chat-anima-tabs-header">
+          <div class="anima-tabs" id="chatAnimaTabs"></div>
+          <div class="chat-add-conversation" id="chatAddConversationArea">
+            <button type="button" class="chat-add-conversation-btn" id="chatAddConversationBtn">+ 会話追加</button>
+            <select id="chatAddConversationSelect" class="anima-dropdown chat-add-conversation-select" aria-label="${t("chat.anima_select")}">
+              <option value="" selected>${t("chat.anima_select")}</option>
+            </select>
+          </div>
         </div>
-
-        <div class="anima-tabs" id="chatAnimaTabs"></div>
 
         <div class="thread-tabs" id="chatThreadTabs">
           <button class="thread-tab active" data-thread="default">メイン</button>
@@ -419,20 +419,41 @@ function _bindEvents() {
     });
   }
 
-  // Bustup overlay on avatar click
-  _addListener("chatPageAvatar", "click", () => {
-    if (_bustupUrl) _showBustupOverlay();
-  });
-
   // Escape to dismiss bustup overlay
   document.addEventListener("keydown", _onBustupEscape);
   _boundListeners.push({ el: document, event: "keydown", handler: _onBustupEscape });
 
-  // Anima selector
-  _addListener("chatPageAnimaSelect", "change", (e) => {
+  // Add conversation picker
+  _addListener("chatAddConversationBtn", "click", (e) => {
+    e.stopPropagation();
+    const area = _$("chatAddConversationArea");
+    if (!area) return;
+    area.classList.toggle("open");
+    if (area.classList.contains("open")) {
+      const select = _$("chatAddConversationSelect");
+      if (select) {
+        select.value = "";
+        select.focus();
+      }
+    }
+  });
+  _addListener("chatAddConversationSelect", "change", (e) => {
     const name = e.target.value;
     if (name) _openOrSelectAnima(name);
+    e.target.value = "";
+    const area = _$("chatAddConversationArea");
+    if (area) area.classList.remove("open");
   });
+  const closeAddConversationPicker = (e) => {
+    const area = _$("chatAddConversationArea");
+    if (!area || !area.classList.contains("open")) return;
+    if (e.target instanceof Element && area.contains(e.target)) return;
+    area.classList.remove("open");
+    const select = _$("chatAddConversationSelect");
+    if (select) select.value = "";
+  };
+  document.addEventListener("pointerdown", closeAddConversationPicker);
+  _boundListeners.push({ el: document, event: "pointerdown", handler: closeAddConversationPicker });
 
   // New thread button
   _addListener("chatNewThreadBtn", "click", () => _createNewThread());
@@ -567,7 +588,7 @@ async function _loadAnimas() {
     ]);
     _animas = animas || [];
     _restoreChatUiState(uiState);
-    _renderAnimaDropdown();
+    _renderAddConversationSelect();
     _renderAnimaTabs();
     if (_animas.length > 0 && !_selectedAnima && !_isChatStreaming) {
       const firstTab = _animaTabs[0]?.name;
@@ -628,20 +649,20 @@ function _restoreChatUiState(uiState) {
   }
 }
 
-function _renderAnimaDropdown() {
-  const select = _$("chatPageAnimaSelect");
+function _renderAddConversationSelect() {
+  const select = _$("chatAddConversationSelect");
   if (!select) return;
 
-  let html = `<option value="" disabled>${t("chat.anima_select")}</option>`;
+  let html = `<option value="">${t("chat.anima_select")}</option>`;
   for (const p of _animas) {
-    const selected = p.name === _selectedAnima ? " selected" : "";
+    const openLabel = _isTabOpen(p.name) ? " · 表示中" : "";
     if (p.status === "bootstrapping" || p.bootstrapping) {
-      html += `<option value="${escapeHtml(p.name)}"${selected} disabled>\u23F3 ${escapeHtml(p.name)} (${escapeHtml(p.status || "bootstrapping")})</option>`;
+      html += `<option value="${escapeHtml(p.name)}" disabled>\u23F3 ${escapeHtml(p.name)} (${escapeHtml(p.status || "bootstrapping")})</option>`;
     } else if (p.status === "not_found" || p.status === "stopped") {
-      html += `<option value="${escapeHtml(p.name)}"${selected}>\uD83D\uDCA4 ${escapeHtml(p.name)} (${escapeHtml(p.status || "stopped")})</option>`;
+      html += `<option value="${escapeHtml(p.name)}">\uD83D\uDCA4 ${escapeHtml(p.name)} (${escapeHtml(p.status || "stopped")})${openLabel}</option>`;
     } else {
       const statusLabel = p.status ? ` (${p.status})` : "";
-      html += `<option value="${escapeHtml(p.name)}"${selected}>${escapeHtml(p.name)}${statusLabel}</option>`;
+      html += `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}${statusLabel}${openLabel}</option>`;
     }
   }
   select.innerHTML = html;
@@ -674,8 +695,7 @@ async function _selectAnima(name) {
   }
   _refreshAnimaUnread(name);
 
-  const select = _$("chatPageAnimaSelect");
-  if (select) select.value = name;
+  _renderAddConversationSelect();
   _renderAnimaTabs();
 
   const input = _$("chatPageInput");
@@ -735,7 +755,7 @@ async function _selectAnima(name) {
   }
 
   // Load secondary data in parallel
-  const secondaryPromises = [_updateAvatar(), _loadMemoryTab(), _loadActivity()];
+  const secondaryPromises = [_loadMemoryTab(), _loadActivity()];
   if (_activeRightTab === "history") secondaryPromises.push(_loadSessionList());
   await Promise.all(secondaryPromises);
 
@@ -773,6 +793,7 @@ function _closeAnimaTab(name) {
       _openOrSelectAnima(next.name);
     }
   } else {
+    _renderAddConversationSelect();
     _renderAnimaTabs();
   }
   _scheduleSaveChatUiState();
@@ -1232,7 +1253,8 @@ function _renderChat(scrollToBottom = true) {
 function _renderStreamingBubble(msg) {
   const messagesEl = _$("chatPageMessages");
   if (!messagesEl) return;
-  const bubble = messagesEl.querySelector(".chat-bubble.assistant.streaming");
+  const bubbles = messagesEl.querySelectorAll(".chat-bubble.assistant.streaming");
+  const bubble = bubbles[bubbles.length - 1];
   if (!bubble) return;
 
   const thinkingHtml = (msg.thinking && msg.thinkingText)
@@ -1614,7 +1636,6 @@ async function _sendChat(message, overrideImages = null) {
         logger.debug(`onHeartbeatRelayStart: ${message}`);
         streamingMsg.heartbeatRelay = true;
         streamingMsg.heartbeatText = "";
-        streamingMsg.text = "";
         _renderStreamingBubble(streamingMsg);
         _addLocalActivity("system", name, `${t("chat.heartbeat_relay")}: ${message}`);
       },
