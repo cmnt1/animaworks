@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 IPC_STREAM_TIMEOUT = 60.0
 MAX_AUDIO_BUFFER_BYTES = 60 * 16_000 * 2  # 60 seconds of 16kHz 16-bit mono PCM
+PCM16_SAMPLE_RATE = 16_000
+PCM16_BYTES_PER_SAMPLE = 2
+MIN_SPEECH_SEC = 0.35
+MIN_SPEECH_BYTES = int(MIN_SPEECH_SEC * PCM16_SAMPLE_RATE * PCM16_BYTES_PER_SAMPLE)
+SILENCE_RMS_THRESHOLD = 0.008
 
 VOICE_MODE_SUFFIX = (
     "\n\n[voice-mode: 音声会話です。話し言葉で300文字以内で簡潔に回答してください。"
@@ -40,6 +45,7 @@ _RE_MD_LIST_BULLET = re.compile(r"^[\s]*[-*+]\s+", re.MULTILINE)
 _RE_MD_LIST_NUMBERED = re.compile(r"^[\s]*\d+\.\s+", re.MULTILINE)
 _RE_MD_TABLE_PIPE = re.compile(r"\|")
 _RE_MD_HR = re.compile(r"^-{3,}$", re.MULTILINE)
+_RE_EMOTION_TYPO = re.compile(r"\bemothion\b", re.IGNORECASE)
 
 
 def sanitize_for_tts(text: str) -> str:
@@ -56,6 +62,32 @@ def sanitize_for_tts(text: str) -> str:
     text = _RE_MD_TABLE_PIPE.sub("", text)
     text = _RE_MD_HR.sub("", text)
     return text.strip()
+
+
+def _normalized_rms_from_pcm16(audio_data: bytes) -> float:
+    """Calculate normalized RMS from 16-bit mono PCM bytes."""
+    if len(audio_data) < PCM16_BYTES_PER_SAMPLE:
+        return 0.0
+    sample_count = len(audio_data) // PCM16_BYTES_PER_SAMPLE
+    if sample_count == 0:
+        return 0.0
+    samples = memoryview(audio_data).cast("h")
+    # Downsample for large chunks to keep CPU usage low.
+    step = 4 if sample_count > 64_000 else 1
+    sum_sq = 0.0
+    count = 0
+    for i in range(0, sample_count, step):
+        value = samples[i] / 32768.0
+        sum_sq += value * value
+        count += 1
+    if count == 0:
+        return 0.0
+    return (sum_sq / count) ** 0.5
+
+
+def normalize_voice_input(text: str) -> str:
+    """Normalize common STT typo patterns used as control words."""
+    return _RE_EMOTION_TYPO.sub("emotion", text)
 
 # ── VoiceSession ────────────────────────────────────────────────
 
@@ -145,6 +177,15 @@ class VoiceSession:
 
         if not audio_data:
             return
+        if len(audio_data) < MIN_SPEECH_BYTES:
+            logger.debug("Ignore short voice chunk: bytes=%s", len(audio_data))
+            return
+        rms = _normalized_rms_from_pcm16(audio_data)
+        if rms < SILENCE_RMS_THRESHOLD:
+            logger.debug(
+                "Ignore likely silence: rms=%.5f bytes=%s", rms, len(audio_data)
+            )
+            return
 
         # 1. STT
         try:
@@ -174,6 +215,8 @@ class VoiceSession:
                 text = refined.get("refined_text", text)
             except Exception as e:
                 logger.warning("STT refine failed, using raw: %s", e)
+
+        text = normalize_voice_input(text)
 
         # 3. Send transcript to client
         await self._ws.send_json({"type": "transcript", "text": text})
