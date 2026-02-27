@@ -797,11 +797,9 @@ async function _selectAnima(name) {
   if (_activeRightTab === "history") secondaryPromises.push(_loadSessionList());
   await Promise.all(secondaryPromises);
 
-  // If anima is currently thinking/processing, resume stream after page return.
-  const selectedAnimaObj = _animas.find((p) => p.name === name);
-  if (selectedAnimaObj && (selectedAnimaObj.status === "thinking" || selectedAnimaObj.status === "processing")) {
-    _resumeActiveStream(name);
-  }
+  // Check StreamRegistry for an active stream (process status is always "running",
+  // "thinking" is only a transient WebSocket event that's lost on reload).
+  _resumeActiveStream(name);
   _scheduleSaveChatUiState();
 }
 
