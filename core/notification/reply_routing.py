@@ -37,7 +37,7 @@ _MAX_REPLY_LENGTH = 4000
 _RE_USER_MENTION = re.compile(r"<@[A-Za-z0-9]+>")
 _RE_LINK = re.compile(r"<(https?://[^|>]+)\|([^>]+)>")
 _RE_LINK_BARE = re.compile(r"<(https?://[^>]+)>")
-_RE_CHANNEL = re.compile(r"<#[A-Z0-9]+\|([^>]+)>")
+_RE_CHANNEL = re.compile(r"<#[A-Za-z0-9]+\|([^>]+)>")
 
 
 def _map_path() -> Path:
