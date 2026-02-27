@@ -302,9 +302,14 @@ class TestCronLLMSession:
         anima_dir = make_anima("cron_exec1")
         shared_dir = data_dir / "shared"
 
+        def _lp(name, **kw):
+            if name == "fragments/command_output":
+                return f"## Command Output\n\n{kw.get('output', '')}"
+            return "prompt"
+
         with patch("core.anima.AgentCore"), \
              patch("core.anima.ConversationMemory") as MockConv, \
-             patch("core.anima.load_prompt", return_value="prompt"):
+             patch("core.anima.load_prompt", side_effect=_lp):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
