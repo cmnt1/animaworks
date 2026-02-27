@@ -32,6 +32,7 @@ let _animaLastAccess = {}; // { [animaName]: epoch_ms }
 const _HISTORY_PAGE_SIZE = 50;
 const _TOOL_RESULT_TRUNCATE = 500;
 const _THREAD_VISIBLE_NON_DEFAULT = 5;
+const _CHAT_POLL_INTERVAL_MS = 5000;
 let _imageInputManager = null;
 let _bustupUrl = null;
 let _pendingQueue = [];       // Array<{ text, images, displayImages }>
@@ -39,6 +40,7 @@ let _chatAbortController = null;
 let _chatUiStateSaveTimer = null;
 let _animaTabAvatarUrls = {}; // { [animaName]: string | null }
 let _animaTabAvatarLoading = {}; // { [animaName]: Promise<void> }
+let _chatPollingInFlight = false;
 
 function _chatInputMaxHeight() {
   return window.matchMedia("(max-width: 768px)").matches ? 140 : 260;
@@ -382,6 +384,8 @@ export function render(container) {
   // Auto-refresh activity
   const actInterval = setInterval(_loadActivity, 30000);
   _intervals.push(actInterval);
+  const chatInterval = setInterval(_pollSelectedChat, _CHAT_POLL_INTERVAL_MS);
+  _intervals.push(chatInterval);
 }
 
 export function destroy() {
@@ -1416,6 +1420,66 @@ async function _fetchConversationHistory(animaName, limit = _HISTORY_PAGE_SIZE, 
   // Use strict thread filtering to keep main/sub-thread histories isolated.
   url += "&strict_thread=1";
   return await api(url);
+}
+
+async function _pollSelectedChat() {
+  const name = _selectedAnima;
+  const tid = _selectedThreadId || "default";
+  if (!name || _chatPollingInFlight) return;
+
+  // Avoid interfering while currently streaming in this tab.
+  if (_streamingContext?.anima === name && _streamingContext?.thread === tid) return;
+  if (_chatAbortController) return;
+
+  _chatPollingInFlight = true;
+  try {
+    const [conv, sessionsData] = await Promise.all([
+      _fetchConversationHistory(name, _HISTORY_PAGE_SIZE, null, tid).catch(() => null),
+      api(`/api/animas/${encodeURIComponent(name)}/sessions`).catch(() => null),
+    ]);
+
+    if (sessionsData) {
+      const prevThreadLastTs = new Map(
+        (_threads[name] || []).map((t) => [t.id, _threadTimeValue(t.lastTs || "")]),
+      );
+      _mergeThreadsFromSessions(name, sessionsData);
+      // Mark other threads unread when timestamp advances.
+      for (const t of _threads[name] || []) {
+        if (!t?.id || t.id === tid) continue;
+        const prev = prevThreadLastTs.get(t.id) || 0;
+        const curr = _threadTimeValue(t.lastTs || "");
+        if (curr > prev) _setThreadUnread(name, t.id, true);
+      }
+      _refreshAnimaUnread(name);
+      _renderAnimaTabs();
+      _renderThreadTabs();
+    }
+
+    if (!conv || !Array.isArray(conv.sessions)) return;
+
+    if (!_historyState[name]) _historyState[name] = {};
+    const prev = _historyState[name][tid] || { sessions: [], hasMore: false, nextBefore: null, loading: false };
+    const prevSig = JSON.stringify(prev.sessions || []);
+    const nextSig = JSON.stringify(conv.sessions || []);
+    const changed = prevSig !== nextSig;
+
+    _historyState[name][tid] = {
+      sessions: conv.sessions,
+      hasMore: conv.has_more || false,
+      nextBefore: conv.next_before || null,
+      loading: false,
+    };
+
+    if (changed) {
+      const messagesEl = _$("chatPageMessages");
+      const shouldStickBottom = messagesEl
+        ? (messagesEl.scrollHeight - (messagesEl.scrollTop + messagesEl.clientHeight)) <= 80
+        : true;
+      _renderChat(shouldStickBottom);
+    }
+  } finally {
+    _chatPollingInFlight = false;
+  }
 }
 
 // ── History Message Rendering ─────────────────
