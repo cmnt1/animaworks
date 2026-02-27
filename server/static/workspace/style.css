@@ -1295,7 +1295,7 @@ html, body {
   align-items: stretch;
   overflow: visible;
   transition: border-color 0.15s;
-  padding: 8px;
+  padding: 6px;
 }
 
 .ws-conv-input-area .chat-input-wrap:focus-within {
@@ -1304,7 +1304,7 @@ html, body {
 
 .ws-conv-input {
   width: 100%;
-  padding: 12px 14px;
+  padding: 10px 14px;
   border: none;
   background: transparent;
   color: #1a1a1a;
@@ -1313,7 +1313,7 @@ html, body {
   line-height: 1.5;
   resize: none;
   outline: none;
-  min-height: 112px;
+  min-height: 84px;
   max-height: 220px;
 }
 
