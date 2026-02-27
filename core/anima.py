@@ -89,6 +89,16 @@ class DigitalAnima:
     """
 
     _MAX_THREAD_LOCKS = 20
+    _THREAD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,36}$")
+
+    @staticmethod
+    def _validate_thread_id(thread_id: str) -> None:
+        """Validate thread_id to prevent path traversal attacks."""
+        if not DigitalAnima._THREAD_ID_PATTERN.match(thread_id):
+            raise ValueError(
+                f"Invalid thread_id: {thread_id!r}. "
+                "Must be 1-36 alphanumeric, underscore, or hyphen characters."
+            )
 
     def __init__(self, anima_dir: Path, shared_dir: Path) -> None:
         self.anima_dir = anima_dir
@@ -457,6 +467,7 @@ class DigitalAnima:
         intent: str = "",
         thread_id: str = "default",
     ) -> str:
+        self._validate_thread_id(thread_id)
         self._interrupt_event.clear()
         logger.info(
             "[%s] process_message WAITING from=%s content_len=%d images=%d",
@@ -569,6 +580,7 @@ class DigitalAnima:
         If bootstrapping is in progress (lock held + needs_bootstrap), yields
         an immediate "initializing" message instead of waiting.
         """
+        self._validate_thread_id(thread_id)
         self._interrupt_event.clear()
         # ── Bootstrap guard: return immediately if bootstrap is running ──
         if self.needs_bootstrap and self._get_thread_lock(thread_id).locked():

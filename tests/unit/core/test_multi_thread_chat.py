@@ -255,3 +255,137 @@ class TestChatRequestThreadId:
 
         req = ChatRequest(message="hello", thread_id="my-thread")
         assert req.thread_id == "my-thread"
+
+
+class TestThreadIdValidation:
+    """Test thread_id validation prevents path traversal."""
+
+    def test_valid_thread_ids(self) -> None:
+        from core.anima import DigitalAnima
+
+        for tid in ["default", "abc123", "a1b2c3d4", "my-thread", "MY_THREAD", "A" * 36]:
+            DigitalAnima._validate_thread_id(tid)  # should not raise
+
+    def test_path_traversal_rejected(self) -> None:
+        from core.anima import DigitalAnima
+
+        for tid in ["../etc", "../../passwd", "/tmp/evil", "a/b", "a\\b"]:
+            with pytest.raises(ValueError, match="Invalid thread_id"):
+                DigitalAnima._validate_thread_id(tid)
+
+    def test_empty_rejected(self) -> None:
+        from core.anima import DigitalAnima
+
+        with pytest.raises(ValueError, match="Invalid thread_id"):
+            DigitalAnima._validate_thread_id("")
+
+    def test_too_long_rejected(self) -> None:
+        from core.anima import DigitalAnima
+
+        with pytest.raises(ValueError, match="Invalid thread_id"):
+            DigitalAnima._validate_thread_id("A" * 37)
+
+    def test_special_chars_rejected(self) -> None:
+        from core.anima import DigitalAnima
+
+        for tid in ["a.b", "a b", "a@b", "a$b", "a;b"]:
+            with pytest.raises(ValueError, match="Invalid thread_id"):
+                DigitalAnima._validate_thread_id(tid)
+
+
+class TestConversationViewThreadFilter:
+    """Test that get_conversation_view filters by thread_id."""
+
+    def test_filter_by_thread_id(self, anima_dir: Path) -> None:
+        """Entries with different thread_ids should be separated."""
+        import json
+        from core.memory.activity import ActivityLogger
+
+        log_dir = anima_dir / "activity_log"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        log_file = log_dir / f"{today}.jsonl"
+
+        entries = [
+            {"ts": "2026-02-27T10:00:00+09:00", "type": "message_received", "content": "hello default", "from": "human", "meta": {"thread_id": "default"}},
+            {"ts": "2026-02-27T10:00:01+09:00", "type": "response_sent", "content": "hi from default", "meta": {"thread_id": "default"}},
+            {"ts": "2026-02-27T10:00:02+09:00", "type": "message_received", "content": "hello thread-a", "from": "human", "meta": {"thread_id": "thread-a"}},
+            {"ts": "2026-02-27T10:00:03+09:00", "type": "response_sent", "content": "hi from thread-a", "meta": {"thread_id": "thread-a"}},
+        ]
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        activity = ActivityLogger(anima_dir)
+
+        default_view = activity.get_conversation_view(thread_id="default")
+        thread_a_view = activity.get_conversation_view(thread_id="thread-a")
+
+        default_msgs = []
+        for s in default_view["sessions"]:
+            default_msgs.extend(s.get("messages", []))
+
+        thread_a_msgs = []
+        for s in thread_a_view["sessions"]:
+            thread_a_msgs.extend(s.get("messages", []))
+
+        assert any("hello default" in str(m) for m in default_msgs)
+        assert not any("hello thread-a" in str(m) for m in default_msgs)
+        assert any("hello thread-a" in str(m) for m in thread_a_msgs)
+        assert not any("hello default" in str(m) for m in thread_a_msgs)
+
+    def test_no_thread_id_filter_returns_all(self, anima_dir: Path) -> None:
+        """Without thread_id filter, all entries should be returned."""
+        import json
+        from core.memory.activity import ActivityLogger
+
+        log_dir = anima_dir / "activity_log"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        log_file = log_dir / f"{today}.jsonl"
+
+        entries = [
+            {"ts": "2026-02-27T10:00:00+09:00", "type": "message_received", "content": "hello default", "from": "human", "meta": {"thread_id": "default"}},
+            {"ts": "2026-02-27T10:00:01+09:00", "type": "message_received", "content": "hello thread-a", "from": "human", "meta": {"thread_id": "thread-a"}},
+        ]
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        activity = ActivityLogger(anima_dir)
+        all_view = activity.get_conversation_view()
+
+        all_msgs = []
+        for s in all_view["sessions"]:
+            all_msgs.extend(s.get("messages", []))
+
+        assert any("hello default" in str(m) for m in all_msgs)
+        assert any("hello thread-a" in str(m) for m in all_msgs)
+
+    def test_entries_without_thread_id_treated_as_default(self, anima_dir: Path) -> None:
+        """Entries without meta.thread_id should be treated as 'default'."""
+        import json
+        from core.memory.activity import ActivityLogger
+
+        log_dir = anima_dir / "activity_log"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        log_file = log_dir / f"{today}.jsonl"
+
+        entries = [
+            {"ts": "2026-02-27T10:00:00+09:00", "type": "message_received", "content": "old entry no thread", "from": "human", "meta": {}},
+            {"ts": "2026-02-27T10:00:01+09:00", "type": "message_received", "content": "new entry with thread", "from": "human", "meta": {"thread_id": "abc123"}},
+        ]
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        activity = ActivityLogger(anima_dir)
+        default_view = activity.get_conversation_view(thread_id="default")
+
+        default_msgs = []
+        for s in default_view["sessions"]:
+            default_msgs.extend(s.get("messages", []))
+
+        assert any("old entry no thread" in str(m) for m in default_msgs)
+        assert not any("new entry with thread" in str(m) for m in default_msgs)

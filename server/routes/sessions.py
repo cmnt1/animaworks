@@ -154,6 +154,7 @@ def create_sessions_router() -> APIRouter:
         return activity.get_conversation_view(
             before=before,
             limit=limit,
+            thread_id=thread_id,
         )
 
     @router.get("/animas/{name}/sessions/{session_id}")

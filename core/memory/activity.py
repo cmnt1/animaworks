@@ -1007,6 +1007,7 @@ class ActivityLogger:
         before: str | None = None,
         limit: int = 50,
         session_gap_minutes: int = 10,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         """Build a conversation view from activity log entries.
 
@@ -1020,11 +1021,16 @@ class ActivityLogger:
             limit: Maximum number of *messages* to return (tool_calls are
                 nested within assistant messages and do not count).
             session_gap_minutes: Minimum gap in minutes to start a new session.
+            thread_id: If given, only include entries whose
+                ``meta.thread_id`` matches. Entries without a ``thread_id``
+                in meta are treated as belonging to ``"default"``.
 
         Returns:
             ``{"sessions": [...], "has_more": bool, "next_before": str | None}``
         """
-        entries = self._load_conversation_entries(before=before, limit=limit)
+        entries = self._load_conversation_entries(
+            before=before, limit=limit, thread_id=thread_id,
+        )
         messages = self._entries_to_messages(entries)
 
         # Apply limit (keep oldest N for chronological order display)
@@ -1051,12 +1057,17 @@ class ActivityLogger:
         *,
         before: str | None = None,
         limit: int = 50,
+        thread_id: str | None = None,
     ) -> list[ActivityEntry]:
         """Load conversation-relevant entries, scanning backwards.
 
         Returns entries in chronological order.  Scans enough days to
         collect at least ``limit * 3`` raw entries (to account for
         tool_use/tool_result pairs being folded into messages).
+
+        When *thread_id* is given, only entries whose ``meta.thread_id``
+        matches are returned.  Entries without the field are treated as
+        belonging to ``"default"``.
         """
         target_raw = limit * 3 + 50  # overshoot to ensure enough messages
         entries: list[ActivityEntry] = []
@@ -1089,6 +1100,10 @@ class ActivityLogger:
                     ts = raw.get("ts", "")
                     if before and ts >= before:
                         continue
+                    if thread_id is not None:
+                        entry_tid = raw.get("meta", {}).get("thread_id", "default")
+                        if entry_tid != thread_id:
+                            continue
                     # Map JSONL keys
                     if "from" in raw:
                         raw["from_person"] = raw.pop("from")
