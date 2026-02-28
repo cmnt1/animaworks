@@ -360,6 +360,15 @@ class TestResolveAnimaConfig:
         assert resolved.max_tokens == 8192
         assert resolved.max_turns == 20  # from anima_defaults
 
+    def test_mode_s_auth_loaded_from_status_json(self, tmp_path):
+        """mode_s_auth in status.json is loaded into resolved config."""
+        status = {"mode_s_auth": "bedrock", "credential": "anthropic"}
+        (tmp_path / "status.json").write_text(json.dumps(status))
+        config = AnimaWorksConfig()
+        config.animas["alice"] = AnimaModelConfig()
+        resolved, _ = resolve_anima_config(config, "alice", anima_dir=tmp_path)
+        assert resolved.mode_s_auth == "bedrock"
+
     def test_custom_credential(self, tmp_path):
         """status.json credential overrides anima_defaults."""
         status = {"credential": "openai"}
