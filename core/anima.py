@@ -96,6 +96,8 @@ class DigitalAnima(
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self._inbox_lock = asyncio.Lock()
         self._background_lock = asyncio.Lock()
+        self._cron_idle = asyncio.Event()
+        self._cron_idle.set()  # initially idle (no cron running)
         self._state_file_lock = threading.Lock()  # protects current_task.md / pending.md
         self.agent._tool_handler.set_state_file_lock(self._state_file_lock)
         self._status_slots: dict[str, str] = {"conversation": "idle", "inbox": "idle", "background": "idle"}

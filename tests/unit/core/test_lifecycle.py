@@ -489,6 +489,8 @@ class TestTryDeferredTrigger:
         dp.messenger.has_unread.return_value = True
         dp._inbox_lock = MagicMock()
         dp._inbox_lock.locked.return_value = False
+        dp._background_lock = MagicMock()
+        dp._background_lock.locked.return_value = False
         lm.animas["alice"] = dp
         lm._deferred_timers["alice"] = MagicMock()
 

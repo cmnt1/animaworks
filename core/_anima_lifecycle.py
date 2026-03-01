@@ -248,6 +248,7 @@ class LifecycleMixin:
         from core.tooling.handler import active_session_type
         try:
             async with self._background_lock:
+                self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
                 _session_token = self.agent._tool_handler.set_active_session_type("background")
@@ -299,6 +300,7 @@ class LifecycleMixin:
                     raise
                 finally:
                     active_session_type.reset(_session_token)
+                    self._cron_idle.set()
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
         finally:
@@ -333,6 +335,7 @@ class LifecycleMixin:
         from core.tooling.handler import active_session_type
         try:
             async with self._background_lock:
+                self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
                 _session_token = self.agent._tool_handler.set_active_session_type("background")
@@ -379,6 +382,7 @@ class LifecycleMixin:
                     )
                 finally:
                     active_session_type.reset(_session_token)
+                    self._cron_idle.set()
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
 

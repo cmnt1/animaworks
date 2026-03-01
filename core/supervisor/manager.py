@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import signal as _signal
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -145,6 +147,9 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
             except OSError as exc:
                 logger.warning("Failed to remove stale socket %s: %s", stale_sock, exc)
 
+        # Kill zombie runner processes from a previous server crash
+        self._kill_zombie_runners(anima_names)
+
         # Start all processes in parallel
         if anima_names:
             results = await asyncio.gather(
@@ -169,6 +174,39 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
         self._start_system_scheduler()
 
         logger.info("All processes started")
+
+    def _kill_zombie_runners(self, anima_names: list[str]) -> None:
+        """Detect and kill zombie runner processes from a previous server crash.
+
+        Reads pidfiles under ``run/animas/{name}.pid`` and sends SIGTERM
+        to any processes that are still alive.  This ensures a clean slate
+        before spawning new runner processes.
+        """
+        pid_dir = self.run_dir / "animas"
+        if not pid_dir.exists():
+            return
+
+        for pid_file in pid_dir.glob("*.pid"):
+            anima_name = pid_file.stem
+            try:
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, 0)  # check if alive
+                logger.warning(
+                    "Killing zombie runner: %s (pid=%d)", anima_name, pid,
+                )
+                try:
+                    os.kill(pid, _signal.SIGTERM)
+                except OSError:
+                    pass
+                pid_file.unlink(missing_ok=True)
+            except (ValueError, ProcessLookupError):
+                pid_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        # Also clean up stale lock files
+        for lock_file in pid_dir.glob("*.lock"):
+            lock_file.unlink(missing_ok=True)
 
     async def start_anima(self, anima_name: str) -> None:
         """Start a single Anima process.

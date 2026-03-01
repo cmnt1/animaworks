@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fcntl
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -69,12 +71,41 @@ class AnimaRunner:
         self.shutdown_event = asyncio.Event()
         self._ready_event = asyncio.Event()
         self._started_at = now_jst()
+        self._lock_file: Any | None = None
 
         # Delegate instances (created in run() after anima initialization)
         self._scheduler_mgr: SchedulerManager | None = None
         self._inbox_limiter: InboxRateLimiter | None = None
         self._pending_executor: PendingTaskExecutor | None = None
         self._streaming_handler: StreamingIPCHandler | None = None
+
+    def _acquire_process_lock(self) -> None:
+        """Acquire an exclusive flock to prevent duplicate processes.
+
+        The lock file is kept open for the lifetime of the process.
+        If another runner for the same Anima is already alive, flock
+        fails immediately and we exit.
+        """
+        lock_dir = self.shared_dir.parent / "run" / "animas"
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = lock_dir / f"{self.anima_name}.lock"
+        pid_path = lock_dir / f"{self.anima_name}.pid"
+
+        self._lock_file = open(lock_path, "w")  # noqa: SIM115
+        try:
+            fcntl.flock(self._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            existing_pid = pid_path.read_text().strip() if pid_path.exists() else "unknown"
+            logger.error(
+                "DUPLICATE PROCESS: %s is already running (pid=%s). Exiting.",
+                self.anima_name, existing_pid,
+            )
+            self._lock_file.close()
+            self._lock_file = None
+            sys.exit(1)
+
+        pid_path.write_text(str(os.getpid()))
+        logger.info("Process lock acquired: %s (pid=%d)", self.anima_name, os.getpid())
 
     async def run(self) -> None:
         """
@@ -86,6 +117,8 @@ class AnimaRunner:
         readiness via the ``ping`` method.
         """
         try:
+            self._acquire_process_lock()
+
             # Start IPC server first so the socket is created immediately.
             self.ipc_server = IPCServer(
                 socket_path=self.socket_path,
@@ -539,6 +572,18 @@ class AnimaRunner:
 
     async def _cleanup(self) -> None:
         """Clean up resources."""
+        # Release process lock and remove pidfile
+        if self._lock_file:
+            try:
+                pid_path = self.shared_dir.parent / "run" / "animas" / f"{self.anima_name}.pid"
+                if pid_path.exists():
+                    pid_path.unlink(missing_ok=True)
+                fcntl.flock(self._lock_file, fcntl.LOCK_UN)
+                self._lock_file.close()
+            except OSError:
+                logger.debug("Lock file cleanup error", exc_info=True)
+            self._lock_file = None
+
         # Cancel deferred trigger timer
         if self._inbox_limiter:
             self._inbox_limiter.cancel_deferred_timer()

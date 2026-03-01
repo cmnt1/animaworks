@@ -147,6 +147,9 @@ class InboxRateLimiter:
         if self._anima._inbox_lock.locked():
             self.schedule_deferred_trigger()
             return
+        if self._anima._background_lock.locked():
+            self.schedule_deferred_trigger()
+            return
         self._pending_trigger = True
         asyncio.create_task(self.message_triggered_inbox())
 
@@ -228,6 +231,10 @@ class InboxRateLimiter:
                     await asyncio.sleep(2.0)
                     continue
                 if self._anima._inbox_lock.locked():
+                    self.schedule_deferred_trigger()
+                    await asyncio.sleep(2.0)
+                    continue
+                if self._anima._background_lock.locked():
                     self.schedule_deferred_trigger()
                     await asyncio.sleep(2.0)
                     continue

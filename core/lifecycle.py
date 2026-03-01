@@ -433,6 +433,9 @@ class LifecycleManager:
                 if anima._inbox_lock.locked():
                     self._schedule_deferred_trigger(name)
                     continue
+                if anima._background_lock.locked():
+                    self._schedule_deferred_trigger(name)
+                    continue
                 self._pending_triggers.add(name)
                 asyncio.create_task(
                     self._message_triggered_heartbeat(name)
@@ -494,6 +497,9 @@ class LifecycleManager:
             self._schedule_deferred_trigger(name)
             return
         if anima._inbox_lock.locked():
+            self._schedule_deferred_trigger(name)
+            return
+        if anima._background_lock.locked():
             self._schedule_deferred_trigger(name)
             return
         self._pending_triggers.add(name)

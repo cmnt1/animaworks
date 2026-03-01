@@ -75,6 +75,11 @@ class InboxMixin:
         self._interrupt_event.clear()
         logger.info("[%s] process_inbox_message START", self.name)
         try:
+            # Wait for any running cron task to finish before processing inbox.
+            # Prevents LLM context confusion when inbox arrives mid-cron.
+            if not self._cron_idle.is_set():
+                logger.info("[%s] inbox waiting for cron to finish", self.name)
+                await self._cron_idle.wait()
             async with self._inbox_lock:
                 self._status_slots["inbox"] = "processing"
 
