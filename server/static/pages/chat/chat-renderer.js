@@ -18,6 +18,41 @@ export function createChatRenderer(ctx) {
   const { state, deps } = ctx;
   const { api, t, escapeHtml, renderMarkdown, smartTimestamp, timeStr, renderChatImages } = deps;
 
+  // ── Smart Scroll (sticky-bottom with floating button) ──
+  const NEAR_BOTTOM_PX = 80;
+  let _userDetached = false;
+
+  function isNearBottom(el) {
+    if (!el) return true;
+    return (el.scrollHeight - (el.scrollTop + el.clientHeight)) <= NEAR_BOTTOM_PX;
+  }
+
+  function scrollToBottom(el) {
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    _userDetached = false;
+    _updateScrollBtn();
+  }
+
+  function _updateScrollBtn() {
+    const btn = $("chatScrollToBottom");
+    if (!btn) return;
+    btn.classList.toggle("visible", _userDetached);
+  }
+
+  function initScrollTracking() {
+    const messagesEl = $("chatPageMessages");
+    if (!messagesEl) return;
+    messagesEl.addEventListener("scroll", () => {
+      _userDetached = !isNearBottom(messagesEl);
+      _updateScrollBtn();
+    }, { passive: true });
+    const btn = $("chatScrollToBottom");
+    if (btn) {
+      btn.addEventListener("click", () => scrollToBottom(messagesEl));
+    }
+  }
+
   const _renderOpts = () => ({
     escapeHtml, renderMarkdown, smartTimestamp, renderChatImages,
     animaName: state.selectedAnima,
@@ -114,7 +149,7 @@ export function createChatRenderer(ctx) {
     if (!bubble) return;
 
     bubble.innerHTML = renderStreamingBubbleInner(msg, _renderOpts());
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (!_userDetached) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   function markResponseComplete(animaName, threadId) {
@@ -222,6 +257,8 @@ export function createChatRenderer(ctx) {
     renderChat, renderStreamingBubble, markResponseComplete,
     setupChatObserver, observeChatSentinel, fetchConversationHistory,
     pollSelectedChat, renderHistoryMessage, renderSessionDivider,
-    bindToolCallHandlers,
+    bindToolCallHandlers, initScrollTracking, scrollToBottom,
+    isUserDetached: () => _userDetached,
+    reattach: () => { _userDetached = false; _updateScrollBtn(); },
   };
 }

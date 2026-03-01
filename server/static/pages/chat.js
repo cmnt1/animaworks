@@ -64,6 +64,13 @@ export function render(container) {
           <div class="chat-empty">${t("chat.anima_select_first")}</div>
         </div>
 
+        <!-- Scroll to bottom button -->
+        <button type="button" id="chatScrollToBottom" class="scroll-to-bottom-btn" aria-label="Scroll to bottom">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
         <!-- Chat Input -->
         <form id="chatPageForm" class="chat-input-form">
           <div class="image-preview-bar" id="chatPagePreviewBar" style="display:none"></div>

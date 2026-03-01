@@ -816,7 +816,41 @@
   animation-play-state: var(--aw-animation-play-state);
 }
 
+/* ── Scroll to Bottom Button ──────────────────── */
+.scroll-to-bottom-btn {
+  position: absolute;
+  right: 16px;
+  bottom: 0;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--aw-color-border-medium);
+  background: var(--aw-color-bg-primary);
+  color: var(--aw-color-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.scroll-to-bottom-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.scroll-to-bottom-btn:hover {
+  background: var(--aw-color-bg-hover);
+}
+
 .chat-input-form {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0;

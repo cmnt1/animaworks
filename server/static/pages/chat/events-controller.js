@@ -132,8 +132,9 @@ export function createEventsController(ctx) {
       if (list) list.style.display = "";
     });
 
-    // Infinite scroll observer
+    // Infinite scroll observer + scroll-to-bottom tracking
     ctx.controllers.renderer.setupChatObserver();
+    ctx.controllers.renderer.initScrollTracking();
   }
 
   return { bindEvents };
