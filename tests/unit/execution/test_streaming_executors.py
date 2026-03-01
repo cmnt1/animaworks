@@ -364,6 +364,7 @@ class FakeStreamChunk:
         delta = MagicMock()
         delta.content = text
         delta.tool_calls = tool_calls
+        delta.reasoning_content = None
 
         choice = MagicMock()
         choice.delta = delta

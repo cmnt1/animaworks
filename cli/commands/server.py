@@ -446,10 +446,7 @@ def cmd_restart(args: argparse.Namespace) -> None:
         print(f"Cleared {removed} __pycache__ directories.")
     time.sleep(0.5)
 
-    if not getattr(args, "foreground", False):
-        _spawn_daemon(args)
-    else:
-        _start_foreground(args)
+    cmd_start(args)
 
 
 # ── Deprecated modes ──────────────────────────────────────

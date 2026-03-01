@@ -21,9 +21,11 @@ export function createThreadController(ctx) {
     if (!container || !state.selectedAnima) return;
 
     const list = state.threads[state.selectedAnima] || [{ id: "default", label: "メイン", unread: false }];
+    const streamCtx = state.manager.getStreamingContext(state.selectedAnima);
     container.innerHTML = renderThreadTabsHtml(list, state.selectedThreadId, {
       escapeHtml,
       maxVisible: CONSTANTS.THREAD_VISIBLE_NON_DEFAULT,
+      streamingThreadId: streamCtx?.thread || null,
     });
 
     container.querySelectorAll(".thread-tab").forEach(btn => {

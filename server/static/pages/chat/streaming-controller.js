@@ -217,6 +217,7 @@ export function createStreamingController(ctx) {
     const input = $("chatPageInput");
     updateSendButton();
     ctx.controllers.anima.renderAnimaTabs();
+    ctx.controllers.thread.renderThreadTabs();
     if (input) input.placeholder = t("chat.message_to", { name });
     if (!overrideImages) state.imageInputManager?.clearImages();
 
@@ -341,6 +342,7 @@ export function createStreamingController(ctx) {
         }
         updateSendButton();
         ctx.controllers.anima.renderAnimaTabs();
+        ctx.controllers.thread.renderThreadTabs();
 
         if (state.selectedAnima === name && mgr.getPendingQueue(name, tid).length > 0) {
           const next = mgr.dequeue(name, tid);
@@ -398,12 +400,14 @@ export function createStreamingController(ctx) {
         }
         updateSendButton();
         ctx.controllers.anima.renderAnimaTabs();
+        ctx.controllers.thread.renderThreadTabs();
       },
     });
 
     if (streamingMsg) {
       updateSendButton();
       ctx.controllers.anima.renderAnimaTabs();
+      ctx.controllers.thread.renderThreadTabs();
       ctx.controllers.renderer.renderChat();
     }
   }

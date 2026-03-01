@@ -252,7 +252,7 @@ class TestCmdStart:
         mock_app = MagicMock()
         mock_create.return_value = mock_app
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        args = argparse.Namespace(host="0.0.0.0", port=18500, foreground=True)
         cmd_start(args)
 
         mock_uvicorn.assert_called_once_with(
@@ -287,7 +287,7 @@ class TestCmdStart:
         mock_app = MagicMock()
         mock_create.return_value = mock_app
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        args = argparse.Namespace(host="0.0.0.0", port=18500, foreground=True)
         cmd_start(args)
 
         call_kwargs = mock_uvicorn.call_args
@@ -314,7 +314,7 @@ class TestCmdStart:
         mock_app = MagicMock()
         mock_create.return_value = mock_app
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        args = argparse.Namespace(host="0.0.0.0", port=18500, foreground=True)
         cmd_start(args)
 
         call_kwargs = mock_uvicorn.call_args

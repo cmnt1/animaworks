@@ -127,6 +127,7 @@ async function _sendConversation(text, overrideImages = null) {
   dom.convInput.value = ""; dom.convInput.disabled = true; dom.convSend.disabled = true;
   if (!overrideImages) im?.clearImages();
   wsUpdateSendButton(true);
+  renderWsThreadTabs();
 
   const mgr = _mgr();
   let talkingStarted = false;
@@ -182,6 +183,7 @@ async function _sendConversation(text, overrideImages = null) {
         if (!streamingMsg.text) streamingMsg.text = "(空の応答)";
       }
       renderConvMessages();
+      renderWsThreadTabs();
       if (dom.convInput) dom.convInput.disabled = false;
       wsUpdateSendButton(false); wsSaveDraft(); dom.convInput?.focus();
 
@@ -247,6 +249,7 @@ export async function resumeConversationStream(animaName) {
         if (!streamingMsg.text) streamingMsg.text = "(空の応答)";
       }
       renderConvMessages();
+      renderWsThreadTabs();
       wsUpdateSendButton(false); dom.convInput?.focus();
       _drainQueue();
     },

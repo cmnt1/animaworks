@@ -35,11 +35,14 @@ export function renderWsThreadTabs() {
 
   const list = getState().threads[animaName] || [{ id: "default", label: "メイン", unread: false }];
   const activeThreadId = getState().activeThreadId || "default";
+  const mgr = ChatSessionManager.getInstance();
+  const streamCtx = mgr.getStreamingContext(animaName);
 
   container.innerHTML = renderThreadTabsHtml(list, activeThreadId, {
     escapeHtml,
     newBtnId: "wsNewThreadBtn",
     moreSelectId: "wsThreadMoreSelect",
+    streamingThreadId: streamCtx?.thread || null,
   });
 
   container.querySelectorAll(".thread-tab").forEach(btn => {

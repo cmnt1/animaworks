@@ -77,10 +77,12 @@ export function closeThread(threadList, threadId) {
  * @param {number}  [opts.maxVisible=5] - Max visible non-default threads
  * @param {string}  [opts.newBtnId="chatNewThreadBtn"] - ID for the new-thread button
  * @param {string}  [opts.moreSelectId="chatThreadMoreSelect"] - ID for the more-threads select
+ * @param {string}  [opts.streamingThreadId] - Thread currently streaming
  * @returns {string} HTML string
  */
 export function renderThreadTabsHtml(threadList, activeThreadId, opts) {
   const { escapeHtml } = opts;
+  const streamingThreadId = opts.streamingThreadId || null;
   const maxVisible = opts.maxVisible ?? 5;
   const newBtnId = opts.newBtnId || "chatNewThreadBtn";
   const moreSelectId = opts.moreSelectId || "chatThreadMoreSelect";
@@ -113,11 +115,13 @@ export function renderThreadTabsHtml(threadList, activeThreadId, opts) {
   const visible = [defaultThread, ...visibleNonDefault];
   for (const th of visible) {
     const activeClass = th.id === activeThreadId ? " active" : "";
+    const streamClass = streamingThreadId === th.id ? " is-streaming" : "";
+    const completeClass = th.unread && th.id !== activeThreadId ? " has-unread-complete" : "";
     const star = th.unread ? ' <span class="tab-star" aria-label="unread">★</span>' : "";
     const closeBtn = th.id !== "default"
       ? ` <button type="button" class="thread-tab-close" data-thread="${escapeHtml(th.id)}" title="スレッドを閉じる" aria-label="閉じる">&times;</button>`
       : "";
-    html += `<span class="thread-tab-wrap"><button type="button" class="thread-tab${activeClass}" data-thread="${escapeHtml(th.id)}">${escapeHtml(th.label)}${star}</button>${closeBtn}</span>`;
+    html += `<span class="thread-tab-wrap"><button type="button" class="thread-tab${activeClass}${streamClass}${completeClass}" data-thread="${escapeHtml(th.id)}">${escapeHtml(th.label)}${star}</button>${closeBtn}</span>`;
   }
 
   if (hiddenThreads.length > 0) {

@@ -340,3 +340,49 @@ class TestGroupedAnimaFilter:
         data = resp.json()
         for grp in data["groups"]:
             assert grp["anima"] == "alice"
+
+
+# ── Test group_type filter ─────────────────────────────────
+
+
+class TestGroupTypeFilter:
+    """Verify group_type filter (trigger-based) works with grouped=true."""
+
+    async def test_filter_by_single_group_type(self, tmp_path: Path) -> None:
+        animas_dir = tmp_path / "animas"
+        _setup_anima(animas_dir, "alice")
+        now = datetime.now(timezone.utc)
+        _write_activity(animas_dir, "alice", [
+            {"ts": (now - timedelta(seconds=3)).isoformat(), "type": "heartbeat_start", "summary": "HB"},
+            {"ts": (now - timedelta(seconds=2)).isoformat(), "type": "heartbeat_end", "summary": "ok"},
+            {"ts": (now - timedelta(seconds=1)).isoformat(), "type": "cron_executed", "summary": "Cron",
+             "meta": {"task_name": "backup"}},
+        ])
+        app = _create_app(tmp_path, anima_names=["alice"])
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/activity/recent?grouped=true&group_type=cron")
+        data = resp.json()
+        assert len(data["groups"]) == 1
+        assert data["groups"][0]["type"] == "cron"
+
+    async def test_filter_by_multiple_group_types(self, tmp_path: Path) -> None:
+        animas_dir = tmp_path / "animas"
+        _setup_anima(animas_dir, "alice")
+        now = datetime.now(timezone.utc)
+        _write_activity(animas_dir, "alice", [
+            {"ts": (now - timedelta(seconds=4)).isoformat(), "type": "heartbeat_start", "summary": "HB"},
+            {"ts": (now - timedelta(seconds=3)).isoformat(), "type": "heartbeat_end", "summary": "ok"},
+            {"ts": (now - timedelta(seconds=2)).isoformat(), "type": "cron_executed", "summary": "Cron",
+             "meta": {"task_name": "backup"}},
+            {"ts": (now - timedelta(seconds=1)).isoformat(), "type": "channel_post", "summary": "post",
+             "channel": "general", "content": "hello"},
+        ])
+        app = _create_app(tmp_path, anima_names=["alice"])
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/activity/recent?grouped=true&group_type=heartbeat,cron")
+        data = resp.json()
+        types = {g["type"] for g in data["groups"]}
+        assert types == {"heartbeat", "cron"}
+        assert len(data["groups"]) == 2

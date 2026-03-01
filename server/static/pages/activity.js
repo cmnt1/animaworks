@@ -1,7 +1,7 @@
 // ── Activity Timeline Page ──────────────────
 import { api } from "../modules/api.js";
 import { escapeHtml, smartTimestamp, renderMarkdown } from "../modules/state.js";
-import { getIcon, getDisplaySummary, TYPE_CATEGORIES } from "../shared/activity-types.js";
+import { getIcon, getDisplaySummary, GROUP_TYPE_CATEGORIES } from "../shared/activity-types.js";
 import { t } from "/shared/i18n.js";
 
 let _refreshInterval = null;
@@ -13,18 +13,20 @@ let _hasMore = false;
 /** @type {Set<string>} */
 let _expandedGroups = new Set();
 let _selectedAnima = "";
-let _selectedTypes = [];
+/** @type {string[]} selected group types (trigger-based) */
+let _selectedGroupTypes = [];
 
 const GROUP_LIMIT = 50;
 
 const GROUP_ICONS = {
   heartbeat: "💓",
-  chat: "📨",
+  chat: "💬",
   dm: "✉️",
   cron: "⏰",
   task: "📋",
   inbox: "📬",
   task_exec: "🔨",
+  single: "⚙️",
 };
 
 // ── Render ─────────────────────────────────
@@ -37,7 +39,7 @@ export function render(container) {
   _hasMore = false;
   _expandedGroups = new Set();
   _selectedAnima = "";
-  _selectedTypes = [];
+  _selectedGroupTypes = [];
 
   container.innerHTML = `
     <div class="activity-page">
@@ -106,12 +108,12 @@ function _buildTypeChips() {
   if (!wrap) return;
 
   wrap.innerHTML = "";
-  for (let i = 0; i < TYPE_CATEGORIES.length; i++) {
-    const chip = TYPE_CATEGORIES[i];
+  for (let i = 0; i < GROUP_TYPE_CATEGORIES.length; i++) {
+    const chip = GROUP_TYPE_CATEGORIES[i];
     const btn = document.createElement("button");
     btn.className = "activity-type-chip" + (i === 0 ? " active" : "");
     btn.textContent = chip.i18nKey ? t(chip.i18nKey) : chip.label;
-    btn.dataset.index = i;
+    btn.dataset.index = String(i);
 
     btn.addEventListener("click", () => {
       const allChip = wrap.querySelector('[data-index="0"]');
@@ -121,21 +123,21 @@ function _buildTypeChips() {
           b.classList.remove("active");
         }
         btn.classList.add("active");
-        _selectedTypes = [];
+        _selectedGroupTypes = [];
       } else {
-        allChip.classList.remove("active");
+        allChip?.classList.remove("active");
         btn.classList.toggle("active");
 
-        _selectedTypes = [];
+        _selectedGroupTypes = [];
         for (const b of wrap.querySelectorAll(".activity-type-chip.active")) {
-          const idx = parseInt(b.dataset.index);
-          if (idx > 0) {
-            _selectedTypes.push(...TYPE_CATEGORIES[idx].types);
+          const idx = parseInt(b.dataset.index, 10);
+          if (idx > 0 && GROUP_TYPE_CATEGORIES[idx]?.groupTypes) {
+            _selectedGroupTypes.push(...GROUP_TYPE_CATEGORIES[idx].groupTypes);
           }
         }
 
-        if (_selectedTypes.length === 0) {
-          allChip.classList.add("active");
+        if (_selectedGroupTypes.length === 0) {
+          allChip?.classList.add("active");
         }
       }
 
@@ -162,8 +164,8 @@ async function _loadEvents(reset) {
   if (_selectedAnima) {
     url += `&anima=${encodeURIComponent(_selectedAnima)}`;
   }
-  if (_selectedTypes.length > 0) {
-    url += `&event_type=${encodeURIComponent(_selectedTypes.join(","))}`;
+  if (_selectedGroupTypes.length > 0) {
+    url += `&group_type=${encodeURIComponent(_selectedGroupTypes.join(","))}`;
   }
 
   const list = document.getElementById("activityList");

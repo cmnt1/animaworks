@@ -351,6 +351,7 @@ def create_system_router() -> APIRouter:
         offset: int = 0,
         limit: int = 200,
         event_type: str | None = None,
+        group_type: str | None = None,
         grouped: bool = False,
         group_limit: int = 50,
         group_offset: int = 0,
@@ -363,6 +364,10 @@ def create_system_router() -> APIRouter:
         When ``grouped=true``, returns trigger-based groups instead of
         flat events.  Pagination switches to group-based (group_limit,
         group_offset).
+
+        When ``grouped=true`` and ``group_type`` is set (comma-separated),
+        filters groups by trigger type: chat, dm, cron, heartbeat, inbox,
+        task_exec, task, single.
         """
         from core.memory.activity import ActivityLogger
 
@@ -373,6 +378,11 @@ def create_system_router() -> APIRouter:
         types: list[str] | None = None
         if event_type:
             types = [t.strip() for t in event_type.split(",") if t.strip()]
+
+        # Parse group_type filter (comma-separated, for grouped mode)
+        group_types: set[str] | None = None
+        if group_type:
+            group_types = {t.strip() for t in group_type.split(",") if t.strip()}
 
         target_names = (
             [anima] if anima and anima in anima_names else list(anima_names)
@@ -403,6 +413,10 @@ def create_system_router() -> APIRouter:
             all_groups = ActivityLogger.group_by_trigger(chrono)
             # Reverse to newest-first for display
             all_groups.reverse()
+
+            # Filter by group_type (trigger-based) when specified
+            if group_types:
+                all_groups = [g for g in all_groups if g.get("type") in group_types]
 
             group_limit = max(1, min(group_limit, 200))
             group_offset = max(0, group_offset)
