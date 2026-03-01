@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
-from core.execution._sanitize import wrap_tool_result
+from core.execution._sanitize import TOOL_TRUST_LEVELS, wrap_tool_result
 from core.execution.base import ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
 from core.exceptions import ToolExecutionError
 from core.tooling.schemas import (
@@ -194,6 +194,8 @@ class ToolProcessingMixin:
         names = ", ".join(sorted(merged.keys()))
         return f"Refreshed tools ({len(merged)} discovered): {names}"
 
+    _TRUST_ORDER: dict[str, int] = {"trusted": 2, "medium": 1, "untrusted": 0}
+
     async def _execute_tool_call(self, tc, fn_args: dict[str, Any]) -> dict[str, Any]:
         """Execute a single tool call, offloading sync work to a thread.
 
@@ -213,6 +215,13 @@ class ToolProcessingMixin:
             fn_args,
             tc.id,
         )
+
+        trust = TOOL_TRUST_LEVELS.get(tc.function.name, "untrusted")
+        trust_rank = self._TRUST_ORDER.get(trust, 0)
+        self._tool_handler._min_trust_seen = min(
+            self._tool_handler._min_trust_seen, trust_rank,
+        )
+
         return {"role": "tool", "tool_call_id": tc.id, "content": wrap_tool_result(tc.function.name, result)}
 
     async def _process_streaming_tool_calls(

@@ -24,6 +24,7 @@ from typing import Any
 
 from core.prompt.context import CHARS_PER_TOKEN
 
+from core.execution._sanitize import TOOL_TRUST_LEVELS
 from core.execution._sdk_security import (
     _build_output_guard,
     _check_a1_bash_command,
@@ -165,6 +166,19 @@ def _build_pre_tool_hook(
     # Cache subordinate paths once at hook build time
     _sub_activity_dirs, _sub_mgmt_files = _cache_subordinate_paths(anima_dir)
     intercepted_task_ids: set[str] = set()
+    _trust_order = {"trusted": 2, "medium": 1, "untrusted": 0}
+
+    # SDK tools → TOOL_TRUST_LEVELS mapping (SDK uses PascalCase names)
+    _SDK_TOOL_TRUST: dict[str, str] = {
+        "Read": "medium",
+        "Write": "medium",
+        "Edit": "medium",
+        "Bash": "medium",
+        "Grep": "medium",
+        "Glob": "medium",
+        "WebFetch": "untrusted",
+        "WebSearch": "untrusted",
+    }
 
     async def _pre_tool_hook(
         input_data: HookInput,
@@ -199,6 +213,31 @@ def _build_pre_tool_hook(
                         f"remaining {remaining} — SDK managing"
                     ),
                 )
+
+        # ── Trust tracking: update min_trust_seen in session_stats ──
+        if session_stats is not None:
+            # Resolve trust for SDK-native tools or MCP tools (mcp__aw__X)
+            effective_name = tool_name
+            if tool_name.startswith("mcp__aw__"):
+                effective_name = tool_name[len("mcp__aw__"):]
+            trust_str = (
+                _SDK_TOOL_TRUST.get(tool_name)
+                or TOOL_TRUST_LEVELS.get(effective_name, "untrusted")
+            )
+            rank = _trust_order.get(trust_str, 0)
+            current_min = session_stats.get("min_trust_seen", 2)
+            session_stats["min_trust_seen"] = min(current_min, rank)
+
+            # Persist to file so MCP server subprocess can read
+            _trust_file = anima_dir / "run" / "min_trust_seen"
+            try:
+                _trust_file.parent.mkdir(parents=True, exist_ok=True)
+                _trust_file.write_text(
+                    str(session_stats["min_trust_seen"]),
+                    encoding="utf-8",
+                )
+            except Exception:
+                logger.debug("Failed to persist min_trust_seen", exc_info=True)
 
         # Task tool intercept → pending LLM task
         if tool_name == "Task":

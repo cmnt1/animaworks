@@ -46,6 +46,7 @@ class MemoryToolsMixin:
     _descendant_state_dirs: list[Path]
     _state_file_lock: threading.Lock | None
     _on_schedule_changed: Callable[[str], Any] | None
+    _min_trust_seen: int
 
     def _handle_search_memory(self, args: dict[str, Any]) -> str:
         scope = args.get("scope", "all")
@@ -238,6 +239,43 @@ class MemoryToolsMixin:
                 memory_type = "skills" if rel.startswith("skills/") else "procedures"
                 try:
                     indexer.index_file(path, memory_type=memory_type, force=True)
+                except Exception as e:
+                    logger.warning("Failed to update RAG index for %s: %s", rel, e)
+
+        # Auto-update RAG index for knowledge writes + origin frontmatter
+        if rel.startswith("knowledge/") and rel.endswith(".md"):
+            _trust_rank_map = {0: "external_web", 1: "mixed"}
+            min_trust = getattr(self, "_min_trust_seen", 2)
+
+            # Also check file-based trust (Mode S writes via MCP subprocess)
+            if min_trust >= 2:
+                _trust_file = self._anima_dir / "run" / "min_trust_seen"
+                try:
+                    if _trust_file.exists():
+                        file_val = int(_trust_file.read_text(encoding="utf-8").strip())
+                        min_trust = min(min_trust, file_val)
+                except (ValueError, OSError):
+                    pass
+
+            origin = _trust_rank_map.get(min_trust, "")
+
+            if origin and mode != "append":
+                current = path.read_text(encoding="utf-8")
+                if not current.startswith("---\norigin:"):
+                    path.write_text(
+                        f"---\norigin: {origin}\n---\n\n{current}",
+                        encoding="utf-8",
+                    )
+
+            indexer = self._memory._get_indexer()
+            if indexer:
+                try:
+                    indexer.index_file(
+                        path,
+                        memory_type="knowledge",
+                        force=True,
+                        origin=origin or None,
+                    )
                 except Exception as e:
                     logger.warning("Failed to update RAG index for %s: %s", rel, e)
 

@@ -24,7 +24,7 @@ from typing import Any
 
 from core.exceptions import LLMAPIError, ToolExecutionError  # noqa: F401
 from core.prompt.context import ContextTracker, resolve_context_window
-from core.execution._sanitize import wrap_tool_result
+from core.execution._sanitize import TOOL_TRUST_LEVELS, wrap_tool_result
 from core.execution._session import build_continuation_prompt, handle_session_chaining
 from core.execution._streaming import stream_error_boundary
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
@@ -316,9 +316,17 @@ class AnthropicFallbackExecutor(BaseExecutor):
             )
             messages.append({"role": "assistant", "content": response.content})
 
+            _trust_order = {"trusted": 2, "medium": 1, "untrusted": 0}
             tool_results = []
             for tu in tool_uses:
                 result = self._tool_handler.handle(tu.name, tu.input, tu.id)
+
+                trust = TOOL_TRUST_LEVELS.get(tu.name, "untrusted")
+                self._tool_handler._min_trust_seen = min(
+                    self._tool_handler._min_trust_seen,
+                    _trust_order.get(trust, 0),
+                )
+
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tu.id,
@@ -533,6 +541,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 })
 
                 loop = asyncio.get_running_loop()
+                _trust_order_s = {"trusted": 2, "medium": 1, "untrusted": 0}
                 tool_results = []
                 for tu in tool_uses:
                     try:
@@ -549,6 +558,13 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     except Exception as tool_err:
                         logger.exception("Unexpected tool error: %s", tu.name)
                         result = f"ツール実行エラー: {tool_err}"
+
+                    trust = TOOL_TRUST_LEVELS.get(tu.name, "untrusted")
+                    self._tool_handler._min_trust_seen = min(
+                        self._tool_handler._min_trust_seen,
+                        _trust_order_s.get(trust, 0),
+                    )
+
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tu.id,

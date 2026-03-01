@@ -71,6 +71,10 @@ _PROTECTED_FILES = frozenset({
     "bootstrap.md",
 })
 
+_PROTECTED_DIRS = frozenset({
+    "activity_log",
+})
+
 _EPISODE_FILENAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(_.+)?\.md$")
 
 # ── read_file dynamic budget constants ────────────────────────
@@ -243,6 +247,13 @@ def _is_protected_write(anima_dir: Path, target: Path) -> str | None:
         return _error_result(
             "PermissionDenied",
             f"'{rel}' is a protected file and cannot be modified by the anima itself",
+        )
+
+    rel_parts = Path(rel).parts
+    if rel_parts and rel_parts[0] in _PROTECTED_DIRS:
+        return _error_result(
+            "PermissionDenied",
+            f"'{rel_parts[0]}/' is a protected directory and cannot be modified by the anima itself",
         )
 
     return None

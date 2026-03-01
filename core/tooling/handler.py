@@ -41,6 +41,7 @@ from core.tooling.handler_base import (  # noqa: F401
     _EPISODE_FILENAME_RE,
     _INJECTION_RE,
     _NEEDS_SHELL_RE,
+    _PROTECTED_DIRS,
     _PROTECTED_FILES,
     _READ_AVG_LINE_LENGTH,
     _READ_CHARS_PER_TOKEN,
@@ -130,6 +131,10 @@ class ToolHandler(
         # ── Session origin tracking (provenance Phase 3) ──
         self._session_origin: str = ""
         self._session_origin_chain: list[str] = []
+
+        # ── Session trust tracking (security: min trust across all tools used) ──
+        # 2 = trusted, 1 = medium, 0 = untrusted; default trusted (no tools used yet)
+        self._min_trust_seen: int = 2
 
         # ── Cache subordinate paths for permission checks ──
         self._subordinate_activity_dirs: list[Path] = []
@@ -283,6 +288,7 @@ class ToolHandler(
     def reset_session_id(self) -> None:
         """Generate a new session ID (call at start of each interaction cycle)."""
         self._session_id = uuid.uuid4().hex[:12]
+        self._min_trust_seen = 2
 
     def reset_replied_to(self, session_type: str | None = None) -> None:
         """Reset replied-to tracking. If session_type given, clear only that session."""
