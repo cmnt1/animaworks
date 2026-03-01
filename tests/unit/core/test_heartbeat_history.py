@@ -11,11 +11,13 @@ backward compatibility with existing heartbeat_history/ files.
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from core.time_utils import now_jst
 
 
 # ── Helpers ───────────────────────────────────────────────
@@ -73,7 +75,7 @@ class TestHeartbeatHistoryLoad:
 
     def test_load_from_activity_log(self, dp, anima_dir):
         """Loading reads heartbeat_end entries from unified activity log."""
-        today = date.today().isoformat()
+        today = now_jst().strftime("%Y-%m-%d")
         entries = []
         for i in range(5):
             entries.append({
@@ -95,7 +97,7 @@ class TestHeartbeatHistoryLoad:
 
     def test_load_ignores_non_heartbeat_entries(self, dp, anima_dir):
         """Loading only picks up heartbeat_end type entries."""
-        today = date.today().isoformat()
+        today = now_jst().strftime("%Y-%m-%d")
         entries = [
             {"ts": f"{today}T08:00:00", "type": "message_received", "summary": "A message"},
             {"ts": f"{today}T09:00:00", "type": "heartbeat_end", "summary": "Heartbeat result"},
@@ -119,7 +121,7 @@ class TestHeartbeatHistoryLoad:
         """Loading reads entries from multiple recent day files."""
         entries_by_date = {}
         for days_ago in range(2):
-            file_date = date.today() - timedelta(days=days_ago)
+            file_date = now_jst().date() - timedelta(days=days_ago)
             date_str = file_date.isoformat()
             entries_by_date[date_str] = [{
                 "ts": f"{date_str}T10:00:00",

@@ -41,6 +41,7 @@ from core.tooling.handler_base import (  # noqa: F401
     _EPISODE_FILENAME_RE,
     _INJECTION_RE,
     _NEEDS_SHELL_RE,
+    _PROTECTED_DIRS,
     _PROTECTED_FILES,
     _READ_AVG_LINE_LENGTH,
     _READ_CHARS_PER_TOKEN,
@@ -131,6 +132,10 @@ class ToolHandler(
         self._session_origin: str = ""
         self._session_origin_chain: list[str] = []
 
+        # ── Session trust tracking (security: min trust across all tools used) ──
+        # 2 = trusted, 1 = medium, 0 = untrusted; default trusted (no tools used yet)
+        self._min_trust_seen: int = 2
+
         # ── Cache subordinate paths for permission checks ──
         self._subordinate_activity_dirs: list[Path] = []
         self._subordinate_management_files: list[Path] = []
@@ -138,11 +143,15 @@ class ToolHandler(
         self._descendant_activity_dirs: list[Path] = []
         self._descendant_state_files: list[Path] = []
         self._descendant_state_dirs: list[Path] = []
+        self._peer_activity_dirs: list[Path] = []
         try:
             from core.config.models import load_config
             from core.paths import get_animas_dir
             _cfg = load_config()
             _animas_dir = get_animas_dir()
+            _my_supervisor = None
+            if self._anima_name in _cfg.animas:
+                _my_supervisor = _cfg.animas[self._anima_name].supervisor
             for _sub_name, _sub_cfg in _cfg.animas.items():
                 if _sub_cfg.supervisor == self._anima_name:
                     _sub_dir = (_animas_dir / _sub_name).resolve()
@@ -152,6 +161,11 @@ class ToolHandler(
                     self._subordinate_management_files.append(_sub_dir / "status.json")
                     self._subordinate_management_files.append(_sub_dir / "injection.md")
                     self._subordinate_root_dirs.append(_sub_dir)
+            # Cache peer activity_log dirs (same supervisor, excluding self)
+            for _peer_name, _peer_cfg in _cfg.animas.items():
+                if _peer_name != self._anima_name and _peer_cfg.supervisor == _my_supervisor:
+                    _peer_dir = (_animas_dir / _peer_name).resolve()
+                    self._peer_activity_dirs.append(_peer_dir / "activity_log")
             _all_descendants = self._get_all_descendants()
             for _desc_name in _all_descendants:
                 _desc_dir = (_animas_dir / _desc_name).resolve()
@@ -283,6 +297,7 @@ class ToolHandler(
     def reset_session_id(self) -> None:
         """Generate a new session ID (call at start of each interaction cycle)."""
         self._session_id = uuid.uuid4().hex[:12]
+        self._min_trust_seen = 2
 
     def reset_replied_to(self, session_type: str | None = None) -> None:
         """Reset replied-to tracking. If session_type given, clear only that session."""

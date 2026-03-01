@@ -24,6 +24,7 @@ from typing import Any
 
 from core.prompt.context import CHARS_PER_TOKEN
 
+from core.execution._sanitize import TOOL_TRUST_LEVELS
 from core.execution._sdk_security import (
     _build_output_guard,
     _check_a1_bash_command,
@@ -55,15 +56,17 @@ def _collect_all_subordinates(
 
 def _cache_subordinate_paths(
     anima_dir: Path,
-) -> tuple[list[Path], list[Path]]:
-    """Cache subordinate paths for permission checks at hook build time.
+) -> tuple[list[Path], list[Path], list[Path]]:
+    """Cache subordinate and peer paths for permission checks at hook build time.
 
     Collects paths for **all** hierarchical subordinates (not just direct
     reports) so that a top-level supervisor can access cron.md, heartbeat.md,
     and activity_log of any anima beneath them in the org tree.
+    Also collects peer activity_log dirs (same supervisor) for verification.
     """
     sub_activity_dirs: list[Path] = []
     sub_mgmt_files: list[Path] = []
+    peer_activity_dirs: list[Path] = []
     try:
         from core.config.models import load_config
         from core.paths import get_animas_dir
@@ -77,9 +80,17 @@ def _cache_subordinate_paths(
             sub_activity_dirs.append(sub_dir / "activity_log")
             sub_mgmt_files.append(sub_dir / "cron.md")
             sub_mgmt_files.append(sub_dir / "heartbeat.md")
+        # Collect peer activity_log dirs (same supervisor, excluding self)
+        my_supervisor = None
+        if anima_name in cfg.animas:
+            my_supervisor = cfg.animas[anima_name].supervisor
+        for peer_name, peer_cfg in cfg.animas.items():
+            if peer_name != anima_name and peer_cfg.supervisor == my_supervisor:
+                peer_dir = (animas_dir / peer_name).resolve()
+                peer_activity_dirs.append(peer_dir / "activity_log")
     except Exception:
         logger.debug("Failed to cache subordinate paths for Mode S hook", exc_info=True)
-    return sub_activity_dirs, sub_mgmt_files
+    return sub_activity_dirs, sub_mgmt_files, peer_activity_dirs
 
 
 # ── Task interception ────────────────────────────────────────
@@ -102,12 +113,23 @@ def _intercept_task_to_pending(
     description = tool_input.get("description", "Background task")
     prompt = tool_input.get("prompt", description)
 
+    context_parts: list[str] = []
+    for ctx_file in ("current_task.md", "pending.md"):
+        ctx_path = anima_dir / "state" / ctx_file
+        if ctx_path.exists():
+            try:
+                content = ctx_path.read_text(encoding="utf-8").strip()
+                if content and content != "status: idle":
+                    context_parts.append(f"[{ctx_file}]\n{content}")
+            except Exception:
+                pass
+
     task_desc = {
         "task_type": "llm",
         "task_id": task_id,
         "title": description,
         "description": prompt,
-        "context": "",
+        "context": "\n\n".join(context_parts),
         "acceptance_criteria": [],
         "constraints": [],
         "file_paths": [],
@@ -162,9 +184,22 @@ def _build_pre_tool_hook(
         SyncHookJSONOutput,
     )
 
-    # Cache subordinate paths once at hook build time
-    _sub_activity_dirs, _sub_mgmt_files = _cache_subordinate_paths(anima_dir)
+    # Cache subordinate and peer paths once at hook build time
+    _sub_activity_dirs, _sub_mgmt_files, _peer_activity_dirs = _cache_subordinate_paths(anima_dir)
     intercepted_task_ids: set[str] = set()
+    _trust_order = {"trusted": 2, "medium": 1, "untrusted": 0}
+
+    # SDK tools → TOOL_TRUST_LEVELS mapping (SDK uses PascalCase names)
+    _SDK_TOOL_TRUST: dict[str, str] = {
+        "Read": "medium",
+        "Write": "medium",
+        "Edit": "medium",
+        "Bash": "medium",
+        "Grep": "medium",
+        "Glob": "medium",
+        "WebFetch": "untrusted",
+        "WebSearch": "untrusted",
+    }
 
     async def _pre_tool_hook(
         input_data: HookInput,
@@ -200,6 +235,31 @@ def _build_pre_tool_hook(
                     ),
                 )
 
+        # ── Trust tracking: update min_trust_seen in session_stats ──
+        if session_stats is not None:
+            # Resolve trust for SDK-native tools or MCP tools (mcp__aw__X)
+            effective_name = tool_name
+            if tool_name.startswith("mcp__aw__"):
+                effective_name = tool_name[len("mcp__aw__"):]
+            trust_str = (
+                _SDK_TOOL_TRUST.get(tool_name)
+                or TOOL_TRUST_LEVELS.get(effective_name, "untrusted")
+            )
+            rank = _trust_order.get(trust_str, 0)
+            current_min = session_stats.get("min_trust_seen", 2)
+            session_stats["min_trust_seen"] = min(current_min, rank)
+
+            # Persist to file so MCP server subprocess can read
+            _trust_file = anima_dir / "run" / "min_trust_seen"
+            try:
+                _trust_file.parent.mkdir(parents=True, exist_ok=True)
+                _trust_file.write_text(
+                    str(session_stats["min_trust_seen"]),
+                    encoding="utf-8",
+                )
+            except Exception:
+                logger.debug("Failed to persist min_trust_seen", exc_info=True)
+
         # Task tool intercept → pending LLM task
         if tool_name == "Task":
             task_id = _intercept_task_to_pending(
@@ -217,10 +277,11 @@ def _build_pre_tool_hook(
                     permissionDecision="deny",
                     permissionDecisionReason=(
                         f"INTERCEPT_OK: Task accepted (task_id: {task_id}). "
-                        f"This task was redirected to state/pending and will run in "
-                        f"your background task executor shortly. "
-                        f"Do not call TaskOutput for this task_id in this session. "
-                        f"Continue the conversation now."
+                        f"Written to state/pending/ for background execution. "
+                        f"The executor has your identity, injection, behavior rules, "
+                        f"memory guide, and org context. "
+                        f"Do NOT call Task or TaskOutput for this task_id again. "
+                        f"Proceed with your current conversation."
                     ),
                 )
             )
@@ -241,9 +302,10 @@ def _build_pre_tool_hook(
                         hookEventName="PreToolUse",
                         permissionDecision="deny",
                         permissionDecisionReason=(
-                            f"INTERCEPT_OK: task_id {task_id} is managed by "
-                            f"PendingTaskExecutor (not SDK TaskOutput). "
-                            f"Treat this as expected and continue."
+                            f"INTERCEPT_OK: task_id {task_id} is already running in "
+                            f"PendingTaskExecutor with full context (identity, injection, "
+                            f"memory guide, org info). Do NOT retry. "
+                            f"Proceed with your current conversation."
                         ),
                     )
                 )
@@ -255,6 +317,7 @@ def _build_pre_tool_hook(
                 file_path, anima_dir, write=True,
                 subordinate_activity_dirs=_sub_activity_dirs,
                 subordinate_management_files=_sub_mgmt_files,
+                peer_activity_dirs=_peer_activity_dirs,
                 superuser=superuser,
             )
             if violation:
@@ -274,6 +337,7 @@ def _build_pre_tool_hook(
                 file_path, anima_dir, write=False,
                 subordinate_activity_dirs=_sub_activity_dirs,
                 subordinate_management_files=_sub_mgmt_files,
+                peer_activity_dirs=_peer_activity_dirs,
                 superuser=superuser,
             )
             if violation:

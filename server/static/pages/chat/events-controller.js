@@ -69,7 +69,7 @@ export function createEventsController(ctx) {
     // Queue / pending
     addListener("chatPageQueueBtn", "click", () => ctx.controllers.streaming.addToQueue());
     addListener("chatPagePendingCancel", "click", () => {
-      state.pendingQueue = [];
+      if (state.selectedAnima) state.manager.clearQueue(state.selectedAnima, state.selectedThreadId);
       ctx.controllers.streaming.hidePendingIndicator();
       ctx.controllers.streaming.updateSendButton();
     });
@@ -80,7 +80,7 @@ export function createEventsController(ctx) {
       if (el) {
         el.style.height = "auto";
         el.style.height = Math.min(el.scrollHeight, chatInputMaxHeight()) + "px";
-        saveDraft(state.selectedAnima, el.value || "");
+        saveDraft(state.selectedAnima, el.value || "", state.selectedThreadId);
       }
       ctx.controllers.streaming.updateSendButton();
     });

@@ -6,12 +6,12 @@
 from __future__ import annotations
 
 import json
-from datetime import date
 from pathlib import Path
 
 import pytest
 
 from core.memory.activity import ActivityEntry, ActivityLogger
+from core.time_utils import now_jst
 
 
 # ── Fix 3: JSONL field name unification ────────────────────
@@ -62,7 +62,7 @@ class TestFieldNameUnification:
         logger = ActivityLogger(anima_dir)
         logger.log("dm_sent", from_person="alice", to_person="bob")
 
-        today = date.today().isoformat()
+        today = now_jst().strftime("%Y-%m-%d")
         path = anima_dir / "activity_log" / f"{today}.jsonl"
         raw = json.loads(path.read_text(encoding="utf-8").strip())
         assert "from" in raw

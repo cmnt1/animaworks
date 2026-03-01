@@ -93,8 +93,8 @@ class TestRAGIndexAutoUpdate:
         call_args = mock_indexer.index_file.call_args
         assert call_args[1]["memory_type"] == "procedures"
 
-    def test_non_skill_write_skips_index(self, memory, anima_dir: Path) -> None:
-        """Writing to knowledge/ should not trigger skill/procedure indexing."""
+    def test_knowledge_write_triggers_knowledge_index(self, memory, anima_dir: Path) -> None:
+        """Writing to knowledge/ should trigger knowledge RAG indexing."""
         mock_indexer = MagicMock()
         memory._indexer = mock_indexer
         memory._indexer_initialized = True
@@ -107,7 +107,9 @@ class TestRAGIndexAutoUpdate:
             "content": "# Some knowledge",
         })
 
-        mock_indexer.index_file.assert_not_called()
+        mock_indexer.index_file.assert_called_once()
+        call_args = mock_indexer.index_file.call_args
+        assert call_args[1]["memory_type"] == "knowledge"
 
     def test_index_failure_does_not_break_write(self, memory, anima_dir: Path) -> None:
         """RAG index failure should be logged but not block the write."""

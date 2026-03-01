@@ -42,6 +42,7 @@ export function getIcon(type) {
 }
 
 // ── Filter categories (detailed API types) ──────
+// Used by workspace timeline (event_type filter)
 export const TYPE_CATEGORIES = [
   { label: "All", i18nKey: "activity.filter_all", types: [] },
   { label: "💬 MSG", i18nKey: "activity.filter_msg", types: ["message_received", "response_sent", "dm_received", "dm_sent"] },
@@ -52,6 +53,20 @@ export const TYPE_CATEGORIES = [
   { label: "📝 Mem", i18nKey: "activity.filter_mem", types: ["memory_write"] },
   { label: "📣 Notify", i18nKey: "activity.filter_notify", types: ["human_notify"] },
   { label: "⚠️ Err", i18nKey: "activity.filter_err", types: ["error", "issue_resolved"] },
+];
+
+// ── Group-type filter categories (trigger-based, for dashboard) ──────
+// Maps to group.type from group_by_trigger: chat, dm, cron, heartbeat, inbox, task_exec, task, single
+export const GROUP_TYPE_CATEGORIES = [
+  { label: "All", i18nKey: "activity.filter_all", groupTypes: [] },
+  { label: "💬", i18nKey: "activity.filter_group_chat", groupTypes: ["chat"] },
+  { label: "⏰", i18nKey: "activity.filter_group_cron", groupTypes: ["cron"] },
+  { label: "🔨", i18nKey: "activity.filter_group_task_exec", groupTypes: ["task_exec"] },
+  { label: "✉️", i18nKey: "activity.filter_group_dm", groupTypes: ["dm"] },
+  { label: "📬", i18nKey: "activity.filter_group_inbox", groupTypes: ["inbox"] },
+  { label: "💓", i18nKey: "activity.filter_group_heartbeat", groupTypes: ["heartbeat"] },
+  { label: "📋", i18nKey: "activity.filter_group_task", groupTypes: ["task"] },
+  { label: "⚙️", i18nKey: "activity.filter_group_other", groupTypes: ["single"] },
 ];
 
 // ── Type-based default summaries (i18n keys) ────

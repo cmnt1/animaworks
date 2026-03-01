@@ -687,9 +687,20 @@ class ConversationMemory:
             logger.exception("Conversation compression failed; keeping raw turns")
             return
 
+        removed_count = len(to_compress)
         state.turns = to_keep
         state.compressed_summary = summary
-        state.compressed_turn_count += len(to_compress)
+        state.compressed_turn_count += removed_count
+
+        # Shift finalization index to match the shortened turns array.
+        # Without this, last_finalized_turn_index can exceed len(turns),
+        # causing finalize_if_session_ended() to see an empty slice and
+        # never trigger the 10-minute idle finalization.
+        if state.last_finalized_turn_index > 0:
+            state.last_finalized_turn_index = max(
+                0, state.last_finalized_turn_index - removed_count,
+            )
+
         self.save()
 
         logger.info(
@@ -878,6 +889,14 @@ class ConversationMemory:
             state = self.load()
             if not state.turns:
                 return False
+            # Clamp stale index (can exceed len(turns) after compression)
+            if state.last_finalized_turn_index > len(state.turns):
+                logger.info(
+                    "Clamping stale last_finalized_turn_index %d -> %d",
+                    state.last_finalized_turn_index, len(state.turns),
+                )
+                state.last_finalized_turn_index = len(state.turns)
+                self.save()
             # No unrecorded turns → skip
             new_turns = state.turns[state.last_finalized_turn_index:]
             if not new_turns:

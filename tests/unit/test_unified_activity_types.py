@@ -87,10 +87,10 @@ class TestSharedActivityTypesModule:
                 f"WebSocket type '{t}' missing from TYPE_ICONS"
 
     def test_type_categories_count(self) -> None:
-        """TYPE_CATEGORIES should have 9 entries (All + 8 categories)."""
+        """TYPE_CATEGORIES (9) + GROUP_TYPE_CATEGORIES (9) = 18 total entries."""
         content = _SHARED_MODULE.read_text(encoding="utf-8")
         count = content.count("{ label:")
-        assert count == 9, f"Expected 9 TYPE_CATEGORIES entries, got {count}"
+        assert count == 18, f"Expected 18 total category entries, got {count}"
 
     def test_fallback_icon_defined(self) -> None:
         """getIcon() should return a fallback for unknown types (emoji 📌, lucide pin)."""

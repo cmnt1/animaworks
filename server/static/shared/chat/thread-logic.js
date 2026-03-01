@@ -38,14 +38,34 @@ export function createThread(threadList, _animaName) {
 }
 
 /**
- * Close (remove) a thread from the list.
+ * Archive a thread (mark as archived instead of removing).
  * @param {Array} threadList
  * @param {string} threadId
- * @returns {Array} Updated list (unchanged if threadId is "default" or not found)
+ * @returns {Array} Updated list with thread marked archived
+ */
+export function archiveThread(threadList, threadId) {
+  if (threadId === "default") return threadList;
+  return threadList.map(th => th.id === threadId ? { ...th, archived: true } : th);
+}
+
+/**
+ * Restore an archived thread.
+ * @param {Array} threadList
+ * @param {string} threadId
+ * @returns {Array} Updated list with thread un-archived
+ */
+export function restoreThread(threadList, threadId) {
+  return threadList.map(th => th.id === threadId ? { ...th, archived: false } : th);
+}
+
+/**
+ * Close (archive) a thread from the list.
+ * @param {Array} threadList
+ * @param {string} threadId
+ * @returns {Array} Updated list
  */
 export function closeThread(threadList, threadId) {
-  if (threadId === "default") return threadList;
-  return threadList.filter(th => th.id !== threadId);
+  return archiveThread(threadList, threadId);
 }
 
 /**
@@ -57,17 +77,20 @@ export function closeThread(threadList, threadId) {
  * @param {number}  [opts.maxVisible=5] - Max visible non-default threads
  * @param {string}  [opts.newBtnId="chatNewThreadBtn"] - ID for the new-thread button
  * @param {string}  [opts.moreSelectId="chatThreadMoreSelect"] - ID for the more-threads select
+ * @param {string}  [opts.streamingThreadId] - Thread currently streaming
  * @returns {string} HTML string
  */
 export function renderThreadTabsHtml(threadList, activeThreadId, opts) {
   const { escapeHtml } = opts;
+  const streamingThreadId = opts.streamingThreadId || null;
   const maxVisible = opts.maxVisible ?? 5;
   const newBtnId = opts.newBtnId || "chatNewThreadBtn";
   const moreSelectId = opts.moreSelectId || "chatThreadMoreSelect";
 
   const list = threadList.length > 0 ? threadList : [{ id: "default", label: "メイン", unread: false }];
   const defaultThread = list.find(th => th.id === "default") || { id: "default", label: "メイン", unread: false };
-  const nonDefault = list.filter(th => th.id !== "default").sort((a, b) => {
+  const archived = list.filter(th => th.id !== "default" && th.archived);
+  const nonDefault = list.filter(th => th.id !== "default" && !th.archived).sort((a, b) => {
     const diff = threadTimeValue(b.lastTs || "") - threadTimeValue(a.lastTs || "");
     if (diff !== 0) return diff;
     return String(a.label || "").localeCompare(String(b.label || ""), "ja");
@@ -92,11 +115,13 @@ export function renderThreadTabsHtml(threadList, activeThreadId, opts) {
   const visible = [defaultThread, ...visibleNonDefault];
   for (const th of visible) {
     const activeClass = th.id === activeThreadId ? " active" : "";
+    const streamClass = streamingThreadId === th.id ? " is-streaming" : "";
+    const completeClass = th.unread && th.id !== activeThreadId ? " has-unread-complete" : "";
     const star = th.unread ? ' <span class="tab-star" aria-label="unread">★</span>' : "";
     const closeBtn = th.id !== "default"
       ? ` <button type="button" class="thread-tab-close" data-thread="${escapeHtml(th.id)}" title="スレッドを閉じる" aria-label="閉じる">&times;</button>`
       : "";
-    html += `<span class="thread-tab-wrap"><button type="button" class="thread-tab${activeClass}" data-thread="${escapeHtml(th.id)}">${escapeHtml(th.label)}${star}</button>${closeBtn}</span>`;
+    html += `<span class="thread-tab-wrap"><button type="button" class="thread-tab${activeClass}${streamClass}${completeClass}" data-thread="${escapeHtml(th.id)}">${escapeHtml(th.label)}${star}</button>${closeBtn}</span>`;
   }
 
   if (hiddenThreads.length > 0) {
@@ -109,6 +134,24 @@ export function renderThreadTabsHtml(threadList, activeThreadId, opts) {
   }
 
   html += `<button type="button" class="thread-tab-new" id="${newBtnId}" title="新しいスレッド">＋</button>`;
+
+  if (archived.length > 0) {
+    const archiveBtnId = opts.archiveBtnId || "chatArchiveBtn";
+    const archiveMenuId = opts.archiveMenuId || "chatArchiveMenu";
+    html += `<span class="thread-archive-wrap">` +
+      `<button type="button" class="thread-archive-btn" id="${archiveBtnId}" title="アーカイブ (${archived.length})">` +
+      `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
+      `<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>` +
+      `</svg>` +
+      `<span class="thread-archive-badge">${archived.length}</span>` +
+      `</button>` +
+      `<div class="thread-archive-menu" id="${archiveMenuId}">` +
+      archived.map(th =>
+        `<button type="button" class="thread-archive-item" data-thread="${escapeHtml(th.id)}">${escapeHtml(th.label)}</button>`
+      ).join("") +
+      `</div></span>`;
+  }
+
   return html;
 }
 

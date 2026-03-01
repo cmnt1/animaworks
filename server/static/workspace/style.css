@@ -1221,8 +1221,38 @@ html, body {
 }
 
 .ws-thread-tabs .thread-tab.active {
-  background: #2563eb;
-  color: #fff;
+  background: color-mix(in srgb, #2563eb 18%, #fafafa 82%);
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.ws-thread-tabs .thread-tab.is-streaming {
+  animation: thread-tab-thinking-pulse 1.6s ease-in-out infinite;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.ws-thread-tabs .thread-tab.has-unread-complete {
+  background: color-mix(in srgb, #16a34a 15%, #fafafa 85%);
+  color: color-mix(in srgb, #16a34a 80%, #1a1a1a 20%);
+  font-weight: 600;
+}
+
+.ws-thread-tabs .thread-tab.active.has-unread-complete {
+  background: color-mix(in srgb, #16a34a 18%, #fafafa 82%);
+  color: color-mix(in srgb, #16a34a 80%, #1a1a1a 20%);
+}
+
+@keyframes thread-tab-thinking-pulse {
+  0%,
+  100% {
+    background: color-mix(in srgb, var(--aw-color-accent, #2563eb) 12%, var(--aw-color-bg-secondary, #f3f4f6) 88%);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--aw-color-accent, #2563eb) 0%, transparent 100%);
+  }
+  50% {
+    background: color-mix(in srgb, var(--aw-color-accent, #2563eb) 30%, var(--aw-color-bg-secondary, #f3f4f6) 70%);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--aw-color-accent, #2563eb) 18%, transparent 82%);
+  }
 }
 
 .ws-thread-tabs .thread-tab-close {
@@ -2874,6 +2904,54 @@ html, body {
     min-height: 44px;
     font-size: 0.85rem;
   }
+}
+
+/* ── Tool Call Group (collapsible wrapper) ──────── */
+
+.tool-call-group {
+  margin-top: 6px;
+}
+
+.tool-call-group-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #fef3c7;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.78rem;
+  color: #92400e;
+}
+
+.tool-call-group-header:hover,
+.tool-call-group-header:active {
+  background: #fde68a;
+}
+
+.tool-call-group-icon {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  transition: transform 0.15s ease;
+}
+
+.tool-call-group.expanded .tool-call-group-icon {
+  transform: rotate(90deg);
+}
+
+.tool-call-group-label {
+  font-weight: 600;
+}
+
+.tool-group-error-badge {
+  color: #c0392b;
+  font-weight: 700;
+}
+
+.tool-call-group-body {
+  padding-left: 4px;
+  margin-top: 2px;
 }
 
 /* ── Tool Call Indicators (Collapsed) ──────── */

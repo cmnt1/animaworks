@@ -887,6 +887,34 @@ class TestExecuteHeartbeatCycle:
             _stop_patches(mocks)
 
 
+class TestProcessInboxMessage:
+    async def test_archives_filtered_inbox_items_when_no_unread_remain(self, data_dir, make_anima):
+        """Filtered/suppressed inbox items are archived even when unread_count becomes 0."""
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+        dp, mocks = _create_anima(anima_dir, shared_dir)
+        try:
+            item = _make_inbox_item("bob", "resolved topic")
+            from core.anima import InboxResult
+
+            dp._process_inbox_messages = AsyncMock(return_value=InboxResult(
+                inbox_items=[item],
+                messages=[],
+                senders=set(),
+                unread_count=0,
+                prompt_parts=[],
+            ))
+            dp._archive_processed_messages = AsyncMock()
+
+            result = await dp.process_inbox_message()
+
+            dp._archive_processed_messages.assert_awaited_once_with([item], set(), set())
+            assert result.action == "idle"
+            assert result.summary == "No unread messages"
+        finally:
+            _stop_patches(mocks)
+
+
 # ── _archive_processed_messages ──────────────────────────
 
 

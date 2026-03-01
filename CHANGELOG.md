@@ -7,6 +7,21 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- thread tab styling improvements — subtle active state, streaming pulse, completion indicator
+
+### Fixed
+- handle additional Codex SDK event types (text.delta, response.completed)
+- use JST date in heartbeat history test for CI timezone compat
+- ensure chat queue auto-drains after streaming completes
+- use JST date for activity_log paths in more test files
+- preserve full message content in heartbeat dedup consolidation
+- use JST date in activity spec test to match now_iso() timezone
+- resolve CI test failures and add activity group_type filter
+
+### Changed
+- rename dashboard anima list label to Org Chart
+
 ## [0.4.7] - 2026-03-01
 
 ### Added

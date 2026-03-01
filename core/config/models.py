@@ -72,6 +72,7 @@ class AnimaModelConfig(BaseModel):
 
     supervisor: str | None = None
     speciality: str | None = None
+    model: str | None = None
 
 
 # ── Default model names (single source of truth) ─────────────────────────────
@@ -180,6 +181,7 @@ class ExternalMessagingChannelConfig(BaseModel):
     enabled: bool = False
     mode: str = "socket"  # "socket" | "webhook"
     anima_mapping: dict[str, str] = {}  # channel_id → anima_name
+    default_anima: str = ""  # fallback anima for unmapped channels
 
 
 class ExternalMessagingConfig(BaseModel):
@@ -212,6 +214,7 @@ class MediaProxyConfig(BaseModel):
 class ServerConfig(BaseModel):
     """Server runtime configuration."""
 
+    session_ttl_days: int | None = 7  # None = unlimited
     ipc_stream_timeout: int = 60  # per-chunk timeout in seconds
     keepalive_interval: int = 30  # keep-alive emission interval in seconds
     max_streaming_duration: int = 1800  # max streaming duration before hang (seconds)

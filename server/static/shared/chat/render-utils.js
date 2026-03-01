@@ -31,7 +31,10 @@ export function renderHistoryMessage(msg, opts) {
     const content = msg.content ? renderMarkdown(msg.content, opts.animaName) : "";
     const toolHtml = renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: truncLen });
     const imagesHtml = renderImages(msg.images, { animaName: opts.animaName });
-    return `<div class="chat-bubble assistant">${content}${imagesHtml}${toolHtml}${tsHtml}</div>`;
+    const toLabel = msg.to_person
+      ? `<div style="font-size:0.72rem; opacity:0.7; margin-bottom:2px;">→ ${escapeHtml(msg.to_person)}</div>`
+      : "";
+    return `<div class="chat-bubble assistant">${toLabel}${content}${imagesHtml}${toolHtml}${tsHtml}</div>`;
   }
 
   const fromLabel = msg.from_person && msg.from_person !== "human"
@@ -81,7 +84,7 @@ export function renderToolCalls(toolCalls, opts) {
   const { escapeHtml } = opts;
   const truncLen = opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE;
 
-  return toolCalls.map((tc, idx) => {
+  const innerHtml = toolCalls.map((tc, idx) => {
     const errorClass = tc.is_error ? " tool-call-error" : "";
     const toolName = escapeHtml(tc.tool_name || "unknown");
     const errorLabel = tc.is_error ? " [ERROR]" : "";
@@ -94,6 +97,16 @@ export function renderToolCalls(toolCalls, opts) {
       renderToolCallDetail(tc, { escapeHtml, truncateLen: truncLen }) +
       `</div>`;
   }).join("");
+
+  const hasErrors = toolCalls.some(tc => tc.is_error);
+  const errorIndicator = hasErrors ? ' <span class="tool-group-error-badge">!</span>' : "";
+  return `<div class="tool-call-group">` +
+    `<div class="tool-call-group-header">` +
+    `<span class="tool-call-group-icon">\u25B6</span>` +
+    `<span class="tool-call-group-label">Tool Calls (${toolCalls.length})${errorIndicator}</span>` +
+    `</div>` +
+    `<div class="tool-call-group-body" style="display:none;">${innerHtml}</div>` +
+    `</div>`;
 }
 
 /**
@@ -133,6 +146,17 @@ export function renderToolCallDetail(tc, opts) {
  */
 export function bindToolCallHandlers(container) {
   if (!container) return;
+
+  container.querySelectorAll(".tool-call-group-header").forEach(header => {
+    header.addEventListener("click", () => {
+      const group = header.parentElement;
+      const body = group.querySelector(".tool-call-group-body");
+      if (!body) return;
+      const isExpanded = group.classList.contains("expanded");
+      group.classList.toggle("expanded", !isExpanded);
+      body.style.display = isExpanded ? "none" : "";
+    });
+  });
 
   container.querySelectorAll(".tool-call-row").forEach(row => {
     row.addEventListener("click", () => {

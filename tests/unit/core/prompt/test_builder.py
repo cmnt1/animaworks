@@ -452,6 +452,12 @@ class TestFormatAnimaEntry:
     def test_empty_speciality(self):
         assert _format_anima_entry("alice", "") == "alice"
 
+    def test_with_speciality_and_model(self):
+        assert _format_anima_entry("alice", "frontend", "claude-opus-4-6") == "alice (frontend, Opus)"
+
+    def test_with_model_only(self):
+        assert _format_anima_entry("alice", None, "bedrock/jp.anthropic.claude-sonnet-4-6") == "alice (Sonnet)"
+
 
 # ── _build_org_context ───────────────────────────────────
 
@@ -467,8 +473,8 @@ class TestBuildOrgContext:
 
         result = _build_org_context("sakura", ["rin", "kotoha"])
         assert "あなたはトップレベルです" in result
-        assert "rin (development)" in result
-        assert "kotoha (communication)" in result
+        assert "rin (development, Sonnet)" in result
+        assert "kotoha (communication, Sonnet)" in result
 
     def test_middle_manager(self, data_dir, make_anima):
         """Middle manager sees supervisor, subordinates, and peers."""
@@ -479,11 +485,11 @@ class TestBuildOrgContext:
 
         result = _build_org_context("rin", ["sakura", "kotoha", "alice"])
         # Supervisor
-        assert "sakura" in result
+        assert "sakura (Sonnet)" in result
         # Subordinate
-        assert "alice (frontend)" in result
+        assert "alice (frontend, Sonnet)" in result
         # Peer
-        assert "kotoha (communication)" in result
+        assert "kotoha (communication, Sonnet)" in result
 
     def test_leaf_worker(self, data_dir, make_anima):
         """Leaf worker sees supervisor and peers but no subordinates."""
@@ -494,12 +500,12 @@ class TestBuildOrgContext:
 
         result = _build_org_context("alice", ["sakura", "rin", "bob"])
         # Supervisor
-        assert "rin (development)" in result
+        assert "rin (development, Sonnet)" in result
         # No subordinates
         assert "部下" in result
         assert "(なし)" in result
         # Peer
-        assert "bob (backend)" in result
+        assert "bob (backend, Sonnet)" in result
 
     def test_solo_anima(self, data_dir, make_anima):
         """Solo anima with no relationships."""

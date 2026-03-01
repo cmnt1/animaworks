@@ -19,6 +19,7 @@ def _make_animas_dict(specs: list[tuple[str, str | None, str | None]]) -> dict:
         m = MagicMock()
         m.supervisor = sup
         m.speciality = spec
+        m.model = None
         animas[name] = m
     return animas
 

@@ -77,33 +77,36 @@ def _escape_toml_string(value: str) -> str:
 
 # ── Session (thread) ID persistence ──────────────────────────
 
-def _thread_id_path(anima_dir: Path, session_type: str) -> Path:
-    return anima_dir / "shortterm" / session_type / "codex_thread_id.txt"
+def _thread_id_path(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> Path:
+    base = anima_dir / "shortterm" / session_type
+    if chat_thread_id != "default":
+        return base / chat_thread_id / "codex_thread_id.txt"
+    return base / "codex_thread_id.txt"
 
 
-def _save_thread_id(anima_dir: Path, thread_id: str, session_type: str) -> None:
-    p = _thread_id_path(anima_dir, session_type)
+def _save_thread_id(anima_dir: Path, thread_id: str, session_type: str, chat_thread_id: str = "default") -> None:
+    p = _thread_id_path(anima_dir, session_type, chat_thread_id)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(thread_id, encoding="utf-8")
 
 
-def _load_thread_id(anima_dir: Path, session_type: str) -> str | None:
-    p = _thread_id_path(anima_dir, session_type)
+def _load_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> str | None:
+    p = _thread_id_path(anima_dir, session_type, chat_thread_id)
     if p.is_file():
         tid = p.read_text(encoding="utf-8").strip()
         return tid or None
     return None
 
 
-def _clear_thread_id(anima_dir: Path, session_type: str) -> None:
-    p = _thread_id_path(anima_dir, session_type)
+def _clear_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
+    p = _thread_id_path(anima_dir, session_type, chat_thread_id)
     p.unlink(missing_ok=True)
 
 
-def clear_codex_thread_ids(anima_dir: Path) -> None:
+def clear_codex_thread_ids(anima_dir: Path, chat_thread_id: str = "default") -> None:
     """Clear all persisted Codex thread IDs (both chat and heartbeat)."""
     for st in ("chat", "heartbeat"):
-        _clear_thread_id(anima_dir, st)
+        _clear_thread_id(anima_dir, st, chat_thread_id)
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -536,6 +539,11 @@ class CodexSDKExecutor(BaseExecutor):
                         if text:
                             response_text_parts.append(text)
                             yield {"type": "text_delta", "text": text}
+                        else:
+                            logger.debug(
+                                "Codex item.completed message with empty text: %s",
+                                repr(item)[:300],
+                            )
                     elif item_type == "tool_use":
                         tool_name = getattr(item, "name", "unknown")
                         tool_id = getattr(item, "id", "")
@@ -552,6 +560,21 @@ class CodexSDKExecutor(BaseExecutor):
                             "tool_id": tool_id,
                             "tool_name": tool_name,
                         }
+                    else:
+                        text = _extract_item_text(item)
+                        if text:
+                            logger.info(
+                                "Codex item.completed unhandled type=%s "
+                                "but has text (%d chars); emitting",
+                                item_type, len(text),
+                            )
+                            response_text_parts.append(text)
+                            yield {"type": "text_delta", "text": text}
+                        else:
+                            logger.debug(
+                                "Codex item.completed unhandled type=%s: %s",
+                                item_type, repr(item)[:300],
+                            )
                 elif etype == "turn.completed":
                     turn_result = _wrap_result_message(event, thread)
                     usage = getattr(event, "usage", None)
@@ -563,6 +586,23 @@ class CodexSDKExecutor(BaseExecutor):
                     saved_tid = _get_thread_id(thread)
                     if saved_tid:
                         _save_thread_id(self._anima_dir, saved_tid, session_type)
+                elif etype == "text.delta":
+                    text = getattr(event, "text", "") or getattr(event, "delta", "")
+                    if text:
+                        response_text_parts.append(text)
+                        yield {"type": "text_delta", "text": text}
+                elif etype == "response.completed":
+                    resp = getattr(event, "response", event)
+                    text = _extract_item_text(resp)
+                    if text and text not in response_text_parts:
+                        response_text_parts.append(text)
+                        yield {"type": "text_delta", "text": text}
+                else:
+                    logger.debug(
+                        "Codex unhandled event type=%s attrs=%s",
+                        etype,
+                        [a for a in dir(event) if not a.startswith("_")][:15],
+                    )
 
         # Try resume first, fallback to fresh thread
         fell_back = False

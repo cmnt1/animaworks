@@ -72,6 +72,31 @@ SECTION_HEADINGS: dict[str, dict[str, str]] = {
     },
 }
 
+# Aliases that older SKILL.md templates or hand-written sheets may use.
+# _normalize_sheet_headings() rewrites them to the canonical form above.
+SECTION_HEADING_ALIASES: dict[str, dict[str, list[str]]] = {
+    "ja": {
+        "basic_info": ["基本プロフィール"],
+        "personality": ["性格・キャラクター", "性格"],
+    },
+}
+
+
+def _normalize_sheet_headings(content: str) -> str:
+    """Replace alias section headings with their canonical equivalents."""
+    for locale, aliases in SECTION_HEADING_ALIASES.items():
+        headings = SECTION_HEADINGS[locale]
+        for key, alias_list in aliases.items():
+            canonical = headings[key]
+            for alias in alias_list:
+                content = re.sub(
+                    rf"^(##\s+){re.escape(alias)}",
+                    rf"\g<1>{canonical}",
+                    content,
+                    flags=re.MULTILINE,
+                )
+    return content
+
 FIELD_NAMES: dict[str, dict[str, str]] = {
     "ja": {
         "name": "英名",
@@ -258,6 +283,9 @@ def create_from_md(
     else:
         raise ValueError("Either md_path or content must be provided")
 
+    # Normalize alias headings before any processing
+    md_content = _normalize_sheet_headings(md_content)
+
     # Validate before creating anything on disk
     _validate_character_sheet(md_content)
 
@@ -401,6 +429,7 @@ def _validate_character_sheet(content: str) -> None:
     Raises:
         ValueError: If any required section is missing.
     """
+    content = _normalize_sheet_headings(content)
     locale = _detect_sheet_locale(content)
     headings = SECTION_HEADINGS[locale]
     missing: list[str] = []
@@ -423,8 +452,11 @@ def _validate_character_sheet(content: str) -> None:
         missing.append(f"{headings['role_guidelines']} (or '→ injection.md')")
 
     if missing:
+        expected = [f"## {headings[k]}" for k in ("basic_info", "personality", "role_guidelines")]
         raise ValueError(
-            "Character sheet is missing required sections: " + ", ".join(missing)
+            "Character sheet is missing required sections: "
+            + ", ".join(missing)
+            + f". Expected headings: {', '.join(expected)}"
         )
 
 

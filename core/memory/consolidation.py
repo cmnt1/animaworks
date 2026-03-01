@@ -366,17 +366,60 @@ class ConsolidationEngine:
 
         return sorted(files)
 
+    # ── Origin detection ─────────────────────────────────────────
+
+    _EXTERNAL_ORIGINS = frozenset({"external_web", "mixed", "consolidation_external"})
+
+    def _has_external_origin_in_files(self, filenames: list[str]) -> bool:
+        """Check if any knowledge file in *filenames* contains an external origin.
+
+        Reads the YAML frontmatter ``origin:`` field.  Returns ``True`` if
+        at least one file has an origin that indicates external (untrusted)
+        data provenance.
+        """
+        for filename in filenames:
+            filepath = self.knowledge_dir / filename
+            if not filepath.exists():
+                continue
+            try:
+                text = filepath.read_text(encoding="utf-8")
+                if not text.startswith("---"):
+                    continue
+                end = text.find("---", 3)
+                if end == -1:
+                    continue
+                for line in text[3:end].splitlines():
+                    if line.strip().startswith("origin:"):
+                        val = line.split(":", 1)[1].strip()
+                        if val in self._EXTERNAL_ORIGINS:
+                            return True
+            except Exception:
+                continue
+        return False
+
     # ── RAG Index ────────────────────────────────────────────────
 
-    def _update_rag_index(self, filenames: list[str], *, origin: str = "consolidation") -> None:
+    def _update_rag_index(self, filenames: list[str], *, origin: str = "consolidation", source_files: list[str] | None = None) -> None:
         """Update RAG index for the specified knowledge files.
 
         Args:
             filenames: List of knowledge file names (relative to knowledge/)
             origin: Provenance origin for the indexed chunks.
+            source_files: Optional list of input knowledge files used in
+                consolidation.  When provided and any contain external
+                origins, *origin* is downgraded to ``consolidation_external``.
         """
         if not filenames:
             return
+
+        effective_origin = origin
+        if source_files and origin == "consolidation":
+            if self._has_external_origin_in_files(source_files):
+                effective_origin = "consolidation_external"
+                logger.info(
+                    "Downgrading consolidation origin to 'consolidation_external' "
+                    "due to external-origin input files",
+                )
 
         try:
             from core.memory.rag import MemoryIndexer
@@ -388,8 +431,8 @@ class ConsolidationEngine:
             for filename in filenames:
                 filepath = self.knowledge_dir / filename
                 if filepath.exists():
-                    indexer.index_file(filepath, memory_type="knowledge", origin=origin)
-                    logger.debug("Updated RAG index for: %s", filename)
+                    indexer.index_file(filepath, memory_type="knowledge", origin=effective_origin)
+                    logger.debug("Updated RAG index for: %s (origin=%s)", filename, effective_origin)
 
         except ImportError:
             logger.debug("RAG not available, skipping index update")
@@ -405,10 +448,22 @@ class ConsolidationEngine:
             vector_store = self._rag_store or get_vector_store(self.anima_name)
             indexer = MemoryIndexer(vector_store, self.anima_name, self.anima_dir)
 
-            # Re-index all knowledge files (consolidation-derived)
+            # Re-index all knowledge files, respecting per-file origin
             for knowledge_file in self.knowledge_dir.rglob("*.md"):
-                indexer.index_file(knowledge_file, memory_type="knowledge", origin="consolidation")
-                logger.debug("Re-indexed knowledge: %s", knowledge_file.name)
+                file_origin = "consolidation"
+                try:
+                    text = knowledge_file.read_text(encoding="utf-8")
+                    if text.startswith("---"):
+                        end = text.find("---", 3)
+                        if end != -1:
+                            for line in text[3:end].splitlines():
+                                if line.strip().startswith("origin:"):
+                                    file_origin = line.split(":", 1)[1].strip() or file_origin
+                                    break
+                except Exception:
+                    pass
+                indexer.index_file(knowledge_file, memory_type="knowledge", origin=file_origin)
+                logger.debug("Re-indexed knowledge: %s (origin=%s)", knowledge_file.name, file_origin)
 
             # Re-index all episode files (origin unknown on rebuild)
             for episode_file in self.episodes_dir.glob("*.md"):

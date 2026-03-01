@@ -65,7 +65,8 @@ class InboxMixin:
         Separated from heartbeat to provide instant response to inter-Anima
         messages without triggering the full heartbeat observation cycle.
         """
-        self._interrupt_event.clear()
+        self._get_interrupt_event("_inbox").clear()
+        self.agent.set_interrupt_event(self._get_interrupt_event("_inbox"))
         logger.info("[%s] process_inbox_message START", self.name)
         try:
             # Wait for any running cron task to finish before processing inbox.
@@ -85,6 +86,12 @@ class InboxMixin:
                     )
 
                     if inbox_result.unread_count == 0:
+                        if inbox_result.inbox_items:
+                            await self._archive_processed_messages(
+                                inbox_result.inbox_items,
+                                inbox_result.senders,
+                                set(),
+                            )
                         logger.info("[%s] process_inbox_message: no messages", self.name)
                         return CycleResult(
                             trigger="inbox",
@@ -176,6 +183,17 @@ class InboxMixin:
                         active_session_type.reset(_session_token)
 
                     self._last_activity = now_jst()
+
+                    # Record inbox response as response_sent so it appears
+                    # in the conversation view alongside message_received.
+                    if accumulated_text.strip():
+                        self._activity.log(
+                            "response_sent",
+                            content=accumulated_text[:2000],
+                            to_person=senders_str,
+                            channel="inbox",
+                            meta={"trigger": "inbox"},
+                        )
 
                     # Archive processed messages
                     await self._archive_processed_messages(

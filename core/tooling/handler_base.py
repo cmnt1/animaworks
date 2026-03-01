@@ -61,6 +61,20 @@ _BLOCKED_CMD_PATTERNS: list[tuple[re.Pattern[str], str]] = [
      "World-writable chmod is blocked"),
     (re.compile(r"\bshutdown\b|\breboot\b|\binit\s+[06]\b"),
      "System shutdown/reboot is blocked"),
+    (re.compile(r"(?:^|[|;&]\s*)nc\b"),
+     "nc (netcat) is blocked for security"),
+    (re.compile(r"(?:^|[|;&]\s*)ncat\b"),
+     "ncat is blocked for security"),
+    (re.compile(r"(?:^|[|;&]\s*)socat\b"),
+     "socat is blocked for security"),
+    (re.compile(r"(?:^|[|;&]\s*)telnet\b"),
+     "telnet is blocked for security"),
+    (re.compile(r"curl\s+.*-[dFT]\b"),
+     "curl data upload (-d/-F/-T) is blocked for security"),
+    (re.compile(r"curl\s+.*--data\b"),
+     "curl --data is blocked for security"),
+    (re.compile(r"wget\s+.*--post\b"),
+     "wget --post is blocked for security"),
 ]
 
 _NEEDS_SHELL_RE = re.compile(r"\||\&\&|\|\||>>?|<<?")
@@ -69,6 +83,10 @@ _PROTECTED_FILES = frozenset({
     "permissions.md",
     "identity.md",
     "bootstrap.md",
+})
+
+_PROTECTED_DIRS = frozenset({
+    "activity_log",
 })
 
 _EPISODE_FILENAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(_.+)?\.md$")
@@ -89,6 +107,26 @@ _READ_FILE_SAFETY_NOTICE = (
 
 
 # ── Helper functions ──────────────────────────────────────────
+
+
+def build_outgoing_origin_chain(
+    session_origin: str,
+    session_origin_chain: list[str],
+) -> list[str]:
+    """Build outgoing origin_chain for Anima-to-Anima messages.
+
+    Appends the session origin and ORIGIN_ANIMA to the chain,
+    deduplicating and truncating to MAX_ORIGIN_CHAIN_LENGTH.
+    """
+    from core.execution._sanitize import ORIGIN_ANIMA, MAX_ORIGIN_CHAIN_LENGTH
+
+    chain = list(session_origin_chain)
+    if session_origin and session_origin not in chain:
+        chain.append(session_origin)
+    if ORIGIN_ANIMA not in chain:
+        chain.append(ORIGIN_ANIMA)
+    return chain[:MAX_ORIGIN_CHAIN_LENGTH]
+
 
 def _error_result(
     error_type: str,
@@ -243,6 +281,13 @@ def _is_protected_write(anima_dir: Path, target: Path) -> str | None:
         return _error_result(
             "PermissionDenied",
             f"'{rel}' is a protected file and cannot be modified by the anima itself",
+        )
+
+    rel_parts = Path(rel).parts
+    if rel_parts and rel_parts[0] in _PROTECTED_DIRS:
+        return _error_result(
+            "PermissionDenied",
+            f"'{rel_parts[0]}/' is a protected directory and cannot be modified by the anima itself",
         )
 
     return None

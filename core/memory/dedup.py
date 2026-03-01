@@ -100,14 +100,11 @@ class MessageDeduplicator:
 
         for sender, sender_msgs in by_sender.items():
             if len(sender_msgs) >= _CONSOLIDATION_THRESHOLD:
-                # Keep a copy of the first message with summary of all
                 first = copy(sender_msgs[0])
-                summaries = [
-                    m.content[:100] for m in sender_msgs
-                ]
+                parts = [m.content for m in sender_msgs]
                 summary_text = (
                     t("dedup.messages_merged", count=len(sender_msgs))
-                    + " / ".join(summaries)
+                    + "\n\n---\n\n".join(parts)
                 )
                 first.content = summary_text
                 consolidated.append(first)

@@ -162,10 +162,50 @@ def _discover_other_animas(anima_dir: Path) -> list[str]:
 # ── Organisation Context ─────────────────────────────────
 
 
-def _format_anima_entry(name: str, speciality: str | None) -> str:
-    """Format an anima name with optional speciality annotation."""
+def _shorten_model_name(model: str | None) -> str | None:
+    """Convert a raw model identifier to a short human-readable label."""
+    if not model or not isinstance(model, str):
+        return None
+    # Strip provider prefix after last "/" (e.g. bedrock/jp.anthropic.claude-... -> jp.anthropic.claude-...)
+    m = model.rsplit("/", 1)[-1]
+    # Strip dot-separated provider namespaces (e.g. jp.anthropic.claude-sonnet-4-6 -> claude-sonnet-4-6)
+    # Only strip segments that look like provider names (all-alpha, no digits)
+    while "." in m:
+        head, _, tail = m.partition(".")
+        if head.isalpha():
+            m = tail
+        else:
+            break
+    low = m.lower()
+    # Claude family
+    if "opus" in low:
+        return "Opus"
+    if "sonnet" in low:
+        return "Sonnet"
+    if "haiku" in low:
+        return "Haiku"
+    # GPT family — extract version number
+    if low.startswith("gpt-"):
+        import re
+        ver = re.match(r"gpt-([\d.]+)", low)
+        label = f"GPT-{ver.group(1)}" if ver else "GPT"
+        if "mini" in low:
+            label += "m"
+        return label
+    # Fallback: return as-is
+    return m
+
+
+def _format_anima_entry(name: str, speciality: str | None, model: str | None = None) -> str:
+    """Format an anima name with optional speciality and model annotation."""
+    short_model = _shorten_model_name(model)
+    parts = []
     if speciality:
-        return f"{name} ({speciality})"
+        parts.append(speciality)
+    if short_model:
+        parts.append(short_model)
+    if parts:
+        return f"{name} ({', '.join(parts)})"
     return name
 
 
@@ -188,8 +228,10 @@ def _build_full_org_tree(
     lines: list[str] = []
 
     def _render(name: str, prefix: str, is_last: bool, is_root: bool) -> None:
-        spec = all_animas[name].speciality if name in all_animas else None
-        label = _format_anima_entry(name, spec)
+        acfg = all_animas.get(name)
+        spec = acfg.speciality if acfg else None
+        mdl = acfg.model if acfg else None
+        label = _format_anima_entry(name, spec, mdl)
         if is_root:
             marker = ""
             suffix = you_marker if name == anima_name else ""
@@ -244,6 +286,7 @@ def _scan_all_animas(animas_dir: Path) -> dict[str, Any]:
         supervisor: str | None = None
         speciality: str | None = None
         role: str | None = None
+        model: str | None = None
 
         # status.json is the SSoT; config.animas is fallback only.
         status_has_supervisor = False
@@ -260,6 +303,7 @@ def _scan_all_animas(animas_dir: Path) -> dict[str, Any]:
                     speciality = data["speciality"] or None
                     status_has_speciality = True
                 role = data.get("role") or None
+                model = data.get("model") or None
             except Exception:
                 pass
 
@@ -274,7 +318,7 @@ def _scan_all_animas(animas_dir: Path) -> dict[str, Any]:
         if not speciality and role:
             speciality = role
 
-        result[name] = AnimaModelConfig(supervisor=supervisor, speciality=speciality)
+        result[name] = AnimaModelConfig(supervisor=supervisor, speciality=speciality, model=model)
 
     for name, cfg in config_animas.items():
         if name not in result:
@@ -329,10 +373,12 @@ def _build_org_context(anima_name: str, other_animas: list[str], execution_mode:
     # Non-top-level: existing logic
     # Supervisor
     if my_supervisor:
-        sup_spec = None
-        if my_supervisor in all_animas:
-            sup_spec = all_animas[my_supervisor].speciality
-        supervisor_line = _format_anima_entry(my_supervisor, sup_spec)
+        sup_cfg = all_animas.get(my_supervisor)
+        supervisor_line = _format_anima_entry(
+            my_supervisor,
+            sup_cfg.speciality if sup_cfg else None,
+            sup_cfg.model if sup_cfg else None,
+        )
     else:
         supervisor_line = _fs.get("none_top_level", "(none — you are top-level)")
 
@@ -343,7 +389,7 @@ def _build_org_context(anima_name: str, other_animas: list[str], execution_mode:
             continue
         pcfg = all_animas[name]
         if pcfg.supervisor == anima_name:
-            subordinates.append(_format_anima_entry(name, pcfg.speciality))
+            subordinates.append(_format_anima_entry(name, pcfg.speciality, pcfg.model))
 
     # Peers: animas with the same supervisor (excluding self)
     peers: list[str] = []
@@ -353,7 +399,7 @@ def _build_org_context(anima_name: str, other_animas: list[str], execution_mode:
                 continue
             pcfg = all_animas[name]
             if pcfg.supervisor == my_supervisor:
-                peers.append(_format_anima_entry(name, pcfg.speciality))
+                peers.append(_format_anima_entry(name, pcfg.speciality, pcfg.model))
 
     subordinates_line = ", ".join(subordinates) if subordinates else _fs.get("none", "(none)")
     peers_line = ", ".join(peers) if peers else _fs.get("none", "(none)")
@@ -551,19 +597,16 @@ def build_system_prompt(
     # resolved without intervening system boilerplate.
     identity = memory.read_identity()
     if identity:
-        if is_task:
-            identity = "\n".join(identity.split("\n")[:3])
         parts.append(identity)
 
-    if not is_task:
-        injection = memory.read_injection()
-        if injection:
-            parts.append(injection)
+    injection = memory.read_injection()
+    if injection:
+        parts.append(injection)
 
     current_time = now_jst().strftime("%Y-%m-%d %H:%M (%Z)")
     parts.append(f"{_ss.get('current_time_label', '**Current time**:')} {current_time}")
 
-    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
+    if tier in (TIER_FULL, TIER_STANDARD):
         _br = (
             _prompt_store.get_section("behavior_rules") if _prompt_store else None
         ) or load_prompt("behavior_rules")
@@ -590,7 +633,7 @@ def build_system_prompt(
         if company_vision:
             parts.append(company_vision)
 
-    if not is_inbox and not is_background_auto and tier in (TIER_FULL, TIER_STANDARD):
+    if not is_inbox and not is_background_auto and not is_task and tier in (TIER_FULL, TIER_STANDARD):
         specialty = memory.read_specialty_prompt()
         if specialty:
             parts.append(specialty)
@@ -679,9 +722,7 @@ def build_system_prompt(
     # ── Group 4: 記憶と能力 ───────────────────────────────────
     parts.append(_ss.get("group4_header", "# 4. Memory and Capabilities"))
 
-    if is_task:
-        parts.append(f"Anima directory: {pd}")
-    elif tier in (TIER_FULL, TIER_STANDARD):
+    if tier in (TIER_FULL, TIER_STANDARD):
         # Memory directory guide
         _none = _fs.get("none", "(none)")
         _common = _ss.get("common_label", "(shared)")
@@ -849,28 +890,28 @@ def build_system_prompt(
             except Exception:
                 logger.debug("Skipped hiring context injection", exc_info=True)
 
-    # org_context: skip for task
-    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
+    if tier in (TIER_FULL, TIER_STANDARD):
         org_context = _build_org_context(pd.name, other_animas, execution_mode)
         if org_context:
             parts.append(org_context)
 
-        _msg = _build_messaging_section(pd, other_animas, execution_mode)
-        if is_background_auto and len(_msg) > 500:
-            _msg = _msg[:500] + "\n" + _fs.get("summary", "(summary)")
-        parts.append(_msg)
+        if not is_task:
+            _msg = _build_messaging_section(pd, other_animas, execution_mode)
+            if is_background_auto and len(_msg) > 500:
+                _msg = _msg[:500] + "\n" + _fs.get("summary", "(summary)")
+            parts.append(_msg)
 
-        # human_notification: skip for inbox and task
-        if not is_inbox:
-            try:
-                from core.config import load_config as _load_cfg
-                _cfg = _load_cfg()
-                _my_pcfg = _cfg.animas.get(pd.name)
-                _is_top_level = _my_pcfg is None or _my_pcfg.supervisor is None
-                if _is_top_level and _cfg.human_notification.enabled:
-                    parts.append(_build_human_notification_guidance(execution_mode))
-            except Exception:
-                logger.debug("Skipped human notification guidance injection", exc_info=True)
+            # human_notification: skip for inbox and task
+            if not is_inbox:
+                try:
+                    from core.config import load_config as _load_cfg
+                    _cfg = _load_cfg()
+                    _my_pcfg = _cfg.animas.get(pd.name)
+                    _is_top_level = _my_pcfg is None or _my_pcfg.supervisor is None
+                    if _is_top_level and _cfg.human_notification.enabled:
+                        parts.append(_build_human_notification_guidance(execution_mode))
+                except Exception:
+                    logger.debug("Skipped human notification guidance injection", exc_info=True)
     elif not is_task and tier == TIER_LIGHT:
         try:
             parts.append(load_prompt("builder/light_tier_org", anima_name=pd.name))

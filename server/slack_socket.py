@@ -45,12 +45,12 @@ class SlackSocketModeManager:
         app_token = get_credential("slack_app", "slack_socket", env_var="SLACK_APP_TOKEN")
 
         self._app = AsyncApp(token=bot_token)
-        self._register_handlers(slack_config.anima_mapping)
+        self._register_handlers(slack_config.anima_mapping, slack_config.default_anima)
         self._handler = AsyncSocketModeHandler(self._app, app_token)
         await self._handler.connect_async()
         logger.info("Slack Socket Mode connected")
 
-    def _register_handlers(self, anima_mapping: dict[str, str]) -> None:
+    def _register_handlers(self, anima_mapping: dict[str, str], default_anima: str = "") -> None:
         """Register Slack event handlers for message routing."""
 
         @self._app.event("message")
@@ -68,10 +68,10 @@ class SlackSocketModeManager:
                 logger.debug("Reply routing lookup failed", exc_info=True)
 
             channel_id = event.get("channel", "")
-            anima_name = anima_mapping.get(channel_id)
+            anima_name = anima_mapping.get(channel_id) or default_anima
             if not anima_name:
                 logger.debug(
-                    "No anima mapping for channel %s; ignoring message",
+                    "No anima mapping for channel %s and no default_anima; ignoring",
                     channel_id,
                 )
                 return

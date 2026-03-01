@@ -2,12 +2,14 @@
 import {
   $, isTabOpen, refreshAnimaUnread, clearUnreadForActiveThread,
   setThreadUnread, threadTimeValue, scheduleSaveChatUiState,
+  saveDraft, loadDraft, chatInputMaxHeight,
   CONSTANTS,
 } from "./ctx.js";
 import {
   renderThreadTabsHtml,
   createThread as sharedCreateThread,
   closeThread as sharedCloseThread,
+  restoreThread as sharedRestoreThread,
 } from "../../shared/chat/thread-logic.js";
 
 export function createThreadController(ctx) {
@@ -19,9 +21,11 @@ export function createThreadController(ctx) {
     if (!container || !state.selectedAnima) return;
 
     const list = state.threads[state.selectedAnima] || [{ id: "default", label: "メイン", unread: false }];
+    const streamCtx = state.manager.getStreamingContext(state.selectedAnima);
     container.innerHTML = renderThreadTabsHtml(list, state.selectedThreadId, {
       escapeHtml,
       maxVisible: CONSTANTS.THREAD_VISIBLE_NON_DEFAULT,
+      streamingThreadId: streamCtx?.thread || null,
     });
 
     container.querySelectorAll(".thread-tab").forEach(btn => {
@@ -48,10 +52,47 @@ export function createThreadController(ctx) {
         e.target.value = "";
       });
     }
+
+    const archiveBtn = $("chatArchiveBtn");
+    if (archiveBtn) {
+      archiveBtn.addEventListener("click", e => {
+        e.stopPropagation();
+        const wrap = archiveBtn.closest(".thread-archive-wrap");
+        if (wrap) wrap.classList.toggle("open");
+      });
+    }
+
+    const archiveMenu = $("chatArchiveMenu");
+    if (archiveMenu) {
+      archiveMenu.querySelectorAll(".thread-archive-item").forEach(btn => {
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          const tid = e.currentTarget.dataset.thread;
+          if (tid) restoreThread(tid);
+          const wrap = archiveMenu.closest(".thread-archive-wrap");
+          if (wrap) wrap.classList.remove("open");
+        });
+      });
+    }
+
+    // Close archive dropdown on outside click
+    function closeArchiveDropdown(e) {
+      const wrap = container.querySelector(".thread-archive-wrap.open");
+      if (wrap && !wrap.contains(e.target)) wrap.classList.remove("open");
+    }
+    document.removeEventListener("click", closeArchiveDropdown);
+    document.addEventListener("click", closeArchiveDropdown);
   }
 
   async function selectThread(threadId) {
     if (threadId === state.selectedThreadId) return;
+    const prevThread = state.selectedThreadId;
+    const name = state.selectedAnima;
+    const input = $("chatPageInput");
+    if (name && input) {
+      saveDraft(name, input.value || "", prevThread);
+    }
+
     state.selectedThreadId = threadId;
     state.activeThreadByAnima[state.selectedAnima] = threadId;
     clearUnreadForActiveThread(ctx, state.selectedAnima, threadId);
@@ -59,29 +100,23 @@ export function createThreadController(ctx) {
     ctx.controllers.anima.renderAnimaTabs();
     renderThreadTabs();
 
-    const name = state.selectedAnima;
     if (!name) return;
 
-    const hs = state.historyState[name]?.[threadId];
+    if (input) {
+      input.value = loadDraft(name, threadId);
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, chatInputMaxHeight()) + "px";
+    }
+    ctx.controllers.streaming.showPendingIndicator();
+    ctx.controllers.streaming.updateSendButton();
+
+    const mgr = state.manager;
+    const hs = mgr.getHistoryState(name, threadId);
     const needLoad = !hs || hs.sessions.length === 0;
     ctx.controllers.renderer.renderChat();
 
     if (needLoad) {
-      try {
-        const conv = await ctx.controllers.renderer.fetchConversationHistory(name, CONSTANTS.HISTORY_PAGE_SIZE, null, threadId);
-        if (!state.historyState[name]) state.historyState[name] = {};
-        if (conv && conv.sessions && conv.sessions.length > 0) {
-          state.historyState[name][threadId] = {
-            sessions: conv.sessions, hasMore: conv.has_more || false,
-            nextBefore: conv.next_before || null, loading: false,
-          };
-        } else {
-          state.historyState[name][threadId] = { sessions: [], hasMore: false, nextBefore: null, loading: false };
-        }
-      } catch {
-        if (!state.historyState[name]) state.historyState[name] = {};
-        state.historyState[name][threadId] = { sessions: [], hasMore: false, nextBefore: null, loading: false };
-      }
+      await mgr.loadHistory(name, threadId, CONSTANTS.HISTORY_PAGE_SIZE);
     }
     ctx.controllers.renderer.renderChat();
     scheduleSaveChatUiState(ctx);
@@ -93,11 +128,7 @@ export function createThreadController(ctx) {
     const { updatedList, newThreadId } = sharedCreateThread(list, state.selectedAnima);
     state.threads[state.selectedAnima] = updatedList;
 
-    if (!state.chatHistories[state.selectedAnima]) state.chatHistories[state.selectedAnima] = {};
-    state.chatHistories[state.selectedAnima][newThreadId] = [];
-
-    if (!state.historyState[state.selectedAnima]) state.historyState[state.selectedAnima] = {};
-    state.historyState[state.selectedAnima][newThreadId] = { sessions: [], hasMore: false, nextBefore: null, loading: false };
+    state.manager.setMessages(state.selectedAnima, newThreadId, []);
 
     renderThreadTabs();
     selectThread(newThreadId);
@@ -111,8 +142,7 @@ export function createThreadController(ctx) {
     if (!list.some(th => th.id === threadId)) return;
 
     state.threads[state.selectedAnima] = sharedCloseThread(list, threadId);
-    delete state.chatHistories[state.selectedAnima]?.[threadId];
-    delete state.historyState[state.selectedAnima]?.[threadId];
+    // Don't destroy session — archived threads can be restored
 
     if (state.selectedThreadId === threadId) {
       state.selectedThreadId = "default";
@@ -125,5 +155,16 @@ export function createThreadController(ctx) {
     scheduleSaveChatUiState(ctx);
   }
 
-  return { renderThreadTabs, selectThread, createNewThread, closeThread };
+  function restoreThread(threadId) {
+    if (!state.selectedAnima) return;
+    const list = state.threads[state.selectedAnima];
+    if (!list) return;
+
+    state.threads[state.selectedAnima] = sharedRestoreThread(list, threadId);
+    renderThreadTabs();
+    selectThread(threadId);
+    scheduleSaveChatUiState(ctx);
+  }
+
+  return { renderThreadTabs, selectThread, createNewThread, closeThread, restoreThread };
 }

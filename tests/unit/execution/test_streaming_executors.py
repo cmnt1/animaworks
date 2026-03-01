@@ -364,6 +364,7 @@ class FakeStreamChunk:
         delta = MagicMock()
         delta.content = text
         delta.tool_calls = tool_calls
+        delta.reasoning_content = None
 
         choice = MagicMock()
         choice.delta = delta
@@ -998,6 +999,7 @@ def anthropic_fallback_executor(tmp_path: Path):
     )
     tool_handler = MagicMock()
     tool_handler._human_notifier = None
+    tool_handler._min_trust_seen = 99
     tool_handler.handle = MagicMock(return_value="tool result")
     memory = MagicMock()
 

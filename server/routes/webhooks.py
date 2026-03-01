@@ -102,9 +102,9 @@ def create_webhooks_router() -> APIRouter:
                 logger.debug("Reply routing lookup failed", exc_info=True)
 
             channel_id = event.get("channel", "")
-            anima_name = slack_config.anima_mapping.get(channel_id)
+            anima_name = slack_config.anima_mapping.get(channel_id) or slack_config.default_anima
             if not anima_name:
-                logger.warning("No anima mapping for Slack channel %s", channel_id)
+                logger.warning("No anima mapping for Slack channel %s and no default_anima", channel_id)
                 return {"ok": True}
 
             text = event.get("text", "")

@@ -36,7 +36,14 @@ CATEGORIES = (
     "common_skills",
     "common_knowledge",
     "docs",
+    "root",
 )
+
+# ── Root-level files (not in templates/ or docs/) ─────────
+
+_ROOT_FILE_MAP: dict[str, tuple[str, str]] = {
+    "root/README": ("README_ja.md", "README.md"),
+}
 
 # ── ja → en path overrides (common_skills differ in structure) ───────
 
@@ -192,6 +199,16 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tools/slack.py",
         "server/routes/webhooks.py",
     ],
+    # ── root-level files ──
+    "root/README": [
+        "core/",
+        "core/execution/",
+        "core/voice/",
+        "core/memory/priming.py",
+        "server/",
+        "cli/",
+        "templates/roles/",
+    ],
 }
 
 # 対象は common_skills, common_knowledge, および OSS公開 docs/ 。
@@ -255,6 +272,9 @@ def _en_rel(doc_key: str) -> str | None:
     """Resolve en-locale relative path for a ja-canonical doc key."""
     if doc_key in _JA_ONLY:
         return None
+    if doc_key in _ROOT_FILE_MAP:
+        _, en = _ROOT_FILE_MAP[doc_key]
+        return en if (WORKSPACE / en).exists() else None
     if doc_key.startswith("docs/"):
         stem = doc_key[len("docs/"):]
         rel = f"docs/{stem}.md"
@@ -265,6 +285,9 @@ def _en_rel(doc_key: str) -> str | None:
 
 
 def _ja_rel(doc_key: str) -> str:
+    if doc_key in _ROOT_FILE_MAP:
+        ja, _ = _ROOT_FILE_MAP[doc_key]
+        return ja
     if doc_key.startswith("docs/"):
         stem = doc_key[len("docs/"):]
         return f"docs/{stem}.ja.md"

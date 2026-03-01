@@ -14,6 +14,7 @@ import {
   threadTimeValue, defaultThreadLabel as _defaultThreadLabel,
   mergeThreadsFromSessions as _mergeThreads,
 } from "../../shared/chat/thread-logic.js";
+import { ChatSessionManager } from "../../shared/chat/session-manager.js";
 
 const logger = createLogger("chat-page");
 
@@ -25,32 +26,43 @@ export const CONSTANTS = Object.freeze({
 });
 
 export function createChatContext() {
+  const mgr = ChatSessionManager.getInstance();
+  mgr.configure({
+    streamChat, fetchActiveStream, fetchStreamProgress,
+    getUser: () => localStorage.getItem("animaworks_user") || "human",
+    fetchHistory: async (animaName, limit, before, threadId) => {
+      let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}`;
+      if (before) url += `&before=${encodeURIComponent(before)}`;
+      url += `&thread_id=${encodeURIComponent(threadId)}`;
+      if (threadId !== "default") url += `&strict_thread=1`;
+      return await api(url);
+    },
+  });
+
   const state = {
     container: null,
     animas: [],
     selectedAnima: null,
-    chatHistories: {},
     animaDetail: null,
     animaTabs: [],
     activeRightTab: "state",
     activeMemoryTab: "episodes",
     intervals: [],
     boundListeners: [],
-    historyState: {},
     chatObserver: null,
-    activeStreams: {},
     selectedThreadId: "default",
     threads: {},
     activeThreadByAnima: {},
     animaLastAccess: {},
     imageInputManager: null,
     bustupUrl: null,
-    pendingQueue: [],
     chatUiStateSaveTimer: null,
     animaTabAvatarUrls: {},
     animaTabAvatarLoading: {},
     chatPollingInFlight: false,
     rightPaneVisible: true,
+    /** @type {ChatSessionManager} */
+    manager: mgr,
   };
 
   const deps = {
@@ -73,24 +85,24 @@ export function chatInputMaxHeight() {
 }
 
 // ── Draft Persistence (delegates to shared/chat/draft.js) ──
-export function getDraftKey(animaName) {
+export function getDraftKey(animaName, threadId) {
   const user = localStorage.getItem("animaworks_user") || "guest";
-  return _getDraftKey("dashboard-chat", user, animaName);
+  return _getDraftKey("dashboard-chat", user, animaName, threadId);
 }
 
-export function saveDraft(animaName, text) {
+export function saveDraft(animaName, text, threadId) {
   if (!animaName) return;
-  _saveDraft(getDraftKey(animaName), text || "");
+  _saveDraft(getDraftKey(animaName, threadId), text || "");
 }
 
-export function loadDraft(animaName) {
+export function loadDraft(animaName, threadId) {
   if (!animaName) return "";
-  return _loadDraft(getDraftKey(animaName));
+  return _loadDraft(getDraftKey(animaName, threadId));
 }
 
-export function clearDraft(animaName) {
+export function clearDraft(animaName, threadId) {
   if (!animaName) return;
-  _clearDraft(getDraftKey(animaName));
+  _clearDraft(getDraftKey(animaName, threadId));
 }
 
 // ── Tab / Thread Helpers ──
@@ -146,7 +158,11 @@ export function serializeChatUiState(ctx) {
     const list = threads[name] || [{ id: "default", label: "メイン", unread: false }];
     threadState[name] = {
       active_thread_id: activeThreadByAnima[name] || "default",
-      threads: list.map(th => ({ id: th.id, label: th.label, unread: Boolean(th.unread) })),
+      threads: list.map(th => {
+        const o = { id: th.id, label: th.label, unread: Boolean(th.unread) };
+        if (th.archived) o.archived = true;
+        return o;
+      }),
     };
   }
   return {
