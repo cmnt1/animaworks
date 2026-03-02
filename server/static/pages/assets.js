@@ -158,7 +158,7 @@ async function _loadGallery() {
 
   let html = "";
 
-  // Primary section
+  // Primary section (open)
   html += `<h3 style="margin-bottom:0.5rem;">${escapeHtml(primaryLabel)}</h3>`;
   html += '<div class="assets-gallery">';
   if (isRealistic) {
@@ -188,13 +188,11 @@ async function _loadGallery() {
     `;
   }
   html += "</div>";
+  html += _renderExpressionGrid(isRealistic ? "realistic" : "anime");
 
   // Secondary section (collapsible)
-  const hasSecondary = isRealistic
-    ? Object.keys(animeAssets).length > 0
-    : Object.keys(realisticAssets).length > 0;
-
-  html += `<details style="margin-top:1.5rem;" ${hasSecondary ? "" : ""}>`;
+  const secondaryStyle = isRealistic ? "anime" : "realistic";
+  html += `<details style="margin-top:1.5rem;">`;
   html += `<summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:var(--aw-color-text-secondary,#555);">${escapeHtml(secondaryLabel)}</summary>`;
   html += '<div class="assets-gallery" style="margin-top:0.5rem;">';
   if (isRealistic) {
@@ -205,10 +203,9 @@ async function _loadGallery() {
     html += _renderThumbnailSmall("Fullbody", realisticAssets.avatar_fullbody_realistic);
     html += _renderThumbnailSmall("Bustup", realisticAssets.avatar_bustup_realistic);
   }
-  html += "</div></details>";
-
-  // Expression grid
-  html += _renderExpressionGrid();
+  html += "</div>";
+  html += _renderExpressionGrid(secondaryStyle);
+  html += "</details>";
 
   // Remake button
   html += `
@@ -268,18 +265,17 @@ function _renderThumbnailSmall(label, assetInfo) {
 
 // ── Expression Grid ─────────────────────────
 
-function _renderExpressionGrid() {
+function _renderExpressionGrid(style) {
   if (!_metadata) return "";
 
-  const isRealistic = isRealisticMode();
-  const expressions = isRealistic
+  const expressions = style === "realistic"
     ? (_metadata.expressions_realistic || {})
     : (_metadata.expressions || {});
 
-  let html = `<div class="assets-expression-section" style="margin-top:1.5rem;">`;
+  let html = `<div class="assets-expression-section" data-style="${escapeHtml(style)}" style="margin-top:1.5rem;">`;
   html += `<div class="assets-expression-header">`;
   html += `<h3 style="margin:0;">${t("assets.expressions_title")}</h3>`;
-  html += `<button class="btn-secondary btn-sm" id="assetsRegenAllExprBtn">${t("assets.regen_all_expressions")}</button>`;
+  html += `<button class="btn-secondary btn-sm assets-regen-all-expr-btn" data-style="${escapeHtml(style)}">${t("assets.regen_all_expressions")}</button>`;
   html += `</div>`;
   html += `<div class="assets-expression-grid">`;
 
@@ -292,11 +288,11 @@ function _renderExpressionGrid() {
       : `<div class="assets-expression-placeholder">${t("assets.not_generated")}</div>`;
 
     html += `
-      <div class="assets-expression-card" data-emotion="${escapeHtml(emotion)}">
+      <div class="assets-expression-card" data-emotion="${escapeHtml(emotion)}" data-style="${escapeHtml(style)}">
         ${imgHtml}
         <div class="assets-expression-card-footer">
           <span class="assets-expression-label">${escapeHtml(label)}</span>
-          <button class="assets-expression-regen-btn" data-emotion="${escapeHtml(emotion)}" title="${t("assets.regen_expression")}">↻</button>
+          <button class="assets-expression-regen-btn" data-emotion="${escapeHtml(emotion)}" data-style="${escapeHtml(style)}" title="${t("assets.regen_expression")}">↻</button>
         </div>
       </div>
     `;
@@ -310,29 +306,27 @@ function _bindExpressionButtons() {
   document.querySelectorAll(".assets-expression-regen-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      _regenerateExpression(btn.dataset.emotion);
+      _regenerateExpression(btn.dataset.emotion, btn.dataset.style);
     });
   });
 
-  document.getElementById("assetsRegenAllExprBtn")?.addEventListener("click", () => {
-    _regenerateAllExpressions();
+  document.querySelectorAll(".assets-regen-all-expr-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      _regenerateAllExpressions(btn.dataset.style);
+    });
   });
 }
 
-async function _regenerateExpression(emotion) {
+async function _regenerateExpression(emotion, style) {
   if (!_selectedAnima) return;
   const enc = encodeURIComponent(_selectedAnima);
-  const card = document.querySelector(`.assets-expression-card[data-emotion="${CSS.escape(emotion)}"]`);
+  const card = document.querySelector(`.assets-expression-card[data-emotion="${CSS.escape(emotion)}"][data-style="${CSS.escape(style)}"]`);
   const btn = card?.querySelector(".assets-expression-regen-btn");
 
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
   if (card) {
-    const imgEl = card.querySelector(".assets-expression-img");
-    const placeholder = card.querySelector(".assets-expression-placeholder");
-    const target = imgEl || placeholder;
-    if (target) {
-      target.style.opacity = "0.4";
-    }
+    const target = card.querySelector(".assets-expression-img") || card.querySelector(".assets-expression-placeholder");
+    if (target) target.style.opacity = "0.4";
   }
 
   try {
@@ -341,7 +335,7 @@ async function _regenerateExpression(emotion) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         expression: emotion,
-        image_style: _currentImageStyle(),
+        image_style: style,
       }),
     });
 
@@ -369,13 +363,13 @@ async function _regenerateExpression(emotion) {
   }
 }
 
-async function _regenerateAllExpressions() {
-  const allBtn = document.getElementById("assetsRegenAllExprBtn");
+async function _regenerateAllExpressions(style) {
+  const allBtn = document.querySelector(`.assets-regen-all-expr-btn[data-style="${CSS.escape(style)}"]`);
   if (allBtn) { allBtn.disabled = true; allBtn.textContent = t("assets.preview_generating"); }
 
   for (const emotion of EXPRESSION_LIST) {
     if (emotion === "neutral") continue;
-    await _regenerateExpression(emotion);
+    await _regenerateExpression(emotion, style);
   }
 
   if (allBtn) { allBtn.disabled = false; allBtn.textContent = t("assets.regen_all_expressions"); }

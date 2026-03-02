@@ -39,6 +39,7 @@ __all__ = [
     "_REALISTIC_BUSTUP_PROMPT",
     "_REALISTIC_EXPRESSION_PROMPTS",
     "_REALISTIC_EXPRESSION_GUIDANCE",
+    "_convert_anime_to_realistic",
     "_DEFAULT_ANIMATIONS",
     "_HTTP_TIMEOUT",
     "_DOWNLOAD_TIMEOUT",
@@ -252,6 +253,51 @@ assert set(_REALISTIC_EXPRESSION_GUIDANCE.keys()) == _VALID_EXPRESSION_NAMES, (
     f"Realistic expression guidance mismatch: "
     f"{set(_REALISTIC_EXPRESSION_GUIDANCE.keys())} != {_VALID_EXPRESSION_NAMES}"
 )
+
+# ── Anime → Realistic prompt conversion ──────────────────
+
+_ANIME_QUALITY_TAGS = frozenset({
+    "masterpiece", "best quality", "very aesthetic", "absurdres",
+    "anime coloring", "clean lineart", "soft shading",
+    "highres", "extremely detailed",
+})
+
+_DANBOORU_TO_NATURAL: dict[str, str] = {
+    "1girl": "a young woman",
+    "1boy": "a young man",
+    "2girls": "two young women",
+    "2boys": "two young men",
+}
+
+
+def _convert_anime_to_realistic(anime_prompt: str) -> str:
+    """Convert a Danbooru-style anime prompt to a photographic prompt.
+
+    Strips anime quality/style tags, replaces Danbooru shorthands with
+    natural English, and prepends realistic quality descriptors.
+    """
+    tags = [t.strip() for t in anime_prompt.split(",") if t.strip()]
+
+    converted: list[str] = []
+    for tag in tags:
+        lower = tag.lower().strip()
+        if lower in _ANIME_QUALITY_TAGS:
+            continue
+        natural = _DANBOORU_TO_NATURAL.get(lower)
+        if natural:
+            converted.append(natural)
+        else:
+            converted.append(tag)
+
+    realistic_prefix = [
+        "professional photograph",
+        "studio lighting",
+        "high resolution",
+        "realistic",
+        "photorealistic",
+    ]
+    return ", ".join(realistic_prefix + converted)
+
 
 # Default animation presets for office digital animas
 # See https://docs.meshy.ai/api/animation-library for full catalog

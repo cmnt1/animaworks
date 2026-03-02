@@ -430,14 +430,13 @@ def create_assets_router() -> APIRouter:
 
         reference_bytes = reference_path.read_bytes()
 
+        from core.config.models import ImageGenConfig
         from core.tools.image_gen import ImageGenPipeline
 
-        pipeline_kwargs: dict = {}
-        if is_realistic:
-            from core.config.models import ImageGenConfig
-            pipeline_kwargs["config"] = ImageGenConfig(image_style="realistic")
-
-        pipeline = ImageGenPipeline(anima_dir, **pipeline_kwargs)
+        style = body.image_style or "anime"
+        pipeline = ImageGenPipeline(
+            anima_dir, config=ImageGenConfig(image_style=style),
+        )
 
         loop = asyncio.get_running_loop()
         result_path = await loop.run_in_executor(
@@ -502,12 +501,11 @@ def create_assets_router() -> APIRouter:
                 )
             vibe_image = style_fullbody.read_bytes()
 
-        # Resolve prompt
+        # Resolve prompt (style-aware)
         prompt = body.prompt
         if not prompt:
-            prompt_file = anima_dir / "assets" / "prompt.txt"
-            if prompt_file.exists():
-                prompt = prompt_file.read_text(encoding="utf-8").strip()
+            from core.asset_reconciler import _resolve_prompt
+            prompt = _resolve_prompt(anima_dir, style="realistic" if is_realistic else "anime")
             if not prompt:
                 raise HTTPException(
                     status_code=400,
@@ -532,14 +530,13 @@ def create_assets_router() -> APIRouter:
                 shutil.copytree(assets_dir, backup_dir)
                 logger.info("Backup created: %s", backup_dir)
 
+        from core.config.models import ImageGenConfig
         from core.tools.image_gen import ImageGenPipeline
 
-        pipeline_kwargs: dict = {}
-        if is_realistic:
-            from core.config.models import ImageGenConfig
-            pipeline_kwargs["config"] = ImageGenConfig(image_style="realistic")
-
-        pipeline = ImageGenPipeline(anima_dir, **pipeline_kwargs)
+        style = body.image_style or "anime"
+        pipeline = ImageGenPipeline(
+            anima_dir, config=ImageGenConfig(image_style=style),
+        )
 
         gen_kwargs: dict = {
             "prompt": prompt,
@@ -646,15 +643,15 @@ def create_assets_router() -> APIRouter:
                 detail=f"No {fullbody_filename} preview found. Run remake-preview first.",
             )
 
-        # Resolve prompt
-        prompt_file = anima_dir / "assets" / "prompt.txt"
-        prompt = ""
-        if prompt_file.exists():
-            prompt = prompt_file.read_text(encoding="utf-8").strip()
+        # Resolve prompt (style-aware)
+        from core.asset_reconciler import _resolve_prompt
+        prompt = _resolve_prompt(
+            anima_dir, style="realistic" if is_realistic else "anime",
+        ) or ""
         if not prompt:
             raise HTTPException(
                 status_code=400,
-                detail="No prompt.txt found in assets. Cannot cascade rebuild.",
+                detail="No prompt available in assets. Cannot cascade rebuild.",
             )
 
         if is_realistic:
@@ -662,14 +659,13 @@ def create_assets_router() -> APIRouter:
         else:
             remaining_steps = ["bustup", "chibi", "3d", "rigging", "animations"]
 
+        from core.config.models import ImageGenConfig
         from core.tools.image_gen import ImageGenPipeline
 
-        pipeline_kwargs: dict = {}
-        if is_realistic:
-            from core.config.models import ImageGenConfig
-            pipeline_kwargs["config"] = ImageGenConfig(image_style="realistic")
-
-        pipeline = ImageGenPipeline(anima_dir, **pipeline_kwargs)
+        style = body.image_style or "anime"
+        pipeline = ImageGenPipeline(
+            anima_dir, config=ImageGenConfig(image_style=style),
+        )
 
         app = request.app
 
