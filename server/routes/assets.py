@@ -28,6 +28,7 @@ class AssetGenerateRequest(BaseModel):
     negative_prompt: str = ""
     steps: list[str] | None = None
     skip_existing: bool = True
+    image_style: str | None = None
 
 
 class ExpressionGenerateRequest(BaseModel):
@@ -48,6 +49,7 @@ class RemakePreviewRequest(BaseModel):
     vibe_info_extracted: float = 0.8
     prompt: str | None = None
     seed: int | None = None
+    image_style: str | None = None
 
     @field_validator("vibe_strength", "vibe_info_extracted")
     @classmethod
@@ -59,6 +61,7 @@ class RemakePreviewRequest(BaseModel):
 
 class RemakeConfirmRequest(BaseModel):
     backup_id: str
+    image_style: str | None = None
 
     @field_validator("backup_id")
     @classmethod
@@ -104,7 +107,7 @@ def create_assets_router() -> APIRouter:
         assets_dir = anima_dir / "assets"
         base_url = f"/api/animas/{name}/assets"
 
-        asset_files = {
+        anime_asset_files = {
             "avatar_fullbody": "avatar_fullbody.png",
             "avatar_bustup": "avatar_bustup.png",
             "avatar_chibi": "avatar_chibi.png",
@@ -112,13 +115,42 @@ def create_assets_router() -> APIRouter:
             "model_rigged": "avatar_chibi_rigged.glb",
         }
 
-        result: dict = {"name": name, "assets": {}, "animations": {}, "colors": None}
+        realistic_asset_files = {
+            "avatar_fullbody_realistic": "avatar_fullbody_realistic.png",
+            "avatar_bustup_realistic": "avatar_bustup_realistic.png",
+        }
+
+        # Resolve current display mode from config
+        display_mode = "anime"
+        try:
+            from core.config.models import load_config
+            display_mode = load_config().image_gen.image_style or "anime"
+        except Exception:
+            pass
+
+        result: dict = {
+            "name": name,
+            "assets": {},
+            "assets_realistic": {},
+            "animations": {},
+            "colors": None,
+            "display_mode": display_mode,
+        }
 
         if assets_dir.exists():
-            for key, filename_ in asset_files.items():
+            for key, filename_ in anime_asset_files.items():
                 path = assets_dir / filename_
                 if path.exists():
                     result["assets"][key] = {
+                        "filename": filename_,
+                        "url": f"{base_url}/{filename_}",
+                        "size": path.stat().st_size,
+                    }
+
+            for key, filename_ in realistic_asset_files.items():
+                path = assets_dir / filename_
+                if path.exists():
+                    result["assets_realistic"][key] = {
                         "filename": filename_,
                         "url": f"{base_url}/{filename_}",
                         "size": path.stat().st_size,
@@ -267,7 +299,15 @@ def create_assets_router() -> APIRouter:
 
         from core.tools.image_gen import ImageGenPipeline
 
-        pipeline = ImageGenPipeline(anima_dir)
+        pipeline_kwargs: dict = {}
+        if body.image_style:
+            try:
+                from core.config.models import ImageGenConfig
+                pipeline_kwargs["config"] = ImageGenConfig(image_style=body.image_style)
+            except Exception:
+                pass
+
+        pipeline = ImageGenPipeline(anima_dir, **pipeline_kwargs)
 
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
@@ -376,11 +416,16 @@ def create_assets_router() -> APIRouter:
                 detail=f"Style reference anima not found: {body.style_from}",
             )
 
-        style_fullbody = style_dir / "assets" / "avatar_fullbody.png"
+        is_realistic = body.image_style == "realistic"
+        style_ref_filename = (
+            "avatar_fullbody_realistic.png" if is_realistic
+            else "avatar_fullbody.png"
+        )
+        style_fullbody = style_dir / "assets" / style_ref_filename
         if not style_fullbody.exists():
             raise HTTPException(
                 status_code=404,
-                detail=f"Style reference has no avatar_fullbody.png: {body.style_from}",
+                detail=f"Style reference has no {style_ref_filename}: {body.style_from}",
             )
 
         # Resolve prompt
@@ -408,7 +453,12 @@ def create_assets_router() -> APIRouter:
 
         from core.tools.image_gen import ImageGenPipeline
 
-        pipeline = ImageGenPipeline(anima_dir)
+        pipeline_kwargs: dict = {}
+        if is_realistic:
+            from core.config.models import ImageGenConfig
+            pipeline_kwargs["config"] = ImageGenConfig(image_style="realistic")
+
+        pipeline = ImageGenPipeline(anima_dir, **pipeline_kwargs)
 
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
@@ -425,7 +475,6 @@ def create_assets_router() -> APIRouter:
         )
 
         if result.errors:
-            # Restore assets from backup on failure
             if backup_dir.exists():
                 if assets_dir.exists():
                     shutil.rmtree(assets_dir)
@@ -436,7 +485,11 @@ def create_assets_router() -> APIRouter:
                 detail=f"Preview generation failed: {'; '.join(result.errors)}",
             )
 
-        preview_url = f"/api/animas/{name}/assets/avatar_fullbody.png"
+        output_filename = (
+            "avatar_fullbody_realistic.png" if is_realistic
+            else "avatar_fullbody.png"
+        )
+        preview_url = f"/api/animas/{name}/assets/{output_filename}"
 
         await emit(request, "anima.remake_preview_ready", {
             "name": name,
@@ -471,12 +524,16 @@ def create_assets_router() -> APIRouter:
                 detail=f"Backup not found: {body.backup_id}",
             )
 
-        # Verify fullbody was already generated (from preview step)
-        fullbody_path = anima_dir / "assets" / "avatar_fullbody.png"
+        is_realistic = body.image_style == "realistic"
+        fullbody_filename = (
+            "avatar_fullbody_realistic.png" if is_realistic
+            else "avatar_fullbody.png"
+        )
+        fullbody_path = anima_dir / "assets" / fullbody_filename
         if not fullbody_path.exists():
             raise HTTPException(
                 status_code=400,
-                detail="No fullbody preview found. Run remake-preview first.",
+                detail=f"No {fullbody_filename} preview found. Run remake-preview first.",
             )
 
         # Resolve prompt
@@ -490,13 +547,21 @@ def create_assets_router() -> APIRouter:
                 detail="No prompt.txt found in assets. Cannot cascade rebuild.",
             )
 
-        remaining_steps = ["bustup", "chibi", "3d", "rigging", "animations"]
+        if is_realistic:
+            remaining_steps = ["bustup"]
+        else:
+            remaining_steps = ["bustup", "chibi", "3d", "rigging", "animations"]
 
         from core.tools.image_gen import ImageGenPipeline
 
-        pipeline = ImageGenPipeline(anima_dir)
+        pipeline_kwargs: dict = {}
+        if is_realistic:
+            from core.config.models import ImageGenConfig
+            pipeline_kwargs["config"] = ImageGenConfig(image_style="realistic")
 
-        app = request.app  # Capture app ref, not request (request lifecycle ends)
+        pipeline = ImageGenPipeline(anima_dir, **pipeline_kwargs)
+
+        app = request.app
 
         async def _run_cascade() -> None:
             try:
@@ -553,7 +618,6 @@ def create_assets_router() -> APIRouter:
             if ws:
                 await ws.broadcast({"type": event_type, "data": data})
 
-        # Run cascade in background so the HTTP response returns immediately
         asyncio.create_task(_run_cascade())
 
         return {

@@ -471,6 +471,42 @@
    Reduced Motion
    ============================================ */
 
+/* ── Secondary Gallery (Small Thumbnails) ──── */
+
+.assets-thumb-card--small {
+  max-width: 120px;
+}
+
+.assets-thumb-card--small .assets-thumb-img {
+  height: 100px;
+}
+
+.assets-thumb-card--small .assets-thumb-placeholder {
+  height: 100px;
+}
+
+.assets-badge--exists {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--aw-color-success-text, #166534);
+  background: var(--aw-color-success-bg, #dcfce7);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+}
+
+.assets-badge--missing {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--aw-color-text-muted, #888);
+  background: var(--aw-color-bg-tertiary, #e5e5e5);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .assets-modal-overlay.active {
     animation: none;

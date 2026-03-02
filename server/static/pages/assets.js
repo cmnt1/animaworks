@@ -2,6 +2,7 @@
 import { api } from "../modules/api.js";
 import { escapeHtml } from "../modules/state.js";
 import { t } from "/shared/i18n.js";
+import { isRealisticMode } from "../modules/avatar-resolver.js";
 
 let _container = null;
 let _animas = [];
@@ -138,42 +139,68 @@ async function _loadGallery() {
     return;
   }
 
-  const assets = _metadata.assets || {};
+  const animeAssets = _metadata.assets || {};
+  const realisticAssets = _metadata.assets_realistic || {};
   const animations = _metadata.animations || {};
-  const modelCount = [assets.model_chibi, assets.model_rigged].filter(Boolean).length;
+  const modelCount = [animeAssets.model_chibi, animeAssets.model_rigged].filter(Boolean).length;
   const animCount = Object.keys(animations).length;
+
+  const isRealistic = isRealisticMode();
+  const primaryLabel = isRealistic ? t("assets.realistic_section") : t("assets.anime_section");
+  const secondaryLabel = isRealistic ? t("assets.anime_section") : t("assets.realistic_section");
+  const primaryAssets = isRealistic ? realisticAssets : animeAssets;
+  const secondaryAssets = isRealistic ? animeAssets : realisticAssets;
 
   let html = "";
 
-  // Thumbnail gallery
+  // Primary section
+  html += `<h3 style="margin-bottom:0.5rem;">${escapeHtml(primaryLabel)}</h3>`;
   html += '<div class="assets-gallery">';
-  html += _renderThumbnail("Fullbody", assets.avatar_fullbody);
-  html += _renderThumbnail("Bustup", assets.avatar_bustup);
-  html += _renderThumbnail("Chibi", assets.avatar_chibi);
-
-  // 3D model badge
-  html += `
-    <div class="assets-thumb-card">
-      <div class="assets-thumb-placeholder">
-        <span class="assets-badge-icon">3D</span>
+  if (isRealistic) {
+    html += _renderThumbnail("Fullbody", realisticAssets.avatar_fullbody_realistic);
+    html += _renderThumbnail("Bustup", realisticAssets.avatar_bustup_realistic);
+  } else {
+    html += _renderThumbnail("Fullbody", animeAssets.avatar_fullbody);
+    html += _renderThumbnail("Bustup", animeAssets.avatar_bustup);
+    html += _renderThumbnail("Chibi", animeAssets.avatar_chibi);
+    html += `
+      <div class="assets-thumb-card">
+        <div class="assets-thumb-placeholder">
+          <span class="assets-badge-icon">3D</span>
+        </div>
+        <div class="assets-thumb-label">${t("assets.model_3d")}</div>
+        <span class="assets-badge">${modelCount}</span>
       </div>
-      <div class="assets-thumb-label">${t("assets.model_3d")}</div>
-      <span class="assets-badge">${modelCount}</span>
-    </div>
-  `;
-
-  // Animation badge
-  html += `
-    <div class="assets-thumb-card">
-      <div class="assets-thumb-placeholder">
-        <span class="assets-badge-icon">Anim</span>
+    `;
+    html += `
+      <div class="assets-thumb-card">
+        <div class="assets-thumb-placeholder">
+          <span class="assets-badge-icon">Anim</span>
+        </div>
+        <div class="assets-thumb-label">${t("assets.animation")}</div>
+        <span class="assets-badge">${animCount}</span>
       </div>
-      <div class="assets-thumb-label">${t("assets.animation")}</div>
-      <span class="assets-badge">${animCount}</span>
-    </div>
-  `;
-
+    `;
+  }
   html += "</div>";
+
+  // Secondary section (collapsible)
+  const hasSecondary = isRealistic
+    ? Object.keys(animeAssets).length > 0
+    : Object.keys(realisticAssets).length > 0;
+
+  html += `<details style="margin-top:1.5rem;" ${hasSecondary ? "" : ""}>`;
+  html += `<summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:var(--aw-color-text-secondary,#555);">${escapeHtml(secondaryLabel)}</summary>`;
+  html += '<div class="assets-gallery" style="margin-top:0.5rem;">';
+  if (isRealistic) {
+    html += _renderThumbnailSmall("Fullbody", animeAssets.avatar_fullbody);
+    html += _renderThumbnailSmall("Bustup", animeAssets.avatar_bustup);
+    html += _renderThumbnailSmall("Chibi", animeAssets.avatar_chibi);
+  } else {
+    html += _renderThumbnailSmall("Fullbody", realisticAssets.avatar_fullbody_realistic);
+    html += _renderThumbnailSmall("Bustup", realisticAssets.avatar_bustup_realistic);
+  }
+  html += "</div></details>";
 
   // Remake button
   html += `
@@ -209,7 +236,32 @@ function _renderThumbnail(label, assetInfo) {
   `;
 }
 
+function _renderThumbnailSmall(label, assetInfo) {
+  const badge = assetInfo && assetInfo.url ? t("assets.exists") : t("assets.not_generated");
+  const badgeClass = assetInfo && assetInfo.url ? "assets-badge--exists" : "assets-badge--missing";
+  if (assetInfo && assetInfo.url) {
+    return `
+      <div class="assets-thumb-card assets-thumb-card--small">
+        <img class="assets-thumb-img" src="${escapeHtml(assetInfo.url)}" alt="${escapeHtml(label)}" loading="lazy">
+        <div class="assets-thumb-label">${escapeHtml(label)} <span class="${badgeClass}">${escapeHtml(badge)}</span></div>
+      </div>
+    `;
+  }
+  return `
+    <div class="assets-thumb-card assets-thumb-card--small">
+      <div class="assets-thumb-placeholder">
+        <span class="assets-thumb-empty">—</span>
+      </div>
+      <div class="assets-thumb-label">${escapeHtml(label)} <span class="${badgeClass}">${escapeHtml(badge)}</span></div>
+    </div>
+  `;
+}
+
 // ── Remake Modal ────────────────────────────
+
+function _currentImageStyle() {
+  return isRealisticMode() ? "realistic" : "anime";
+}
 
 function _openRemakeModal() {
   if (!_selectedAnima || !_metadata) return;
@@ -218,8 +270,13 @@ function _openRemakeModal() {
   _closeRemakeModal(false);
 
   const enc = encodeURIComponent(_selectedAnima);
-  const assets = _metadata.assets || {};
-  const currentFullbodyUrl = assets.avatar_fullbody?.url || "";
+  const imgStyle = _currentImageStyle();
+  const isReal = imgStyle === "realistic";
+  const animeAssets = _metadata.assets || {};
+  const realAssets = _metadata.assets_realistic || {};
+  const currentFullbodyUrl = isReal
+    ? (realAssets.avatar_fullbody_realistic?.url || "")
+    : (animeAssets.avatar_fullbody?.url || "");
 
   // Build style-from options (other animas)
   let styleOptions = `<option value="">-- ${t("assets.select_prompt")} --</option>`;
@@ -235,7 +292,7 @@ function _openRemakeModal() {
   overlay.innerHTML = `
     <div class="assets-modal">
       <div class="assets-modal-header">
-        <h3>Remake Assets - ${escapeHtml(_selectedAnima)}</h3>
+        <h3>Remake Assets - ${escapeHtml(_selectedAnima)} <span style="font-size:0.75em;color:var(--aw-color-text-secondary,#888);">(${isReal ? "Realistic" : "Anime"})</span></h3>
         <button class="assets-modal-close" id="assetsModalCloseBtn">&times;</button>
       </div>
 
@@ -367,6 +424,7 @@ async function _generatePreview() {
         style_from: styleFrom,
         vibe_strength: vibeStrength,
         vibe_info_extracted: infoExtracted,
+        image_style: _currentImageStyle(),
       }),
     });
 
@@ -446,7 +504,10 @@ async function _acceptAndRebuild() {
     const result = await api(`/api/animas/${enc}/assets/remake-confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ backup_id: _previewBackupId }),
+      body: JSON.stringify({
+        backup_id: _previewBackupId,
+        image_style: _currentImageStyle(),
+      }),
     });
 
     // If result contains steps, initialize progress bars

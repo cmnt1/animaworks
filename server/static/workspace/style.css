@@ -3449,5 +3449,4 @@ html, body {
 }
 
 /* ── Realistic Mode Overrides ─────────────────────── */
-.mode-realistic .ws-conv-character { display: none !important; }
-.mode-realistic .ws-mobile-character-toggle { display: none; }
+/* (avatar display is now handled by avatar-resolver regardless of mode) */

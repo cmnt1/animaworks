@@ -145,8 +145,6 @@
 .mode-realistic {
   --aw-animation-play-state: paused;
   --aw-animation-duration-multiplier: 0;
-  --aw-avatar-display: none;
-  --aw-avatar-initial-display: flex;
   --aw-emoji-display: none;
   --aw-icon-display: inline-flex;
 }

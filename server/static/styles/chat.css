@@ -337,6 +337,15 @@
   color: var(--aw-color-text-primary);
 }
 
+/* --- Mobile-only unified header elements (hidden on desktop) --- */
+.chat-unified-hamburger,
+.chat-thread-dropdown,
+.chat-unified-info-btn,
+.chat-unified-user-btn,
+.chat-unified-user-menu {
+  display: none;
+}
+
 /* --- Desktop rail layout when sidebar is hidden --- */
 @media (min-width: 769px) {
   .chat-page-layout.sidebar-hidden {
@@ -445,7 +454,7 @@
     grid-row: 1;
   }
 
-  body.sidebar-collapsed #chatPageMessages {
+  body.sidebar-collapsed .chat-messages-area {
     grid-column: 2;
     grid-row: 2;
     min-height: 0;
@@ -816,11 +825,20 @@
   animation-play-state: var(--aw-animation-play-state);
 }
 
+/* ── Messages Area Wrapper ──────────────────── */
+.chat-messages-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* ── Scroll to Bottom Button ──────────────────── */
 .scroll-to-bottom-btn {
   position: absolute;
   right: 16px;
-  bottom: 0;
+  bottom: 12px;
   z-index: 10;
   width: 36px;
   height: 36px;

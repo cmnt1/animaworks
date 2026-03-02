@@ -71,7 +71,6 @@ scripts/verify_org_chart_final.py
 
 # Private-only static assets
 server/static/finance/
-server/static/modules/avatar-resolver.js
 
 # Private-only test data
 tests/evaluation/results/

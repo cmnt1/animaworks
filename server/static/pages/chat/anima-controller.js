@@ -1,6 +1,6 @@
 // ── Anima Selection / Tab / Avatar Controller ──
 import {
-  $, isTabOpen, isBusinessTheme, refreshAnimaUnread,
+  $, isTabOpen, refreshAnimaUnread,
   clearUnreadForActiveThread, loadDraft, saveDraft, chatInputMaxHeight,
   fetchChatUiState, scheduleSaveChatUiState, mergeThreadsFromSessions,
 } from "./ctx.js";
@@ -12,7 +12,7 @@ export function createAnimaController(ctx) {
   let _selectGen = 0;
 
   function ensureAnimaTabAvatar(name) {
-    if (!name || isBusinessTheme()) return Promise.resolve();
+    if (!name) return Promise.resolve();
     if (Object.prototype.hasOwnProperty.call(state.animaTabAvatarUrls, name)) return Promise.resolve();
     if (state.animaTabAvatarLoading[name]) return state.animaTabAvatarLoading[name];
 
@@ -28,9 +28,6 @@ export function createAnimaController(ctx) {
 
   function buildAnimaTabAvatar(name) {
     const initial = escapeHtml((name || "").charAt(0).toUpperCase() || "?");
-    if (isBusinessTheme()) {
-      return `<span class="anima-tab-avatar anima-tab-avatar-initial">${initial}</span>`;
-    }
     const url = state.animaTabAvatarUrls[name];
     if (url) {
       return `<img class="anima-tab-avatar anima-tab-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}">`;
@@ -40,9 +37,6 @@ export function createAnimaController(ctx) {
 
   function buildAddConversationAvatar(name) {
     const initial = escapeHtml((name || "").charAt(0).toUpperCase() || "?");
-    if (isBusinessTheme()) {
-      return `<span class="add-conversation-avatar add-conversation-avatar-initial">${initial}</span>`;
-    }
     const url = state.animaTabAvatarUrls[name];
     if (url) {
       return `<img class="add-conversation-avatar add-conversation-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}">`;
