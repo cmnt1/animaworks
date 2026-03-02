@@ -33,9 +33,9 @@
   "task_type": "llm",
   "task_id": "unique-id",
   "description": "APIテストを実施し結果をまとめる",
-  "context": "hinata から依頼されたSlack API接続テスト",
+  "context": "aoi から依頼されたSlack API接続テスト",
   "acceptance_criteria": "全エンドポイントのテスト結果をレポートにまとめる",
-  "reply_to": {"name": "hinata", "content": "テスト完了の報告"},
+  "reply_to": {"name": "aoi", "content": "テスト完了の報告"},
   "submitted_by": "heartbeat"
 }
 ```
