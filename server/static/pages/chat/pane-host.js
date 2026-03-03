@@ -96,6 +96,7 @@ function paneHtml() {
                 <path d="M12 5v14M5 12l7 7 7-7" />
               </svg>
             </button>
+            <div class="voice-controls-slot"></div>
             <button type="submit" class="chat-send-btn" data-chat-id="chatPageSendBtn" disabled>
               <svg class="chat-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M12 19V5M5 12l7-7 7 7" />

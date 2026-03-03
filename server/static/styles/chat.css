@@ -1096,6 +1096,15 @@
   min-height: 0;
 }
 
+.voice-controls-slot {
+  width: 28px;
+  height: 28px;
+}
+
+.chat-pane:not(.focused) .voice-controls-slot {
+  visibility: hidden;
+}
+
 .chat-input-actions .voice-controls {
   display: flex;
   align-items: center;

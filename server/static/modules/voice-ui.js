@@ -90,12 +90,10 @@ export function initVoiceUI(chatInputForm, animaName, callbacks, opts) {
   tbControls.append(modeToggle, volumeSlider);
   toolbar.append(tbStatus, tbControls);
 
-  // Insert mic button into actions grid (before send button)
-  const sendBtn = chatInputForm.querySelector(
-    '[data-chat-id$="SendBtn"], .chat-send-btn, .ws-conv-send, button[type="submit"]'
-  );
-  if (sendBtn && sendBtn.parentNode) {
-    sendBtn.parentNode.insertBefore(micContainer, sendBtn);
+  // Insert mic button into the pre-allocated slot
+  const voiceSlot = chatInputForm.querySelector('.voice-controls-slot');
+  if (voiceSlot) {
+    voiceSlot.appendChild(micContainer);
   } else {
     chatInputForm.appendChild(micContainer);
   }

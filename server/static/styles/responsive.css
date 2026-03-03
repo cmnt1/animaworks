@@ -709,6 +709,11 @@ body.sidebar-collapsed .sidebar-collapse-btn {
     height: 32px;
   }
 
+  .voice-controls-slot {
+    width: 32px;
+    height: 32px;
+  }
+
   .chat-input-actions .voice-controls {
     width: 32px;
     height: 32px;
