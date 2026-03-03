@@ -11,6 +11,7 @@ one execution cycle (chat, heartbeat, cron, inbox, task).
 
 import json
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -189,15 +190,14 @@ class TokenUsageLogger:
         return cost
 
     def _resolve_pricing(self, model: str) -> dict[str, float] | None:
-        """Resolve pricing for a model (prefix match)."""
+        """Resolve pricing for a model (longest prefix match)."""
         table = self._load_pricing_table()
         bare = model.split("/", 1)[-1] if "/" in model else model
-        import re
         bare = re.sub(r"^[a-z]{2}\.anthropic\.", "", bare)
-        for prefix, pricing in table.items():
-            if bare.startswith(prefix):
-                return pricing
-        return None
+        matches = [(p, v) for p, v in table.items() if bare.startswith(p)]
+        if not matches:
+            return None
+        return max(matches, key=lambda x: len(x[0]))[1]
 
     def _load_pricing_table(self) -> dict[str, dict[str, float]]:
         if self._pricing is not None:

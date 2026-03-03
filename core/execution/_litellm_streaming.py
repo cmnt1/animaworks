@@ -464,7 +464,7 @@ class StreamingMixin:
                     if tracker:
                         tracker.update_from_usage(usage_dict)
 
-                    if tracker.threshold_exceeded:
+                    if tracker and tracker.threshold_exceeded:
                         try:
                             ratio = float(tracker.usage_ratio)
                         except (TypeError, ValueError):

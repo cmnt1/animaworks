@@ -31,6 +31,17 @@ from core.i18n import t
 logger = logging.getLogger("animaworks.agent")
 
 
+_USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+
+
+def _merge_stream_usage(acc: dict[str, int], chunk_usage: dict[str, int] | None) -> None:
+    """Accumulate chunk usage into the streaming accumulator dict."""
+    if not chunk_usage:
+        return
+    for k in _USAGE_KEYS:
+        acc[k] = acc.get(k, 0) + (chunk_usage.get(k, 0) or 0)
+
+
 def _log_session_token_usage(
     anima_dir: "Path",
     *,
@@ -433,6 +444,11 @@ class CycleMixin:
                 break
             accumulated_text = accumulated_text + "\n" + result_2.text
             accumulated_tool_records.extend(_tool_records_to_dicts(result_2))
+            if result_2.usage:
+                if result.usage:
+                    result.usage.merge(result_2.usage)
+                else:
+                    result.usage = result_2.usage
             result_msg = result_2.result_message
             if result_msg:
                 total_turns += result_msg.num_turns
@@ -654,11 +670,7 @@ class CycleMixin:
                         all_tool_call_records.extend(
                             chunk.get("tool_call_records", [])
                         )
-                        # Accumulate token usage
-                        _chunk_usage = chunk.get("usage")
-                        if _chunk_usage:
-                            for _uk in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"):
-                                _stream_usage[_uk] = _stream_usage.get(_uk, 0) + (_chunk_usage.get(_uk, 0) or 0)
+                        _merge_stream_usage(_stream_usage, chunk.get("usage"))
                         # Merge transcript replied_to
                         transcript_replied = chunk.get("replied_to_from_transcript", set())
                         if transcript_replied:
@@ -862,10 +874,7 @@ class CycleMixin:
                         all_tool_call_records.extend(
                             chunk.get("tool_call_records", [])
                         )
-                        _chunk_usage2 = chunk.get("usage")
-                        if _chunk_usage2:
-                            for _uk2 in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"):
-                                _stream_usage[_uk2] = _stream_usage.get(_uk2, 0) + (_chunk_usage2.get(_uk2, 0) or 0)
+                        _merge_stream_usage(_stream_usage, chunk.get("usage"))
                         if result_message:
                             total_turns += result_message.num_turns
                         # Merge transcript replied_to
