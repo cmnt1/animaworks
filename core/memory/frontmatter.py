@@ -4,12 +4,99 @@ from __future__ import annotations
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import re
 from pathlib import Path
+from typing import Any
 
 from core.memory._io import atomic_write_text
 from core.schemas import SkillMeta
 
 logger = logging.getLogger("animaworks.memory")
+
+
+# ── Robust Frontmatter Parser ─────────────────────────────
+#
+# The old ``text.split("---", 2)`` approach splits on the *substring*
+# ``---`` anywhere in the file, which breaks when YAML values contain
+# ``---`` (e.g. ``description: "Before---After"``) or when LLM output
+# produces double-frontmatter.  The line-based parser below only
+# recognises ``---`` that appears as a **standalone line** (with
+# optional trailing whitespace).
+
+_FM_FENCE = re.compile(r"^---\s*$", re.MULTILINE)
+
+
+def split_frontmatter(text: str) -> tuple[str, str]:
+    """Split text into (frontmatter_yaml, body) using line-based parsing.
+
+    Looks for an opening ``---`` line at position 0, then scans for the
+    next standalone ``---`` line to close the block.  This avoids false
+    splits when YAML values or body content contain the ``---`` substring.
+
+    Returns:
+        ``(yaml_str, body)`` where *yaml_str* is the raw YAML between
+        delimiters (empty string if no frontmatter) and *body* is the
+        remaining content (stripped of leading blank lines).
+    """
+    if not text.startswith("---"):
+        return "", text
+
+    # Skip the opening ``---`` line
+    first_newline = text.index("\n") if "\n" in text else len(text)
+    rest = text[first_newline + 1:]
+
+    m = _FM_FENCE.search(rest)
+    if m is None:
+        return "", text
+
+    yaml_str = rest[:m.start()]
+    body = rest[m.end():]
+    # Strip at most two leading newlines (the blank line after ``---``)
+    if body.startswith("\n\n"):
+        body = body[2:]
+    elif body.startswith("\n"):
+        body = body[1:]
+    return yaml_str, body
+
+
+def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
+    """Parse YAML frontmatter and return ``(metadata_dict, body)``.
+
+    Wraps :func:`split_frontmatter` with ``yaml.safe_load``.  Returns
+    an empty dict when no frontmatter is present or parsing fails.
+    """
+    yaml_str, body = split_frontmatter(text)
+    if not yaml_str:
+        return {}, body
+
+    import yaml
+    try:
+        meta = yaml.safe_load(yaml_str)
+        if not isinstance(meta, dict):
+            meta = {}
+    except Exception:
+        logger.debug("Failed to parse YAML frontmatter", exc_info=True)
+        meta = {}
+    return meta, body
+
+
+def strip_frontmatter(text: str) -> str:
+    """Return *text* with YAML frontmatter removed (body only)."""
+    _, body = split_frontmatter(text)
+    return body
+
+
+def strip_content_frontmatter(content: str) -> str:
+    """Strip accidental frontmatter from *content* before wrapping.
+
+    Used by write helpers to prevent double-frontmatter when LLM output
+    already contains ``---`` delimiters.
+    """
+    if content.lstrip().startswith("---"):
+        _, body = split_frontmatter(content.lstrip())
+        return body
+    return content
+
 
 # ── FrontmatterService ────────────────────────────────────
 
@@ -33,6 +120,7 @@ class FrontmatterService:
         """Write knowledge file with YAML frontmatter metadata."""
         import yaml
 
+        content = strip_content_frontmatter(content)
         frontmatter = yaml.dump(metadata, default_flow_style=False, allow_unicode=True)
         atomic_write_text(path, f"---\n{frontmatter}---\n\n{content}")
         logger.debug("Knowledge written with metadata path='%s' length=%d", path, len(content))
@@ -40,11 +128,8 @@ class FrontmatterService:
     def read_knowledge_content(self, path: Path) -> str:
         """Read knowledge file body, stripping YAML frontmatter if present."""
         text = path.read_text(encoding="utf-8")
-        if text.startswith("---"):
-            parts = text.split("---", 2)
-            if len(parts) >= 3:
-                return parts[2].strip()
-        return text
+        _, body = split_frontmatter(text)
+        return body.strip()
 
     def read_knowledge_metadata(self, path: Path) -> dict:
         """Read YAML frontmatter metadata from a knowledge file.
@@ -52,22 +137,13 @@ class FrontmatterService:
         Applies legacy migration: renames ``superseded_at`` to
         ``valid_until`` when encountered.
         """
-        import yaml
-
         text = path.read_text(encoding="utf-8")
-        if text.startswith("---"):
-            parts = text.split("---", 2)
-            if len(parts) >= 3:
-                try:
-                    meta = yaml.safe_load(parts[1]) or {}
-                except Exception:
-                    logger.warning("Failed to parse YAML frontmatter in %s", path)
-                    return {}
-                # Legacy migration: superseded_at -> valid_until
-                if "superseded_at" in meta and "valid_until" not in meta:
-                    meta["valid_until"] = meta.pop("superseded_at")
-                return meta
-        return {}
+        meta, _ = parse_frontmatter(text)
+        if not meta:
+            return {}
+        if "superseded_at" in meta and "valid_until" not in meta:
+            meta["valid_until"] = meta.pop("superseded_at")
+        return meta
 
     def update_knowledge_metadata(self, path: Path, updates: dict) -> None:
         """Partially update YAML frontmatter metadata of a knowledge file."""
@@ -88,6 +164,7 @@ class FrontmatterService:
         target = path if path.is_absolute() else self._procedures_dir / path
         target.parent.mkdir(parents=True, exist_ok=True)
 
+        content = strip_content_frontmatter(content)
         fm_str = yaml.dump(metadata, default_flow_style=False, allow_unicode=True).rstrip()
         full = f"---\n{fm_str}\n---\n\n{content}"
         target.write_text(full, encoding="utf-8")
@@ -99,30 +176,17 @@ class FrontmatterService:
         if not target.exists():
             return ""
         text = target.read_text(encoding="utf-8")
-        if text.startswith("---"):
-            parts = text.split("---", 2)
-            if len(parts) >= 3:
-                return parts[2].strip()
-        return text.strip()
+        _, body = split_frontmatter(text)
+        return body.strip()
 
     def read_procedure_metadata(self, path: Path) -> dict:
         """Read YAML frontmatter metadata from a procedure file."""
-        import yaml
-
         target = path if path.is_absolute() else self._procedures_dir / path
         if not target.exists():
             return {}
         text = target.read_text(encoding="utf-8")
-        if not text.startswith("---"):
-            return {}
-        parts = text.split("---", 2)
-        if len(parts) < 3:
-            return {}
-        try:
-            fm = yaml.safe_load(parts[1])
-            return fm if isinstance(fm, dict) else {}
-        except Exception:
-            return {}
+        meta, _ = parse_frontmatter(text)
+        return meta
 
     def list_procedure_metas(self, extract_skill_meta_fn) -> list[SkillMeta]:
         """Return SkillMeta for each procedure file."""
