@@ -7,7 +7,8 @@
 
 """AnimaWorks Gmail tool -- direct Gmail API access.
 
-Provides unread-mail listing, body reading, and draft creation.
+Provides inbox/sent/unread mail listing, Gmail search, body reading,
+and draft creation.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import json
 import logging
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import mimetypes
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -40,6 +41,12 @@ except ImportError:
     )
 
 logger = logging.getLogger(__name__)
+
+# ── Gmail query constants ────────────────────────────────
+
+_QUERY_UNREAD = "is:unread in:inbox category:primary"
+_QUERY_INBOX = "in:inbox"
+_QUERY_SENT = "in:sent"
 
 # ── Execution Profile ─────────────────────────────────────
 
@@ -77,6 +84,21 @@ class Email:
     to_addr: str = ""
     date: str = ""
     label_ids: list[str] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a dict suitable for tool responses.
+
+        Renames ``from_addr`` → ``from`` and ``to_addr`` → ``to`` to
+        match natural email field names, and omits the heavyweight
+        ``body`` field (callers use ``gmail_read_body`` for that).
+        """
+        d = asdict(self)
+        d["from"] = d.pop("from_addr")
+        d["to"] = d.pop("to_addr")
+        d.pop("body", None)
+        if not d.get("label_ids"):
+            d.pop("label_ids", None)
+        return d
 
 
 @dataclass
@@ -191,58 +213,24 @@ class GmailClient:
             self._service = build("gmail", "v1", credentials=creds)
         return self._service
 
-    def get_unread_emails(self, max_results: int = 20) -> list[Email]:
-        """Fetch unread emails from Primary category.
-
-        Args:
-            max_results: Maximum number of emails to retrieve.
-
-        Returns:
-            List of unread Email objects.
-        """
-        logger.info("Fetching unread emails...")
-
-        try:
-            results = (
-                self.service.users()
-                .messages()
-                .list(
-                    userId="me",
-                    q="is:unread in:inbox category:primary",
-                    maxResults=max_results,
-                )
-                .execute()
-            )
-
-            messages = results.get("messages", [])
-            if not messages:
-                logger.info("No unread emails")
-                return []
-
-            emails = []
-            for msg in messages:
-                email = self._get_email_details(msg["id"])
-                if email:
-                    emails.append(email)
-
-            logger.info("Fetched %d unread emails", len(emails))
-            return emails
-
-        except Exception as e:
-            logger.error("Email fetch error: %s", e)
-            return []
+    # ── Private helpers ──────────────────────────────────
 
     def _get_email_details(self, message_id: str) -> Email | None:
-        """Get email details by message ID.
+        """Get email metadata by message ID.
 
-        Extracts From, To, Subject, Date headers and label IDs from the
-        full message payload.
+        Uses ``format="metadata"`` to fetch only headers without the
+        full MIME body, which is significantly lighter than ``"full"``.
         """
         try:
             message = (
                 self.service.users()
                 .messages()
-                .get(userId="me", id=message_id, format="full")
+                .get(
+                    userId="me",
+                    id=message_id,
+                    format="metadata",
+                    metadataHeaders=["From", "To", "Subject", "Date"],
+                )
                 .execute()
             )
 
@@ -263,87 +251,60 @@ class GmailClient:
             logger.error("Email detail fetch error (%s): %s", message_id, e)
             return None
 
-    def get_inbox_emails(self, max_results: int = 20) -> list[Email]:
-        """Fetch emails from the inbox.
+    def _fetch_emails(
+        self, query: str, max_results: int, label: str,
+    ) -> list[Email]:
+        """Fetch emails matching *query* from the Gmail API.
 
         Args:
-            max_results: Maximum number of emails to retrieve.
+            query: Gmail search query string.
+            max_results: Maximum number of messages to return.
+            label: Human-readable label used in log messages
+                (e.g. ``"unread"``, ``"inbox"``).
 
         Returns:
-            List of inbox Email objects.
+            List of :class:`Email` objects.
         """
-        logger.info("Fetching inbox emails...")
+        logger.info("Fetching %s emails...", label)
 
         try:
             results = (
                 self.service.users()
                 .messages()
-                .list(
-                    userId="me",
-                    q="in:inbox",
-                    maxResults=max_results,
-                )
+                .list(userId="me", q=query, maxResults=max_results)
                 .execute()
             )
 
             messages = results.get("messages", [])
             if not messages:
-                logger.info("No inbox emails")
+                logger.info("No %s emails", label)
                 return []
 
-            emails = []
-            for msg in messages:
-                email = self._get_email_details(msg["id"])
-                if email:
-                    emails.append(email)
+            emails = [
+                e for msg in messages
+                if (e := self._get_email_details(msg["id"]))
+            ]
 
-            logger.info("Fetched %d inbox emails", len(emails))
+            logger.info("Fetched %d %s emails", len(emails), label)
             return emails
 
         except Exception as e:
-            logger.error("Inbox fetch error: %s", e)
+            logger.error("%s fetch error: %s", label.capitalize(), e)
             return []
+
+    # ── Public listing methods ────────────────────────────
+
+    def get_unread_emails(self, max_results: int = 20) -> list[Email]:
+        """Fetch unread emails from Primary category."""
+        return self._fetch_emails(_QUERY_UNREAD, max_results, "unread")
+
+    def get_inbox_emails(self, max_results: int = 20) -> list[Email]:
+        """Fetch emails from the inbox (read and unread)."""
+        return self._fetch_emails(_QUERY_INBOX, max_results, "inbox")
 
     def get_sent_emails(self, max_results: int = 20) -> list[Email]:
-        """Fetch sent emails.
-
-        Args:
-            max_results: Maximum number of emails to retrieve.
-
-        Returns:
-            List of sent Email objects.
-        """
-        logger.info("Fetching sent emails...")
-
-        try:
-            results = (
-                self.service.users()
-                .messages()
-                .list(
-                    userId="me",
-                    q="in:sent",
-                    maxResults=max_results,
-                )
-                .execute()
-            )
-
-            messages = results.get("messages", [])
-            if not messages:
-                logger.info("No sent emails")
-                return []
-
-            emails = []
-            for msg in messages:
-                email = self._get_email_details(msg["id"])
-                if email:
-                    emails.append(email)
-
-            logger.info("Fetched %d sent emails", len(emails))
-            return emails
-
-        except Exception as e:
-            logger.error("Sent fetch error: %s", e)
-            return []
+        """Fetch sent emails."""
+        return self._fetch_emails(_QUERY_SENT, max_results, "sent")
 
     def search_emails(
         self, query: str, max_results: int = 20,
@@ -353,41 +314,8 @@ class GmailClient:
         Args:
             query: Gmail search query (e.g. ``from:alice subject:report``).
             max_results: Maximum number of emails to retrieve.
-
-        Returns:
-            List of matching Email objects.
         """
-        logger.info("Searching emails: %s", query)
-
-        try:
-            results = (
-                self.service.users()
-                .messages()
-                .list(
-                    userId="me",
-                    q=query,
-                    maxResults=max_results,
-                )
-                .execute()
-            )
-
-            messages = results.get("messages", [])
-            if not messages:
-                logger.info("No emails matched query: %s", query)
-                return []
-
-            emails = []
-            for msg in messages:
-                email = self._get_email_details(msg["id"])
-                if email:
-                    emails.append(email)
-
-            logger.info("Found %d emails for query: %s", len(emails), query)
-            return emails
-
-        except Exception as e:
-            logger.error("Search error: %s", e)
-            return []
+        return self._fetch_emails(query, max_results, "search")
 
     def get_email_body(self, message_id: str) -> str:
         """Get full email body text."""
@@ -745,6 +673,18 @@ animaworks-tool gmail draft --to "宛先" --subject "件名" --body "本文" --a
 ```"""
 
 
+def _print_emails(emails: list[Email], label: str) -> None:
+    """Print a list of emails to stdout in a human-readable format."""
+    if not emails:
+        print(f"No {label} emails.")
+        return
+    for em in emails:
+        print(f"[{em.id}] {em.from_addr} -> {em.to_addr}  ({em.date})")
+        print(f"  Subject: {em.subject}")
+        print(f"  Snippet: {em.snippet}")
+        print()
+
+
 def cli_main(argv: list[str] | None = None) -> None:
     """Standalone CLI for Gmail operations."""
     parser = argparse.ArgumentParser(
@@ -803,31 +743,20 @@ def cli_main(argv: list[str] | None = None) -> None:
 
     client = GmailClient()
 
-    def _print_emails(emails: list[Email], label: str) -> None:
-        if not emails:
-            print(f"No {label} emails.")
-            return
-        for em in emails:
-            print(f"[{em.id}] {em.from_addr} -> {em.to_addr}  ({em.date})")
-            print(f"  Subject: {em.subject}")
-            print(f"  Snippet: {em.snippet}")
-            print()
-
     if args.command == "unread":
-        emails = client.get_unread_emails(max_results=args.max_results)
-        _print_emails(emails, "unread")
+        _print_emails(client.get_unread_emails(max_results=args.max_results), "unread")
 
     elif args.command == "inbox":
-        emails = client.get_inbox_emails(max_results=args.max_results)
-        _print_emails(emails, "inbox")
+        _print_emails(client.get_inbox_emails(max_results=args.max_results), "inbox")
 
     elif args.command == "sent":
-        emails = client.get_sent_emails(max_results=args.max_results)
-        _print_emails(emails, "sent")
+        _print_emails(client.get_sent_emails(max_results=args.max_results), "sent")
 
     elif args.command == "search":
-        emails = client.search_emails(query=args.query, max_results=args.max_results)
-        _print_emails(emails, "matching")
+        _print_emails(
+            client.search_emails(query=args.query, max_results=args.max_results),
+            "search",
+        )
 
     elif args.command == "read":
         body = client.get_email_body(args.message_id)
@@ -856,47 +785,29 @@ def cli_main(argv: list[str] | None = None) -> None:
 
 # ── Dispatch ──────────────────────────────────────────
 
-def _email_to_dict(e: Email) -> dict[str, Any]:
-    """Convert an Email to a serialisable dict."""
-    d: dict[str, Any] = {
-        "id": e.id,
-        "from": e.from_addr,
-        "to": e.to_addr,
-        "subject": e.subject,
-        "snippet": e.snippet,
-        "date": e.date,
-    }
-    if e.label_ids:
-        d["label_ids"] = e.label_ids
-    return d
-
 
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
+    client = GmailClient()
+
     if name == "gmail_unread":
-        client = GmailClient()
         emails = client.get_unread_emails(max_results=args.get("max_results", 20))
-        return [_email_to_dict(e) for e in emails]
+        return [e.to_dict() for e in emails]
     if name == "gmail_inbox":
-        client = GmailClient()
         emails = client.get_inbox_emails(max_results=args.get("max_results", 20))
-        return [_email_to_dict(e) for e in emails]
+        return [e.to_dict() for e in emails]
     if name == "gmail_sent":
-        client = GmailClient()
         emails = client.get_sent_emails(max_results=args.get("max_results", 20))
-        return [_email_to_dict(e) for e in emails]
+        return [e.to_dict() for e in emails]
     if name == "gmail_search":
-        client = GmailClient()
         emails = client.search_emails(
             query=args["query"],
             max_results=args.get("max_results", 20),
         )
-        return [_email_to_dict(e) for e in emails]
+        return [e.to_dict() for e in emails]
     if name == "gmail_read_body":
-        client = GmailClient()
         return client.get_email_body(args["message_id"])
     if name == "gmail_draft":
-        client = GmailClient()
         raw_attachments = args.get("attachments")
         if isinstance(raw_attachments, str):
             raw_attachments = json.loads(raw_attachments)

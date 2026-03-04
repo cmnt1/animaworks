@@ -528,7 +528,7 @@ class TestGetToolSchemas:
         assert sent["input_schema"]["required"] == []
 
 
-# ── _email_to_dict ────────────────────────────────────────────────
+# ── Email.to_dict ─────────────────────────────────────────────────
 
 
 class TestEmailToDict:
@@ -540,14 +540,18 @@ class TestEmailToDict:
             to_addr="c@d.com", date="Thu, 5 Mar 2026 10:00:00 +0900",
             label_ids=["INBOX"],
         )
-        d = gmail._email_to_dict(email)
+        d = email.to_dict()
         assert d["id"] == "m1"
+        assert d["thread_id"] == "t1"
         assert d["from"] == "a@b.com"
         assert d["to"] == "c@d.com"
         assert d["subject"] == "Sub"
         assert d["snippet"] == "snip"
         assert d["date"] == "Thu, 5 Mar 2026 10:00:00 +0900"
         assert d["label_ids"] == ["INBOX"]
+        assert "body" not in d
+        assert "from_addr" not in d
+        assert "to_addr" not in d
 
     def test_no_label_ids(self):
         gmail = _get_gmail()
@@ -555,7 +559,7 @@ class TestEmailToDict:
             id="m1", thread_id="t1", from_addr="a@b.com",
             subject="Sub", snippet="snip",
         )
-        d = gmail._email_to_dict(email)
+        d = email.to_dict()
         assert "label_ids" not in d
 
     def test_empty_label_ids(self):
@@ -564,7 +568,7 @@ class TestEmailToDict:
             id="m1", thread_id="t1", from_addr="a@b.com",
             subject="Sub", snippet="snip", label_ids=[],
         )
-        d = gmail._email_to_dict(email)
+        d = email.to_dict()
         assert "label_ids" not in d
 
 
@@ -752,7 +756,7 @@ class TestCliMain:
         mock_gmail_client.search_emails.return_value = []
         gmail.cli_main(["search", "nothing"])
         captured = capsys.readouterr()
-        assert "No matching emails" in captured.out
+        assert "No search emails" in captured.out
 
     def test_cli_no_command(self, mock_gmail_client):
         gmail = _get_gmail()

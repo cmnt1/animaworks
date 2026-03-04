@@ -37,11 +37,18 @@ cd animaworks
 uv run animaworks start     # サーバー起動 — 初回はセットアップウィザードが開く
 ```
 
-**http://localhost:18500/** を開く — セットアップウィザードがAPIキー・言語・最初のAnima作成をガイドする。完了後、ダッシュボードへ。
+**http://localhost:18500/** を開く — セットアップウィザードが以下をガイドする:
 
-**セットアップはこれで完了。** セットアップスクリプトが [uv](https://docs.astral.sh/uv/) をインストールし、リポジトリをクローンし、Python 3.12+と全依存パッケージを自動でダウンロードする。
+1. **言語** — UIの表示言語を選択
+2. **ユーザー情報** — オーナーアカウントを作成
+3. **APIキー** — LLMのAPIキーを入力（リアルタイムで接続検証）
+4. **最初のAnima** — 最初のエージェントに名前をつける
 
-> **他のLLMを使う場合:** AnimaWorksはClaude、GPT、Gemini、ローカルモデル等に対応。`.env`でAPIキーを追加するか、セットアップウィザードでcredentialを設定。詳細は [APIキーリファレンス](#apiキーリファレンス) を参照。
+`.env`の手動編集は不要 — ウィザードがcredentialを `config.json` に自動保存する。
+
+**セットアップはこれで完了。** セットアップスクリプトが [uv](https://docs.astral.sh/uv/) をインストールし、リポジトリをクローンし、Python 3.12+と全依存パッケージを自動でダウンロードする。**macOS、Linux、WSL**で事前のPythonインストール不要で動作する。
+
+> **他のLLMを使う場合:** AnimaWorksはClaude、GPT、Gemini、ローカルモデル等に対応。セットアップウィザードでAPIキーを入力するか、ダッシュボードの **Settings** から後で追加できる。詳細は [APIキーリファレンス](#apiキーリファレンス) を参照。
 
 <details>
 <summary><strong>別の方法: スクリプトを確認してから実行</strong></summary>
@@ -57,13 +64,34 @@ bash setup.sh           # 確認後に実行
 </details>
 
 <details>
+<summary><strong>別の方法: uvでステップごとに手動インストール</strong></summary>
+
+```bash
+# uvをインストール（インストール済みならスキップ）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+
+# クローンとインストール
+git clone https://github.com/xuiltul/animaworks.git && cd animaworks
+uv sync                 # Python 3.12+と全依存パッケージを自動ダウンロード
+
+# 起動
+uv run animaworks start
+```
+
+</details>
+
+<details>
 <summary><strong>別の方法: pipで手動インストール</strong></summary>
+
+> **macOS ユーザーへ:** macOS Sonoma以前のシステムPython (`/usr/bin/python3`) はバージョン3.9のため、AnimaWorksの要件（3.12+）を満たしません。[Homebrew](https://brew.sh/) で `brew install python@3.13` をインストールするか、上のuvによる方法を使ってください（uvはPythonを自動管理します）。
 
 Python 3.12+ がシステムにインストール済みであること。
 
 ```bash
 git clone https://github.com/xuiltul/animaworks.git && cd animaworks
 python3 -m venv .venv && source .venv/bin/activate
+python3 --version       # 3.12+ であることを確認
 pip install --upgrade pip && pip install -e .
 animaworks start
 ```
