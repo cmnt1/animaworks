@@ -38,11 +38,18 @@ cd animaworks
 uv run animaworks start     # start the server — setup wizard opens on first run
 ```
 
-Open **http://localhost:18500/** — the setup wizard guides you through API keys, locale, and creating your first Anima. After that, you're on the dashboard.
+Open **http://localhost:18500/** — a setup wizard walks you through:
 
-**That's it.** The setup script installs [uv](https://docs.astral.sh/uv/), clones the repo, and downloads Python 3.12+ with all dependencies automatically.
+1. **Language** — pick your UI language
+2. **User info** — create your owner account
+3. **API key** — enter your LLM API key (validated in real time)
+4. **First Anima** — name your first agent
 
-> **Using a different LLM?** AnimaWorks supports Claude, GPT, Gemini, local models, and more. Add your API key in `.env` or configure credentials through the setup wizard. See [API Key Reference](#api-key-reference) below.
+No `.env` editing required — the wizard saves credentials to `config.json` automatically.
+
+**That's it.** The setup script installs [uv](https://docs.astral.sh/uv/), clones the repo, and downloads Python 3.12+ with all dependencies automatically. Works on **macOS, Linux, and WSL** without any pre-installed Python.
+
+> **Using a different LLM?** AnimaWorks supports Claude, GPT, Gemini, local models, and more. Enter your API key in the setup wizard, or add it later via **Settings** in the dashboard. See [API Key Reference](#api-key-reference) below.
 
 <details>
 <summary><strong>Alternative: inspect before running</strong></summary>
@@ -58,13 +65,34 @@ bash setup.sh           # run after inspection
 </details>
 
 <details>
+<summary><strong>Alternative: manual install with uv (step by step)</strong></summary>
+
+```bash
+# Install uv (skip if already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+
+# Clone and install
+git clone https://github.com/xuiltul/animaworks.git && cd animaworks
+uv sync                 # downloads Python 3.12+ and all dependencies
+
+# Start
+uv run animaworks start
+```
+
+</details>
+
+<details>
 <summary><strong>Alternative: manual install with pip</strong></summary>
+
+> **macOS users:** The system Python (`/usr/bin/python3`) is 3.9 on macOS Sonoma and earlier — too old for AnimaWorks. Install Python 3.12+ via [Homebrew](https://brew.sh/) (`brew install python@3.13`) or use the uv method above, which handles Python automatically.
 
 Requires Python 3.12+ already installed on your system.
 
 ```bash
 git clone https://github.com/xuiltul/animaworks.git && cd animaworks
 python3 -m venv .venv && source .venv/bin/activate
+python3 --version       # verify 3.12+ before continuing
 pip install --upgrade pip && pip install -e .
 animaworks start
 ```
