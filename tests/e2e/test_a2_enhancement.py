@@ -94,62 +94,27 @@ def _install_litellm_mock(mock: AsyncMock) -> MagicMock:
     return mock_mod
 
 
-class TestDiscoverToolsE2E:
-    """Test discover_tools progressive tool disclosure in the loop."""
+class TestUseToolE2E:
+    """Test use_tool unified dispatcher in the loop."""
 
-    async def test_list_categories_then_respond(self, executor):
-        """LLM calls discover_tools() → gets categories → responds."""
-        tc_discover = make_tool_call("discover_tools", {}, "call_001")
-        resp1 = make_litellm_response(content="", tool_calls=[tc_discover])
+    async def test_use_tool_dispatches_in_loop(self, executor):
+        """LLM calls use_tool() → dispatch → responds."""
+        tc_use = make_tool_call(
+            "use_tool",
+            {"tool_name": "chatwork", "action": "list_rooms", "args": {}},
+            "call_001",
+        )
+        resp1 = make_litellm_response(content="", tool_calls=[tc_use])
         resp2 = make_litellm_response(
-            content="I can use chatwork and slack tools.",
+            content="I checked chatwork rooms.",
             tool_calls=None,
         )
 
         mock = AsyncMock(side_effect=[resp1, resp2])
         _install_litellm_mock(mock)
         with patch("litellm.acompletion", mock):
-            result = await executor.execute("What tools do you have?", system_prompt="sys")
-        assert "chatwork" in result.text.lower() or "slack" in result.text.lower()
-
-    async def test_activate_category_adds_tools(self, executor):
-        """discover_tools(category='chatwork') → new tools added → used."""
-        tc_discover = make_tool_call(
-            "discover_tools", {"category": "chatwork"}, "call_001",
-        )
-        resp1 = make_litellm_response(content="", tool_calls=[tc_discover])
-        resp2 = make_litellm_response(content="Tools activated", tool_calls=None)
-
-        mock_schemas = [
-            {"name": "chatwork_send", "description": "Send chatwork msg", "parameters": {"type": "object", "properties": {}}},
-            {"name": "chatwork_messages", "description": "Get chatwork msgs", "parameters": {"type": "object", "properties": {}}},
-        ]
-
-        mock = AsyncMock(side_effect=[resp1, resp2])
-        _install_litellm_mock(mock)
-        with patch("litellm.acompletion", mock), \
-             patch("core.execution._litellm_tools.load_external_schemas", return_value=mock_schemas):
-            result = await executor.execute("Check chatwork", system_prompt="sys")
-        assert "Tools activated" in result.text
-
-    async def test_duplicate_category_activation(self, executor):
-        """Activating same category twice returns 'already active'."""
-        tc1 = make_tool_call("discover_tools", {"category": "chatwork"}, "call_001")
-        tc2 = make_tool_call("discover_tools", {"category": "chatwork"}, "call_002")
-        resp1 = make_litellm_response(content="", tool_calls=[tc1])
-        resp2 = make_litellm_response(content="", tool_calls=[tc2])
-        resp3 = make_litellm_response(content="Done", tool_calls=None)
-
-        mock_schemas = [
-            {"name": "chatwork_send", "description": "Send", "parameters": {}},
-        ]
-
-        mock = AsyncMock(side_effect=[resp1, resp2, resp3])
-        _install_litellm_mock(mock)
-        with patch("litellm.acompletion", mock), \
-             patch("core.execution._litellm_tools.load_external_schemas", return_value=mock_schemas):
-            result = await executor.execute("test", system_prompt="sys")
-        assert "Done" in result.text
+            result = await executor.execute("Check chatwork rooms", system_prompt="sys")
+        assert "chatwork" in result.text.lower()
 
 
 class TestSearchCodeE2E:
@@ -265,13 +230,13 @@ class TestBaseToolCount:
     """Verify the base tool set matches the design spec."""
 
     def test_base_tool_count(self, executor):
-        """Base tools should be 28 (including skill + create_skill)."""
+        """Base tools should be 28 (including use_tool + skill + create_skill)."""
         tools = executor._build_base_tools()
         assert len(tools) == 28
         names = {t["function"]["name"] for t in tools}
         assert "search_code" in names
         assert "list_directory" in names
-        assert "discover_tools" in names
+        assert "use_tool" in names
         assert "read_file" in names
         assert "search_memory" in names
         assert "refresh_tools" in names
@@ -285,3 +250,5 @@ class TestBaseToolCount:
         assert "report_procedure_outcome" in names
         assert "skill" in names
         assert "create_skill" in names
+        assert "plan_tasks" in names
+        assert "manage_channel" in names

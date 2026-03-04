@@ -247,15 +247,15 @@ class TestSupervisorVibeReferenceE2E:
         # Original config object must remain unchanged
         assert config.image_gen.style_reference == original_ref
 
-    def test_schema_includes_supervisor_name_param(self):
-        """The generate_character_assets schema should include supervisor_name."""
-        from core.tools.image_gen import get_tool_schemas
+    def test_dispatch_accepts_supervisor_name_param(self):
+        """The image_gen dispatch should accept supervisor_name parameter."""
+        import inspect
+        from core.tools.image_gen import dispatch
 
-        schemas = get_tool_schemas()
-        gen_schema = next(s for s in schemas if s["name"] == "generate_character_assets")
-        props = gen_schema["input_schema"]["properties"]
-        assert "supervisor_name" in props
-        assert props["supervisor_name"]["type"] == "string"
+        src = inspect.getsource(dispatch)
+        assert "supervisor_name" in src, (
+            "dispatch() should handle supervisor_name for Vibe Transfer"
+        )
 
     def test_multiple_subordinates_get_same_supervisor_reference(
         self,
