@@ -381,8 +381,8 @@ class TestPreToolHookTaskBranching:
         with patch("core.execution._sdk_hooks._cache_subordinate_paths", return_value=([], [], [])):
             return _build_pre_tool_hook(anima_dir, has_subordinates=True)
 
-    async def test_no_subs_passes_through(self, hook_no_subs) -> None:
-        """Non-supervisor: Task tool passes through (empty SyncHookJSONOutput)."""
+    async def test_no_subs_intercepts_to_pending(self, hook_no_subs) -> None:
+        """Non-supervisor: Task tool is intercepted to state/pending/."""
         input_data = {
             "tool_name": "Task",
             "tool_input": {"description": "test", "prompt": "do it"},
@@ -391,7 +391,8 @@ class TestPreToolHookTaskBranching:
             result = await hook_no_subs(input_data, "tool-1", {})
 
         output = result.get("hookSpecificOutput", {})
-        assert output.get("permissionDecision") != "deny"
+        assert output.get("permissionDecision") == "deny"
+        assert "INTERCEPT_OK" in output.get("permissionDecisionReason", "")
 
     async def test_with_subs_delegation_attempted(self, hook_with_subs) -> None:
         """Supervisor: delegation is attempted, falls back to pending on failure."""

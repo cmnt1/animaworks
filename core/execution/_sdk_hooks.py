@@ -99,8 +99,10 @@ def _intercept_task_to_pending(
     anima_dir: Path,
     tool_input: dict[str, Any],
     tool_use_id: str | None,
+    *,
+    actual_tool_name: str = "Task",
 ) -> str:
-    """Convert a Task tool call into a pending LLM task JSON.
+    """Convert a Task/Agent tool call into a pending LLM task JSON.
 
     Writes a task descriptor to ``state/pending/`` so that
     ``PendingTaskExecutor`` picks it up and runs it as an independent
@@ -135,6 +137,7 @@ def _intercept_task_to_pending(
         "file_paths": [],
         "submitted_by": "self_task_intercept",
         "submitted_at": datetime.now(_tz.utc).isoformat(),
+        "reply_to": anima_dir.name,
     }
 
     pending_dir = anima_dir / "state" / "pending"
@@ -146,15 +149,55 @@ def _intercept_task_to_pending(
     )
 
     _log_tool_use(
-        anima_dir, "Task", tool_input, tool_use_id=tool_use_id,
+        anima_dir, actual_tool_name, tool_input, tool_use_id=tool_use_id,
         blocked=False,
     )
 
     logger.info(
-        "Task tool intercepted → pending LLM task: id=%s title=%s",
-        task_id, description,
+        "%s tool intercepted → pending LLM task: id=%s title=%s",
+        actual_tool_name, task_id, description,
     )
     return task_id
+
+
+def _do_pending_intercept(
+    anima_dir: Path,
+    tool_input: dict[str, Any],
+    tool_use_id: str | None,
+    tool_name: str,
+    intercepted_task_ids: set[str],
+    on_task_intercepted: Callable[[], None] | None,
+) -> Any:
+    """Intercept a Task/Agent call to state/pending/ and return deny response."""
+    from claude_agent_sdk.types import (
+        PreToolUseHookSpecificOutput,
+        SyncHookJSONOutput,
+    )
+
+    task_id = _intercept_task_to_pending(
+        anima_dir, tool_input, tool_use_id,
+        actual_tool_name=tool_name,
+    )
+    intercepted_task_ids.add(task_id)
+    if on_task_intercepted is not None:
+        try:
+            on_task_intercepted()
+        except Exception:
+            logger.debug("on_task_intercepted callback failed", exc_info=True)
+    return SyncHookJSONOutput(
+        hookSpecificOutput=PreToolUseHookSpecificOutput(
+            hookEventName="PreToolUse",
+            permissionDecision="deny",
+            permissionDecisionReason=(
+                f"INTERCEPT_OK: Task accepted (task_id: {task_id}). "
+                f"Written to state/pending/ for background execution. "
+                f"The executor has your identity, injection, behavior rules, "
+                f"memory guide, and org context. "
+                f"Do NOT call Task or TaskOutput for this task_id again. "
+                f"Proceed with your current conversation."
+            ),
+        )
+    )
 
 
 # ── Delegation helpers ────────────────────────────────────────
@@ -476,8 +519,8 @@ def _build_pre_tool_hook(
             except Exception:
                 logger.debug("Failed to persist min_trust_seen", exc_info=True)
 
-        # Task tool intercept
-        if tool_name == "Task":
+        # Task / Agent tool intercept (SDK uses "Agent" as the subagent tool name)
+        if tool_name in ("Agent", "Task"):
             if has_subordinates:
                 # Supervisor path: delegate to subordinate, fallback to pending
                 try:
@@ -501,37 +544,11 @@ def _build_pre_tool_hook(
                 except Exception:
                     logger.warning("Delegation failed, falling back to pending", exc_info=True)
 
-                # Fallback: all subordinates disabled or delegation error
-                task_id = _intercept_task_to_pending(
-                    anima_dir, tool_input, tool_use_id,
-                )
-                intercepted_task_ids.add(task_id)
-                if on_task_intercepted is not None:
-                    try:
-                        on_task_intercepted()
-                    except Exception:
-                        logger.debug("on_task_intercepted callback failed", exc_info=True)
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PreToolUseHookSpecificOutput(
-                        hookEventName="PreToolUse",
-                        permissionDecision="deny",
-                        permissionDecisionReason=(
-                            f"INTERCEPT_OK: Task accepted (task_id: {task_id}). "
-                            f"Written to state/pending/ for background execution. "
-                            f"The executor has your identity, injection, behavior rules, "
-                            f"memory guide, and org context. "
-                            f"Do NOT call Task or TaskOutput for this task_id again. "
-                            f"Proceed with your current conversation."
-                        ),
-                    )
-                )
-            else:
-                # Non-supervisor: let SDK run the Task tool natively (subagent)
-                _log_tool_use(
-                    anima_dir, "Task", tool_input, tool_use_id=tool_use_id,
-                    blocked=False,
-                )
-                return SyncHookJSONOutput()
+            # Non-supervisor or supervisor fallback → state/pending/
+            return _do_pending_intercept(
+                anima_dir, tool_input, tool_use_id, tool_name,
+                intercepted_task_ids, on_task_intercepted,
+            )
 
         # plan_tasks intercept → DAG batch to pending
         if tool_name in ("plan_tasks", "mcp__aw__plan_tasks"):
@@ -563,13 +580,13 @@ def _build_pre_tool_hook(
                 )
             )
 
-        # TaskOutput for intercepted Task is not backed by SDK task IDs.
-        if tool_name == "TaskOutput":
+        # TaskOutput/AgentOutput for intercepted tasks — not backed by SDK task IDs.
+        if tool_name in ("TaskOutput", "AgentOutput"):
             task_id = str(tool_input.get("task_id", "")).strip()
             if task_id and task_id in intercepted_task_ids:
                 _log_tool_use(
                     anima_dir,
-                    "TaskOutput",
+                    tool_name,
                     tool_input,
                     tool_use_id=tool_use_id,
                     blocked=False,

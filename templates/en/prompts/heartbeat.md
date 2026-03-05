@@ -5,6 +5,7 @@ This is a Heartbeat. Follow the process below.
 
 ## Plan
 Based on your observations, decide what to do next.
+- Background task results: Check state/task_results/ for completed tasks and follow up as needed
 - **MUST**: If recent chat/inbox messages contain instructions from humans or Animas that are not yet in the task queue, register them with `add_task` (use source="human" for human instructions)
 - STALE / near-deadline tasks: Follow up with assignee (send_message), escalate to supervisor if needed
 - Long-stalled waiting tasks (24h+): Send status check or reminder

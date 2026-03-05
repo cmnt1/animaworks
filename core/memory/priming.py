@@ -1046,6 +1046,30 @@ class PrimingEngine:
                     lines.append(f"  {desc[:100]}")
             parts.append("\n".join(lines))
 
+        # Completed background tasks from state/task_results/
+        results_dir = self.anima_dir / "state" / "task_results"
+        if results_dir.is_dir():
+            try:
+                result_files = sorted(
+                    results_dir.glob("*.md"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )[:5]
+                if result_files:
+                    lines = ["## 完了済みバックグラウンドタスク"]
+                    for rf in result_files:
+                        try:
+                            content = rf.read_text(encoding="utf-8").strip()
+                            task_id = rf.stem
+                            preview = content[:150].replace("\n", " ")
+                            lines.append(f"- [{task_id}] {preview}")
+                        except Exception:
+                            logger.debug("Channel E: failed to read %s", rf.name, exc_info=True)
+                    if len(lines) > 1:
+                        parts.append("\n".join(lines))
+            except Exception:
+                logger.debug("Channel E: task_results read failed", exc_info=True)
+
         return "\n\n".join(parts)
 
     @staticmethod

@@ -28,7 +28,7 @@ def summarize_tool_args(tool_name: str, args: dict[str, Any]) -> str:
             return f"{pattern} in {path}"
         case "Glob" | "glob_files":
             return args.get("pattern") or args.get("glob_pattern") or ""
-        case "Task":
+        case "Task" | "Agent":
             return (args.get("description") or "")[:80]
         case "send_message":
             return f"→ {args.get('to', '')}"

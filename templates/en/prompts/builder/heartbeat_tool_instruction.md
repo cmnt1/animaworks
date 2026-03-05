@@ -7,3 +7,6 @@ Complete observation → planning → task file creation / follow-ups within 20 
 
 If heavy work is needed, delegate via delegate_task when you have subordinates, or submit as a background task via plan_tasks tool.
 Task execution is handled automatically in a separate session (TaskExec).
+
+Completed background task results are in state/task_results/.
+Check for important results and plan follow-up actions as needed.
