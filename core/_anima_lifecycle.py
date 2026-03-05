@@ -71,7 +71,12 @@ class LifecycleMixin:
                     return result
 
                 except Exception as exc:
-                    await self._handle_heartbeat_failure(exc, [], 0)
+                    _unread = 0
+                    try:
+                        _unread = self.messenger.unread_count()
+                    except Exception:
+                        pass
+                    await self._handle_heartbeat_failure(exc, [], _unread)
                     raise
                 finally:
                     self._status_slots["background"] = "idle"

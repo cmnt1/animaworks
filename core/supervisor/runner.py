@@ -296,6 +296,27 @@ class AnimaRunner:
                 else:
                     StreamingJournal.confirm_recovery(self._anima_dir, session_type, thread_id=thread_id)
 
+                # Write recovery_note for crashed heartbeat sessions
+                if session_type == "heartbeat":
+                    try:
+                        recovery_note_path = self._anima_dir / "state" / "recovery_note.md"
+                        from core.i18n import t
+                        from core.time_utils import now_iso
+                        note_content = t(
+                            "anima.recovery_crash_info",
+                            ts=recovery.last_event_at or recovery.started_at or now_iso(),
+                            recovered_chars=len(recovery.recovered_text),
+                            tool_calls=len(recovery.tool_calls),
+                            trigger=recovery.trigger or "unknown",
+                        )
+                        recovery_note_path.write_text(note_content, encoding="utf-8")
+                        logger.info("Recovery note saved for crashed heartbeat: %s", self.anima_name)
+                    except Exception:
+                        logger.debug(
+                            "Failed to save recovery note for crashed heartbeat: %s",
+                            self.anima_name, exc_info=True,
+                        )
+
                 # Record crash event in activity log
                 try:
                     from core.memory.activity import ActivityLogger

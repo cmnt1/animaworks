@@ -185,6 +185,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "anima.heartbeat_episode": {"ja": "## {ts} ハートビート活動\n\n{summary}", "en": "## {ts} Heartbeat activity\n\n{summary}"},
     "anima.heartbeat_msgs_processed": {"ja": "\n\n（{count}件のメッセージを処理）", "en": "\n\n({count} messages processed)"},
     "anima.recovery_error_info": {"ja": "### エラー情報\n\n- エラー種別: {exc_type}\n- エラー内容: {exc_msg}\n- 発生日時: {ts}\n- 未処理メッセージ数: {count}", "en": "### Error information\n\n- Error type: {exc_type}\n- Error message: {exc_msg}\n- Occurred at: {ts}\n- Unprocessed message count: {count}"},
+    "anima.recovery_crash_info": {"ja": "### クラッシュ復旧情報\n\n- 発生日時: {ts}\n- トリガー: {trigger}\n- 回復テキスト長: {recovered_chars}文字\n- ツール呼び出し数: {tool_calls}回\n- 原因: プロセスが予期せず終了しました（SIGKILL/OOM等の可能性）", "en": "### Crash recovery information\n\n- Occurred at: {ts}\n- Trigger: {trigger}\n- Recovered text length: {recovered_chars} chars\n- Tool calls: {tool_calls}\n- Cause: Process terminated unexpectedly (possible SIGKILL/OOM)"},
     # ── priming.py ──
     "priming.section_title": {"ja": "## あなたが思い出していること", "en": "## What you recall"},
     "priming.section_intro": {"ja": "以下は、この会話に関連してあなたが自然に想起した記憶です。", "en": "Below are memories you naturally recalled relevant to this conversation."},
