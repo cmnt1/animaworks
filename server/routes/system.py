@@ -48,7 +48,7 @@ def _get_frontend_logger() -> logging.Logger:
         filename=log_path,
         when="midnight",
         interval=1,
-        backupCount=30,  # 30 days retention
+        backupCount=7,  # 7 days retention
         encoding="utf-8",
         utc=False,
     )

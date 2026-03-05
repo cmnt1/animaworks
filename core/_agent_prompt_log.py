@@ -138,3 +138,31 @@ def _save_prompt_log_end(
             f.write(_json.dumps(entry, ensure_ascii=False, default=str) + "\n")
     except Exception:
         logger.warning("Failed to save prompt log end", exc_info=True)
+
+
+def rotate_all_prompt_logs(
+    animas_dir: Path,
+    retention_days: int = 3,
+) -> dict[str, int]:
+    """Rotate prompt logs for all Animas under *animas_dir*.
+
+    Returns:
+        Dict mapping anima name to number of deleted files.
+    """
+    cutoff = now_jst() - timedelta(days=retention_days)
+    cutoff_str = cutoff.strftime("%Y-%m-%d")
+    results: dict[str, int] = {}
+    for anima_dir in sorted(animas_dir.iterdir()):
+        if not anima_dir.is_dir():
+            continue
+        log_dir = anima_dir / "prompt_logs"
+        if not log_dir.is_dir():
+            continue
+        deleted = 0
+        for f in log_dir.glob("*.jsonl"):
+            if f.stem < cutoff_str:
+                f.unlink(missing_ok=True)
+                deleted += 1
+        if deleted:
+            results[anima_dir.name] = deleted
+    return results

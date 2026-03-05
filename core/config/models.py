@@ -273,6 +273,21 @@ class ActivityLogConfig(BaseModel):
     rotation_time: str = "05:00"                   # 実行時刻 (JST)
 
 
+class HousekeepingConfig(BaseModel):
+    """Configuration for periodic disk cleanup."""
+
+    enabled: bool = True
+    run_time: str = "05:30"
+
+    prompt_log_retention_days: int = 3
+    daemon_log_max_size_mb: int = 100
+    daemon_log_keep_generations: int = 5
+    frontend_log_backup_count: int = 7
+    dm_log_archive_retention_days: int = 30
+    cron_log_retention_days: int = 30
+    shortterm_retention_days: int = 7
+
+
 class HeartbeatConfig(BaseModel):
     """Heartbeat scheduling and cascade prevention settings."""
 
@@ -361,6 +376,7 @@ class AnimaWorksConfig(BaseModel):
     activity_log: ActivityLogConfig = ActivityLogConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     voice: VoiceConfig = VoiceConfig()
+    housekeeping: HousekeepingConfig = HousekeepingConfig()
     ui: UIConfig = UIConfig()
 
 
