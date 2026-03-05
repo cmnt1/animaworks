@@ -151,5 +151,7 @@ def cli_main(args: list[str]) -> None:
     for r in results:
         print(r)
 
-    if any("ERROR" in r for r in results):
+    sent_ok = any("OK" in r for r in results)
+    has_error = any("ERROR" in r for r in results)
+    if has_error or not sent_ok:
         sys.exit(1)

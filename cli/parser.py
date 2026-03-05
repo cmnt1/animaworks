@@ -155,7 +155,7 @@ def cli_main() -> None:
     p_chat.add_argument("anima", help="Anima name")
     p_chat.add_argument("message", help="Message to send")
     p_chat.add_argument(
-        "--local", action="store_true", help="Direct mode (no gateway)"
+        "--local", action="store_true", help="(deprecated) Direct mode (no gateway)"
     )
     p_chat.add_argument(
         "--from", dest="from_person", default="human",
@@ -167,7 +167,7 @@ def cli_main() -> None:
     p_hb = sub.add_parser("heartbeat", help="Trigger heartbeat")
     p_hb.add_argument("anima", help="Anima name")
     p_hb.add_argument(
-        "--local", action="store_true", help="Direct mode (no gateway)"
+        "--local", action="store_true", help="(deprecated) Direct mode (no gateway)"
     )
     p_hb.set_defaults(func=_lazy_heartbeat)
 

@@ -114,10 +114,12 @@ def _tail_all_logs(log_dir: Path) -> None:
     # Collect all current log files
     log_files = {}
 
-    # Server log
-    server_log = log_dir / "server.log"
+    server_log = log_dir / "animaworks.log"
     if server_log.exists():
         log_files["[SERVER]"] = server_log
+    daemon_log = log_dir / "server-daemon.log"
+    if daemon_log.exists():
+        log_files["[SERVER-DAEMON]"] = daemon_log
 
     # Anima logs
     for anima_dir in anima_dirs:
