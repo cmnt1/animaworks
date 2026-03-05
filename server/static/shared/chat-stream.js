@@ -150,7 +150,6 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
         break;
       }
       chunkCount++;
-      lastChunkTime = performance.now();
 
       buffer += decoder.decode(value, { stream: true });
       const { parsed, remaining } = parseConvSSE(buffer);
