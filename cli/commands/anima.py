@@ -72,6 +72,13 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
 def cmd_chat(args: argparse.Namespace) -> None:
     """Chat with an anima (via gateway or direct)."""
     if args.local:
+        import warnings
+        warnings.warn(
+            "--local is deprecated and bypasses ProcessSupervisor. "
+            "Use the server (animaworks server start) and omit --local.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         from core.init import ensure_runtime_dir
         from core.paths import get_animas_dir, get_shared_dir
         from core.anima import DigitalAnima
@@ -106,6 +113,13 @@ def cmd_chat(args: argparse.Namespace) -> None:
 def cmd_heartbeat(args: argparse.Namespace) -> None:
     """Trigger heartbeat (via gateway or direct)."""
     if args.local:
+        import warnings
+        warnings.warn(
+            "--local is deprecated and bypasses ProcessSupervisor. "
+            "Use the server (animaworks server start) and omit --local.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         from core.init import ensure_runtime_dir
         from core.paths import get_animas_dir, get_shared_dir
         from core.anima import DigitalAnima
