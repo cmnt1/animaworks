@@ -3306,7 +3306,8 @@ html, body {
   gap: 10px;
 }
 
-.org-card:hover {
+.org-card:hover,
+.org-card:active {
   border-color: var(--aw-color-border-medium, #cbd5e1);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
