@@ -3412,6 +3412,7 @@ html, body {
 
 /* Status dot shared styles */
 .dot-idle { background: var(--aw-color-success, #22c55e); }
+.dot-running { background: var(--aw-color-success, #22c55e); }
 .dot-active {
   background: var(--aw-color-warning, #f59e0b);
   animation: dot-active-pulse 1.2s ease-in-out infinite;
@@ -3429,6 +3430,12 @@ html, body {
 /* ── data-status Animations ────────────── */
 .org-card[data-status="idle"] .org-card-dot {
   background: var(--aw-color-text-placeholder, #9ca3af);
+  animation: none;
+  box-shadow: none;
+}
+
+.org-card[data-status="running"] .org-card-dot {
+  background: var(--aw-color-success, #22c55e);
   animation: none;
   box-shadow: none;
 }

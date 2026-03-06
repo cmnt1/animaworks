@@ -107,7 +107,8 @@ function getStatusDotClass(status) {
   const s = typeof status === "object" ? (status.state || status.status || "") : String(status);
   const lower = s.toLowerCase();
   if (lower === "idle") return "dot-idle";
-  if (lower === "thinking" || lower === "working" || lower === "running") return "dot-active";
+  if (lower === "running") return "dot-running";
+  if (lower === "thinking" || lower === "working") return "dot-active";
   if (lower === "sleeping" || lower === "stopped" || lower === "not_found") return "dot-sleeping";
   if (lower.includes("error")) return "dot-error";
   if (lower.includes("bootstrap")) return "dot-bootstrap";
@@ -128,9 +129,32 @@ function getStatusAttr(status) {
   const lower = s.toLowerCase();
   if (lower.includes("error")) return "error";
   if (lower.includes("bootstrap")) return "bootstrapping";
-  if (lower === "thinking" || lower === "working" || lower === "running") return "working";
+  if (lower === "thinking" || lower === "working") return "working";
+  if (lower === "running") return "running";
   if (lower.includes("chat") || lower.includes("talk")) return "chatting";
   return "idle";
+}
+
+function _hasRunningStreamEntry(name) {
+  const entries = _cardStreams.get(name);
+  if (!entries) return false;
+  return entries.some(e => e.status === "running");
+}
+
+function _syncCardSpinner(name) {
+  const card = _cardEls.get(name);
+  if (!card) return;
+  const entries = _cardStreams.get(name) || [];
+  const runningEntry = [...entries].reverse().find(e => e.status === "running");
+  if (runningEntry) {
+    card.dataset.status = runningEntry.type === "heartbeat" ? "heartbeat" : "working";
+  } else {
+    const node = _nodeData.get(name);
+    const baseAttr = node ? getStatusAttr(node.status) : "idle";
+    if (card.dataset.status === "working" || card.dataset.status === "heartbeat") {
+      card.dataset.status = baseAttr;
+    }
+  }
 }
 
 // ── Tree Layout Algorithm ──────────────────────
@@ -791,11 +815,11 @@ export function updateAnimaStatus(name, status) {
   const card = _cardEls.get(name);
   if (!card) return;
 
+  const node = _nodeData.get(name);
+  if (node) node.status = status;
+
   const dotClass = getStatusDotClass(status);
   const label = getStatusLabel(status);
-  const statusAttr = getStatusAttr(status);
-
-  card.dataset.status = statusAttr;
 
   const dot = card.querySelector(".org-card-dot");
   if (dot) dot.className = `org-card-dot ${dotClass}`;
@@ -803,6 +827,7 @@ export function updateAnimaStatus(name, status) {
   const labelEl = card.querySelector(".org-card-status-label");
   if (labelEl) labelEl.textContent = label;
 
+  _syncCardSpinner(name);
   _renderKpiBar();
 }
 
@@ -822,6 +847,9 @@ export function updateCardActivity(name, data) {
   const { eventType, toolName, toolId, isError, detail, channel, summary } = data;
 
   if (eventType === "tool_start") {
+    for (const e of entries) {
+      if (e.type === "tool" && e.status === "running") e.status = "done";
+    }
     entries.push({
       id: toolId || Date.now().toString(),
       type: "tool",
@@ -830,12 +858,16 @@ export function updateCardActivity(name, data) {
       ts: Date.now(),
     });
   } else if (eventType === "tool_end" || eventType === "tool_use") {
-    const existing = entries.find(e => e.id === toolId);
+    const existing = toolId
+      ? entries.find(e => e.id === toolId)
+      : [...entries].reverse().find(e => e.type === "tool" && e.status === "running");
     if (existing) {
       existing.status = isError ? "error" : "done";
     }
   } else if (eventType === "tool_detail") {
-    const existing = entries.find(e => e.id === toolId && e.status === "running");
+    const existing = toolId
+      ? entries.find(e => e.id === toolId && e.status === "running")
+      : [...entries].reverse().find(e => e.type === "tool" && e.status === "running");
     if (existing) {
       existing.text = `${toolName}: ${detail || ""}`.slice(0, 80);
     }
@@ -863,8 +895,6 @@ export function updateCardActivity(name, data) {
       status: "running",
       ts: Date.now(),
     });
-    const card = _cardEls.get(name);
-    if (card) card.dataset.status = "heartbeat";
   } else if (eventType === "cron_end" || eventType === "heartbeat_end") {
     const last = [...entries].reverse().find(
       e => (e.type === "cron" || e.type === "heartbeat") && e.status === "running",
@@ -877,6 +907,7 @@ export function updateCardActivity(name, data) {
   }
   _cardStreams.set(name, entries);
   _renderStream(streamEl, entries.slice(-MAX_STREAM_ENTRIES));
+  _syncCardSpinner(name);
   _ensureStaleTimer();
 }
 
@@ -912,12 +943,14 @@ function _ensureStaleTimer() {
     const now = Date.now();
     for (const [name, entries] of _cardStreams) {
       let changed = false;
+      let hadStaleExpiry = false;
       for (const e of entries) {
         if (e.status === "running") {
           if (now - e.ts > STALE_TIMEOUT_MS) {
             e.status = "done";
             e.text += " (timeout)";
             changed = true;
+            hadStaleExpiry = true;
           } else {
             hasRunning = true;
             changed = true;
@@ -928,6 +961,7 @@ function _ensureStaleTimer() {
         const streamEl = document.getElementById(`orgStream_${CSS.escape(name)}`);
         if (streamEl) _renderStream(streamEl, entries.slice(-MAX_STREAM_ENTRIES));
       }
+      if (hadStaleExpiry) _syncCardSpinner(name);
     }
     if (!hasRunning) {
       clearInterval(_staleTimerId);
