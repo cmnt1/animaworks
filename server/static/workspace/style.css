@@ -3641,6 +3641,10 @@ html, body {
   .org-card[data-status="bootstrapping"] .org-card-dot { animation: none; }
   .org-stream-spinner { animation: none; }
   .org-stream-entry { animation: none; }
+  .org-msg-line-group { transition: none; }
+  .org-msg-packet animateMotion { display: none; }
+  .org-msg-trail { stroke-dasharray: 8 4; }
+  .org-card-avatar img { transition: none; }
 }
 
 /* ── Org Dashboard Responsive ────────────── */
@@ -3758,21 +3762,6 @@ html, body {
 
 .org-card[data-expression="embarrassed"] .org-card-avatar img {
   filter: hue-rotate(10deg) brightness(1.02) saturate(1.15);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .org-msg-line-group {
-    transition: none;
-  }
-  .org-msg-packet animateMotion {
-    display: none;
-  }
-  .org-msg-trail {
-    stroke-dasharray: 8 4;
-  }
-  .org-card-avatar img {
-    transition: none;
-  }
 }
 
 /* ── Realistic Mode Overrides ─────────────────────── */

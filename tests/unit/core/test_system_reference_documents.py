@@ -832,6 +832,7 @@ _EXPECTED_FILES = [
     "communication/messaging-guide.md",
     "communication/reporting-guide.md",
     "communication/sending-limits.md",
+    "communication/slack-bot-token-guide.md",
     "operations/background-tasks.md",
     "operations/heartbeat-cron-guide.md",
     "operations/mode-s-auth-guide.md",
