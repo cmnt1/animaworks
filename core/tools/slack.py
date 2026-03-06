@@ -370,11 +370,23 @@ class SlackClient:
         )
         return all_replies
 
-    def post_message(self, channel_id: str, text: str, thread_ts: str | None = None) -> dict:
+    def post_message(
+        self,
+        channel_id: str,
+        text: str,
+        thread_ts: str | None = None,
+        *,
+        username: str = "",
+        icon_url: str = "",
+    ) -> dict:
         """Send a message via chat.postMessage."""
         kwargs = {"channel": channel_id, "text": text}
         if thread_ts:
             kwargs["thread_ts"] = thread_ts
+        if username:
+            kwargs["username"] = username
+        if icon_url:
+            kwargs["icon_url"] = icon_url
         response = self._call("chat_postMessage", **kwargs)
         return response
 
@@ -1132,6 +1144,40 @@ def _resolve_slack_token(args: dict[str, Any]) -> str | None:
     return _resolve_per_anima_token(args.get("anima_dir"))
 
 
+def _resolve_slack_identity(args: dict[str, Any]) -> tuple[str, str]:
+    """Resolve Anima display name and icon URL for Slack messages.
+
+    Reads ``icon_url_template`` from the first enabled Slack channel in
+    ``config.json`` ``human_notification.channels`` — the same template
+    used by the ``call_human`` notification path.
+
+    Returns:
+        (username, icon_url) tuple.  Either may be empty string.
+    """
+    anima_dir = args.get("anima_dir")
+    if not anima_dir:
+        return ("", "")
+
+    anima_name = Path(anima_dir).name
+    icon_url = ""
+
+    try:
+        from core.config import load_config
+
+        cfg = load_config()
+        if cfg.human_notification and cfg.human_notification.channels:
+            for ch in cfg.human_notification.channels:
+                if ch.type == "slack" and ch.enabled:
+                    template = ch.config.get("icon_url_template", "")
+                    if template:
+                        icon_url = template.format(name=anima_name)
+                    break
+    except Exception:
+        logger.debug("Failed to load icon_url_template from config", exc_info=True)
+
+    return (anima_name, icon_url)
+
+
 def _resolve_cli_token() -> str | None:
     """Resolve per-Anima Slack bot token for CLI invocations.
 
@@ -1148,10 +1194,13 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
     if name == "slack_send":
         client = SlackClient(token=_resolve_slack_token(args))
         channel_id = client.resolve_channel(args["channel"])
+        username, icon_url = _resolve_slack_identity(args)
         return client.post_message(
             channel_id,
             md_to_slack_mrkdwn(args["message"]),
             thread_ts=args.get("thread_ts"),
+            username=username,
+            icon_url=icon_url,
         )
     if name == "slack_messages":
         client = SlackClient(token=_resolve_slack_token(args))
