@@ -300,7 +300,7 @@ def test_channel_d_vector_search_integration(anima_dir, monkeypatch):
 
     # Test: keyword match should find deploy skill
     import asyncio
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         engine._channel_d_skill_match("サーバーをデプロイしたい", ["デプロイ"]),
     )
     assert "deploy_procedure" in result

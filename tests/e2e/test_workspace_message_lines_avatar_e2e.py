@@ -166,7 +166,7 @@ class TestAccessibility:
     def test_prefers_reduced_motion_message_lines(self):
         """Message line animations should be simplified for reduced-motion."""
         reduced_sections = re.findall(
-            r"@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]*(?:\{[^}]*\})*[^}]*)\}",
+            r"@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{((?:[^{}]*|\{[^{}]*\})*)\}",
             self.css_src,
         )
         combined = " ".join(reduced_sections)
@@ -175,7 +175,7 @@ class TestAccessibility:
     def test_prefers_reduced_motion_avatar(self):
         """Avatar transitions should be disabled for reduced-motion."""
         reduced_sections = re.findall(
-            r"@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]*(?:\{[^}]*\})*[^}]*)\}",
+            r"@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{((?:[^{}]*|\{[^{}]*\})*)\}",
             self.css_src,
         )
         combined = " ".join(reduced_sections)
