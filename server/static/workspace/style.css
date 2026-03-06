@@ -3286,11 +3286,10 @@ html, body {
 .org-card {
   position: absolute;
   width: 280px;
-  height: 80px;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px 8px;
   background: var(--aw-color-bg-primary, #fff);
   border: 1px solid var(--aw-color-border, #e5e5e5);
   border-radius: 10px;
@@ -3299,6 +3298,12 @@ html, body {
   touch-action: none;
   transition: box-shadow 0.15s, border-color 0.15s;
   box-sizing: border-box;
+}
+
+.org-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .org-card:hover {
@@ -3420,6 +3425,223 @@ html, body {
 .dot-bootstrap { background: var(--aw-color-info, #6366f1); }
 .dot-unknown { background: var(--aw-color-border-dark, #ccc); }
 
+/* ── data-status Animations ────────────── */
+.org-card[data-status="idle"] .org-card-dot {
+  background: var(--aw-color-text-placeholder, #9ca3af);
+  animation: none;
+  box-shadow: none;
+}
+
+.org-card[data-status="working"] .org-card-dot,
+.org-card[data-status="thinking"] .org-card-dot {
+  background: var(--aw-color-warning, #f59e0b);
+  position: relative;
+  animation: none;
+  box-shadow: none;
+}
+.org-card[data-status="working"] .org-card-dot::after,
+.org-card[data-status="thinking"] .org-card-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--aw-color-warning, #f59e0b);
+  animation: org-spin 1s linear infinite;
+}
+
+.org-card[data-status="heartbeat"] .org-card-dot {
+  background: var(--aw-color-success, #22c55e);
+  position: relative;
+  animation: none;
+  box-shadow: none;
+}
+.org-card[data-status="heartbeat"] .org-card-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--aw-color-success, #22c55e);
+  animation: org-heartbeat 1.5s ease-in-out infinite;
+}
+
+.org-card[data-status="chatting"] .org-card-dot {
+  background: var(--aw-color-accent, #3b82f6);
+  position: relative;
+  animation: none;
+  box-shadow: none;
+}
+.org-card[data-status="chatting"] .org-card-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--aw-color-accent, #3b82f6);
+  animation: org-pulse 2s ease-out infinite;
+}
+
+.org-card[data-status="error"] .org-card-dot {
+  background: var(--aw-color-error, #ef4444);
+  animation: org-blink 1s step-end infinite;
+  box-shadow: none;
+}
+
+.org-card[data-status="bootstrapping"] .org-card-dot {
+  background: var(--aw-color-info, #6366f1);
+  animation: org-pulse 1.5s ease-out infinite;
+  box-shadow: none;
+}
+
+@keyframes org-spin { to { transform: rotate(360deg); } }
+@keyframes org-pulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  70% { transform: scale(2.5); opacity: 0; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+@keyframes org-heartbeat {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.3); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.15); }
+}
+@keyframes org-blink { 50% { opacity: 0.3; } }
+
+/* ── Card Activity Stream ────────────── */
+.org-card-stream {
+  max-height: 76px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+  cursor: pointer;
+}
+
+.org-card-stream::-webkit-scrollbar { width: 3px; }
+.org-card-stream::-webkit-scrollbar-thumb {
+  background: var(--aw-color-border, #e5e5e5);
+  border-radius: 2px;
+}
+
+.org-stream-idle {
+  font-size: 11px;
+  color: var(--aw-color-text-placeholder, #9ca3af);
+  text-align: center;
+  padding: 4px 0;
+}
+
+.org-stream-entry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  animation: org-stream-fadein 0.3s ease-out;
+}
+
+@keyframes org-stream-fadein {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.org-stream-entry.org-stream--running {
+  background: color-mix(in srgb, var(--aw-color-warning, #f59e0b) 8%, transparent);
+  color: var(--aw-color-text-primary, #1a1a1a);
+}
+
+.org-stream-entry.org-stream--done {
+  color: var(--aw-color-text-secondary, #555);
+}
+
+.org-stream-entry.org-stream--error {
+  color: var(--aw-color-error, #ef4444);
+}
+
+.org-stream-icon {
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.org-stream-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.org-stream-status {
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.org-stream-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--aw-color-border, #e5e5e5);
+  border-top-color: var(--aw-color-warning, #f59e0b);
+  border-radius: 50%;
+  animation: org-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ── Card Expanded Mode ────────────── */
+.org-card--expanded {
+  width: 360px;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.org-card-detail {
+  border-top: 1px solid var(--aw-color-border, #e5e5e5);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+.org-card-detail-header {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--aw-color-text-muted, #888);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.org-card-detail-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.org-detail-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 2px 4px;
+  color: var(--aw-color-text-secondary, #555);
+}
+
+.org-detail-entry--empty {
+  color: var(--aw-color-text-placeholder, #9ca3af);
+  text-align: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+/* ── Reduced Motion ────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .org-card-dot::before,
+  .org-card-dot::after { animation: none !important; }
+  .org-card[data-status="error"] .org-card-dot { animation: none; }
+  .org-card[data-status="bootstrapping"] .org-card-dot { animation: none; }
+  .org-stream-spinner { animation: none; }
+  .org-stream-entry { animation: none; }
+}
+
 /* ── Org Dashboard Responsive ────────────── */
 @media (max-width: 900px) {
   .org-kpi-bar {
@@ -3433,8 +3655,13 @@ html, body {
   .org-kpi-value { font-size: 16px; }
   .org-card {
     width: 220px;
-    height: 70px;
     padding: 8px 10px;
+  }
+  .org-card-stream {
+    max-height: 60px;
+  }
+  .org-card--expanded {
+    width: 280px;
   }
   .org-card-avatar {
     width: 32px;

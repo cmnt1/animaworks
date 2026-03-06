@@ -19,7 +19,7 @@ const logger = createLogger("org-dashboard");
 const CARD_W = 280;
 const CARD_H = 80;
 const GAP_X = 60;
-const GAP_Y = 50;
+const GAP_Y = 120;
 const STORAGE_KEY = "aw-org-positions";
 
 // ── Module State ──────────────────────
@@ -34,6 +34,7 @@ let _onNodeClick = null;
 const _positions = new Map();
 const _nodeData = new Map();
 const _cardEls = new Map();
+const _cardStreams = new Map();
 let _draggingCard = null;
 let _didDrag = false;
 let _resizeRafId = null;
@@ -88,6 +89,17 @@ function getStatusLabel(status) {
   if (!status) return "unknown";
   const s = typeof status === "object" ? (status.state || status.status || "unknown") : String(status);
   return s.toLowerCase();
+}
+
+function getStatusAttr(status) {
+  if (!status) return "idle";
+  const s = typeof status === "object" ? (status.state || status.status || "") : String(status);
+  const lower = s.toLowerCase();
+  if (lower.includes("error")) return "error";
+  if (lower.includes("bootstrap")) return "bootstrapping";
+  if (lower === "thinking" || lower === "working") return "working";
+  if (lower.includes("chat") || lower.includes("talk")) return "chatting";
+  return "idle";
 }
 
 // ── Tree Layout Algorithm ──────────────────────
@@ -208,6 +220,8 @@ function _setupDrag(cardEl, name) {
   cardEl.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     if (e.target.closest(".org-card-expand")) return;
+    if (e.target.closest(".org-card-stream")) return;
+    if (e.target.closest(".org-card-detail")) return;
     dragging = true;
     moved = false;
     _draggingCard = name;
@@ -296,6 +310,7 @@ function _setupPan(viewport) {
 function _createCardEl(node) {
   const statusDot = getStatusDotClass(node.status);
   const statusLabel = getStatusLabel(node.status);
+  const statusAttr = getStatusAttr(node.status);
   const initial = (node.name || "?")[0].toUpperCase();
   const color = animaHashColor(node.name);
   const roleLabel = node.role || "";
@@ -307,17 +322,23 @@ function _createCardEl(node) {
   const card = document.createElement("div");
   card.className = "org-card";
   card.dataset.name = node.name;
+  card.dataset.status = statusAttr;
   card.id = `orgCard_${node.name}`;
   card.innerHTML = `
-    <div class="org-card-avatar" style="background:${color}" data-anima="${escapeHtml(node.name)}">${initial}</div>
-    <div class="org-card-info">
-      <span class="org-card-name">${escapeHtml(node.name)}</span>
-      ${tagHtml}
+    <div class="org-card-header">
+      <div class="org-card-avatar" style="background:${color}" data-anima="${escapeHtml(node.name)}">${initial}</div>
+      <div class="org-card-info">
+        <span class="org-card-name">${escapeHtml(node.name)}</span>
+        ${tagHtml}
+      </div>
+      <span class="org-card-status">
+        <span class="org-card-dot ${statusDot}"></span>
+        <span class="org-card-status-label">${escapeHtml(statusLabel)}</span>
+      </span>
     </div>
-    <span class="org-card-status">
-      <span class="org-card-dot ${statusDot}"></span>
-      <span class="org-card-status-label">${escapeHtml(statusLabel)}</span>
-    </span>
+    <div class="org-card-stream" id="orgStream_${CSS.escape(node.name)}">
+      <div class="org-stream-idle">\u{1F4A4} idle</div>
+    </div>
   `;
   return card;
 }
@@ -362,11 +383,12 @@ function _renderKpiBar() {
 function _resizeSvg() {
   if (!_svgLayer || !_nodesLayer) return;
   const rect = _nodesLayer.getBoundingClientRect();
+  const { w: cw, h: ch } = _getCardDimensions();
   let maxX = 0;
   let maxY = 0;
   for (const pos of _positions.values()) {
-    maxX = Math.max(maxX, pos.x + CARD_W + 40);
-    maxY = Math.max(maxY, pos.y + CARD_H + 40);
+    maxX = Math.max(maxX, pos.x + cw + 40);
+    maxY = Math.max(maxY, pos.y + ch + 40);
   }
   maxX = Math.max(maxX, rect.width);
   maxY = Math.max(maxY, rect.height);
@@ -468,12 +490,26 @@ export async function initOrgDashboard(container, animas, { onNodeClick } = {}) 
 
   container.addEventListener("click", (e) => {
     if (_didDrag) { _didDrag = false; return; }
+
+    const streamTarget = e.target.closest(".org-card-stream");
+    if (streamTarget) {
+      const card = streamTarget.closest(".org-card");
+      if (card && card.dataset.name) {
+        _toggleCardExpand(card.dataset.name);
+      }
+      return;
+    }
+
     const card = e.target.closest(".org-card");
     if (!card) return;
     const name = card.dataset.name;
     if (!name) return;
     container.querySelectorAll(".org-card.selected").forEach(el => el.classList.remove("selected"));
     card.classList.add("selected");
+    document.querySelectorAll(".org-card--expanded").forEach(el => {
+      el.classList.remove("org-card--expanded");
+      el.querySelector(".org-card-detail")?.remove();
+    });
     if (_onNodeClick) _onNodeClick(name);
   });
 
@@ -496,10 +532,12 @@ function _onResize() {
 
 export function disposeOrgDashboard() {
   window.removeEventListener("resize", _onResize);
+  if (_staleTimerId) { clearInterval(_staleTimerId); _staleTimerId = null; }
   if (_container) {
     _container.innerHTML = "";
   }
   _cardEls.clear();
+  _cardStreams.clear();
   _nodeData.clear();
   _positions.clear();
   _container = null;
@@ -520,6 +558,9 @@ export function updateAnimaStatus(name, status) {
 
   const dotClass = getStatusDotClass(status);
   const label = getStatusLabel(status);
+  const statusAttr = getStatusAttr(status);
+
+  card.dataset.status = statusAttr;
 
   const dot = card.querySelector(".org-card-dot");
   if (dot) dot.className = `org-card-dot ${dotClass}`;
@@ -534,9 +575,169 @@ export function getCardPosition(name) {
   return _positions.get(name) || null;
 }
 
-export function updateCardActivity(name, _data) {
-  // Placeholder for Issue 2 — live activity within cards
-  void name;
+const MAX_STREAM_ENTRIES = 4;
+const STALE_TIMEOUT_MS = 30_000;
+let _staleTimerId = null;
+
+export function updateCardActivity(name, data) {
+  const streamEl = document.getElementById(`orgStream_${CSS.escape(name)}`);
+  if (!streamEl) return;
+
+  let entries = _cardStreams.get(name) || [];
+  const { eventType, toolName, toolId, isError, detail, channel, summary } = data;
+
+  if (eventType === "tool_start") {
+    entries.push({
+      id: toolId || Date.now().toString(),
+      type: "tool",
+      text: toolName || "tool",
+      status: "running",
+      ts: Date.now(),
+    });
+  } else if (eventType === "tool_end" || eventType === "tool_use") {
+    const existing = entries.find(e => e.id === toolId);
+    if (existing) {
+      existing.status = isError ? "error" : "done";
+    }
+  } else if (eventType === "tool_detail") {
+    const existing = entries.find(e => e.id === toolId && e.status === "running");
+    if (existing) {
+      existing.text = `${toolName}: ${detail || ""}`.slice(0, 80);
+    }
+  } else if (eventType === "board_post") {
+    entries.push({
+      id: Date.now().toString(),
+      type: "board",
+      text: `#${channel}: ${(summary || "").slice(0, 60)}`,
+      status: "done",
+      ts: Date.now(),
+    });
+  } else if (eventType === "cron") {
+    entries.push({
+      id: Date.now().toString(),
+      type: "cron",
+      text: summary || "cron",
+      status: "running",
+      ts: Date.now(),
+    });
+  } else if (eventType === "heartbeat") {
+    entries.push({
+      id: Date.now().toString(),
+      type: "heartbeat",
+      text: "heartbeat",
+      status: "running",
+      ts: Date.now(),
+    });
+    const card = _cardEls.get(name);
+    if (card) card.dataset.status = "heartbeat";
+  } else if (eventType === "cron_end" || eventType === "heartbeat_end") {
+    const last = [...entries].reverse().find(
+      e => (e.type === "cron" || e.type === "heartbeat") && e.status === "running",
+    );
+    if (last) last.status = "done";
+  }
+
+  if (entries.length > MAX_STREAM_ENTRIES * 2) {
+    entries = entries.slice(-MAX_STREAM_ENTRIES);
+  }
+  _cardStreams.set(name, entries);
+  _renderStream(streamEl, entries.slice(-MAX_STREAM_ENTRIES));
+  _ensureStaleTimer();
+}
+
+function _renderStream(container, entries) {
+  if (!entries.length) {
+    container.innerHTML = '<div class="org-stream-idle">\u{1F4A4} idle</div>';
+    return;
+  }
+  container.innerHTML = entries.map(e => {
+    const typeIcon = { tool: "\u{1F527}", board: "\u{1F4CB}", cron: "\u23F0", heartbeat: "\u{1F49A}" }[e.type] || "\u{1F4CC}";
+    const elapsed = e.status === "running" ? ` ${Math.round((Date.now() - e.ts) / 1000)}s` : "";
+    const cls = `org-stream--${e.status}`;
+    if (e.status === "running") {
+      return `<div class="org-stream-entry ${cls}">
+        <span class="org-stream-icon">${typeIcon}</span>
+        <span class="org-stream-text">${escapeHtml(e.text)}${elapsed}</span>
+        <span class="org-stream-spinner"></span>
+      </div>`;
+    }
+    const statusIcon = e.status === "error" ? "\u2717" : "\u2713";
+    return `<div class="org-stream-entry ${cls}">
+      <span class="org-stream-icon">${typeIcon}</span>
+      <span class="org-stream-text">${escapeHtml(e.text)}</span>
+      <span class="org-stream-status">${statusIcon}</span>
+    </div>`;
+  }).join("");
+}
+
+function _ensureStaleTimer() {
+  if (_staleTimerId) return;
+  _staleTimerId = setInterval(() => {
+    let hasRunning = false;
+    const now = Date.now();
+    for (const [name, entries] of _cardStreams) {
+      let changed = false;
+      for (const e of entries) {
+        if (e.status === "running") {
+          if (now - e.ts > STALE_TIMEOUT_MS) {
+            e.status = "done";
+            e.text += " (timeout)";
+            changed = true;
+          } else {
+            hasRunning = true;
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        const streamEl = document.getElementById(`orgStream_${CSS.escape(name)}`);
+        if (streamEl) _renderStream(streamEl, entries.slice(-MAX_STREAM_ENTRIES));
+      }
+    }
+    if (!hasRunning) {
+      clearInterval(_staleTimerId);
+      _staleTimerId = null;
+    }
+  }, 1000);
+}
+
+function _toggleCardExpand(name) {
+  const card = document.querySelector(`.org-card[data-name="${CSS.escape(name)}"]`);
+  if (!card) return;
+
+  if (card.classList.contains("org-card--expanded")) {
+    card.classList.remove("org-card--expanded");
+    const detail = card.querySelector(".org-card-detail");
+    if (detail) detail.remove();
+    _updateConnections();
+    return;
+  }
+
+  document.querySelectorAll(".org-card--expanded").forEach(el => {
+    el.classList.remove("org-card--expanded");
+    el.querySelector(".org-card-detail")?.remove();
+  });
+
+  card.classList.add("org-card--expanded");
+
+  const entries = _cardStreams.get(name) || [];
+  const detail = document.createElement("div");
+  detail.className = "org-card-detail";
+  detail.innerHTML = `
+    <div class="org-card-detail-header">\u76F4\u8FD1\u306E\u30A2\u30AF\u30C6\u30A3\u30D3\u30C6\u30A3</div>
+    <div class="org-card-detail-list">
+      ${entries.length === 0
+        ? '<div class="org-detail-entry org-detail-entry--empty">\u30A2\u30AF\u30C6\u30A3\u30D3\u30C6\u30A3\u306A\u3057</div>'
+        : entries.slice(-20).reverse().map(e => {
+          const icon = { tool: "\u{1F527}", board: "\u{1F4CB}", cron: "\u23F0", heartbeat: "\u{1F49A}" }[e.type] || "\u{1F4CC}";
+          const statusIcon = e.status === "running" ? "\u23F3" : e.status === "error" ? "\u2717" : "\u2713";
+          return `<div class="org-detail-entry"><span>${icon}</span><span>${escapeHtml(e.text)}</span><span>${statusIcon}</span></div>`;
+        }).join("")
+      }
+    </div>
+  `;
+  card.appendChild(detail);
+  _updateConnections();
 }
 
 /** @deprecated Right-column activity feed removed. Kept as no-op for backward compat. */
