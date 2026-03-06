@@ -59,6 +59,9 @@ py-modules = ["main"]
 include = ["core*", "cli*", "server*"]
 exclude = ["tests*", "archive*", "demo*", "site-docs*"]
 
+[tool.setuptools.package-data]
+server = ["static/**/*"]
+
 [project.scripts]
 animaworks = "cli:cli_main"
 animaworks-tool = "core.tools:cli_dispatch"
