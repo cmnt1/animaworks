@@ -252,4 +252,4 @@ class ReconcileMixin:
                 load_config()
                 logger.info("Reconciliation: config.json changed, cache refreshed")
         except Exception:
-            pass
+            logger.debug("Config freshness check failed", exc_info=True)
