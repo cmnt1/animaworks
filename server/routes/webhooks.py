@@ -142,15 +142,16 @@ def create_webhooks_router() -> APIRouter:
             text = event.get("text", "")
             user_id = event.get("user", "")
             message_ts = event.get("ts", "")
+            thread_ts = event.get("thread_ts", "")
 
             # Resolve bot user ID for mention detection (cached per app_id)
             cache_key = anima_from_app or "__shared__"
             bot_user_id = _slack_bot_user_ids.get(cache_key, "")
+            _token: str | None = None
             if not bot_user_id and api_app_id:
                 try:
                     from slack_sdk.web.async_client import AsyncWebClient
 
-                    _token = None
                     if anima_from_app:
                         from server.slack_socket import SlackSocketModeManager
 
@@ -168,9 +169,24 @@ def create_webhooks_router() -> APIRouter:
                 except Exception:
                     logger.debug("Failed to resolve bot user ID for webhook", exc_info=True)
 
-            from server.slack_socket import _detect_slack_intent
+            from server.slack_socket import _detect_slack_intent, _fetch_thread_context
 
             intent = _detect_slack_intent(text, channel_id, bot_user_id)
+
+            if thread_ts:
+                if _token is None:
+                    if anima_from_app:
+                        from server.slack_socket import SlackSocketModeManager
+
+                        _token = SlackSocketModeManager._get_per_anima_credential(
+                            "SLACK_BOT_TOKEN",
+                            anima_from_app,
+                        )
+                    if not _token:
+                        _token = get_credential("slack", "slack_webhook", env_var="SLACK_BOT_TOKEN")
+                ctx = _fetch_thread_context(_token or "", channel_id, thread_ts)
+                if ctx:
+                    text = ctx + text
 
             shared_dir = get_data_dir() / "shared"
             messenger = Messenger(shared_dir, anima_name)
@@ -180,6 +196,7 @@ def create_webhooks_router() -> APIRouter:
                 source_message_id=message_ts,
                 external_user_id=user_id,
                 external_channel_id=channel_id,
+                external_thread_ts=thread_ts,
                 intent=intent,
             )
             logger.info(

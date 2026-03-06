@@ -623,6 +623,7 @@ class Messenger:
         source_message_id: str = "",
         external_user_id: str = "",
         external_channel_id: str = "",
+        external_thread_ts: str = "",
         intent: str = "",
     ) -> Message:
         """Receive a message from an external platform and place it in inbox.
@@ -641,6 +642,7 @@ class Messenger:
             source_message_id=source_message_id,
             external_user_id=external_user_id,
             external_channel_id=external_channel_id,
+            external_thread_ts=external_thread_ts,
             origin_chain=[ORIGIN_EXTERNAL_PLATFORM],
         )
         if not msg.thread_id:

@@ -523,6 +523,7 @@ class TestSlackSocketModeManagerPerAnima:
             source_message_id="1.1",
             external_user_id="U_USER",
             external_channel_id="C_SUMIRE_CHAN",
+            external_thread_ts="",
             intent="",
         )
 

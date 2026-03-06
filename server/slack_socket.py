@@ -53,6 +53,38 @@ def _detect_slack_intent(text: str, channel_id: str, bot_user_id: str) -> str:
     return ""
 
 
+def _fetch_thread_context(token: str, channel_id: str, thread_ts: str, *, limit: int = 10) -> str:
+    """Fetch Slack thread context and format as a text block.
+
+    Returns a formatted ``[Thread context]`` string to prepend to message
+    content, or an empty string when *thread_ts* is empty or the fetch fails.
+    """
+    if not thread_ts or not token:
+        return ""
+    try:
+        from core.tools.slack import SlackClient
+
+        client = SlackClient(token=token)
+        replies = client.thread_replies(channel_id, thread_ts)
+        if len(replies) <= 1:
+            return ""
+        if len(replies) > limit:
+            selected = [replies[0]] + replies[-(limit - 1) :]
+        else:
+            selected = replies
+        lines = ["[Thread context — this message is a reply in a Slack thread]"]
+        for msg in selected[:-1]:
+            user = msg.get("user", "unknown")
+            text = msg.get("text", "")
+            lines.append(f"  <@{user}>: {text}")
+        lines.append("[/Thread context]")
+        lines.append("")
+        return "\n".join(lines)
+    except Exception:
+        logger.warning("Failed to fetch Slack thread context", exc_info=True)
+        return ""
+
+
 async def _resolve_bot_user_id(app: AsyncApp) -> str:
     """Call ``auth.test`` once and return the bot's Slack user ID."""
     try:
@@ -280,7 +312,14 @@ class SlackSocketModeManager:
 
             text = event.get("text", "")
             channel_id = event.get("channel", "")
+            thread_ts = event.get("thread_ts", "")
             intent = _detect_slack_intent(text, channel_id, bot_user_id)
+
+            if thread_ts:
+                token = self._get_per_anima_credential("SLACK_BOT_TOKEN", anima_name) or ""
+                ctx = _fetch_thread_context(token, channel_id, thread_ts)
+                if ctx:
+                    text = ctx + text
 
             shared_dir = get_data_dir() / "shared"
             messenger = Messenger(shared_dir, anima_name)
@@ -290,6 +329,7 @@ class SlackSocketModeManager:
                 source_message_id=ts,
                 external_user_id=event.get("user", ""),
                 external_channel_id=channel_id,
+                external_thread_ts=thread_ts,
                 intent=intent,
             )
             logger.info(
@@ -307,6 +347,13 @@ class SlackSocketModeManager:
 
             text = event.get("text", "")
             channel_id = event.get("channel", "")
+            thread_ts = event.get("thread_ts", "")
+
+            if thread_ts:
+                token = self._get_per_anima_credential("SLACK_BOT_TOKEN", anima_name) or ""
+                ctx = _fetch_thread_context(token, channel_id, thread_ts)
+                if ctx:
+                    text = ctx + text
 
             shared_dir = get_data_dir() / "shared"
             messenger = Messenger(shared_dir, anima_name)
@@ -316,6 +363,7 @@ class SlackSocketModeManager:
                 source_message_id=ts,
                 external_user_id=event.get("user", ""),
                 external_channel_id=channel_id,
+                external_thread_ts=thread_ts,
                 intent="question",
             )
             logger.info(
@@ -365,7 +413,14 @@ class SlackSocketModeManager:
                 return
 
             text = event.get("text", "")
+            thread_ts = event.get("thread_ts", "")
             intent = _detect_slack_intent(text, channel_id, bot_user_id)
+
+            if thread_ts:
+                token = get_credential("slack", "slack_webhook", env_var="SLACK_BOT_TOKEN") or ""
+                ctx = _fetch_thread_context(token, channel_id, thread_ts)
+                if ctx:
+                    text = ctx + text
 
             shared_dir = get_data_dir() / "shared"
             messenger = Messenger(shared_dir, anima_name)
@@ -375,6 +430,7 @@ class SlackSocketModeManager:
                 source_message_id=ts,
                 external_user_id=event.get("user", ""),
                 external_channel_id=channel_id,
+                external_thread_ts=thread_ts,
                 intent=intent,
             )
             logger.info(
@@ -402,6 +458,13 @@ class SlackSocketModeManager:
                 return
 
             text = event.get("text", "")
+            thread_ts = event.get("thread_ts", "")
+
+            if thread_ts:
+                token = get_credential("slack", "slack_webhook", env_var="SLACK_BOT_TOKEN") or ""
+                ctx = _fetch_thread_context(token, channel_id, thread_ts)
+                if ctx:
+                    text = ctx + text
 
             shared_dir = get_data_dir() / "shared"
             messenger = Messenger(shared_dir, anima_name_resolved)
@@ -411,6 +474,7 @@ class SlackSocketModeManager:
                 source_message_id=ts,
                 external_user_id=event.get("user", ""),
                 external_channel_id=channel_id,
+                external_thread_ts=thread_ts,
                 intent="question",
             )
             logger.info(

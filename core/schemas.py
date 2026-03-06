@@ -128,6 +128,7 @@ class Message(BaseModel):
     source_message_id: str = ""  # message ID on external platform
     external_user_id: str = ""  # user ID on external platform
     external_channel_id: str = ""  # channel/room ID on external platform
+    external_thread_ts: str = ""  # thread parent ts on external platform (Slack thread_ts)
 
     # Provenance tracking (Phase 2)
     origin_chain: list[str] = Field(default_factory=list)

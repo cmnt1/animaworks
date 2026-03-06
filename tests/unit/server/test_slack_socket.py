@@ -187,6 +187,7 @@ class TestSlackSocketModeManagerHandlers:
             source_message_id="1234567890.123456",
             external_user_id="U_USER_123",
             external_channel_id="C_TEST_CHAN",
+            external_thread_ts="",
             intent="",
         )
 
