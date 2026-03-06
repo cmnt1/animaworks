@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -23,7 +24,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -49,26 +49,55 @@ server = Server("aw")
 # ``core/tooling/schemas.py``.  We pick them by name to build a
 # stable, curated subset suitable for Mode S.
 
-_EXPOSED_TOOL_NAMES: frozenset[str] = frozenset({
-    "send_message",
-    "post_channel",
-    "read_channel",
-    "manage_channel",
-    "read_dm_history",
-    "add_task",
-    "update_task",
-    "list_tasks",
-    "call_human",
-    "search_memory",
-    "report_procedure_outcome",
-    "report_knowledge_outcome",
-    "disable_subordinate",
-    "enable_subordinate",
-    "skill",
-    "plan_tasks",
-    "check_background_task",
-    "list_background_tasks",
-})
+_EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "send_message",
+        "post_channel",
+        "read_channel",
+        "manage_channel",
+        "read_dm_history",
+        "add_task",
+        "update_task",
+        "list_tasks",
+        "call_human",
+        "search_memory",
+        "report_procedure_outcome",
+        "report_knowledge_outcome",
+        "check_permissions",
+        "disable_subordinate",
+        "enable_subordinate",
+        "set_subordinate_model",
+        "set_subordinate_background_model",
+        "restart_subordinate",
+        "org_dashboard",
+        "ping_subordinate",
+        "read_subordinate_state",
+        "delegate_task",
+        "task_tracker",
+        "audit_subordinate",
+        "skill",
+        "create_skill",
+        "plan_tasks",
+        "check_background_task",
+        "list_background_tasks",
+        "vault_get",
+        "vault_store",
+        "vault_list",
+    }
+)
+
+
+def _get_supervisor_tool_names() -> frozenset[str]:
+    """Supervisor tool names — derived from SUPERVISOR_TOOLS at import time.
+
+    Used by list_tools() to dynamically filter supervisor-only tools.
+    """
+    from core.tooling.schemas import SUPERVISOR_TOOLS
+
+    return frozenset(t["name"] for t in SUPERVISOR_TOOLS)
+
+
+_SUPERVISOR_TOOL_NAMES: frozenset[str] = _get_supervisor_tool_names()
 
 
 # Cached original parameter schemas (before relaxation) for type coercion
@@ -116,29 +145,12 @@ def _coerce_integers(
     return arguments
 
 
-# Regex matching permission lines like "- chatwork: 全権限" or "- slack: 読み取りのみ"
-_PERMISSION_ALLOW_RE = re.compile(
-    r"[-*]?\s*(\w+)\s*:\s*(OK|yes|enabled|true|全権限|読み取り.*)\s*$",
-    re.IGNORECASE,
-)
-_PERMISSION_ALL_RE = re.compile(
-    r"[-*]?\s*all\s*:\s*(OK|yes|enabled|true)\s*$",
-    re.IGNORECASE,
-)
-_PERMISSION_DENY_RE = re.compile(
-    r"[-*]?\s*(\w+)\s*:\s*(no|deny|disabled|false)\s*$",
-    re.IGNORECASE,
-)
-
-
 def _load_permitted_categories(anima_dir: Path) -> set[str]:
     """Parse permissions.md to extract permitted external tool categories.
 
-    Mirrors the logic of ``AgentCore._init_tool_registry()`` but operates
-    on the raw file without requiring MemoryManager.
-
-    Returns a set of permitted category names (module names from TOOL_MODULES).
+    Delegates to :func:`core.tooling.permissions.parse_permitted_tools`.
     """
+    from core.tooling.permissions import parse_permitted_tools
     from core.tools import TOOL_MODULES
 
     all_tools = set(TOOL_MODULES.keys())
@@ -152,51 +164,24 @@ def _load_permitted_categories(anima_dir: Path) -> set[str]:
         logger.debug("Cannot read permissions.md from %s", anima_dir)
         return all_tools
 
-    if "外部ツール" not in text:
-        return all_tools
-
-    has_all_yes = False
-    allowed: list[str] = []
-    denied: list[str] = []
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        if _PERMISSION_ALL_RE.match(stripped):
-            has_all_yes = True
-            continue
-        m_deny = _PERMISSION_DENY_RE.match(stripped)
-        if m_deny:
-            name = m_deny.group(1)
-            if name in all_tools:
-                denied.append(name)
-            continue
-        m_allow = _PERMISSION_ALLOW_RE.match(stripped)
-        if m_allow:
-            name = m_allow.group(1)
-            if name in all_tools:
-                allowed.append(name)
-
-    if has_all_yes:
-        return all_tools - set(denied)
-    if allowed:
-        return set(allowed)
-    return all_tools
+    return parse_permitted_tools(text)
 
 
 def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
     """Convert canonical AnimaWorks schemas to MCP Tool objects.
 
     Reads all relevant schema lists from ``core.tooling.schemas`` and
-    filters to the exposed tools.  Additionally loads permitted external
-    tool schemas (chatwork, slack, etc.) from permissions.md.
+    filters to the exposed tools.  Mode S uses skill+CLI for external
+    tools; ``use_tool`` is Mode B only.
 
     Returns:
         Tuple of (tool_list, exposed_name_set) where exposed_name_set
-        is the union of internal and external tool names.
+        is the set of internal tool names.
     """
     from core.tooling.schemas import (
         BACKGROUND_TASK_TOOLS,
         CHANNEL_TOOLS,
+        CHECK_PERMISSIONS_TOOLS,
         KNOWLEDGE_TOOLS,
         MEMORY_TOOLS,
         NOTIFICATION_TOOLS,
@@ -205,6 +190,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         SKILL_TOOLS,
         SUPERVISOR_TOOLS,
         TASK_TOOLS,
+        VAULT_TOOLS,
     )
 
     all_schemas: list[dict[str, Any]] = [
@@ -218,32 +204,11 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         *SKILL_TOOLS,
         *PLAN_TASKS_TOOLS,
         *BACKGROUND_TASK_TOOLS,
+        *VAULT_TOOLS,
+        *CHECK_PERMISSIONS_TOOLS,
     ]
 
-    # Load permitted external tool schemas from permissions.md
-    external_schemas: list[dict[str, Any]] = []
-    anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
-    if anima_dir_env:
-        anima_dir = Path(anima_dir_env).resolve()
-        if anima_dir.is_dir():
-            try:
-                from core.tooling.schemas import load_external_schemas_by_category
-
-                permitted = _load_permitted_categories(anima_dir)
-                if permitted:
-                    external_schemas = load_external_schemas_by_category(permitted)
-                    all_schemas.extend(external_schemas)
-                    logger.info(
-                        "Loaded %d external tool schemas for categories: %s",
-                        len(external_schemas),
-                        ", ".join(sorted(permitted)),
-                    )
-            except Exception:
-                logger.debug("External tool schema loading failed", exc_info=True)
-
-    # Build the dynamic exposed set: internal + external tool names
-    external_names = frozenset(s["name"] for s in external_schemas)
-    exposed = _EXPOSED_TOOL_NAMES | external_names
+    exposed = _EXPOSED_TOOL_NAMES
 
     # Apply DB description overrides
     from core.tooling.schemas import apply_db_descriptions
@@ -253,9 +218,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
     # Cache original schemas for type coercion lookup
     for schema in all_schemas:
         if schema["name"] in exposed:
-            _TOOL_SCHEMAS[schema["name"]] = schema.get(
-                "parameters", {}
-            )
+            _TOOL_SCHEMAS[schema["name"]] = schema.get("parameters", {})
 
     # Generate dynamic description for the skill tool
     _skill_description = _build_skill_description()
@@ -318,10 +281,7 @@ def _build_skill_description() -> str:
         procedures_dir = anima_dir / "procedures"
         procedure_metas = []
         if procedures_dir.is_dir():
-            procedure_metas = [
-                SkillMetadataService.extract_skill_meta(f)
-                for f in sorted(procedures_dir.glob("*.md"))
-            ]
+            procedure_metas = [SkillMetadataService.extract_skill_meta(f) for f in sorted(procedures_dir.glob("*.md"))]
 
         return build_skill_tool_description(skill_metas, common_metas, procedure_metas)
 
@@ -358,10 +318,7 @@ def _build_background_manager(anima_dir: Path) -> Any:
         from core.tools._base import load_execution_profiles
 
         profiles = load_execution_profiles(TOOL_MODULES)
-        config_eligible = {
-            name: tc.threshold_s
-            for name, tc in config.background_task.eligible_tools.items()
-        }
+        config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}
 
         mgr = BackgroundTaskManager.from_profiles(
             anima_dir=anima_dir,
@@ -407,11 +364,14 @@ def _make_on_complete_callback(anima_dir: Path) -> Any:
             notif_path.write_text(notif_content, encoding="utf-8")
             logger.info(
                 "MCP bg task notification written: %s (tool=%s, status=%s)",
-                task.task_id, task.tool_name, task.status.value,
+                task.task_id,
+                task.tool_name,
+                task.status.value,
             )
         except Exception:
             logger.exception(
-                "Failed to write MCP bg task notification for %s", task.task_id,
+                "Failed to write MCP bg task notification for %s",
+                task.task_id,
             )
 
     return _on_complete
@@ -421,6 +381,51 @@ def _make_on_complete_callback(anima_dir: Path) -> Any:
 
 _tool_handler: Any = None  # core.tooling.handler.ToolHandler | None
 _init_error: str | None = None
+_is_supervisor: bool | None = None
+
+
+def _has_subordinates_for_anima() -> bool:
+    """Check if this Anima has subordinates via config.json.
+
+    Evaluated once at first call and cached. Falls back to False (safe side —
+    hides supervisor tools when check fails).
+    """
+    global _is_supervisor
+    if _is_supervisor is not None:
+        return _is_supervisor
+
+    try:
+        anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+        if not anima_dir_env:
+            _is_supervisor = False
+            return False
+        anima_name = Path(anima_dir_env).name
+
+        from core.paths import get_data_dir
+
+        config_path = get_data_dir() / "config.json"
+        if not config_path.is_file():
+            _is_supervisor = False
+            return False
+
+        import json as _json
+
+        config_data = _json.loads(config_path.read_text(encoding="utf-8"))
+        animas = config_data.get("animas", {})
+
+        for other_name, other_cfg in animas.items():
+            if other_name == anima_name:
+                continue
+            if isinstance(other_cfg, dict) and other_cfg.get("supervisor") == anima_name:
+                _is_supervisor = True
+                return True
+
+        _is_supervisor = False
+        return False
+    except Exception:
+        logger.debug("Failed to check subordinate status, defaulting to False")
+        _is_supervisor = False
+        return False
 
 
 def _get_tool_handler() -> Any:
@@ -455,8 +460,8 @@ def _get_tool_handler() -> Any:
         memory = MemoryManager(anima_dir)
 
         # ── Messenger ──
-        from core.paths import get_shared_dir
         from core.messenger import Messenger
+        from core.paths import get_shared_dir
 
         shared_dir = get_shared_dir()
         messenger = Messenger(shared_dir=shared_dir, anima_name=anima_dir.name)
@@ -479,12 +484,12 @@ def _get_tool_handler() -> Any:
         personal_tools: dict[str, str] = {}
         try:
             from core.tools import (
-                TOOL_MODULES,
                 discover_common_tools,
                 discover_personal_tools,
             )
 
-            tool_registry = sorted(TOOL_MODULES.keys())
+            permitted = _load_permitted_categories(anima_dir)
+            tool_registry = sorted(permitted)
             common = discover_common_tools()
             personal = discover_personal_tools(anima_dir)
             personal_tools = {**common, **personal}
@@ -500,6 +505,7 @@ def _get_tool_handler() -> Any:
         if _status_path.is_file():
             try:
                 import json as _json_mod
+
                 _su_data = _json_mod.loads(_status_path.read_text(encoding="utf-8"))
                 _superuser = bool(_su_data.get("debug_superuser"))
             except (ValueError, OSError):
@@ -536,6 +542,7 @@ def _get_tool_handler() -> Any:
 
 # ── Trust boundary labeling ───────────────────────────────
 
+
 def _wrap_result(tool_name: str, result: str) -> str:
     """Apply trust boundary tag to a successful tool result.
 
@@ -545,6 +552,7 @@ def _wrap_result(tool_name: str, result: str) -> str:
     """
     try:
         from core.execution._sanitize import wrap_tool_result
+
         return wrap_tool_result(tool_name, result)
     except Exception:
         return result
@@ -555,8 +563,10 @@ def _wrap_result(tool_name: str, result: str) -> str:
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    """Return the static list of exposed AnimaWorks tools."""
-    return MCP_TOOLS
+    """Return exposed AnimaWorks tools, filtering supervisor tools dynamically."""
+    if _has_subordinates_for_anima():
+        return MCP_TOOLS
+    return [t for t in MCP_TOOLS if t.name not in _SUPERVISOR_TOOL_NAMES]
 
 
 @server.call_tool()

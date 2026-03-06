@@ -205,6 +205,78 @@ class TestStopServer:
         assert "54321" in out
         mock_kill.assert_called_once_with(54321, signal.SIGTERM)
 
+    # ── Force mode tests ─────────────────────────────────
+
+    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
+    @patch("cli.commands.server._remove_pid_file")
+    @patch("os.killpg")
+    @patch("os.getpgid", return_value=12345)
+    @patch("os.kill")
+    @patch("time.sleep")
+    @patch("time.monotonic")
+    @patch("cli.commands.server._is_process_alive")
+    @patch("cli.commands.server._read_pid", return_value=12345)
+    def test_force_sigkill_after_timeout(
+        self, mock_pid, mock_alive, mock_monotonic, mock_sleep, mock_kill,
+        mock_getpgid, mock_killpg, mock_remove, mock_orphans, capsys,
+    ):
+        """Force mode escalates to SIGKILL when SIGTERM times out."""
+        from cli.commands.server import _stop_server
+
+        fake_time = [0.0]
+
+        def advance_sleep(seconds):
+            fake_time[0] += seconds
+
+        mock_monotonic.side_effect = lambda: fake_time[0]
+        mock_sleep.side_effect = advance_sleep
+
+        call_count = [0]
+
+        def alive_side_effect(pid):
+            call_count[0] += 1
+            if call_count[0] <= 10:
+                return True
+            return False
+
+        mock_alive.side_effect = alive_side_effect
+
+        result = _stop_server(timeout=1, force=True)
+        assert result is True
+        out = capsys.readouterr().out
+        assert "SIGKILL" in out
+        assert "force-killed" in out
+        mock_kill.assert_called_with(12345, signal.SIGTERM)
+        mock_killpg.assert_called_with(12345, signal.SIGKILL)
+
+    @patch("cli.commands.server._kill_orphan_runners", return_value=3)
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
+    @patch("cli.commands.server._read_pid", return_value=None)
+    def test_force_kills_orphans_when_no_server(
+        self, mock_pid, mock_find, mock_orphans, capsys,
+    ):
+        """Force mode cleans up orphan runners even when server is not running."""
+        from cli.commands.server import _stop_server
+
+        result = _stop_server(force=True)
+        assert result is True
+        out = capsys.readouterr().out
+        assert "3 orphan" in out
+        mock_orphans.assert_called_once()
+
+    @patch("cli.commands.server._is_process_alive", return_value=True)
+    @patch("os.kill")
+    @patch("cli.commands.server._read_pid", return_value=12345)
+    def test_non_force_timeout_returns_false(self, mock_pid, mock_kill, mock_alive, capsys):
+        """Without --force, timeout returns False without SIGKILL."""
+        from cli.commands.server import _stop_server
+
+        result = _stop_server(timeout=1, force=False)
+        assert result is False
+        out = capsys.readouterr().out
+        assert "did not stop" in out
+        assert "SIGKILL" not in out
+
 
 # ── cmd_start ────────────────────────────────────────────
 
@@ -343,16 +415,25 @@ class TestCmdStop:
     def test_stop_success(self, mock_stop):
         from cli.commands.server import cmd_stop
 
-        args = argparse.Namespace()
+        args = argparse.Namespace(force=False)
         cmd_stop(args)
+        mock_stop.assert_called_once_with(force=False)
 
     @patch("cli.commands.server._stop_server", return_value=False)
     def test_stop_failure(self, mock_stop):
         from cli.commands.server import cmd_stop
 
-        args = argparse.Namespace()
+        args = argparse.Namespace(force=False)
         with pytest.raises(SystemExit):
             cmd_stop(args)
+
+    @patch("cli.commands.server._stop_server", return_value=True)
+    def test_stop_force(self, mock_stop):
+        from cli.commands.server import cmd_stop
+
+        args = argparse.Namespace(force=True)
+        cmd_stop(args)
+        mock_stop.assert_called_once_with(force=True)
 
 
 # ── cmd_restart ──────────────────────────────────────────
@@ -366,19 +447,32 @@ class TestCmdRestart:
     def test_restart_success(self, mock_sleep, mock_stop, mock_clear, mock_start):
         from cli.commands.server import cmd_restart
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        args = argparse.Namespace(host="0.0.0.0", port=18500, force=False)
         cmd_restart(args)
 
-        mock_stop.assert_called_once()
+        mock_stop.assert_called_once_with(force=False)
         mock_start.assert_called_once_with(args)
 
     @patch("cli.commands.server._stop_server", return_value=False)
     def test_restart_stop_fails(self, mock_stop):
         from cli.commands.server import cmd_restart
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        args = argparse.Namespace(host="0.0.0.0", port=18500, force=False)
         with pytest.raises(SystemExit):
             cmd_restart(args)
+
+    @patch("cli.commands.server.cmd_start")
+    @patch("cli.commands.server._clear_pycache", return_value=0)
+    @patch("cli.commands.server._stop_server", return_value=True)
+    @patch("time.sleep")
+    def test_restart_with_force(self, mock_sleep, mock_stop, mock_clear, mock_start):
+        from cli.commands.server import cmd_restart
+
+        args = argparse.Namespace(host="0.0.0.0", port=18500, force=True)
+        cmd_restart(args)
+
+        mock_stop.assert_called_once_with(force=True)
+        mock_start.assert_called_once_with(args)
 
 
 # ── Deprecated commands ──────────────────────────────────

@@ -169,6 +169,34 @@ class TestLifecycleIntentFilter:
         lm.animas["alice"].process_inbox_message.assert_called_once()
         assert "alice" not in lm._pending_triggers
 
+    async def test_lifecycle_slack_source_always_triggers(self):
+        """Message with source='slack' and intent='' should trigger.
+
+        External platform messages always bypass the intent filter.
+        """
+        messages = [_make_message(intent="", source="slack")]
+        lm = _setup_lifecycle(messages)
+
+        with patch("core.lifecycle.load_config", return_value=_default_config()):
+            await lm._message_triggered_heartbeat("alice")
+
+        lm.animas["alice"].process_inbox_message.assert_called_once()
+        assert "alice" not in lm._pending_triggers
+
+    async def test_lifecycle_chatwork_source_always_triggers(self):
+        """Message with source='chatwork' and intent='' should trigger.
+
+        External platform messages always bypass the intent filter.
+        """
+        messages = [_make_message(intent="", source="chatwork")]
+        lm = _setup_lifecycle(messages)
+
+        with patch("core.lifecycle.load_config", return_value=_default_config()):
+            await lm._message_triggered_heartbeat("alice")
+
+        lm.animas["alice"].process_inbox_message.assert_called_once()
+        assert "alice" not in lm._pending_triggers
+
     async def test_lifecycle_mixed_messages_actionable_wins(self):
         """If any message has an actionable intent, inbox processing triggers."""
         messages = [
@@ -241,6 +269,40 @@ class TestLimiterIntentFilter:
         Human messages always bypass the intent filter.
         """
         messages = [_make_message(intent="", source="human")]
+        limiter = _make_limiter(messages)
+
+        with patch(
+            "core.supervisor.inbox_rate_limiter.load_config",
+            return_value=_default_config(),
+        ):
+            await limiter.message_triggered_inbox()
+
+        limiter._anima.process_inbox_message.assert_called_once()
+        assert limiter._pending_trigger is False
+
+    async def test_limiter_slack_source_always_triggers(self):
+        """Message with source='slack' and intent='' should trigger.
+
+        External platform messages always bypass the intent filter.
+        """
+        messages = [_make_message(intent="", source="slack")]
+        limiter = _make_limiter(messages)
+
+        with patch(
+            "core.supervisor.inbox_rate_limiter.load_config",
+            return_value=_default_config(),
+        ):
+            await limiter.message_triggered_inbox()
+
+        limiter._anima.process_inbox_message.assert_called_once()
+        assert limiter._pending_trigger is False
+
+    async def test_limiter_chatwork_source_always_triggers(self):
+        """Message with source='chatwork' and intent='' should trigger.
+
+        External platform messages always bypass the intent filter.
+        """
+        messages = [_make_message(intent="", source="chatwork")]
         limiter = _make_limiter(messages)
 
         with patch(

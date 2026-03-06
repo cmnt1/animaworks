@@ -2,10 +2,10 @@
 
 **[English version](features.md)**
 
-> 最終更新: 2026-02-26
-> 関連: [spec.md](spec.md), [memory.ja.md](memory.ja.md), [vision.ja.md](vision.ja.md)
+> 最終更新: 2026-03-05
+> 関連: [spec.md](spec.md), [memory.ja.md](memory.ja.md), [vision.ja.md](vision.ja.md), [brain-mapping.ja.md](brain-mapping.ja.md)
 
-AnimaWorksフレームワークの実装済み機能を20カテゴリに分類した索引。各エントリの「設計」リンクは設計・実装文書、「Review」リンクはコードレビューレポートを参照する。
+AnimaWorksフレームワークの実装済み機能を21カテゴリに分類した索引。各エントリの「設計」リンクは設計・実装文書、「Review」リンクはコードレビューレポートを参照する。
 
 ---
 
@@ -38,7 +38,7 @@ agent.pyリファクタリング、階層設計、プロセス隔離、リネー
 
 ## 2. 実行エンジン
 
-S/A/B各モード（旧A1/A2/B）改善、Agent SDKクラッシュリカバリー、SSE改善等。
+S/A/B/C各モード改善、Agent SDKクラッシュリカバリー、SSE改善等。Mode C (Codex) はCodex CLI経由でOpenAIモデルを実行。
 
 - **A2エージェンティックループの高度化** (2026-02-15) — LiteLLM + tool_useループの信頼性・機能向上
   [設計](implemented/20260215_a2-agentic-loop-enhancement_implemented-20260215.md) | [Review](implemented/20260215_review_a2-agentic-loop-enhancement_approved-20260215.md)
@@ -379,6 +379,8 @@ call_human統合、組織構成プロンプト注入等。
   [設計](implemented/20260217_comprehensive-logging-enhancement_implemented-20260217.md) | [Review](implemented/20260217_review_comprehensive-logging-enhancement_approved-20260217.md)
 - **フロントエンドログがサーバーに到達しない問題の修正** (2026-02-17) — ログ配信パイプラインの修正
   [設計](implemented/20260217_fix-frontend-log-delivery_implemented-20260217.md) | [Review](implemented/20260217_review_fix-frontend-log-delivery_approved-20260217.md)
+- **トークン使用量追跡** (2026-03-03) — LLM呼び出しの入力/出力トークン計測と記録
+  [設計](implemented/20260303_review_token-usage-tracking_approved-20260303.md)
 
 ---
 
@@ -431,7 +433,7 @@ call_human統合、組織構成プロンプト注入等。
 
 ### 実行エンジン
 
-- **実行モード再設計: S/A/B 3モードアーキテクチャ** (2026-02-23) — 実行モードをS (SDK) / A (Autonomous) / B (Basic) の3つに再定義。SモードはAgent SDKにセッション管理を委任
+- **実行モード再設計: S/A/B 3モードアーキテクチャ** (2026-02-23) — 実行モードをS (SDK) / A (Autonomous) / B (Basic) の3つに再定義。SモードはAgent SDKにセッション管理を委任。後に **Mode C (Codex)** が追加され、Codex CLI経由でOpenAIモデルを実行
   [設計](implemented/20260223_execution-mode-redesign-s-a-b-20260223.md) | [Review](implemented/20260223_review_execution-mode-redesign-s-a-b_approved-20260223.md)
 - **Sモード記憶エンコーディングギャップ修正** (2026-02-23) — 会話ターン保存・要旨記憶検索・行動トレース知識生成の3層対策
   [設計](implemented/20260223_s-mode-memory-encoding-gap_implemented-20260223.md) | [Review](implemented/20260223_review_s-mode-memory-encoding-gap_approved-20260223.md)
@@ -531,3 +533,98 @@ Animaとのリアルタイム音声会話機能。ブラウザ音声入力 → S
 
 - **Voice Chat System — STT + TTS + WebSocket音声会話** (2026-02-26) — 音声専用WebSocket `/ws/voice/{name}` + faster-whisper STT + マルチプロバイダTTS（VOICEVOX / Style-BERT-VITS2 / ElevenLabs）。AudioWorklet PCM 16kHz直送、文分割ストリーミングTTS、VAD/PTT両対応、barge-in、Per-Anima音声設定
   [設計](implemented/20260226_voice-chat-system-implemented-20260226.md) | [Review](implemented/20260226_review_voice-chat-system_approved-20260226.md)
+- **TTS不安定性修正** (2026-03-04) — 音声プロバイダの接続・再生エラー時の堅牢性向上
+  [設計](implemented/20260304_tts-instability-implemented-20260304.md) | [Review](implemented/20260304_review_tts-instability_approved-20260304.md)
+
+---
+
+## 21. v0.2後の拡張（2026-02-27 — 2026-03-05）
+
+ツールアーキテクチャ統一、記憶システム改善、ハウスキーピング、Live Tool Activity、Mode C (Codex)、運用堅牢性の強化。
+
+### 実行エンジン
+
+- **Mode C (Codex) 追加** — Codex CLI経由でOpenAIモデル（o4-mini, o3, gpt-4.1等）を実行。サンドボックスモード + MCP連携でツール安全性を確保
+  [設計](core/execution/codex_sdk.py)
+- **LLM APIリトライ** (2026-03-05) — API呼び出し失敗時の自動リトライ機構
+  [設計](implemented/20260305_llm-api-retry_implemented-20260305.md) | [Review](implemented/20260305_review_llm-api-retry_approved-20260305.md)
+- **バックグラウンドモデルオーバーライド** (2026-03-05) — heartbeat/cron/task実行時のモデル切り替え
+  [設計](implemented/20260305_background-model-override-20260305.md) | [Review](implemented/20260305_review_background-model-override_approved-20260305.md)
+- **SDKエージェントツールインターセプト・ハートビート監視** (2026-03-05) — Mode Sでのツール呼び出し監視とハートビート応答検知
+  [設計](implemented/20260305_sdk-agent-tool-intercept-and-heartbeat-monitoring_implemented-20260305.md) | [Review](implemented/20260305_review_sdk-agent-tool-intercept-and-heartbeat-monitoring_approved-20260305.md)
+- **Agentサイクルツールサマリー** (2026-03-05) — ツール呼び出し引数の要約をSSE `tool_detail` で配信
+  [設計](implemented/20260305_agent-cycle-tool-summary_implemented-20260305.md) | [Review](implemented/20260305_review_agent-cycle-tool-summary_approved-20260305.md)
+- **クラッシュリカバリノート** (2026-03-05) — Agent SDKクラッシュ時の復旧ドキュメント整備
+  [設計](implemented/20260305_crash-recovery-note-implemented-20260305.md) | [Review](implemented/20260305_review_crash-recovery-note_approved-20260305.md)
+
+### ツール・スキルアーキテクチャ
+
+- **ツールアーキテクチャ — 外部ツールMCP全廃・スキル+CLI統一** (2026-03-04) — 外部ツール38スキーマを廃止し、ビルトイン内部ツール + スキル経由CLIの2層に統一。Mode B専用 `use_tool` ディスパッチャー導入
+  [設計](implemented/20260303_tool-architecture-skill-cli-migration_implemented-20260304.md) | [Review](implemented/20260304_review_tool-architecture-skill-cli-migration_r4_approved-20260304.md)
+- **ツール可視性統一** (2026-03-05) — 全実行モードでツール一覧の一貫性を確保
+  [設計](implemented/20260305_tool-visibility-unification_implemented-20260305.md) | [Review](implemented/20260305_review_tool-visibility-unification_approved-20260305.md)
+- **スキルクリエイター仕様準拠・パス修正** (2026-03-05) — スキル作成フローの仕様整合とパス検証
+  [設計](implemented/20260305_skill-creator-spec-alignment-and-path-fixes_implemented-20260305.md) | [Review](implemented/20260305_review_skill-creator-spec-alignment_approved-20260305.md)
+- **Live Tool Activity Streaming** (2026-03-04) — ツール実行のリアルタイム可視化。SSE `tool_detail` + ActivityLogger → WebSocketブロードキャスト
+  [設計](implemented/20260303_live-tool-activity-streaming.md) | [Review](implemented/20260304_review_live-tool-activity-streaming_approved.md)
+
+### 記憶システム
+
+- **DK段階廃止 Phase 1: Channel C 全知識検索** (2026-03-04) — Priming Channel Cの検索対象を「DK溢れファイル限定」から「全knowledge/procedures」に拡大
+  [設計](implemented/20260304_dk-removal-phase1-channel-c-full-search.md)
+- **Priming Channel C キーワード・topk修正** (2026-03-04) — 関連知識検索の精度向上
+  [設計](implemented/20260304_priming-channel-c-keyword-and-topk-fix_implemented-20260304.md)
+- **DK注入フロントマター修復** (2026-03-04) — knowledge/proceduresのfrontmatter検証・自動修復
+  [設計](implemented/20260303_dk-injection-frontmatter-repair-20260304.md) | [Review](implemented/20260304_review_dk-injection-frontmatter-repair_approved-20260304.md)
+- **知識フロントマター検証・修復** (2026-03-05) — 不正frontmatterの検出と自動修復
+  [設計](implemented/20260305_knowledge-frontmatter-validation-repair-implemented-20260305.md)
+- **スプレッディングアクティベーション残り修正** (2026-03-05) — 拡散活性化のepisodes対応と検索品質改善
+  [設計](implemented/20260305_spreading-activation-remaining-fixes_implemented-20260305.md)
+- **メモリファイルI/O保護** (2026-03-05) — 記憶書き込みのアトミック性と整合性保証
+  [設計](implemented/20260305_memory-file-io-protection_implemented-20260305.md)
+- **ファイル書き込みアトミック性** (2026-03-05) — クラッシュ耐性のあるファイル更新
+  [設計](implemented/20260305_file-write-atomicity-20260305.md) | [Review](implemented/20260305_review_file-write-atomicity_approved-20260305.md)
+
+### ハウスキーピング・運用
+
+- **ディスク容量管理 — ハウスキーピングジョブによる統一ローテーション** (2026-03-05) — prompt_logs、server-daemon.log、shortterm、cron_logs、DM archives等の統一クリーンアップ
+  [設計](implemented/20260305_housekeeping-disk-rotation_implemented-20260305.md) | [Review](implemented/20260305_review_housekeeping-disk-rotation_approved-20260305.md)
+- **Cronロガーデータ整合性** (2026-03-05) — cron実行ログの信頼性向上
+  [設計](implemented/20260305_cron-logger-data-integrity_implemented-20260305.md)
+- **タスクライフサイクルサイレント失敗** (2026-03-05) — pendingタスク実行失敗時の安全なハンドリング
+  [設計](implemented/20260305_task-lifecycle-silent-failure_implemented-20260305.md)
+- **ペンディングタスク失敗時の安全性** (2026-03-05) — タスク実行エラー時の復旧と再試行
+  [設計](implemented/20260305_pending-task-failure-safety-20260305.md) | [Review](implemented/20260305_review_pending-task-failure-safety_approved-20260305.md)
+
+### 通信・通知
+
+- **Per-Anima Slackボット** (2026-03-05) — AnimaごとのSlack Bot Token対応
+  [設計](implemented/20260305_per-anima-slack-bot_implemented-20260305.md) | [Review](implemented/20260305_per-anima-slack-bot_review-20260305.md)
+- **Slackスレッド返信メタデータ自動注入** (2026-03-05) — スレッド返信時のコンテキスト自動付与
+  [設計](implemented/20260305_slack-reply-metadata-autoinjection_implemented-20260305.md) | [Review](implemented/20260305_review_slack-reply-metadata-autoinjection_approved-20260305.md)
+- **通知ボールト堅牢性** (2026-03-05) — 認証情報の安全な保存・取得
+  [設計](implemented/20260305_notification-vault-robustness_implemented-20260305.md) | [Review](implemented/20260305_review_notification-vault-robustness_approved-20260305.md)
+
+### 設定・CLI
+
+- **設定スレッドセーフティクリーンアップ** (2026-03-05) — マルチスレッド環境での設定読み込みの安全性
+  [設計](implemented/20260305_config-thread-safety-cleanup_implemented-20260305.md)
+- **WebSocketブロードキャストレース** (2026-03-05) — ブロードキャスト時の競合状態解消
+  [設計](implemented/20260305_websocket-broadcast-race_implemented-20260305.md)
+- **animaworks anima rename コマンド** (2026-03-05) — Anima名のCLIからの変更
+  [設計](implemented/20260301_anima-rename-command_implemented-20260305.md) | [Review](implemented/20260305_review_anima-rename-command_approved-20260305.md)
+- **Opus 4 参照更新** (2026-03-05) — モデル参照の最新化
+  [設計](implemented/20260305_update-opus-4-20250514-refs_implemented-20260305.md) | [Review](implemented/20260305_review_update-opus-4-20250514-refs_approved-20260305.md)
+
+### その他（2026-02-27）
+
+- **アシスタント画像チャット** (2026-02-27) — チャット応答での画像表示対応
+  [設計](implemented/20260227_assistant-images-in-chat_implemented-20260227.md)
+- **マルチスレッドチャット** (2026-02-27) — バックエンド・フロントエンドの並列チャット処理
+  [設計](implemented/20260227_multi-thread-chat-backend-20260227.md) | [Review](implemented/20260227_review_multi-thread-chat_approved-20260227.md)
+- **チャットマルチタブ永続化** (2026-02-27) — タブごとのセッション状態保持
+  [設計](implemented/20260227_review_chat_multi-tab_persistence_revision2_approved-20260227.md)
+- **スキルディレクトリ構造移行** (2026-02-27) — スキル配置の再構成
+  [設計](implemented/20260227_review_skill-directory-structure-migration_approved-20260227.md)
+- **オープンドメイン画像プロキシ強化** (2026-02-27) — 画像URLのセキュリティ強化
+  [設計](implemented/20260227_review_open-domain-image-proxy-hardening_approved-20260227.md)

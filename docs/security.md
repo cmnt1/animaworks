@@ -4,25 +4,25 @@ AnimaWorks runs autonomous AI agents with tool access, persistent memory, and in
 
 This document describes the layered security model and an adversarial threat analysis based on cutting-edge LLM/agent attack research (OWASP Top 10 for LLM 2025, AdapTools, MemoryGraft, ChatInject, RoguePilot, MCP Tool Poisoning, RAGPoison, Confused Deputy attacks).
 
-**Last audited**: 2026-03-02
+**Last audited**: 2026-03-06
 
 ---
 
 ## Threat Model
 
-| Threat | Vector | Impact |
-|--------|--------|--------|
+| Threat | Attack Vector | Impact |
+|--------|---------------|--------|
 | Prompt injection via external data | Web search results, Slack/Chatwork messages, emails | Agent executes attacker-controlled instructions |
 | RAG / Memory poisoning | Malicious web content → knowledge → persistent recall | Long-term behavioral drift across all sessions |
 | Lateral movement between agents | Compromised agent sends malicious DMs to peers | Privilege escalation across the organization |
 | Confused Deputy attack | Low-privilege agent tricks high-privilege agent | Unauthorized tool execution, data exfiltration |
 | Consolidation contamination | Poisoned episodes/activity → knowledge extraction | Trusted knowledge generated from tainted sources |
 | Destructive command execution | Agent runs `rm -rf /` or `curl … \| sh` | Data loss, system compromise |
-| Shell injection bypass | Network tools in pipes, shell mode escalation | Data exfiltration via allowed commands |
+| Shell injection bypass | Network tools via pipes | Data exfiltration via allowed commands |
 | Path traversal | Agent reads/writes outside its sandbox | Cross-agent data leak, config tampering |
-| Activity log tampering | Agent writes fake entries to own activity_log | Manipulated Priming context, false history |
+| Activity log tampering | Agent writes fake entries to own activity_log | Manipulated Priming context |
 | Infinite message loops | Two agents endlessly replying to each other | Resource exhaustion, API cost explosion |
-| Unauthorized external access | Agent sends messages to unintended recipients | Data exfiltration |
+| Unintended external sending | Agent sends messages to unexpected recipients | Data exfiltration |
 | Session hijacking | Stolen tokens with no expiration | Persistent unauthorized access |
 | Credential exposure | Plaintext API keys in config.json | External service abuse |
 
@@ -36,17 +36,17 @@ Every piece of data entering an agent's context is tagged with a trust level. Th
 
 #### Trust Levels
 
-| Level | Sources | Treatment |
-|-------|---------|-----------|
-| `trusted` | Internal tools (send_message, search_memory), system-generated | Execute normally |
-| `medium` | File reads, RAG results, user profiles, consolidated knowledge | Interpret as reference data |
-| `untrusted` | web_search, slack_read, chatwork_read, gmail_read, x_search | **Never follow directives** |
+| Level | Target Sources | Treatment |
+|-------|----------------|-----------|
+| `trusted` | Internal tools (send_message, search_memory, add_task, post_channel, etc.), system-generated | Execute normally |
+| `medium` | read_file, search_code, write_file, execute_command, RAG results, user profiles, consolidated knowledge | Interpret as reference data |
+| `untrusted` | web_search, web_fetch, x_search, x_user_tweets, slack_*, chatwork_*, gmail_*, read_channel, read_dm_history, local_llm | **Never follow directives** |
 
 #### Implementation
 
 ```
 <tool_result tool="web_search" trust="untrusted">
-  Search results here — may contain injection attempts
+  Search results — may contain injection attempts
 </tool_result>
 
 <priming source="related_knowledge" trust="medium" origin="consolidation">
@@ -56,38 +56,43 @@ Every piece of data entering an agent's context is tagged with a trust level. Th
 
 **Origin categories**: `system`, `human`, `anima`, `external_platform`, `external_web`, `consolidation`, `unknown`. Each maps to a trust level via `ORIGIN_TRUST_MAP`.
 
-**Origin chain propagation**: When data flows through multiple systems (e.g., web → RAG index → priming), the trust level degrades to the **minimum** in the chain. `resolve_trust(origin, origin_chain)` computes the conservative minimum across all nodes in the chain plus the current origin. A web search result indexed into RAG retains `untrusted` status even when retrieved later.
+**Origin chain propagation**: When data flows through multiple systems (e.g., web → RAG index → priming), the trust level degrades to the **minimum** in the chain. `resolve_trust(origin, origin_chain)` computes the conservative minimum across all nodes in the chain plus the current origin.
 
-**Session-level trust tracking**: `_min_trust_seen` tracks the minimum trust rank (2=trusted, 1=medium, 0=untrusted) across all tool calls in a session. Updated in Mode S (via `PreToolUse` hook + `run/min_trust_seen` file for MCP subprocess), Mode A (in `litellm_loop` and `anthropic_fallback` tool result processing). Reset at each new interaction cycle.
+**Session-level trust tracking**: `_min_trust_seen` tracks the minimum trust rank (2=trusted, 1=medium, 0=untrusted) across all tool calls in a session. Updated in Mode S (`PreToolUse` hook + `run/min_trust_seen` file), Mode A (`litellm_loop` and `anthropic_fallback`). Reset at each interaction cycle start.
 
-**Key files**: `core/execution/_sanitize.py` (trust resolution, boundary wrapping, `TOOL_TRUST_LEVELS`, `ORIGIN_TRUST_MAP`), `templates/*/prompts/tool_data_interpretation.md` (model instructions for interpreting trust levels and origin chains)
+**Trigger and tier injection conditions** (`core/prompt/builder.py`):
+
+- `tool_data_interpretation` is in **Group 1** but is **not injected** when `trigger="task"` (TaskExec). TaskExec runs with minimal context, so the model does not receive trust boundary interpretation instructions. Tool results are still wrapped with `wrap_tool_result` so tags are applied, but note that the "tag interpretation rules" instruction to the model is omitted.
+- `permissions` is injected only when `tier != TIER_MINIMAL`. When context is under 16k (TIER_MINIMAL), permissions are omitted.
+- `behavior_rules` applies only to TIER_FULL and TIER_STANDARD. Omitted for TIER_LIGHT / TIER_MINIMAL.
+- Tier boundaries: 128k+ = FULL, 32k–128k = STANDARD, 16k–32k = LIGHT, under 16k = MINIMAL.
+
+**Key files**: `core/execution/_sanitize.py` (trust resolution, boundary wrapping, `TOOL_TRUST_LEVELS`, `ORIGIN_TRUST_MAP`), `core/prompt/builder.py` (trigger/tier prompt construction, `tool_data_interpretation` injection conditions), `templates/{locale}/prompts/tool_data_interpretation.md` (trust level and origin chain interpretation instructions; locale depends on config.locale)
 
 ---
 
-### 2. Memory Provenance — RAG and Knowledge Trust
+### 2. Memory Provenance — RAG and Knowledge Trust Tracking
 
 #### write_memory_file origin propagation
 
-When an agent writes to `knowledge/*.md`, the system checks `_min_trust_seen` for the session. If the session has encountered untrusted (rank 0) or medium (rank 1) tool results, an `origin` frontmatter is prepended:
+When an agent writes to `knowledge/*.md`, the system checks `_min_trust_seen` for the session. If the session has processed untrusted (rank 0) or medium (rank 1) tool results, an `origin` frontmatter is added:
 
 - Rank 0 (untrusted) → `origin: external_web`
 - Rank 1 (medium) → `origin: mixed`
 - Rank 2 (trusted) → no origin tag (clean knowledge)
 
-The origin is also passed to the RAG indexer, which stores it in ChromaDB chunk metadata.
-
-For Mode S, `_min_trust_seen` is persisted to `run/min_trust_seen` so the MCP server subprocess can read it.
+The origin is passed to the RAG indexer and stored in ChromaDB chunk metadata.
 
 #### RAG indexer origin tracking
 
-`index_file()` accepts an `origin` parameter. Chunk metadata in ChromaDB includes `metadata["origin"]` when set.
+`index_file()` accepts an `origin` parameter and stores it as `metadata["origin"]` in chunk metadata.
 
 #### Priming Channel C trust splitting
 
-When Priming retrieves related knowledge via RAG, each chunk's `origin` metadata is checked via `resolve_trust()`. Chunks are split into:
+When Priming retrieves related knowledge via RAG, each chunk's `origin` metadata is evaluated with `resolve_trust()`. Chunks are split into:
 
-- **Trusted/medium** → `related_knowledge` (wrapped with `trust="medium"`)
-- **Untrusted** → `related_knowledge_external` (wrapped with `trust="untrusted"`, `origin="external_platform"`)
+- **trusted/medium** → `related_knowledge` (wrapped with `trust="medium"`)
+- **untrusted** → `related_knowledge_external` (wrapped with `trust="untrusted"`, `origin="external_platform"`)
 
 Budget prioritizes trusted/medium content first; untrusted content fills remaining budget.
 
@@ -129,33 +134,33 @@ Pattern-matched commands that are **always** blocked regardless of permissions:
 
 #### Layer 2.5: Per-Agent Denied Commands
 
-Each agent's `permissions.md` can define a `## 実行できないコマンド` section listing additional blocked commands specific to that agent's role.
+Each agent's `permissions.md` can define a `## 実行できないコマンド` (Execution Denied Commands) section for additional blocked commands.
 
-#### Layer 3: Per-Agent Section Required
+#### Layer 3: Section Required
 
-A `## コマンド実行` or `## 実行できるコマンド` section must exist in `permissions.md` — default-deny for agents without explicit command permissions.
+A `## コマンド実行` or `## 実行できるコマンド` (Command Execution / Executable Commands) section must exist in `permissions.md` — default-deny for agents without explicit permissions.
 
 #### Layer 4: Per-Agent Allowlist
 
-Only commands matching the agent's allowlist (from `permissions.md`) are permitted.
+Only commands matching the agent's allowlist are permitted.
 
 #### Layer 5: Path Traversal Detection
 
-Command arguments are checked for path traversal patterns (`../`) that would escape the agent's sandbox.
+Command arguments are checked for path traversal patterns (`../`).
 
-**Pipeline segment checking**: Each segment of piped commands is checked independently — `safe_cmd | dangerous_cmd` is still blocked.
+**Pipeline segment checking**: Each segment of piped commands is checked independently.
 
-**Key files**: `core/tooling/handler_base.py` (blocklist `_BLOCKED_CMD_PATTERNS`, injection regex `_INJECTION_RE`), `core/tooling/handler_perms.py` (5-layer check pipeline `_check_command_permission`)
+**Key files**: `core/tooling/handler_base.py` (`_BLOCKED_CMD_PATTERNS`, `_INJECTION_RE`), `core/tooling/handler_perms.py` (`_check_command_permission`)
 
 ---
 
 ### 4. File Access Control — Sandboxed by Default
 
-Each agent operates within its own directory (`~/.animaworks/animas/{name}/`). File access outside this sandbox requires explicit permission.
+Each agent operates within its own directory (`~/.animaworks/animas/{name}/`).
 
 #### Protected Files and Directories (Immutable)
 
-These cannot be written by the agent that owns them, preventing self-modification of security-critical settings:
+These cannot be written by the agent that owns them:
 
 - `permissions.md` — Tool and command allowlists
 - `identity.md` — Core personality (immutable baseline)
@@ -163,8 +168,6 @@ These cannot be written by the agent that owns them, preventing self-modificatio
 - `activity_log/` — Activity log directory; only `ActivityLogger` (code-level) may append entries
 
 #### Supervisor Access Matrix
-
-Supervisors (managers) can access subordinate data with scoped permissions:
 
 | Path | Direct Report | All Descendants |
 |------|:---:|:---:|
@@ -176,19 +179,19 @@ Supervisors (managers) can access subordinate data with scoped permissions:
 | `injection.md` | Read/Write | Read |
 | `cron.md`, `heartbeat.md` | Read/Write | — |
 
-Descendant resolution uses BFS with cycle detection to prevent circular supervisor chains from causing infinite loops. Peers (same supervisor) can read each other's `activity_log/`.
+Descendant resolution uses BFS with cycle detection. Peers (same supervisor) can read each other's `activity_log/`.
 
-**Key files**: `core/tooling/handler_base.py` (`_PROTECTED_FILES`, `_PROTECTED_DIRS`, `_is_protected_write`), `core/tooling/handler_perms.py` (`_check_file_permission`), `core/tooling/handler_memory.py` (memory read/write guards), `core/tooling/handler_org.py` (hierarchy checks)
+**Key files**: `core/tooling/handler_base.py` (`_PROTECTED_FILES`, `_PROTECTED_DIRS`, `_is_protected_write`), `core/tooling/handler_perms.py` (`_check_file_permission`)
 
 ---
 
 ### 5. Process Isolation
 
-Each agent runs as an independent OS process managed by `ProcessSupervisor`:
+Each agent runs as an independent OS process:
 
-- **Separate processes**: Crash in one agent doesn't affect others
-- **Unix Domain Socket IPC**: Inter-process communication over filesystem sockets (not TCP), limiting network exposure
-- **Independent locks**: Chat, inbox, and background tasks use separate asyncio locks — concurrent paths don't block each other
+- **Process isolation**: Crash in one agent doesn't affect others
+- **Unix Domain Socket IPC**: Inter-process communication over filesystem sockets (no TCP)
+- **Independent locks**: Chat, Inbox, and background tasks use separate asyncio locks
 - **Socket directory**: `~/.animaworks/run/sockets/{name}.sock` with stale socket cleanup on startup
 
 **Key files**: `core/supervisor/manager.py`, `core/supervisor/ipc.py`, `core/supervisor/runner.py`
@@ -197,34 +200,31 @@ Each agent runs as an independent OS process managed by `ProcessSupervisor`:
 
 ### 6. Rate Limiting — 3-Layer Outbound Control
 
-Autonomous agents must not spam. Three independent layers enforce message limits:
-
 #### Layer 1: Per-Run (Session-Scoped)
 
-- No duplicate DM to the same recipient within one execution session
-- Max 2 distinct DM recipients per run
+- No duplicate DM to the same recipient
+- Max 2 distinct DM recipients per execution
 - One channel post per channel per session
-- Cross-session channel post cooldown (configurable `channel_post_cooldown_s`)
-- Tracked via in-memory sets (`_replied_to`, `_posted_channels`) and persisted to `run/replied_to.jsonl`
+- Cross-session channel post cooldown (`channel_post_cooldown_s`)
+- Persisted to `run/replied_to.jsonl`
 
 #### Layer 2: Cross-Run (Persistent)
 
-- **Configurable messages per hour** per agent (`max_messages_per_hour`)
-- **Configurable messages per day** per agent (`max_messages_per_day`)
-- Computed from `activity_log` sliding window — survives process restarts
+- **Configurable per-agent send limits** (hourly and daily)
+- Computed from `activity_log` sliding window
 - `ack`, `error`, `system_alert` messages are exempt
 
 #### Layer 3: Behavior Awareness (Self-Regulation)
 
-Recent outbound messages (last 2 hours, max 3) are injected into the agent's system prompt via Priming. The agent can see its own recent sending pattern and self-regulate.
+Recent outbound messages (last 2 hours, max 3) are injected into the system prompt via Priming.
 
 #### Cascade Prevention
 
-- **Conversation depth limiter**: Configurable max turns between any agent pair within `depth_window_s`
-- **Inbox rate limiter**: Cooldown period (`msg_heartbeat_cooldown_s`), cascade detection within `cascade_window_s`, per-sender rate limit during heartbeat
-- **Fail-closed**: Depth check returns `False` on activity log read failure
+- **Conversation depth limiter**: Configurable max turns within `depth_window_s`
+- **Inbox rate limiter**: Cooldown, cascade detection, per-sender rate limit
+- **Fail-closed**: Returns `False` on activity log read failure
 
-**Key files**: `core/tooling/handler_comms.py` (per-run), `core/cascade_limiter.py` (cross-run, depth), `core/supervisor/inbox_rate_limiter.py` (inbox), `core/memory/priming.py` (`_collect_recent_outbound`)
+**Key files**: `core/tooling/handler_comms.py`, `core/cascade_limiter.py`, `core/supervisor/inbox_rate_limiter.py`, `core/memory/priming.py`
 
 ---
 
@@ -241,29 +241,27 @@ Recent outbound messages (last 2 hours, max 3) are injected into the agent's sys
 #### Session Security
 
 - **Argon2id** password hashing (memory-hard, side-channel resistant)
-- **48-byte URL-safe tokens** for sessions (cryptographically random)
+- **48-byte URL-safe tokens** (cryptographically random)
 - **Max 10 sessions per user** — oldest evicted on overflow
-- **Session TTL** — configurable via `config.server.session_ttl_days` (default: 7). Expired sessions are rejected and removed in `validate_session()`.
-- **Password change revokes sessions** — `change_password()` calls `revoke_all_sessions()` for the affected user
+- **Session TTL** — `config.server.session_ttl_days` (default: 7 days). Expired sessions are rejected and removed in `validate_session()`.
+- **Password change revokes sessions** — `change_password()` calls `revoke_all_sessions()` to invalidate all sessions
 - **Cookie-based** session transport with middleware guard on `/api/` and `/ws` routes
-- Config files (`config.json`, `auth.json`) saved with **0600 permissions**
+- Config files saved with **0600 permissions**
 
 #### Localhost Trust
 
-When `trust_localhost` is enabled, requests from loopback addresses are authenticated automatically. Origin and Host header checks mitigate CSRF from browser-based attacks against localhost.
+When `trust_localhost` is enabled, requests from loopback addresses are authenticated automatically. Origin and Host header checks mitigate CSRF.
 
-**Key files**: `core/auth/manager.py`, `server/app.py` (auth_guard middleware), `server/localhost.py`
+**Key files**: `core/auth/manager.py`, `server/app.py`, `server/localhost.py`
 
 ---
 
 ### 8. Webhook Verification
 
-Inbound webhooks from external platforms are cryptographically verified:
-
 | Platform | Method | Replay Protection |
 |----------|--------|-------------------|
-| Slack | HMAC-SHA256 with signing secret | Timestamp check (5-minute window) |
-| Chatwork | HMAC-SHA256 with webhook token | — |
+| Slack | HMAC-SHA256 (signing secret) | Timestamp check (5-minute window) |
+| Chatwork | HMAC-SHA256 (webhook token) | — |
 
 Both use constant-time comparison (`hmac.compare_digest`).
 
@@ -273,17 +271,17 @@ Both use constant-time comparison (`hmac.compare_digest`).
 
 ### 9. SSRF Mitigation — Media Proxy
 
-The media proxy (`/api/media/proxy`) fetches external images for display in the UI. It enforces:
+The media proxy (`/api/media/proxy`) fetches external images for display in the UI:
 
-- **HTTPS only** — no plaintext HTTP
+- **HTTPS only**
 - **Domain allowlist or open-with-scan** — configurable via `MediaProxyConfig.mode`
-- **Private IP blocking** — blocks localhost, private ranges (RFC 1918), link-local, multicast, reserved
-- **DNS resolution check** — resolves hostname and verifies the IP isn't private (prevents DNS rebinding)
-- **Content-type validation** — only `image/jpeg`, `image/png`, `image/gif`, `image/webp`; SVG blocked
+- **Private IP blocking** — localhost, RFC 1918, link-local, multicast, reserved
+- **DNS resolution check** — prevents DNS rebinding
+- **Content-Type validation** — only `image/jpeg`, `image/png`, `image/gif`, `image/webp`; SVG blocked
 - **Magic bytes verification** — validates actual file format matches declared content-type
-- **Size limit** — configurable `max_bytes` (default 5 MB)
-- **Redirect validation** — redirect targets are re-validated; max redirects enforced
-- **Per-IP rate limiting** — configurable per-client rate limit (default 30 req/min)
+- **Size limit** — `max_bytes` (default 5 MB)
+- **Redirect validation** — redirect targets re-validated; max redirect count enforced
+- **Per-IP rate limiting** — configurable (default 30 req/min)
 - **Security headers** — `X-Content-Type-Options: nosniff`
 
 **Key file**: `server/routes/media_proxy.py`
@@ -294,28 +292,26 @@ The media proxy (`/api/media/proxy`) fetches external images for display in the 
 
 When running on Claude Agent SDK (Mode S), additional guardrails apply via `PreToolUse` hooks:
 
-- **Bash command filtering**: Separate blocklist for SDK-executed commands (includes Chatwork CLI bypass prevention, network exfiltration tools, data upload patterns)
-- **File write protection**: Validates write targets against protected file list and agent sandbox
+- **Bash command filtering**: Separate blocklist for SDK (includes Chatwork CLI bypass prevention, network exfiltration tools, data upload patterns)
+- **File write protection**: Validates against protected file list and sandbox
 - **File read restriction**: Blocks access to other agents' directories (except subordinate/peer activity_log, subordinate management files)
-- **Output truncation**: Bash output capped at 10KB (head+tail), file reads default-limited to 500 lines, grep/glob results capped
-- **Trust tracking**: `_SDK_TOOL_TRUST` mapping for SDK tool names (Read/Write/Edit/Bash → medium, WebFetch/WebSearch → untrusted), persisted to `run/min_trust_seen` for MCP subprocess access
+- **Output truncation**: Bash output capped at 10KB; file reads default-limited to 500 lines; grep/glob also limited
+- **Trust tracking**: `_SDK_TOOL_TRUST` mapping; persisted to `run/min_trust_seen`
 
-**Key file**: `core/execution/_sdk_security.py`, `core/execution/_sdk_hooks.py`
+**Key files**: `core/execution/_sdk_security.py`, `core/execution/_sdk_hooks.py`
 
 ---
 
 ### 11. Outbound Routing Security
 
-The unified outbound router (`resolve_recipient()`) prevents agents from sending messages to unintended recipients:
+`resolve_recipient()` prevents agents from sending to unintended recipients:
 
 1. Exact match against known agent names (case-sensitive)
-2. User alias lookup (case-insensitive) from explicit config
-3. Platform-prefixed recipients (`slack:USERID`, `chatwork:ROOMID`)
+2. User alias lookup (case-insensitive)
+3. Platform-prefixed recipients
 4. Slack User ID pattern match
-5. Fallback case-insensitive agent match
+5. Case-insensitive agent name match
 6. **Unknown recipients → RecipientNotFoundError** (fail-closed)
-
-Agents cannot send to arbitrary external addresses without explicit configuration.
 
 **Key file**: `core/outbound.py`
 
@@ -323,60 +319,46 @@ Agents cannot send to arbitrary external addresses without explicit configuratio
 
 ### 12. Inter-Agent Message Security
 
-#### Origin Chain in Messages
+#### Message Origin Chain
 
-DMs between agents carry `origin_chain` metadata, built by `build_outgoing_origin_chain()`. This appends the session's origin and `ORIGIN_ANIMA` to the chain, enabling the receiver to assess the trust lineage of a message.
+DMs carry `origin_chain` metadata, built by `build_outgoing_origin_chain()`. Receivers can evaluate the trust lineage of messages.
 
 #### Inbox from_person Validation
 
-`Messenger.receive()` validates `from_person` against `known_animas` (from `config.animas`). Messages with unknown `from_person` are rejected and logged as warnings, preventing spoofing as another agent.
+`Messenger.receive()` validates `from_person` against `known_animas` (`config.animas`). Unknown `from_person` is rejected and logged.
 
 #### Inbox Directory Permissions
 
-Inbox directories are created with `0o700` permissions, restricting access to the owning user.
+Inbox directories are created with `0o700` permissions.
 
 #### Channel Name Validation
 
-Channel and peer names are validated against `_SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")`, preventing path traversal in channel operations.
+`_SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")` prevents path traversal.
 
 #### Board Channel Content Limits
 
-Channel posts are limited to 10,000 characters via Pydantic validation (`max_length=10000`).
+Channel posts are limited to `max_length=10000` via Pydantic.
 
-**Key files**: `core/messenger.py`, `core/tooling/handler_comms.py`, `core/tooling/handler_base.py` (`build_outgoing_origin_chain`)
+**Key files**: `core/messenger.py`, `core/tooling/handler_comms.py`, `core/tooling/handler_base.py`
 
 ---
 
 ## Part II: Adversarial Threat Analysis
 
-This section documents an offensive security audit applying cutting-edge LLM/agent attack research to AnimaWorks' architecture. Each vulnerability is assessed from an attacker's perspective with concrete exploitation scenarios.
-
-### Research Basis
-
-| Source | Key Finding |
-|--------|-------------|
-| OWASP Top 10 for LLM 2025 | 10 vulnerability categories: prompt injection, sensitive info disclosure, supply chain, data poisoning, improper output handling, excessive agency, system prompt leakage, vector/embedding weaknesses, misinformation, unbounded consumption |
-| AdapTools (arXiv 2602.20720) | Adaptive indirect prompt injection achieving 2.13x improvement in attack success rates against state-of-the-art defenses |
-| MemoryGraft (arXiv 2512.16962) | Persistent agent compromise via poisoned experience retrieval |
-| ChatInject (arXiv 2509.22830) | Role-based message manipulation achieving 32-52% attack success rates on agent frameworks |
-| Confused Deputy (Quarkslab, promptfoo) | Low-privilege agents tricking high-privilege agents in multi-agent systems |
-
----
-
 ### Resolved Vulnerabilities
 
-These vulnerabilities identified in the initial audit have been addressed:
+Vulnerabilities identified in the initial audit that have been addressed:
 
 | ID | Severity | Title | Resolution |
 |----|----------|-------|------------|
-| RAG-1 | Critical → Mitigated | Web → Knowledge → RAG Persistent Poisoning | `write_memory_file` propagates `_min_trust_seen` as origin frontmatter; RAG indexer stores origin in chunk metadata; Priming Channel C splits trusted/untrusted chunks |
-| CON-1 | High → Mitigated | Consolidation Pipeline Contamination | `_has_external_origin_in_files()` checks source file origins; consolidation output downgraded to `consolidation_external` when inputs are external |
+| RAG-1 | Critical → Mitigated | Web → Knowledge → RAG Persistent Poisoning | `write_memory_file` propagates `_min_trust_seen` as origin frontmatter; RAG indexer stores origin in chunk metadata; Priming Channel C splits trusted/untrusted |
+| CON-1 | High → Mitigated | Consolidation Pipeline Contamination | `_has_external_origin_in_files()` checks source file origins; output downgraded to `consolidation_external` when external origin present |
 | MSG-1 | High → Mitigated | Inbox File-Level Spoofing | `from_person` validated against `known_animas`; inbox dirs set to `0o700` |
 | BOARD-1 | High → Mitigated | Board Channel Broadcast Poisoning | Auth middleware protects channel POST; content limited to 10,000 chars; channel name regex validation |
 | ALOG-1 | High → Resolved | Activity Log Tampering | `activity_log/` in `_PROTECTED_DIRS`; writes blocked via `_is_protected_write` |
-| CMD-1 | High → Resolved | Shell Mode Network Exfiltration | `nc`, `ncat`, `socat`, `telnet`, `curl -d/--data`, `wget --post` in blocklist |
+| CMD-1 | High → Resolved | Shell Mode Network Exfiltration | `nc`, `ncat`, `socat`, `telnet`, `curl -d/--data`, `wget --post` added to blocklist |
 | AUTH-1 | High → Resolved | Perpetual Session Tokens | TTL check in `validate_session()` (default 7 days); `change_password()` calls `revoke_all_sessions()` |
-| DEPUTY-1 | Medium → Mitigated | Confused Deputy Privilege Escalation | `origin_chain` metadata in inter-agent messages; `from_person` validation; `tool_data_interpretation` instructions for trust boundaries |
+| DEPUTY-1 | Medium → Mitigated | Confused Deputy Privilege Escalation | `origin_chain` metadata in messages; `from_person` validation; trust boundary instructions in `tool_data_interpretation` |
 
 ---
 
@@ -386,59 +368,31 @@ These vulnerabilities identified in the initial audit have been addressed:
 
 | ID | Category | Title | Status |
 |----|----------|-------|--------|
-| CFG-1 | Config | Plaintext Credential Storage | Partial mitigation (per-tool env_var fallback exists, but no first-class env-only mode) |
+| CFG-1 | Config | Plaintext Credential Storage | Partial (per-tool env_var fallback exists; no env-only mode in CredentialConfig) |
 
 #### Medium
 
 | ID | Category | Title | Status |
 |----|----------|-------|--------|
-| IPC-1 | Network | Socket File Permission Exposure | Not implemented (no `chmod 0o700` on Unix socket files) |
-| WS-1 | Network | Voice WebSocket Audio Injection | Partial (60s buffer max, but no explicit max frame size or PCM format validation) |
-| OB-1 | Rate Limit | Multi-Agent Distributed Spam | Not implemented (per-sender rate, no per-recipient aggregate) |
+| IPC-1 | Network | Socket File Permissions | Not implemented (no `chmod 0o700` on Unix sockets) |
+| WS-1 | Network | Voice WebSocket Audio Injection | Partial (60s buffer max; no max frame size or PCM format validation) |
+| OB-1 | Rate Limit | Multi-Agent Distributed Spam | Not implemented (per-sender rate limit only; no per-recipient aggregate) |
 | PR-1 | Memory | PageRank Graph Manipulation | Not implemented (no trust-weighted PageRank) |
-| SKILL-1 | Memory | Skill Description Keyword Stuffing | Not implemented (no anti-stuffing in 3-tier matching) |
-| PI-1 | Prompt | New Tool Trust Registration Gap | Not implemented (unlisted tools fall back to `untrusted`, but no CI assertion) |
+| SKILL-1 | Memory | Skill Description Keyword Stuffing | Not implemented (no mitigation in 3-tier matching) |
+| PI-1 | Prompt | Tool Trust Level Registration Gap | Not implemented (unlisted tools fall back to untrusted; no CI check) |
 | CMD-2 | Execution | Denied List Partial Match Bypass | Not implemented (substring matching; no `shutil.which()` resolution) |
-| EXT-1 | External | Indirect Prompt Injection via External Sources | Mitigated by trust labeling; no additional regex pattern filter |
-| LEAK-1 | Info Disclosure | System Prompt Leakage | Partial (`tool_data_interpretation` has trust rules but no explicit anti-leak instruction) |
+| EXT-1 | External | Indirect Injection via External Sources | Mitigated by trust labeling; no additional regex filter |
+| LEAK-1 | Info Disclosure | System Prompt Leakage | Partial (trust rules exist; no explicit anti-leak instruction) |
 
 #### Low
 
 | ID | Category | Title | Status |
 |----|----------|-------|--------|
-| AUTH-2 | Auth | Localhost Trust Over-Permission | Not implemented (no `X-Forwarded-For` awareness) |
-| FILE-1 | File | Symlink Following in allowed_dirs | Not implemented (uses `resolve()` without strict symlink rejection) |
+| AUTH-2 | Auth | Localhost Trust Over-Permission | Not implemented (no `X-Forwarded-For` support) |
+| FILE-1 | File | Symlink Following in allowed_dirs | Not implemented (uses `resolve()`; no strict symlink rejection) |
 | WS-2 | Network | WebSocket JSON Schema Laxity | Not implemented (no Pydantic validation for voice WebSocket JSON) |
 | OB-2 | Rate Limit | Activity Log Write Bypass | Not implemented (send does not depend on activity log success) |
 | ACCESS-1 | Memory | RAG Access Count Inflation | Not implemented (no access_count cap) |
-
----
-
-### Vulnerability Details (Remaining)
-
-#### CFG-1: Plaintext Credential Storage
-
-`CredentialConfig` stores API keys in `config.json`. File has `0600` permissions, but backup tools, NFS mounts, or same-user processes can read it. Per-tool `env_var` fallback exists (e.g., `ANTHROPIC_API_KEY`), but `CredentialConfig` has no first-class env-only mode.
-
-**Recommendation**: Add env-only credential mode; add `config.json` to agent-unreadable paths.
-
-#### IPC-1: Socket File Permission Exposure
-
-Unix sockets created by `asyncio.start_unix_server()` without explicit `chmod`. On multi-user systems, another user could connect.
-
-**Recommendation**: `os.chmod(socket_path, 0o700)` after creation.
-
-#### WS-1: Voice WebSocket Audio Injection
-
-Audio buffer is capped at 60 seconds (`MAX_AUDIO_BUFFER_BYTES`), clearing on overflow. However, no explicit max frame size for individual WebSocket binary messages, and no PCM format validation before STT processing.
-
-**Recommendation**: Max frame size enforcement; PCM format validation.
-
-#### OB-1: Multi-Agent Distributed Spam
-
-Rate limiting is per-agent (hour/day) and per-pair (depth). Multiple agents can independently target the same external recipient.
-
-**Recommendation**: Global per-recipient rate limit across all agents.
 
 ---
 
@@ -447,7 +401,7 @@ Rate limiting is per-agent (hour/day) and per-pair (depth). Multiple agents can 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    External Data                        │
-│          (web, slack, email, board, DM, etc.)            │
+│          (Web, Slack, email, Board, DM, etc.)            │
 └────────────────────────┬────────────────────────────────┘
                          │
               ┌──────────▼──────────┐
@@ -457,16 +411,16 @@ Rate limiting is per-agent (hour/day) and per-pair (depth). Multiple agents can 
                          │
               ┌──────────▼──────────┐
               │  Auth & Session     │  ← Argon2id, TTL-enforced sessions
-              │  Management         │  ← webhook HMAC verification
+              │  Management         │  ← Webhook HMAC verification
               └──────────┬──────────┘
                          │
      ┌───────────────────┼───────────────────┐
      │                   │                   │
 ┌────▼────┐      ┌──────▼──────┐     ┌──────▼──────┐
-│ Command │      │ File Access │     │  Outbound   │
-│ Security│      │   Control   │     │  Rate Limit │
-│ (5-layer│      │ (sandbox +  │     │  (3-layer + │
-│  check) │      │  ACL matrix)│     │   cascade)  │
+│ Command │      │ File Access  │     │  Outbound   │
+│ Security│      │   Control    │     │  Rate Limit │
+│ (5-layer│      │ (sandbox +   │     │  (3-layer + │
+│  check) │      │  ACL)        │     │   cascade)  │
 └────┬────┘      └──────┬──────┘     └──────┬──────┘
      │                  │                   │
      └───────────────┐  │  ┌────────────────┘
@@ -482,7 +436,7 @@ Rate limiting is per-agent (hour/day) and per-pair (depth). Multiple agents can 
               └─────────────────────┘
 ```
 
-Each layer operates independently. A failure in one layer is caught by others — prompt injection that bypasses trust labeling still faces command blocklists, file sandboxing, rate limits, and memory provenance tracking.
+Each layer operates independently. A failure in one layer is caught by others.
 
 ---
 
@@ -500,23 +454,23 @@ Each layer operates independently. A failure in one layer is caught by others �
 
 | Priority | ID | Action | Effort |
 |:---:|------|--------|:---:|
-| 4 | CFG-1 | Support env-var-only credential mode; add `config.json` to agent-unreadable paths | M |
-| 5 | WS-1 | Maximum frame size + PCM format validation for voice WebSocket | S |
-| 6 | OB-1 | Global per-recipient rate limit across all agents | S |
-| 7 | LEAK-1 | Anti-leak instruction in system prompt; output monitoring for prompt fragments | S |
-| 8 | CMD-2 | `shutil.which()` resolution + basename comparison for denied commands | S |
+| 4 | CFG-1 | Env-var-only credential mode; agent-unreadable paths for `config.json` | M |
+| 5 | WS-1 | Max frame size + PCM format validation | S |
+| 6 | OB-1 | Per-recipient rate limit across all agents | S |
+| 7 | LEAK-1 | Anti-leak instruction in system prompt; output monitoring | S |
+| 8 | CMD-2 | `shutil.which()` resolution + basename comparison | S |
 
 ### Phase 3: Defense-in-Depth (long-term)
 
 | Priority | ID | Action | Effort |
 |:---:|------|--------|:---:|
-| 9 | PR-1 | Trust-weighted PageRank (untrusted-origin nodes get reduced activation) | M |
-| 10 | EXT-1 | Injection pattern regex filter on external data before LLM ingestion | M |
-| 11 | AUTH-2 | Document reverse proxy guidance; add `X-Forwarded-For` support | S |
-| 12 | ALOG+ | Append-only hash chain for activity log integrity | M |
-| 13 | MSG+ | HMAC message signing between agents (cryptographic spoofing prevention) | L |
+| 9 | PR-1 | Trust-weighted PageRank | M |
+| 10 | EXT-1 | Injection pattern regex filter on external data | M |
+| 11 | AUTH-2 | Reverse proxy guidance; `X-Forwarded-For` support | S |
+| 12 | ALOG+ | Append-only hash chain for activity log | M |
+| 13 | MSG+ | HMAC message signing between agents | L |
 
-Effort scale: XS = less than 1 hour, S = 1-4 hours, M = 4-16 hours, L = more than 16 hours
+Effort scale: XS = less than 1 hour, S = 1–4 hours, M = 4–16 hours, L = more than 16 hours
 
 ---
 
@@ -529,6 +483,6 @@ Effort scale: XS = less than 1 hour, S = 1-4 hours, M = 4-16 hours, L = more tha
 | [Trust Propagation](implemented/20260228_provenance-3-propagation.md) | Origin chain across data flows |
 | [RAG Provenance](implemented/20260228_provenance-4-rag-provenance.md) | Trust tracking in vector search |
 | [Mode S Trust](implemented/20260228_provenance-5-mode-s-trust.md) | Agent SDK security hooks |
-| [Command Injection Fix](implemented/20260228_security-command-injection-fix.md) | Pipe-to-interpreter and newline injection |
+| [Command Injection Fix](implemented/20260228_security-command-injection-fix.md) | Pipe and newline injection |
 | [Path Traversal Fix](implemented/20260228_security-path-traversal-fix.md) | common_knowledge and create_anima path validation |
 | [Memory Write Security](implemented/20260215_memory-write-security-20260216.md) | Protected files and cross-mode hardening |

@@ -9,14 +9,20 @@
 
 | ツール | 用途 | 備考 |
 |--------|------|------|
-| `send_message` | 上司・同僚への1対1報告 | `intent="report"` 必須。進捗・結果・判断依頼 |
-| `post_channel` | チーム全体へのお知らせ | acknowledgments・感謝・FYI は Board を使用 |
+| `send_message` | 上司・同僚への1対1報告 | `intent="report"` 必須。進捗・結果・判断依頼。Anima名または人間エイリアス宛て |
+| `post_channel` | チーム全体へのお知らせ（Board） | acknowledgments・感謝・FYI は Board を使用。同一チャネル1回/run、再投稿はクールダウン（デフォルト300秒）が必要 |
 | `call_human` | 人間への緊急通知 | サービス停止・セキュリティインシデント等 |
 
 **send_message の制約**:
 - `intent` は必須。報告には `report` を指定する（`delegation`=委譲、`question`=質問）
-- 1回の run あたり最大2宛先まで、同一宛先へは1通のみ
+- 1 run あたり最大2宛先まで、同一宛先へは1通のみ。3人以上への伝達は Board を使用
 - 追加の連絡は Board（post_channel）を使用する
+- **宛先**: Anima名（上司・同僚）または人間エイリアス（`config.external_messaging.user_aliases` 設定時は Slack/Chatwork 等へ外部配信）
+- **注**: チャットセッション中は人間宛てに send_message は使えない。直接テキストで返答する
+
+**送信制限（cross-run）**:
+- グローバル: 30通/時、100通/日（超過時は送信ブロック。内容を current_task.md に記録し次セッションで送信）
+- 同一ペア間: 10分間に6ターンまで（超過時は次のハートビートサイクルまで待機）
 
 ## 報告のタイミング
 
@@ -62,7 +68,7 @@
 
 ### 返信時のスレッド継続
 
-上司からのメッセージに返信する場合、`reply_to` と `thread_id` を指定して会話の文脈を維持する。
+上司からのメッセージに返信する場合、`reply_to`（返信先メッセージID）と `thread_id`（スレッドID）を指定して会話の文脈を維持する。ID形式は `YYYYMMDD_HHMMSS_ffffff`（例: `20260215_093000_123456`）。
 
 ```
 send_message(

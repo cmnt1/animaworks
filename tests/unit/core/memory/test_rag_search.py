@@ -181,7 +181,7 @@ class TestSearchMemoryTextRespectsScope:
 
 
 class TestSearchMemoryTextEmptyQuery:
-    def test_search_memory_text_empty_query(
+    def test_search_memory_text_empty_query_returns_nothing(
         self,
         rag: RAGMemorySearch,
         knowledge_dir: Path,
@@ -189,10 +189,7 @@ class TestSearchMemoryTextEmptyQuery:
         procedures_dir: Path,
         common_knowledge_dir: Path,
     ) -> None:
-        """Returns matching lines for empty-ish queries.
-
-        An empty string matches every line via ``"" in line.lower()``.
-        """
+        """Empty query returns no results (guard against vacuous match)."""
         (knowledge_dir / "info.md").write_text(
             "Line one\nLine two", encoding="utf-8",
         )
@@ -206,10 +203,61 @@ class TestSearchMemoryTextEmptyQuery:
             common_knowledge_dir=common_knowledge_dir,
         )
 
-        assert len(results) == 2
+        assert results == []
+
+
+class TestSearchMemoryTextOrSplit:
+    def test_or_split_matches_either_token(
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
+        episodes_dir: Path,
+        procedures_dir: Path,
+        common_knowledge_dir: Path,
+    ) -> None:
+        """Space-separated tokens are OR-matched: a line containing
+        any single token is returned."""
+        (knowledge_dir / "langs.md").write_text(
+            "Python is great\nJava is fine\nRust is fast",
+            encoding="utf-8",
+        )
+
+        results = rag.search_memory_text(
+            "Python Rust",
+            scope="knowledge",
+            knowledge_dir=knowledge_dir,
+            episodes_dir=episodes_dir,
+            procedures_dir=procedures_dir,
+            common_knowledge_dir=common_knowledge_dir,
+        )
+
+        filenames_lines = [(r[0], r[1]) for r in results]
         lines = [r[1] for r in results]
-        assert "Line one" in lines
-        assert "Line two" in lines
+        assert "Python is great" in lines
+        assert "Rust is fast" in lines
+        assert "Java is fine" not in lines
+
+    def test_or_split_whitespace_only_returns_empty(
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
+        episodes_dir: Path,
+        procedures_dir: Path,
+        common_knowledge_dir: Path,
+    ) -> None:
+        """Query with only whitespace returns no results."""
+        (knowledge_dir / "info.md").write_text("content", encoding="utf-8")
+
+        results = rag.search_memory_text(
+            "   ",
+            scope="knowledge",
+            knowledge_dir=knowledge_dir,
+            episodes_dir=episodes_dir,
+            procedures_dir=procedures_dir,
+            common_knowledge_dir=common_knowledge_dir,
+        )
+
+        assert results == []
 
 
 # ── search_knowledge ─────────────────────────────────────
@@ -233,6 +281,33 @@ class TestSearchKnowledgeKeyword:
         assert len(results) == 1
         assert results[0][0] == "api-design.md"
         assert "REST API best practices" in results[0][1]
+
+
+class TestSearchKnowledgeOrSplit:
+    def test_search_knowledge_or_split(
+        self, rag: RAGMemorySearch, knowledge_dir: Path,
+    ) -> None:
+        """search_knowledge uses OR-split for multi-word queries."""
+        (knowledge_dir / "mixed.md").write_text(
+            "REST API guide\nGraphQL overview\nDeploy instructions",
+            encoding="utf-8",
+        )
+
+        results = rag.search_knowledge("api deploy", knowledge_dir)
+
+        lines = [r[1] for r in results]
+        assert "REST API guide" in lines
+        assert "Deploy instructions" in lines
+        assert "GraphQL overview" not in lines
+
+    def test_search_knowledge_empty_returns_nothing(
+        self, rag: RAGMemorySearch, knowledge_dir: Path,
+    ) -> None:
+        """Empty query returns no results."""
+        (knowledge_dir / "info.md").write_text("content", encoding="utf-8")
+
+        results = rag.search_knowledge("", knowledge_dir)
+        assert results == []
 
 
 class TestSearchKnowledgeNoResults:

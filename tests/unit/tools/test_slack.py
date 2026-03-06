@@ -334,14 +334,8 @@ class TestSlackClient:
 
 
 class TestGetToolSchemas:
-    def test_returns_schemas(self):
+    def test_returns_empty_list(self):
+        """External tool modules return empty schema lists (schemas from dispatch layer)."""
         schemas = get_tool_schemas()
         assert isinstance(schemas, list)
-        assert len(schemas) == 5
-        names = {s["name"] for s in schemas}
-        assert names == {"slack_send", "slack_messages", "slack_search", "slack_unreplied", "slack_channels"}
-
-    def test_slack_send_requires_channel_and_message(self):
-        schemas = get_tool_schemas()
-        send_schema = [s for s in schemas if s["name"] == "slack_send"][0]
-        assert set(send_schema["input_schema"]["required"]) == {"channel", "message"}
+        assert schemas == []

@@ -827,10 +827,12 @@ _TEMPLATES_CK_DIR = (
 _EXPECTED_FILES = [
     "00_index.md",
     "communication/board-guide.md",
+    "communication/call-human-guide.md",
     "communication/instruction-patterns.md",
     "communication/messaging-guide.md",
     "communication/reporting-guide.md",
     "communication/sending-limits.md",
+    "communication/slack-bot-token-guide.md",
     "operations/background-tasks.md",
     "operations/heartbeat-cron-guide.md",
     "operations/mode-s-auth-guide.md",

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -25,6 +26,8 @@ from core.tools._base import ToolConfigError, get_credential
 
 logger = logging.getLogger("animaworks.webhooks")
 
+_slack_bot_user_ids: dict[str, str] = {}
+
 
 def create_webhooks_router() -> APIRouter:
     """Create the webhooks API router."""
@@ -33,17 +36,22 @@ def create_webhooks_router() -> APIRouter:
     # ── Slack ──────────────────────────────────────────────
 
     def _verify_slack_signature(
-        body: bytes, timestamp: str, signature: str,
+        body: bytes,
+        timestamp: str,
+        signature: str,
+        signing_secret: str | None = None,
     ) -> bool:
         """Verify Slack request signature using signing secret."""
-        try:
-            signing_secret = get_credential(
-                "slack_signing", "slack_webhook",
-                env_var="SLACK_SIGNING_SECRET",
-            )
-        except ToolConfigError:
-            logger.error("SLACK_SIGNING_SECRET not configured")
-            return False
+        if signing_secret is None:
+            try:
+                signing_secret = get_credential(
+                    "slack_signing",
+                    "slack_webhook",
+                    env_var="SLACK_SIGNING_SECRET",
+                )
+            except ToolConfigError:
+                logger.error("SLACK_SIGNING_SECRET not configured")
+                return False
 
         # Reject requests older than 5 minutes (replay attack prevention)
         try:
@@ -54,12 +62,25 @@ def create_webhooks_router() -> APIRouter:
             return False
 
         sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
-        expected = "v0=" + hmac.new(
-            signing_secret.encode("utf-8"),
-            sig_basestring.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
+        expected = (
+            "v0="
+            + hmac.new(
+                signing_secret.encode("utf-8"),
+                sig_basestring.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+        )
         return hmac.compare_digest(expected, signature)
+
+    def _resolve_per_anima_signing_secret(anima_name: str) -> str | None:
+        """Resolve per-Anima signing secret from vault/shared credentials."""
+        from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential
+
+        key = f"SLACK_SIGNING_SECRET__{anima_name}"
+        secret = _lookup_vault_credential(key)
+        if secret:
+            return secret
+        return _lookup_shared_credentials(key)
 
     @router.post("/slack/events")
     async def slack_events(request: Request) -> dict:
@@ -76,15 +97,23 @@ def create_webhooks_router() -> APIRouter:
         if data.get("type") == "url_verification":
             return {"challenge": data.get("challenge", "")}
 
-        # Signature verification for all other requests
         signature = request.headers.get("X-Slack-Signature", "")
         timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
-        if not _verify_slack_signature(body, timestamp, signature):
-            raise HTTPException(status_code=400, detail="Invalid signature")
 
-        # Check if external messaging is enabled for Slack
         config = load_config()
         slack_config = config.external_messaging.slack
+
+        api_app_id = data.get("api_app_id", "")
+        anima_from_app = slack_config.app_id_mapping.get(api_app_id) if api_app_id else None
+
+        if anima_from_app:
+            per_secret = _resolve_per_anima_signing_secret(anima_from_app)
+            if not _verify_slack_signature(body, timestamp, signature, per_secret):
+                raise HTTPException(status_code=400, detail="Invalid signature")
+        else:
+            if not _verify_slack_signature(body, timestamp, signature):
+                raise HTTPException(status_code=400, detail="Invalid signature")
+
         if not slack_config.enabled:
             logger.debug("Slack webhook received but external_messaging.slack is disabled")
             return {"ok": True}
@@ -102,7 +131,10 @@ def create_webhooks_router() -> APIRouter:
                 logger.debug("Reply routing lookup failed", exc_info=True)
 
             channel_id = event.get("channel", "")
-            anima_name = slack_config.anima_mapping.get(channel_id) or slack_config.default_anima
+            if anima_from_app:
+                anima_name = anima_from_app
+            else:
+                anima_name = slack_config.anima_mapping.get(channel_id) or slack_config.default_anima
             if not anima_name:
                 logger.warning("No anima mapping for Slack channel %s and no default_anima", channel_id)
                 return {"ok": True}
@@ -110,6 +142,35 @@ def create_webhooks_router() -> APIRouter:
             text = event.get("text", "")
             user_id = event.get("user", "")
             message_ts = event.get("ts", "")
+
+            # Resolve bot user ID for mention detection (cached per app_id)
+            cache_key = anima_from_app or "__shared__"
+            bot_user_id = _slack_bot_user_ids.get(cache_key, "")
+            if not bot_user_id and api_app_id:
+                try:
+                    from slack_sdk.web.async_client import AsyncWebClient
+
+                    _token = None
+                    if anima_from_app:
+                        from server.slack_socket import SlackSocketModeManager
+
+                        _token = SlackSocketModeManager._get_per_anima_credential(
+                            "SLACK_BOT_TOKEN",
+                            anima_from_app,
+                        )
+                    if not _token:
+                        _token = get_credential("slack", "slack_webhook", env_var="SLACK_BOT_TOKEN")
+                    client = AsyncWebClient(token=_token)
+                    resp = await client.auth_test()
+                    bot_user_id = resp.get("user_id", "") or ""
+                    if bot_user_id:
+                        _slack_bot_user_ids[cache_key] = bot_user_id
+                except Exception:
+                    logger.debug("Failed to resolve bot user ID for webhook", exc_info=True)
+
+            from server.slack_socket import _detect_slack_intent
+
+            intent = _detect_slack_intent(text, channel_id, bot_user_id)
 
             shared_dir = get_data_dir() / "shared"
             messenger = Messenger(shared_dir, anima_name)
@@ -119,10 +180,14 @@ def create_webhooks_router() -> APIRouter:
                 source_message_id=message_ts,
                 external_user_id=user_id,
                 external_channel_id=channel_id,
+                intent=intent,
             )
             logger.info(
-                "Slack message delivered: channel=%s user=%s -> anima=%s",
-                channel_id, user_id, anima_name,
+                "Slack message delivered: channel=%s user=%s -> anima=%s (intent=%s)",
+                channel_id,
+                user_id,
+                anima_name,
+                intent or "none",
             )
 
         return {"ok": True}
@@ -138,7 +203,8 @@ def create_webhooks_router() -> APIRouter:
         """
         try:
             token = get_credential(
-                "chatwork_webhook", "chatwork_webhook",
+                "chatwork_webhook",
+                "chatwork_webhook",
                 env_var="CHATWORK_WEBHOOK_TOKEN",
             )
         except ToolConfigError:
@@ -198,7 +264,9 @@ def create_webhooks_router() -> APIRouter:
             )
             logger.info(
                 "Chatwork message delivered: room=%s account=%s -> anima=%s",
-                room_id, account_id, anima_name,
+                room_id,
+                account_id,
+                anima_name,
             )
 
         return {"ok": True}

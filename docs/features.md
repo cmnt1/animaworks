@@ -2,10 +2,10 @@
 
 **[日本語版](features.ja.md)**
 
-> Last updated: 2026-02-23
-> Related: [spec.md](spec.md), [memory.md](memory.md), [vision.md](vision.md)
+> Last updated: 2026-03-05
+> Related: [spec.md](spec.md), [memory.md](memory.md), [vision.md](vision.md), [brain-mapping.md](brain-mapping.md)
 
-An index of implemented features in the AnimaWorks framework, organized across 19 categories. "Design" links point to design and implementation documents; "Review" links point to code review reports.
+An index of implemented features in the AnimaWorks framework, organized across 21 categories. "Design" links point to design and implementation documents; "Review" links point to code review reports.
 
 ---
 
@@ -38,7 +38,7 @@ Framework foundation changes including agent.py refactoring, hierarchy design, p
 
 ## 2. Execution Engine
 
-Improvements to S/A/B modes (formerly A1/A2/B), Agent SDK crash recovery, SSE enhancements, and more.
+Improvements to S/A/B/C modes, Agent SDK crash recovery, SSE enhancements, and more. Mode C (Codex) runs OpenAI models via Codex CLI.
 
 - **A2 Agentic Loop Enhancement** (2026-02-15) — Reliability and feature improvements for the LiteLLM + tool_use loop
   [Design](implemented/20260215_a2-agentic-loop-enhancement_implemented-20260215.md) | [Review](implemented/20260215_review_a2-agentic-loop-enhancement_approved-20260215.md)
@@ -314,7 +314,7 @@ Image generation pipeline, expression variants, 3D model caching, NovelAI V4, an
 
 ## 12. Process Management & IPC
 
-Zombie detection, keepalive, buffer overflow fixes, and more.
+Zombie detection, keep-alive, buffer overflow fixes, and more.
 
 - **Process Isolation Architecture** (2026-02-14) — Anima isolation via Unix Domain Socket + child processes
   [Design](implemented/20260214_process-isolation_issue.md) | [Review](implemented/20260214_review_process-isolation-design_revision.md)
@@ -379,6 +379,8 @@ Logging enhancements, frontend log delivery, and more.
   [Design](implemented/20260217_comprehensive-logging-enhancement_implemented-20260217.md) | [Review](implemented/20260217_review_comprehensive-logging-enhancement_approved-20260217.md)
 - **Fix Frontend Logs Not Reaching Server** (2026-02-17) — Fix for log delivery pipeline
   [Design](implemented/20260217_fix-frontend-log-delivery_implemented-20260217.md) | [Review](implemented/20260217_review_fix-frontend-log-delivery_approved-20260217.md)
+- **Token Usage Tracking** (2026-03-03) — Input/output token measurement and recording for LLM calls
+  [Design](implemented/20260303_review_token-usage-tracking_approved-20260303.md)
 
 ---
 
@@ -431,7 +433,7 @@ Execution mode redesign, task queue, resolution registry, dynamic Priming, refac
 
 ### Execution Engine
 
-- **Execution Mode Redesign: S/A/B 3-Mode Architecture** (2026-02-23) — Redesign execution modes as S (SDK) / A (Autonomous) / B (Basic). S mode delegates session management to Agent SDK
+- **Execution Mode Redesign: S/A/B 3-Mode Architecture** (2026-02-23) — Redesign execution modes as S (SDK) / A (Autonomous) / B (Basic). S mode delegates session management to Agent SDK. **Mode C (Codex)** was later added to run OpenAI models via Codex CLI
   [Design](implemented/20260223_execution-mode-redesign-s-a-b-20260223.md) | [Review](implemented/20260223_review_execution-mode-redesign-s-a-b_approved-20260223.md)
 - **S Mode Memory Encoding Gap Fix** (2026-02-23) — Three-layer solution for conversation turn preservation, memory summary search, and behavior trace knowledge generation in S mode
   [Design](implemented/20260223_s-mode-memory-encoding-gap_implemented-20260223.md) | [Review](implemented/20260223_review_s-mode-memory-encoding-gap_approved-20260223.md)
@@ -522,3 +524,107 @@ Execution mode redesign, task queue, resolution registry, dynamic Priming, refac
   [Design](implemented/20260220_conversation-history-turn-limit_implemented-20260220.md) | [Review](implemented/20260220_review_conversation-history-turn-limit_approved-20260220.md)
 - **Cron Task Type Correctness** (2026-02-21) — Replace improper llm-typed cron tasks with command type and add validation
   [Design](implemented/20260221_K_cron-type-correctness-20260222.md) | [Review](implemented/20260222_review_AHK_dm-heartbeat-cron_approved-20260222.md)
+
+---
+
+## 20. Voice Chat
+
+Real-time voice conversation with Anima. Browser audio input → STT → existing chat pipeline → TTS → browser playback.
+
+- **Voice Chat System — STT + TTS + WebSocket Voice Conversation** (2026-02-26) — Dedicated voice WebSocket `/ws/voice/{name}` + faster-whisper STT + multi-provider TTS (VOICEVOX / Style-BERT-VITS2 / ElevenLabs). AudioWorklet PCM 16kHz direct streaming, sentence-split streaming TTS, VAD/PTT support, barge-in, per-Anima voice settings
+  [Design](implemented/20260226_voice-chat-system-implemented-20260226.md) | [Review](implemented/20260226_review_voice-chat-system_approved-20260226.md)
+- **TTS Stability Fixes** (2026-03-04) — Improved robustness for voice provider connection and playback errors
+  [Design](implemented/20260304_tts-instability-implemented-20260304.md) | [Review](implemented/20260304_review_tts-instability_approved-20260304.md)
+
+---
+
+## 21. Post-v0.2 Enhancements (2026-02-27 — 2026-03-05)
+
+Tool architecture unification, memory system improvements, housekeeping, Live Tool Activity, Mode C (Codex), and operational robustness.
+
+### Execution Engine
+
+- **Mode C (Codex) Added** — Run OpenAI models (o4-mini, o3, gpt-4.1, etc.) via Codex CLI. Sandbox mode + MCP integration for tool safety
+  [Design](core/execution/codex_sdk.py)
+- **LLM API Retry** (2026-03-05) — Automatic retry on API call failure
+  [Design](implemented/20260305_llm-api-retry_implemented-20260305.md) | [Review](implemented/20260305_review_llm-api-retry_approved-20260305.md)
+- **Background Model Override** (2026-03-05) — Model switching for heartbeat/cron/task execution
+  [Design](implemented/20260305_background-model-override-20260305.md) | [Review](implemented/20260305_review_background-model-override_approved-20260305.md)
+- **SDK Agent Tool Intercept & Heartbeat Monitoring** (2026-03-05) — Tool call monitoring and heartbeat response detection in Mode S
+  [Design](implemented/20260305_sdk-agent-tool-intercept-and-heartbeat-monitoring_implemented-20260305.md) | [Review](implemented/20260305_review_sdk-agent-tool-intercept-and-heartbeat-monitoring_approved-20260305.md)
+- **Agent Cycle Tool Summary** (2026-03-05) — Tool call argument summaries delivered via SSE `tool_detail`
+  [Design](implemented/20260305_agent-cycle-tool-summary_implemented-20260305.md) | [Review](implemented/20260305_review_agent-cycle-tool-summary_approved-20260305.md)
+- **Crash Recovery Note** (2026-03-05) — Documentation for Agent SDK crash recovery
+  [Design](implemented/20260305_crash-recovery-note-implemented-20260305.md) | [Review](implemented/20260305_review_crash-recovery-note_approved-20260305.md)
+
+### Tool & Skill Architecture
+
+- **Tool Architecture — External Tool MCP Removal, Skill + CLI Unification** (2026-03-04) — Remove 38 external tool schemas, unify to built-in internal tools + skill-based CLI. Mode B dedicated `use_tool` dispatcher
+  [Design](implemented/20260303_tool-architecture-skill-cli-migration_implemented-20260304.md) | [Review](implemented/20260304_review_tool-architecture-skill-cli-migration_r4_approved-20260304.md)
+- **Tool Visibility Unification** (2026-03-05) — Consistent tool listing across all execution modes
+  [Design](implemented/20260305_tool-visibility-unification_implemented-20260305.md) | [Review](implemented/20260305_review_tool-visibility-unification_approved-20260305.md)
+- **Skill Creator Spec Alignment & Path Fixes** (2026-03-05) — Spec consistency and path validation for skill creation flow
+  [Design](implemented/20260305_skill-creator-spec-alignment-and-path-fixes_implemented-20260305.md) | [Review](implemented/20260305_review_skill-creator-spec-alignment_approved-20260305.md)
+- **Live Tool Activity Streaming** (2026-03-04) — Real-time tool execution visibility. SSE `tool_detail` + ActivityLogger → WebSocket broadcast
+  [Design](implemented/20260303_live-tool-activity-streaming.md) | [Review](implemented/20260304_review_live-tool-activity-streaming_approved.md)
+
+### Memory System
+
+- **DK Phase-Out Phase 1: Channel C Full Knowledge Search** (2026-03-04) — Expand Priming Channel C search from "DK overflow files only" to "all knowledge/procedures"
+  [Design](implemented/20260304_dk-removal-phase1-channel-c-full-search.md)
+- **Priming Channel C Keyword & topk Fix** (2026-03-04) — Improved related knowledge search accuracy
+  [Design](implemented/20260304_priming-channel-c-keyword-and-topk-fix_implemented-20260304.md)
+- **DK Injection Frontmatter Repair** (2026-03-04) — Frontmatter validation and auto-repair for knowledge/procedures
+  [Design](implemented/20260303_dk-injection-frontmatter-repair-20260304.md) | [Review](implemented/20260304_review_dk-injection-frontmatter-repair_approved-20260304.md)
+- **Knowledge Frontmatter Validation & Repair** (2026-03-05) — Invalid frontmatter detection and auto-repair
+  [Design](implemented/20260305_knowledge-frontmatter-validation-repair-implemented-20260305.md)
+- **Spreading Activation Remaining Fixes** (2026-03-05) — Episodes support for spreading activation and search quality improvements
+  [Design](implemented/20260305_spreading-activation-remaining-fixes_implemented-20260305.md)
+- **Memory File I/O Protection** (2026-03-05) — Atomicity and consistency guarantees for memory writes
+  [Design](implemented/20260305_memory-file-io-protection_implemented-20260305.md)
+- **File Write Atomicity** (2026-03-05) — Crash-resilient file updates
+  [Design](implemented/20260305_file-write-atomicity-20260305.md) | [Review](implemented/20260305_review_file-write-atomicity_approved-20260305.md)
+
+### Housekeeping & Operations
+
+- **Disk Capacity Management — Unified Rotation via Housekeeping Job** (2026-03-05) — Unified cleanup for prompt_logs, server-daemon.log, shortterm, cron_logs, DM archives, etc.
+  [Design](implemented/20260305_housekeeping-disk-rotation_implemented-20260305.md) | [Review](implemented/20260305_review_housekeeping-disk-rotation_approved-20260305.md)
+- **Cron Logger Data Integrity** (2026-03-05) — Improved cron execution log reliability
+  [Design](implemented/20260305_cron-logger-data-integrity_implemented-20260305.md)
+- **Task Lifecycle Silent Failure** (2026-03-05) — Safe handling when pending task execution fails
+  [Design](implemented/20260305_task-lifecycle-silent-failure_implemented-20260305.md)
+- **Pending Task Failure Safety** (2026-03-05) — Recovery and retry on task execution error
+  [Design](implemented/20260305_pending-task-failure-safety-20260305.md) | [Review](implemented/20260305_review_pending-task-failure-safety_approved-20260305.md)
+
+### Communication & Notification
+
+- **Per-Anima Slack Bot** (2026-03-05) — Per-Anima Slack Bot Token support
+  [Design](implemented/20260305_per-anima-slack-bot_implemented-20260305.md) | [Review](implemented/20260305_per-anima-slack-bot_review-20260305.md)
+- **Slack Thread Reply Metadata Auto-Injection** (2026-03-05) — Automatic context attachment for thread replies
+  [Design](implemented/20260305_slack-reply-metadata-autoinjection_implemented-20260305.md) | [Review](implemented/20260305_review_slack-reply-metadata-autoinjection_approved-20260305.md)
+- **Notification Vault Robustness** (2026-03-05) — Secure storage and retrieval of credentials
+  [Design](implemented/20260305_notification-vault-robustness_implemented-20260305.md) | [Review](implemented/20260305_review_notification-vault-robustness_approved-20260305.md)
+
+### Configuration & CLI
+
+- **Config Thread Safety Cleanup** (2026-03-05) — Safe config loading in multi-threaded environments
+  [Design](implemented/20260305_config-thread-safety-cleanup_implemented-20260305.md)
+- **WebSocket Broadcast Race** (2026-03-05) — Resolve race conditions during broadcast
+  [Design](implemented/20260305_websocket-broadcast-race_implemented-20260305.md)
+- **animaworks anima rename Command** (2026-03-05) — CLI-based Anima name change
+  [Design](implemented/20260301_anima-rename-command_implemented-20260305.md) | [Review](implemented/20260305_review_anima-rename-command_approved-20260305.md)
+- **Opus 4 Reference Update** (2026-03-05) — Update model references to latest
+  [Design](implemented/20260305_update-opus-4-20250514-refs_implemented-20260305.md) | [Review](implemented/20260305_review_update-opus-4-20250514-refs_approved-20260305.md)
+
+### Miscellaneous (2026-02-27)
+
+- **Assistant Image Chat** (2026-02-27) — Image display in chat responses
+  [Design](implemented/20260227_assistant-images-in-chat_implemented-20260227.md)
+- **Multi-Thread Chat** (2026-02-27) — Parallel chat processing on backend and frontend
+  [Design](implemented/20260227_multi-thread-chat-backend-20260227.md) | [Review](implemented/20260227_review_multi-thread-chat_approved-20260227.md)
+- **Chat Multi-Tab Persistence** (2026-02-27) — Per-tab session state retention
+  [Design](implemented/20260227_review_chat_multi-tab_persistence_revision2_approved-20260227.md)
+- **Skill Directory Structure Migration** (2026-02-27) — Skill directory reorganization
+  [Design](implemented/20260227_review_skill-directory-structure-migration_approved-20260227.md)
+- **Open Domain Image Proxy Hardening** (2026-02-27) — Security hardening for image URLs
+  [Design](implemented/20260227_review_open-domain-image-proxy-hardening_approved-20260227.md)

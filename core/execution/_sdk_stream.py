@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -29,6 +30,7 @@ logger = logging.getLogger("animaworks.execution.agent_sdk")
 
 
 # ── Tool logging helpers ─────────────────────────────────────
+
 
 def _summarise_tool_input(tool_name: str, tool_input: dict[str, Any]) -> str:
     """Return a concise one-line summary of tool_input for activity log content."""
@@ -118,18 +120,21 @@ def _log_tool_result(
 
 # ── Stream block handlers ────────────────────────────────────
 
+
 def _handle_tool_use_block(
     block: Any,
     pending_records: dict[str, ToolCallRecord],
     journal: Any | None,
     model: str,
+    *,
+    cw_overrides: dict[str, int] | None = None,
 ) -> ToolCallRecord:
     """Process a ToolUseBlock from AssistantMessage.
 
     Registers the block in ``pending_records`` and writes a WAL entry
     via the streaming journal (if provided).
     """
-    context_window = resolve_context_window(model)
+    context_window = resolve_context_window(model, cw_overrides)
     record = ToolCallRecord(
         tool_name=block.name,
         tool_id=block.id,
@@ -155,11 +160,7 @@ def _tool_result_content_len(block: Any) -> int:
     """
     content = block.content
     if isinstance(content, list):
-        return sum(
-            len(str(c.get("text", "")))
-            for c in content
-            if isinstance(c, dict)
-        )
+        return sum(len(str(c.get("text", ""))) for c in content if isinstance(c, dict))
     return len(str(content)) if content else 0
 
 
@@ -170,6 +171,7 @@ def _handle_tool_result_block(
     model: str,
     *,
     anima_dir: Path | None = None,
+    cw_overrides: dict[str, int] | None = None,
 ) -> None:
     """Process a ToolResultBlock from UserMessage.
 
@@ -179,15 +181,13 @@ def _handle_tool_result_block(
     """
     content = block.content
     if isinstance(content, list):
-        content = " ".join(
-            str(c.get("text", "")) for c in content if isinstance(c, dict)
-        )
+        content = " ".join(str(c.get("text", "")) for c in content if isinstance(c, dict))
     content_str = str(content) if content else ""
     is_error = block.is_error if block.is_error is not None else False
 
     record = pending_records.get(block.tool_use_id)
     if record:
-        context_window = resolve_context_window(model)
+        context_window = resolve_context_window(model, cw_overrides)
         record.result_summary = _truncate_for_record(
             content_str,
             tool_result_save_budget(record.tool_name, context_window),
@@ -195,7 +195,10 @@ def _handle_tool_result_block(
         record.is_error = is_error
         logger.info(
             "ToolResult captured: tool=%s id=%s result_len=%d is_error=%s",
-            record.tool_name, block.tool_use_id, len(content_str), is_error,
+            record.tool_name,
+            block.tool_use_id,
+            len(content_str),
+            is_error,
         )
     else:
         logger.warning("ToolResultBlock for unknown tool_use_id=%s", block.tool_use_id)
@@ -208,8 +211,11 @@ def _handle_tool_result_block(
     if anima_dir is not None:
         tool_name = record.tool_name if record else "unknown"
         _log_tool_result(
-            anima_dir, tool_name, block.tool_use_id,
-            content_str, is_error=is_error,
+            anima_dir,
+            tool_name,
+            block.tool_use_id,
+            content_str,
+            is_error=is_error,
         )
 
 
@@ -226,7 +232,8 @@ def _finalize_pending_records(
             record.is_error = True
             logger.warning(
                 "ToolCallRecord without result: tool=%s id=%s",
-                record.tool_name, tool_id,
+                record.tool_name,
+                tool_id,
             )
         records.append(record)
     return records

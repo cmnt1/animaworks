@@ -21,11 +21,11 @@ description: >-
 
 | モード | 実装 | Bash | このスキルの適用 |
 |--------|------|------|------------------|
-| **Mode S** | `agent_sdk.py` (Claude Agent SDK) | デフォルトで利用可能 | 適用される。Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch が利用可能 |
+| **Mode S** | `agent_sdk.py` (Claude Agent SDK) | デフォルトで利用可能 | 適用される。Claude Code サブプロセス内で Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP(mcp__aw__*) + Task/Agent が利用可能。Bash 実行時の cwd は anima_dir |
 | **Mode A/B** | LiteLLM + tool_use / 1ショット | permissions.md で許可時のみ | Bash 許可があれば適用 |
-| **Mode C** | `codex_sdk.py` (Codex SDK) | Codex CLI のツールセットに依存 | **codex exec は不要** — フレームワークが Codex を直接実行。cursor-agent / claude -p は Bash 経由で呼べる（Bash が利用可能な場合） |
+| **Mode C** | `codex_sdk.py` (Codex SDK) | Codex CLI のツールセットに依存 | **codex exec は不要** — フレームワークが openai_codex_sdk 経由で Codex を直接実行。cursor-agent / claude -p は Bash 経由で呼べる（Bash が利用可能な場合） |
 
-**重要**: Mode C (codex/* モデル) の Anima は、フレームワークが Codex SDK 経由で Codex CLI を直接実行する。この場合、自分で `codex exec` を Bash から呼ぶ必要はない。cursor-agent や claude -p を使いたい場合のみ、このスキルの該当セクションを参照する。
+**重要**: Mode C (codex/* モデル) の Anima は、フレームワークが Codex SDK 経由で Codex を直接実行する。この場合、自分で `codex exec` を Bash から呼ぶ必要はない。cursor-agent や claude -p を使いたい場合のみ、このスキルの該当セクションを参照する。
 
 ## ツール選択の優先順位
 
@@ -67,7 +67,7 @@ description: >-
 codex exec --full-auto -C /path/to/workspace "プロンプト"
 ```
 
-作業ディレクトリ `-C` には対象プロジェクトのパスを指定する。メインプロジェクトが対象の場合は `$ANIMAWORKS_PROJECT_DIR` が利用可能な場合がある（Mode S の Bash 実行環境で設定される）。
+作業ディレクトリ `-C` には対象プロジェクトの絶対パスを指定する。Mode S の Bash 実行時には `ANIMAWORKS_ANIMA_DIR`（Anima のデータディレクトリ）と `ANIMAWORKS_PROJECT_DIR`（AnimaWorks フレームワークのルート）が環境変数として設定される。AnimaWorks 自体の開発が対象の場合は `-C "$ANIMAWORKS_PROJECT_DIR"` が使える。
 
 ### 重要オプション
 
@@ -349,4 +349,4 @@ nohup timeout 30m codex exec --full-auto --ephemeral -C /path \
 - 実行結果は自分のepisodes/に記録し、学んだパターンはknowledge/に蓄積すること
 - 実行には5分〜20分以上かかる。必ずバックグラウンドで実行し、timeout を設定すること
 - git管理されたリポジトリで作業すること（変更の追跡・取り消しが容易）
-- Mode S では Bash 実行時に `ANIMAWORKS_ANIMA_DIR` と `ANIMAWORKS_PROJECT_DIR` が環境変数として設定される
+- Mode S では Bash 実行時に `ANIMAWORKS_ANIMA_DIR`（Anima のデータディレクトリ）と `ANIMAWORKS_PROJECT_DIR`（AnimaWorks フレームワークのルート）が環境変数として設定される（`agent_sdk.py` の `_build_env()` で注入）

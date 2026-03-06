@@ -106,21 +106,24 @@ class TestFacadeDelegation:
         assert "1234ms" in result
 
     def test_cron_command_log(self, mm: MemoryManager) -> None:
-        """append_cron_command_log writes to the log file."""
+        """append_cron_command_log writes to the log file and read_cron_log includes it."""
         import json as _json
-        from datetime import date as _date
+
+        from core.time_utils import now_jst
 
         mm.append_cron_command_log(
             "test-cmd", exit_code=0, stdout="line1", stderr="", duration_ms=100,
         )
-        # Command logs don't have 'summary' so read_cron_log skips them.
-        # Verify by reading the JSONL directly.
         log_dir = mm.anima_dir / "state" / "cron_logs"
-        log_file = log_dir / f"{_date.today().isoformat()}.jsonl"
+        log_file = log_dir / f"{now_jst().date().isoformat()}.jsonl"
         assert log_file.exists()
         entry = _json.loads(log_file.read_text().strip())
         assert entry["task"] == "test-cmd"
         assert entry["exit_code"] == 0
+
+        result = mm.read_cron_log(days=1)
+        assert "test-cmd" in result
+        assert "exit=0" in result
 
     def test_resolution_roundtrip(self, mm: MemoryManager) -> None:
         """append_resolution + read_resolutions works through the facade."""

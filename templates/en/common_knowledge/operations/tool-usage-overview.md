@@ -19,17 +19,16 @@ Your mode is determined automatically from your model name in `status.json`.
 Three tool families:
 
 1. **Claude Code built-ins**: Read, Write, Edit, Grep, Glob, Bash, git, etc. For file operations and command execution
-2. **MCP tools (`mcp__aw__*`)**: AnimaWorks-specific internal features. External tools permitted in `permissions.md` are also available directly via MCP
-   - Internal: `send_message`, `post_channel`, `read_channel`, `read_dm_history`, `add_task`, `update_task`, `list_tasks`, `call_human`, `search_memory`, `report_procedure_outcome`, `report_knowledge_outcome`, `skill`, `disable_subordinate`, `enable_subordinate`
-   - External (when permitted): `mcp__aw__slack_post`, `mcp__aw__chatwork_send`, etc.
-3. **Bash + animaworks-tool**: Long-running tools (image generation, local LLM, speech transcription, etc.) are executed asynchronously via `animaworks-tool submit`
+2. **MCP tools (`mcp__aw__*`)**: AnimaWorks-specific internal features
+   - `send_message`, `post_channel`, `read_channel`, `read_dm_history`, `add_task`, `update_task`, `list_tasks`, `call_human`, `search_memory`, `report_procedure_outcome`, `report_knowledge_outcome`, `skill`, `disable_subordinate`, `enable_subordinate`, `set_subordinate_model`, `restart_subordinate`, `org_dashboard`, `ping_subordinate`, `read_subordinate_state`, `delegate_task`, `task_tracker`, `audit_subordinate`
+3. **Bash + animaworks-tool**: External tools (chatwork, slack, gmail, web_search, etc.) are accessed via `skill` to check CLI usage, then executed with `animaworks-tool <tool> <subcommand>`. Long-running tools use `animaworks-tool submit` for async execution
 
 ### A-mode (LiteLLM)
 
 Two tool families:
 
-1. **Internal tools**: `send_message`, `search_memory`, `read_file`, `execute_command`, `add_task`, `discover_tools`, etc. Call by name using function calling
-2. **External tools**: When you enable a category with `discover_tools(category="...")`, those tools are dynamically added
+1. **Internal tools**: `send_message`, `search_memory`, `read_file`, `execute_command`, `add_task`, etc. Call by name using function calling
+2. **External tools**: Look up usage via the `skill` tool and execute with CLI (`animaworks-tool <tool> <subcommand>`)
 
 ### B-mode (Basic)
 
@@ -43,7 +42,7 @@ Tools are invoked in JSON text format. Available tools:
 - **Notification**: call_human (when notification channels are configured)
 - **External tools**: Tools in categories permitted in permissions.md (when permitted)
 
-Task management, supervisor tools, discover_tools, refresh_tools, share_tool, and create_anima are not available.
+Task management, supervisor tools, refresh_tools, share_tool, and create_anima are not available. External tools can be called via `use_tool` for structured invocation.
 
 ---
 
@@ -98,7 +97,7 @@ In S-mode, use Claude Code's Read / Write / Edit / Grep / Glob / Bash for equiva
 
 | Tool | Description |
 |------|-------------|
-| `discover_tools` | List and enable external tool categories |
+| `skill` | Get full text of skills, common skills, and procedures (use for tool usage lookup) |
 | `refresh_tools` | Rescan personal and common tools |
 | `share_tool` | Share personal tool to common_tools/ |
 
@@ -108,17 +107,18 @@ Organizational tools automatically enabled for Anima with subordinates. See `org
 
 | Tool | Description | S-mode MCP |
 |------|-------------|------------|
-| `org_dashboard` | Show process status of all subordinates in a tree | × |
-| `ping_subordinate` | Check subordinate liveness | × |
-| `read_subordinate_state` | Read subordinate current task | × |
-| `delegate_task` | Delegate task to subordinate | × |
-| `task_tracker` | Track delegated task progress | × |
 | `disable_subordinate` | Disable subordinate | ○ |
 | `enable_subordinate` | Re-enable subordinate | ○ |
-| `set_subordinate_model` | Change subordinate model | × |
-| `restart_subordinate` | Restart subordinate process | × |
+| `set_subordinate_model` | Change subordinate model | ○ |
+| `restart_subordinate` | Restart subordinate process | ○ |
+| `delegate_task` | Delegate task to subordinate | ○ |
+| `org_dashboard` | Show process status of all subordinates in a tree | ○ |
+| `ping_subordinate` | Check subordinate liveness | ○ |
+| `read_subordinate_state` | Read subordinate current task | ○ |
+| `task_tracker` | Track delegated task progress | ○ |
+| `audit_subordinate` | Comprehensive audit of subordinate's recent activity | ○ |
 
-In S-mode, only `disable_subordinate` and `enable_subordinate` are available via MCP. Others are A-mode only.
+All supervisor tools are available via MCP in S-mode. Audit is also available via CLI: `animaworks anima audit {name}`.
 
 ### Admin Tools (Conditional)
 
@@ -138,8 +138,8 @@ Main categories: `slack`, `chatwork`, `gmail`, `github`, `aws_collector`, `web_s
 
 ### S-mode
 
-1. **Check categories**: Confirm permitted categories in `permissions.md`
-2. **Execute**: Permitted external tools can be called directly via MCP (e.g. `mcp__aw__slack_post`)
+1. **Check skill**: Use `skill` tool to check CLI usage (e.g. `skill("chatwork-tool")`)
+2. **Execute**: Run `animaworks-tool <tool> <subcommand> [args...]` via Bash (e.g. `animaworks-tool chatwork send 123 "message"`)
 3. **Long-running tools**: Execute asynchronously with `animaworks-tool submit <tool_name> <subcommand> [args...]`
 4. **Help**: `animaworks-tool <tool_name> --help` for subcommands and arguments
 
@@ -147,10 +147,9 @@ Long-running tools (image generation, local LLM, speech transcription, etc.) mus
 
 ### A-mode
 
-1. **Check categories**: Call `discover_tools()` with no arguments
-2. **Enable**: `discover_tools(category="slack")` to enable a category
-3. **Execute**: Enabled tools become callable via normal function calling
-4. **Long-running tools**: Automatically run in background (equivalent to `submit`)
+1. **Look up skill**: `skill("slack-tool")` to get CLI usage
+2. **Execute**: `execute_command("animaworks-tool slack post ...")` to run via CLI
+3. **Long-running tools**: Automatically run in background (equivalent to `submit`)
 
 ### B-mode
 
@@ -171,7 +170,7 @@ If you are in S-mode, add the `mcp__aw__` prefix when reading (e.g. `mcp__aw__se
 
 - **A/B-mode**: Use `check_permissions` to see your permissions
 - **S-mode**: Tools exposed via MCP have the `mcp__aw__` prefix. Read `permissions.md` for permission details
-- **A-mode**: `discover_tools()` for external tool categories
+- **A-mode**: Use `skill` tool to look up external tool CLI usage
 - **All modes**: `read_memory_file(path="permissions.md")` to check permitted content (S-mode: read directly with Claude Code's Read)
 
 ### Tool returns an error

@@ -1,5 +1,4 @@
 ## External Tools
 
-To use external tools, call `discover_tools`.
+External service tools (Chatwork, Slack, Gmail, etc.) can be looked up via the `skill` tool and executed through CLI or `use_tool`.
 Available categories: {categories}
-Specify a category to enable that tool group.

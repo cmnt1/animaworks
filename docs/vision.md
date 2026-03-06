@@ -2,9 +2,12 @@
 
 **Organization-as-Code for LLM Agents**
 
+> Updated: 2026-03-05
+> Related: [brain-mapping.md](brain-mapping.md), [memory.md](memory.md)
+
 Define an organization. Feed it work. Watch it run autonomously.
 
-AnimaWorks is not a multi-agent framework. It is a system for defining persistent, autonomous organizations made of LLM agents. Each agent communicates through encapsulated messages, maintains its own memory and identity, and is assigned the right model for the right role — from local models to cloud APIs.
+AnimaWorks is not a multi-agent framework. It is a system for defining persistent, autonomous organizations made of LLM agents. Each agent communicates through encapsulated messages, maintains its own memory and identity, and selects the right model for the right role — from local models to cloud APIs.
 
 **[日本語版](vision.ja.md)**
 
@@ -43,7 +46,7 @@ No one can know everything. That constraint is what forces each Anima to rely on
 
 Rather than cramming information into the context window, AnimaWorks handles memory using the same mechanisms as the human brain.
 
-- **Recall**: When a message arrives, relevant memories surface automatically across multiple channels (sender profile, recent activity, related knowledge, skills, task queue) — priming
+- **Recall**: When a message arrives, relevant memories surface automatically across six channels (sender profile, recent activity from unified activity log, related knowledge, skill match, pending tasks, episodes) — priming. Recent outbound (what you recently sent) is also injected to suppress duplicate sends. Skills use progressive disclosure (names only at first; full content on demand) to reduce cognitive load
 - **Learning**: Experiences are recorded as episodes; frequently referenced knowledge gets reinforced. Procedural memory is auto-generated from resolved issues
 - **Forgetting**: Unused memories gradually fade and eventually disappear. A three-stage process (synaptic downscaling → neurogenesis reorganization → complete forgetting) actively curates memory
 - **Consolidation**: Daily experiences are distilled into generalized knowledge (episodic → semantic memory). Procedural memory improves through reconsolidation when failures accumulate
@@ -57,7 +60,7 @@ Imperfect individuals have limits on their own. But as an organization, they tra
 - **Process isolation**: Each Anima runs as an independent child process, monitored and restarted as needed. This avoids single points of failure and yields a robust organization
 - **Hierarchy**: Directives and reports flow through supervisor–subordinate relationships. Task delegation is tracked via messages and a persistent queue
 - **Communication**: All coordination happens through asynchronous messaging. No shared memory, no direct references
-- **Autonomy**: Each Anima acts on its own schedule through heartbeats and cron, guided by its own values. Heavy execution is separated from planning and handled by a dedicated task-execution path
+- **Autonomy**: Each Anima acts on its own schedule through heartbeats and cron, guided by its own values. Heavy execution is separated from planning and handled by a dedicated task-execution path. Inter-Anima messages (Inbox) use an immediate-response path so replies can be sent without waiting for the next heartbeat
 - **Culture**: The organization's vision and each Anima's identity form the foundation for every decision
 
 ## Why This Design

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -35,11 +36,12 @@ from core.time_utils import now_jst
 logger = logging.getLogger("animaworks.streaming_journal")
 
 # ── Buffering configuration ───────────────────────────────────────
-_FLUSH_INTERVAL_SEC = 1.0   # Flush at most every 1 second
-_FLUSH_SIZE_CHARS = 500     # Flush when buffer reaches 500 chars
+_FLUSH_INTERVAL_SEC = 1.0  # Flush at most every 1 second
+_FLUSH_SIZE_CHARS = 500  # Flush when buffer reaches 500 chars
 
 
 # ── Data models ───────────────────────────────────────────────────
+
 
 @dataclass
 class JournalRecovery:
@@ -56,6 +58,7 @@ class JournalRecovery:
 
 
 # ── StreamingJournal ──────────────────────────────────────────────
+
 
 class StreamingJournal:
     """Write-ahead journal for streaming output.
@@ -107,16 +110,23 @@ class StreamingJournal:
                 logger.warning(
                     "Orphaned journal found on open; no content recovered",
                 )
-        self._fd = open(self._journal_path, "w", encoding="utf-8")
+        try:
+            self._fd = open(self._journal_path, "w", encoding="utf-8")  # noqa: SIM115
+        except OSError:
+            logger.warning("Failed to open streaming journal at %s", self._journal_path, exc_info=True)
+            self._fd = None
+            return
         self._buffer = ""
         self._last_flush = time.monotonic()
         self._finalized = False
-        self._write_event({
-            "ev": "start",
-            "trigger": trigger,
-            "from": from_person,
-            "session_id": session_id,
-        })
+        self._write_event(
+            {
+                "ev": "start",
+                "trigger": trigger,
+                "from": from_person,
+                "session_id": session_id,
+            }
+        )
         logger.debug("Streaming journal opened: trigger=%s", trigger)
 
     def write_text(self, text: str) -> None:
@@ -125,14 +135,15 @@ class StreamingJournal:
             return
         self._buffer += text
         now = time.monotonic()
-        if (
-            len(self._buffer) >= _FLUSH_SIZE_CHARS
-            or now - self._last_flush >= _FLUSH_INTERVAL_SEC
-        ):
+        if len(self._buffer) >= _FLUSH_SIZE_CHARS or now - self._last_flush >= _FLUSH_INTERVAL_SEC:
             self._flush_buffer()
 
     def write_tool_start(
-        self, tool: str, args_summary: str = "", *, tool_id: str = "",
+        self,
+        tool: str,
+        args_summary: str = "",
+        *,
+        tool_id: str = "",
     ) -> None:
         """Record tool execution start.
 
@@ -155,7 +166,11 @@ class StreamingJournal:
         self._write_event(event)
 
     def write_tool_end(
-        self, tool: str, result_summary: str = "", *, tool_id: str = "",
+        self,
+        tool: str,
+        result_summary: str = "",
+        *,
+        tool_id: str = "",
     ) -> None:
         """Record tool execution end.
 
@@ -224,7 +239,7 @@ class StreamingJournal:
         # Check thread subdirectories
         thread_dir = anima_dir / "shortterm" / session_type
         if thread_dir.is_dir():
-            for journal in thread_dir.rglob("streaming_journal.jsonl"):
+            for _ in thread_dir.rglob("streaming_journal.jsonl"):
                 return True
         return False
 
@@ -303,10 +318,7 @@ class StreamingJournal:
                 matched = False
                 if end_tool_id:
                     for tc in reversed(tool_calls):
-                        if (
-                            tc.get("tool_id") == end_tool_id
-                            and tc["status"] == "started"
-                        ):
+                        if tc.get("tool_id") == end_tool_id and tc["status"] == "started":
                             tc["status"] = "completed"
                             tc["result_summary"] = entry.get("result_summary", "")
                             matched = True
@@ -426,16 +438,19 @@ class StreamingJournal:
 
     def _write_event(self, event: dict[str, Any]) -> None:
         """Write a single JSONL event line with timestamp."""
-        if not self._fd:
+        if self._fd is None:
             return
         event.setdefault("ts", now_jst().isoformat(timespec="seconds"))
         line = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
-        self._fd.write(line + "\n")
-        self._fd.flush()
         try:
-            os.fsync(self._fd.fileno())
+            self._fd.write(line + "\n")
+            self._fd.flush()
+            try:
+                os.fsync(self._fd.fileno())
+            except OSError:
+                logger.debug("fsync failed for journal", exc_info=True)
         except OSError:
-            logger.debug("fsync failed for journal", exc_info=True)
+            logger.warning("Failed to write streaming journal event", exc_info=True)
 
     def _flush_buffer(self) -> None:
         """Write buffered text as a single text event."""

@@ -238,12 +238,8 @@ class TestProcessAudio:
 
 
 class TestGetToolSchemas:
-    def test_returns_schemas(self):
+    def test_returns_empty_list(self):
+        """External tool modules return empty schema lists (schemas from dispatch layer)."""
         schemas = get_tool_schemas()
         assert isinstance(schemas, list)
-        assert len(schemas) == 1
-        assert schemas[0]["name"] == "transcribe_audio"
-
-    def test_requires_audio_path(self):
-        schema = get_tool_schemas()[0]
-        assert "audio_path" in schema["input_schema"]["required"]
+        assert schemas == []

@@ -492,16 +492,16 @@ class TestActivityLogConsolidation:
         engine = ConsolidationEngine(anima_dir, "test-act")
         result = engine._collect_activity_entries(hours=24)
 
-        # Should contain text from our entries
+        # Should contain communication entries (tool_use excluded by smart filtering)
         assert result  # Non-empty
         assert "message_received" in result
         assert "response_sent" in result
-        assert "tool_use" in result
+        assert "tool_use" not in result
 
     def test_collect_activity_entries_type_filter(
         self, data_dir: Path, make_anima,
     ) -> None:
-        """Only response_sent, tool_use, message_received types are collected."""
+        """Communication types are prioritized; tool_use is excluded, channel_post included."""
         anima_dir = make_anima(name="test-filter")
 
         log_dir = anima_dir / "activity_log"
@@ -554,15 +554,17 @@ class TestActivityLogConsolidation:
         engine = ConsolidationEngine(anima_dir, "test-filter")
         result = engine._collect_activity_entries(hours=24)
 
-        # Should include target types
+        # Should include communication types
         assert "response_sent" in result
-        assert "tool_use" in result
         assert "message_received" in result
+        # channel_post is now a communication type (included in _COMM_TYPES)
+        assert "channel_post" in result
 
         # Should NOT include filtered types
         assert "heartbeat_start" not in result
         assert "heartbeat_end" not in result
-        assert "channel_post" not in result
+        # tool_use is excluded by smart filtering (only tool_result is kept)
+        assert "tool_use" not in result
 
     def test_collect_activity_entries_budget_limit(
         self, data_dir: Path, make_anima,

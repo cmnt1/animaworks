@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -92,6 +93,10 @@ class MemoryWriteError(MemoryIOError):
 
 class MemoryCorruptedError(MemoryIOError):
     """Memory data is corrupted (JSON decode failure, schema mismatch)."""
+
+
+class TaskPersistenceError(MemoryIOError):
+    """Failed to persist task queue data."""
 
 
 # ── Process / IPC ────────────────────────────────────────────

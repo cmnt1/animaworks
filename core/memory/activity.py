@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -30,8 +31,18 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from core.paths import get_data_dir
-from core.time_utils import ensure_aware, now_iso, now_jst  # noqa: F401
+from core.exceptions import MemoryWriteError
+
+# ── Mixin imports ────────────────────────────────────────────
+from core.memory._activity_conversation import ConversationMixin
+
+# ── Re-export with legacy private names for test compat ──────
+from core.memory._activity_models import (
+    CHARS_PER_TOKEN as _CHARS_PER_TOKEN,  # noqa: F401
+)
+from core.memory._activity_models import (
+    EVENT_TYPE_ALIASES as _EVENT_TYPE_ALIASES,  # noqa: F401
+)
 
 # ── Re-export data models & helpers (public API) ─────────────
 from core.memory._activity_models import (  # noqa: F401
@@ -39,25 +50,32 @@ from core.memory._activity_models import (  # noqa: F401
     ActivityPage,
     EntryGroup,
 )
-
-# ── Re-export with legacy private names for test compat ──────
 from core.memory._activity_models import (
-    CHARS_PER_TOKEN as _CHARS_PER_TOKEN,  # noqa: F401
-    EVENT_TYPE_ALIASES as _EVENT_TYPE_ALIASES,  # noqa: F401
     dm_label as _dm_label,  # noqa: F401
+)
+from core.memory._activity_models import (
     find_tool_result_fallback as _find_tool_result_fallback,  # noqa: F401
+)
+from core.memory._activity_models import (
     get_peer as _get_peer,  # noqa: F401
+)
+from core.memory._activity_models import (
     get_task_name as _get_task_name,  # noqa: F401
+)
+from core.memory._activity_models import (
     resolve_type_filter as _resolve_type_filter,  # noqa: F401
+)
+from core.memory._activity_models import (
     set_source_lines as _set_source_lines,  # noqa: F401
+)
+from core.memory._activity_models import (
     time_diff as _time_diff,  # noqa: F401
 )
-
-# ── Mixin imports ────────────────────────────────────────────
-from core.memory._activity_conversation import ConversationMixin
 from core.memory._activity_priming import PrimingMixin
 from core.memory._activity_rotation import RotationMixin
 from core.memory._activity_timeline import TimelineMixin
+from core.paths import get_data_dir
+from core.time_utils import ensure_aware, now_iso, now_jst  # noqa: F401
 
 logger = logging.getLogger("animaworks.activity")
 
@@ -66,7 +84,10 @@ logger = logging.getLogger("animaworks.activity")
 
 
 class ActivityLogger(
-    PrimingMixin, TimelineMixin, ConversationMixin, RotationMixin,
+    PrimingMixin,
+    TimelineMixin,
+    ConversationMixin,
+    RotationMixin,
 ):
     """Unified activity recorder for a single Anima.
 
@@ -77,10 +98,13 @@ class ActivityLogger(
     grouping, conversation view, and rotation are provided by mixins.
     """
 
-    _LIVE_EVENT_TYPES = frozenset({
-        "tool_use",
-        "inbox_processing_start", "inbox_processing_end",
-    })
+    _LIVE_EVENT_TYPES = frozenset(
+        {
+            "tool_use",
+            "inbox_processing_start",
+            "inbox_processing_end",
+        }
+    )
 
     def __init__(self, anima_dir: Path) -> None:
         self.anima_dir = anima_dir
@@ -103,6 +127,7 @@ class ActivityLogger(
         meta: dict[str, Any] | None = None,
         origin: str = "",
         origin_chain: list[str] | None = None,
+        safe: bool = False,
     ) -> ActivityEntry:
         """Record an activity entry.
 
@@ -119,6 +144,9 @@ class ActivityLogger(
             meta: Arbitrary metadata dict.
             origin: Origin category (e.g. ``"human"``, ``"external_platform"``).
             origin_chain: Intermediate origins the data traversed.
+            safe: If True, suppress exceptions (log as warning instead of
+                raising).  Use inside ``except`` handlers to prevent
+                double-fault when the activity log itself fails.
 
         Returns:
             The recorded :class:`ActivityEntry`.
@@ -137,12 +165,12 @@ class ActivityLogger(
             origin=origin,
             origin_chain=origin_chain or [],
         )
-        self._append(entry)
+        self._append(entry, safe=safe)
         if event_type in self._LIVE_EVENT_TYPES:
             self._emit_live_event(entry)
         return entry
 
-    def _append(self, entry: ActivityEntry) -> None:
+    def _append(self, entry: ActivityEntry, *, safe: bool = False) -> None:
         """Append *entry* to today's JSONL file with fsync."""
         try:
             self._log_dir.mkdir(parents=True, exist_ok=True)
@@ -154,11 +182,15 @@ class ActivityLogger(
                 f.flush()
                 os.fsync(f.fileno())
         except OSError as exc:
-            from core.exceptions import MemoryWriteError
             logger.exception("Failed to append activity log")
+            if safe:
+                return
             raise MemoryWriteError(f"Activity log write failed: {exc}") from exc
-        except Exception:
+        except (TypeError, ValueError, AttributeError, KeyError) as exc:
             logger.exception("Failed to append activity log")
+            if safe:
+                return
+            raise MemoryWriteError(f"Activity log write failed: {exc}") from exc
 
     def _emit_live_event(self, entry: ActivityEntry) -> None:
         """Write event file for ProcessSupervisor to broadcast via WebSocket."""
@@ -178,7 +210,8 @@ class ActivityLogger(
             }
             event_file = event_dir / f"ta_{uuid4().hex[:8]}.json"
             event_file.write_text(
-                json.dumps(payload, ensure_ascii=False), encoding="utf-8",
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
             )
         except Exception:
             logger.debug("Failed to emit live event", exc_info=True)
@@ -222,9 +255,7 @@ class ActivityLogger(
             if not path.exists():
                 continue
             try:
-                for line_num, line in enumerate(
-                    path.read_text(encoding="utf-8").splitlines(), start=1
-                ):
+                for line_num, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
                     line = line.strip()
                     if not line:
                         continue
@@ -236,6 +267,12 @@ class ActivityLogger(
                         continue
                     if involving and not self._involves(raw, involving):
                         continue
+                    if "timestamp" in raw and "ts" not in raw:
+                        raw["ts"] = raw.pop("timestamp")
+                    if "from" in raw:
+                        raw["from_person"] = raw.pop("from")
+                    if "to" in raw:
+                        raw["to_person"] = raw.pop("to")
                     if cutoff:
                         try:
                             ts = datetime.fromisoformat(raw.get("ts", ""))
@@ -245,17 +282,10 @@ class ActivityLogger(
                                 continue
                         except (ValueError, TypeError):
                             logger.debug("Failed to parse timestamp for cutoff filtering", exc_info=True)
-                    if "from" in raw:
-                        raw["from_person"] = raw.pop("from")
-                    if "to" in raw:
-                        raw["to_person"] = raw.pop("to")
-                    entry = ActivityEntry(**{
-                        k: v for k, v in raw.items()
-                        if k in ActivityEntry.__dataclass_fields__
-                    })
+                    entry = ActivityEntry(**{k: v for k, v in raw.items() if k in ActivityEntry.__dataclass_fields__})
                     entry._line_number = line_num
                     entries.append(entry)
-            except Exception:
+            except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
                 logger.exception("Failed to read activity log %s", path)
 
         entries.sort(key=lambda e: e.ts)
@@ -281,7 +311,9 @@ class ActivityLogger(
             List of :class:`ActivityEntry` in chronological order.
         """
         entries = self._load_entries(
-            days=days, types=types, involving=involving,
+            days=days,
+            types=types,
+            involving=involving,
         )
 
         if len(entries) > limit:
@@ -316,7 +348,10 @@ class ActivityLogger(
         offset = max(0, offset)
 
         all_entries = self._load_entries(
-            days=days, hours=hours, types=types, involving=involving,
+            days=days,
+            hours=hours,
+            types=types,
+            involving=involving,
         )
         total = len(all_entries)
 
@@ -333,7 +368,7 @@ class ActivityLogger(
             )
 
         limit = min(limit, 500)
-        page = all_entries[offset:offset + limit]
+        page = all_entries[offset : offset + limit]
 
         return ActivityPage(
             entries=page,

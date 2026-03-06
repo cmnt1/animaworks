@@ -1278,6 +1278,7 @@ class TestRAGFilter:
             query="test query",
             anima_name="test-anima",
             memory_type="knowledge",
+            enable_spreading_activation=False,
         )
 
         # Verify filter_metadata was passed with valid_until=""
@@ -1304,6 +1305,7 @@ class TestRAGFilter:
             anima_name="test-anima",
             memory_type="knowledge",
             include_superseded=True,
+            enable_spreading_activation=False,
         )
 
         call_kwargs = mock_store.query.call_args
@@ -1327,6 +1329,7 @@ class TestRAGFilter:
             query="test query",
             anima_name="test-anima",
             memory_type="episodes",
+            enable_spreading_activation=False,
         )
 
         call_kwargs = mock_store.query.call_args

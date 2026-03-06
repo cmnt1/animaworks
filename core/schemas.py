@@ -1,43 +1,48 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 #
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
-
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field
 
 from core.config.models import DEFAULT_ANIMA_MODEL
-
 from core.time_utils import now_jst
 
-
 # ── Skill Metadata ────────────────────────────────────────
+
 
 @dataclass
 class SkillMeta:
     """Metadata extracted from a skill file's YAML frontmatter."""
 
-    name: str           # frontmatter の name（なければファイル名 stem）
-    description: str    # frontmatter の description（なければ空文字列）
-    path: Path          # ファイルパス
-    is_common: bool     # common_skills/ に配置されているか
+    name: str  # frontmatter の name（なければファイル名 stem）
+    description: str  # frontmatter の description（なければ空文字列）
+    path: Path  # ファイルパス
+    is_common: bool  # common_skills/ に配置されているか
     allowed_tools: list[str] = field(default_factory=list)  # frontmatter の allowed_tools
 
 
 # ── Emotion Constants ─────────────────────────────────────
 
-VALID_EMOTIONS: frozenset[str] = frozenset({
-    "neutral", "smile", "laugh", "troubled",
-    "surprised", "thinking", "embarrassed",
-})
+VALID_EMOTIONS: frozenset[str] = frozenset(
+    {
+        "neutral",
+        "smile",
+        "laugh",
+        "troubled",
+        "surprised",
+        "thinking",
+        "embarrassed",
+    }
+)
 
 
 class CronTask(BaseModel):
@@ -52,6 +57,7 @@ class CronTask(BaseModel):
         - command: Bash command to execute
         - OR tool + args: Internal tool to invoke
     """
+
     name: str
     schedule: str
     type: str = "llm"  # "llm" or "command"
@@ -83,6 +89,8 @@ class ModelConfig(BaseModel):
     thinking: bool | None = None  # Extended thinking (Bedrock: reasoning_effort, Ollama: think param)
     thinking_effort: str | None = None  # "low"/"medium"/"high"/"max" (default: "high")
     llm_timeout: int | None = None  # LLM API呼び出しタイムアウト（秒）
+    background_model: str | None = None  # heartbeat/cron override model
+    background_credential: str | None = None  # credential for background_model
     extra_keys: dict[str, str] = {}  # provider-specific credential keys (e.g. api_version, vertex_project)
     mode_s_auth: str | None = None  # Mode S auth: "max"|"api"|"bedrock"|"vertex"|None(=max)
 
@@ -99,10 +107,12 @@ class AnimaConfig(BaseModel):
     model_config_data: ModelConfig = Field(default_factory=ModelConfig)
 
 
+EXTERNAL_PLATFORM_SOURCES: frozenset[str] = frozenset({"slack", "chatwork"})
+"""Message ``source`` values representing external platforms (Slack, Chatwork, etc.)."""
+
+
 class Message(BaseModel):
-    id: str = Field(
-        default_factory=lambda: now_jst().strftime("%Y%m%d_%H%M%S_%f")
-    )
+    id: str = Field(default_factory=lambda: now_jst().strftime("%Y%m%d_%H%M%S_%f"))
     thread_id: str = ""  # conversation thread (empty = new thread)
     reply_to: str = ""  # id of message being replied to
     from_person: str
@@ -123,6 +133,26 @@ class Message(BaseModel):
     origin_chain: list[str] = Field(default_factory=list)
 
 
+# ── Shared TypedDicts ────────────────────────────────────────
+
+
+class ImageData(TypedDict):
+    """Base64-encoded image payload used across core and server layers."""
+
+    data: str  # Base64 encoded (no data: prefix)
+    media_type: str  # "image/jpeg", "image/png", etc.
+
+
+class ToolCallRecordDict(TypedDict):
+    """Serialised form of :class:`core.execution.base.ToolCallRecord`."""
+
+    tool_name: str
+    tool_id: str
+    input_summary: str
+    result_summary: str
+    is_error: bool
+
+
 class CycleResult(BaseModel):
     trigger: str
     action: str
@@ -133,7 +163,7 @@ class CycleResult(BaseModel):
     context_usage_ratio: float = 0.0
     session_chained: bool = False
     total_turns: int = 0
-    tool_call_records: list[dict] = Field(default_factory=list)
+    tool_call_records: list[ToolCallRecordDict] = Field(default_factory=list)
     images: list[dict[str, str]] = Field(default_factory=list)
     usage: dict[str, int] | None = None
 

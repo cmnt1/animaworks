@@ -169,14 +169,8 @@ class TestFormatResults:
 
 
 class TestGetToolSchemas:
-    def test_returns_list(self):
+    def test_returns_empty_list(self):
+        """External tool modules return empty schema lists (schemas from dispatch layer)."""
         schemas = get_tool_schemas()
         assert isinstance(schemas, list)
-        assert len(schemas) == 1
-
-    def test_schema_structure(self):
-        schema = get_tool_schemas()[0]
-        assert schema["name"] == "web_search"
-        assert "input_schema" in schema
-        assert "query" in schema["input_schema"]["properties"]
-        assert "query" in schema["input_schema"]["required"]
+        assert schemas == []

@@ -85,7 +85,7 @@ Run `/invite @BotName` in each channel where you want to receive messages.
 
 ## 2. Credential Configuration (AnimaWorks Side)
 
-Credentials are resolved in the following priority order: `config.json` → `shared/credentials.json` → environment variables.
+Credentials are resolved in the following priority order: `config.json` → vault → `shared/credentials.json` → environment variables.
 
 Set the following keys in `~/.animaworks/shared/credentials.json`:
 
@@ -103,6 +103,10 @@ Set the following keys in `~/.animaworks/shared/credentials.json`:
 
 Environment variables can also be used. Credentials can also be configured in the `credentials` section of `config.json`. `SLACK_APP_TOKEN` is not required for Webhook mode.
 
+**Per-Anima Bot**: Use `SLACK_BOT_TOKEN__{anima_name}` and `SLACK_APP_TOKEN__{anima_name}` to configure a dedicated Bot for each Anima. Add these to vault or `shared/credentials.json`.
+
+**Webhook mode with app_id_mapping**: Configure Per-Anima signing secret as `SLACK_SIGNING_SECRET__{anima_name}`.
+
 ## 3. config.json Configuration
 
 Add the `external_messaging` section to `~/.animaworks/config.json`:
@@ -115,7 +119,9 @@ Add the `external_messaging` section to `~/.animaworks/config.json`:
       "mode": "socket",
       "anima_mapping": {
         "C0ACT663B5L": "sakura"
-      }
+      },
+      "default_anima": "",
+      "app_id_mapping": {}
     }
   }
 }
@@ -127,7 +133,9 @@ Add the `external_messaging` section to `~/.animaworks/config.json`:
 |-----|------|---------|-------------|
 | `enabled` | bool | `false` | Enable/disable Slack message reception |
 | `mode` | string | `"socket"` | `"socket"` (recommended) or `"webhook"` |
-| `anima_mapping` | object | `{}` | Mapping of Slack channel IDs to Anima names |
+| `anima_mapping` | object | `{}` | Mapping of Slack channel IDs to Anima names (for shared Bot) |
+| `default_anima` | string | `""` | Fallback Anima when channel is not in anima_mapping |
+| `app_id_mapping` | object | `{}` | Slack API App ID → Anima name (for Webhook mode with multiple Apps) |
 
 ### Finding the Channel ID
 
@@ -139,6 +147,19 @@ Right-click a channel name in Slack, select "View channel details", and find the
 |------|---------------------|------------|----------|
 | `socket` | Server → Slack (WebSocket) | Not required | Servers behind NAT (recommended) |
 | `webhook` | Slack → Server (HTTP POST) | Required | Public-facing servers |
+
+### Per-Anima Bot (Socket Mode)
+
+You can configure a dedicated Slack Bot for each Anima. Add `SLACK_BOT_TOKEN__{anima_name}` and `SLACK_APP_TOKEN__{anima_name}` to vault or `shared/credentials.json` to start a Socket Mode connection dedicated to that Anima. Per-Anima Bot does not require channel mapping; all messages are delivered to that Anima's inbox.
+
+```json
+{
+  "SLACK_BOT_TOKEN__sakura": "xoxb-...",
+  "SLACK_APP_TOKEN__sakura": "xapp-..."
+}
+```
+
+Per-Anima Bot and shared Bot (`SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN`) can be used together. The shared Bot performs channel-based routing via `anima_mapping` and `default_anima`.
 
 ### Additional Webhook Mode Configuration
 
@@ -160,6 +181,8 @@ When `mode: "webhook"`, the following is required:
 
 The Signing Secret can be found in the Slack App admin console under "Basic Information" → "App Credentials".
 
+**Using multiple Slack Apps (app_id_mapping)**: Prepare a dedicated Slack App for each Anima and set `app_id_mapping` with `api_app_id → Anima name`. The api_app_id can be found in the Slack App admin console under "Basic Information" (ID starting with `A`). In that case, use Per-Anima signing secret `SLACK_SIGNING_SECRET__{anima_name}`.
+
 ## 4. Restart the Server
 
 ```bash
@@ -169,8 +192,11 @@ animaworks start
 If the following appears in the startup log, the connection was successful:
 
 ```
-INFO  animaworks.slack_socket: Slack Socket Mode connected
+INFO  animaworks.slack_socket: Shared Slack bot registered (bot_uid=U...)
+INFO  animaworks.slack_socket: Slack Socket Mode connected (1 handler(s))
 ```
+
+When Per-Anima Bot is configured, `Per-Anima Slack bot registered: {name} (bot_uid=U...)` is also displayed.
 
 When disabled, or when `mode: "webhook"`:
 
@@ -185,20 +211,24 @@ In Webhook mode, Socket Mode does not start; events are received via the HTTP en
 1. A Slack user sends a message in a mapped channel
 2. Slack sends the event via WebSocket (Socket Mode) or HTTP POST (Webhook)
 3. **call_human thread reply**: If the message is a thread reply and mapped via `route_thread_reply`, it is routed to the original Anima's inbox that sent the notification (`core/notification/reply_routing.py`)
-4. Otherwise: Resolve channel ID → Anima name via `anima_mapping`
-5. `Messenger.receive_external()` places the message at `~/.animaworks/shared/inbox/{anima_name}/{msg_id}.json`
-6. The Anima processes the inbox on its next run cycle (heartbeat/cron/manual)
+4. **Routing resolution**:
+   - **Socket Mode Per-Anima Bot**: All messages to that Bot are delivered directly to the corresponding Anima
+   - **Socket Mode shared Bot**: `anima_mapping.get(channel_id) or default_anima`
+   - **Webhook**: Get Anima via `app_id_mapping.get(api_app_id)` → if not found, use `anima_mapping.get(channel_id) or default_anima`
+5. **Intent detection**: For DM or Bot mention, `intent="question"` is attached (`_detect_slack_intent`)
+6. `Messenger.receive_external()` places the message at `~/.animaworks/shared/inbox/{anima_name}/{msg_id}.json`
+7. The Anima processes the inbox on its next run cycle (heartbeat/cron/manual)
 
 ## Related Files
 
 | File | Role |
 |------|------|
-| `server/slack_socket.py` | SlackSocketModeManager implementation (Socket Mode) |
-| `server/app.py:141-150, 245-246` | Start/stop within lifespan |
-| `server/routes/webhooks.py:64-127` | Webhook endpoint (`/api/webhooks/slack/events`, when mode=webhook) |
+| `server/slack_socket.py` | SlackSocketModeManager implementation (Socket Mode, supports both Per-Anima and shared Bot) |
+| `server/app.py:174-183, 310-312` | Start/stop within lifespan |
+| `server/routes/webhooks.py:78-183` | Webhook endpoint (`/api/webhooks/slack/events`, when mode=webhook; supports app_id_mapping and default_anima) |
 | `core/messenger.py` | `receive_external()` — inbox placement |
 | `core/notification/reply_routing.py` | call_human thread reply routing to Anima |
-| `core/config/models.py:177-192` | `ExternalMessagingChannelConfig` / `ExternalMessagingConfig` model |
+| `core/config/models.py:181-189` | `ExternalMessagingChannelConfig` / `ExternalMessagingConfig` model |
 | `core/tools/slack.py` | Polling-based tools (send/messages/unreplied — coexists) |
 
 ## Troubleshooting
@@ -212,12 +242,13 @@ In Webhook mode, Socket Mode does not start; events are received via the HTTP en
 ### Messages Are Not Received
 
 - Verify that the channel IDs in `anima_mapping` are correct
+- If `default_anima` is set, confirm that the fallback target is enabled
 - Confirm that the Bot has been invited to the target channel
-- Check the server logs for `"No anima mapping for channel"` (Socket Mode) or `"No anima mapping for Slack channel"` (Webhook)
+- Check the server logs for `"No anima mapping for channel"` (Socket Mode) or `"No anima mapping for Slack channel %s and no default_anima"` (Webhook)
 
 ### Webhook Mode Signature Error (400 Invalid signature)
 
-- Verify that `SLACK_SIGNING_SECRET` is configured
+- Verify that `SLACK_SIGNING_SECRET` (shared) or `SLACK_SIGNING_SECRET__{anima_name}` (when using app_id_mapping) is configured
 - Confirm it matches the Signing Secret in "Basic Information" → "App Credentials" of the Slack App admin console
 - Check the server logs for `"SLACK_SIGNING_SECRET not configured"`
 

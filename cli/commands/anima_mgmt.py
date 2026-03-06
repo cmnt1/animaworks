@@ -33,10 +33,7 @@ def cmd_anima_restart(args: argparse.Namespace) -> None:
     gateway_url = args.gateway_url or "http://localhost:18500"
 
     try:
-        response = requests.post(
-            f"{gateway_url}/api/animas/{args.anima}/restart",
-            timeout=30.0
-        )
+        response = requests.post(f"{gateway_url}/api/animas/{args.anima}/restart", timeout=30.0)
         response.raise_for_status()
         result = response.json()
         print(f"Anima '{args.anima}' restarted successfully")
@@ -126,19 +123,13 @@ def cmd_anima_status(args: argparse.Namespace) -> None:
         # Get status from API
         if args.anima:
             # Specific anima
-            response = requests.get(
-                f"{gateway_url}/api/animas/{args.anima}",
-                timeout=10.0
-            )
+            response = requests.get(f"{gateway_url}/api/animas/{args.anima}", timeout=10.0)
             response.raise_for_status()
             data = response.json()
             _print_anima_status(args.anima, data.get("status", {}))
         else:
             # All animas
-            response = requests.get(
-                f"{gateway_url}/api/animas",
-                timeout=10.0
-            )
+            response = requests.get(f"{gateway_url}/api/animas", timeout=10.0)
             response.raise_for_status()
             animas = response.json()
 
@@ -149,10 +140,7 @@ def cmd_anima_status(args: argparse.Namespace) -> None:
                 name = anima.get("name", "unknown")
                 # Get individual status
                 try:
-                    status_resp = requests.get(
-                        f"{gateway_url}/api/animas/{name}",
-                        timeout=5.0
-                    )
+                    status_resp = requests.get(f"{gateway_url}/api/animas/{name}", timeout=5.0)
                     status_resp.raise_for_status()
                     data = status_resp.json()
                     _print_anima_status(name, data.get("status", {}))
@@ -181,17 +169,17 @@ def _print_anima_status(name: str, status: dict) -> None:
     print(f"  PID: {status.get('pid', 'N/A')}")
     print(f"  Status: {status.get('status', 'unknown')}")
 
-    if status.get('uptime_sec'):
-        uptime = status['uptime_sec']
+    if status.get("uptime_sec"):
+        uptime = status["uptime_sec"]
         hours = int(uptime // 3600)
         minutes = int((uptime % 3600) // 60)
         seconds = int(uptime % 60)
         print(f"  Uptime: {hours}h {minutes}m {seconds}s")
 
-    if status.get('restart_count'):
+    if status.get("restart_count"):
         print(f"  Restarts: {status['restart_count']}")
 
-    if status.get('current_task'):
+    if status.get("current_task"):
         print(f"  Current task: {status['current_task']}")
 
 
@@ -213,6 +201,7 @@ def _read_model_from_status_json(anima_dir: Path) -> tuple[str, str]:
         if not mode and model:
             try:
                 from core.config.models import load_config, resolve_execution_mode
+
                 mode = resolve_execution_mode(load_config(), model)
             except Exception:
                 pass
@@ -251,8 +240,10 @@ def cmd_anima_info(args: argparse.Namespace) -> None:
     explicit_mode = data.get("execution_mode", "")
     try:
         from core.config.models import load_config, resolve_execution_mode
+
         mode = resolve_execution_mode(
-            load_config(), model if model != "-" else "",
+            load_config(),
+            model if model != "-" else "",
             explicit_override=explicit_mode or None,
         )
     except Exception:
@@ -298,8 +289,8 @@ def cmd_anima_delete(args: argparse.Namespace) -> None:
     import requests
 
     from core.config.models import unregister_anima_from_config
-    from core.time_utils import now_jst
     from core.paths import get_animas_dir, get_data_dir
+    from core.time_utils import now_jst
 
     name = args.anima
     data_dir = get_data_dir()
@@ -313,9 +304,7 @@ def cmd_anima_delete(args: argparse.Namespace) -> None:
 
     # Confirmation prompt
     if not args.force:
-        answer = input(
-            f"Are you sure you want to delete anima '{name}'? [y/N] "
-        )
+        answer = input(f"Are you sure you want to delete anima '{name}'? [y/N] ")
         if answer.strip().lower() != "y":
             print("Aborted.")
             return
@@ -358,10 +347,7 @@ def cmd_anima_delete(args: argparse.Namespace) -> None:
             try:
                 status_data = json.loads(status_file.read_text(encoding="utf-8"))
                 if status_data.get("supervisor") == name:
-                    print(
-                        f"Warning: Anima '{other_dir.name}' has "
-                        f"deleted anima '{name}' as supervisor"
-                    )
+                    print(f"Warning: Anima '{other_dir.name}' has deleted anima '{name}' as supervisor")
             except Exception:
                 pass
 
@@ -519,8 +505,7 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
         if defaults_path.is_file():
             try:
                 role_defaults = json.loads(defaults_path.read_text(encoding="utf-8"))
-                for key in ("model", "context_threshold", "max_turns", "max_chains",
-                            "conversation_history_threshold"):
+                for key in ("model", "context_threshold", "max_turns", "max_chains", "conversation_history_threshold"):
                     if key in role_defaults:
                         status_data[key] = role_defaults[key]
             except Exception:
@@ -597,7 +582,9 @@ def cmd_anima_set_model(args: argparse.Namespace) -> None:
             print(f"Updated model for {updated} anima(s) to '{model}'")
         else:
             if not args.anima or not args.model:
-                print("Error: anima name and model are required (e.g. animaworks anima set-model hinata claude-sonnet-4-6)")
+                print(
+                    "Error: anima name and model are required (e.g. animaworks anima set-model hinata claude-sonnet-4-6)"
+                )
                 sys.exit(1)
             anima_dir = animas_dir / args.anima
             if not anima_dir.exists():
@@ -618,6 +605,442 @@ def cmd_anima_set_model(args: argparse.Namespace) -> None:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def cmd_anima_set_background_model(args: argparse.Namespace) -> None:
+    """Set an anima's background model for heartbeat/cron (updates status.json)."""
+    from core.config.models import update_status_model
+    from core.paths import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+        animas_dir = data_dir / "animas"
+        pid_file = data_dir / "server.pid"
+
+        if args.clear:
+            if args.all:
+                updated = 0
+                for entry in sorted(animas_dir.iterdir()):
+                    if not entry.is_dir():
+                        continue
+                    status_file = entry / "status.json"
+                    if not status_file.exists():
+                        continue
+                    try:
+                        status_data = json.loads(status_file.read_text(encoding="utf-8"))
+                        if not status_data.get("enabled", True):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        update_status_model(
+                            entry,
+                            background_model="",
+                            background_credential="",
+                        )
+                        updated += 1
+                        print(f"  {entry.name}: background_model cleared")
+                    except Exception as e:
+                        print(f"  {entry.name}: ERROR - {e}", file=sys.stderr)
+                if updated == 0:
+                    print("No enabled animas found.")
+                    return
+                print(f"Cleared background_model for {updated} anima(s)")
+            else:
+                name = args.anima
+                if not name:
+                    print("Error: anima name is required (or use --all)")
+                    sys.exit(1)
+                anima_dir = animas_dir / name
+                if not anima_dir.exists():
+                    print(f"Error: Anima '{name}' not found")
+                    sys.exit(1)
+                update_status_model(
+                    anima_dir,
+                    background_model="",
+                    background_credential="",
+                )
+                print(f"Cleared background_model for '{name}'")
+        elif args.all:
+            model = args.model or args.anima
+            if not model:
+                print("Error: model is required (e.g. animaworks anima set-background-model claude-sonnet-4-6 --all)")
+                sys.exit(1)
+            credential = args.credential
+            updated = 0
+            for entry in sorted(animas_dir.iterdir()):
+                if not entry.is_dir():
+                    continue
+                status_file = entry / "status.json"
+                if not status_file.exists():
+                    continue
+                try:
+                    status_data = json.loads(status_file.read_text(encoding="utf-8"))
+                    if not status_data.get("enabled", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    kwargs: dict = {"background_model": model}
+                    if credential:
+                        kwargs["background_credential"] = credential
+                    update_status_model(entry, **kwargs)
+                    updated += 1
+                    print(f"  {entry.name}: background_model={model}")
+                except Exception as e:
+                    print(f"  {entry.name}: ERROR - {e}", file=sys.stderr)
+            if updated == 0:
+                print("No enabled animas found.")
+                return
+            print(f"Updated background_model for {updated} anima(s) to '{model}'")
+        else:
+            if not args.anima or not args.model:
+                print(
+                    "Error: anima name and model are required "
+                    "(e.g. animaworks anima set-background-model hinata claude-sonnet-4-6)"
+                )
+                sys.exit(1)
+            anima_dir = animas_dir / args.anima
+            if not anima_dir.exists():
+                print(f"Error: Anima '{args.anima}' not found")
+                sys.exit(1)
+            kwargs_update: dict = {"background_model": args.model}
+            if args.credential:
+                kwargs_update["background_credential"] = args.credential
+            update_status_model(anima_dir, **kwargs_update)
+            print(f"Background model updated to '{args.model}' for '{args.anima}'")
+
+        if pid_file.exists():
+            print("  Server is running. Restart animas to apply changes (animaworks anima restart <name>).")
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_anima_audit(args: argparse.Namespace) -> None:
+    """Audit a subordinate anima's recent activity."""
+    from collections import Counter
+
+    from core.memory.activity import ActivityLogger
+    from core.paths import get_animas_dir
+
+    name: str = args.anima
+    days: int = max(1, min(getattr(args, "days", 1), 30))
+    animas_dir = get_animas_dir()
+    anima_dir = animas_dir / name
+
+    if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        print(f"Error: Anima '{name}' not found")
+        sys.exit(1)
+
+    # ── Overview ──
+    status_file = anima_dir / "status.json"
+    process_status = "unknown"
+    model_name = "unknown"
+    role = "-"
+    if status_file.exists():
+        try:
+            sdata = json.loads(status_file.read_text(encoding="utf-8"))
+            process_status = "enabled" if sdata.get("enabled", True) else "disabled"
+            model_name = sdata.get("model", "unknown")
+            role = sdata.get("role", "-")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    print(f"=== Audit Report: {name} ===")
+    print(f"Period: last {days} day(s)")
+    print(f"Status: {process_status}")
+    print(f"Model: {model_name}")
+    print(f"Role: {role}")
+    print()
+
+    # ── Activity summary ──
+    al = ActivityLogger(anima_dir)
+    _ENTRY_LIMIT = 10_000
+    entries = al.recent(days=days, limit=_ENTRY_LIMIT)
+
+    print("--- Activity Summary ---")
+    if entries:
+        type_counts: Counter[str] = Counter()
+        for e in entries:
+            type_counts[e.type] += 1
+        print(f"Total events: {len(entries)}")
+        for etype, count in type_counts.most_common():
+            print(f"  {etype}: {count}")
+    else:
+        print("No activity found.")
+    print()
+
+    # ── Task status ──
+    print("--- Task Status ---")
+    task_file = anima_dir / "state" / "current_task.md"
+    if task_file.exists():
+        try:
+            task_text = task_file.read_text(encoding="utf-8").strip()
+            print(f"Current task: {task_text[:200] if task_text else '(none)'}")
+        except Exception:
+            print("Current task: (unreadable)")
+    else:
+        print("Current task: (none)")
+
+    try:
+        from core.memory.task_queue import TaskQueueManager
+
+        tqm = TaskQueueManager(anima_dir)
+        active = tqm.get_all_active()
+        done_tasks = tqm.list_tasks(status="done")
+        print(f"Active tasks: {len(active)}")
+        print(f"Completed tasks: {len(done_tasks)}")
+    except Exception:
+        print("Active tasks: 0")
+        print("Completed tasks: 0")
+    print()
+
+    # ── Errors ──
+    print("--- Errors ---")
+    error_entries = [e for e in entries if e.type == "error"]
+    print(f"Error count: {len(error_entries)}")
+    if error_entries:
+        for e in error_entries[-5:]:
+            summary = e.summary or (e.content[:100] if e.content else "")
+            print(f"  [{e.ts[:16]}] {summary}")
+    print()
+
+    # ── Tool usage ──
+    print("--- Tool Usage ---")
+    tool_entries = [e for e in entries if e.type == "tool_use" and e.tool]
+    if tool_entries:
+        tool_counts: Counter[str] = Counter()
+        for e in tool_entries:
+            tool_counts[e.tool] += 1
+        for tool, count in tool_counts.most_common(10):
+            print(f"  {tool}: {count}")
+    else:
+        print("No tool usage.")
+    print()
+
+    # ── Communication ──
+    print("--- Communication ---")
+    sent = [e for e in entries if e.type in ("message_sent", "dm_sent")]
+    received = [e for e in entries if e.type in ("message_received", "dm_received")]
+    if sent or received:
+        print(f"Messages sent: {len(sent)}")
+        print(f"Messages received: {len(received)}")
+        peer_sent: Counter[str] = Counter()
+        peer_recv: Counter[str] = Counter()
+        for e in sent:
+            peer_sent[e.to_person or "unknown"] += 1
+        for e in received:
+            peer_recv[e.from_person or "unknown"] += 1
+        all_peers = sorted(set(peer_sent) | set(peer_recv))
+        for peer in all_peers:
+            print(f"  {peer}: sent={peer_sent.get(peer, 0)}, received={peer_recv.get(peer, 0)}")
+    else:
+        print("No communication.")
+
+
+def cmd_anima_rename(args: argparse.Namespace) -> None:
+    """Rename an anima (directory, config, references)."""
+    import requests
+
+    from core.anima_factory import validate_anima_name
+    from core.config.models import rename_anima_in_config
+    from core.paths import get_animas_dir, get_data_dir
+
+    old_name: str = args.old_name
+    new_name: str = args.new_name
+    data_dir = get_data_dir()
+    animas_dir = get_animas_dir()
+    old_dir = animas_dir / old_name
+    new_dir = animas_dir / new_name
+    shared_dir = data_dir / "shared"
+    gateway_url = getattr(args, "gateway_url", None) or "http://localhost:18500"
+
+    # ── Validation ──
+    if old_name == new_name:
+        print("Error: Old and new names are the same")
+        sys.exit(1)
+
+    if not old_dir.exists() or not (old_dir / "identity.md").exists():
+        print(f"Error: Anima '{old_name}' not found (missing identity.md)")
+        sys.exit(1)
+
+    if new_dir.exists():
+        print(f"Error: Anima '{new_name}' already exists")
+        sys.exit(1)
+
+    name_err = validate_anima_name(new_name)
+    if name_err:
+        print(f"Error: {name_err}")
+        sys.exit(1)
+
+    # ── Confirmation ──
+    if not args.force:
+        answer = input(f"Rename anima '{old_name}' → '{new_name}'? [y/N] ")
+        if answer.strip().lower() != "y":
+            print("Aborted.")
+            return
+
+    print(f"Renaming anima '{old_name}' → '{new_name}'...")
+
+    # ── Server check: disable old anima if running ──
+    pid_file = data_dir / "server.pid"
+    server_running = pid_file.exists()
+    if server_running:
+        try:
+            requests.post(
+                f"{gateway_url}/api/animas/{old_name}/disable",
+                timeout=10,
+            )
+            print(f"  Stopped anima process '{old_name}'")
+        except Exception as e:
+            logger.warning("Failed to disable anima via API: %s", e)
+
+    rollback_needed = False
+    try:
+        # ── Filesystem: rename anima directory ──
+        old_dir.rename(new_dir)
+        rollback_needed = True
+        print(f"  Renamed directory: animas/{old_name} → animas/{new_name}")
+
+        # ── Filesystem: rename inbox ──
+        old_inbox = shared_dir / "inbox" / old_name
+        if old_inbox.exists():
+            new_inbox = shared_dir / "inbox" / new_name
+            old_inbox.rename(new_inbox)
+            print(f"  Renamed inbox: shared/inbox/{old_name} → shared/inbox/{new_name}")
+
+        # ── Filesystem: rename DM logs ──
+        dm_count = _rename_dm_logs(shared_dir, old_name, new_name)
+        if dm_count:
+            print(f"  Renamed {dm_count} DM log file(s)")
+
+        # ── Filesystem: clean up stale socket/pid ──
+        run_dir = data_dir / "run"
+        for stale in (
+            run_dir / "sockets" / f"{old_name}.sock",
+            run_dir / "animas" / f"{old_name}.pid",
+        ):
+            if stale.exists():
+                stale.unlink(missing_ok=True)
+
+        # ── Config: update config.json ──
+        try:
+            sup_count = rename_anima_in_config(data_dir, old_name, new_name)
+            parts = ["key"]
+            if sup_count:
+                parts.append(f"{sup_count} supervisor reference(s)")
+            print(f"  Updated config.json ({' + '.join(parts)})")
+        except Exception as e:
+            print(f"  Warning: Failed to update config.json: {e}")
+
+        # ── Config: update status.json supervisor refs ──
+        status_updated = 0
+        for other_dir in animas_dir.iterdir():
+            if not other_dir.is_dir():
+                continue
+            status_file = other_dir / "status.json"
+            if not status_file.exists():
+                continue
+            try:
+                status_data = json.loads(status_file.read_text(encoding="utf-8"))
+                if status_data.get("supervisor") == old_name:
+                    status_data["supervisor"] = new_name
+                    tmp = status_file.with_suffix(".tmp")
+                    tmp.write_text(
+                        json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8",
+                    )
+                    tmp.replace(status_file)
+                    status_updated += 1
+            except Exception:
+                pass
+        if status_updated:
+            print(f"  Updated status.json for {status_updated} anima(s) with supervisor reference")
+
+        # ── RAG: cleanup old collections ──
+        _cleanup_rag_collections(new_dir, old_name)
+        print("  Cleared RAG index (will re-index on next startup)")
+
+        # ── Server: reload + restart ──
+        if server_running:
+            try:
+                requests.post(f"{gateway_url}/api/system/reload", timeout=10)
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{gateway_url}/api/animas/{new_name}/enable",
+                    timeout=10,
+                )
+                requests.post(
+                    f"{gateway_url}/api/animas/{new_name}/restart",
+                    timeout=30,
+                )
+                print(f"  Restarted anima '{new_name}'")
+            except Exception as e:
+                logger.warning("Failed to restart renamed anima: %s", e)
+
+    except OSError as e:
+        if rollback_needed and new_dir.exists() and not old_dir.exists():
+            try:
+                new_dir.rename(old_dir)
+                print("  Rolled back directory rename")
+            except OSError:
+                pass
+        print(f"Error: Failed to rename: {e}")
+        sys.exit(1)
+
+    print(f"Anima renamed successfully: {old_name} → {new_name}")
+
+
+def _rename_dm_logs(shared_dir: Path, old_name: str, new_name: str) -> int:
+    """Rename DM log files referencing *old_name*. Returns count of renamed files."""
+    dm_dir = shared_dir / "dm_logs"
+    if not dm_dir.exists():
+        return 0
+    count = 0
+    for f in sorted(dm_dir.glob("*.jsonl")):
+        stem = f.stem
+        parts = stem.split("-", 1)
+        if len(parts) != 2:
+            continue
+        if old_name not in parts:
+            continue
+        new_parts = [new_name if p == old_name else p for p in parts]
+        new_parts.sort()
+        new_path = dm_dir / f"{new_parts[0]}-{new_parts[1]}.jsonl"
+        if new_path.exists():
+            with new_path.open("a", encoding="utf-8") as dst:
+                dst.write(f.read_text(encoding="utf-8"))
+            f.unlink()
+        else:
+            f.rename(new_path)
+        count += 1
+    return count
+
+
+def _cleanup_rag_collections(anima_dir: Path, old_name: str) -> None:
+    """Delete old RAG collections and reset index_meta for re-indexing."""
+    index_meta = anima_dir / "index_meta.json"
+    if index_meta.exists():
+        index_meta.write_text("{}\n", encoding="utf-8")
+
+    try:
+        from core.memory.rag.store import VectorStore
+
+        store = VectorStore(old_name)
+        for suffix in ("knowledge", "episodes", "procedures", "skills", "common_knowledge", "conversation_summary"):
+            collection_name = f"{old_name}_{suffix}"
+            try:
+                store.delete_collection(collection_name)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def cmd_anima_list(args: argparse.Namespace) -> None:

@@ -2,7 +2,7 @@
 
 **[日本語版](brain-mapping.ja.md)**
 
-> Created: 2026-02-19 | Updated: 2026-03-01
+> Created: 2026-02-19 | Updated: 2026-03-05
 > Related: [vision.md](vision.md), [memory.md](memory.md)
 
 ---
@@ -51,7 +51,7 @@ This distinction aligns with the "imperfect individual" design philosophy descri
 | Human Memory | Brain Region | AnimaWorks Implementation | Characteristics |
 |---|---|---|---|
 | **Working memory** | Prefrontal cortex | LLM context window | Capacity-limited. Temporary holding of "what is currently being thought about" |
-| **Episodic memory** | Hippocampus -> neocortex | `episodes/` | Chronological record of "when and what happened" |
+| **Episodic memory** | Hippocampus → neocortex | `episodes/` | Chronological record of "when and what happened" |
 | **Semantic memory** | Temporal cortex | `knowledge/` | Lessons and knowledge decoupled from context |
 | **Procedural memory** | Basal ganglia, cerebellum | `procedures/`, `skills/` | "How to do it." Strengthened through repetition |
 | **Person memory** | Fusiform gyrus, temporal pole | `shared/users/` | Automatic recall of "who is this person" |
@@ -74,7 +74,7 @@ Following Cowan (2005), working memory is understood as a "spotlight on activate
 
 | Recall Pathway | Brain Process | AnimaWorks Implementation |
 |---|---|---|
-| **Automatic recall** | Pattern completion by the CA3 auto-associative network of the hippocampus. Unconscious, fast (250–500 ms), unsuppressible | Priming layer (5-channel parallel search) |
+| **Automatic recall** | Pattern completion by the CA3 auto-associative network of the hippocampus. Unconscious, fast (250–500 ms), unsuppressible | Priming layer (6-channel parallel search) |
 | **Deliberate recall** | Strategic search by the prefrontal cortex (PFC). Conscious, slow | `search_memory` / `read_memory_file` tools |
 
 ### Spreading Activation — Collins & Loftus (1975)
@@ -88,17 +88,18 @@ Following Cowan (2005), working memory is understood as a "spotlight on activate
 
 ### Priming Channels and Dynamic Budget — Selective Attention
 
-The PrimingEngine executes 5-channel parallel memory retrieval, each corresponding to a distinct neurocognitive function:
+The PrimingEngine executes 6-channel parallel memory retrieval, each corresponding to a distinct neurocognitive function:
 
 | Channel | Function | Brain Counterpart | Token Budget |
 |---|---|---|---|
 | A: Sender profile | "Who is talking to me?" | Fusiform face area / temporal pole (person recognition) | 500 |
 | B: Recent activity | "What happened recently?" | Hippocampal replay (recent episode reactivation) | 1300 |
-| C: Related knowledge | "What do I know about this?" | Semantic memory retrieval (temporal cortex) | 700 |
+| C: Related knowledge | "What do I know about this?" | Semantic memory retrieval (temporal cortex) | 1200 |
 | D: Skill matching | "Can I handle this?" | Procedural memory activation (basal ganglia) | 200 |
 | E: Pending tasks | "What am I supposed to be doing?" | Prospective memory / intention monitoring (rostral PFC) | 300 |
+| F: Episodes | "Have I had similar experiences?" | Episodic memory semantic search (hippocampus-cortex) | 500 |
 
-Channel D returns only **skill/procedure names** (progressive disclosure, max 5). Full content is loaded on demand via the `skill` tool. Channel B retrieves recent activity from the unified activity log (`activity_log/`) and shared channels. Channel D is skipped for heartbeat/cron triggers to avoid false matches.
+Channel D returns only **skill/procedure names** (progressive disclosure, max 5). Full content is loaded on demand via the `skill` tool. Channel C splits search results by trust level (medium / untrusted), injecting external-origin knowledge separately. Channel B retrieves recent activity from the unified activity log (`activity_log/`) and shared channels (`shared/channels/`). For heartbeat/cron, tool_use, tool_result, heartbeat_start/end, and inbox_processing_start/end are filtered as noise; only actionable communication events are injected.
 
 In addition, PrimingEngine collects **recent outbound** actions (channel posts and DMs from the last 2 hours, max 3 entries) and injects them into the system prompt. This corresponds to self-monitoring of "what I recently did," contributing to duplicate-send suppression and behavioral consistency. The builder does not read ActivityLogger directly; PrimingEngine serves as the sole activity reader for prompt construction (hippocampus model).
 
@@ -125,6 +126,10 @@ Depending on context window size, `build_system_prompt()` adjusts injected secti
 
 Additionally, section selection depends on the trigger (`chat` / `inbox` / `heartbeat` / `cron` / `task`). Heartbeat and cron omit specialty, emotion, and a_reflection; task runs with minimal context (identity 3 lines + task description only). Controlling "what surfaces in consciousness" per execution path optimizes cognitive load.
 
+#### Unified Activity Log
+
+As the sole data source for Priming Channel B, `ActivityLogger` records all Anima interactions in `{anima_dir}/activity_log/{date}.jsonl` in chronological order. Main event types: `message_received` / `message_sent` (backward compatible with `dm_received` / `dm_sent`), `response_sent`, `channel_read` / `channel_post`, `human_notify`, `tool_use` / `tool_result`, `heartbeat_start` / `heartbeat_end` / `heartbeat_reflection`, `inbox_processing_start` / `inbox_processing_end`, `cron_executed`, `memory_write`, `error`, `issue_resolved`, `task_created` / `task_updated`. Crash resilience for streaming output is provided by the Write-Ahead Log at `shortterm/streaming_journal_{session_type}.jsonl` (separate for chat/heartbeat).
+
 ---
 
 ### Memory Consolidation — Sleep and Integration
@@ -132,10 +137,11 @@ Additionally, section selection depends on the trigger (`chat` / `inbox` / `hear
 | AnimaWorks | Brain Process | Description |
 |---|---|---|
 | **Immediate encoding** (session boundary) | Hippocampal rapid one-shot encoding | At conversation end, a differential summary is recorded in episodes/ |
-| **Daily consolidation** (midnight cron) | NREM slow-wave — spindle — ripple cascade | Knowledge extraction and validation from episodes/ to knowledge/ |
+| **Daily consolidation** (midnight cron) | NREM slow-wave — spindle — ripple cascade | Anima-driven via tools. Knowledge extraction and validation from episodes/ to knowledge/. ConsolidationEngine provides pre-processing (episode collection, issue_resolved collection) and post-processing (RAG index updates) |
+| **issue_resolved → procedure** | Proceduralization of resolutions | Scans activity_log for `issue_resolved` events and generates procedure documents via ProceduralDistiller (`create_procedures_from_resolved`) |
 | **Weekly integration** | Neocortical long-term consolidation | Deduplication and merging of knowledge/, pattern distillation |
 | **NLI + LLM validation** | Hippocampal pattern separation | Hallucination elimination. Consistency verification between episodes and extracted knowledge |
-| **Prediction-error-based reconsolidation** | Reconsolidation theory, Nader et al. (2000) | Updating memory when new information contradicts existing memory |
+| **Prediction-error-based reconsolidation** (`reconsolidation.py`) | Reconsolidation theory, Nader et al. (2000) | LLM revision of procedures with failure counts above threshold. Version control and archival |
 
 ---
 
@@ -147,8 +153,8 @@ Based on the synaptic homeostasis hypothesis of Tononi & Cirelli (2003):
 |---|---|---|
 | **Daily downscaling** | Synaptic downscaling during NREM sleep | Marking of low-activity chunks |
 | **Neurogenesis-inspired reorganization** | Memory circuit reorganization via neurogenesis in the hippocampal dentate gyrus | LLM-driven merging of low-activity + similar chunks |
-| **Complete forgetting** | Elimination of sub-threshold synapses | Archive -> deletion |
-| **Forgetting resistance** (procedures, skills) | Procedural memory in basal ganglia is resistant to forgetting | Protected by version >= 3 or protected: true |
+| **Complete forgetting** (monthly) | Elimination of sub-threshold synapses | Archive → deletion. Procedure version archives keep only the 5 most recent versions |
+| **Forgetting resistance** (procedures, skills, knowledge) | Procedural memory in basal ganglia is resistant to forgetting | procedures: version >= 3 or protected: true, or utility-based protection (low failure rate, high usage). knowledge: success_count >= 2. skills / shared_users: fully protected |
 
 ### Procedural Distillation and Metaplasticity
 
@@ -159,7 +165,7 @@ Beyond the 3-stage forgetting cycle, AnimaWorks implements additional memory sub
 | **Procedural distillation** (`distillation.py`) | Skill consolidation in the basal ganglia-cerebellar circuit | LLM-based classification of episodic memories into knowledge and procedures. Repeated action patterns are detected from activity logs and distilled into reusable procedure files — analogous to how repeated motor sequences become automated through basal ganglia loop consolidation |
 | **Weekly pattern detection** | Metaplasticity (Abraham & Bear, 1996) | Activity log clustering identifies recurrent behavioral patterns across 7-day windows. Represents "learning how to learn" — the system adapts not just memory content but memory formation processes themselves |
 | **RAG duplicate detection** (similarity >= 0.85) | Hippocampal pattern separation | Before saving a new procedure, vector similarity checks prevent redundant encoding — mirroring how the dentate gyrus performs orthogonalization to keep similar memories distinct |
-| **Resolution tracking** (`resolution_tracker.py`) | Organizational long-term memory (transactive memory systems) | Cross-Anima shared resolution log. Records which Anima resolved which issue, enabling organizational knowledge about "who knows what" — corresponding to Wegner's (1987) transactive memory theory |
+| **Resolution tracking** (`resolution_tracker.py`) | Organizational long-term memory (transactive memory systems) | Records cross-Anima shared resolution log in `shared/resolutions.jsonl`. Enables organizational knowledge about "who resolved what" — corresponding to Wegner's (1987) transactive memory theory |
 | **Persistent task queue** (`task_queue.py`) | Prospective memory / working memory extension | Append-only JSONL task queue with deadline tracking and stale-task detection. Extends working memory beyond the context window, like an external notepad for the central executive |
 
 The procedural distillation pipeline operates on two timescales:

@@ -257,16 +257,4 @@ class TestGetToolSchemas:
     def test_returns_schemas(self):
         schemas = get_tool_schemas()
         assert isinstance(schemas, list)
-        assert len(schemas) == 3
-        names = {s["name"] for s in schemas}
-        assert names == {"aws_ecs_status", "aws_error_logs", "aws_metrics"}
-
-    def test_ecs_status_requires_cluster_and_service(self):
-        schemas = get_tool_schemas()
-        ecs = [s for s in schemas if s["name"] == "aws_ecs_status"][0]
-        assert set(ecs["input_schema"]["required"]) == {"cluster", "service"}
-
-    def test_error_logs_requires_log_group(self):
-        schemas = get_tool_schemas()
-        logs = [s for s in schemas if s["name"] == "aws_error_logs"][0]
-        assert "log_group" in logs["input_schema"]["required"]
+        assert len(schemas) == 0

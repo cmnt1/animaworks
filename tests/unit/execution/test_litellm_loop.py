@@ -126,10 +126,26 @@ class TestBuildBaseTools:
         assert "search_code" in names
         assert "list_directory" in names
 
-    def test_includes_discover_tools(self, executor):
+    def test_excludes_use_tool_in_mode_a(self, anima_dir, model_config, memory):
+        """use_tool is NOT included in Mode A (LiteLLM) — Mode B only."""
+        th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["chatwork"])
+        from core.execution.litellm_loop import LiteLLMExecutor
+        ex = LiteLLMExecutor(
+            model_config=model_config,
+            anima_dir=anima_dir,
+            tool_handler=th,
+            tool_registry=["chatwork"],
+            memory=memory,
+        )
+        tools = ex._build_base_tools()
+        names = [t["function"]["name"] for t in tools]
+        assert "use_tool" not in names
+
+    def test_excludes_use_tool_when_tool_registry_empty(self, executor):
+        """use_tool is excluded when tool_registry is empty."""
         tools = executor._build_base_tools()
         names = [t["function"]["name"] for t in tools]
-        assert "discover_tools" in names
+        assert "use_tool" not in names
 
     def test_does_not_include_external_tools(self, executor):
         tools = executor._build_base_tools()
@@ -311,37 +327,31 @@ class TestExecuteWithInvalidJson:
         # and the LLM should have been given a chance to retry
 
 
-# ── execute() — discover_tools ───────────────────────────────
+# ── execute() — use_tool ───────────────────────────────────────
 
 
-class TestDiscoverTools:
-    async def test_discover_tools_lists_categories(self, executor):
-        executor._tool_registry = ["chatwork", "slack"]
-        tc = make_tool_call("discover_tools", {})
+class TestUseTool:
+    async def test_use_tool_in_loop_returns_result(self, anima_dir, model_config, memory):
+        """use_tool is callable in the loop and returns tool result to LLM."""
+        th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["chatwork"])
+        from core.execution.litellm_loop import LiteLLMExecutor
+        ex = LiteLLMExecutor(
+            model_config=model_config,
+            anima_dir=anima_dir,
+            tool_handler=th,
+            tool_registry=["chatwork"],
+            memory=memory,
+        )
+        tc = make_tool_call("use_tool", {"tool_name": "chatwork", "action": "rooms", "args": {}})
         resp_with_tool = make_litellm_response(content="", tool_calls=[tc])
-        resp_final = make_litellm_response(content="Got categories", tool_calls=None)
+        resp_final = make_litellm_response(content="Got rooms", tool_calls=None)
 
-        mock = AsyncMock(side_effect=[resp_with_tool, resp_final])
-        _install_litellm_mock(mock)
-        with patch("litellm.acompletion", mock):
-            result = await executor.execute("test", system_prompt="sys")
-        assert "Got categories" in result.text
-
-    async def test_discover_tools_activates_category(self, executor):
-        executor._tool_registry = ["chatwork"]
-        tc = make_tool_call("discover_tools", {"category": "chatwork"})
-        resp_with_tool = make_litellm_response(content="", tool_calls=[tc])
-        resp_final = make_litellm_response(content="Category active", tool_calls=None)
-
-        mock_schemas = [
-            {"name": "chatwork_send", "description": "Send chatwork", "parameters": {}},
-        ]
         mock = AsyncMock(side_effect=[resp_with_tool, resp_final])
         _install_litellm_mock(mock)
         with patch("litellm.acompletion", mock), \
-             patch("core.execution._litellm_tools.load_external_schemas", return_value=mock_schemas):
-            result = await executor.execute("test", system_prompt="sys")
-        assert "Category active" in result.text
+             patch.object(th, "handle", return_value='{"status": "ok", "rooms": []}'):
+            result = await ex.execute("test", system_prompt="sys")
+        assert "Got rooms" in result.text
 
 
 # ── execute() — tool execution error handling ─────────────

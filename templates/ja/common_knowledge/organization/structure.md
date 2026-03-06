@@ -1,7 +1,7 @@
 # 組織構造の仕組み
 
 AnimaWorks における組織構造は、各 Anima の `status.json`（または `identity.md`）を Single Source of Truth（SSoT）として構築される。
-`core/org_sync.py` がディスク上の値を `config.json` に同期し、プロンプト構築時に利用される。
+`core/org_sync.py` がディスク上の **supervisor** を `config.json` に同期し、プロンプト構築時に利用される。
 本ドキュメントでは、組織構造がどのように定義・解釈・表示されるかを説明する。
 
 ## データソースと優先順位
@@ -11,31 +11,38 @@ AnimaWorks における組織構造は、各 Anima の `status.json`（または
 組織の上下関係は、各 Anima の `supervisor` で定義される。読み取り優先順位:
 
 1. **status.json** — `"supervisor"` キー（推奨）
-2. **identity.md** — 表形式 `| 上司 | name |` の行
+2. **identity.md** — 表形式 `| 上司 | name |` の行（日本語のみ。`core/config/models.py` の `read_anima_supervisor` が解析）
 
-`supervisor` が未設定・空・「なし」等の場合はトップレベル（最上位）となる。
+`supervisor` が未設定・空・「なし」「(なし)」「（なし）」「-」「---」の場合はトップレベル（最上位）となる。
 `config.json` の `animas.<name>.supervisor` は org_sync によって **ディスクから同期される** ため、手動編集は上書きされる。
 
 ### speciality（専門）
 
-専門領域は以下の優先順位で解決される:
+専門領域は `core/prompt/builder.py` の `_scan_all_animas()` により以下の優先順位で解決される:
 
-1. **status.json** — `"speciality"` または `"role"` キー
-2. **config.json** — `animas.<name>.speciality`（フォールバック）
+1. **status.json** — `"speciality"` キー（自由テキスト）
+2. **status.json** — `"role"` キー（`speciality` がない場合のフォールバック。ロール名: engineer, manager, general 等）
+3. **config.json** — `animas.<name>.speciality`（status.json に両方ない場合のフォールバック）
+
+**注意:** org_sync は **speciality を同期しない**。speciality はプロンプト構築時にディスクと config から都度解決される。
+`animaworks anima create --from-md` で作成した Anima は `status.json` に `role` が入るが `speciality` は入らない。
+カスタム表示（例: 「開発リード」）にしたい場合は、`status.json` に `"speciality": "開発リード"` を手動で追加する。
 
 ## org_sync による config.json 同期
 
 `core/org_sync.py` の `sync_org_structure()` が以下を行う:
 
-1. 各 Anima ディレクトリから `status.json` / `identity.md` を読み、supervisor を抽出
+1. 各 Anima ディレクトリ（`identity.md` が存在するもののみ）から `status.json` / `identity.md` を読み、supervisor を抽出（`read_anima_supervisor`）
 2. 循環参照を検出（検出された Anima は同期対象外）
-3. `config.json` の `animas` をディスクの値に合わせて更新
+3. `config.json` の `animas.<name>.supervisor` をディスクの値に合わせて更新（**supervisor のみ**）
 4. ディスク上に存在しない Anima の config エントリを削除（prune）
+
+**同期される項目:** supervisor のみ。speciality は org_sync では更新されない。
 
 **実行タイミング:**
 
-- サーバー起動時（`animaworks start`）
-- Anima が reconciliation で追加されたとき
+- サーバー起動時（`animaworks start` の Anima プロセス起動後）
+- Anima が reconciliation で追加されたとき（`on_anima_added` コールバック）
 
 ## supervisor による階層定義
 
@@ -116,16 +123,16 @@ alice（経営戦略・全体統括）
 組織構造の変更は以下の手順で反映される:
 
 1. 対象 Anima の `status.json` を編集（`supervisor` / `speciality` の変更）
-2. サーバーを再起動するか、次回の org_sync 実行を待つ
-3. org_sync が `config.json` に同期し、次回のプロンプト構築で新しい組織コンテキストが使われる
+2. **supervisor を変更した場合:** サーバーを再起動するか、次回の org_sync 実行を待つ（org_sync が config.json に supervisor を同期）
+3. **speciality を変更した場合:** プロンプト構築時に status.json から都度読み取られるため、サーバー再起動は不要。次回のチャット/ハートビートで反映される
 
 注意点:
-- `config.json` の `animas` を直接編集しても、org_sync 実行時にディスクの値で上書きされる
+- `config.json` の `animas.<name>.supervisor` を直接編集しても、org_sync 実行時にディスクの値で上書きされる（speciality は上書きされない）
 - 組織変更後は、影響を受ける Anima にメッセージで通知することを SHOULD（推奨）
 
 ## 組織構造のパターン例
 
-以下は各 Anima の `status.json` に設定する例。org_sync が config.json に同期する。
+以下は各 Anima の `status.json` に設定する例。org_sync が `supervisor` を config.json に同期する。`speciality` はプロンプト構築時に status.json / config から都度解決される。
 
 ### パターン1: フラット組織
 
@@ -188,11 +195,16 @@ manager（プロジェクト管理）
 
 ## speciality の活用
 
-`speciality` は `status.json` の `speciality` または `role` に自由テキストで記述する。
+`speciality` は `status.json` の `speciality` に自由テキストで記述する。未設定時は `role`（ロール名）がフォールバックとして表示される。
 
-- 組織コンテキストで各 Anima の名前の横に表示される（例: `bob (開発リード)`）
+- 組織コンテキストで各 Anima の名前の横に表示される（例: `bob (開発リード)` または `bob (engineer)`）
 - 他の Anima がタスクの相談先や委任先を判断する手がかりになる
 - 未設定の場合は「(未設定)」と表示される
+
+**Anima 作成時の挙動（`core/anima_factory.py`）:**
+- `animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME]` で作成すると、`status.json` に `supervisor` と `role` が書き込まれる
+- `speciality` はキャラクターシートの基本情報テーブルには含まれず、作成時に自動設定されない
+- カスタム専門表示が必要な場合は、作成後に `status.json` に `"speciality": "開発リード"` 等を手動で追加する
 
 効果的な speciality の書き方:
 - 具体的で短い: `バックエンド開発` `顧客サポート` `データ分析`

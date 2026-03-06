@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -6,7 +7,6 @@ from __future__ import annotations
 """Chatwork API notification channel."""
 
 import logging
-from typing import Any
 
 import httpx
 
@@ -33,13 +33,18 @@ class ChatworkChannel(NotificationChannel):
         *,
         anima_name: str = "",
     ) -> str:
-        token = self._resolve_env("api_token_env")
+        token = self._resolve_credential_with_vault(
+            "api_token_env",
+            anima_name=anima_name,
+            fallback_env="CHATWORK_API_TOKEN",
+        )
         if not token:
             return "chatwork: ERROR - api_token_env not configured or env var not set"
 
         room_id = self._config.get("room_id", "")
         if not room_id:
             return "chatwork: ERROR - room_id not configured"
+        room_id = str(room_id)
         if not room_id.isdigit():
             return "chatwork: ERROR - room_id must be numeric"
 

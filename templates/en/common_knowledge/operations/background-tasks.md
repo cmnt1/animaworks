@@ -1,13 +1,13 @@
-# Background Task Guide
+# Background Task Execution Guide
 
 ## Overview
 
-Some external tools (image generation, 3D model generation, local LLM inference, transcription, etc.)
-take minutes to tens of minutes to run. Running them directly holds the lock during execution
-and blocks message handling and Heartbeat.
+Some external tools (image generation, 3D model generation, local LLM inference, audio transcription, etc.)
+take several minutes to tens of minutes to run. Running them directly holds the lock during execution,
+blocking message reception and heartbeat.
 
 Using `animaworks-tool submit` runs the task in the background so you can
-move on to other work immediately.
+immediately move on to the next task.
 
 ## When to Use submit
 
@@ -24,13 +24,13 @@ Subcommands marked with ⚠ in the tool guide (system prompt):
 Tools that typically finish in under 30 seconds:
 
 - `web_search`, `x_search`
-- `slack`, `chatwork`, `gmail` (normal use)
+- `slack`, `chatwork`, `gmail` (normal operations)
 - `github`, `aws_collector`
 
 ### How to Decide
 
 - ⚠ mark present → Always use submit
-- No ⚠ → Run directly
+- No ⚠ mark → Run directly
 
 ## Usage
 
@@ -58,7 +58,7 @@ animaworks-tool submit transcribe "/path/to/audio.wav" --language ja
 
 ### Return Value
 
-submit returns immediately with JSON and exits:
+submit returns immediately with the following JSON and exits:
 
 ```json
 {
@@ -74,16 +74,18 @@ submit returns immediately with JSON and exits:
 
 1. After submit, the task runs in the background
 2. When finished, the result is written to `state/background_notifications/{task_id}.md`
-3. The next Heartbeat automatically picks up this notification
-4. The notification includes success/failure and a result summary
+3. The next heartbeat automatically picks up this notification
+4. The notification includes success/failure status and a result summary
 
 ## Handling Failures
 
-When the notification says "failed":
-1. Check the error details
-2. Identify cause (missing API key, timeout, bad args, etc.)
-3. Fix and resubmit
-4. If you cannot resolve, report to supervisor
+- When the notification says "failed":
+  1. Check the error details
+  2. Identify the cause (missing API key, timeout, incorrect arguments, etc.)
+  3. Fix and resubmit
+  4. If you cannot resolve, report to your supervisor
+
+- If the process crashes during execution, tasks left in `state/background_tasks/pending/processing/` are automatically moved to `pending/failed/` on the next startup for recovery
 
 ## Common Mistakes
 
@@ -98,18 +100,35 @@ animaworks-tool submit image_gen 3d assets/avatar_chibi.png
 ```
 
 If you ran directly, you must wait for it to finish.
-Use submit next time.
+Always use submit next time.
 
 ### Waiting for results after submit
 
-Do not poll or wait after submit.
-Move on; results are delivered automatically.
+Move on to the next task immediately after submit.
+Results are delivered automatically, so polling or waiting is unnecessary.
 
-## How It Works (Technical)
+## Technical Mechanism (Reference)
+
+### Command-type tasks (animaworks-tool submit)
 
 1. `animaworks-tool submit` writes a task JSON under `state/background_tasks/pending/`
-2. Runner's pending watcher polls this dir every 3 seconds
-3. On detection, BackgroundTaskManager enqueues (runs outside Anima _lock)
-4. BackgroundTaskManager runs it via asyncio.create_task()
-5. On completion, result is written under `state/background_notifications/`
-6. Next Heartbeat processes the notification
+2. PendingTaskExecutor's watcher monitors this directory every 3 seconds (`wake` can trigger an immediate check)
+3. On detection, the task is moved from `pending/` to `pending/processing/` and execution starts
+4. The task is enqueued in BackgroundTaskManager and runs as a subprocess outside the Anima lock (30 min timeout)
+5. On success: the file in processing is deleted. On failure: moved to `pending/failed/`
+6. On completion, the `_on_background_task_complete` callback writes the notification to `state/background_notifications/{task_id}.md`
+7. On the next heartbeat, `drain_background_notifications()` reads the notification and injects it into the context
+
+### File Lifecycle
+
+```
+pending/*.json → pending/processing/*.json → success: deleted | failure: pending/failed/*.json
+```
+
+On startup, orphaned files left in `processing/` (e.g., from a crash) are moved to `failed/` for recovery.
+
+### Relationship with LLM Tasks (state/pending/)
+
+LLM tasks written by Heartbeat or the `plan_tasks` tool are enqueued in `state/pending/` (a different directory).
+These support parallel/sequential execution based on a DAG, and results are saved in `state/task_results/`.
+The entry point differs from the `submit` described in this guide.

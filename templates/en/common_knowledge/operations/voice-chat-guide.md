@@ -6,7 +6,7 @@ Browser microphone input → STT (speech recognition) → chat pipeline → TTS 
 ## Architecture Overview
 
 ```
-Browser (AudioWorklet 16kHz PCM)
+Browser (AudioWorklet 16kHz mono PCM)
   → WebSocket /ws/voice/{name}
     → VoiceSTT (faster-whisper)
       → ProcessSupervisor IPC → Anima chat (existing pipeline)
@@ -28,6 +28,7 @@ Requires `faster-whisper`:
 
 ```bash
 pip install faster-whisper
+# or pip install animaworks[transcribe]
 ```
 
 The Whisper model (default: `large-v3-turbo`) is downloaded automatically on first STT run.
@@ -100,7 +101,7 @@ Each Anima's `status.json` can have a `voice` key for per-Anima settings:
 | `voice_id` | Provider-specific voice ID (see below) |
 | `speed` | Speech rate (1.0 = normal) |
 | `pitch` | Pitch (0.0 = normal) |
-| `extra` | Provider-specific additional parameters (optional) |
+| `extra` | Provider-specific additional parameters (optional). For ElevenLabs, `model_id` can override the model |
 
 #### How to specify voice_id
 
@@ -140,6 +141,7 @@ WebSocket sends cookies on HTTP Upgrade, so a logged-in browser is authenticated
 | Audio data | binary | 16kHz mono 16-bit PCM binary |
 | `{"type": "speech_end"}` | JSON | End-of-utterance notification → triggers STT |
 | `{"type": "interrupt"}` | JSON | Stop TTS playback (barge-in) |
+| `{"type": "config", "vad_mode": "ptt"}` or `{"type": "config", "vad_mode": "vad"}` | JSON | Optional. Mode switch notification (server does not process currently) |
 
 ### Server → Client
 
@@ -155,6 +157,7 @@ WebSocket sends cookies on HTTP Upgrade, so a logged-in browser is authenticated
 | `{"type": "thinking_delta", "text": "..."}` | JSON | Extended thinking text chunk |
 | TTS audio data | binary | TTS audio binary |
 | `{"type": "tts_start"}` | JSON | TTS audio send start |
+| `{"type": "tts_error", "message": "..."}` | JSON | TTS synthesis failure (sent immediately before tts_done) |
 | `{"type": "tts_done"}` | JSON | TTS audio send complete |
 | `{"type": "error", "message": "..."}` | JSON | Error notification |
 
@@ -170,7 +173,7 @@ After connecting, the server sends `status: loading` → `status: ready`; voice 
 
 | Mode | Action | Description |
 |------|--------|-------------|
-| **PTT (Push-to-Talk)** | Hold mic → release | Reliable control. Records only while pressed |
+| **PTT (Push-to-Talk)** | Hold mic button → release | Reliable control. Records only while pressed |
 | **VAD (Voice Activity Detection)** | Automatic | Auto-detects speech start, records, sends when silent |
 
 Toggled in the UI.
@@ -224,6 +227,7 @@ Toggled in the UI.
   - SBV2: `curl http://localhost:5000/models/info` returns response
   - ElevenLabs: `ELEVENLABS_API_KEY` is set
 - Check server logs for `TTS unavailable` errors
+- Check if client receives `tts_error` messages (TTS synthesis failure)
 - If TTS is unavailable, only text responses are returned (no audio)
 
 ### Audio cuts out / high latency
@@ -253,18 +257,19 @@ Toggled in the UI.
 3. **STT**: Transcribes buffered audio when `speech_end` is received
 4. **Voice mode suffix**: Appends `[voice-mode: Voice conversation. Respond concisely in spoken style, under 200 chars...]` to the message before sending to Anima
 5. **Chat integration**: Sends text to existing chat pipeline via ProcessSupervisor IPC
-6. **TTS pre-sanitization**: Strips Markdown and emotion tags before TTS
-7. **Streaming response**: Splits Anima response into sentences (punctuation: 。！？、…)
+6. **TTS pre-sanitization**: Strips Markdown (headings, bold, lists, code blocks, etc.) before TTS
+7. **Streaming response**: Splits Anima response into sentences (punctuation: 。！？!?; line breaks)
 8. **Sentence TTS**: TTS per sentence to minimize first-byte latency
-9. **TTS health check**: Checks provider availability on first call (result cached)
+9. **TTS health check**: Checks provider availability on first call. Cached on success, retried on failure. Cache invalidated after 3 consecutive TTS synthesis failures
 10. **Concurrency guard**: Prevents multiple `speech_end` handlers from running in parallel
+
+IPC stream timeout is 60 seconds by default. Overridable via `server.ipc_stream_timeout` in `config.json`.
 
 ### StreamingSentenceSplitter
 
-Japanese sentence splitting for streaming:
-- Split immediately on sentence punctuation (。！？)
-- Split on commas (、) and ellipsis (…) (improves latency for short responses)
-- Split on line breaks
+Japanese sentence splitting for streaming (`core/voice/sentence_splitter.py`):
+- Splits immediately after sentence punctuation (。！？!?)
+- Splits on line breaks
 - Buffers incomplete sentences
 
 ### Barge-in

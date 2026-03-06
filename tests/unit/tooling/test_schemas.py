@@ -14,6 +14,7 @@ from core.tooling.schemas import (
     MEMORY_TOOLS,
     SEARCH_TOOLS,
     TOOL_MANAGEMENT_TOOLS,
+    USE_TOOL,
     build_tool_list,
     load_external_schemas,
     to_anthropic_format,
@@ -123,12 +124,12 @@ class TestSearchTools:
 class TestDiscoveryTools:
     def test_discovery_tools_is_list(self):
         assert isinstance(DISCOVERY_TOOLS, list)
-        assert len(DISCOVERY_TOOLS) == 1
+        assert len(DISCOVERY_TOOLS) == 0
 
-    def test_discover_tools_schema(self):
-        schema = DISCOVERY_TOOLS[0]
-        assert schema["name"] == "discover_tools"
-        assert "category" in schema["parameters"]["properties"]
+    def test_use_tool_schema(self):
+        schema = USE_TOOL[0]
+        assert schema["name"] == "use_tool"
+        assert "tool_name" in schema["parameters"]["properties"]
 
 
 class TestToolManagementTools:
@@ -251,10 +252,10 @@ class TestBuildToolList:
         # Should NOT include file tools unless requested
         assert "read_file" not in names
 
-    def test_include_discovery_tools(self):
-        result = build_tool_list(include_discovery_tools=True)
+    def test_include_use_tool(self):
+        result = build_tool_list(include_use_tool=True)
         names = [t["name"] for t in result]
-        assert "discover_tools" in names
+        assert "use_tool" in names
 
     def test_include_tool_management(self):
         result = build_tool_list(include_tool_management=True)
@@ -272,14 +273,15 @@ class TestBuildToolList:
             include_file_tools=True,
             include_search_tools=True,
             include_discovery_tools=True,
+            include_use_tool=True,
             include_tool_management=True,
         )
         names = [t["name"] for t in result]
-        # 5 memory + 4 channel (incl. manage_channel) + 1 report_procedure_outcome + 1 report_knowledge_outcome + 1 check_permissions + 4 file + 3 search + 1 discovery + 2 tool_management = 22
+        # 5 memory + 4 channel (incl. manage_channel) + 1 report_procedure_outcome + 1 report_knowledge_outcome + 1 check_permissions + 4 file + 3 search + 1 use_tool + 2 tool_management = 22
         assert len(result) == 22
         assert "search_code" in names
         assert "list_directory" in names
-        assert "discover_tools" in names
+        assert "use_tool" in names
         assert "refresh_tools" in names
         assert "share_tool" in names
         assert "post_channel" in names

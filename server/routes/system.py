@@ -1,8 +1,8 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
 import json
 import logging
 import re
@@ -48,7 +48,7 @@ def _get_frontend_logger() -> logging.Logger:
         filename=log_path,
         when="midnight",
         interval=1,
-        backupCount=30,  # 30 days retention
+        backupCount=7,  # 7 days retention
         encoding="utf-8",
         utc=False,
     )
@@ -115,11 +115,7 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
         now = now_jst()
         for idx, task in enumerate(parsed_tasks):
             trigger = parse_schedule(task.schedule)
-            next_run_dt = (
-                trigger.get_next_fire_time(None, now)
-                if trigger is not None
-                else None
-            )
+            next_run_dt = trigger.get_next_fire_time(None, now) if trigger is not None else None
             next_run = next_run_dt.isoformat() if next_run_dt else None
             schedule = task.schedule.strip() if task.schedule else ""
             if not schedule:
@@ -127,15 +123,17 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
                 if m:
                     schedule = m.group(1).strip()
 
-            jobs.append({
-                "id": f"cron-{name}-{idx}",
-                "name": task.name,
-                "anima": name,
-                "type": task.type,
-                "schedule": schedule,
-                "last_run": last_runs.get(task.name),
-                "next_run": next_run,
-            })
+            jobs.append(
+                {
+                    "id": f"cron-{name}-{idx}",
+                    "name": task.name,
+                    "anima": name,
+                    "type": task.type,
+                    "schedule": schedule,
+                    "last_run": last_runs.get(task.name),
+                    "next_run": next_run,
+                }
+            )
     return jobs
 
 
@@ -198,7 +196,10 @@ def create_system_router() -> APIRouter:
 
             try:
                 status_resp = await supervisor.send_request(
-                    anima_name, method="get_status", params={}, timeout=3.0,
+                    anima_name,
+                    method="get_status",
+                    params={},
+                    timeout=3.0,
                 )
                 status_text = str(status_resp.get("status", "") or "")
                 current_task = str(status_resp.get("current_task", "") or "")
@@ -255,16 +256,20 @@ def create_system_router() -> APIRouter:
                     busy = busy_snapshot.get(name, {})
                     reasons = busy.get("reasons") if isinstance(busy.get("reasons"), list) else []
                     if reasons:
-                        skipped_busy.append({
-                            "name": name,
-                            "reasons": reasons,
-                            "status": busy.get("status", ""),
-                            "current_task": busy.get("current_task", ""),
-                        })
+                        skipped_busy.append(
+                            {
+                                "name": name,
+                                "reasons": reasons,
+                                "status": busy.get("status", ""),
+                                "current_task": busy.get("current_task", ""),
+                            }
+                        )
                         logger.info(
                             "Skipped reload for busy anima: %s (reasons=%s status=%s task=%s)",
-                            name, ",".join(str(r) for r in reasons),
-                            busy.get("status", ""), busy.get("current_task", ""),
+                            name,
+                            ",".join(str(r) for r in reasons),
+                            busy.get("status", ""),
+                            busy.get("current_task", ""),
                         )
                         continue
                     # Existing anima — restart to pick up file changes
@@ -299,15 +304,10 @@ def create_system_router() -> APIRouter:
         return {
             "websocket": {
                 "connected_clients": (
-                    len(ws_manager.active_connections)
-                    if hasattr(ws_manager, "active_connections")
-                    else 0
+                    len(ws_manager.active_connections) if hasattr(ws_manager, "active_connections") else 0
                 ),
             },
-            "processes": {
-                name: supervisor.get_process_status(name)
-                for name in request.app.state.anima_names
-            },
+            "processes": {name: supervisor.get_process_status(name) for name in request.app.state.anima_names},
         }
 
     # ── Scheduler ──────────────────────────────────────────
@@ -326,20 +326,60 @@ def create_system_router() -> APIRouter:
         system_jobs = []
         if supervisor.scheduler:
             for job in supervisor.scheduler.get_jobs():
-                system_jobs.append({
-                    "id": job.id,
-                    "name": job.name,
-                    "anima": "system",
-                    "type": "consolidation",
-                    "schedule": str(job.trigger),
-                    "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
-                })
+                system_jobs.append(
+                    {
+                        "id": job.id,
+                        "name": job.name,
+                        "anima": "system",
+                        "type": "consolidation",
+                        "schedule": str(job.trigger),
+                        "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+                    }
+                )
 
         return {
             "running": supervisor.is_scheduler_running(),
             "system_jobs": system_jobs,
             "anima_jobs": jobs,
         }
+
+    # ── Tasks ───────────────────────────────────────────
+
+    @router.get("/tasks/summary")
+    async def get_tasks_summary(request: Request):
+        """Aggregate pending task counts across all animas."""
+        import asyncio
+
+        animas_dir = request.app.state.animas_dir
+        anima_names = request.app.state.anima_names
+
+        def _count_tasks(name: str) -> tuple[int, int]:
+            tq_path = animas_dir / name / "state" / "task_queue.jsonl"
+            if not tq_path.exists():
+                return (0, 0)
+            pend = prog = 0
+            try:
+                for raw_line in tq_path.read_text(encoding="utf-8").splitlines():
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    try:
+                        entry = json.loads(raw_line)
+                    except json.JSONDecodeError:
+                        continue
+                    st = entry.get("status", "")
+                    if st in ("pending", "delegated"):
+                        pend += 1
+                    elif st == "in_progress":
+                        prog += 1
+            except OSError:
+                pass
+            return (pend, prog)
+
+        results = await asyncio.gather(*(asyncio.to_thread(_count_tasks, n) for n in anima_names))
+        pending = sum(r[0] for r in results)
+        in_progress = sum(r[1] for r in results)
+        return {"pending": pending, "in_progress": in_progress, "total_active": pending + in_progress}
 
     # ── Activity ───────────────────────────────────────────
 
@@ -384,9 +424,7 @@ def create_system_router() -> APIRouter:
         if group_type:
             group_types = {t.strip() for t in group_type.split(",") if t.strip()}
 
-        target_names = (
-            [anima] if anima and anima in anima_names else list(anima_names)
-        )
+        target_names = [anima] if anima and anima in anima_names else list(anima_names)
 
         limit = max(1, min(limit, 500))
         offset = max(0, offset)
@@ -433,7 +471,7 @@ def create_system_router() -> APIRouter:
 
             total_groups = len(all_groups)
             total_events = len(all_entries)
-            page_groups = all_groups[group_offset:group_offset + group_limit]
+            page_groups = all_groups[group_offset : group_offset + group_limit]
 
             return {
                 "groups": page_groups,
@@ -441,15 +479,12 @@ def create_system_router() -> APIRouter:
                 "total_events": total_events,
                 "group_offset": group_offset,
                 "group_limit": group_limit,
-                "has_more": (
-                    (group_offset + group_limit) < total_groups
-                    or any_capped
-                ),
+                "has_more": ((group_offset + group_limit) < total_groups or any_capped),
             }
 
         # Flat (default) — backward compatible
         total = len(all_entries)
-        page_entries = all_entries[offset:offset + limit]
+        page_entries = all_entries[offset : offset + limit]
 
         return {
             "events": [e.to_api_dict() for e in page_entries],
@@ -474,7 +509,8 @@ def create_system_router() -> APIRouter:
             entries = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
             logger.warning(
-                "Frontend log: invalid JSON body (%d bytes)", len(raw),
+                "Frontend log: invalid JSON body (%d bytes)",
+                len(raw),
             )
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
 
@@ -668,6 +704,52 @@ def create_system_router() -> APIRouter:
                     if s["total_sessions"] > 0:
                         result[ad.name] = s
         return result
+
+    # ── Hot Reload ─────────────────────────────────────────
+
+    @router.post("/system/hot-reload")
+    async def hot_reload_all(request: Request):
+        """Hot-reload all configuration and connections."""
+        manager = getattr(request.app.state, "reload_manager", None)
+        if manager is None:
+            return JSONResponse(
+                {"error": "Reload manager not initialized"},
+                status_code=503,
+            )
+        return await manager.reload_all()
+
+    @router.post("/system/hot-reload/slack")
+    async def hot_reload_slack(request: Request):
+        """Hot-reload Slack Socket Mode connections only."""
+        manager = getattr(request.app.state, "reload_manager", None)
+        if manager is None:
+            return JSONResponse(
+                {"error": "Reload manager not initialized"},
+                status_code=503,
+            )
+        return await manager.reload_slack()
+
+    @router.post("/system/hot-reload/credentials")
+    async def hot_reload_credentials(request: Request):
+        """Hot-reload credentials and dependent connections."""
+        manager = getattr(request.app.state, "reload_manager", None)
+        if manager is None:
+            return JSONResponse(
+                {"error": "Reload manager not initialized"},
+                status_code=503,
+            )
+        return await manager.reload_credentials()
+
+    @router.post("/system/hot-reload/animas")
+    async def hot_reload_animas(request: Request):
+        """Sync Anima processes with disk state."""
+        manager = getattr(request.app.state, "reload_manager", None)
+        if manager is None:
+            return JSONResponse(
+                {"error": "Reload manager not initialized"},
+                status_code=503,
+            )
+        return await manager.reload_animas()
 
     # ── Health Check ────────────────────────────────────────
 

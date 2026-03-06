@@ -3,7 +3,7 @@
 **[日本語版](memory.ja.md)**
 
 > Created: 2026-02-14
-> Updated: 2026-03-01
+> Updated: 2026-03-05
 > Related: [vision.md](vision.md), [spec.md](spec.md), [implemented/20260214_priming-layer_design.md](implemented/20260214_priming-layer_design.md)
 > Research: [AI Agent Memory Architecture Survey](research/20260212_AI_Agent記憶アーキテクチャ調査.md) Section 10
 
@@ -88,7 +88,7 @@ Memories are not truncated and injected into prompts but stored in a file-system
           │    │  Spreading Activation     │
           │    │  Vector similarity +       │
           │    │  temporal decay           │
-          │    │  -> Auto-activation of    │
+          │    │  -> Auto-activation of     │
           │    │     related memories      │
           │    └─────────┬────────────────┘
           │              │
@@ -96,10 +96,10 @@ Memories are not truncated and injected into prompts but stored in a file-system
 │                Long-term Memory (Hippocampus + Cortex)   │
 │                                                          │
 │  ┌───────────────────────────────────────────────┐      │
-│  │  Unified Activity Log  activity_log/         │      │
-│  │  = JSONL chronological record of all         │      │
-│  │    interactions                               │      │
-│  │  Source for Priming "Recent Activity" channel │      │
+│  │  Unified Activity Log  activity_log/          │      │
+│  │  = JSONL chronological record of all           │      │
+│  │    interactions                                 │      │
+│  │  Source for Priming "Recent Activity" channel   │      │
 │  └───────────────────────────────────────────────┘      │
 │                                                          │
 │  ┌────────────┐  ┌────────────┐  ┌────────────────┐    │
@@ -114,29 +114,29 @@ Memories are not truncated and injected into prompts but stored in a file-system
 │  └────────────┘  └────────────┘  └────────────────┘    │
 │                                                          │
 │  ┌────────────────────────────────────────────────┐     │
-│  │  Shared Memory  shared/                       │     │
-│  │  users/           Interpersonal memory         │     │
-│  │                   (user profiles)              │     │
-│  │  resolutions.jsonl Resolution registry         │     │
-│  │                   (cross-organizational)       │     │
+│  │  Shared Memory  shared/                        │     │
+│  │  users/            Interpersonal memory         │     │
+│  │                    (user profiles)               │     │
+│  │  resolutions.jsonl Resolution registry           │     │
+│  │                    (cross-organizational)        │     │
 │  └────────────────────────────────────────────────┘     │
 │                                                          │
 │  ┌────────────────────────────────────────────────┐     │
-│  │  Streaming Journal  shortterm/                 │     │
-│  │  = WAL (Write-Ahead Log). Crash-resilient      │     │
+│  │  Streaming Journal  shortterm/                  │     │
+│  │  = WAL (Write-Ahead Log). Crash-resilient        │     │
 │  │  Incrementally persists text during streaming   │     │
-│  │  output                                        │     │
+│  │  output                                          │     │
 │  └────────────────────────────────────────────────┘     │
 │                                                          │
 │  -- Memory Consolidation (Anima-led + Framework post-processing) -- │
 │                                                          │
 │  [Immediate] Session boundary detection -> diff summary  │
-│              -> episodes/                                │
-│              + auto state update + resolution propagation│
+│              -> episodes/                                 │
+│              + auto state update + resolution propagation │
 │  [Daily]     Midnight cron -> Anima.run_consolidation("daily") │
 │              (tools for knowledge extraction, procedure   │
 │               creation, contradiction resolution)       │
-│              -> Post-processing: Synaptic Downscaling    │
+│              -> Post-processing: Synaptic Downscaling     │
 │              -> Post-processing: RAG index rebuild       │
 │  [Weekly]    Weekly cron -> Anima.run_consolidation("weekly") │
 │              -> Post-processing: Neurogenesis reorganization │
@@ -151,9 +151,10 @@ Memories are not truncated and injected into prompts but stored in a file-system
 │              -> low-activity mark                        │
 │  [Weekly]    Neurogenesis Reorganization: LLM merge of  │
 │              low-activity + similar chunks               │
-│  [Monthly]   Complete Forgetting: low-activity 90d+      │
+│  [Monthly]   Complete Forgetting: low-activity 90d+     │
 │              + access_count≤2 -> archive & delete        │
-│              + archive/procedure_versions/ cleanup       │
+│              archive/forgotten/ + archive/versions/     │
+│              cleanup                                     │
 │                                                          │
 │  * Agent's only write path: intentional memorization     │
 │    (write_memory_file)                                    │
@@ -184,9 +185,10 @@ Six search channels (`core/memory/priming.py`):
 |---|---|---|---|---|
 | **A: Sender Profile** | shared/users/ | 500 tokens | Exact-match lookup | Automatic recall upon seeing a face |
 | **B: Recent Activity** | activity_log/ | 1300 tokens | Chronological retrieval from ActivityLogger | Short-to-recent memory. "What happened recently" |
-| **C: Related Knowledge** | knowledge/ | 700 tokens | Dense vector similarity search (RAG) | Associative recall via spreading activation |
+| **C: Related Knowledge** | knowledge/ | 1200 tokens | Dense vector similarity search (RAG) | Associative recall via spreading activation |
 | **D: Skill/Procedure Match** | skills/, procedures/, common_skills/ | 200 tokens | Description-based 3-stage matching | Returns **names only** of "what I can do" and "how to do it" (max 5 items) |
 | **E: Pending Tasks** | state/task_queue.jsonl | 300 tokens | TaskQueueManager formatting | "What I need to do." Outstanding tasks and deadlines |
+| **F: Episodes** | episodes/ | 500 tokens | Dense vector similarity search (RAG) | Semantic search of past action records |
 | **Recent Outbound** | activity_log/ | Last 2 hours, max 3 items | channel_post, message_sent events | Recent send history (behavior awareness for outbound rate limiting) |
 
 Channel B consolidates the legacy `episodes/` date-filtered retrieval and shared channel reads into a unified retrieval from the `ActivityLogger` unified activity log. When the activity log is empty, it falls back to the legacy format (episodes/ + channels/).
@@ -571,7 +573,7 @@ Waking (during conversation)                Sleeping (non-conversation)
  [Access Recording]                         [Daily Downscaling]
  Frequently used memories are               knowledge: 90d+ unaccessed
  strengthened                               + low frequency
- (Hebbian learning / LTP)                   procedures: 180d+ unused
+ (Hebbian learning / LTP)                    procedures: 180d+ unused
                                             + low frequency
                                             or utility<0.3 + failure>=3
                                             -> immediate mark
@@ -626,6 +628,7 @@ procedures/ has more lenient thresholds than knowledge/ (procedural memory is mo
 | `skills/` | Always protected | Origin point for description-based matching. Deleting them severs the recall pathway |
 | `shared/users/` (memory_type: shared_users) | Always protected | Interpersonal memory protection |
 | `[IMPORTANT]` tagged | Always protected | Forgetting resistance through elaborative encoding |
+| `knowledge/` (success_count >= 2) | Conditionally protected | Knowledge confirmed useful multiple times |
 | `procedures/` (version >= 3) | Conditionally protected | Mature procedures that have undergone 3+ reconsolidations |
 | `procedures/` (protected: true) | Conditionally protected | Manual protection via frontmatter |
 | `procedures/` ([IMPORTANT]) | Conditionally protected | Forgetting resistance via tag |
@@ -638,9 +641,9 @@ The monthly forgetting pipeline organizes old versions accumulated in `archive/p
 
 ## Unified Activity Log
 
-> Implementation: `core/memory/activity.py` — `ActivityLogger` class
+> Implementation: `core/memory/activity.py` — `ActivityLogger` class (Mixin composition: `PrimingMixin`, `TimelineMixin`, `ConversationMixin`, `RotationMixin`)
 
-A unified logging infrastructure that records all interactions in a single JSONL chronological timeline. This consolidates records that were previously scattered across transcript, dm_log, heartbeat_history, etc. into a single source, serving as the sole data source for the Priming Layer's "Recent Activity" channel (Channel B).
+A unified logging infrastructure that records all interactions in a single JSONL chronological timeline. This consolidates records that were previously scattered across transcript, dm_log, heartbeat_history, etc. into a single source, serving as the sole data source for the Priming Layer's "Recent Activity" channel (Channel B). The implementation is split across `_activity_models.py` (data models), `_activity_priming.py` (priming formatting), `_activity_timeline.py` (API timeline), `_activity_conversation.py` (conversation view), and `_activity_rotation.py` (rotation).
 
 ### Storage Location
 
@@ -658,7 +661,7 @@ One file per date. Written append-only; each line is a single JSON entry.
 {"ts":"2026-02-17T15:00:00","type":"tool_use","tool":"web_search","summary":"Search executed"}
 ```
 
-Empty fields are omitted. `from`/`to` are sender/recipient names (internally `from_person`/`to_person`), `channel` is the channel name, `tool` is the tool name, `via` is the notification channel (for human_notify events), and `meta` is arbitrary metadata (`from_type`, etc.).
+Empty fields are omitted. `from`/`to` are sender/recipient names (internally `from_person`/`to_person`), `channel` is the channel name, `tool` is the tool name, `via` is the notification channel (for human_notify events), and `meta` is arbitrary metadata (`from_type`, etc.). `origin` and `origin_chain` are used for data provenance tracking (e.g., `"human"`, `"external_platform"`).
 
 ### Event Type Reference
 
@@ -679,8 +682,12 @@ Empty fields are omitted. `from`/`to` are sender/recipient names (internally `fr
 | `issue_resolved` | `RSLV` | Issue resolved (auto-recorded from auto state update) |
 | `task_created` | `TSK+` | Task created |
 | `task_updated` | `TSK~` | Task updated |
+| `tool_result` | `TRES` | Tool execution result (for consolidation; only metadata injected, raw content omitted) |
+| `inbox_processing_start` / `inbox_processing_end` | — | Inbox processing start/end (live event delivery target) |
 
 Backward-compatible aliases: `dm_sent` -> `message_sent`, `dm_received` -> `message_received` (auto-converted on read)
+
+**Live events**: `tool_use`, `inbox_processing_start`, and `inbox_processing_end` are delivered in real time via WebSocket through ProcessSupervisor for real-time UI display.
 
 ### Priming Integration
 
@@ -698,6 +705,20 @@ The `ActivityLogger.format_for_priming()` method formats retrieved entries withi
 | single | All others | `[HH:MM] {LABEL} {content}` |
 
 **Pointer references**: When content exceeds 200 characters and is truncated, a source file pointer `(-> activity_log/{date}.jsonl)` is appended. Groups include `-> activity_log/{date}.jsonl#L{range}` at the group end. This allows the LLM to reference the original data via `read_memory_file` when more detail is needed.
+
+### Activity Log Rotation
+
+Configure rotation in the `activity_log` section of `config.json`. `RotationMixin.rotate()` is executed to delete older files and limit disk usage.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `rotation_enabled` | true | Whether to enable rotation |
+| `rotation_mode` | `"size"` | `"size"` (total size limit), `"time"` (elapsed days), `"both"` |
+| `max_size_mb` | 1024 | Maximum total size per Anima (MB) |
+| `max_age_days` | 7 | Maximum retention days in `time`/`both` mode |
+| `rotation_time` | `"05:00"` | Execution time (JST) |
+
+The ProcessSupervisor scheduler executes `ActivityLogger.rotate_all()` for all Animas according to `rotation_time`.
 
 ---
 
@@ -778,11 +799,11 @@ The memory subsystem is implemented as a set of specialized modules under `core/
 | `manager.py` | `MemoryManager` | Memory facade. Coordinates file-based memory operations, skill matching, and RAG search |
 | `conversation.py` | `ConversationMemory` | Conversation history with rolling LLM compression and structured message building |
 | `shortterm.py` | `ShortTermMemory` | Session state externalization. Stores session_state.md/json in `shortterm/{session_type}/` (chat/heartbeat separated) |
-| `priming.py` | `PrimingEngine` | 6-channel automatic memory recall (A–E + Recent Outbound) injected into system prompt before agent execution |
+| `priming.py` | `PrimingEngine` | 6-channel automatic memory recall (A–F + Recent Outbound) injected into system prompt before agent execution |
 | `activity.py` | `ActivityLogger` | Unified append-only JSONL timeline recording all Anima interactions |
 | `consolidation.py` | `ConsolidationEngine` | Preprocessing (episode, resolved event, activity collection), post-processing (RAG rebuild), legacy migration |
 | `forgetting.py` | `ForgettingEngine` | 3-stage active forgetting (synaptic downscaling, neurogenesis reorganization, complete forgetting) |
-| `streaming_journal.py` | `StreamingJournal` | WAL-based crash-resilient persistence of streaming LLM output. `streaming_journal_{session_type}.jsonl` |
+| `streaming_journal.py` | `StreamingJournal` | WAL-based crash-resilient persistence of streaming LLM output. `shortterm/streaming_journal_{session_type}.jsonl` (when thread_id specified: `shortterm/{session_type}/{thread_id}/streaming_journal.jsonl`) |
 | `task_queue.py` | `TaskQueueManager` | Persistent structured task queue with JSONL append-only log and staleness detection |
 | `distillation.py` | `ProceduralDistiller` | Episodic memory classification and procedural knowledge auto-distillation (used by ReconsolidationEngine) |
 | `reconsolidation.py` | `ReconsolidationEngine` | Prediction-error-based reconsolidation, issue_resolved->procedure conversion (create_procedures_from_resolved) |
@@ -792,6 +813,7 @@ The memory subsystem is implemented as a set of specialized modules under `core/
 | `validation.py` | `KnowledgeValidator` | NLI+LLM cascade validation (legacy/alternative path) |
 | `contradiction.py` | `ContradictionDetector` | Knowledge contradiction detection and resolution (NLI+LLM; in Anima-led consolidation, Anima executes via tools) |
 | `dedup.py` | Message deduplication | Resolved-topic detection, same-sender consolidation, rate limiting for heartbeat |
+| `housekeeping.py` | `run_housekeeping()` | Unified housekeeping. Rotation and cleanup of prompt_logs, daemon_log, dm_archives, cron_logs, shortterm. Executed by ProcessSupervisor daily job |
 | `frontmatter.py` | `FrontmatterService` | YAML frontmatter read/write for knowledge and procedure files |
 | `rag_search.py` | `RAGMemorySearch` | RAG vector search and indexer management wrapper |
 | `rag/indexer.py` | `MemoryIndexer` | Markdown section chunking, embedding generation, incremental indexing |

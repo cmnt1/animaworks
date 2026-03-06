@@ -264,22 +264,8 @@ class TestPrChecks:
 
 
 class TestGetToolSchemas:
-    def test_returns_schemas(self):
+    def test_returns_empty_list(self):
+        """External tool modules' get_tool_schemas() returns empty list."""
         schemas = get_tool_schemas()
         assert isinstance(schemas, list)
-        assert len(schemas) == 4
-        names = {s["name"] for s in schemas}
-        assert names == {
-            "github_list_issues", "github_create_issue",
-            "github_list_prs", "github_create_pr",
-        }
-
-    def test_create_issue_requires_title_and_body(self):
-        schemas = get_tool_schemas()
-        ci = [s for s in schemas if s["name"] == "github_create_issue"][0]
-        assert set(ci["input_schema"]["required"]) == {"title", "body"}
-
-    def test_create_pr_requires_title_body_head(self):
-        schemas = get_tool_schemas()
-        cp = [s for s in schemas if s["name"] == "github_create_pr"][0]
-        assert set(cp["input_schema"]["required"]) == {"title", "body", "head"}
+        assert schemas == []

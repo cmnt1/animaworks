@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -17,17 +18,14 @@ from collections.abc import AsyncGenerator
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-
-from core.prompt.context import ContextTracker
-from core.execution.reminder import SystemReminderQueue
-from core.schemas import ModelConfig
-from core.memory.shortterm import ShortTermMemory
-
+from typing import Any, Protocol, runtime_checkable
 
 # ── Streaming error ──────────────────────────────────────────
-
 from core.exceptions import StreamDisconnectedError  # noqa: F401 – re-export
+from core.execution.reminder import SystemReminderQueue
+from core.memory.shortterm import ShortTermMemory
+from core.prompt.context import ContextTracker
+from core.schemas import ImageData, ModelConfig
 
 # ── Per-task interrupt event ─────────────────────────────────
 # Each asyncio task (i.e. each concurrent HTTP request) gets its own
@@ -35,7 +33,8 @@ from core.exceptions import StreamDisconnectedError  # noqa: F401 – re-export
 # multiple chat threads share a single executor instance.
 
 _active_interrupt_event: ContextVar[asyncio.Event | None] = ContextVar(
-    "_active_interrupt_event", default=None,
+    "_active_interrupt_event",
+    default=None,
 )
 
 
@@ -99,7 +98,7 @@ def strip_thinking_tags(text: str) -> tuple[str, str]:
     """
     m = _THINK_TAG_RE.match(text)
     if m:
-        return m.group(1), text[m.end():]
+        return m.group(1), text[m.end() :]
     return "", text
 
 
@@ -131,8 +130,7 @@ class StreamingThinkFilter:
         # Early exit: if accumulated text clearly doesn't start with <think>,
         # pass through immediately so non-think streams aren't buffered.
         stripped = self._buffer.lstrip()
-        if stripped and not stripped.startswith(self._THINK_OPEN) \
-                and not self._THINK_OPEN.startswith(stripped):
+        if stripped and not stripped.startswith(self._THINK_OPEN) and not self._THINK_OPEN.startswith(stripped):
             self._done = True
             text = self._buffer
             self._buffer = ""
@@ -163,11 +161,16 @@ class StreamingThinkFilter:
 
 # Per-tool base budgets (character count) calibrated for a 128K context model.
 _TOOL_RESULT_BASE_BUDGET: dict[str, int] = {
-    "Read": 4000, "Grep": 4000, "Glob": 4000,
+    "Read": 4000,
+    "Grep": 4000,
+    "Glob": 4000,
     "Bash": 2000,
-    "web_search": 1500, "x_search": 1500,
-    "write_file": 500, "edit_file": 500,
-    "search_memory": 1500, "read_file": 4000,
+    "web_search": 1500,
+    "x_search": 1500,
+    "write_file": 500,
+    "edit_file": 500,
+    "search_memory": 1500,
+    "read_file": 4000,
 }
 _TOOL_RESULT_DEFAULT_BUDGET = 1000
 _TOOL_INPUT_BASE_BUDGET = 500
@@ -200,6 +203,24 @@ def tool_input_save_budget(context_window: int) -> int:
     return max(200, int(_TOOL_INPUT_BASE_BUDGET * scale))
 
 
+# ── Session result protocol ───────────────────────────────────
+
+
+@runtime_checkable
+class SessionResultLike(Protocol):
+    """Minimal interface required for session chaining.
+
+    S mode's ``ResultMessage`` satisfies this structurally.
+    A/B modes pass ``None``.
+    """
+
+    @property
+    def num_turns(self) -> int: ...
+
+    @property
+    def session_id(self) -> str: ...
+
+
 # ── Result ───────────────────────────────────────────────────
 
 
@@ -229,7 +250,7 @@ class TokenUsage:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
 
-    def merge(self, other: "TokenUsage") -> None:
+    def merge(self, other: TokenUsage) -> None:
         """Accumulate usage from another TokenUsage (for chaining)."""
         self.input_tokens += other.input_tokens
         self.output_tokens += other.output_tokens
@@ -266,7 +287,7 @@ class ExecutionResult:
     """
 
     text: str
-    result_message: Any = field(default=None, repr=False)
+    result_message: SessionResultLike | None = field(default=None, repr=False)
     replied_to_from_transcript: set[str] = field(default_factory=set)
     unconfirmed_sends: list[dict] = field(default_factory=list)
     tool_call_records: list[ToolCallRecord] = field(default_factory=list)
@@ -326,12 +347,10 @@ class BaseExecutor(ABC):
         """Check if this anima has any subordinates (is a supervisor)."""
         try:
             from core.config.models import load_config
+
             config = load_config()
             my_name = self._anima_dir.name
-            return any(
-                cfg.supervisor == my_name
-                for cfg in config.animas.values()
-            )
+            return any(cfg.supervisor == my_name for cfg in config.animas.values())
         except Exception:
             return False
 
@@ -403,6 +422,37 @@ class BaseExecutor(ABC):
             return 300
         return 600
 
+    def _resolve_num_retries(self) -> int:
+        """Resolve LLM API retry count from ``config.server.llm_num_retries``."""
+        try:
+            from core.config import load_config
+
+            return load_config().server.llm_num_retries
+        except Exception:
+            return 3
+
+    def _resolve_cw(self) -> int:
+        """Resolve context window with config overrides."""
+        from core.config import load_config
+        from core.exceptions import ConfigError
+        from core.prompt.context import resolve_context_window
+
+        try:
+            overrides = load_config().model_context_windows
+        except (ConfigError, OSError):
+            overrides = None
+        return resolve_context_window(self._model_config.model, overrides)
+
+    def _resolve_cw_overrides(self) -> dict[str, int] | None:
+        """Return config model_context_windows or None."""
+        from core.config import load_config
+        from core.exceptions import ConfigError
+
+        try:
+            return load_config().model_context_windows
+        except (ConfigError, OSError):
+            return None
+
     def _check_interrupted(self) -> bool:
         """Return True if the interrupt event has been set.
 
@@ -424,7 +474,7 @@ class BaseExecutor(ABC):
         tracker: ContextTracker | None = None,
         shortterm: ShortTermMemory | None = None,
         trigger: str = "",
-        images: list[dict[str, Any]] | None = None,
+        images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         max_turns_override: int | None = None,
     ) -> ExecutionResult:
@@ -456,7 +506,7 @@ class BaseExecutor(ABC):
         system_prompt: str,
         prompt: str,
         tracker: ContextTracker,
-        images: list[dict[str, Any]] | None = None,
+        images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         max_turns_override: int | None = None,
         trigger: str = "",

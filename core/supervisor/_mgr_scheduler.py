@@ -71,6 +71,7 @@ class SchedulerMixin:
         # Load consolidation config
         try:
             from core.config import load_config
+
             config = load_config()
             consolidation_cfg = getattr(config, "consolidation", None)
         except Exception:
@@ -137,7 +138,9 @@ class SchedulerMixin:
             )
             logger.info(
                 "System cron: Monthly forgetting on day %d at %02d:%02d JST",
-                day_of_month, hour, minute,
+                day_of_month,
+                hour,
+                minute,
             )
 
         # Activity log rotation
@@ -147,6 +150,7 @@ class SchedulerMixin:
             activity_cfg: ActivityLogConfig | None = None
             try:
                 from core.config import load_config as _load_cfg
+
                 _al = getattr(_load_cfg(), "activity_log", None)
                 if isinstance(_al, ActivityLogConfig):
                     activity_cfg = _al
@@ -168,6 +172,46 @@ class SchedulerMixin:
                 logger.info("System cron: Activity log rotation at %s JST", activity_cfg.rotation_time)
         except Exception:
             logger.debug("Activity log rotation schedule setup failed", exc_info=True)
+
+        # Housekeeping
+        try:
+            from core.config.models import HousekeepingConfig
+
+            hk_cfg: HousekeepingConfig | None = None
+            try:
+                from core.config import load_config as _load_hk
+
+                _hk = getattr(_load_hk(), "housekeeping", None)
+                if isinstance(_hk, HousekeepingConfig):
+                    hk_cfg = _hk
+            except Exception:
+                logger.debug("Config load failed for housekeeping schedule", exc_info=True)
+
+            if hk_cfg is None:
+                hk_cfg = HousekeepingConfig()
+
+            if hk_cfg.enabled:
+                hk_hour, hk_minute = (int(x) for x in hk_cfg.run_time.split(":"))
+                self.scheduler.add_job(
+                    self._run_housekeeping,
+                    CronTrigger(hour=hk_hour, minute=hk_minute),
+                    id="system_housekeeping",
+                    name="System: Housekeeping",
+                    replace_existing=True,
+                )
+                logger.info("System cron: Housekeeping at %s JST", hk_cfg.run_time)
+        except Exception:
+            logger.debug("Housekeeping schedule setup failed", exc_info=True)
+
+        # DM log rotation (mirrors LifecycleManager registration)
+        self.scheduler.add_job(
+            self._run_dm_log_rotation,
+            CronTrigger(hour=4, minute=30),
+            id="system_dm_log_rotation",
+            name="System: DM Log Rotation",
+            replace_existing=True,
+        )
+        logger.info("System cron: DM log rotation at 04:30 JST")
 
     def _iter_consolidation_targets(self) -> list[tuple[str, Path]]:
         """Return (anima_name, anima_dir) for all initialized and enabled animas.
@@ -206,6 +250,7 @@ class SchedulerMixin:
 
         try:
             from core.config import load_config
+
             config = load_config()
             consolidation_cfg = getattr(config, "consolidation", None)
         except Exception:
@@ -213,6 +258,7 @@ class SchedulerMixin:
             consolidation_cfg = None
 
         from core.config.models import ConsolidationConfig
+
         max_turns = ConsolidationConfig().max_turns
         if consolidation_cfg:
             max_turns = getattr(consolidation_cfg, "max_turns", max_turns)
@@ -236,7 +282,8 @@ class SchedulerMixin:
                 if response.error:
                     logger.error(
                         "Daily consolidation IPC error for %s: %s",
-                        anima_name, response.error,
+                        anima_name,
+                        response.error,
                     )
                     continue
 
@@ -250,25 +297,30 @@ class SchedulerMixin:
                 # Post-processing: Synaptic downscaling (metadata-based, no LLM)
                 try:
                     from core.memory.forgetting import ForgettingEngine
+
                     forgetter = ForgettingEngine(anima_dir, anima_name)
                     downscaling_result = forgetter.synaptic_downscaling()
                     logger.info(
                         "Synaptic downscaling for %s: %s",
-                        anima_name, downscaling_result,
+                        anima_name,
+                        downscaling_result,
                     )
                 except Exception:
                     logger.exception(
-                        "Synaptic downscaling failed for anima=%s", anima_name,
+                        "Synaptic downscaling failed for anima=%s",
+                        anima_name,
                     )
 
                 # Post-processing: Rebuild RAG index
                 try:
                     from core.memory.consolidation import ConsolidationEngine
+
                     engine = ConsolidationEngine(anima_dir, anima_name)
                     engine._rebuild_rag_index()
                 except Exception:
                     logger.exception(
-                        "RAG index rebuild failed for anima=%s", anima_name,
+                        "RAG index rebuild failed for anima=%s",
+                        anima_name,
                     )
 
                 await self._broadcast_event(
@@ -296,6 +348,7 @@ class SchedulerMixin:
 
         try:
             from core.config import load_config
+
             config = load_config()
             consolidation_cfg = getattr(config, "consolidation", None)
         except Exception:
@@ -303,6 +356,7 @@ class SchedulerMixin:
             consolidation_cfg = None
 
         from core.config.models import ConsolidationConfig as _CC
+
         max_turns = _CC().max_turns
         if consolidation_cfg:
             max_turns = getattr(consolidation_cfg, "max_turns", max_turns)
@@ -326,7 +380,8 @@ class SchedulerMixin:
                 if response.error:
                     logger.error(
                         "Weekly integration IPC error for %s: %s",
-                        anima_name, response.error,
+                        anima_name,
+                        response.error,
                     )
                     continue
 
@@ -340,11 +395,13 @@ class SchedulerMixin:
                 # Post-processing: Neurogenesis reorganization (metadata-based)
                 try:
                     from core.memory.forgetting import ForgettingEngine
+
                     forgetter = ForgettingEngine(anima_dir, anima_name)
                     reorg_result = await forgetter.neurogenesis_reorganize()
                     logger.info(
                         "Neurogenesis reorganization for %s: %s",
-                        anima_name, reorg_result,
+                        anima_name,
+                        reorg_result,
                     )
                 except Exception:
                     logger.exception(
@@ -355,11 +412,13 @@ class SchedulerMixin:
                 # Post-processing: Rebuild RAG index
                 try:
                     from core.memory.consolidation import ConsolidationEngine
+
                     engine = ConsolidationEngine(anima_dir, anima_name)
                     engine._rebuild_rag_index()
                 except Exception:
                     logger.exception(
-                        "RAG index rebuild failed for anima=%s", anima_name,
+                        "RAG index rebuild failed for anima=%s",
+                        anima_name,
                     )
 
                 await self._broadcast_event(
@@ -414,16 +473,24 @@ class SchedulerMixin:
 
         try:
             from core.config import load_config
+
             activity_cfg = getattr(load_config(), "activity_log", None)
         except Exception:
             logger.debug("Config load failed for activity log rotation", exc_info=True)
             activity_cfg = None
 
         from core.config.models import ActivityLogConfig
+
         defaults = ActivityLogConfig()
-        mode = getattr(activity_cfg, "rotation_mode", defaults.rotation_mode) if activity_cfg else defaults.rotation_mode
-        max_size_mb = getattr(activity_cfg, "max_size_mb", defaults.max_size_mb) if activity_cfg else defaults.max_size_mb
-        max_age_days = getattr(activity_cfg, "max_age_days", defaults.max_age_days) if activity_cfg else defaults.max_age_days
+        mode = (
+            getattr(activity_cfg, "rotation_mode", defaults.rotation_mode) if activity_cfg else defaults.rotation_mode
+        )
+        max_size_mb = (
+            getattr(activity_cfg, "max_size_mb", defaults.max_size_mb) if activity_cfg else defaults.max_size_mb
+        )
+        max_age_days = (
+            getattr(activity_cfg, "max_age_days", defaults.max_age_days) if activity_cfg else defaults.max_age_days
+        )
 
         try:
             from core.memory.activity import ActivityLogger
@@ -439,12 +506,64 @@ class SchedulerMixin:
                 total_deleted = sum(r.get("deleted_files", 0) for r in results.values())
                 logger.info(
                     "Activity log rotation complete: %d animas, %d files deleted, %d bytes freed",
-                    len(results), total_deleted, total_freed,
+                    len(results),
+                    total_deleted,
+                    total_freed,
                 )
             else:
                 logger.info("Activity log rotation: no files needed rotation")
         except Exception:
             logger.exception("Activity log rotation failed")
+
+    async def _run_housekeeping(self) -> None:
+        """Run unified housekeeping for all data types."""
+        logger.info("Starting system-wide housekeeping")
+
+        try:
+            from core.config import load_config
+            from core.config.models import HousekeepingConfig
+
+            hk_cfg = getattr(load_config(), "housekeeping", None)
+            if not isinstance(hk_cfg, HousekeepingConfig):
+                hk_cfg = HousekeepingConfig()
+        except Exception:
+            logger.debug("Config load failed for housekeeping", exc_info=True)
+            from core.config.models import HousekeepingConfig
+
+            hk_cfg = HousekeepingConfig()
+
+        try:
+            from core.memory.housekeeping import run_housekeeping
+
+            results = await run_housekeeping(
+                self._get_data_dir(),
+                prompt_log_retention_days=hk_cfg.prompt_log_retention_days,
+                daemon_log_max_size_mb=hk_cfg.daemon_log_max_size_mb,
+                daemon_log_keep_generations=hk_cfg.daemon_log_keep_generations,
+                dm_log_archive_retention_days=hk_cfg.dm_log_archive_retention_days,
+                cron_log_retention_days=hk_cfg.cron_log_retention_days,
+                shortterm_retention_days=hk_cfg.shortterm_retention_days,
+            )
+            logger.info("Housekeeping complete: %s", results)
+        except Exception:
+            logger.exception("Housekeeping failed")
+
+        _write_marker(_marker_dir(self._get_data_dir()) / "last_housekeeping")
+
+    async def _run_dm_log_rotation(self) -> None:
+        """Archive old dm_log entries beyond 7 days."""
+        logger.info("Starting DM log rotation")
+        try:
+            from core.background import rotate_dm_logs
+
+            shared_dir = self._get_data_dir() / "shared"
+            result = await rotate_dm_logs(shared_dir)
+            if result:
+                logger.info("DM log rotation completed: %s", result)
+            else:
+                logger.debug("DM log rotation: nothing to archive")
+        except Exception:
+            logger.exception("DM log rotation failed")
 
     # ── Catch-up for missed scheduled jobs ──────────────────────────
 
@@ -462,6 +581,7 @@ class SchedulerMixin:
 
         try:
             from core.config import load_config
+
             consolidation_cfg = getattr(load_config(), "consolidation", None)
         except Exception:
             consolidation_cfg = None
@@ -499,3 +619,12 @@ class SchedulerMixin:
                     last,
                 )
                 await self._run_monthly_forgetting()
+
+        # Housekeeping catch-up
+        last = _read_marker(mdir / "last_housekeeping")
+        if last is None or (now - last) > timedelta(hours=36):
+            logger.info(
+                "Catch-up: housekeeping missed (last=%s), running now",
+                last,
+            )
+            await self._run_housekeeping()

@@ -3,6 +3,8 @@
 Mode S（Claude Agent SDK）で使用する認証方式を Anima ごとに切り替える方法。
 認証モードは **`mode_s_auth`** という明示的な設定で指定する（credential の自動判定ではない）。
 
+実装: `core/execution/agent_sdk.py` の `_build_env()` が Claude Code 子プロセスの環境変数を構築する。
+
 ## 認証モード一覧
 
 | モード | mode_s_auth 値 | 接続先 | 用途 |
@@ -41,6 +43,9 @@ Anthropic API に直接接続する。ストリーミングが最もスムーズ
 }
 ```
 
+- `api_key`: Anthropic API キー。空の場合は環境変数 `ANTHROPIC_API_KEY` にフォールバック
+- `base_url`: カスタムエンドポイント（任意）。指定時は `ANTHROPIC_BASE_URL` として子プロセスに渡される（プロキシやオンプレミス利用時）
+
 **status.json（Anima 個別）:**
 
 ```json
@@ -51,11 +56,11 @@ Anthropic API に直接接続する。ストリーミングが最もスムーズ
 }
 ```
 
-`mode_s_auth` が `"api"` で credential に `api_key` がない場合、Max plan にフォールバックする。
+`mode_s_auth` が `"api"` で credential に `api_key` がなく環境変数にもない場合、Max plan にフォールバックする。
 
 ### 2. Bedrock モード
 
-AWS Bedrock 経由で接続する。
+AWS Bedrock 経由で接続する。credential の `keys` が `extra_keys` として ModelConfig に渡され、環境変数にマッピングされる。
 
 **config.json の credential 設定:**
 
@@ -67,12 +72,24 @@ AWS Bedrock 経由で接続する。
       "keys": {
         "aws_access_key_id": "AKIA...",
         "aws_secret_access_key": "...",
-        "aws_region_name": "us-east-1"
+        "aws_region_name": "us-east-1",
+        "aws_session_token": "",
+        "aws_profile": ""
       }
     }
   }
 }
 ```
+
+| keys キー | 環境変数 | 説明 |
+|-----------|----------|------|
+| aws_access_key_id | AWS_ACCESS_KEY_ID | 必須 |
+| aws_secret_access_key | AWS_SECRET_ACCESS_KEY | 必須 |
+| aws_region_name | AWS_REGION | リージョン |
+| aws_session_token | AWS_SESSION_TOKEN | 一時認証（任意） |
+| aws_profile | AWS_PROFILE | プロファイル名（任意） |
+
+`keys` に値がない項目は、上記の対応する環境変数にフォールバックする。本番では `AWS_PROFILE` のみ設定し、キーを config に書かない運用も可能。
 
 **status.json（Anima 個別）:**
 
@@ -85,11 +102,11 @@ AWS Bedrock 経由で接続する。
 }
 ```
 
-Bedrock を Mode S で使う場合は `execution_mode: "S"` と `mode_s_auth: "bedrock"` の両方が必要。
+Bedrock を Mode S で使う場合は `execution_mode: "S"` と `mode_s_auth: "bedrock"` の両方を指定する。
 
 ### 3. Vertex AI モード
 
-Google Vertex AI 経由で接続する。
+Google Vertex AI 経由で接続する。credential の `keys` が `extra_keys` として ModelConfig に渡され、環境変数にマッピングされる。
 
 **config.json の credential 設定:**
 
@@ -97,6 +114,7 @@ Google Vertex AI 経由で接続する。
 {
   "credentials": {
     "vertex": {
+      "api_key": "",
       "keys": {
         "vertex_project": "my-gcp-project",
         "vertex_location": "us-central1",
@@ -106,6 +124,14 @@ Google Vertex AI 経由で接続する。
   }
 }
 ```
+
+| keys キー | 環境変数 | 説明 |
+|-----------|----------|------|
+| vertex_project | CLOUD_ML_PROJECT_ID | GCP プロジェクト ID |
+| vertex_location | CLOUD_ML_REGION | リージョン（例: us-central1） |
+| vertex_credentials | GOOGLE_APPLICATION_CREDENTIALS | サービスアカウント JSON パス |
+
+`keys` に値がない項目は、上記の対応する環境変数にフォールバックする。ADC（Application Default Credentials）利用時は `vertex_credentials` を省略可能。
 
 **status.json（Anima 個別）:**
 
@@ -203,7 +229,8 @@ for d in ~/.animaworks/animas/*/; do name=$(basename "$d"); python3 -c "import j
 
 - 認証モードは `_build_env()` で Claude Code 子プロセスの環境変数として渡される
 - `mode_s_auth` は credential の内容から自動判定されない。明示指定が必須
-- `mode_s_auth=api` で credential に `api_key` がない場合、Max plan にフォールバックする
-- Bedrock / Vertex を使う場合は credential の `keys` にプロバイダ固有のキーを設定し、`mode_s_auth` でモードを指定する
+- `mode_s_auth=api` で credential に `api_key` がなく環境変数にもない場合、Max plan にフォールバックする
+- Bedrock / Vertex では credential の `keys` が `extra_keys` として渡され、環境変数にマッピングされる。`keys` 未設定の項目は同名の環境変数にフォールバック
+- API モードでカスタムエンドポイントを使う場合、credential の `base_url` を指定すると `ANTHROPIC_BASE_URL` として子プロセスに渡される
 - 設定変更後はサーバー再起動が必要
 - Mode A/B では従来通り LiteLLM が credential を使用する（この設定は Mode S 専用）

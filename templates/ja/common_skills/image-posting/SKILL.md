@@ -2,9 +2,9 @@
 name: image-posting
 description: >-
   チャット応答に画像を添付・表示するスキル。
-  ツール結果(web_search等)に含まれる画像URLの自動検出・プロキシ経由表示の仕組み、
+  ツール結果(web_search、image_gen等)に含まれる画像URL・パスの自動検出・表示の仕組み、
   応答テキスト内でのMarkdown画像構文による埋め込み方法、
-  自分のassets画像の表示方法を提供する。
+  自分のassets/attachments画像の表示方法を提供する。
   「画像を貼る」「画像を見せて」「イラスト表示」「画像添付」「写真を貼って」「検索画像を表示」
 ---
 
@@ -25,22 +25,38 @@ description: >-
 
 ツール結果のJSON内で以下が検出されると画像として扱われる:
 
-- **パス検出**: `assets/` または `attachments/` で始まるパス → `source: generated`（信頼済み）
-- **URL検出**: `https://` で始まり `.png` `.jpg` `.jpeg` `.gif` `.webp` で終わるURL → `source: searched`（プロキシ経由）
-- **キー名検出**: `image_url`, `thumbnail`, `src`, `url` キーに画像URLがある場合も検出
+- **パス検出**: `path`, `file`, `filepath`, `asset_path` キーの値、または結果文字列内に `assets/` / `attachments/` で始まるパス（`.png` `.jpg` `.jpeg` `.gif` `.webp`）→ `source: generated`（信頼済み）
+- **URL検出**: `url`, `image_url`, `thumbnail`, `src` キーに画像URLがある場合 → `source: searched`（プロキシ経由、許可ドメインのみ）
+- **image_gen専用**: ツール結果全体を正規表現で走査し、`assets/` または `attachments/` を含むパスを自動抽出
 
 1応答あたり最大5枚まで。
 
+### image_genツールの出力ファイル
+
+画像生成ツール（`core/tools/image_gen.py`）は以下のアセットを `assets/` に出力する。**PNG画像**は自動表示対象、GLB（3Dモデル）はアセットとして保存されワークスペース等で別途表示される:
+
+| ツール | 出力ファイル例 | チャット自動表示 |
+|--------|----------------|------------------|
+| `generate_character_assets` | 一括パイプライン（fullbody, bustup, chibi, 3D, リグ, アニメーション） | PNGのみ |
+| `generate_fullbody` | `avatar_fullbody.png` / `avatar_fullbody_realistic.png` | ○ |
+| `generate_bustup` | `avatar_bustup.png` / `avatar_bustup_realistic.png` | ○ |
+| `generate_chibi` | `avatar_chibi.png` | ○ |
+| `generate_3d_model` | `avatar_chibi.glb` | —（3D表示用） |
+| `generate_rigged_model` | `avatar_chibi_rigged.glb`, `anim_*.glb` | —（3D表示用） |
+| `generate_animations` | `anim_idle.glb`, `anim_sitting.glb` 等 | —（3D表示用） |
+
+リアルティックスタイル（`image_style: realistic`）時は `*_realistic.png` が生成される。表情バリエーション（`bustup_expressions`）は `avatar_bustup_smile.png` 等。
+
 ### searched画像のプロキシ制限
 
-外部URL画像はセキュリティのためプロキシ経由で配信される。ドメイン固定の許可リストではなく、以下の安全検査を通過した画像のみ表示される:
+外部URL画像はセキュリティのためプロキシ経由で配信される。**アーティファクト抽出時点**で以下の許可ドメインのみが検出対象となる:
 
-- `https://` のみ（`http://` は拒否）
-- private/local/loopback/link-local 宛先は拒否
-- リダイレクト先も同じ検査を再適用
-- 画像実体（magic bytes）検証に失敗した場合は拒否
-- SVG (`image/svg+xml`) は拒否
-- サイズ上限・レート制限超過時はブロック
+- `cdn.search.brave.com`
+- `images.unsplash.com`
+- `images.pexels.com`
+- `upload.wikimedia.org`
+
+上記以外のドメインのURLはツール結果に含まれていても自動表示されない。プロキシ自体はHTTPS強制・private/local拒否・magic bytes検証・SVG拒否・サイズ・レート制限などの安全検査を実施する（`config.server.media_proxy` で `open_with_scan` / `allowlist` モードを切り替え可能）。
 
 ## 方法2: Markdown画像構文
 
@@ -96,6 +112,6 @@ agent-browser screenshot ~/.animaworks/animas/aoi/attachments/page_screenshot.pn
 ## 注意事項
 
 - 他のAnimaのアセットパスは直接参照できない（権限外）
-- 外部URLの直リンクは非推奨。安全検査でブロックされる場合がある
-- 画像生成ツール（generate_fullbody等）の結果は自動表示されるため、Markdown構文は不要
+- 外部URLの直リンクは非推奨。許可ドメイン外は自動表示されず、プロキシの安全検査でブロックされる場合がある
+- 画像生成ツール（`generate_character_assets`, `generate_fullbody`, `generate_bustup`, `generate_chibi` 等）の結果は自動表示されるため、Markdown構文は不要
 - 1応答あたりの自動表示は最大5枚

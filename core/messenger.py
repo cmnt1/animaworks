@@ -1,12 +1,11 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 #
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
-
-
 import json
 import logging
 import re
@@ -14,11 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core.exceptions import (
+    DeliveryError,
+    RecipientNotFoundError,
+)  # noqa: F401
 from core.i18n import t
-from core.time_utils import now_iso
-
-from core.exceptions import MessagingError, DeliveryError, RecipientNotFoundError  # noqa: F401
 from core.schemas import Message
+from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.messenger")
 
@@ -40,6 +41,7 @@ class ChannelMeta:
 
     If ``members`` is empty, the channel is open (all Animas can access).
     """
+
     members: list[str]
     created_by: str = ""
     created_at: str = ""
@@ -110,6 +112,7 @@ def is_channel_member(
 @dataclass
 class InboxItem:
     """Message paired with its file path for selective archiving."""
+
     msg: Message
     path: Path
 
@@ -148,12 +151,15 @@ class Messenger:
         # ── Conversation depth check (internal Anima only) ──
         if msg_type not in ("ack", "error", "system_alert"):
             from core.paths import get_animas_dir
+
             animas_dir = get_animas_dir()
             is_internal = (animas_dir / to).is_dir() if animas_dir.exists() else False
             if is_internal:
-                from core.cascade_limiter import depth_limiter
+                from core.cascade_limiter import get_depth_limiter
+
                 sender_dir = animas_dir / self.anima_name
-                outbound_check = depth_limiter.check_global_outbound(self.anima_name, sender_dir)
+                limiter = get_depth_limiter()
+                outbound_check = limiter.check_global_outbound(self.anima_name, sender_dir)
                 if outbound_check is not True:
                     logger.warning(
                         "Global outbound limit exceeded: %s. Message not sent.",
@@ -165,10 +171,11 @@ class Messenger:
                         type="error",
                         content=str(outbound_check),
                     )
-                if not depth_limiter.check_depth(self.anima_name, to, sender_dir):
+                if not limiter.check_depth(self.anima_name, to, sender_dir):
                     logger.warning(
                         "Depth limit exceeded: %s -> %s. Message not sent.",
-                        self.anima_name, to,
+                        self.anima_name,
+                        to,
                     )
                     return Message(
                         from_person="system",
@@ -196,10 +203,7 @@ class Messenger:
         filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
 
         if not filepath.exists():
-            raise DeliveryError(
-                f"Message delivery failed: file not created at {filepath} "
-                f"({self.anima_name} -> {to})"
-            )
+            raise DeliveryError(f"Message delivery failed: file not created at {filepath} ({self.anima_name} -> {to})")
 
         logger.info("Message sent: %s -> %s (%s)", self.anima_name, to, msg.id)
 
@@ -207,6 +211,7 @@ class Messenger:
         if not skip_logging:
             try:
                 from core.memory.activity import ActivityLogger
+
                 anima_dir = self.shared_dir.parent / "animas" / self.anima_name
                 if anima_dir.exists():
                     activity = ActivityLogger(anima_dir)
@@ -217,7 +222,9 @@ class Messenger:
             except Exception as e:
                 logger.warning(
                     "Activity logging failed for message_sent (%s -> %s): %s",
-                    self.anima_name, to, e,
+                    self.anima_name,
+                    to,
+                    e,
                 )
 
         return msg
@@ -235,7 +242,10 @@ class Messenger:
     # ── Channel operations ──────────────────────────────────
 
     def post_channel(
-        self, channel: str, text: str, source: str = "anima",
+        self,
+        channel: str,
+        text: str,
+        source: str = "anima",
         from_name: str | None = None,
     ) -> None:
         """Post a message to a shared channel (append-only JSONL)."""
@@ -246,7 +256,9 @@ class Messenger:
         # ── ACL check ──
         if not is_channel_member(self.shared_dir, channel, self.anima_name, source=source):
             logger.warning(
-                "ACL denied: %s cannot post to #%s", self.anima_name, channel,
+                "ACL denied: %s cannot post to #%s",
+                self.anima_name,
+                channel,
             )
             return
 
@@ -254,11 +266,13 @@ class Messenger:
         if poster != "human":
             try:
                 from core.config.models import load_config
+
                 known_animas = set(load_config().animas.keys())
                 if known_animas and self.anima_name in known_animas and poster not in known_animas:
                     logger.warning(
                         "Rejecting channel post with unknown from_name=%r to #%s",
-                        poster, channel,
+                        poster,
+                        channel,
                     )
                     return
             except Exception:
@@ -266,12 +280,15 @@ class Messenger:
         channels_dir = self.shared_dir / "channels"
         channels_dir.mkdir(parents=True, exist_ok=True)
         filepath = channels_dir / f"{channel}.jsonl"
-        entry = json.dumps({
-            "ts": now_iso(),
-            "from": poster,
-            "text": text,
-            "source": source,
-        }, ensure_ascii=False)
+        entry = json.dumps(
+            {
+                "ts": now_iso(),
+                "from": poster,
+                "text": text,
+                "source": source,
+            },
+            ensure_ascii=False,
+        )
         try:
             with filepath.open("a", encoding="utf-8") as f:
                 f.write(entry + "\n")
@@ -304,8 +321,12 @@ class Messenger:
         return None
 
     def read_channel(
-        self, channel: str, limit: int = 20, human_only: bool = False,
-        *, source: str = "anima",
+        self,
+        channel: str,
+        limit: int = 20,
+        human_only: bool = False,
+        *,
+        source: str = "anima",
     ) -> list[dict]:
         """Read recent messages from a shared channel."""
         _validate_name(channel, "channel name")
@@ -313,7 +334,9 @@ class Messenger:
         # ── ACL check ──
         if not is_channel_member(self.shared_dir, channel, self.anima_name, source=source):
             logger.warning(
-                "ACL denied: %s cannot read #%s", self.anima_name, channel,
+                "ACL denied: %s cannot read #%s",
+                self.anima_name,
+                channel,
             )
             return []
 
@@ -342,8 +365,12 @@ class Messenger:
         return entries
 
     def read_channel_mentions(
-        self, channel: str, name: str | None = None, limit: int = 10,
-        *, source: str = "anima",
+        self,
+        channel: str,
+        name: str | None = None,
+        limit: int = 10,
+        *,
+        source: str = "anima",
     ) -> list[dict]:
         """Read messages mentioning @name from a shared channel."""
         _validate_name(channel, "channel name")
@@ -364,13 +391,15 @@ class Messenger:
         # New source: unified activity log
         try:
             from core.memory.activity import ActivityLogger
+
             # Determine anima_dir from shared_dir (shared_dir is {data}/shared,
             # anima_dir is {data}/animas/{name})
             anima_dir = self.shared_dir.parent / "animas" / self.anima_name
             if anima_dir.exists():
                 activity = ActivityLogger(anima_dir)
                 recent = activity.recent(
-                    days=30, limit=limit * 2,
+                    days=30,
+                    limit=limit * 2,
                     types=["message_sent", "message_received"],
                     involving=peer,
                 )
@@ -378,12 +407,14 @@ class Messenger:
                     # Exclude chat message_received (from_type=human)
                     if e.type == "message_received" and e.meta.get("from_type") != "anima":
                         continue
-                    entries.append({
-                        "ts": e.ts,
-                        "from": e.from_person or self.anima_name,
-                        "text": e.content,
-                        "source": "activity_log",
-                    })
+                    entries.append(
+                        {
+                            "ts": e.ts,
+                            "from": e.from_person or self.anima_name,
+                            "text": e.content,
+                            "source": "activity_log",
+                        }
+                    )
         except Exception:
             logger.debug("Failed to read DM history from activity log", exc_info=True)
 
@@ -435,6 +466,7 @@ class Messenger:
         known_animas: set[str] | None = None
         try:
             from core.config.models import load_config
+
             cfg_animas = set(load_config().animas.keys())
             if self.anima_name in cfg_animas:
                 known_animas = cfg_animas
@@ -446,14 +478,15 @@ class Messenger:
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
                 msg = Message(**data)
-                if known_animas is not None and msg.from_person not in known_animas:
+                if known_animas is not None and msg.source == "anima" and msg.from_person not in known_animas:
                     logger.warning(
                         "Ignoring inbox message with unknown from_person=%r in %s",
-                        msg.from_person, f,
+                        msg.from_person,
+                        f,
                     )
                     continue
                 messages.append(msg)
-            except Exception as e:
+            except (json.JSONDecodeError, OSError, KeyError) as e:
                 logger.error("Failed to parse message %s: %s", f, e)
         return messages
 
@@ -467,6 +500,7 @@ class Messenger:
         known_animas: set[str] | None = None
         try:
             from core.config.models import load_config
+
             cfg_animas = set(load_config().animas.keys())
             if self.anima_name in cfg_animas:
                 known_animas = cfg_animas
@@ -478,14 +512,15 @@ class Messenger:
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
                 msg = Message(**data)
-                if known_animas is not None and msg.from_person not in known_animas:
+                if known_animas is not None and msg.source == "anima" and msg.from_person not in known_animas:
                     logger.warning(
                         "Ignoring inbox message with unknown from_person=%r in %s",
-                        msg.from_person, f,
+                        msg.from_person,
+                        f,
                     )
                     continue
                 items.append(InboxItem(msg=msg, path=f))
-            except Exception:
+            except (json.JSONDecodeError, OSError, KeyError):
                 logger.warning("Failed to read inbox file: %s", f, exc_info=True)
         return items
 
@@ -510,6 +545,7 @@ class Messenger:
             # E: Send read ACK to senders (disabled by default via heartbeat.enable_read_ack)
             try:
                 from core.config.models import load_config
+
                 _send_ack = load_config().heartbeat.enable_read_ack
             except Exception:
                 _send_ack = False
@@ -533,7 +569,9 @@ class Messenger:
                             )
                         except Exception:
                             logger.debug(
-                                "Failed to send read ACK to %s", sender, exc_info=True,
+                                "Failed to send read ACK to %s",
+                                sender,
+                                exc_info=True,
                             )
             self.archive_all()
         return messages
@@ -568,7 +606,7 @@ class Messenger:
                 if data.get("from_person") == sender:
                     f.rename(processed_dir / f.name)
                     count += 1
-            except Exception as e:
+            except (OSError, json.JSONDecodeError, KeyError) as e:
                 logger.error("Failed to check message %s: %s", f, e)
         return count
 
@@ -585,6 +623,7 @@ class Messenger:
         source_message_id: str = "",
         external_user_id: str = "",
         external_channel_id: str = "",
+        intent: str = "",
     ) -> Message:
         """Receive a message from an external platform and place it in inbox.
 
@@ -592,11 +631,13 @@ class Messenger:
         anima's inbox directory.
         """
         from core.execution._sanitize import ORIGIN_EXTERNAL_PLATFORM
+
         msg = Message(
             from_person=f"{source}:{external_user_id}" if external_user_id else source,
             to_person=self.anima_name,
             content=content,
             source=source,
+            intent=intent,
             source_message_id=source_message_id,
             external_user_id=external_user_id,
             external_channel_id=external_channel_id,
@@ -608,7 +649,10 @@ class Messenger:
         filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
         logger.info(
             "External message received: %s -> %s (source=%s, id=%s)",
-            msg.from_person, self.anima_name, source, msg.id,
+            msg.from_person,
+            self.anima_name,
+            source,
+            msg.id,
         )
         # Mirror to general channel if human uses @all
         if source == "human" and "@all" in content:

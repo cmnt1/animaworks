@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -58,10 +59,7 @@ def apply_db_descriptions(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 MEMORY_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_memory",
-        "description": (
-            "Search the anima's long-term memory "
-            "(knowledge, episodes, procedures) by keyword."
-        ),
+        "description": ("Search the anima's long-term memory (knowledge, episodes, procedures) by keyword."),
         "parameters": {
             "type": "object",
             "properties": {
@@ -197,6 +195,7 @@ CHANNEL_TOOLS: list[dict[str, Any]] = [
             "Boardの共有チャネルの直近メッセージを読む。"
             "他のAnimaやユーザーが共有した情報を確認できる。"
             "human_only=trueでユーザー発言のみフィルタリング可能。"
+            "inbox はチャネルではないため指定不可（inbox はシステムが自動処理）。"
         ),
         "parameters": {
             "type": "object",
@@ -447,26 +446,46 @@ NOTIFICATION_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
-DISCOVERY_TOOLS: list[dict[str, Any]] = [
+DISCOVERY_TOOLS: list[dict[str, Any]] = []
+
+USE_TOOL: list[dict[str, Any]] = [
     {
-        "name": "discover_tools",
+        "name": "use_tool",
         "description": (
-            "Discover available external tools. "
-            "Call without arguments to list available categories. "
-            "Call with a category name to activate that category's tools."
+            "Execute an external tool action. "
+            "Combines tool_name and action to dispatch to the appropriate "
+            "external tool module (e.g. chatwork + send → chatwork_send). "
+            "Available tools depend on permissions.md settings. "
+            "Use the 'skill' tool to look up detailed usage for each tool."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "category": {
+                "tool_name": {
                     "type": "string",
                     "description": (
-                        "Tool category to activate "
-                        "(e.g. 'chatwork', 'slack', 'gmail'). "
-                        "Omit to list all available categories."
+                        "External tool module name "
+                        "(e.g. 'chatwork', 'slack', 'gmail', 'web_search', "
+                        "'github', 'aws_collector', 'image_gen', 'x_search', "
+                        "'transcribe', 'local_llm', 'google_calendar')"
+                    ),
+                },
+                "action": {
+                    "type": "string",
+                    "description": (
+                        "Action/subcommand to execute within the tool (e.g. 'send', 'read', 'search', 'query', 'list')"
+                    ),
+                },
+                "args": {
+                    "type": "object",
+                    "description": (
+                        "Arguments to pass to the tool action. "
+                        "Refer to the tool's skill documentation for "
+                        "required and optional parameters."
                     ),
                 },
             },
+            "required": ["tool_name", "action"],
         },
     },
 ]
@@ -564,10 +583,7 @@ ADMIN_TOOLS: list[dict[str, Any]] = [
 SUPERVISOR_TOOLS: list[dict[str, Any]] = [
     {
         "name": "disable_subordinate",
-        "description": (
-            "部下のAnimaを休止させる（プロセス停止 + 自動復帰防止）。"
-            "自分の直属部下のみ操作可能。"
-        ),
+        "description": ("部下のAnimaを休止させる（プロセス停止 + 自動復帰防止）。自分の直属部下のみ操作可能。"),
         "parameters": {
             "type": "object",
             "properties": {
@@ -585,10 +601,7 @@ SUPERVISOR_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "enable_subordinate",
-        "description": (
-            "休止中の部下のAnimaを復帰させる。"
-            "自分の直属部下のみ操作可能。"
-        ),
+        "description": ("休止中の部下のAnimaを復帰させる。自分の直属部下のみ操作可能。"),
         "parameters": {
             "type": "object",
             "properties": {
@@ -641,6 +654,37 @@ SUPERVISOR_TOOLS: list[dict[str, Any]] = [
                 "reason": {
                     "type": "string",
                     "description": "変更理由（activity_log に記録される）",
+                },
+            },
+            "required": ["name", "model"],
+        },
+    },
+    {
+        "name": "set_subordinate_background_model",
+        "description": (
+            "部下のバックグラウンドモデル（heartbeat/cron用）を変更する（直属部下のみ可能）。\n"
+            "変更は即時 status.json に保存される。反映には restart_subordinate を併用すること。\n\n"
+            "バックグラウンドモデル未設定時はメインモデル（model）がそのまま使用される。\n"
+            "クリアするには model に空文字 '' を指定する。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "対象の部下Anima名",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "バックグラウンドモデル名（空文字でクリア）",
+                },
+                "credential": {
+                    "type": "string",
+                    "description": "credential名（省略可）",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "変更理由",
                 },
             },
             "required": ["name", "model"],
@@ -849,16 +893,12 @@ KNOWLEDGE_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": (
-                        "Relative path to the knowledge file "
-                        "(e.g. 'knowledge/deployment-notes.md')"
-                    ),
+                    "description": ("Relative path to the knowledge file (e.g. 'knowledge/deployment-notes.md')"),
                 },
                 "success": {
                     "type": "boolean",
                     "description": (
-                        "Whether the knowledge was useful/accurate (true) "
-                        "or inaccurate/irrelevant (false)"
+                        "Whether the knowledge was useful/accurate (true) or inaccurate/irrelevant (false)"
                     ),
                 },
                 "notes": {
@@ -867,6 +907,72 @@ KNOWLEDGE_TOOLS: list[dict[str, Any]] = [
                 },
             },
             "required": ["path", "success"],
+        },
+    },
+]
+
+VAULT_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "vault_get",
+        "description": (
+            "暗号化されたクレデンシャルvaultから値を取得する。"
+            "APIキー、パスワード、トークンなどの秘密情報を安全に保管・取得できる。"
+            "sectionとkeyを指定して値を取得する。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "section": {
+                    "type": "string",
+                    "description": "セクション名（例: 'shared', 'bitwarden', 'bank'）",
+                },
+                "key": {
+                    "type": "string",
+                    "description": "キー名（例: 'api_key', 'master_password'）",
+                },
+            },
+            "required": ["section", "key"],
+        },
+    },
+    {
+        "name": "vault_store",
+        "description": (
+            "暗号化されたクレデンシャルvaultに値を保存する。"
+            "APIキー、パスワード、トークンなどの秘密情報を暗号化して保管する。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "section": {
+                    "type": "string",
+                    "description": "セクション名（例: 'shared', 'bitwarden', 'bank'）",
+                },
+                "key": {
+                    "type": "string",
+                    "description": "キー名（例: 'api_key', 'master_password'）",
+                },
+                "value": {
+                    "type": "string",
+                    "description": "保存する値（暗号化されて保存される）",
+                },
+            },
+            "required": ["section", "key", "value"],
+        },
+    },
+    {
+        "name": "vault_list",
+        "description": (
+            "暗号化されたクレデンシャルvaultのセクション・キー一覧を表示する。"
+            "値は表示されない（セクション名とキー名のみ）。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "section": {
+                    "type": "string",
+                    "description": "セクション名（省略時は全セクション一覧）",
+                },
+            },
         },
     },
 ]
@@ -1092,8 +1198,7 @@ TASK_TOOLS: list[dict[str, Any]] = [
     {
         "name": "update_task",
         "description": (
-            "タスクのステータスを更新する。"
-            "完了時は status='done'、中断時は status='cancelled' に設定する。"
+            "タスクのステータスを更新する。完了時は status='done'、中断時は status='cancelled' に設定する。"
         ),
         "parameters": {
             "type": "object",
@@ -1104,7 +1209,7 @@ TASK_TOOLS: list[dict[str, Any]] = [
                 },
                 "status": {
                     "type": "string",
-                    "enum": ["pending", "in_progress", "done", "cancelled", "blocked"],
+                    "enum": ["pending", "in_progress", "done", "cancelled", "blocked", "failed"],
                     "description": "新しいステータス",
                 },
                 "summary": {
@@ -1117,16 +1222,13 @@ TASK_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "list_tasks",
-        "description": (
-            "タスクキューの一覧を取得する。"
-            "ステータスでフィルタリング可能。"
-        ),
+        "description": ("タスクキューの一覧を取得する。ステータスでフィルタリング可能。"),
         "parameters": {
             "type": "object",
             "properties": {
                 "status": {
                     "type": "string",
-                    "enum": ["pending", "in_progress", "done", "cancelled", "blocked"],
+                    "enum": ["pending", "in_progress", "done", "cancelled", "blocked", "failed"],
                     "description": "フィルタするステータス（省略時は全件）",
                 },
             },
@@ -1223,7 +1325,7 @@ def to_text_format(
             "If you don't need to use a tool, respond with plain text.",
             "Only one tool call per message.",
             "**Important**: NEVER fabricate command output, file contents, or system information. Always use a tool to retrieve real data.",
-            "Do NOT just say \"I'll check\" without actually calling a tool.",
+            'Do NOT just say "I\'ll check" without actually calling a tool.',
         ]
         fewshot_header = "### Examples"
         fewshot_items = [
@@ -1291,6 +1393,7 @@ def build_tool_list(
     include_file_tools: bool = False,
     include_search_tools: bool = False,
     include_discovery_tools: bool = False,
+    include_use_tool: bool = False,
     include_notification_tools: bool = False,
     include_admin_tools: bool = False,
     include_supervisor_tools: bool = False,
@@ -1298,6 +1401,7 @@ def build_tool_list(
     include_task_tools: bool = False,
     include_plan_tasks: bool = False,
     include_background_task_tools: bool = False,
+    include_vault_tools: bool = False,
     include_skill_tools: bool = False,
     skill_metas: list[Any] | None = None,
     common_skill_metas: list[Any] | None = None,
@@ -1309,7 +1413,8 @@ def build_tool_list(
     Args:
         include_file_tools: Include file/command operation tools (for Mode A).
         include_search_tools: Include search_code/list_directory tools.
-        include_discovery_tools: Include discover_tools tool.
+        include_discovery_tools: Include discover_tools tool (deprecated, now empty).
+        include_use_tool: Include use_tool unified external tool dispatcher.
         include_notification_tools: Include call_human tool (for top-level Animas).
         include_admin_tools: Include admin tools (create_anima etc.).
         include_supervisor_tools: Include supervisor tools (disable/enable subordinate).
@@ -1317,6 +1422,7 @@ def build_tool_list(
         include_task_tools: Include task queue tools (add_task, update_task, list_tasks).
         include_plan_tasks: Include plan_tasks DAG batch submission tool.
         include_background_task_tools: Include background task check/list tools.
+        include_vault_tools: Include credential vault tools (get/store/list).
         include_skill_tools: Include skill on-demand loading tool.
         skill_metas: Personal skill metadata for dynamic description generation.
         common_skill_metas: Common skill metadata for dynamic description generation.
@@ -1341,6 +1447,8 @@ def build_tool_list(
         tools.extend(SEARCH_TOOLS)
     if include_discovery_tools:
         tools.extend(DISCOVERY_TOOLS)
+    if include_use_tool:
+        tools.extend(USE_TOOL)
     if include_notification_tools:
         tools.extend(NOTIFICATION_TOOLS)
     if include_admin_tools:
@@ -1355,6 +1463,8 @@ def build_tool_list(
         tools.extend(PLAN_TASKS_TOOLS)
     if include_background_task_tools:
         tools.extend(BACKGROUND_TASK_TOOLS)
+    if include_vault_tools:
+        tools.extend(VAULT_TOOLS)
     if external_schemas:
         tools.extend(external_schemas)
     tools = apply_db_descriptions(tools)
@@ -1423,7 +1533,8 @@ def load_personal_tool_schemas(
     for tool_name, file_path in personal_tools.items():
         try:
             spec = importlib.util.spec_from_file_location(
-                f"animaworks_personal_tool_{tool_name}", file_path,
+                f"animaworks_personal_tool_{tool_name}",
+                file_path,
             )
             if spec is None or spec.loader is None:
                 continue
@@ -1436,7 +1547,8 @@ def load_personal_tool_schemas(
         except Exception:
             logger.debug(
                 "Failed to load personal tool schemas: %s",
-                tool_name, exc_info=True,
+                tool_name,
+                exc_info=True,
             )
     return schemas
 

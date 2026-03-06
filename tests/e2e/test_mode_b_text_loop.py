@@ -196,16 +196,16 @@ class TestModeBTextLoop:
         assert tool_result_msg["role"] == "user"
         assert "ツール実行結果:" in tool_result_msg["content"]
 
-    async def test_llm_api_error_returns_error_text(self, assisted_executor):
-        """LiteLLM error -> returns error message."""
-        with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API timeout")):
-            result = await assisted_executor.execute(
-                prompt="テスト",
-                system_prompt="テスト",
-            )
+    async def test_llm_api_error_raises_execution_error(self, assisted_executor):
+        """LiteLLM error -> raises ExecutionError."""
+        from core.exceptions import ExecutionError
 
-        assert "[LLM API Error:" in result.text
-        assert "API timeout" in result.text
+        with pytest.raises(ExecutionError, match="API timeout"):
+            with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API timeout")):
+                await assisted_executor.execute(
+                    prompt="テスト",
+                    system_prompt="テスト",
+                )
 
 
 class TestModeBModeRouting:

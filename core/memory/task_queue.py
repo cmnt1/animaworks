@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -19,6 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
+from core.exceptions import TaskPersistenceError as TaskPersistenceError  # noqa: F401
 from core.i18n import t
 from core.schemas import TaskEntry
 from core.time_utils import ensure_aware, now_iso, now_jst
@@ -26,7 +28,9 @@ from core.time_utils import ensure_aware, now_iso, now_jst
 logger = logging.getLogger("animaworks.task_queue")
 
 # Valid task statuses
-_VALID_STATUSES = frozenset({"pending", "in_progress", "done", "cancelled", "blocked", "delegated"})
+_VALID_STATUSES = frozenset({"pending", "in_progress", "done", "cancelled", "blocked", "delegated", "failed"})
+_TERMINAL_STATUSES = frozenset({"done", "cancelled", "failed"})
+
 # Valid task sources
 _VALID_SOURCES = frozenset({"human", "anima"})
 # Maximum characters for original_instruction
@@ -65,9 +69,8 @@ def _parse_deadline(value: str) -> str:
         return value
     except (ValueError, TypeError):
         raise ValueError(
-            f"Invalid deadline format: {value!r}. "
-            "Use relative format ('30m', '2h', '1d') or ISO8601."
-        )
+            f"Invalid deadline format: {value!r}. Use relative format ('30m', '2h', '1d') or ISO8601."
+        ) from None
 
 
 def _elapsed_seconds(updated_at: str, now: datetime) -> float | None:
@@ -104,8 +107,8 @@ def _format_deadline_display(deadline: str, now: datetime) -> str:
     except (ValueError, TypeError):
         return ""
     if now >= dl:
-        return t("task_queue.overdue", time=dl.strftime('%H:%M'))
-    return t("task_queue.deadline_by", time=dl.strftime('%H:%M'))
+        return t("task_queue.overdue", time=dl.strftime("%H:%M"))
+    return t("task_queue.deadline_by", time=dl.strftime("%H:%M"))
 
 
 class TaskQueueManager:
@@ -144,9 +147,7 @@ class TaskQueueManager:
         if source not in _VALID_SOURCES:
             raise ValueError(f"Invalid source: {source!r} (must be 'human' or 'anima')")
         if not deadline:
-            raise ValueError(
-                "deadline is required. Use relative format ('30m', '2h', '1d') or ISO8601."
-            )
+            raise ValueError("deadline is required. Use relative format ('30m', '2h', '1d') or ISO8601.")
         parsed_deadline = _parse_deadline(deadline)
         if len(original_instruction) > _MAX_INSTRUCTION_CHARS:
             original_instruction = original_instruction[:_MAX_INSTRUCTION_CHARS]
@@ -167,7 +168,10 @@ class TaskQueueManager:
         self._append(entry.model_dump())
         logger.info(
             "Task added: id=%s source=%s assignee=%s summary=%s",
-            entry.task_id, source, assignee, summary[:50],
+            entry.task_id,
+            source,
+            assignee,
+            summary[:50],
         )
         return entry
 
@@ -208,7 +212,9 @@ class TaskQueueManager:
         self._append(entry.model_dump())
         logger.info(
             "Delegated task added: id=%s assignee=%s summary=%s",
-            entry.task_id, assignee, summary[:50],
+            entry.task_id,
+            assignee,
+            summary[:50],
         )
         return entry
 
@@ -303,10 +309,7 @@ class TaskQueueManager:
     def get_pending(self) -> list[TaskEntry]:
         """Return tasks with status 'pending' or 'in_progress'."""
         tasks = self._load_all()
-        return [
-            t for t in tasks.values()
-            if t.status in ("pending", "in_progress")
-        ]
+        return [t for t in tasks.values() if t.status in ("pending", "in_progress")]
 
     def get_human_tasks(self) -> list[TaskEntry]:
         """Return pending/in_progress tasks with source='human'."""
@@ -315,10 +318,7 @@ class TaskQueueManager:
     def get_all_active(self) -> list[TaskEntry]:
         """Return all non-terminal tasks (pending, in_progress, blocked)."""
         tasks = self._load_all()
-        return [
-            t for t in tasks.values()
-            if t.status in ("pending", "in_progress", "blocked")
-        ]
+        return [t for t in tasks.values() if t.status in ("pending", "in_progress", "blocked")]
 
     def list_tasks(self, status: str | None = None) -> list[TaskEntry]:
         """List tasks, optionally filtered by status."""
@@ -360,10 +360,7 @@ class TaskQueueManager:
         for task in tasks:
             priority = "🔴 HIGH" if task.source == "human" else "⚪"
             status_icon = "🔄" if task.status == "in_progress" else "📋"
-            line = (
-                f"- {status_icon} {priority} [{task.task_id[:8]}] "
-                f"{task.summary} (assignee: {task.assignee})"
-            )
+            line = f"- {status_icon} {priority} [{task.task_id[:8]}] {task.summary} (assignee: {task.assignee})"
             if task.relay_chain:
                 line += f" chain: {' → '.join(task.relay_chain)}"
 
@@ -409,7 +406,7 @@ class TaskQueueManager:
         Returns the number of tasks removed.
         """
         tasks = self._load_all()
-        active = {tid: t for tid, t in tasks.items() if t.status not in ("done", "cancelled")}
+        active = {tid: t for tid, t in tasks.items() if t.status not in _TERMINAL_STATUSES}
         removed = len(tasks) - len(active)
         if removed == 0:
             return 0
@@ -441,5 +438,6 @@ class TaskQueueManager:
                 f.write(line + "\n")
                 f.flush()
                 os.fsync(f.fileno())
-        except Exception:
+        except OSError as exc:
             logger.exception("Failed to append to task queue")
+            raise TaskPersistenceError(str(exc)) from exc

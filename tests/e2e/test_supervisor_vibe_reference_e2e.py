@@ -27,12 +27,13 @@ def animas_dir(data_dir: Path) -> Path:
 
 @pytest.fixture
 def supervisor_with_image(animas_dir: Path) -> Path:
-    """Create a supervisor anima with a fullbody avatar image."""
+    """Create a supervisor anima with fullbody avatar images (anime + realistic)."""
     supervisor_dir = animas_dir / "sakura"
     assets_dir = supervisor_dir / "assets"
     assets_dir.mkdir(parents=True)
-    fullbody = assets_dir / "avatar_fullbody.png"
-    fullbody.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)  # Minimal PNG header
+    _png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100  # Minimal PNG header
+    (assets_dir / "avatar_fullbody.png").write_bytes(_png)
+    (assets_dir / "avatar_fullbody_realistic.png").write_bytes(_png)
     return supervisor_dir
 
 
@@ -127,11 +128,15 @@ class TestSupervisorVibeReferenceE2E:
 
         assert len(captured_configs) == 1
         config_used = captured_configs[0]
+        ref_name = (
+            "avatar_fullbody_realistic.png"
+            if config.image_gen.image_style == "realistic"
+            else "avatar_fullbody.png"
+        )
         expected_path = str(
-            supervisor_with_image / "assets" / "avatar_fullbody.png"
+            supervisor_with_image / "assets" / ref_name
         )
         assert config_used.style_reference == expected_path
-        # Vibe transfer settings preserved from global config
         assert config_used.vibe_strength == 0.8
         assert config_used.vibe_info_extracted == 0.7
         assert config_used.style_prefix == "anime, "
@@ -215,9 +220,13 @@ class TestSupervisorVibeReferenceE2E:
 
         assert len(captured_configs) == 1
         config_used = captured_configs[0]
-        # Supervisor image should win over global style_reference
+        ref_name = (
+            "avatar_fullbody_realistic.png"
+            if config.image_gen.image_style == "realistic"
+            else "avatar_fullbody.png"
+        )
         expected_path = str(
-            supervisor_with_image / "assets" / "avatar_fullbody.png"
+            supervisor_with_image / "assets" / ref_name
         )
         assert config_used.style_reference == expected_path
         assert config_used.style_reference != "/global/org_style.png"
@@ -247,15 +256,15 @@ class TestSupervisorVibeReferenceE2E:
         # Original config object must remain unchanged
         assert config.image_gen.style_reference == original_ref
 
-    def test_schema_includes_supervisor_name_param(self):
-        """The generate_character_assets schema should include supervisor_name."""
-        from core.tools.image_gen import get_tool_schemas
+    def test_dispatch_accepts_supervisor_name_param(self):
+        """The image_gen dispatch should accept supervisor_name parameter."""
+        import inspect
+        from core.tools.image_gen import dispatch
 
-        schemas = get_tool_schemas()
-        gen_schema = next(s for s in schemas if s["name"] == "generate_character_assets")
-        props = gen_schema["input_schema"]["properties"]
-        assert "supervisor_name" in props
-        assert props["supervisor_name"]["type"] == "string"
+        src = inspect.getsource(dispatch)
+        assert "supervisor_name" in src, (
+            "dispatch() should handle supervisor_name for Vibe Transfer"
+        )
 
     def test_multiple_subordinates_get_same_supervisor_reference(
         self,
@@ -283,8 +292,13 @@ class TestSupervisorVibeReferenceE2E:
             )
             all_captured_configs.extend(captured)
 
+        ref_name = (
+            "avatar_fullbody_realistic.png"
+            if config.image_gen.image_style == "realistic"
+            else "avatar_fullbody.png"
+        )
         expected_path = str(
-            supervisor_with_image / "assets" / "avatar_fullbody.png"
+            supervisor_with_image / "assets" / ref_name
         )
         assert len(all_captured_configs) == 3
         for cfg in all_captured_configs:

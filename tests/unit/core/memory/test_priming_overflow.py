@@ -89,6 +89,51 @@ class TestChannelCLegacyWhenNone:
         assert isinstance(result, tuple)
 
 
+class TestChannelCFallbackToMessageWhenNoKeywords:
+    @pytest.mark.asyncio
+    async def test_channel_c_uses_message_when_keywords_empty(
+        self, priming_engine: PrimingEngine,
+    ) -> None:
+        """When keywords is empty but message exists, use message[:200] as query."""
+        (priming_engine.knowledge_dir / "topic.md").write_text(
+            "Some knowledge", encoding="utf-8",
+        )
+
+        mock_retriever = MagicMock()
+        mock_retriever.search.return_value = []
+
+        with patch.object(
+            priming_engine, "_get_or_create_retriever", return_value=mock_retriever,
+        ):
+            await priming_engine._channel_c_related_knowledge(
+                keywords=[], message="短いメッセージ",
+            )
+
+        mock_retriever.search.assert_called_once()
+        actual_query = mock_retriever.search.call_args.kwargs.get("query")
+        assert "短いメッセージ" in actual_query
+
+    @pytest.mark.asyncio
+    async def test_channel_c_returns_empty_no_keywords_no_message(
+        self, priming_engine: PrimingEngine,
+    ) -> None:
+        """When both keywords and message are empty, return empty tuple."""
+        (priming_engine.knowledge_dir / "topic.md").write_text(
+            "Knowledge", encoding="utf-8",
+        )
+
+        mock_retriever = MagicMock()
+        with patch.object(
+            priming_engine, "_get_or_create_retriever", return_value=mock_retriever,
+        ):
+            result = await priming_engine._channel_c_related_knowledge(
+                keywords=[], message="",
+            )
+
+        assert result == ("", "")
+        mock_retriever.search.assert_not_called()
+
+
 class TestPrimeMemoriesPassesOverflowToChannelC:
     @pytest.mark.asyncio
     async def test_prime_memories_passes_overflow_to_channel_c(

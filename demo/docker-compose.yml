@@ -7,7 +7,7 @@ services:
       - "18500:18500"
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      PRESET: ${PRESET:-en-anime}
+      PRESET: ${PRESET:-en-business}
       TZ: ${TZ:-Asia/Tokyo}
     volumes:
       - animaworks-demo-data:/root/.animaworks

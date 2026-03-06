@@ -11,7 +11,7 @@ Task state is managed by files in the `state/` directory and the task queue.
 |----------|------|
 | `state/current_task.md` | Current task being worked on (one at a time) |
 | `state/pending.md` | Manual backlog (free-form) |
-| `state/pending/` directory | LLM tasks written by Heartbeat (JSON format). TaskExec path automatically picks them up and runs them |
+| `state/pending/` directory | LLM tasks (JSON format). Written by Heartbeat, plan_tasks, and Task tool. TaskExec path automatically picks them up and runs them |
 | `state/task_queue.jsonl` | Persistent task queue (append-only JSONL). Tracks requests from humans and Anima |
 
 `state/current_task.md` MUST always reflect the latest state. Update it whenever the task state changes.
@@ -28,9 +28,9 @@ In AnimaWorks, tasks are processed across three independent paths:
 
 Heartbeat does **not** execute. When it finds a task that needs execution, it either delegates via `delegate_task` (if subordinates are available) or writes it out as a JSON file to `state/pending/` for the TaskExec path.
 
-In S-mode (Claude Agent SDK) Chat path, the **Task tool** provides automatic routing:
-- With subordinates → immediately delegated to a subordinate based on the description
-- Without subordinates → runs immediately as a parallel sub-agent
+In S-mode (Claude Agent SDK) Chat path, the **Task tool** (and Agent tool) provides automatic routing:
+- With subordinates → immediately delegated to the subordinate with minimum workload and best role match (same flow as delegate_task)
+- Without subordinates, or when delegation fails → written to `state/pending/`, and TaskExec path runs it
 
 ### Task Queue (add_task / update_task / list_tasks)
 
@@ -45,11 +45,11 @@ add_task(source="human", original_instruction="Create the monthly sales report a
 ```
 
 | Parameter | Required | Description |
-|-----------|----------|--------------|
+|-----------|----------|-------------|
 | `source` | MUST | `human` (request from human) / `anima` (delegation from Anima) |
-| `original_instruction` | MUST | Original instruction text (include quoted text when delegating) |
+| `original_instruction` | MUST | Original instruction text (include quoted text when delegating. Max 10,000 characters) |
 | `assignee` | MUST | Assignee name (your own name or delegated Anima name) |
-| `summary` | SHOULD | One-line task summary (defaults to first 100 chars of original_instruction if omitted) |
+| `summary` | MUST | One-line task summary (defaults to first 100 chars of original_instruction if empty) |
 | `deadline` | MUST | Deadline. Relative format `30m` / `2h` / `1d` or ISO8601 |
 | `relay_chain` | MAY | Delegation chain (e.g. `["aoi", "taro"]`) |
 
@@ -59,7 +59,7 @@ add_task(source="human", original_instruction="Create the monthly sales report a
 
 #### update_task
 
-Updates task status. Set to `done` when complete, `cancelled` when aborted.
+Updates task status. Set to `done` when complete, `cancelled` when aborted, `failed` when execution fails.
 
 ```
 update_task(task_id="abc123def456", status="in_progress")
@@ -69,7 +69,7 @@ update_task(task_id="abc123def456", status="done", summary="Report creation comp
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `task_id` | MUST | Task ID (returned when add_task was called) |
-| `status` | MUST | `pending` / `in_progress` / `done` / `cancelled` / `blocked` |
+| `status` | MUST | `pending` / `in_progress` / `done` / `cancelled` / `blocked` / `failed` |
 | `summary` | MAY | Updated summary |
 
 #### list_tasks
@@ -77,9 +77,11 @@ update_task(task_id="abc123def456", status="done", summary="Report creation comp
 Retrieves the task queue list. Can filter by status.
 
 ```
-list_tasks()                    # All tasks
-list_tasks(status="pending")    # Pending only
+list_tasks()                     # All tasks
+list_tasks(status="pending")     # Pending only
 list_tasks(status="in_progress") # In progress only
+list_tasks(status="done")        # Completed only
+list_tasks(status="failed")      # Failed only
 ```
 
 #### Task Queue States and Markers
@@ -91,9 +93,10 @@ list_tasks(status="in_progress") # In progress only
 | `done` | Completed |
 | `cancelled` | Cancelled |
 | `blocked` | Blocked |
+| `failed` | Failed (when TaskExec or similar execution fails) |
 | `delegated` | Delegated (tracking for tasks delegated to subordinates via delegate_task) |
 
-In Priming display, tasks not updated for 30+ minutes get the ⚠️ STALE marker; overdue tasks get the 🔴 OVERDUE marker.
+In Priming display, human-originated tasks (source=human) get the 🔴 HIGH marker, tasks not updated for 30+ minutes get the ⚠️ STALE marker, and overdue tasks get the 🔴 OVERDUE marker.
 
 ## Using current_task.md
 
@@ -385,15 +388,19 @@ plan_tasks(batch_id="build-20260301", tasks=[
 | `tasks[].description` | MUST | Work content |
 | `tasks[].parallel` | MAY | `true` for parallel execution (default: `false`) |
 | `tasks[].depends_on` | MAY | Array of predecessor task IDs |
+| `tasks[].acceptance_criteria` | MAY | Array of completion criteria |
+| `tasks[].constraints` | MAY | Array of constraints |
+| `tasks[].file_paths` | MAY | Array of related file paths |
 
 ### How It Works
 
 1. `plan_tasks` validates (unique IDs, valid dependencies, cycle detection)
 2. Task files are written to `state/pending/` with `batch_id`
-3. TaskExec detects the batch and determines execution order via topological sort
+3. TaskExec (PendingTaskExecutor) detects the batch and determines execution order via topological sort
 4. `parallel: true` tasks with no pending dependencies run concurrently within semaphore limit
 5. Predecessor results are automatically injected into dependent task context
 6. If a predecessor fails, dependent tasks are skipped
+7. Tasks not executed within 24 hours of submit are skipped (TTL)
 
 ### Concurrency Limit
 
@@ -401,8 +408,8 @@ Max parallel tasks is controlled by `config.json` `background_task.max_parallel_
 
 ### Task Result Storage
 
-Completed task result summaries are saved to `state/task_results/{task_id}.json`.
-Dependent tasks automatically receive these results as context.
+Completed task result summaries are saved to `state/task_results/{task_id}.md` (max 2,000 characters).
+Dependent tasks automatically receive these results as context. If a predecessor fails, dependent tasks are skipped and `FAILED: {reason}` is recorded.
 
 ### When to Use plan_tasks vs Direct Write
 
@@ -416,7 +423,7 @@ Dependent tasks automatically receive these results as context.
 ## Task Delegation (delegate_task / Task tool)
 
 Anima with subordinates (supervisors) can delegate tasks to subordinates using the `delegate_task` tool.
-In S-mode Chat path, the Task tool also supports delegation (auto-routed to subordinates). Include a subordinate's name in the Task tool description for direct assignment; if omitted, the least-loaded subordinate with the best role match is auto-selected.
+In S-mode Chat path, the Task tool (and Agent tool) also supports delegation. The Task tool has no parameter to specify a subordinate; it auto-selects the subordinate with minimum workload and best role match.
 
 ### How delegate_task Works
 
@@ -435,7 +442,7 @@ delegate_task(name="dave", instruction="Run API test and report results", deadli
 | `name` | MUST | Name of the direct subordinate Anima to delegate to |
 | `instruction` | MUST | Task instruction content |
 | `deadline` | MUST | Deadline. Relative format `30m` / `2h` / `1d` or ISO8601 |
-| `summary` | MAY | One-line task summary |
+| `summary` | MAY | One-line task summary (defaults to first 100 chars of instruction if omitted) |
 
 ### Tracking Delegated Tasks
 
@@ -450,9 +457,9 @@ task_tracker(status="completed")   # Completed only
 
 | status | Meaning |
 |--------|---------|
-| `active` | In progress (other than done/cancelled). Default |
+| `active` | In progress (other than done/cancelled/failed). Default |
 | `all` | All tasks |
-| `completed` | Completed only (done/cancelled) |
+| `completed` | Completed only (done/cancelled/failed) |
 
 ### Receiving a Delegated Task
 

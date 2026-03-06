@@ -13,8 +13,8 @@ import json
 import logging
 from pathlib import Path
 
-from core.time_utils import ensure_aware, now_jst
 from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.time_utils import ensure_aware, now_jst
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +59,7 @@ class HealthMixin:
             last_log = self._failed_log_times.get(anima_name, 0)
             if now - last_log >= 300:
                 logger.warning(
-                    "Process still in FAILED state: %s "
-                    "(awaiting reconciliation recovery)",
+                    "Process still in FAILED state: %s (awaiting reconciliation recovery)",
                     anima_name,
                 )
                 self._failed_log_times[anima_name] = now
@@ -70,18 +69,15 @@ class HealthMixin:
         if handle.state == ProcessState.STOPPING:
             if not handle.stopping_since:
                 return
-            stopping_duration = (
-                now_jst() - ensure_aware(handle.stopping_since)
-            ).total_seconds()
+            stopping_duration = (now_jst() - ensure_aware(handle.stopping_since)).total_seconds()
             if stopping_duration > 30:
                 logger.error(
                     "Process stuck in STOPPING state: %s (%.0fs)",
-                    anima_name, stopping_duration,
+                    anima_name,
+                    stopping_duration,
                 )
                 handle.state = ProcessState.FAILED
-                asyncio.create_task(
-                    self._handle_process_failure(anima_name, handle)
-                )
+                asyncio.create_task(self._handle_process_failure(anima_name, handle))
             return
 
         # RESTARTING 状態ならヘルスチェックをスキップ
@@ -94,20 +90,18 @@ class HealthMixin:
             # Detect process death during streaming
             if handle.state == ProcessState.FAILED:
                 logger.error(
-                    "Process FAILED during streaming: %s", anima_name,
+                    "Process FAILED during streaming: %s",
+                    anima_name,
                 )
-                asyncio.create_task(
-                    self._handle_process_failure(anima_name, handle)
-                )
+                asyncio.create_task(self._handle_process_failure(anima_name, handle))
                 return
             if not handle.is_alive():
                 logger.error(
                     "Process died during streaming: %s (exit_code=%s)",
-                    anima_name, handle.stats.exit_code,
+                    anima_name,
+                    handle.stats.exit_code,
                 )
-                asyncio.create_task(
-                    self._handle_process_failure(anima_name, handle)
-                )
+                asyncio.create_task(self._handle_process_failure(anima_name, handle))
                 return
             # Streaming duration timeout
             started_at = handle.streaming_started_at
@@ -116,12 +110,11 @@ class HealthMixin:
                 if streaming_sec > self._max_streaming_duration_sec:
                     logger.error(
                         "Streaming timeout for %s (%.0fs > %ds)",
-                        anima_name, streaming_sec,
+                        anima_name,
+                        streaming_sec,
                         self._max_streaming_duration_sec,
                     )
-                    asyncio.create_task(
-                        self._handle_process_hang(anima_name, handle)
-                    )
+                    asyncio.create_task(self._handle_process_hang(anima_name, handle))
             return
 
         # Skip if in startup grace period
@@ -136,7 +129,8 @@ class HealthMixin:
                 self._restart_counts[anima_name] = 0
                 logger.info(
                     "Restart counter reset for %s (stable for %.0fs)",
-                    anima_name, uptime,
+                    anima_name,
+                    uptime,
                 )
 
         # Direct state check: detect IPC connection loss
@@ -162,24 +156,74 @@ class HealthMixin:
             return
 
         # Ping process
-        success = await handle.ping(timeout=self.health_config.ping_timeout_sec)
+        ping_result = await handle.ping(
+            timeout=self.health_config.ping_timeout_sec,
+            return_details=True,
+        )
+        success = bool(ping_result.get("success"))
+        is_busy = bool(ping_result.get("is_busy"))
 
         if success:
-            if handle.stats.missed_pings > 0:
+            if is_busy:
+                handle.stats.missed_pings = 0
+                last_progress_iso = ping_result.get("last_progress_at")
+                if last_progress_iso:
+                    from datetime import datetime as _dt
+
+                    try:
+                        last_progress = ensure_aware(_dt.fromisoformat(last_progress_iso))
+                    except (ValueError, TypeError):
+                        logger.warning(
+                            "Invalid last_progress_at from %s: %r",
+                            anima_name,
+                            last_progress_iso,
+                        )
+                        last_progress = None
+
+                    if last_progress is not None:
+                        idle_sec = (now_jst() - last_progress).total_seconds()
+                        if idle_sec > self.health_config.busy_hang_threshold_sec:
+                            logger.error(
+                                "Process busy hang (no progress): %s (idle=%.0fs > %ds)",
+                                anima_name,
+                                idle_sec,
+                                int(self.health_config.busy_hang_threshold_sec),
+                            )
+                            asyncio.create_task(self._handle_process_hang(anima_name, handle))
+                        return
+                if handle.stats.last_busy_since is None:
+                    handle.stats.last_busy_since = now_jst()
+                busy_duration = (now_jst() - handle.stats.last_busy_since).total_seconds()
+                if busy_duration > self.health_config.busy_hang_threshold_sec:
+                    logger.error(
+                        "Process busy hang (no progress info, fallback): %s (busy=%.0fs > %ds)",
+                        anima_name,
+                        busy_duration,
+                        int(self.health_config.busy_hang_threshold_sec),
+                    )
+                    asyncio.create_task(self._handle_process_hang(anima_name, handle))
+                return
+
+            if handle.stats.missed_pings > 0 or handle.stats.last_busy_since is not None:
                 logger.info("Process recovered: %s", anima_name)
+            handle.stats.last_busy_since = None
             return
 
         # Ping failed
+        handle.stats.last_busy_since = None
         logger.warning(
             "Health check failed: %s (missed=%d/%d)",
-            anima_name, handle.stats.missed_pings, self.health_config.max_missed_pings,
+            anima_name,
+            handle.stats.missed_pings,
+            self.health_config.max_missed_pings,
         )
 
         # Check if hang threshold exceeded
         if handle.stats.missed_pings >= self.health_config.max_missed_pings:
             logger.error(
                 "Process hang detected: %s (PID %s)",
-                anima_name, handle.get_pid(),
+                anima_name,
+                handle.get_pid(),
             )
             asyncio.create_task(self._handle_process_hang(anima_name, handle))
 
@@ -215,13 +259,16 @@ class HealthMixin:
 
             # Calculate backoff delay
             backoff = min(
-                self.restart_policy.backoff_base_sec * (2 ** count),
+                self.restart_policy.backoff_base_sec * (2**count),
                 self.restart_policy.backoff_max_sec,
             )
 
             logger.info(
                 "Scheduling restart for %s (retry %d/%d, delay=%.1fs)",
-                anima_name, count + 1, self.restart_policy.max_retries, backoff,
+                anima_name,
+                count + 1,
+                self.restart_policy.max_retries,
+                backoff,
             )
 
             # Wait and restart
@@ -234,12 +281,15 @@ class HealthMixin:
             if new_handle:
                 logger.info(
                     "Process restarted: %s (PID %s, retry=%d/%d)",
-                    anima_name, new_handle.get_pid(),
-                    count + 1, self.restart_policy.max_retries,
+                    anima_name,
+                    new_handle.get_pid(),
+                    count + 1,
+                    self.restart_policy.max_retries,
                 )
             else:
                 logger.error(
-                    "Restart completed but no handle found: %s", anima_name,
+                    "Restart completed but no handle found: %s",
+                    anima_name,
                 )
 
         except Exception as e:

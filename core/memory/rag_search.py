@@ -1,13 +1,58 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
+import hashlib
 import json
 import logging
 from pathlib import Path
 
 logger = logging.getLogger("animaworks.memory")
+
+
+# ── Shared-index change detection helpers ─────────────────
+
+
+def _compute_dir_hash(dir_path: Path, glob_pattern: str = "*.md") -> str:
+    """Compute a SHA-256 hash over file relative paths + mtimes in *dir_path*.
+
+    The hash changes whenever a file is added, removed, or modified.
+    """
+    entries: list[tuple[str, float]] = []
+    for f in dir_path.rglob(glob_pattern):
+        if f.is_file():
+            entries.append((str(f.relative_to(dir_path)), f.stat().st_mtime))
+    entries.sort()
+    h = hashlib.sha256(repr(entries).encode()).hexdigest()
+    return h
+
+
+def _read_shared_hash(meta_path: Path, key: str) -> str | None:
+    """Read a stored shared-index hash from *meta_path* (index_meta.json)."""
+    if not meta_path.is_file():
+        return None
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        return meta.get(key)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _write_shared_hash(meta_path: Path, key: str, value: str) -> None:
+    """Write a shared-index hash into *meta_path* (index_meta.json)."""
+    meta: dict = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    meta[key] = value
+    meta_path.write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
 
 # ── RAGMemorySearch ───────────────────────────────────────
 
@@ -33,9 +78,6 @@ class RAGMemorySearch:
         Called lazily by ``_get_indexer()`` on first access.
         Uses process-level singletons for ChromaVectorStore and embedding
         model to avoid costly repeated initialization.
-
-        Also ensures the ``shared_common_knowledge`` collection is indexed
-        from ``~/.animaworks/common_knowledge/``.
         """
         self._indexer_initialized = True
         try:
@@ -52,11 +94,13 @@ class RAGMemorySearch:
             if procedures_dir.is_dir() and any(procedures_dir.glob("*.md")):
                 try:
                     indexed = self._indexer.index_directory(
-                        procedures_dir, "procedures",
+                        procedures_dir,
+                        "procedures",
                     )
                     if indexed > 0:
                         logger.debug(
-                            "Indexed %d chunks from procedures/", indexed,
+                            "Indexed %d chunks from procedures/",
+                            indexed,
                         )
                 except Exception as e:
                     logger.warning("Failed to index procedures: %s", e)
@@ -67,28 +111,58 @@ class RAGMemorySearch:
             if conv_file.is_file():
                 try:
                     indexed = self._indexer.index_conversation_summary(
-                        state_dir, anima_name,
+                        state_dir,
+                        anima_name,
                     )
                     if indexed > 0:
                         logger.debug(
-                            "Indexed %d chunks from conversation_summary", indexed,
+                            "Indexed %d chunks from conversation_summary",
+                            indexed,
                         )
                 except Exception as e:
                     logger.warning("Failed to index conversation_summary: %s", e)
 
-            # Ensure shared collections exist
-            self._ensure_shared_knowledge_indexed(vector_store)
-            self._ensure_shared_skills_indexed(vector_store)
         except ImportError:
             logger.debug("RAG dependencies not installed, indexing disabled")
         except Exception as e:
             logger.warning("Failed to initialize RAG indexer: %s", e)
 
+    # ── Shared collection change detection ────────────────
+
+    def _check_shared_collections(self) -> None:
+        """Re-index shared common_knowledge / common_skills if changed.
+
+        Called on every ``_get_indexer()`` access so that file changes are
+        picked up even after the initial ``_init_indexer()`` run.  Uses a
+        SHA-256 hash of (relative_path, mtime) tuples stored in the
+        per-anima ``index_meta.json`` to skip re-indexing when unchanged.
+        """
+        if self._indexer is None:
+            return
+        try:
+            vector_store = self._indexer.vector_store
+            self._ensure_shared_knowledge_indexed(vector_store)
+            self._ensure_shared_skills_indexed(vector_store)
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug("Shared collection check failed: %s", e)
+
     def _ensure_shared_knowledge_indexed(self, vector_store) -> None:
-        """Index common_knowledge/ into ``shared_common_knowledge`` collection."""
+        """Index common_knowledge/ into ``shared_common_knowledge`` collection.
+
+        Skips re-indexing when the directory hash matches the stored value.
+        """
         ck_dir = self._common_knowledge_dir
         if not ck_dir.is_dir() or not any(ck_dir.rglob("*.md")):
             logger.debug("No common_knowledge files found, skipping shared indexing")
+            return
+
+        meta_path = self._anima_dir / "index_meta.json"
+        current_hash = _compute_dir_hash(ck_dir, "*.md")
+        stored_hash = _read_shared_hash(meta_path, "shared_common_knowledge_hash")
+        if current_hash == stored_hash:
+            logger.debug("common_knowledge unchanged (hash match), skipping")
             return
 
         try:
@@ -104,18 +178,30 @@ class RAGMemorySearch:
                 embedding_model=self._indexer.embedding_model if self._indexer else None,
             )
             indexed = shared_indexer.index_directory(ck_dir, "common_knowledge")
+            _write_shared_hash(meta_path, "shared_common_knowledge_hash", current_hash)
             if indexed > 0:
                 logger.info(
-                    "Indexed %d chunks into shared_common_knowledge", indexed,
+                    "Indexed %d chunks into shared_common_knowledge",
+                    indexed,
                 )
         except Exception as e:
             logger.warning("Failed to index shared common_knowledge: %s", e)
 
     def _ensure_shared_skills_indexed(self, vector_store) -> None:
-        """Index common_skills/ into ``shared_common_skills`` collection."""
+        """Index common_skills/ into ``shared_common_skills`` collection.
+
+        Skips re-indexing when the directory hash matches the stored value.
+        """
         cs_dir = self._common_skills_dir
         if not cs_dir.is_dir() or not any(cs_dir.glob("*/SKILL.md")):
             logger.debug("No common_skills files found, skipping shared skills indexing")
+            return
+
+        meta_path = self._anima_dir / "index_meta.json"
+        current_hash = _compute_dir_hash(cs_dir, "*.md")
+        stored_hash = _read_shared_hash(meta_path, "shared_common_skills_hash")
+        if current_hash == stored_hash:
+            logger.debug("common_skills unchanged (hash match), skipping")
             return
 
         try:
@@ -131,17 +217,23 @@ class RAGMemorySearch:
                 embedding_model=self._indexer.embedding_model if self._indexer else None,
             )
             indexed = shared_indexer.index_directory(cs_dir, "common_skills")
+            _write_shared_hash(meta_path, "shared_common_skills_hash", current_hash)
             if indexed > 0:
                 logger.info(
-                    "Indexed %d chunks into shared_common_skills", indexed,
+                    "Indexed %d chunks into shared_common_skills",
+                    indexed,
                 )
         except Exception as e:
             logger.warning("Failed to index shared common_skills: %s", e)
 
     def _get_indexer(self):
-        """Return the RAG indexer, initializing it on first call."""
+        """Return the RAG indexer, initializing it on first call.
+
+        Also checks shared collections for changes on every call.
+        """
         if not self._indexer_initialized:
             self._init_indexer()
+        self._check_shared_collections()
         return self._indexer
 
     # ── Search methods ────────────────────────────────────
@@ -174,13 +266,16 @@ class RAGMemorySearch:
             if common_knowledge_dir.is_dir():
                 dirs.append(common_knowledge_dir)
 
-        # Keyword search
+        # Keyword search — OR-split: match any whitespace-separated token
         results: list[tuple[str, str]] = []
-        q = query.lower()
+        tokens = [tok for tok in query.lower().split() if tok]
+        if not tokens:
+            return results
         for d in dirs:
             for f in d.glob("*.md"):
                 for line in f.read_text(encoding="utf-8").splitlines():
-                    if q in line.lower():
+                    line_lower = line.lower()
+                    if any(tok in line_lower for tok in tokens):
                         results.append((f.name, line.strip()))
 
         # Search compressed_summary from conversation.json
@@ -190,18 +285,22 @@ class RAGMemorySearch:
                 try:
                     conv_data = json.loads(conv_file.read_text(encoding="utf-8"))
                     summary = conv_data.get("compressed_summary", "")
-                    if summary and q in summary.lower():
-                        # Return matching lines from compressed_summary
+                    if summary:
                         for line in summary.splitlines():
-                            if q in line.lower() and line.strip():
+                            line_lower = line.lower()
+                            if any(tok in line_lower for tok in tokens) and line.strip():
                                 results.append(("conversation_summary", line.strip()))
                 except Exception as e:
                     logger.debug("Failed to search conversation_summary: %s", e)
 
         # Hybrid: append vector search results when RAG is available
         if self._indexer is not None and scope in (
-            "knowledge", "episodes", "common_knowledge", "procedures",
-            "conversation_summary", "all",
+            "knowledge",
+            "episodes",
+            "common_knowledge",
+            "procedures",
+            "conversation_summary",
+            "all",
         ):
             try:
                 vector_hits = self._vector_search_memory(query, scope, knowledge_dir)
@@ -233,7 +332,10 @@ class RAGMemorySearch:
         return ["knowledge"]
 
     def _vector_search_memory(
-        self, query: str, scope: str, knowledge_dir: Path,
+        self,
+        query: str,
+        scope: str,
+        knowledge_dir: Path,
     ) -> list[tuple[str, str]]:
         """Perform vector search to augment keyword results."""
         from core.memory.rag.retriever import MemoryRetriever
@@ -272,18 +374,23 @@ class RAGMemorySearch:
         return hits
 
     def search_knowledge(self, query: str, knowledge_dir: Path) -> list[tuple[str, str]]:
-        """Search knowledge/ by keyword."""
+        """Search knowledge/ by keyword (OR-split on whitespace tokens)."""
         results: list[tuple[str, str]] = []
-        q = query.lower()
+        tokens = [tok for tok in query.lower().split() if tok]
+        if not tokens:
+            return results
         for f in knowledge_dir.glob("*.md"):
             for line in f.read_text(encoding="utf-8").splitlines():
-                if q in line.lower():
+                line_lower = line.lower()
+                if any(tok in line_lower for tok in tokens):
                     results.append((f.name, line.strip()))
         logger.debug("search_knowledge query='%s' results=%d", query, len(results))
         return results
 
     def search_procedures(
-        self, query: str, procedures_dir: Path,
+        self,
+        query: str,
+        procedures_dir: Path,
     ) -> list[tuple[str, str]]:
         """Search procedures/ by keyword (delegates to search_memory_text)."""
         return self.search_memory_text(

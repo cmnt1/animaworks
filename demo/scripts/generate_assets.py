@@ -29,24 +29,53 @@ sys.path.insert(0, str(PROJECT_ROOT))
 PRESETS: dict[str, dict[str, object]] = {
     "ja-anime": {
         "characters": ["kaito", "sora", "hina"],
+        "supervisor": "kaito",
         "style": "anime",
     },
     "ja-business": {
         "characters": ["kaito", "sora", "hina"],
+        "supervisor": "kaito",
         "style": "realistic",
     },
     "en-anime": {
         "characters": ["alex", "kai", "nova"],
+        "supervisor": "alex",
         "style": "anime",
     },
     "en-business": {
         "characters": ["alex", "kai", "nova"],
+        "supervisor": "alex",
         "style": "realistic",
     },
 }
 
 
 # ── Prompt extraction ─────────────────────────────────────────
+
+
+_MALE_KEYWORDS = {"male", "男性", "男"}
+_FEMALE_KEYWORDS = {"female", "女性", "女"}
+
+
+def _extract_gender(md_path: Path) -> str:
+    """Extract gender from character sheet (Gender/性別 field in table).
+
+    Returns ``"male"`` or ``"female"``.  Defaults to ``"female"``
+    when the field is absent or unrecognised.
+    """
+    text = md_path.read_text(encoding="utf-8")
+    match = re.search(
+        r"\|\s*(?:Gender|性別)\s*\|\s*(.+?)\s*\|",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        value = match.group(1).strip().lower()
+        if value in _MALE_KEYWORDS:
+            return "male"
+        if value in _FEMALE_KEYWORDS:
+            return "female"
+    return "female"
 
 
 def _extract_appearance(md_path: Path) -> str | None:
@@ -62,7 +91,6 @@ def _extract_appearance(md_path: Path) -> str | None:
         if match:
             return match.group(1).strip()
 
-    # Fall back to ## 外見 / ## Appearance section
     section_pat = re.compile(
         r"^##\s+(?:外見|Appearance)\s*\n(.*?)(?=\n##|\Z)",
         re.MULTILINE | re.DOTALL,
@@ -74,15 +102,17 @@ def _extract_appearance(md_path: Path) -> str | None:
     return None
 
 
-def _build_prompt_for_style(appearance: str, style: str) -> str:
+def _build_prompt_for_style(appearance: str, style: str, gender: str = "female") -> str:
     """Convert appearance description to a generation prompt."""
     if style == "anime":
+        tag = "1boy" if gender == "male" else "1girl"
         return (
-            f"1girl, {appearance}, full body, standing, white background, "
+            f"{tag}, {appearance}, full body, standing, white background, "
             "anime illustration, high quality, detailed"
         )
+    person = "a young man" if gender == "male" else "a young woman"
     return (
-        f"A professional photo of a person: {appearance}. "
+        f"A professional photo of {person}: {appearance}. "
         "Full body, standing, studio lighting, neutral background, "
         "high quality photograph"
     )
@@ -95,58 +125,53 @@ def generate_character(
     preset_name: str,
     character_name: str,
     style: str,
-) -> None:
-    """Generate all asset images for a single character."""
-    from core.config.models import ImageGenConfig
-    from core.tools._image_pipeline import ImageGenPipeline
+    *,
+    vibe_reference: bytes | None = None,
+) -> bytes | None:
+    """Generate all asset images for a single character.
 
+    Args:
+        vibe_reference: If provided, the fullbody is generated via Flux
+            Kontext using this image as style reference (vibe transfer)
+            instead of generating from scratch.
+
+    Returns:
+        The fullbody image bytes (used as vibe reference for subordinates).
+    """
     preset_dir = DEMO_DIR / "presets" / preset_name
     md_path = preset_dir / "characters" / f"{character_name}.md"
     assets_dir = preset_dir / "assets" / character_name
 
     if not md_path.exists():
         print(f"  SKIP {character_name}: character sheet not found at {md_path}")
-        return
+        return None
 
     appearance = _extract_appearance(md_path)
     if not appearance:
         print(f"  SKIP {character_name}: no appearance description found")
-        return
+        return None
 
-    prompt = _build_prompt_for_style(appearance, style)
+    gender = _extract_gender(md_path)
+    prompt = _build_prompt_for_style(appearance, style, gender)
     print(f"  Prompt: {prompt[:120]}...")
 
     assets_dir.mkdir(parents=True, exist_ok=True)
 
-    enable_3d = False
-    image_config = ImageGenConfig(image_style=style, enable_3d=enable_3d)
-
-    # ImageGenPipeline expects an anima_dir with assets/ subdirectory.
-    # We create a temporary wrapper that points assets/ to our target.
-    # Since ImageGenPipeline uses anima_dir / "assets", we pass
-    # the parent of assets_dir as anima_dir.
-    anima_dir_proxy = assets_dir.parent
-    (anima_dir_proxy / "assets").mkdir(parents=True, exist_ok=True)
-    # Symlink or just use the right structure — assets_dir IS
-    # preset_dir/assets/{name}, so anima_dir_proxy/assets = assets_dir
-    # only if anima_dir_proxy = preset_dir/assets/{name} parent.
-    # Actually: ImageGenPipeline does self._assets_dir = anima_dir / "assets"
-    # We want output in preset_dir/assets/{name}/
-    # So anima_dir should be preset_dir/assets/{name} and pipeline
-    # writes to preset_dir/assets/{name}/assets/ — that's wrong.
-    #
-    # Instead, we use the pipeline directly with the correct paths.
-    # We'll call the lower-level clients ourselves.
-
-    _generate_with_clients(assets_dir, prompt, style)
+    return _generate_with_clients(assets_dir, prompt, style, vibe_reference=vibe_reference)
 
 
 def _generate_with_clients(
     assets_dir: Path,
     prompt: str,
     style: str,
-) -> None:
-    """Generate images using the API clients directly."""
+    *,
+    vibe_reference: bytes | None = None,
+) -> bytes | None:
+    """Generate images using the API clients directly.
+
+    Returns:
+        The fullbody image bytes.
+    """
     from core.tools._image_clients import _CHIBI_PROMPT
 
     assets_dir.mkdir(parents=True, exist_ok=True)
@@ -164,20 +189,41 @@ def _generate_with_clients(
     fullbody_bytes: bytes | None = None
 
     if fullbody_path.exists() and fullbody_path.stat().st_size > 100:
-        print(f"    fullbody: exists, skipping")
+        print("    fullbody: exists, skipping")
         fullbody_bytes = fullbody_path.read_bytes()
+    elif vibe_reference is not None:
+        if not os.environ.get("FAL_KEY"):
+            print("    fullbody: SKIP (no FAL_KEY for vibe transfer)")
+            return None
+        print("    fullbody: generating with Flux Kontext (vibe transfer)...")
+        from core.tools._image_clients import FluxKontextClient
+
+        kontext = FluxKontextClient()
+        vibe_prompt = (
+            f"Transform this character into a completely different character: {prompt}. "
+            "Keep the exact same anime art style, line weight, coloring technique, "
+            "and background style. Full body, standing, white background."
+        )
+        fullbody_bytes = kontext.generate_from_reference(
+            reference_image=vibe_reference,
+            prompt=vibe_prompt,
+            aspect_ratio="9:16",
+        )
+        fullbody_path.write_bytes(fullbody_bytes)
+        size_kb = len(fullbody_bytes) / 1024
+        print(f"    fullbody: saved ({size_kb:.0f} KB)")
     else:
         if style == "realistic" or not os.environ.get("NOVELAI_TOKEN"):
             if not os.environ.get("FAL_KEY"):
-                print(f"    fullbody: SKIP (no FAL_KEY)")
-                return
-            print(f"    fullbody: generating with Fal Flux Pro...")
+                print("    fullbody: SKIP (no FAL_KEY)")
+                return None
+            print("    fullbody: generating with Fal Flux Pro...")
             from core.tools._image_clients import FalTextToImageClient
 
             client = FalTextToImageClient()
             fullbody_bytes = client.generate_fullbody(prompt=prompt)
         else:
-            print(f"    fullbody: generating with NovelAI...")
+            print("    fullbody: generating with NovelAI...")
             from core.tools._image_clients import NovelAIClient
 
             client = NovelAIClient()
@@ -234,6 +280,8 @@ def _generate_with_clients(
             size_kb = len(chibi_bytes) / 1024
             print(f"    chibi: saved ({size_kb:.0f} KB)")
 
+    return fullbody_bytes
+
 
 # ── CLI ───────────────────────────────────────────────────────
 
@@ -273,6 +321,7 @@ def main() -> None:
     for preset_name, preset_info in presets_to_run.items():
         style = str(preset_info["style"])
         characters = list(preset_info["characters"])  # type: ignore[arg-type]
+        supervisor = str(preset_info.get("supervisor", ""))
 
         if args.character:
             if args.character not in characters:
@@ -280,10 +329,26 @@ def main() -> None:
             characters = [args.character]
 
         print(f"=== {preset_name} (style={style}) ===")
+
+        # For anime presets, generate supervisor first for vibe transfer
+        vibe_ref: bytes | None = None
+        if style == "anime" and supervisor and supervisor in characters:
+            characters = [supervisor] + [c for c in characters if c != supervisor]
+
         for char_name in characters:
-            print(f"  [{char_name}]")
+            is_supervisor = char_name == supervisor
+            use_vibe = style == "anime" and not is_supervisor and vibe_ref is not None
+            label = " (vibe transfer)" if use_vibe else " (anchor)" if is_supervisor and style == "anime" else ""
+            print(f"  [{char_name}]{label}")
             try:
-                generate_character(preset_name, char_name, style)
+                fb = generate_character(
+                    preset_name,
+                    char_name,
+                    style,
+                    vibe_reference=vibe_ref if use_vibe else None,
+                )
+                if is_supervisor and fb is not None:
+                    vibe_ref = fb
             except Exception as exc:
                 print(f"  ERROR: {exc}")
         print()

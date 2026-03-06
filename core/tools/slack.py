@@ -19,9 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sqlite3
 import sys
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -36,13 +34,14 @@ from core.tools._retry import retry_on_rate_limit
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "channels": {"expected_seconds": 10, "background_eligible": False},
     "messages": {"expected_seconds": 30, "background_eligible": False},
-    "send":     {"expected_seconds": 10, "background_eligible": False},
-    "search":   {"expected_seconds": 30, "background_eligible": False},
+    "send": {"expected_seconds": 10, "background_eligible": False},
+    "search": {"expected_seconds": 30, "background_eligible": False},
     "unreplied": {"expected_seconds": 30, "background_eligible": False},
 }
 
 WebClient: Any = None
 SlackApiError: Any = None
+
 
 def _require_slack_sdk():
     global WebClient, SlackApiError
@@ -50,13 +49,15 @@ def _require_slack_sdk():
         try:
             from slack_sdk import WebClient as _WC
             from slack_sdk.errors import SlackApiError as _SAE
+
             WebClient = _WC
             SlackApiError = _SAE
         except ImportError:
             raise ImportError(
                 "slack tool requires 'slack-sdk'. Install with: pip install animaworks[communication]"
-            )
+            ) from None
     return WebClient
+
 
 # ============================================================
 # Constants
@@ -72,6 +73,7 @@ DEFAULT_CACHE_DIR = Path.home() / ".animaworks" / "cache" / "slack"
 # ============================================================
 # Helper functions
 # ============================================================
+
 
 def format_slack_ts(ts: str) -> str:
     """Convert a Slack timestamp (e.g. '1707123456.789012') to JST datetime string."""
@@ -152,9 +154,7 @@ def md_to_slack_mrkdwn(text: str) -> str:
     text = re.sub(r"^(\s*)[-*]\s+", r"\1• ", text, flags=re.MULTILINE)
 
     # ── Horizontal rules: --- / *** / ___ → ─────────────── ──
-    text = re.sub(
-        r"^[-*_]{3,}\s*$", "───────────────", text, flags=re.MULTILINE
-    )
+    text = re.sub(r"^[-*_]{3,}\s*$", "───────────────", text, flags=re.MULTILINE)
 
     # ── Restore placeholders ──
     for i, ph in enumerate(_placeholders):
@@ -226,6 +226,7 @@ def truncate(s: str, length: int = 80) -> str:
 # Slack API Client
 # ============================================================
 
+
 class SlackClient:
     """Slack Web API wrapper with rate-limit retry and cursor pagination."""
 
@@ -256,11 +257,7 @@ class SlackClient:
                 return method(**kwargs)
             except SlackApiError as e:
                 if e.response.status_code == 429:
-                    retry_after = int(
-                        e.response.headers.get(
-                            "Retry-After", RATE_LIMIT_WAIT_DEFAULT
-                        )
-                    )
+                    retry_after = int(e.response.headers.get("Retry-After", RATE_LIMIT_WAIT_DEFAULT))
                     raise _SlackRateLimitError(e, retry_after) from e
                 raise
 
@@ -374,12 +371,22 @@ class SlackClient:
         return all_replies
 
     def post_message(
-        self, channel_id: str, text: str, thread_ts: str | None = None
+        self,
+        channel_id: str,
+        text: str,
+        thread_ts: str | None = None,
+        *,
+        username: str = "",
+        icon_url: str = "",
     ) -> dict:
         """Send a message via chat.postMessage."""
         kwargs = {"channel": channel_id, "text": text}
         if thread_ts:
             kwargs["thread_ts"] = thread_ts
+        if username:
+            kwargs["username"] = username
+        if icon_url:
+            kwargs["icon_url"] = icon_url
         response = self._call("chat_postMessage", **kwargs)
         return response
 
@@ -388,11 +395,7 @@ class SlackClient:
         all_users = self._paginate("users_list", "members", limit=200)
         # Cache display names
         for u in all_users:
-            display = (
-                u.get("profile", {}).get("display_name", "")
-                or u.get("real_name", "")
-                or u.get("name", "")
-            )
+            display = u.get("profile", {}).get("display_name", "") or u.get("real_name", "") or u.get("name", "")
             self._user_cache[u["id"]] = display
         return all_users
 
@@ -430,12 +433,9 @@ class SlackClient:
             return matches[0][0]
 
         if len(matches) > 1:
-            names = ", ".join(
-                f"{cid} #{c.get('name', '?')}" for cid, c in matches
-            )
+            names = ", ".join(f"{cid} #{c.get('name', '?')}" for cid, c in matches)
             raise ToolConfigError(
-                f"Multiple channels matched '{name_or_id}': {names}. "
-                f"Specify the channel ID directly."
+                f"Multiple channels matched '{name_or_id}': {names}. Specify the channel ID directly."
             )
 
         raise ToolConfigError(f"Channel '{name_or_id}' not found")
@@ -450,9 +450,7 @@ class SlackClient:
             response = self._call("users_info", user=user_id)
             user = response.get("user", {})
             display = (
-                user.get("profile", {}).get("display_name", "")
-                or user.get("real_name", "")
-                or user.get("name", "")
+                user.get("profile", {}).get("display_name", "") or user.get("real_name", "") or user.get("name", "")
             )
             self._user_cache[user_id] = display
             return display
@@ -577,8 +575,7 @@ class MessageCache(BaseMessageCache):
             """INSERT OR REPLACE INTO channels
                (channel_id, name, type, is_member, updated_at)
                VALUES (?, ?, ?, ?, ?)""",
-            (channel_id, name, ch_type, is_member,
-             datetime.now(JST).isoformat()),
+            (channel_id, name, ch_type, is_member, datetime.now(JST).isoformat()),
         )
         self.conn.commit()
 
@@ -586,9 +583,7 @@ class MessageCache(BaseMessageCache):
         """Save/update user info."""
         user_id = user.get("id", "")
         display_name = (
-            user.get("profile", {}).get("display_name", "")
-            or user.get("real_name", "")
-            or user.get("name", "")
+            user.get("profile", {}).get("display_name", "") or user.get("real_name", "") or user.get("name", "")
         )
         real_name = user.get("real_name", "")
         is_bot = 1 if user.get("is_bot", False) else 0
@@ -597,8 +592,7 @@ class MessageCache(BaseMessageCache):
             """INSERT OR REPLACE INTO users
                (user_id, name, real_name, is_bot, updated_at)
                VALUES (?, ?, ?, ?, ?)""",
-            (user_id, display_name, real_name, is_bot,
-             datetime.now(JST).isoformat()),
+            (user_id, display_name, real_name, is_bot, datetime.now(JST).isoformat()),
         )
         self.conn.commit()
 
@@ -630,8 +624,7 @@ class MessageCache(BaseMessageCache):
                    (channel_id, ts, user_id, user_name, text, thread_ts,
                     reply_count, ts_epoch, send_time_jst)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (channel_id, ts, user_id, user_name, text, thread_ts,
-                 reply_count, ts_epoch, send_time_jst),
+                (channel_id, ts, user_id, user_name, text, thread_ts, reply_count, ts_epoch, send_time_jst),
             )
         self.conn.commit()
 
@@ -716,9 +709,7 @@ class MessageCache(BaseMessageCache):
               AND m.user_id != ?
             ORDER BY m.ts_epoch DESC LIMIT ?
         """
-        rows = self.conn.execute(
-            query1, (mention_pattern, my_user_id, limit)
-        ).fetchall()
+        rows = self.conn.execute(query1, (mention_pattern, my_user_id, limit)).fetchall()
         for r in rows:
             d = dict(r)
             key = (d["channel_id"], d["ts"])
@@ -728,9 +719,7 @@ class MessageCache(BaseMessageCache):
 
         # 2) DM channels: all messages from the other anima
         if unreplied_cfg.get("include_direct_messages", True):
-            dm_rows = self.conn.execute(
-                "SELECT channel_id FROM channels WHERE type = 'im'"
-            ).fetchall()
+            dm_rows = self.conn.execute("SELECT channel_id FROM channels WHERE type = 'im'").fetchall()
             dm_channel_ids = [r["channel_id"] for r in dm_rows]
             if dm_channel_ids:
                 placeholders = ",".join("?" for _ in dm_channel_ids)
@@ -754,11 +743,7 @@ class MessageCache(BaseMessageCache):
         # 3) watch_channels: messages from other users
         watch_channels = unreplied_cfg.get("watch_channels", [])
         if watch_channels:
-            watch_ids = [
-                wc.get("channel_id", "")
-                for wc in watch_channels
-                if wc.get("channel_id")
-            ]
+            watch_ids = [wc.get("channel_id", "") for wc in watch_channels if wc.get("channel_id")]
             if watch_ids:
                 placeholders = ",".join("?" for _ in watch_ids)
                 query3 = f"""
@@ -850,28 +835,16 @@ class MessageCache(BaseMessageCache):
 
     def get_stats(self) -> dict:
         """Return cache statistics."""
-        channels = self.conn.execute(
-            "SELECT COUNT(*) as c FROM channels"
-        ).fetchone()["c"]
-        users = self.conn.execute(
-            "SELECT COUNT(*) as c FROM users"
-        ).fetchone()["c"]
-        msgs = self.conn.execute(
-            "SELECT COUNT(*) as c FROM messages"
-        ).fetchone()["c"]
+        channels = self.conn.execute("SELECT COUNT(*) as c FROM channels").fetchone()["c"]
+        users = self.conn.execute("SELECT COUNT(*) as c FROM users").fetchone()["c"]
+        msgs = self.conn.execute("SELECT COUNT(*) as c FROM messages").fetchone()["c"]
 
         # Oldest/newest message timestamps
-        oldest = self.conn.execute(
-            "SELECT MIN(send_time_jst) as t FROM messages"
-        ).fetchone()["t"]
-        newest = self.conn.execute(
-            "SELECT MAX(send_time_jst) as t FROM messages"
-        ).fetchone()["t"]
+        oldest = self.conn.execute("SELECT MIN(send_time_jst) as t FROM messages").fetchone()["t"]
+        newest = self.conn.execute("SELECT MAX(send_time_jst) as t FROM messages").fetchone()["t"]
 
         # Synced channel count
-        synced = self.conn.execute(
-            "SELECT COUNT(*) as c FROM sync_state"
-        ).fetchone()["c"]
+        synced = self.conn.execute("SELECT COUNT(*) as c FROM sync_state").fetchone()["c"]
 
         return {
             "channels": channels,
@@ -887,105 +860,10 @@ class MessageCache(BaseMessageCache):
 # Tool schemas (Anthropic tool_use format)
 # ============================================================
 
+
 def get_tool_schemas() -> list[dict]:
     """Return Anthropic tool_use schemas for Slack tools."""
-    return [
-        {
-            "name": "slack_send",
-            "description": (
-                "Send a message to a Slack channel or DM. "
-                "The channel can be specified by ID or name. "
-                "Optionally reply in a thread by providing thread_ts."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "channel": {
-                        "type": "string",
-                        "description": "Channel name or ID (e.g. '#general' or 'C01234ABCDE').",
-                    },
-                    "message": {
-                        "type": "string",
-                        "description": "Message text to send.",
-                    },
-                    "thread_ts": {
-                        "type": "string",
-                        "description": "Optional thread timestamp to reply in a thread.",
-                    },
-                },
-                "required": ["channel", "message"],
-            },
-        },
-        {
-            "name": "slack_messages",
-            "description": (
-                "Get recent messages from a Slack channel. "
-                "Fetches from API and caches locally, then returns from cache."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "channel": {
-                        "type": "string",
-                        "description": "Channel name or ID.",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of messages to return (default 20).",
-                        "default": 20,
-                    },
-                },
-                "required": ["channel"],
-            },
-        },
-        {
-            "name": "slack_search",
-            "description": (
-                "Search cached Slack messages by keyword. "
-                "Searches the local SQLite cache. Run sync first for fresh data."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "keyword": {
-                        "type": "string",
-                        "description": "Search keyword.",
-                    },
-                    "channel": {
-                        "type": "string",
-                        "description": "Optional channel name or ID to filter results.",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum results (default 50).",
-                        "default": 50,
-                    },
-                },
-                "required": ["keyword"],
-            },
-        },
-        {
-            "name": "slack_unreplied",
-            "description": (
-                "Find Slack messages addressed to me that I haven't replied to. "
-                "Uses the local cache. Includes DMs and watched channels."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-        {
-            "name": "slack_channels",
-            "description": "List Slack channels that the bot has joined.",
-            "input_schema": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    ]
+    return []
 
 
 # ============================================================
@@ -1023,17 +901,13 @@ def cli_main(argv: list[str] | None = None) -> None:
     # messages
     p = sub.add_parser("messages", help="Get recent messages")
     p.add_argument("channel", help="Channel name or ID")
-    p.add_argument(
-        "-n", "--num", type=int, default=20, help="Number of messages (default 20)"
-    )
+    p.add_argument("-n", "--num", type=int, default=20, help="Number of messages (default 20)")
 
     # search
     p = sub.add_parser("search", help="Search cached messages")
     p.add_argument("keyword", nargs="+", help="Search keyword")
     p.add_argument("-c", "--channel", help="Filter by channel name or ID")
-    p.add_argument(
-        "-n", "--num", type=int, default=50, help="Max results (default 50)"
-    )
+    p.add_argument("-n", "--num", type=int, default=50, help="Max results (default 50)")
 
     # unreplied
     p = sub.add_parser("unreplied", help="Show unreplied messages addressed to me")
@@ -1048,8 +922,9 @@ def cli_main(argv: list[str] | None = None) -> None:
         parser.print_help()
         sys.exit(0)
 
+    token = _resolve_cli_token()
     try:
-        client = SlackClient()
+        client = SlackClient(token=token)
     except ToolConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -1105,9 +980,7 @@ def _run_cli_command(client: SlackClient, args) -> None:
                         user_name = cache.get_user_name(m["user_id"])
                     channel_name = m.get("channel_name", "")
                     channel_tag = f"[#{channel_name}] " if channel_name else ""
-                    text = clean_slack_markup(
-                        m.get("text", ""), cache=user_name_map
-                    )
+                    text = clean_slack_markup(m.get("text", ""), cache=user_name_map)
                     print(f"{ts} {channel_tag}{user_name}")
                     for line in text.strip().split("\n"):
                         print(f"  {line}")
@@ -1131,9 +1004,7 @@ def _run_cli_command(client: SlackClient, args) -> None:
                 print(f"No messages matching '{keyword}'.")
             else:
                 for m in results:
-                    m["text"] = clean_slack_markup(
-                        m.get("text", ""), cache=user_name_map
-                    )
+                    m["text"] = clean_slack_markup(m.get("text", ""), cache=user_name_map)
                     if not m.get("user_name") and m.get("user_id"):
                         m["user_name"] = cache.get_user_name(m["user_id"])
                 print(f"Results: {len(results)} (keyword: '{keyword}')\n")
@@ -1163,22 +1034,20 @@ def _run_cli_command(client: SlackClient, args) -> None:
             if getattr(args, "json", False):
                 output = []
                 for m in unreplied:
-                    text_clean = clean_slack_markup(
-                        m.get("text", ""), cache=user_name_map
+                    text_clean = clean_slack_markup(m.get("text", ""), cache=user_name_map)
+                    output.append(
+                        {
+                            "channel_id": m.get("channel_id", ""),
+                            "channel_name": m.get("channel_name", m.get("channel_id", "")),
+                            "ts": m.get("ts", ""),
+                            "user_id": m.get("user_id", ""),
+                            "user_name": m.get("user_name", ""),
+                            "text": text_clean.strip(),
+                            "ts_epoch": m.get("ts_epoch", 0),
+                            "send_time_jst": m.get("send_time_jst", ""),
+                            "thread_ts": m.get("thread_ts", ""),
+                        }
                     )
-                    output.append({
-                        "channel_id": m.get("channel_id", ""),
-                        "channel_name": m.get(
-                            "channel_name", m.get("channel_id", "")
-                        ),
-                        "ts": m.get("ts", ""),
-                        "user_id": m.get("user_id", ""),
-                        "user_name": m.get("user_name", ""),
-                        "text": text_clean.strip(),
-                        "ts_epoch": m.get("ts_epoch", 0),
-                        "send_time_jst": m.get("send_time_jst", ""),
-                        "thread_ts": m.get("thread_ts", ""),
-                    })
                 print(json.dumps(output, ensure_ascii=False, indent=2))
             elif not unreplied:
                 print(f"No unreplied messages ({my_name} / ID: {my_user_id})")
@@ -1189,20 +1058,14 @@ def _run_cli_command(client: SlackClient, args) -> None:
                     user_name = m.get("user_name", "")
                     if not user_name and m.get("user_id"):
                         user_name = cache.get_user_name(m["user_id"])
-                    channel_name = m.get(
-                        "channel_name", m.get("channel_id", "")
-                    )
-                    text = clean_slack_markup(
-                        m.get("text", ""), cache=user_name_map
-                    )
+                    channel_name = m.get("channel_name", m.get("channel_id", ""))
+                    text = clean_slack_markup(m.get("text", ""), cache=user_name_map)
                     text_clean = text.strip()
                     text_preview = text_clean.replace("\n", " ")[:120]
                     if len(text_clean) > 120:
                         text_preview += "..."
                     thread_ts = m.get("thread_ts", "")
-                    thread_info = (
-                        f"  (thread: {thread_ts})" if thread_ts else ""
-                    )
+                    thread_info = f"  (thread: {thread_ts})" if thread_ts else ""
                     print(f"{ts} [#{channel_name}]{thread_info}")
                     print(f"  From: {user_name}")
                     print(f"  {text_preview}")
@@ -1220,13 +1083,9 @@ def _run_cli_command(client: SlackClient, args) -> None:
             member_channels = [
                 ch
                 for ch in all_channels
-                if ch.get("is_member", False)
-                or ch.get("is_im", False)
-                or ch.get("is_mpim", False)
+                if ch.get("is_member", False) or ch.get("is_im", False) or ch.get("is_mpim", False)
             ]
-            member_channels.sort(
-                key=lambda c: c.get("updated", 0), reverse=True
-            )
+            member_channels.sort(key=lambda c: c.get("updated", 0), reverse=True)
 
             print(f"{'ID':>12}  {'Type':10}  {'Members':>7}  {'Name'}")
             print("-" * 70)
@@ -1256,18 +1115,95 @@ def _run_cli_command(client: SlackClient, args) -> None:
 
 # ── Dispatch ──────────────────────────────────────────
 
+
+def _resolve_per_anima_token(anima_dir: str | Path | None) -> str | None:
+    """Resolve per-Anima Slack bot token from anima_dir path.
+
+    Uses ``SLACK_BOT_TOKEN__<anima_name>`` from vault.json / shared/credentials.json.
+    Returns None to fall back to the shared token.
+    """
+    if not anima_dir:
+        return None
+    from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential
+
+    anima_name = Path(anima_dir).name
+    per_anima_key = f"SLACK_BOT_TOKEN__{anima_name}"
+    token = _lookup_vault_credential(per_anima_key)
+    if token:
+        logger.debug("Using per-Anima Slack token for '%s'", anima_name)
+        return token
+    token = _lookup_shared_credentials(per_anima_key)
+    if token:
+        logger.debug("Using per-Anima Slack token for '%s'", anima_name)
+        return token
+    return None
+
+
+def _resolve_slack_token(args: dict[str, Any]) -> str | None:
+    """Resolve per-Anima Slack bot token from tool dispatch args."""
+    return _resolve_per_anima_token(args.get("anima_dir"))
+
+
+def _resolve_slack_identity(args: dict[str, Any]) -> tuple[str, str]:
+    """Resolve Anima display name and icon URL for Slack messages.
+
+    Reads ``icon_url_template`` from the first enabled Slack channel in
+    ``config.json`` ``human_notification.channels`` — the same template
+    used by the ``call_human`` notification path.
+
+    Returns:
+        (username, icon_url) tuple.  Either may be empty string.
+    """
+    anima_dir = args.get("anima_dir")
+    if not anima_dir:
+        return ("", "")
+
+    anima_name = Path(anima_dir).name
+    icon_url = ""
+
+    try:
+        from core.config import load_config
+
+        cfg = load_config()
+        if cfg.human_notification and cfg.human_notification.channels:
+            for ch in cfg.human_notification.channels:
+                if ch.type == "slack" and ch.enabled:
+                    template = ch.config.get("icon_url_template", "")
+                    if template:
+                        icon_url = template.format(name=anima_name)
+                    break
+    except Exception:
+        logger.debug("Failed to load icon_url_template from config", exc_info=True)
+
+    return (anima_name, icon_url)
+
+
+def _resolve_cli_token() -> str | None:
+    """Resolve per-Anima Slack bot token for CLI invocations.
+
+    Reads ``ANIMAWORKS_ANIMA_DIR`` env var set by the framework when
+    spawning Anima subprocesses (Mode S / Mode A).
+    """
+    import os
+
+    return _resolve_per_anima_token(os.environ.get("ANIMAWORKS_ANIMA_DIR"))
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
     if name == "slack_send":
-        client = SlackClient()
+        client = SlackClient(token=_resolve_slack_token(args))
         channel_id = client.resolve_channel(args["channel"])
+        username, icon_url = _resolve_slack_identity(args)
         return client.post_message(
             channel_id,
             md_to_slack_mrkdwn(args["message"]),
             thread_ts=args.get("thread_ts"),
+            username=username,
+            icon_url=icon_url,
         )
     if name == "slack_messages":
-        client = SlackClient()
+        client = SlackClient(token=_resolve_slack_token(args))
         channel_id = client.resolve_channel(args["channel"])
         cache = MessageCache()
         try:
@@ -1284,19 +1220,21 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         finally:
             cache.close()
     if name == "slack_search":
-        client = SlackClient()
+        client = SlackClient(token=_resolve_slack_token(args))
         cache = MessageCache()
         try:
             channel_id = None
             if args.get("channel"):
                 channel_id = client.resolve_channel(args["channel"])
             return cache.search(
-                args["keyword"], channel_id=channel_id, limit=args.get("limit", 50),
+                args["keyword"],
+                channel_id=channel_id,
+                limit=args.get("limit", 50),
             )
         finally:
             cache.close()
     if name == "slack_unreplied":
-        client = SlackClient()
+        client = SlackClient(token=_resolve_slack_token(args))
         cache = MessageCache()
         try:
             client.auth_test()
@@ -1304,7 +1242,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         finally:
             cache.close()
     if name == "slack_channels":
-        client = SlackClient()
+        client = SlackClient(token=_resolve_slack_token(args))
         return client.channels()
     raise ValueError(f"Unknown tool: {name}")
 

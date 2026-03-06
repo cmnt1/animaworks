@@ -11,9 +11,11 @@ When you use the Task tool, the framework automatically routes based on your org
 - If no name is given, the least-loaded subordinate with the best role match is auto-selected
 - Falls back to state/pending/ if all subordinates are disabled
 
-**Without subordinates** → Runs immediately as a parallel sub-agent
-- The sub-agent shares your identity, tools, and MCP servers
-- It cannot access your conversation history or short-term memory
+**Without subordinates** → Submitted as a background task
+- Written to state/pending/ and automatically executed by TaskExec in a separate session
+- The executor shares your identity, injection, behavior rules, memory guide, and org context
+- A task_id is returned. You will receive a DM notification when it completes
+- You can check task results in Heartbeat (state/task_results/)
 
 ### Task Tool vs delegate_task
 

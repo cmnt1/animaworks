@@ -295,7 +295,6 @@ class TestDefaultData:
             "post_channel",
             "read_channel",
             "call_human",
-            "discover_tools",
             "execute_command",
         ]
         for name in expected_names:

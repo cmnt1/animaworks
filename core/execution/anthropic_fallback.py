@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -17,33 +18,54 @@ Handles mid-conversation context monitoring and session chaining.
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager as _acm
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 from typing import Any
 
-from core.exceptions import LLMAPIError, ToolExecutionError  # noqa: F401
-from core.prompt.context import ContextTracker, resolve_context_window
+import httpx
+
+from core.exceptions import AnimaWorksError, LLMAPIError, ToolExecutionError  # noqa: F401
 from core.execution._sanitize import TOOL_TRUST_LEVELS, wrap_tool_result
 from core.execution._session import build_continuation_prompt, handle_session_chaining
 from core.execution._streaming import stream_error_boundary
-from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
-from core.execution.reminder import MSG_CONTEXT_THRESHOLD, MSG_FINAL_ITERATION, MSG_OUTPUT_TRUNCATED, SystemReminderQueue
+from core.execution._tool_summary import make_tool_detail_chunk
+from core.execution.base import (
+    BaseExecutor,
+    ExecutionResult,
+    TokenUsage,
+    ToolCallRecord,
+    _truncate_for_record,
+    tool_input_save_budget,
+    tool_result_save_budget,
+)
+from core.execution.reminder import (
+    MSG_CONTEXT_THRESHOLD,
+    MSG_FINAL_ITERATION,
+    MSG_OUTPUT_TRUNCATED,
+    SystemReminderQueue,
+)
 from core.memory import MemoryManager
-from core.prompt.builder import build_system_prompt
-from core.schemas import ModelConfig
 from core.memory.shortterm import ShortTermMemory
+from core.prompt.builder import build_system_prompt
+from core.prompt.context import ContextTracker
+from core.schemas import ImageData, ModelConfig
 from core.tooling.handler import ToolHandler
-from core.tooling.guide import load_tool_schemas
 from core.tooling.schemas import (
     build_tool_list,
     to_anthropic_format,
 )
-import httpx
-
-from core.execution._tool_summary import make_tool_detail_chunk
 
 logger = logging.getLogger("animaworks.execution.anthropic_fallback")
+
+
+async def _close_client_quietly(client: Any) -> None:
+    """Close async API client and suppress close-time errors."""
+    try:
+        await client.close()
+    except Exception:
+        logger.debug("Failed to close Anthropic client", exc_info=True)
 
 
 def _extract_tool_uses_from_messages(messages: list[dict]) -> list[dict]:
@@ -55,15 +77,19 @@ def _extract_tool_uses_from_messages(messages: list[dict]) -> list[dict]:
             if isinstance(content, list):
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "tool_use":
-                        tool_uses.append({
-                            "name": block.get("name", ""),
-                            "input": str(block.get("input", ""))[:500],
-                        })
+                        tool_uses.append(
+                            {
+                                "name": block.get("name", ""),
+                                "input": str(block.get("input", ""))[:500],
+                            }
+                        )
                     elif hasattr(block, "type") and getattr(block, "type", None) == "tool_use":
-                        tool_uses.append({
-                            "name": getattr(block, "name", ""),
-                            "input": str(getattr(block, "input", ""))[:500],
-                        })
+                        tool_uses.append(
+                            {
+                                "name": getattr(block, "name", ""),
+                                "input": str(getattr(block, "input", ""))[:500],
+                            }
+                        )
         elif msg.get("role") == "user":
             content = msg.get("content", [])
             if isinstance(content, list):
@@ -72,11 +98,61 @@ def _extract_tool_uses_from_messages(messages: list[dict]) -> list[dict]:
                         result_content = block.get("content", "")
                         if isinstance(result_content, list):
                             result_content = " ".join(
-                                b.get("text", "") for b in result_content
+                                b.get("text", "")
+                                for b in result_content
                                 if isinstance(b, dict) and b.get("type") == "text"
                             )
                         tool_uses[-1]["result"] = str(result_content)[:500]
     return tool_uses[-20:]  # Keep last 20 entries
+
+
+def _anthropic_retryable_errors():
+    """Return the tuple of transient Anthropic exceptions worth retrying."""
+    import anthropic as _anth
+
+    return (
+        _anth.RateLimitError,
+        _anth.APIConnectionError,
+        _anth.InternalServerError,
+        _anth.APITimeoutError,
+    )
+
+
+@_acm
+async def _stream_with_retry(
+    client,
+    stream_kwargs,
+    max_retries,
+    base_delay=1.0,
+    max_delay=60.0,
+):
+    """Open Anthropic streaming connection with retry on transient errors.
+
+    Retries only connection establishment (429/5xx/timeout).  Once streaming
+    begins, errors are re-raised immediately (handled by the upper
+    StreamDisconnectedError layer).
+    """
+    _retry_on = _anthropic_retryable_errors()
+    _entered = False
+    for attempt in range(1 + max_retries):
+        try:
+            async with client.messages.stream(**stream_kwargs) as stream:
+                _entered = True
+                yield stream
+                return
+        except _retry_on as exc:
+            if _entered or attempt >= max_retries:
+                raise
+            wait = min(base_delay * (2**attempt), max_delay)
+            logger.warning(
+                "Stream connect retry %d/%d after %.1fs – %s: %s",
+                attempt + 1,
+                max_retries,
+                wait,
+                type(exc).__name__,
+                exc,
+            )
+            await asyncio.sleep(wait)
 
 
 class AnthropicFallbackExecutor(BaseExecutor):
@@ -105,9 +181,10 @@ class AnthropicFallbackExecutor(BaseExecutor):
 
     def _build_tools(self) -> list[dict[str, Any]]:
         """Build the Anthropic-format tool list."""
-        external = load_tool_schemas(self._tool_registry, self._personal_tools)
         canonical = build_tool_list(
-            include_file_tools=False,
+            include_file_tools=True,
+            include_search_tools=True,
+            include_use_tool=False,
             include_notification_tools=self._tool_handler._human_notifier is not None,
             include_admin_tools=(self._anima_dir / "skills" / "newstaff.md").exists(),
             include_supervisor_tools=self._has_subordinates(),
@@ -115,11 +192,11 @@ class AnthropicFallbackExecutor(BaseExecutor):
             include_task_tools=True,
             include_plan_tasks=True,
             include_background_task_tools=getattr(self._tool_handler, "_background_manager", None) is not None,
+            include_vault_tools=True,
             include_skill_tools=True,
             skill_metas=self._memory.list_skill_metas(),
             common_skill_metas=self._memory.list_common_skill_metas(),
             procedure_metas=self._memory.list_procedure_metas(),
-            external_schemas=external,
         )
         return to_anthropic_format(canonical)
 
@@ -138,20 +215,22 @@ class AnthropicFallbackExecutor(BaseExecutor):
     def _build_initial_messages(
         self,
         prompt: str,
-        images: list[dict[str, Any]] | None = None,
+        images: list[ImageData] | None = None,
     ) -> list[dict[str, Any]]:
         """Build the initial user message with optional image content blocks."""
         if images:
             content_blocks: list[dict[str, Any]] = []
             for img in images:
-                content_blocks.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": img["media_type"],
-                        "data": img["data"],
-                    },
-                })
+                content_blocks.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": img["media_type"],
+                            "data": img["data"],
+                        },
+                    }
+                )
             content_blocks.append({"type": "text", "text": prompt})
             return [{"role": "user", "content": content_blocks}]
         return [{"role": "user", "content": prompt}]
@@ -163,14 +242,14 @@ class AnthropicFallbackExecutor(BaseExecutor):
         tracker: ContextTracker | None = None,
         shortterm: ShortTermMemory | None = None,
         trigger: str = "",
-        images: list[dict[str, Any]] | None = None,
+        images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         max_turns_override: int | None = None,
     ) -> ExecutionResult:
         """Run Anthropic SDK with tool_use loop."""
         client = self._build_client()
         tools = self._build_tools()
-        context_window = resolve_context_window(self._model_config.model)
+        context_window = self._resolve_cw()
         if prior_messages:
             messages = prior_messages  # Structured history including current msg
         else:
@@ -193,19 +272,20 @@ class AnthropicFallbackExecutor(BaseExecutor):
         for iteration in range(max_iterations):
             if self._check_interrupted():
                 logger.info("Anthropic execute interrupted at iteration=%d", iteration)
+                await _close_client_quietly(client)
                 return ExecutionResult(text="[Session interrupted by user]")
 
-            is_final_iteration = (
-                max_iterations > 1 and iteration == max_iterations - 1
-            )
+            is_final_iteration = max_iterations > 1 and iteration == max_iterations - 1
 
             if is_final_iteration:
-                messages.append({
-                    "role": "user",
-                    "content": SystemReminderQueue.format_reminder(
-                        MSG_FINAL_ITERATION,
-                    ),
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": SystemReminderQueue.format_reminder(
+                            MSG_FINAL_ITERATION,
+                        ),
+                    }
+                )
                 logger.info(
                     "Anthropic final iteration=%d: tools removed",
                     iteration,
@@ -213,7 +293,8 @@ class AnthropicFallbackExecutor(BaseExecutor):
 
             logger.debug(
                 "API call iteration=%d messages_count=%d",
-                iteration, len(messages),
+                iteration,
+                len(messages),
             )
 
             create_kwargs: dict[str, Any] = {
@@ -226,9 +307,12 @@ class AnthropicFallbackExecutor(BaseExecutor):
             if self._model_config.thinking and is_anthropic_claude(self._model_config.model):
                 if is_adaptive_model(self._model_config.model):
                     create_kwargs["thinking"] = {"type": "adaptive"}
-                    create_kwargs["output_config"] = {"effort": resolve_thinking_effort(
-                        self._model_config.model, self._model_config.thinking_effort,
-                    )}
+                    create_kwargs["output_config"] = {
+                        "effort": resolve_thinking_effort(
+                            self._model_config.model,
+                            self._model_config.thinking_effort,
+                        )
+                    }
                 else:
                     create_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
                 create_kwargs["temperature"] = 1
@@ -236,11 +320,20 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 create_kwargs["tools"] = tools
 
             try:
-                response = await client.messages.create(**create_kwargs)
+                from core.tools._retry import async_retry_with_backoff
+
+                response = await async_retry_with_backoff(
+                    client.messages.create,
+                    **create_kwargs,
+                    max_retries=self._resolve_num_retries(),
+                    retry_on=_anthropic_retryable_errors(),
+                )
             except LLMAPIError:
+                await _close_client_quietly(client)
                 raise
             except Exception as e:
                 logger.exception("Anthropic API error")
+                await _close_client_quietly(client)
                 raise LLMAPIError(f"Anthropic API error: {e}") from e
 
             # ── Context tracking + session chaining ───────────
@@ -258,13 +351,9 @@ class AnthropicFallbackExecutor(BaseExecutor):
                         ratio = float(tracker.usage_ratio)
                     except (TypeError, ValueError):
                         ratio = 0.0
-                    self.reminder_queue.push_sync(
-                        MSG_CONTEXT_THRESHOLD.format(ratio=ratio)
-                    )
+                    self.reminder_queue.push_sync(MSG_CONTEXT_THRESHOLD.format(ratio=ratio))
 
-                current_text = "\n".join(
-                    b.text for b in response.content if b.type == "text"
-                )
+                current_text = "\n".join(b.text for b in response.content if b.type == "text")
                 new_sys, chain_count = await handle_session_chaining(
                     tracker=tracker,
                     shortterm=shortterm,
@@ -289,9 +378,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 if new_sys is not None:
                     all_response_text.append(current_text)
                     system_prompt = new_sys
-                    messages: list[dict[str, Any]] = [
-                        {"role": "user", "content": build_continuation_prompt()}
-                    ]
+                    messages: list[dict[str, Any]] = [{"role": "user", "content": build_continuation_prompt()}]
                     continue
 
             # ── P1-2: output truncation reminder ─────────────────
@@ -302,14 +389,13 @@ class AnthropicFallbackExecutor(BaseExecutor):
             tool_uses = [b for b in response.content if b.type == "tool_use"]
             if not tool_uses:
                 logger.debug("Final response received at iteration=%d", iteration)
-                final_text = "\n".join(
-                    b.text for b in response.content if b.type == "text"
-                )
+                final_text = "\n".join(b.text for b in response.content if b.type == "text")
                 all_response_text.append(final_text)
                 # ── Final drain: deliver any undelivered reminders ──
                 final_reminder = self.reminder_queue.drain_formatted()
                 if final_reminder:
                     all_response_text.append(final_reminder)
+                await _close_client_quietly(client)
                 return ExecutionResult(
                     text="\n".join(all_response_text),
                     tool_call_records=all_tool_records,
@@ -319,7 +405,8 @@ class AnthropicFallbackExecutor(BaseExecutor):
             # ── Process tool calls ────────────────────────────
             logger.info(
                 "Tool calls at iteration=%d: %s",
-                iteration, ", ".join(tu.name for tu in tool_uses),
+                iteration,
+                ", ".join(tu.name for tu in tool_uses),
             )
             messages.append({"role": "assistant", "content": response.content})
 
@@ -334,17 +421,23 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     _trust_order.get(trust, 0),
                 )
 
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": wrap_tool_result(tu.name, result),
-                })
-                all_tool_records.append(ToolCallRecord(
-                    tool_name=tu.name,
-                    tool_id=tu.id,
-                    input_summary=_truncate_for_record(str(tu.input), tool_input_save_budget(context_window)),
-                    result_summary=_truncate_for_record(str(result), tool_result_save_budget(tu.name, context_window)),
-                ))
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": wrap_tool_result(tu.name, result),
+                    }
+                )
+                all_tool_records.append(
+                    ToolCallRecord(
+                        tool_name=tu.name,
+                        tool_id=tu.id,
+                        input_summary=_truncate_for_record(str(tu.input), tool_input_save_budget(context_window)),
+                        result_summary=_truncate_for_record(
+                            str(result), tool_result_save_budget(tu.name, context_window)
+                        ),
+                    )
+                )
             messages.append({"role": "user", "content": tool_results})
 
             # ── Drain reminder queue into tool result message ──
@@ -353,14 +446,17 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 formatted = SystemReminderQueue.format_reminder(reminder)
                 last_content = messages[-1]["content"]
                 if isinstance(last_content, list):
-                    last_content.append({
-                        "type": "text",
-                        "text": formatted,
-                    })
+                    last_content.append(
+                        {
+                            "type": "text",
+                            "text": formatted,
+                        }
+                    )
                 elif isinstance(last_content, str):
                     messages[-1]["content"] += "\n\n" + formatted
 
         logger.warning("Max iterations (%d) reached, returning fallback response", max_iterations)
+        await _close_client_quietly(client)
         return ExecutionResult(
             text="\n".join(all_response_text) or "(max iterations reached)",
             tool_call_records=all_tool_records,
@@ -374,7 +470,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
         system_prompt: str,
         prompt: str,
         tracker: ContextTracker,
-        images: list[dict[str, Any]] | None = None,
+        images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         max_turns_override: int | None = None,
         trigger: str = "",
@@ -391,8 +487,35 @@ class AnthropicFallbackExecutor(BaseExecutor):
         externally for streaming paths.
         """
         client = self._build_client()
+        try:
+            async for event in self._execute_streaming_inner(
+                client,
+                system_prompt,
+                prompt,
+                tracker,
+                images,
+                prior_messages,
+                max_turns_override,
+                trigger,
+            ):
+                yield event
+        finally:
+            await _close_client_quietly(client)
+
+    async def _execute_streaming_inner(
+        self,
+        client: Any,
+        system_prompt: str,
+        prompt: str,
+        tracker: ContextTracker,
+        images: list[ImageData] | None = None,
+        prior_messages: list[dict[str, Any]] | None = None,
+        max_turns_override: int | None = None,
+        trigger: str = "",
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Inner streaming logic — client lifecycle managed by caller."""
         tools = self._build_tools()
-        context_window = resolve_context_window(self._model_config.model)
+        context_window = self._resolve_cw()
         if prior_messages:
             messages = prior_messages
         else:
@@ -413,7 +536,8 @@ class AnthropicFallbackExecutor(BaseExecutor):
         )
 
         async with stream_error_boundary(
-            all_response_text, executor_name="AnthropicFallback",
+            all_response_text,
+            executor_name="AnthropicFallback",
         ):
             for iteration in range(_MAX_ITERATIONS):
                 if self._check_interrupted():
@@ -422,17 +546,17 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     yield {"type": "done", "full_text": "[Session interrupted by user]", "result_message": None}
                     return
 
-                is_final_iteration = (
-                    _MAX_ITERATIONS > 1 and iteration == _MAX_ITERATIONS - 1
-                )
+                is_final_iteration = _MAX_ITERATIONS > 1 and iteration == _MAX_ITERATIONS - 1
 
                 if is_final_iteration:
-                    messages.append({
-                        "role": "user",
-                        "content": SystemReminderQueue.format_reminder(
-                            MSG_FINAL_ITERATION,
-                        ),
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": SystemReminderQueue.format_reminder(
+                                MSG_FINAL_ITERATION,
+                            ),
+                        }
+                    )
                     logger.info(
                         "Streaming final iteration=%d: tools removed",
                         iteration,
@@ -440,7 +564,8 @@ class AnthropicFallbackExecutor(BaseExecutor):
 
                 logger.debug(
                     "Streaming API call iteration=%d messages_count=%d",
-                    iteration, len(messages),
+                    iteration,
+                    len(messages),
                 )
 
                 # ── Stream one API round ──────────────────────
@@ -457,9 +582,12 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 if self._model_config.thinking and is_anthropic_claude(self._model_config.model):
                     if is_adaptive_model(self._model_config.model):
                         stream_kwargs["thinking"] = {"type": "adaptive"}
-                        stream_kwargs["output_config"] = {"effort": resolve_thinking_effort(
-                            self._model_config.model, self._model_config.thinking_effort,
-                        )}
+                        stream_kwargs["output_config"] = {
+                            "effort": resolve_thinking_effort(
+                                self._model_config.model,
+                                self._model_config.thinking_effort,
+                            )
+                        }
                     else:
                         stream_kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
                     stream_kwargs["temperature"] = 1
@@ -467,7 +595,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     stream_kwargs["tools"] = tools
 
                 _in_thinking_block = False
-                async with client.messages.stream(**stream_kwargs) as stream:
+                async with _stream_with_retry(client, stream_kwargs, self._resolve_num_retries()) as stream:
                     async for event in stream:
                         # Text deltas — forward immediately
                         if event.type == "text":
@@ -515,25 +643,22 @@ class AnthropicFallbackExecutor(BaseExecutor):
                             ratio = float(tracker.usage_ratio)
                         except (TypeError, ValueError):
                             ratio = 0.0
-                        self.reminder_queue.push_sync(
-                            MSG_CONTEXT_THRESHOLD.format(ratio=ratio)
-                        )
+                        self.reminder_queue.push_sync(MSG_CONTEXT_THRESHOLD.format(ratio=ratio))
 
                 # P1-2: output truncation reminder
                 if final_message and getattr(final_message, "stop_reason", None) == "max_tokens":
                     self.reminder_queue.push_sync(MSG_OUTPUT_TRUNCATED)
 
                 # ── Check for tool use ────────────────────────
-                tool_uses = [
-                    b for b in final_message.content if b.type == "tool_use"
-                ]
+                tool_uses = [b for b in final_message.content if b.type == "tool_use"]
                 if not tool_uses:
                     # No tools — this is the final response
                     iteration_text = "".join(iteration_text_parts)
                     if iteration_text:
                         all_response_text.append(iteration_text)
                     logger.debug(
-                        "Streaming final response at iteration=%d", iteration,
+                        "Streaming final response at iteration=%d",
+                        iteration,
                     )
                     break
 
@@ -544,19 +669,24 @@ class AnthropicFallbackExecutor(BaseExecutor):
 
                 logger.info(
                     "Streaming tool calls at iteration=%d: %s",
-                    iteration, ", ".join(tu.name for tu in tool_uses),
+                    iteration,
+                    ", ".join(tu.name for tu in tool_uses),
                 )
-                messages.append({
-                    "role": "assistant",
-                    "content": final_message.content,
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": final_message.content,
+                    }
+                )
 
                 loop = asyncio.get_running_loop()
                 _trust_order_s = {"trusted": 2, "medium": 1, "untrusted": 0}
                 tool_results = []
                 for tu in tool_uses:
                     detail_chunk = make_tool_detail_chunk(
-                        tu.name, tu.id, tu.input or {},
+                        tu.name,
+                        tu.id,
+                        tu.input or {},
                     )
                     if detail_chunk:
                         yield detail_chunk
@@ -572,6 +702,8 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     except ToolExecutionError as tool_err:
                         logger.warning("Tool execution error: %s – %s", tu.name, tool_err)
                         result = f"ツール実行エラー: {tool_err}"
+                    except AnimaWorksError:
+                        raise
                     except Exception as tool_err:
                         logger.exception("Unexpected tool error: %s", tu.name)
                         result = f"ツール実行エラー: {tool_err}"
@@ -582,17 +714,23 @@ class AnthropicFallbackExecutor(BaseExecutor):
                         _trust_order_s.get(trust, 0),
                     )
 
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu.id,
-                        "content": wrap_tool_result(tu.name, result),
-                    })
-                    all_tool_records.append(ToolCallRecord(
-                        tool_name=tu.name,
-                        tool_id=tu.id,
-                        input_summary=_truncate_for_record(str(tu.input), tool_input_save_budget(context_window)),
-                        result_summary=_truncate_for_record(str(result), tool_result_save_budget(tu.name, context_window)),
-                    ))
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tu.id,
+                            "content": wrap_tool_result(tu.name, result),
+                        }
+                    )
+                    all_tool_records.append(
+                        ToolCallRecord(
+                            tool_name=tu.name,
+                            tool_id=tu.id,
+                            input_summary=_truncate_for_record(str(tu.input), tool_input_save_budget(context_window)),
+                            result_summary=_truncate_for_record(
+                                str(result), tool_result_save_budget(tu.name, context_window)
+                            ),
+                        )
+                    )
                     yield {
                         "type": "tool_end",
                         "tool_id": tu.id,
@@ -606,16 +744,19 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     formatted = SystemReminderQueue.format_reminder(reminder)
                     last_content = messages[-1]["content"]
                     if isinstance(last_content, list):
-                        last_content.append({
-                            "type": "text",
-                            "text": formatted,
-                        })
+                        last_content.append(
+                            {
+                                "type": "text",
+                                "text": formatted,
+                            }
+                        )
                     elif isinstance(last_content, str):
                         messages[-1]["content"] += "\n\n" + formatted
             else:
                 # for-else: max iterations reached without break
                 logger.warning(
-                    "Streaming max iterations (%d) reached", _MAX_ITERATIONS,
+                    "Streaming max iterations (%d) reached",
+                    _MAX_ITERATIONS,
                 )
 
         full_text = "\n".join(all_response_text) or "(no response)"

@@ -198,7 +198,7 @@ Roles are not applied with `create_from_template` or `create_blank`.
 
 ### Template Directory Structure
 
-Role templates are organized across two path types:
+Role templates are organized across `templates/_shared` and locale-specific paths:
 
 | Path | Content | Locale |
 |------|---------|--------|
@@ -207,29 +207,42 @@ Role templates are organized across two path types:
 | `templates/{locale}/roles/{role}/specialty_prompt.md` | Role-specific behavior guidelines | ja / en |
 
 `locale` is resolved from `config.json`'s `locale` or defaults to `ja`.
-`defaults.json` is shared across locales and defines `model`, `context_threshold`, `max_turns`,
-`max_chains`, and `conversation_history_threshold`.
+`_get_roles_dir()` returns `templates/{locale}/roles` and falls back to `ja` if the locale path does not exist.
+
+`defaults.json` is shared across all locales and defines the following fields:
+
+| Field | Description | Notes |
+|-------|--------------|-------|
+| `model` | Model for chat and task execution | All roles |
+| `background_model` | Model for Heartbeat and cron | engineer, manager only |
+| `context_threshold` | Compaction threshold | All roles |
+| `max_turns` | Maximum number of turns | All roles |
+| `max_chains` | Maximum number of chains | All roles |
+| `conversation_history_threshold` | Conversation history compression threshold | All roles |
 
 ### Available Roles
 
-| Role | Summary | Default Model |
-|------|---------|---------------|
-| manager | Delegation, reporting, escalation decisions | claude-opus-4-6 |
-| engineer | Code implementation, technical design, testing | claude-opus-4-6 |
-| researcher | Information gathering, analysis, reports | claude-sonnet-4-6 |
-| writer | Document creation, communication design | claude-sonnet-4-6 |
-| ops | Monitoring, anomaly detection, incident response | ollama/glm-4.7 |
-| general | General tasks (default) | claude-sonnet-4-6 |
+| Role | Summary | Default Model | max_turns | max_chains | context_threshold |
+|------|---------|---------------|-----------|------------|-------------------|
+| manager | Delegation, reporting, escalation decisions | claude-opus-4-6 | 50 | 3 | 0.60 |
+| engineer | Code implementation, technical design, testing | claude-opus-4-6 | 200 | 10 | 0.80 |
+| researcher | Information gathering, analysis, reports | claude-sonnet-4-6 | 30 | 2 | 0.50 |
+| writer | Document creation, communication design | claude-sonnet-4-6 | 80 | 5 | 0.70 |
+| ops | Monitoring, anomaly detection, incident response | ollama/glm-4.7 | 30 | 2 | 0.50 |
+| general | General tasks (default) | claude-sonnet-4-6 | 20 | 2 | 0.50 |
 
 `general` is applied when unspecified. For ops using vLLM, edit `model` and `credential` in
 `status.json` to specify e.g. `openai/glm-4.7-flash`.
+engineer and manager use `background_model` for Heartbeat and cron with claude-sonnet-4-6.
 
 ### Application Flow
 
 1. **On creation** (`create_from_md`): `_apply_role_defaults()` copies `permissions.md` and
-   `specialty_prompt.md` to `animas/{name}/`. `_create_status_json()` merges `defaults.json`
-   into `status.json`.
-2. **On role change** (`animaworks anima set-role`): Same templates are reapplied.
+   `specialty_prompt.md` to `animas/{name}/`. `_create_status_json()` merges all fields from
+   `defaults.json` (including `background_model`) into `status.json`.
+2. **On role change** (`animaworks anima set-role`): `permissions.md` and `specialty_prompt.md` are recopied.
+   Only `model`, `context_threshold`, `max_turns`, `max_chains`, and `conversation_history_threshold`
+   are merged into `status.json` (`background_model` is not applied on set-role).
    Use `--status-only` to update only status.json, `--no-restart` to skip auto-restart.
 
 ### Prompt Injection

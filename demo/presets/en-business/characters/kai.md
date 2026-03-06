@@ -7,6 +7,7 @@
 | Name | kai |
 | Age | 25 |
 | Birthday | May 21 |
+| Gender | Male |
 | Height | 175cm |
 | Role | Lead Engineer |
 | Supervisor | alex |

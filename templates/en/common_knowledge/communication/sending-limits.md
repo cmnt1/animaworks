@@ -3,6 +3,8 @@
 Details of the 3-layer rate limit system that prevents message storms (excessive message sending).
 Refer to this when send errors occur or when you want to understand how the limits work.
 
+**Implementation**: `core/cascade_limiter.py` (depth and global limits), `core/messenger.py` (pre-send checks), `core/tooling/handler_comms.py` (per-run and Board limits), `core/outbound.py` (recipient resolution and external delivery)
+
 ## 3-Layer Rate Limits
 
 ### Layer 1: Session Guard (per-run)
@@ -11,6 +13,7 @@ Limits applied within a single session (heartbeat, chat, task execution, etc.).
 
 | Limit | Description |
 |-------|-------------|
+| DM intent restriction | Only `report`, `delegation`, and `question` intents are allowed for `send_message`. Use Board for acknowledgments, thanks, and FYI |
 | No duplicate sends to same recipient | One DM reply per recipient per session |
 | DM recipient cap | Max 2 recipients per session; use Board for 3+ |
 | Board: 1 post per session | One post per channel per session |
@@ -18,15 +21,15 @@ Limits applied within a single session (heartbeat, chat, task execution, etc.).
 ### Layer 2: Cross-Run Limits
 
 Limits computed from activity_log sliding window across sessions.
-Counts `message_sent` (legacy `dm_sent`) events.
+Counts `message_sent` (legacy `dm_sent`) events. **Applies only to internal Anima DMs** (external platform sends use a separate path).
 
-| Limit | Value | Method |
-|-------|-------|--------|
-| Hourly cap | 30 messages/hour | message_sent events in last hour |
-| 24h cap | 100 messages/24h | message_sent events in last 24 hours |
-| Board post cooldown | 300s (default) | Min gap between posts to same channel (`config.json` `heartbeat.channel_post_cooldown_s`) |
+| Limit | Default | Config Key | Description |
+|-------|---------|------------|-------------|
+| Hourly cap | 30 messages/hour | `heartbeat.max_messages_per_hour` | message_sent events in last hour |
+| 24h cap | 100 messages/24h | `heartbeat.max_messages_per_day` | message_sent events in last 24 hours |
+| Board post cooldown | 300s | `heartbeat.channel_post_cooldown_s` | Min gap between posts to same channel (0 disables) |
 
-**Excluded**: `ack` (acknowledgment), `error` (error notification), `system_alert` (system alert) are not subject to rate or depth limits.
+**Excluded**: `ack` (acknowledgment), `error` (error notification), `system_alert` (system alert) are not subject to rate or depth limits (they are not blocked).
 
 ### Layer 3: Behavior-Aware Priming
 
@@ -35,12 +38,12 @@ This lets you make send decisions with awareness of your recent sending activity
 
 ## Conversation Depth Limit (Bilateral DM)
 
-When DM exchanges between two parties exceed a threshold, `send_message` is blocked.
+When DM exchanges between two parties exceed a threshold, `send_message` to **internal Anima recipients** is blocked.
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| Depth window | 10 min | Sliding window |
-| Max depth | 6 turns | 6 turns = 3 round-trips; blocks send above this |
+| Setting | Default | Config Key | Description |
+|---------|---------|------------|-------------|
+| Depth window | 600s (10 min) | `heartbeat.depth_window_s` | Sliding window |
+| Max depth | 6 turns | `heartbeat.max_depth` | 6 turns = 3 round-trips; blocks send above this |
 
 Error: `ConversationDepthExceeded: Conversation with {peer} reached 6 turns in 10 minutes. Please wait until the next heartbeat cycle.`
 
@@ -49,18 +52,36 @@ Error: `ConversationDepthExceeded: Conversation with {peer} reached 6 turns in 1
 When exchanges between two parties exceed a threshold within a time window, **message-triggered heartbeat is suppressed**.
 Sending is not blocked, but immediate heartbeat on messages from that peer will not fire.
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| Cascade window | 30 min | Sliding window (`config.json` `heartbeat.cascade_window_s`) |
-| Cascade threshold | 3 round-trips | Heartbeat suppressed above this (`config.json` `heartbeat.cascade_threshold`) |
+| Setting | Default | Config Key | Description |
+|---------|---------|------------|-------------|
+| Cascade window | 1800s (30 min) | `heartbeat.cascade_window_s` | Sliding window |
+| Cascade threshold | 3 round-trips | `heartbeat.cascade_threshold` | Heartbeat suppressed above this |
+
+## Configuration (config.json)
+
+Limit values can be changed in the `heartbeat` section of `config.json`:
+
+```json
+{
+  "heartbeat": {
+    "max_messages_per_hour": 30,
+    "max_messages_per_day": 100,
+    "depth_window_s": 600,
+    "max_depth": 6,
+    "channel_post_cooldown_s": 300,
+    "cascade_window_s": 1800,
+    "cascade_threshold": 3
+  }
+}
+```
 
 ## When Limits Are Hit
 
 ### Error Messages
 
 When limits are reached, errors like the following are returned:
-- `GlobalOutboundLimitExceeded: Hourly send limit (30 messages) reached...`
-- `GlobalOutboundLimitExceeded: 24-hour send limit (100 messages) reached...`
+- `GlobalOutboundLimitExceeded: Hourly send limit (30 messages) reached...` (at default)
+- `GlobalOutboundLimitExceeded: 24-hour send limit (100 messages) reached...` (at default)
 - `ConversationDepthExceeded: Conversation with {peer} reached 6 turns in 10 minutes. Please wait until the next heartbeat cycle.`
 
 ### What to Do
@@ -86,5 +107,5 @@ Use the `read_dm_history` tool when checking DM history (it prefers activity_log
 ## Avoiding Loops
 
 - Before replying again to a peer's message, consider whether another reply is really needed
-- Simple acknowledgments tend to cause loops
+- Acknowledgments and simple confirmations tend to cause loops
 - Move complex discussions to Board channels

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -32,20 +33,34 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from core.exceptions import LLMAPIError, ToolExecutionError, ConfigError  # noqa: F401
-from core.i18n import t
+from core.exceptions import (
+    AnimaWorksError,
+    ExecutionError,
+    LLMAPIError,
+    ToolExecutionError,
+)  # noqa: F401
 from core.execution._sanitize import wrap_tool_result
-from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord, _truncate_for_record, strip_thinking_tags, tool_input_save_budget, tool_result_save_budget
-from core.execution.reminder import MSG_OUTPUT_TRUNCATED, SystemReminderQueue
 from core.execution._streaming import stream_error_boundary
+from core.execution._tool_summary import make_tool_detail_chunk
+from core.execution.base import (
+    BaseExecutor,
+    ExecutionResult,
+    TokenUsage,
+    ToolCallRecord,
+    _truncate_for_record,
+    strip_thinking_tags,
+    tool_input_save_budget,
+    tool_result_save_budget,
+)
+from core.execution.reminder import MSG_OUTPUT_TRUNCATED, SystemReminderQueue
+from core.i18n import t
 from core.memory import MemoryManager
-from core.messenger import Messenger
-from core.prompt.context import ContextTracker, resolve_context_window
-from core.schemas import ModelConfig
 from core.memory.shortterm import ShortTermMemory
+from core.messenger import Messenger
+from core.prompt.context import ContextTracker
+from core.schemas import ImageData, ModelConfig
 from core.tooling.handler import ToolHandler
 from core.tooling.schemas import build_tool_list, to_text_format
-from core.execution._tool_summary import make_tool_detail_chunk
 
 logger = logging.getLogger("animaworks.execution.assisted")
 
@@ -82,10 +97,7 @@ def _looks_like_tool_intent(text: str) -> bool:
     """
     if not text or len(text) > 2000:
         return False
-    return bool(
-        _TOOL_INTENT_PATTERNS_JA.search(text)
-        or _TOOL_INTENT_PATTERNS_EN.search(text)
-    )
+    return bool(_TOOL_INTENT_PATTERNS_JA.search(text) or _TOOL_INTENT_PATTERNS_EN.search(text))
 
 
 # ── JSON extraction ─────────────────────────────────────────
@@ -134,6 +146,7 @@ def extract_tool_call(text: str) -> dict | None:
     # Step 4: json_repair (broken JSON repair)
     try:
         from json_repair import repair_json
+
         repaired = repair_json(json_str, return_objects=True, ensure_ascii=False)
         if isinstance(repaired, dict) and "tool" in repaired:
             return repaired
@@ -168,10 +181,7 @@ def _truncate_tool_output(result: str, max_bytes: int = _MAX_TOOL_OUTPUT_BYTES) 
     if len(encoded) <= max_bytes:
         return result
     truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
-    return (
-        f"{truncated}\n"
-        + t("assisted.output_truncated", size=len(encoded))
-    )
+    return f"{truncated}\n" + t("assisted.output_truncated", size=len(encoded))
 
 
 # ── Executor ────────────────────────────────────────────────
@@ -213,38 +223,24 @@ class AssistedExecutor(BaseExecutor):
 
     def _build_tool_schemas(self) -> list[dict[str, Any]]:
         """Build canonical tool schemas for text format generation."""
-        from core.tooling.schemas import (
-            load_external_schemas,
-            load_personal_tool_schemas,
-        )
-
         canonical = build_tool_list(
             include_file_tools=True,
             include_search_tools=True,
-            include_discovery_tools=False,  # Not needed in text mode
+            include_discovery_tools=False,
+            include_use_tool=bool(self._tool_registry),
             include_notification_tools=self._tool_handler._human_notifier is not None,
             include_admin_tools=(self._anima_dir / "skills" / "newstaff.md").exists(),
             include_supervisor_tools=self._has_subordinates(),
-            include_tool_management=False,  # Not needed in text mode
+            include_tool_management=False,
             include_task_tools=True,
             include_plan_tasks=True,
             include_background_task_tools=getattr(self._tool_handler, "_background_manager", None) is not None,
+            include_vault_tools=True,
             include_skill_tools=True,
             skill_metas=self._memory.list_skill_metas(),
             common_skill_metas=self._memory.list_common_skill_metas(),
             procedure_metas=self._memory.list_procedure_metas(),
         )
-
-        # Load external tool schemas
-        external = load_external_schemas(self._tool_registry)
-        if external:
-            canonical.extend(external)
-
-        # Load personal tool schemas
-        if self._personal_tools:
-            personal = load_personal_tool_schemas(self._personal_tools)
-            canonical.extend(personal)
-
         return canonical
 
     def _build_tool_spec_text(self) -> str:
@@ -262,18 +258,8 @@ class AssistedExecutor(BaseExecutor):
         if the prompt is too large to fit in the context window at all.
         """
         import litellm as _litellm
-        from core.prompt.context import resolve_context_window
-        from core.config import load_config
 
-        try:
-            _cw_overrides = load_config().model_context_windows
-        except Exception:
-            logger.debug("Failed to load model context windows", exc_info=True)
-            _cw_overrides = None
-
-        ctx_window = resolve_context_window(
-            self._model_config.model, _cw_overrides,
-        )
+        ctx_window = self._resolve_cw()
 
         try:
             est_input = _litellm.token_counter(
@@ -290,22 +276,19 @@ class AssistedExecutor(BaseExecutor):
 
         if available - 128 < 256:
             # Last resort: truncate system message to fit
-            if (
-                messages
-                and messages[0].get("role") == "system"
-                and isinstance(messages[0].get("content"), str)
-            ):
+            if messages and messages[0].get("role") == "system" and isinstance(messages[0].get("content"), str):
                 sys_content = messages[0]["content"]
                 excess_tokens = est_input - ctx_window + 512
                 excess_chars = excess_tokens * 4
-                if len(sys_content) > excess_chars + 2000:
-                    messages[0]["content"] = sys_content[
-                        : len(sys_content) - excess_chars
-                    ]
+                _min_sys_chars = 2000
+                available_for_trim = len(sys_content) - _min_sys_chars
+                if available_for_trim > 0:
+                    trim_amount = min(excess_chars, available_for_trim)
+                    messages[0]["content"] = sys_content[: len(sys_content) - trim_amount]
                     logger.warning(
-                        "Mode B preflight: hard-truncated system prompt "
-                        "by %d chars to fit context window %d",
-                        excess_chars, ctx_window,
+                        "Mode B preflight: hard-truncated system prompt by %d chars to fit context window %d",
+                        trim_amount,
+                        ctx_window,
                     )
                     try:
                         est_input = _litellm.token_counter(
@@ -313,9 +296,7 @@ class AssistedExecutor(BaseExecutor):
                             messages=messages,
                         )
                     except Exception:
-                        msg_chars = sum(
-                            len(str(m.get("content", ""))) for m in messages
-                        )
+                        msg_chars = sum(len(str(m.get("content", ""))) for m in messages)
                         est_input = msg_chars // 2
                     available = ctx_window - est_input
                     if available - 128 >= 256:
@@ -323,18 +304,20 @@ class AssistedExecutor(BaseExecutor):
                         return {"max_tokens": clamped}
 
             logger.error(
-                "Mode B preflight: prompt too large "
-                "(~%d tokens input, %d window)",
-                est_input, ctx_window,
+                "Mode B preflight: prompt too large (~%d tokens input, %d window)",
+                est_input,
+                ctx_window,
             )
             return None
 
         if available < configured_max:
             clamped = available - 128
             logger.info(
-                "Mode B preflight: clamping max_tokens %d -> %d "
-                "(est_input ~%d, window %d)",
-                configured_max, clamped, est_input, ctx_window,
+                "Mode B preflight: clamping max_tokens %d -> %d (est_input ~%d, window %d)",
+                configured_max,
+                clamped,
+                est_input,
+                ctx_window,
             )
             return {"max_tokens": clamped}
 
@@ -351,16 +334,21 @@ class AssistedExecutor(BaseExecutor):
         from core.config.models import resolve_max_tokens
         from core.execution.base import is_adaptive_model, is_anthropic_claude, resolve_thinking_effort
 
-        _eff_max = max_tokens_override if max_tokens_override is not None else resolve_max_tokens(
-            self._model_config.model,
-            self._model_config.max_tokens,
-            self._model_config.thinking,
+        _eff_max = (
+            max_tokens_override
+            if max_tokens_override is not None
+            else resolve_max_tokens(
+                self._model_config.model,
+                self._model_config.max_tokens,
+                self._model_config.thinking,
+            )
         )
         kwargs: dict[str, Any] = {
             "model": self._model_config.model,
             "messages": messages,
             "max_tokens": _eff_max,
             "timeout": self._resolve_llm_timeout(),
+            "num_retries": self._resolve_num_retries(),
         }
 
         api_key = self._resolve_api_key()
@@ -376,14 +364,16 @@ class AssistedExecutor(BaseExecutor):
             if model.startswith("bedrock/"):
                 if self._model_config.thinking:
                     kwargs["reasoning_effort"] = resolve_thinking_effort(
-                        model, self._model_config.thinking_effort,
+                        model,
+                        self._model_config.thinking_effort,
                     )
             elif is_anthropic_claude(model):
                 if self._model_config.thinking:
                     if is_adaptive_model(model):
                         kwargs["thinking"] = {"type": "adaptive"}
                         kwargs["reasoning_effort"] = resolve_thinking_effort(
-                            model, self._model_config.thinking_effort,
+                            model,
+                            self._model_config.thinking_effort,
                         )
                     else:
                         kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
@@ -395,16 +385,7 @@ class AssistedExecutor(BaseExecutor):
 
         # Ollama num_ctx: explicitly set context window to prevent silent truncation
         if self._model_config.model.startswith("ollama/"):
-            from core.prompt.context import resolve_context_window
-            from core.config import load_config
-            try:
-                _cw_overrides = load_config().model_context_windows
-            except Exception:
-                logger.debug("Failed to load model context windows", exc_info=True)
-                _cw_overrides = None
-            kwargs["num_ctx"] = resolve_context_window(
-                self._model_config.model, _cw_overrides,
-            )
+            kwargs["num_ctx"] = self._resolve_cw()
 
         return await litellm.acompletion(**kwargs)
 
@@ -415,7 +396,7 @@ class AssistedExecutor(BaseExecutor):
         tracker: ContextTracker | None = None,
         shortterm: ShortTermMemory | None = None,
         trigger: str = "",
-        images: list[dict[str, Any]] | None = None,
+        images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         max_turns_override: int | None = None,
     ) -> ExecutionResult:
@@ -424,20 +405,18 @@ class AssistedExecutor(BaseExecutor):
         Returns ``ExecutionResult`` with the accumulated response text.
         """
         if images:
-            logger.warning(
-                "Mode B (text-loop) does not support image input; "
-                "images will be ignored"
-            )
+            logger.warning("Mode B (text-loop) does not support image input; images will be ignored")
         logger.info(
             "Mode B text-loop START prompt_len=%d trigger=%s",
-            len(prompt), trigger,
+            len(prompt),
+            trigger,
         )
 
         # ── 1. Build tool spec and augment system prompt ─────
         tool_spec = self._build_tool_spec_text()
         full_system = system_prompt + "\n\n" + tool_spec if system_prompt else tool_spec
 
-        context_window = resolve_context_window(self._model_config.model)
+        context_window = self._resolve_cw()
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": full_system},
             {"role": "user", "content": prompt},
@@ -452,16 +431,14 @@ class AssistedExecutor(BaseExecutor):
         for iteration in range(max_iterations):
             logger.debug(
                 "Mode B iteration=%d messages=%d",
-                iteration, len(messages),
+                iteration,
+                len(messages),
             )
 
             # ── Preflight: check context window ───────────
             preflight = self._preflight_check(messages)
             if preflight is None:
-                all_response_text.append(
-                    f"[Error: prompt too large for "
-                    f"{self._model_config.model}]"
-                )
+                all_response_text.append(f"[Error: prompt too large for {self._model_config.model}]")
                 break
 
             try:
@@ -469,9 +446,13 @@ class AssistedExecutor(BaseExecutor):
                     messages,
                     max_tokens_override=preflight.get("max_tokens"),
                 )
+            except LLMAPIError:
+                raise
+            except AnimaWorksError:
+                raise
             except Exception as e:
                 logger.exception("LiteLLM API error in Mode B")
-                return ExecutionResult(text=f"[LLM API Error: {e}]")
+                raise ExecutionError(str(e)) from e
 
             choice = response.choices[0]
             content = choice.message.content or ""
@@ -489,24 +470,17 @@ class AssistedExecutor(BaseExecutor):
                 # Check for intent-without-action: model says "I'll check"
                 # but doesn't actually call a tool.  Re-prompt up to
                 # _MAX_INTENT_REPROMPTS times to coax out the JSON block.
-                if (
-                    intent_reprompt_count < _MAX_INTENT_REPROMPTS
-                    and _looks_like_tool_intent(content)
-                ):
+                if intent_reprompt_count < _MAX_INTENT_REPROMPTS and _looks_like_tool_intent(content):
                     intent_reprompt_count += 1
                     logger.info(
-                        "Mode B intent detected without tool call "
-                        "(reprompt %d/%d): %.80s",
+                        "Mode B intent detected without tool call (reprompt %d/%d): %.80s",
                         intent_reprompt_count,
                         _MAX_INTENT_REPROMPTS,
                         content,
                     )
                     from core.tooling.prompt_db import _get_locale
-                    reprompt = (
-                        _INTENT_REPROMPT_JA
-                        if _get_locale() == "ja"
-                        else _INTENT_REPROMPT_EN
-                    )
+
+                    reprompt = _INTENT_REPROMPT_JA if _get_locale() == "ja" else _INTENT_REPROMPT_EN
                     messages.append({"role": "assistant", "content": content})
                     messages.append({"role": "user", "content": reprompt})
                     continue
@@ -515,7 +489,8 @@ class AssistedExecutor(BaseExecutor):
                 all_response_text.append(content)
                 logger.info(
                     "Mode B final response at iteration=%d len=%d",
-                    iteration, len(content),
+                    iteration,
+                    len(content),
                 )
                 break
 
@@ -528,23 +503,27 @@ class AssistedExecutor(BaseExecutor):
             if tool_name not in self._known_tools:
                 logger.warning(
                     "Mode B unknown tool: %s (known: %s)",
-                    tool_name, sorted(self._known_tools)[:10],
+                    tool_name,
+                    sorted(self._known_tools)[:10],
                 )
                 messages.append({"role": "assistant", "content": content})
-                messages.append({
-                    "role": "user",
-                    "content": t(
-                        "assisted.unknown_tool",
-                        tool_name=tool_name,
-                        available=sorted(self._known_tools),
-                    ),
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": t(
+                            "assisted.unknown_tool",
+                            tool_name=tool_name,
+                            available=sorted(self._known_tools),
+                        ),
+                    }
+                )
                 continue
 
             # ── 5. Execute tool ───────────────────────────────
             logger.info(
                 "Mode B tool call: %s args=%s",
-                tool_name, list(tool_args.keys()),
+                tool_name,
+                list(tool_args.keys()),
             )
 
             tool_id = f"assisted_{iteration}_{tool_name}"
@@ -560,17 +539,21 @@ class AssistedExecutor(BaseExecutor):
             except ToolExecutionError as e:
                 logger.warning("Mode B tool execution error: %s – %s", tool_name, e)
                 result = t("assisted.tool_exec_error", error=e)
+            except AnimaWorksError:
+                raise
             except Exception as e:
                 logger.exception("Mode B unexpected tool error: %s", tool_name)
                 result = t("assisted.tool_exec_error", error=e)
 
             result = _truncate_tool_output(str(result))
-            all_tool_records.append(ToolCallRecord(
-                tool_name=tool_name,
-                tool_id=tool_id,
-                input_summary=_truncate_for_record(str(tool_args), tool_input_save_budget(context_window)),
-                result_summary=_truncate_for_record(result, tool_result_save_budget(tool_name, context_window)),
-            ))
+            all_tool_records.append(
+                ToolCallRecord(
+                    tool_name=tool_name,
+                    tool_id=tool_id,
+                    input_summary=_truncate_for_record(str(tool_args), tool_input_save_budget(context_window)),
+                    result_summary=_truncate_for_record(result, tool_result_save_budget(tool_name, context_window)),
+                )
+            )
 
             # ── 6. Inject result and continue ─────────────────
             narrative = _strip_tool_call_block(content)
@@ -578,10 +561,12 @@ class AssistedExecutor(BaseExecutor):
                 all_response_text.append(narrative)
 
             messages.append({"role": "assistant", "content": content})
-            messages.append({
-                "role": "user",
-                "content": t("assisted.tool_result_header") + "\n" + wrap_tool_result(tool_name, result),
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": t("assisted.tool_result_header") + "\n" + wrap_tool_result(tool_name, result),
+                }
+            )
 
             # ── Drain reminder queue into tool result message ──
             reminder = self.reminder_queue.drain_sync()
@@ -590,7 +575,8 @@ class AssistedExecutor(BaseExecutor):
         else:
             # max_turns reached
             logger.warning(
-                "Mode B max iterations (%d) reached", max_iterations,
+                "Mode B max iterations (%d) reached",
+                max_iterations,
             )
 
         # ── Final drain: deliver any undelivered reminders ──
@@ -611,7 +597,7 @@ class AssistedExecutor(BaseExecutor):
         system_prompt: str,
         prompt: str,
         tracker: ContextTracker,
-        images: list[dict[str, Any]] | None = None,
+        images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         max_turns_override: int | None = None,
         trigger: str = "",
@@ -630,19 +616,17 @@ class AssistedExecutor(BaseExecutor):
             ``{"type": "done", "full_text": "...", "result_message": None}``
         """
         if images:
-            logger.warning(
-                "Mode B (text-loop) streaming does not support image input; "
-                "images will be ignored"
-            )
+            logger.warning("Mode B (text-loop) streaming does not support image input; images will be ignored")
         logger.info(
-            "Mode B streaming START prompt_len=%d", len(prompt),
+            "Mode B streaming START prompt_len=%d",
+            len(prompt),
         )
 
         # ── 1. Build tool spec and augment system prompt ─────
         tool_spec = self._build_tool_spec_text()
         full_system = system_prompt + "\n\n" + tool_spec if system_prompt else tool_spec
 
-        context_window = resolve_context_window(self._model_config.model)
+        context_window = self._resolve_cw()
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": full_system},
             {"role": "user", "content": prompt},
@@ -655,21 +639,20 @@ class AssistedExecutor(BaseExecutor):
 
         # ── 2. Tool-call loop ────────────────────────────────
         async with stream_error_boundary(
-            all_response_text, executor_name="Mode B",
+            all_response_text,
+            executor_name="Mode B",
         ):
             for iteration in range(max_iterations):
                 logger.debug(
                     "Mode B streaming iteration=%d messages=%d",
-                    iteration, len(messages),
+                    iteration,
+                    len(messages),
                 )
 
                 # ── Preflight: check context window ───────────
                 preflight = self._preflight_check(messages)
                 if preflight is None:
-                    error_msg = (
-                        f"[Error: prompt too large for "
-                        f"{self._model_config.model}]"
-                    )
+                    error_msg = f"[Error: prompt too large for {self._model_config.model}]"
                     yield {"type": "text_delta", "text": error_msg}
                     break
 
@@ -693,24 +676,17 @@ class AssistedExecutor(BaseExecutor):
 
                 if tool_call is None:
                     # Check for intent-without-action (same as non-streaming)
-                    if (
-                        intent_reprompt_count < _MAX_INTENT_REPROMPTS
-                        and _looks_like_tool_intent(content)
-                    ):
+                    if intent_reprompt_count < _MAX_INTENT_REPROMPTS and _looks_like_tool_intent(content):
                         intent_reprompt_count += 1
                         logger.info(
-                            "Mode B streaming intent detected without tool call "
-                            "(reprompt %d/%d): %.80s",
+                            "Mode B streaming intent detected without tool call (reprompt %d/%d): %.80s",
                             intent_reprompt_count,
                             _MAX_INTENT_REPROMPTS,
                             content,
                         )
                         from core.tooling.prompt_db import _get_locale
-                        reprompt = (
-                            _INTENT_REPROMPT_JA
-                            if _get_locale() == "ja"
-                            else _INTENT_REPROMPT_EN
-                        )
+
+                        reprompt = _INTENT_REPROMPT_JA if _get_locale() == "ja" else _INTENT_REPROMPT_EN
                         messages.append({"role": "assistant", "content": content})
                         messages.append({"role": "user", "content": reprompt})
                         continue
@@ -721,7 +697,8 @@ class AssistedExecutor(BaseExecutor):
                         yield {"type": "text_delta", "text": content}
                     logger.info(
                         "Mode B streaming final response at iteration=%d len=%d",
-                        iteration, len(content),
+                        iteration,
+                        len(content),
                     )
                     break
 
@@ -734,17 +711,20 @@ class AssistedExecutor(BaseExecutor):
                 if tool_name not in self._known_tools:
                     logger.warning(
                         "Mode B streaming unknown tool: %s (known: %s)",
-                        tool_name, sorted(self._known_tools)[:10],
+                        tool_name,
+                        sorted(self._known_tools)[:10],
                     )
                     messages.append({"role": "assistant", "content": content})
-                    messages.append({
-                        "role": "user",
-                        "content": t(
-                            "assisted.unknown_tool",
-                            tool_name=tool_name,
-                            available=sorted(self._known_tools),
-                        ),
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": t(
+                                "assisted.unknown_tool",
+                                tool_name=tool_name,
+                                available=sorted(self._known_tools),
+                            ),
+                        }
+                    )
                     continue
 
                 # ── 5. Yield narrative text (tool JSON stripped) ──
@@ -767,7 +747,8 @@ class AssistedExecutor(BaseExecutor):
                 # ── 7. Execute tool ──────────────────────────
                 logger.info(
                     "Mode B streaming tool call: %s args=%s",
-                    tool_name, list(tool_args.keys()),
+                    tool_name,
+                    list(tool_args.keys()),
                 )
 
                 try:
@@ -781,22 +762,29 @@ class AssistedExecutor(BaseExecutor):
                     )
                 except ToolExecutionError as e:
                     logger.warning(
-                        "Mode B streaming tool error: %s – %s", tool_name, e,
+                        "Mode B streaming tool error: %s – %s",
+                        tool_name,
+                        e,
                     )
                     result = t("assisted.tool_exec_error", error=e)
+                except AnimaWorksError:
+                    raise
                 except Exception as e:
                     logger.exception(
-                        "Mode B streaming unexpected tool error: %s", tool_name,
+                        "Mode B streaming unexpected tool error: %s",
+                        tool_name,
                     )
                     result = t("assisted.tool_exec_error", error=e)
 
                 result = _truncate_tool_output(str(result))
-                all_tool_records.append(ToolCallRecord(
-                    tool_name=tool_name,
-                    tool_id=tool_id,
-                    input_summary=_truncate_for_record(str(tool_args), tool_input_save_budget(context_window)),
-                    result_summary=_truncate_for_record(result, tool_result_save_budget(tool_name, context_window)),
-                ))
+                all_tool_records.append(
+                    ToolCallRecord(
+                        tool_name=tool_name,
+                        tool_id=tool_id,
+                        input_summary=_truncate_for_record(str(tool_args), tool_input_save_budget(context_window)),
+                        result_summary=_truncate_for_record(result, tool_result_save_budget(tool_name, context_window)),
+                    )
+                )
 
                 # ── 8. Yield tool_end ────────────────────────
                 yield {
@@ -807,10 +795,12 @@ class AssistedExecutor(BaseExecutor):
 
                 # ── 9. Inject result and continue ────────────
                 messages.append({"role": "assistant", "content": content})
-                messages.append({
-                    "role": "user",
-                    "content": t("assisted.tool_result_header") + "\n" + wrap_tool_result(tool_name, result),
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": t("assisted.tool_result_header") + "\n" + wrap_tool_result(tool_name, result),
+                    }
+                )
 
                 # ── Drain reminder queue into tool result message ──
                 reminder = self.reminder_queue.drain_sync()

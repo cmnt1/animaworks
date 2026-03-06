@@ -157,6 +157,54 @@ Received messages include the following fields:
 - MUST: Always respond to questions and requests
 - SHOULD: Include next actions, not just "Understood"
 
+## Receiving Messages from External Platforms
+
+### The Server Receives Automatically
+
+Messages from external platforms like Slack and Chatwork are **received by the AnimaWorks server at all times and automatically delivered to the target Anima's Inbox**. Animas do not need to maintain WebSocket connections or poll APIs themselves.
+
+The server receives messages via the following methods (configured by administrators):
+
+- **Socket Mode**: Real-time reception via Slack WebSocket
+- **Webhook**: Reception via Slack Events API / Chatwork Webhook
+
+Regardless of the method, messages are delivered to the Inbox in the same format.
+
+### Identifying External Messages
+
+Messages from external platforms differ from inter-Anima messages in the following ways:
+
+| Field | Inter-Anima DM | External Message |
+|-------|---------------|-----------------|
+| `source` | `"anima"` | `"slack"`, `"chatwork"`, etc. |
+| `from_person` | Anima name (e.g., `alice`) | `"slack:U12345..."` format |
+
+### When External Messages Arrive
+
+1. **Human DMs**: When a human sends a message to an Anima via Slack/Chatwork
+2. **call_human replies**: When a human replies in the Slack thread of a `call_human` notification (details: `communication/call-human-guide.md`)
+3. **Channel mentions**: When a message is posted to a Slack channel targeting an Anima
+
+### Slack Message: Immediate vs Deferred Processing
+
+Slack messages are automatically classified for immediate or deferred processing:
+
+| Condition | Processing Timing | Reason |
+|-----------|------------------|--------|
+| **@mention** (Bot is mentioned) | **Immediate** | `intent="question"` is auto-assigned, triggering immediate inbox processing |
+| **DM** (direct message to Bot) | **Immediate** | DMs target the Bot directly, so `intent="question"` is auto-assigned |
+| **Channel message without mention** | **Next heartbeat** | `intent` is empty, so it is not triggered immediately and is processed as unread during the scheduled heartbeat |
+
+This ensures Animas are not woken up for every channel message (e.g., casual chat), but respond quickly when explicitly addressed via @mention or DM.
+
+### Responding to External Messages
+
+When you receive an external message:
+
+- For `call_human` replies: Respond via chat response or another `call_human`
+- For human DMs: Respond via chat response (`send_message` is for inter-Anima messages and may not reach external platform users directly)
+- For unknown senders: Check the message `source` and `from_person`, and report to your supervisor if needed
+
 ## Message Body Best Practices
 
 ### Writing Good Messages

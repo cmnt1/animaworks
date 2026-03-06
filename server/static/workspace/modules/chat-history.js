@@ -7,6 +7,7 @@ import { escapeHtml, renderSimpleMarkdown, smartTimestamp } from "./utils.js";
 import { renderChatImages } from "../../shared/image-input.js";
 import {
   renderHistoryMessage, renderSessionDivider, bindToolCallHandlers,
+  bindBubbleActionHandlers,
   renderLiveBubble, renderStreamingBubbleInner,
 } from "../../shared/chat/render-utils.js";
 import { createScrollObserver } from "../../shared/chat/scroll-observer.js";
@@ -93,7 +94,8 @@ export function renderConvMessages() {
     const lastSession = hs?.sessions?.[hs.sessions.length - 1];
     const lastSessionLastTs = lastSession?.messages?.slice(-1)[0]?.ts ?? "";
     const lastLiveTs = threadMessages[threadMessages.length - 1]?.timestamp ?? "";
-    const liveIsNewer = hasStreaming || !lastSessionLastTs || lastLiveTs > lastSessionLastTs;
+    const liveIsNewer = hasStreaming || !lastSessionLastTs
+      || new Date(lastLiveTs).getTime() > new Date(lastSessionLastTs).getTime();
     if (liveIsNewer) {
       if (hs && hs.sessions.length > 0) {
         html += '<div class="session-divider"><span class="session-divider-label">現在のセッション</span></div>';
@@ -104,6 +106,8 @@ export function renderConvMessages() {
 
   dom.convMessages.innerHTML = html;
   bindToolCallHandlers(dom.convMessages);
+  bindBubbleActionHandlers(dom.convMessages);
+  if (window.lucide) lucide.createIcons({ nodes: [dom.convMessages] });
   refreshSentinel();
   dom.convMessages.scrollTop = dom.convMessages.scrollHeight;
 }

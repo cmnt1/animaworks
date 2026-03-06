@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.exceptions import ProcessError
 from core.supervisor.manager import ProcessSupervisor, RestartPolicy, HealthConfig
 
 
@@ -203,7 +204,7 @@ class TestStartAnimaStartingGuard:
             mock_handle.start = AsyncMock(side_effect=RuntimeError("spawn failed"))
             MockHandle.return_value = mock_handle
 
-            with pytest.raises(RuntimeError, match="spawn failed"):
+            with pytest.raises(ProcessError, match="spawn failed"):
                 await supervisor.start_anima("test-anima")
 
         # Flag must be cleared even after failure

@@ -84,11 +84,31 @@ class TestChannelFEpisodes:
         assert "deploy" in actual_query
 
     @pytest.mark.asyncio
-    async def test_channel_f_returns_empty_on_no_keywords(
+    async def test_channel_f_fallback_to_message_when_no_keywords(
         self, temp_anima_dir: Path,
     ) -> None:
+        """When keywords is empty but message exists, use message[:200] as query."""
         engine = PrimingEngine(temp_anima_dir)
-        result = await engine._channel_f_episodes([], message="hello")
+
+        mock_retriever = MagicMock()
+        mock_retriever.search.return_value = []
+
+        msg = "短いメッセージ"
+        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+            await engine._channel_f_episodes([], message=msg)
+
+        mock_retriever.search.assert_called_once()
+        call_kwargs = mock_retriever.search.call_args
+        actual_query = call_kwargs.kwargs.get("query")
+        assert msg in actual_query
+
+    @pytest.mark.asyncio
+    async def test_channel_f_returns_empty_on_no_keywords_and_no_message(
+        self, temp_anima_dir: Path,
+    ) -> None:
+        """When both keywords and message are empty, return empty."""
+        engine = PrimingEngine(temp_anima_dir)
+        result = await engine._channel_f_episodes([], message="")
         assert result == ""
 
     @pytest.mark.asyncio

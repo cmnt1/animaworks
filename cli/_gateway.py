@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # ── Constants ─────────────────────────────────────────────
 
 _DEFAULT_GATEWAY_URL = "http://localhost:18500"
+_ENV_SERVER_URL = "ANIMAWORKS_SERVER_URL"
 _ENV_GATEWAY_URL = "ANIMAWORKS_GATEWAY_URL"
 
 
@@ -24,11 +25,12 @@ _ENV_GATEWAY_URL = "ANIMAWORKS_GATEWAY_URL"
 def resolve_gateway_url(args: argparse.Namespace) -> str:
     """Resolve the gateway URL from CLI args or environment variable.
 
-    Priority: ``--gateway-url`` flag > ``ANIMAWORKS_GATEWAY_URL`` env > default.
+    Priority: ``--gateway-url`` flag > ``ANIMAWORKS_SERVER_URL`` >
+    ``ANIMAWORKS_GATEWAY_URL`` (legacy) > default.
     """
-    return getattr(args, "gateway_url", None) or os.environ.get(
-        _ENV_GATEWAY_URL, _DEFAULT_GATEWAY_URL
-    )
+    if getattr(args, "gateway_url", None):
+        return args.gateway_url
+    return os.environ.get(_ENV_SERVER_URL) or os.environ.get(_ENV_GATEWAY_URL) or _DEFAULT_GATEWAY_URL
 
 
 def gateway_request(
@@ -64,10 +66,7 @@ def gateway_request(
         resp = httpx.request(method, url, json=json, timeout=timeout)
         return resp.json()
     except httpx.ConnectError:
-        print(
-            f"Cannot connect to gateway at {gateway}. "
-            "Use --local for direct mode."
-        )
+        print(f"Cannot connect to gateway at {gateway}. Use --local for direct mode.")
         sys.exit(1)
     except httpx.TimeoutException:
         print(f"Request timed out after {timeout}s.")

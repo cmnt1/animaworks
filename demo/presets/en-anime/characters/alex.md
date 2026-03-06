@@ -7,6 +7,7 @@
 | Name | alex |
 | Age | 30 |
 | Birthday | January 15 |
+| Gender | Male |
 | Height | 180cm |
 | Role | Product Manager |
 | Supervisor | None |

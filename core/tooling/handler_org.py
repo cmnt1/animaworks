@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -12,7 +13,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.i18n import t
-
 from core.tooling.handler_base import _error_result, build_outgoing_origin_chain
 
 if TYPE_CHECKING:
@@ -39,7 +39,7 @@ class OrgToolsMixin:
     def _handle_create_anima(self, args: dict[str, Any]) -> str:
         """Create a new anima from a character sheet via anima_factory."""
         from core.anima_factory import create_from_md
-        from core.paths import get_data_dir, get_animas_dir
+        from core.paths import get_animas_dir, get_data_dir
 
         content = args.get("character_sheet_content")
         sheet_path_raw = args.get("character_sheet_path")
@@ -68,10 +68,7 @@ class OrgToolsMixin:
                 return _error_result(
                     "FileNotFound",
                     f"Character sheet not found: {md_path}",
-                    suggestion=(
-                        "Use character_sheet_content to pass content directly, "
-                        "or ensure the file exists"
-                    ),
+                    suggestion=("Use character_sheet_content to pass content directly, or ensure the file exists"),
                 )
         else:
             return _error_result(
@@ -116,6 +113,7 @@ class OrgToolsMixin:
 
         try:
             from cli.commands.init_cmd import _register_anima_in_config
+
             _register_anima_in_config(get_data_dir(), anima_dir.name)
         except Exception:
             logger.warning("Failed to register anima in config.json", exc_info=True)
@@ -164,26 +162,21 @@ class OrgToolsMixin:
         root = root_name or self._anima_name
         descendants: list[str] = []
         visited: set[str] = {root}
-        queue = [
-            name for name, cfg in config.animas.items()
-            if cfg.supervisor == root
-        ]
+        queue = [name for name, cfg in config.animas.items() if cfg.supervisor == root]
         while queue:
             current = queue.pop(0)
             if current in visited:
                 continue
             visited.add(current)
             descendants.append(current)
-            queue.extend(
-                name for name, cfg in config.animas.items()
-                if cfg.supervisor == current
-            )
+            queue.extend(name for name, cfg in config.animas.items() if cfg.supervisor == current)
         return descendants
 
     @staticmethod
     def _read_recent_activity(anima_dir: Path, *, limit: int = 1) -> list:
         """Read recent activity entries from another anima's directory."""
         from core.memory.activity import ActivityLogger
+
         al = ActivityLogger(anima_dir)
         return al.recent(days=1, limit=limit)
 
@@ -249,7 +242,9 @@ class OrgToolsMixin:
 
         logger.info(
             "disable_subordinate: %s disabled %s (reason=%s)",
-            self._anima_name, target_name, reason or "(none)",
+            self._anima_name,
+            target_name,
+            reason or "(none)",
         )
 
         result = t("handler.disabled_success", target_name=target_name)
@@ -298,7 +293,8 @@ class OrgToolsMixin:
 
         logger.info(
             "enable_subordinate: %s enabled %s",
-            self._anima_name, target_name,
+            self._anima_name,
+            target_name,
         )
 
         return t("handler.enabled_success", target_name=target_name)
@@ -325,9 +321,9 @@ class OrgToolsMixin:
         warn_msg = ""
         if model not in known_names:
             logger.warning(
-                "set_subordinate_model: unknown model '%s' for '%s'. "
-                "Not in KNOWN_MODELS — proceeding anyway.",
-                model, target_name,
+                "set_subordinate_model: unknown model '%s' for '%s'. Not in KNOWN_MODELS — proceeding anyway.",
+                model,
+                target_name,
             )
             warn_msg = "\n" + t("handler.model_warning", model=model)
 
@@ -346,13 +342,62 @@ class OrgToolsMixin:
 
         logger.info(
             "set_subordinate_model: %s changed %s model to %s (reason=%s)",
-            self._anima_name, target_name, model, reason or "(none)",
+            self._anima_name,
+            target_name,
+            model,
+            reason or "(none)",
         )
 
         result = t("handler.model_changed", target_name=target_name, model=model)
         if reason:
             result += "\n" + t("handler.reason_prefix", reason=reason)
         return result + warn_msg
+
+    def _handle_set_subordinate_background_model(self, args: dict[str, Any]) -> str:
+        """Change a subordinate's background model (heartbeat/cron)."""
+        from core.config.models import update_status_model
+        from core.paths import get_data_dir
+
+        target_name = args.get("name", "")
+        model = args.get("model", "")
+        credential = args.get("credential")
+        reason = args.get("reason", "")
+
+        if not target_name:
+            return _error_result("InvalidArguments", "name is required")
+
+        err = self._check_subordinate(target_name)
+        if err:
+            return err
+
+        target_dir = get_data_dir() / "animas" / target_name
+        update_status_model(
+            target_dir,
+            background_model=model if model else "",
+            background_credential=credential if credential else "",
+        )
+
+        log_summary = f"{target_name}のbackground_modelを{model or '(クリア)'}に変更"
+        if reason:
+            log_summary += f" (理由: {reason})"
+        self._activity.log(
+            "tool_use",
+            tool="set_subordinate_background_model",
+            summary=log_summary,
+            meta={"target": target_name, "model": model, "reason": reason},
+        )
+
+        logger.info(
+            "set_subordinate_background_model: %s changed %s background_model to %s (reason=%s)",
+            self._anima_name,
+            target_name,
+            model or "(clear)",
+            reason or "(none)",
+        )
+
+        if model:
+            return f"{target_name}のbackground_modelを'{model}'に変更しました。反映にはrestart_subordinateが必要です。"
+        return f"{target_name}のbackground_modelをクリアしました（メインモデルを使用）。"
 
     def _handle_restart_subordinate(self, args: dict[str, Any]) -> str:
         """Request restart of a subordinate anima via sentinel flag in status.json."""
@@ -396,7 +441,9 @@ class OrgToolsMixin:
 
         logger.info(
             "restart_subordinate: %s requested restart of %s (reason=%s)",
-            self._anima_name, target_name, reason or "(none)",
+            self._anima_name,
+            target_name,
+            reason or "(none)",
         )
 
         result = t("handler.restart_success", target_name=target_name)
@@ -484,13 +531,24 @@ class OrgToolsMixin:
             children = by_supervisor.get(parent, [])
             for child in children:
                 prefix = "  " * indent + "├─ " if indent > 0 else ""
-                status_icon = "🟢" if child["process_status"] in ("running", "enabled") else "🔴" if child["process_status"] == "disabled" else "⚪"
+                status_icon = (
+                    "🟢"
+                    if child["process_status"] in ("running", "enabled")
+                    else "🔴"
+                    if child["process_status"] == "disabled"
+                    else "⚪"
+                )
                 line = f"{prefix}{status_icon} **{child['name']}** [{child['process_status']}]"
                 line += " | " + t("handler.dashboard_last", activity=child["last_activity"])
                 line += " | " + t("handler.dashboard_tasks", count=child["active_tasks"])
                 none_str = t("handler.current_task_none")
                 if child["current_task"] != none_str:
-                    line += "\n" + "  " * (indent + 1) + "└ " + t("handler.dashboard_working_on", task=child["current_task"])
+                    line += (
+                        "\n"
+                        + "  " * (indent + 1)
+                        + "└ "
+                        + t("handler.dashboard_working_on", task=child["current_task"])
+                    )
                 lines.append(line)
                 _render_tree(child["name"], indent + 1)
 
@@ -590,7 +648,7 @@ class OrgToolsMixin:
         self._activity.log(
             "tool_use",
             tool="ping_subordinate",
-            summary=t("handler.ping_summary", target=t("handler.all_descendants") if not target_name else target_name),
+            summary=t("handler.ping_summary", target=t("handler.all_descendants") if not target_name else target_name),  # noqa: SIM212
         )
 
         return _json.dumps(results, ensure_ascii=False, indent=2)
@@ -689,10 +747,14 @@ class OrgToolsMixin:
             )
         except ValueError as e:
             return _error_result("InvalidArguments", str(e))
+        except Exception as e:
+            logger.error("Task persistence failed in delegate_task (subordinate queue): %s", e)
+            return _error_result("PersistenceFailed", f"Failed to persist task to subordinate queue: {e}")
 
         # Build outgoing origin_chain (provenance Phase 3)
         outgoing_chain = build_outgoing_origin_chain(
-            self._session_origin, self._session_origin_chain,
+            self._session_origin,
+            self._session_origin_chain,
         )
 
         dm_result = ""
@@ -719,6 +781,7 @@ class OrgToolsMixin:
         process_warning = ""
         try:
             from core.paths import get_data_dir
+
             sock = get_data_dir() / "run" / "sockets" / f"{target_name}.sock"
             if not sock.exists():
                 status_file = target_dir / "status.json"
@@ -730,25 +793,30 @@ class OrgToolsMixin:
             logger.debug("Failed to check subordinate process status for %s", target_name, exc_info=True)
 
         own_tqm = TaskQueueManager(self._anima_dir)
-        own_entry = own_tqm.add_delegated_task(
-            original_instruction=instruction,
-            assignee=target_name,
-            summary=t("handler.delegation_summary", summary=summary),
-            deadline=deadline,
-            relay_chain=[self._anima_name, target_name],
-            meta={
-                "delegated_to": target_name,
-                "delegated_task_id": sub_entry.task_id,
-            },
-        )
+        try:
+            own_entry = own_tqm.add_delegated_task(
+                original_instruction=instruction,
+                assignee=target_name,
+                summary=t("handler.delegation_summary", summary=summary),
+                deadline=deadline,
+                relay_chain=[self._anima_name, target_name],
+                meta={
+                    "delegated_to": target_name,
+                    "delegated_task_id": sub_entry.task_id,
+                },
+            )
+        except Exception as e:
+            logger.warning("Failed to persist tracking entry for delegate_task (DM already sent): %s", e)
+            own_entry = None
 
+        own_id = own_entry.task_id if own_entry else "persist_failed"
         self._activity.log(
             "tool_use",
             tool="delegate_task",
             summary=t("handler.delegate_log", target_name=target_name, summary=summary[:80]),
             meta={
                 "target": target_name,
-                "own_task_id": own_entry.task_id,
+                "own_task_id": own_id,
                 "sub_task_id": sub_entry.task_id,
             },
         )
@@ -757,7 +825,7 @@ class OrgToolsMixin:
             "handler.delegated_success",
             target_name=target_name,
             sub_id=sub_entry.task_id,
-            own_id=own_entry.task_id,
+            own_id=own_id,
             dm_result=dm_result,
         )
         return result + process_warning
@@ -843,10 +911,12 @@ class OrgToolsMixin:
         if task_file.exists():
             try:
                 task_text = task_file.read_text(encoding="utf-8").strip()
-                lines.append(t(
-                    "handler.audit_current_task",
-                    task=task_text[:150] if task_text else t("handler.state_none"),
-                ))
+                lines.append(
+                    t(
+                        "handler.audit_current_task",
+                        task=task_text[:150] if task_text else t("handler.state_none"),
+                    )
+                )
             except Exception:
                 lines.append(t("handler.audit_current_task", task=t("handler.state_unreadable")))
         else:
@@ -922,10 +992,14 @@ class OrgToolsMixin:
 
             all_peers = sorted(set(peer_sent) | set(peer_recv))
             for peer in all_peers:
-                lines.append(t(
-                    "handler.audit_comms_peer",
-                    peer=peer, sent=peer_sent.get(peer, 0), received=peer_recv.get(peer, 0),
-                ))
+                lines.append(
+                    t(
+                        "handler.audit_comms_peer",
+                        peer=peer,
+                        sent=peer_sent.get(peer, 0),
+                        received=peer_recv.get(peer, 0),
+                    )
+                )
         else:
             lines.append(t("handler.audit_no_comms"))
 
@@ -983,9 +1057,10 @@ class OrgToolsMixin:
                     entry["subordinate_status"] = "unknown"
 
             sub_status = entry["subordinate_status"]
-            if status_filter == "active" and sub_status in ("done", "cancelled"):
+            _terminal = {"done", "cancelled", "failed"}
+            if status_filter == "active" and sub_status in _terminal:
                 continue
-            if status_filter == "completed" and sub_status not in ("done", "cancelled"):
+            if status_filter == "completed" and sub_status not in _terminal:
                 continue
 
             results.append(entry)

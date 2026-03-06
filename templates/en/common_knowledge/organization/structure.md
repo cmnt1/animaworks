@@ -1,7 +1,7 @@
 # How Organization Structure Works
 
 Organization structure in AnimaWorks is built from each Anima's `status.json` (or `identity.md`) as the Single Source of Truth (SSoT).
-`core/org_sync.py` syncs disk values into `config.json`, which is used when building prompts.
+`core/org_sync.py` syncs the **supervisor** on disk into `config.json`, which is used when building prompts.
 This document explains how organization structure is defined, interpreted, and displayed.
 
 ## Data Sources and Priority
@@ -11,31 +11,38 @@ This document explains how organization structure is defined, interpreted, and d
 Hierarchy is defined by each Anima's `supervisor`. Read order:
 
 1. **status.json** — `"supervisor"` key (recommended)
-2. **identity.md** — table row `| 上司 | name |` (上司 = supervisor)
+2. **identity.md** — table row `| 上司 | name |` (Japanese only; parsed by `read_anima_supervisor` in `core/config/models.py`)
 
-If unset, empty, or "なし" (none), the Anima is top-level.
-`config.json` `animas.<name>.supervisor` is synced **from disk** by org_sync; manual edits are overwritten.
+If `supervisor` is unset, empty, or one of "なし", "(なし)", "（なし）", "-", "---", the Anima is top-level.
+`config.json` `animas.<name>.supervisor` is **synced from disk** by org_sync; manual edits are overwritten.
 
 ### speciality
 
-Speciality is resolved in this order:
+Speciality is resolved by `_scan_all_animas()` in `core/prompt/builder.py` in this order:
 
-1. **status.json** — `"speciality"` or `"role"` key
-2. **config.json** — `animas.<name>.speciality` (fallback)
+1. **status.json** — `"speciality"` key (free text)
+2. **status.json** — `"role"` key (fallback when `speciality` is absent; role names: engineer, manager, general, etc.)
+3. **config.json** — `animas.<name>.speciality` (fallback when neither exists in status.json)
+
+**Note:** org_sync does **not** sync speciality. Speciality is resolved on each prompt build from disk and config.
+Anima created with `animaworks anima create --from-md` get `role` in `status.json` but not `speciality`.
+For custom display (e.g. "Development lead"), add `"speciality": "Development lead"` manually to `status.json`.
 
 ## org_sync and config.json
 
-`core/org_sync.py` `sync_org_structure()`:
+`sync_org_structure()` in `core/org_sync.py`:
 
-1. Reads `status.json` / `identity.md` per Anima and extracts supervisor
-2. Detects circular references (those Anima are excluded from sync)
-3. Updates `config.json` `animas` to match disk
-4. Prunes config entries for Anima that no longer exist on disk
+1. Reads `status.json` / `identity.md` per Anima directory (only where `identity.md` exists) and extracts supervisor (`read_anima_supervisor`)
+2. Detects circular references (affected Anima are excluded from sync)
+3. Updates `config.json` `animas.<name>.supervisor` to match disk values (**supervisor only**)
+4. Removes config entries for Anima that no longer exist on disk (prune)
+
+**What is synced:** supervisor only. speciality is not updated by org_sync.
 
 **When it runs:**
 
-- On server startup (`animaworks start`)
-- When an Anima is added via reconciliation
+- On server startup (after Anima processes are started by `animaworks start`)
+- When an Anima is added via reconciliation (`on_anima_added` callback)
 
 ## Hierarchy via supervisor
 
@@ -76,7 +83,7 @@ Important constraints:
 
 ## How Org Context Is Built
 
-`core/prompt/builder.py` `_build_org_context()` derives from directory scan and config.json merge:
+`_build_org_context()` in `core/prompt/builder.py` derives the following from directory scan and config.json merge:
 
 1. **Supervisor**: Your `supervisor` value. If unset: "You are top-level"
 2. **Subordinates**: All Anima whose `supervisor` is your name
@@ -116,16 +123,16 @@ From the "Your org position" section in the system prompt:
 Org structure changes are applied as follows:
 
 1. Edit the target Anima's `status.json` (change `supervisor` / `speciality`)
-2. Restart the server or wait for the next org_sync run
-3. org_sync updates `config.json`; the new org context is used on the next prompt build
+2. **If supervisor changed:** Restart the server or wait for the next org_sync run (org_sync syncs supervisor to config.json)
+3. **If speciality changed:** No server restart needed. It is read from status.json on each prompt build, so it takes effect on the next chat/heartbeat
 
 Notes:
-- Direct edits to `config.json` `animas` are overwritten when org_sync runs
+- Direct edits to `config.json` `animas.<name>.supervisor` are overwritten when org_sync runs (speciality is not overwritten)
 - SHOULD notify affected Anima of org changes via message
 
 ## Example Org Patterns
 
-Below are examples to set in each Anima's `status.json`. org_sync syncs these to config.json.
+Below are examples to set in each Anima's `status.json`. org_sync syncs `supervisor` to config.json. `speciality` is resolved on each prompt build from status.json / config.
 
 ### Pattern 1: Flat Organization
 
@@ -188,11 +195,16 @@ Characteristics:
 
 ## Using speciality
 
-`speciality` is free text in `status.json` under `speciality` or `role`.
+`speciality` is free text in `status.json` under the `speciality` key. When unset, `role` (role name) is shown as a fallback.
 
-- Shown next to each Anima's name in org context (e.g. `bob (Development lead)`)
+- Shown next to each Anima's name in org context (e.g. `bob (Development lead)` or `bob (engineer)`)
 - Helps other Anima decide who to consult or delegate to
 - Unset shows as "(unset)"
+
+**Behavior when creating Anima (`core/anima_factory.py`):**
+- `animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME]` writes `supervisor` and `role` to `status.json`
+- `speciality` is not in the character sheet basic info table and is not set automatically on creation
+- For custom speciality display, add `"speciality": "Development lead"` etc. manually to `status.json` after creation
 
 Effective speciality guidelines:
 - Concrete and short: `Backend development`, `Customer support`, `Data analysis`

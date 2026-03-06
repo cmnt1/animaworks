@@ -100,7 +100,7 @@ async def test_health_config_defaults():
 
     assert config.ping_interval_sec == 10.0
     assert config.ping_timeout_sec == 5.0
-    assert config.max_missed_pings == 3
+    assert config.max_missed_pings == 6
     assert config.startup_grace_sec == 30.0
 
 

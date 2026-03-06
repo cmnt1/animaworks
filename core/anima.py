@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,6 +15,7 @@ Implementation is split into Mixin sub-modules for manageability:
 """
 
 import asyncio
+import json
 import logging
 import re
 import threading
@@ -24,35 +26,38 @@ from typing import Any
 
 from core.agent import AgentCore
 from core.background import BackgroundTask
-from core.memory.activity import ActivityLogger
-from core.memory import MemoryManager
-from core.messenger import Messenger
-from core.i18n import t
 from core.exceptions import (  # noqa: F401
     AnimaWorksError,
     ExecutionError,
     LLMAPIError,
-    ToolError,
     MemoryIOError,
+    ToolError,
 )
+from core.i18n import t
+from core.memory import MemoryManager
+from core.memory.activity import ActivityLogger
+from core.messenger import Messenger
 from core.schemas import AnimaStatus, ModelConfig
+from core.time_utils import now_jst
 
 logger = logging.getLogger("animaworks.anima")
 
 # ── Mixin imports ───────────────────────────────────────────────
-from core._anima_messaging import MessagingMixin
-from core._anima_inbox import InboxMixin
-from core._anima_heartbeat import HeartbeatMixin
-from core._anima_lifecycle import LifecycleMixin
+from core._anima_heartbeat import (  # noqa: F401
+    _MIN_REFLECTION_LENGTH,
+    _RE_REFLECTION,
+    HeartbeatMixin,
+    _extract_reflection,
+)
 
 # ── Re-exports for backward compatibility ───────────────────────
 # Tests and other modules import these symbols from ``core.anima``.
-from core._anima_inbox import InboxResult  # noqa: F401
-from core._anima_heartbeat import (  # noqa: F401
-    _RE_REFLECTION,
-    _MIN_REFLECTION_LENGTH,
-    _extract_reflection,
+from core._anima_inbox import (
+    InboxMixin,
+    InboxResult,  # noqa: F401
 )
+from core._anima_lifecycle import LifecycleMixin
+from core._anima_messaging import MessagingMixin
 
 
 class DigitalAnima(
@@ -74,8 +79,7 @@ class DigitalAnima(
         """Validate thread_id to prevent path traversal attacks."""
         if not DigitalAnima._THREAD_ID_PATTERN.match(thread_id):
             raise ValueError(
-                f"Invalid thread_id: {thread_id!r}. "
-                "Must be 1-36 alphanumeric, underscore, or hyphen characters."
+                f"Invalid thread_id: {thread_id!r}. Must be 1-36 alphanumeric, underscore, or hyphen characters."
             )
 
     def __init__(self, anima_dir: Path, shared_dir: Path) -> None:
@@ -87,9 +91,19 @@ class DigitalAnima(
         self.model_config = self.memory.read_model_config()
         self.messenger = Messenger(shared_dir, self.name)
         self._interrupt_events: dict[str, asyncio.Event] = {}
-        self.agent = AgentCore(
-            anima_dir, self.memory, self.model_config, self.messenger
-        )
+        self.agent = AgentCore(anima_dir, self.memory, self.model_config, self.messenger)
+        self._progress_min_interval = 0.5  # seconds
+        self._progress_last_mono: float = 0.0
+
+        def _throttled_progress() -> None:
+            import time
+
+            mono = time.monotonic()
+            if mono - self._progress_last_mono >= self._progress_min_interval:
+                self._last_progress_at = now_jst()
+                self._progress_last_mono = mono
+
+        self.agent._progress_callback = _throttled_progress
 
         # 3-lock structure: conversation (human chat) / inbox (Anima-to-Anima MSG) / background (HB/cron/TaskExec)
         self._conversation_locks: dict[str, asyncio.Lock] = {}
@@ -101,12 +115,15 @@ class DigitalAnima(
 
         # Parallel task execution (DAG scheduler)
         self._task_semaphore: asyncio.Semaphore | None = None  # lazy init from config
-        self._active_parallel_tasks: dict[str, dict[str, Any]] = {}  # task_id -> {title, description, started_at, batch_id, status}
+        self._active_parallel_tasks: dict[
+            str, dict[str, Any]
+        ] = {}  # task_id -> {title, description, started_at, batch_id, status}
         self.agent._tool_handler.set_state_file_lock(self._state_file_lock)
         self._status_slots: dict[str, str] = {"inbox": "idle", "background": "idle"}
         self._task_slots: dict[str, str] = {"inbox": "", "background": ""}
         self._last_heartbeat: datetime | None = None
         self._last_activity: datetime | None = None
+        self._last_progress_at: datetime | None = None
         self._on_lock_released: Callable[[], None] | None = None
         self._pending_executor: Any | None = None  # set by runner after PendingTaskExecutor init
 
@@ -152,13 +169,15 @@ class DigitalAnima(
     # ── Config / Callbacks ──────────────────────────────────────
 
     def set_on_message_sent(
-        self, fn: Callable[[str, str, str], None],
+        self,
+        fn: Callable[[str, str, str], None],
     ) -> None:
         """Inject a callback fired after this anima sends a message."""
         self.agent.set_on_message_sent(fn)
 
     def set_on_schedule_changed(
-        self, fn: Callable[[str], Any] | None,
+        self,
+        fn: Callable[[str], Any] | None,
     ) -> None:
         """Inject a callback fired when heartbeat.md or cron.md is modified."""
         self.agent.set_on_schedule_changed(fn)
@@ -181,7 +200,7 @@ class DigitalAnima(
             try:
                 notifications.append(path.read_text(encoding="utf-8"))
                 path.unlink()
-            except Exception:
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 logger.warning("Failed to read notification: %s", path.name)
 
         return notifications
@@ -210,10 +229,7 @@ class DigitalAnima(
         new = self.memory.read_model_config()
         self.model_config = new
         self.agent.update_model_config(new)
-        changes = [
-            k for k in ModelConfig.model_fields
-            if getattr(old, k) != getattr(new, k)
-        ]
+        changes = [k for k in ModelConfig.model_fields if getattr(old, k) != getattr(new, k)]
         logger.info("reload_config: model=%s, changes=%s", new.model, changes)
         return {"status": "ok", "model": new.model, "changes": changes}
 
@@ -231,26 +247,32 @@ class DigitalAnima(
         """Callback invoked when a background tool call completes."""
         logger.info(
             "[%s] Background task completed: id=%s tool=%s status=%s",
-            self.name, task.task_id, task.tool_name, task.status.value,
+            self.name,
+            task.task_id,
+            task.tool_name,
+            task.status.value,
         )
 
         # Broadcast via WebSocket
         if self._ws_broadcast:
             try:
-                await self._ws_broadcast({
-                    "type": "background_task.done",
-                    "data": {
-                        "task_id": task.task_id,
-                        "anima": self.name,
-                        "tool_name": task.tool_name,
-                        "status": task.status.value,
-                        "result_summary": task.summary(),
-                    },
-                })
+                await self._ws_broadcast(
+                    {
+                        "type": "background_task.done",
+                        "data": {
+                            "task_id": task.task_id,
+                            "anima": self.name,
+                            "tool_name": task.tool_name,
+                            "status": task.status.value,
+                            "result_summary": task.summary(),
+                        },
+                    }
+                )
             except Exception:
                 logger.exception(
                     "[%s] WebSocket broadcast failed for bg task %s",
-                    self.name, task.task_id,
+                    self.name,
+                    task.task_id,
                 )
 
         # Notify human via configured channels
@@ -267,7 +289,8 @@ class DigitalAnima(
             except Exception:
                 logger.exception(
                     "[%s] Human notification failed for bg task %s",
-                    self.name, task.task_id,
+                    self.name,
+                    task.task_id,
                 )
 
         # Send inbox notification so next heartbeat picks up the result
@@ -290,12 +313,14 @@ class DigitalAnima(
             notif_path.write_text(notif_content, encoding="utf-8")
             logger.info(
                 "[%s] Background task notification written: %s",
-                self.name, notif_path.name,
+                self.name,
+                notif_path.name,
             )
         except Exception:
             logger.exception(
                 "[%s] Failed to write bg task notification for %s",
-                self.name, task.task_id,
+                self.name,
+                task.task_id,
             )
 
     @property

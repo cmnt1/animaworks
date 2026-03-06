@@ -1,20 +1,19 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 #
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
-
-
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from core.memory import MemoryManager
-from core.paths import PROJECT_DIR, get_data_dir, load_prompt
 from core.memory.shortterm import ShortTermMemory
+from core.paths import PROJECT_DIR, get_data_dir, load_prompt
 from core.time_utils import now_jst
 
 logger = logging.getLogger("animaworks.prompt_builder")
@@ -45,7 +44,7 @@ def _parse_kv_template(raw: str) -> dict[str, str]:
         if sep < 0:
             continue
         key = line[1:bracket_end]
-        value = line[sep + 3:]
+        value = line[sep + 3 :]
         result[key] = value
     return result
 
@@ -113,10 +112,10 @@ class BuildResult:
 _CURRENT_TASK_MAX_CHARS = 3000
 
 # ── Prompt tier constants ─────────────────────────────────────
-TIER_FULL = "full"          # 128k+
+TIER_FULL = "full"  # 128k+
 TIER_STANDARD = "standard"  # 32k–128k
-TIER_LIGHT = "light"        # 16k–32k
-TIER_MINIMAL = "minimal"    # <16k
+TIER_LIGHT = "light"  # 16k–32k
+TIER_MINIMAL = "minimal"  # <16k
 
 
 def resolve_prompt_tier(context_window: int) -> str:
@@ -136,11 +135,91 @@ def resolve_prompt_tier(context_window: int) -> str:
         return TIER_LIGHT
     return TIER_MINIMAL
 
+
+# ── Budget-based prompt scaling ───────────────────────────────
+_REFERENCE_WINDOW = 128_000
+_TOOL_RESERVATION_PCT = 0.15
+_OUTPUT_RESERVATION_PCT = 0.10
+_CONVERSATION_RESERVATION_PCT = 0.10
+_MIN_SYSTEM_BUDGET = 2000
+
+
+@dataclass
+class SectionEntry:
+    """A prompt section with budget allocation metadata."""
+
+    id: str
+    priority: int  # 1=mandatory, 2=important, 3=nice-to-have, 4=optional
+    kind: str  # "rigid" or "elastic"
+    content: str
+
+
+def _compute_system_budget(context_window: int, system_budget: int | None = None) -> int:
+    """Compute the character budget for the system prompt.
+
+    Reserves portions of the context window for tools, output, and conversation,
+    then returns the remaining space as the system prompt budget.
+    """
+    usable = int(
+        context_window * (1.0 - _TOOL_RESERVATION_PCT - _OUTPUT_RESERVATION_PCT - _CONVERSATION_RESERVATION_PCT)
+    )
+    auto = max(usable, _MIN_SYSTEM_BUDGET)
+    if system_budget is not None:
+        return max(min(system_budget, auto), _MIN_SYSTEM_BUDGET)
+    return auto
+
+
+def _allocate_sections(sections: list[SectionEntry], budget: int) -> list[SectionEntry]:
+    """Apply Rigid/Elastic budget allocation preserving original order.
+
+    Rigid sections are included entirely or excluded entirely (all-or-nothing).
+    Priority-1 rigid sections are always included regardless of budget.
+    Elastic sections share the remaining budget proportionally.
+    """
+    included_rigid: set[int] = set()
+    remaining = budget
+
+    for priority in range(1, 5):
+        for i, s in enumerate(sections):
+            if s.kind != "rigid" or s.priority != priority:
+                continue
+            cost = len(s.content)
+            if s.priority == 1 or cost <= remaining:
+                included_rigid.add(i)
+                remaining -= cost
+
+    elastic_indices = [i for i, s in enumerate(sections) if s.kind == "elastic"]
+    included_elastic: dict[int, str] = {}
+
+    if remaining > 0 and elastic_indices:
+        total_elastic = sum(len(sections[i].content) for i in elastic_indices)
+        if total_elastic <= remaining:
+            for i in elastic_indices:
+                included_elastic[i] = sections[i].content
+        elif total_elastic > 0:
+            ratio = remaining / total_elastic
+            for i in elastic_indices:
+                allowed = int(len(sections[i].content) * ratio)
+                if allowed > 100:
+                    included_elastic[i] = sections[i].content[:allowed]
+
+    result: list[SectionEntry] = []
+    for i, s in enumerate(sections):
+        if i in included_rigid:
+            result.append(s)
+        elif i in included_elastic:
+            result.append(SectionEntry(id=s.id, priority=s.priority, kind=s.kind, content=included_elastic[i]))
+
+    return result
+
+
 # ── Emotion Instruction ───────────────────────────────────
+
 
 def _build_emotion_instruction() -> str:
     """Build EMOTION_INSTRUCTION with the canonical emotion list."""
     from core.schemas import VALID_EMOTIONS
+
     emotion_list = ", ".join(sorted(VALID_EMOTIONS))
     return load_prompt("builder/emotion_instruction", emotion_list=emotion_list)
 
@@ -187,6 +266,7 @@ def _shorten_model_name(model: str | None) -> str | None:
     # GPT family — extract version number
     if low.startswith("gpt-"):
         import re
+
         ver = re.match(r"gpt-([\d.]+)", low)
         label = f"GPT-{ver.group(1)}" if ver else "GPT"
         if "mini" in low:
@@ -241,7 +321,7 @@ def _build_full_org_tree(
         lines.append(f"{prefix}{marker}{label}{suffix}")
         kids = children.get(name, [])
         for i, child in enumerate(kids):
-            child_is_last = (i == len(kids) - 1)
+            child_is_last = i == len(kids) - 1
             if is_root:
                 child_prefix = prefix
             else:
@@ -295,6 +375,7 @@ def _scan_all_animas(animas_dir: Path) -> dict[str, Any]:
         if status_path.exists():
             try:
                 import json
+
                 data = json.loads(status_path.read_text(encoding="utf-8"))
                 if "supervisor" in data:
                     supervisor = data["supervisor"] or None
@@ -333,8 +414,8 @@ def _build_org_context(anima_name: str, other_animas: list[str], execution_mode:
     Scans anima directories for ``status.json`` supervisor relationships
     and merges with config.json for a complete org tree.
     """
-    from core.tooling.prompt_db import get_prompt_store
     from core.paths import get_data_dir
+    from core.tooling.prompt_db import get_prompt_store
 
     _fs = _load_fallback_strings()
 
@@ -363,9 +444,7 @@ def _build_org_context(anima_name: str, other_animas: list[str], execution_mode:
         if other_animas:
             cr_key = "communication_rules_s" if _is_mcp_mode(execution_mode) else "communication_rules"
             _cr_store = get_prompt_store()
-            _cr = (
-                _cr_store.get_section(cr_key) if _cr_store else None
-            ) or load_prompt(cr_key)
+            _cr = (_cr_store.get_section(cr_key) if _cr_store else None) or load_prompt(cr_key)
             if _cr:
                 parts.append(_cr)
         return "\n\n".join(parts)
@@ -419,9 +498,7 @@ def _build_org_context(anima_name: str, other_animas: list[str], execution_mode:
     if other_animas:
         cr_key = "communication_rules_s" if _is_mcp_mode(execution_mode) else "communication_rules"
         _cr_store = get_prompt_store()
-        _cr = (
-            _cr_store.get_section(cr_key) if _cr_store else None
-        ) or load_prompt(cr_key)
+        _cr = (_cr_store.get_section(cr_key) if _cr_store else None) or load_prompt(cr_key)
         if _cr:
             parts.append(_cr)
 
@@ -439,17 +516,17 @@ def _build_messaging_section(
     _fs = _load_fallback_strings()
     self_name = anima_dir.name
     main_py = PROJECT_DIR / "main.py"
-    animas_line = (
-        ", ".join(other_animas) if other_animas else _fs.get("no_other_animas", "(no other employees yet)")
-    )
+    animas_line = ", ".join(other_animas) if other_animas else _fs.get("no_other_animas", "(no other employees yet)")
 
     db_key = "messaging_s" if _is_mcp_mode(execution_mode) else "messaging"
     _msg_store = get_prompt_store()
-    raw = (_msg_store.get_section(db_key) if _msg_store else None)
+    raw = _msg_store.get_section(db_key) if _msg_store else None
     if raw:
         try:
             return raw.format(
-                animas_line=animas_line, main_py=main_py, self_name=self_name,
+                animas_line=animas_line,
+                main_py=main_py,
+                self_name=self_name,
             )
         except (KeyError, IndexError):
             return raw
@@ -478,6 +555,7 @@ def _build_recent_tool_section(anima_dir: Path, model_config: Any) -> str:
     """
     try:
         from core.memory.conversation import ConversationMemory
+
         conv_memory = ConversationMemory(anima_dir, model_config)
         state = conv_memory.load()
     except Exception:
@@ -506,7 +584,6 @@ def _build_recent_tool_section(anima_dir: Path, model_config: Any) -> str:
     return f"{header}\n\n" + "\n".join(tool_lines)
 
 
-
 def _build_human_notification_guidance(execution_mode: str = "") -> str:
     """Build the human notification instruction for top-level Animas."""
     if _is_mcp_mode(execution_mode):
@@ -528,6 +605,7 @@ def build_system_prompt(
     *,
     trigger: str = "",
     context_window: int = 200_000,
+    system_budget: int | None = None,
 ) -> BuildResult:
     """Construct the full system prompt from Markdown files.
 
@@ -539,12 +617,19 @@ def build_system_prompt(
       5. 組織とコミュニケーション
       6. メタ設定
     """
-    parts: list[str] = []
     pd = memory.anima_dir
     data_dir = get_data_dir()
+    budget = _compute_system_budget(context_window, system_budget)
+    scale = min(context_window / _REFERENCE_WINDOW, 1.0)
     tier = resolve_prompt_tier(context_window)
     _ss = _load_section_strings()
     _fs = _load_fallback_strings()
+
+    sections: list[SectionEntry] = []
+
+    def _add(content: str, sid: str, priority: int = 2, kind: str = "rigid") -> None:
+        if content and content.strip():
+            sections.append(SectionEntry(id=sid, priority=priority, kind=kind, content=content))
 
     # ── Trigger-based section filtering ──────────────────────────
     is_inbox = trigger.startswith("inbox:")
@@ -558,6 +643,7 @@ def build_system_prompt(
 
     # DB-first prompt store (singleton); used for system sections & tool guides
     from core.tooling.prompt_db import get_default_guide, get_prompt_store
+
     _prompt_store = get_prompt_store()
 
     # other_animas is needed by Group 5 (org_context, messaging)
@@ -572,12 +658,12 @@ def build_system_prompt(
     permissions = memory.read_permissions()
 
     # ── Group 1: 動作環境と行動ルール ─────────────────────────
-    parts.append(_ss.get("group1_header", "# 1. Environment and Action Rules"))
+    _add(_ss.get("group1_header", "# 1. Environment and Action Rules"), "group1_header", 1)
 
     if is_task:
-        parts.append(f"Anima: {pd.name}\nData directory: {data_dir}")
+        _add(f"Anima: {pd.name}\nData directory: {data_dir}", "environment", 1)
     else:
-        _env = (_prompt_store.get_section("environment") if _prompt_store else None)
+        _env = _prompt_store.get_section("environment") if _prompt_store else None
         if _env:
             try:
                 _env = _env.format(data_dir=data_dir, anima_name=pd.name)
@@ -586,101 +672,97 @@ def build_system_prompt(
         else:
             _env = load_prompt("environment", data_dir=data_dir, anima_name=pd.name)
         if _env:
-            if tier == TIER_LIGHT and len(_env) > 8000:
-                _env = _env[:8000]
-            elif tier == TIER_MINIMAL and len(_env) > 4800:
-                _env = _env[:4800]
-            parts.append(_env)
+            _add(_env, "environment", 2)
 
     # ── Identity + Injection: immediately after environment ──────
     # Placed here so the "# Identity" teaser in environment.md is
     # resolved without intervening system boilerplate.
     identity = memory.read_identity()
     if identity:
-        parts.append(identity)
+        _add(identity, "identity", 1)
 
     injection = memory.read_injection()
     if injection:
-        parts.append(injection)
+        _add(injection, "injection", 1)
 
     current_time = now_jst().strftime("%Y-%m-%d %H:%M (%Z)")
-    parts.append(f"{_ss.get('current_time_label', '**Current time**:')} {current_time}")
+    _add(f"{_ss.get('current_time_label', '**Current time**:')} {current_time}", "current_time", 1)
 
-    if tier in (TIER_FULL, TIER_STANDARD):
-        _br = (
-            _prompt_store.get_section("behavior_rules") if _prompt_store else None
-        ) or load_prompt("behavior_rules")
-        if _br:
-            parts.append(_br)
+    _br = (_prompt_store.get_section("behavior_rules") if _prompt_store else None) or load_prompt("behavior_rules")
+    if _br:
+        _add(_br, "behavior_rules", 2)
 
     if not is_task:
         _tdi = load_prompt("tool_data_interpretation")
         if _tdi:
-            parts.append(_tdi)
+            _add(_tdi, "tool_data_interpretation", 2)
 
     # ── Group 2: あなた自身（補足） ─────────────────────────────
     # NOTE: identity.md / injection.md は Group 1 直後に注入済み。
     #       ここでは bootstrap, vision, specialty, permissions を追加。
-    parts.append(_ss.get("group2_header", "# 2. Yourself"))
+    _add(_ss.get("group2_header", "# 2. Yourself"), "group2_header", 1)
 
-    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
+    if not is_task:
         bootstrap = memory.read_bootstrap()
         if bootstrap:
-            parts.append(bootstrap)
+            _add(bootstrap, "bootstrap", 3)
 
-    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
+    if not is_task:
         company_vision = memory.read_company_vision()
         if company_vision:
-            parts.append(company_vision)
+            _add(company_vision, "vision", 3)
 
-    if not is_inbox and not is_background_auto and not is_task and tier in (TIER_FULL, TIER_STANDARD):
+    if not is_inbox and not is_background_auto and not is_task:
         specialty = memory.read_specialty_prompt()
         if specialty:
-            parts.append(specialty)
+            _add(specialty, "specialty", 3)
 
-    if tier != TIER_MINIMAL:
-        if permissions:
-            parts.append(permissions)
+    if permissions:
+        _add(permissions, "permissions", 2)
 
     # ── Group 3: 現在の状況 ───────────────────────────────────
-    parts.append(_ss.get("group3_header", "# 3. Current Situation"))
+    _add(_ss.get("group3_header", "# 3. Current Situation"), "group3_header", 1)
 
     # current_state: skip for task; summary (500 chars) for inbox
     if not is_task:
-        _state_max = {
-            TIER_FULL: _CURRENT_TASK_MAX_CHARS,
-            TIER_STANDARD: _CURRENT_TASK_MAX_CHARS,
-            TIER_LIGHT: 1000,
-            TIER_MINIMAL: 500,
-        }[tier]
+        _state_max = max(int(_CURRENT_TASK_MAX_CHARS * scale), 500)
         if is_inbox:
             _state_max = min(_state_max, 500)
         state = memory.read_current_state()
+        state_content = ""
         if state and state.strip() != "status: idle":
             if len(state) > _state_max:
                 truncated = state[-_state_max:]
                 first_nl = truncated.find("\n")
                 if first_nl != -1 and first_nl < _state_max * 0.2:
-                    truncated = truncated[first_nl + 1:]
+                    truncated = truncated[first_nl + 1 :]
                 state = f"{_fs.get('truncated', '(earlier portion omitted)')}\n\n{truncated}"
-            parts.append(load_prompt("builder/task_in_progress", state=state))
+            state_content = load_prompt("builder/task_in_progress", state=state)
         elif state:
-            parts.append(f"{_ss.get('current_state_header', '## Current State')}\n\n{state}")
+            state_content = f"{_ss.get('current_state_header', '## Current State')}\n\n{state}"
+        if state_content:
+            _add(state_content, "current_state", 2, "elastic")
 
     # pending: skip for inbox and task
     if not is_inbox and not is_task:
         pending = memory.read_pending()
         if pending:
-            parts.append(f"{_ss.get('pending_tasks_header', '## Pending Tasks')}\n\n{pending}")
+            pending_max = max(int(2000 * scale), 200)
+            pending_content = f"{_ss.get('pending_tasks_header', '## Pending Tasks')}\n\n{pending}"
+            if len(pending_content) > pending_max:
+                pending_content = pending_content[:pending_max]
+            _add(pending_content, "pending", 2, "elastic")
 
     # Task Queue, Resolution Registry, Recent Outbound: skip for inbox and task
-    if not is_inbox and not is_task and tier in (TIER_FULL, TIER_STANDARD):
+    if not is_inbox and not is_task:
         try:
             from core.memory.task_queue import TaskQueueManager
+
             task_queue = TaskQueueManager(memory.anima_dir)
             task_summary = task_queue.format_for_priming()
             if task_summary:
-                parts.append(load_prompt("builder/task_queue", task_summary=task_summary))
+                task_content = load_prompt("builder/task_queue", task_summary=task_summary)
+                _add(task_content, "task_queue", 3, "elastic")
         except Exception:
             logger.debug("Failed to inject task queue", exc_info=True)
 
@@ -698,59 +780,61 @@ def build_system_prompt(
                     resolver = r.get("resolver", "unknown")
                     issue = r.get("issue", "")
                     res_lines.append(f"- [{ts_short}] {resolver}: {issue}")
-                parts.append(load_prompt(
+                res_content = load_prompt(
                     "builder/resolution_registry",
                     res_lines="\n".join(res_lines),
-                ))
+                )
+                _add(res_content, "resolution_registry", 3, "elastic")
         except Exception:
             logger.debug("Failed to inject resolution registry", exc_info=True)
 
     # Priming: skip for task
     if not is_task and priming_section:
-        parts.append(priming_section)
+        _add(priming_section, "priming", 2, "elastic")
 
     # Recent tool results: only for chat
-    if is_chat and tier in (TIER_FULL, TIER_STANDARD):
+    if is_chat:
         try:
             _model_cfg = memory.read_model_config()
             recent_tools = _build_recent_tool_section(pd, _model_cfg)
             if recent_tools:
-                parts.append(recent_tools)
+                _add(recent_tools, "recent_tools", 3, "elastic")
         except Exception:
             logger.debug("Failed to inject recent tool results", exc_info=True)
 
     # ── Group 4: 記憶と能力 ───────────────────────────────────
-    parts.append(_ss.get("group4_header", "# 4. Memory and Capabilities"))
+    _add(_ss.get("group4_header", "# 4. Memory and Capabilities"), "group4_header", 1)
 
-    if tier in (TIER_FULL, TIER_STANDARD):
-        # Memory directory guide
-        _none = _fs.get("none", "(none)")
-        _common = _ss.get("common_label", "(shared)")
-        knowledge_list = ", ".join(memory.list_knowledge_files()) or _none
-        episode_list = ", ".join(memory.list_episode_files()[:7]) or _none
-        procedure_list = ", ".join(memory.list_procedure_files()) or _none
-        skill_lines: list[str] = []
-        for m in skill_metas:
-            desc = f": {m.description}" if m.description else ""
-            skill_lines.append(f"- {m.name}{desc}")
-        for m in common_skill_metas:
-            desc = f": {m.description}" if m.description else ""
-            skill_lines.append(f"- {m.name}{_common}{desc}")
-        for m in procedure_metas:
-            desc = f": {m.description}" if m.description else ""
-            skill_lines.append(f"- {m.name} (手順){desc}")
-        skill_names = "\n".join(skill_lines) or _none
-        shared_users_list = ", ".join(memory.list_shared_users()) or _none
+    # Memory directory guide
+    _none = _fs.get("none", "(none)")
+    _common = _ss.get("common_label", "(shared)")
+    knowledge_list = ", ".join(memory.list_knowledge_files()) or _none
+    episode_list = ", ".join(memory.list_episode_files()[:7]) or _none
+    procedure_list = ", ".join(memory.list_procedure_files()) or _none
+    skill_lines: list[str] = []
+    for m in skill_metas:
+        desc = f": {m.description}" if m.description else ""
+        skill_lines.append(f"- {m.name}{desc}")
+    for m in common_skill_metas:
+        desc = f": {m.description}" if m.description else ""
+        skill_lines.append(f"- {m.name}{_common}{desc}")
+    for m in procedure_metas:
+        desc = f": {m.description}" if m.description else ""
+        skill_lines.append(f"- {m.name} (手順){desc}")
+    skill_names = "\n".join(skill_lines) or _none
+    shared_users_list = ", ".join(memory.list_shared_users()) or _none
 
-        parts.append(load_prompt(
-            "memory_guide",
-            anima_dir=pd,
-            knowledge_list=knowledge_list,
-            episode_list=episode_list,
-            procedure_list=procedure_list,
-            skill_names=skill_names,
-            shared_users_list=shared_users_list,
-        ))
+    memory_guide_content = load_prompt(
+        "memory_guide",
+        anima_dir=pd,
+        knowledge_list=knowledge_list,
+        episode_list=episode_list,
+        procedure_list=procedure_list,
+        skill_names=skill_names,
+        shared_users_list=shared_users_list,
+    )
+    if memory_guide_content:
+        _add(memory_guide_content, "memory_guide", 3)
 
     # ── Distilled Knowledge Injection (skip for task) ─────
     injected_knowledge_files: list[str] = []
@@ -759,18 +843,8 @@ def build_system_prompt(
 
     if is_task:
         knowledge_budget = 0
-    elif tier == TIER_FULL:
-        from core.prompt.context import resolve_context_window
-        try:
-            _model_config = memory.read_model_config()
-            ctx_window = resolve_context_window(_model_config.model)
-        except Exception:
-            ctx_window = 128_000
-        knowledge_budget = min(int(ctx_window * 0.05), 4000)
-    elif tier == TIER_STANDARD:
-        knowledge_budget = min(int(context_window * 0.03), 2000)
     else:
-        knowledge_budget = 0
+        knowledge_budget = max(int(4000 * scale), 0)
 
     procedures_list, knowledge_list = memory.collect_distilled_knowledge_separated()
 
@@ -780,49 +854,46 @@ def build_system_prompt(
     for entry in procedures_list:
         est_tokens = len(entry["content"]) // 3
         if used_tokens + est_tokens <= knowledge_budget:
-            proc_parts.append(
-                f"### {entry['name']}\n\n{entry['content']}"
-            )
+            proc_parts.append(f"### {entry['name']}\n\n{entry['content']}")
             used_tokens += est_tokens
             injected_procedures.append(Path(entry["path"]))
         else:
             overflow_files.append(entry["name"])
 
+    proc_content = f"{_ss.get('procedures_header', '## Procedures')}\n\n" + "\n\n---\n\n".join(proc_parts)
     if proc_parts:
-        parts.append(
-            f"{_ss.get('procedures_header', '## Procedures')}\n\n"
-            + "\n\n---\n\n".join(proc_parts)
-        )
+        _add(proc_content, "dk_procedures", 3, "elastic")
 
     know_parts: list[str] = []
     for entry in knowledge_list:
         est_tokens = len(entry["content"]) // 3
         if used_tokens + est_tokens <= knowledge_budget:
-            know_parts.append(
-                f"### {entry['name']}\n\n{entry['content']}"
-            )
+            know_parts.append(f"### {entry['name']}\n\n{entry['content']}")
             used_tokens += est_tokens
             injected_knowledge_files.append(entry["name"])
         else:
             overflow_files.append(entry["name"])
 
+    know_content = f"{_ss.get('distilled_knowledge_header', '## Distilled Knowledge')}\n\n" + "\n\n---\n\n".join(
+        know_parts
+    )
     if know_parts:
-        parts.append(
-            f"{_ss.get('distilled_knowledge_header', '## Distilled Knowledge')}\n\n"
-            + "\n\n---\n\n".join(know_parts)
-        )
+        _add(know_content, "dk_knowledge", 3, "elastic")
 
-    if not is_task and tier in (TIER_FULL, TIER_STANDARD):
+    if not is_task:
         common_knowledge_dir = data_dir / "common_knowledge"
         if common_knowledge_dir.exists() and any(common_knowledge_dir.rglob("*.md")):
-            parts.append(load_prompt("builder/common_knowledge_hint"))
+            ck_hint = load_prompt("builder/common_knowledge_hint")
+            _add(ck_hint, "common_knowledge_hint", 4)
 
         has_newstaff = any(m.name == "newstaff" for m in skill_metas)
         if has_newstaff:
-            if _is_mcp_mode(execution_mode):
-                parts.append(load_prompt("builder/hiring_rules_s"))
-            else:
-                parts.append(load_prompt("builder/hiring_rules_other"))
+            hiring_rules = (
+                load_prompt("builder/hiring_rules_s")
+                if _is_mcp_mode(execution_mode)
+                else load_prompt("builder/hiring_rules_other")
+            )
+            _add(hiring_rules, "hiring_rules", 4)
 
     # ── Tool usage guides from DB (with hardcoded fallback) ──
     if not _prompt_store:
@@ -830,125 +901,119 @@ def build_system_prompt(
 
     if is_heartbeat:
         try:
-            parts.append(load_prompt("builder/heartbeat_tool_instruction"))
+            hb_tool = load_prompt("builder/heartbeat_tool_instruction")
         except FileNotFoundError:
-            parts.append(
+            hb_tool = (
                 "Heartbeatでは**観察・報告・計画・フォローアップ**にツールを使ってください。\n"
                 "- OK: チャネル読み取り、記憶検索、メッセージ送信、タスク更新、pending作成、外部ツール確認\n"
                 "- NG: コード変更、ファイル大量編集、長時間の分析・調査\n"
                 "重い作業が必要な場合は state/pending/ にタスクファイルを書き出してください。"
             )
+        _add(hb_tool, "tool_guides", 2)
     else:
         if _is_mcp_mode(execution_mode):
-            _s_builtin = (
-                _prompt_store.get_guide("s_builtin") if _prompt_store else None
-            ) or get_default_guide("s_builtin")
-            if _s_builtin:
-                parts.append(_s_builtin)
-            _s_mcp = (
-                _prompt_store.get_guide("s_mcp") if _prompt_store else None
-            ) or get_default_guide("s_mcp")
-            if _s_mcp:
-                parts.append(_s_mcp)
+            _s_builtin = (_prompt_store.get_guide("s_builtin") if _prompt_store else None) or get_default_guide(
+                "s_builtin"
+            )
+            _s_mcp = (_prompt_store.get_guide("s_mcp") if _prompt_store else None) or get_default_guide("s_mcp")
+            guide_parts = [p for p in (_s_builtin, _s_mcp) if p]
+            guide = "\n\n".join(guide_parts) if guide_parts else ""
+            if guide:
+                _add(guide, "tool_guides", 2)
         else:
-            _non_s = (
-                _prompt_store.get_guide("non_s") if _prompt_store else None
-            ) or get_default_guide("non_s")
+            _non_s = (_prompt_store.get_guide("non_s") if _prompt_store else None) or get_default_guide("non_s")
             if _non_s:
-                parts.append(_non_s)
+                _add(_non_s, "tool_guides", 2)
 
-    # External tools guide (include for heartbeat too for observation)
-    _EXTERNAL_TOOLS_KEYWORDS = {"外部ツール", "External Tools", "external tools"}
-    if permissions and any(kw in permissions for kw in _EXTERNAL_TOOLS_KEYWORDS) and (tool_registry or personal_tools):
-        if execution_mode == "a":
-            categories = ", ".join(sorted(tool_registry or []))
-            if personal_tools:
-                personal_cats = ", ".join(sorted(personal_tools.keys()))
-                categories = f"{categories}, {personal_cats}" if categories else personal_cats
-            parts.append(load_prompt(
-                "builder/external_tools_guide",
-                categories=categories,
-            ))
-        else:
-            from core.tooling.guide import build_tools_guide
-            tools_guide = build_tools_guide(tool_registry or [], personal_tools)
-            if tools_guide:
-                parts.append(tools_guide)
+    # External tools hint (mode-dependent)
+    if not is_heartbeat and (tool_registry or personal_tools):
+        _ext_cats = sorted(set((tool_registry or []) + list((personal_tools or {}).keys())))
+        if _ext_cats:
+            _cats_str = ", ".join(_ext_cats)
+            if execution_mode.lower() == "b":
+                ext_tools = (
+                    f"## External Tools\n"
+                    f"Available via `use_tool`: {_cats_str}\n"
+                    f"Use the `skill` tool to look up usage details for each tool before calling."
+                )
+            elif execution_mode.lower() in ("s", "c"):
+                ext_tools = (
+                    f"## External Tools\n"
+                    f"Available categories: {_cats_str}\n"
+                    f"Use the `skill` tool to look up CLI usage, "
+                    f"then execute via Bash: `animaworks-tool <tool> <subcommand>`."
+                )
+            else:
+                ext_tools = (
+                    f"## External Tools\n"
+                    f"Available categories: {_cats_str}\n"
+                    f"Use the `skill` tool to look up CLI usage, "
+                    f"then execute via `execute_command`: `animaworks-tool <tool> <subcommand>`."
+                )
+            _add(ext_tools, "external_tools", 2)
 
     # ── Group 5: 組織とコミュニケーション ─────────────────────
-    parts.append(_ss.get("group5_header", "# 5. Organization and Communication"))
+    _add(_ss.get("group5_header", "# 5. Organization and Communication"), "group5_header", 1)
 
     # hiring_context: skip for inbox and task
-    if not is_inbox and not is_task and tier in (TIER_FULL, TIER_STANDARD):
+    if not is_inbox and not is_task:
         if not other_animas:
             try:
                 model_config = memory.read_model_config()
                 if model_config.supervisor is None:
-                    _hc = (
-                        _prompt_store.get_section("hiring_context")
-                        if _prompt_store else None
-                    ) or load_prompt("hiring_context")
-                    if _hc:
-                        parts.append(_hc)
+                    hc = (_prompt_store.get_section("hiring_context") if _prompt_store else None) or load_prompt(
+                        "hiring_context"
+                    )
+                    if hc:
+                        _add(hc, "hiring_context", 4)
             except Exception:
                 logger.debug("Skipped hiring context injection", exc_info=True)
 
-    if tier in (TIER_FULL, TIER_STANDARD):
-        org_context = _build_org_context(pd.name, other_animas, execution_mode)
-        if org_context:
-            parts.append(org_context)
+    org_context = _build_org_context(pd.name, other_animas, execution_mode)
+    if org_context:
+        _add(org_context, "org_context", 2)
 
-        if not is_task:
-            _msg = _build_messaging_section(pd, other_animas, execution_mode)
-            if is_background_auto and len(_msg) > 500:
-                _msg = _msg[:500] + "\n" + _fs.get("summary", "(summary)")
-            parts.append(_msg)
+    if not is_task:
+        _msg = _build_messaging_section(pd, other_animas, execution_mode)
+        if is_background_auto and len(_msg) > 500:
+            _msg = _msg[:500] + "\n" + _fs.get("summary", "(summary)")
+        _add(_msg, "messaging", 2)
 
-            # human_notification: skip for inbox and task
-            if not is_inbox:
-                try:
-                    from core.config import load_config as _load_cfg
-                    _cfg = _load_cfg()
-                    _my_pcfg = _cfg.animas.get(pd.name)
-                    _is_top_level = _my_pcfg is None or _my_pcfg.supervisor is None
-                    if _is_top_level and _cfg.human_notification.enabled:
-                        parts.append(_build_human_notification_guidance(execution_mode))
-                except Exception:
-                    logger.debug("Skipped human notification guidance injection", exc_info=True)
-    elif not is_task and tier == TIER_LIGHT:
-        try:
-            parts.append(load_prompt("builder/light_tier_org", anima_name=pd.name))
-        except FileNotFoundError:
-            parts.append(f"あなたは{pd.name}です。他のアニマとはsend_messageで通信できます。")
-            parts.append("メッセージはsend_messageツールで送信してください。")
+        # human_notification: skip for inbox and task
+        if not is_inbox:
+            try:
+                from core.config import load_config as _load_cfg
+
+                _cfg = _load_cfg()
+                _my_pcfg = _cfg.animas.get(pd.name)
+                _is_top_level = _my_pcfg is None or _my_pcfg.supervisor is None
+                if _is_top_level and _cfg.human_notification.enabled:
+                    hn = _build_human_notification_guidance(execution_mode)
+                    _add(hn, "human_notification", 4)
+            except Exception:
+                logger.debug("Skipped human notification guidance injection", exc_info=True)
 
     # ── Group 6: メタ設定 ─────────────────────────────────────
-    parts.append(_ss.get("group6_header", "# 6. Meta Settings"))
+    _add(_ss.get("group6_header", "# 6. Meta Settings"), "group6_header", 1)
 
     # emotion: skip for background-auto (heartbeat/cron) and task
-    if not is_background_auto and not is_task and tier in (TIER_FULL, TIER_STANDARD):
-        _ei = (
-            _prompt_store.get_section("emotion_instruction")
-            if _prompt_store else None
-        ) or EMOTION_INSTRUCTION
+    if not is_background_auto and not is_task:
+        _ei = (_prompt_store.get_section("emotion_instruction") if _prompt_store else None) or EMOTION_INSTRUCTION
         if _ei:
-            parts.append(_ei)
+            _add(_ei, "emotion_instruction", 4)
 
     # a_reflection: skip for inbox and background-auto (heartbeat/cron)
-    if not is_inbox and not is_background_auto and tier in (TIER_FULL, TIER_STANDARD):
+    if not is_inbox and not is_background_auto:
         if execution_mode == "a":
-            _ar = (
-                _prompt_store.get_section("a_reflection")
-                if _prompt_store else None
-            ) or _load_a_reflection()
+            _ar = (_prompt_store.get_section("a_reflection") if _prompt_store else None) or _load_a_reflection()
             if _ar:
-                parts.append(_ar)
+                _add(_ar, "a_reflection", 4)
 
     # c_response_requirement: Codex models need explicit text-output guidance
     # because model_instructions_file replaces the CLI's built-in preamble
     # prompt.  Only injected for chat / inbox (not background / task).
     if execution_mode == "c" and not is_background_auto and not is_task:
-        parts.append(
+        c_resp = (
             "## 応答要件\n"
             "あなたはユーザーとの対話において、**必ずテキストで応答**してください。\n"
             "ツール呼び出しを行った場合でも、その結果の要約やユーザーへの返答を\n"
@@ -956,12 +1021,19 @@ def build_system_prompt(
             "挨拶・質問・雑談などの会話メッセージには、ツール呼び出しの前後に\n"
             "自然なテキスト応答を必ず含めてください。"
         )
+        _add(c_resp, "c_response_requirement", 2)
 
-    # ── Final assembly ────────────────────────────────────────
-    prompt = "\n\n---\n\n".join(parts)
+    # ── Budget allocation + Final assembly ─────────────────────
+    allocated = _allocate_sections(sections, budget)
+    prompt = "\n\n---\n\n".join(s.content for s in allocated)
     logger.debug(
-        "System prompt built: %d sections, total_len=%d, tier=%s, context_window=%d",
-        len(parts), len(prompt), tier, context_window,
+        "System prompt built: %d/%d sections, total_len=%d, budget=%d, tier=%s, cw=%d",
+        len(allocated),
+        len(sections),
+        len(prompt),
+        budget,
+        tier,
+        context_window,
     )
     return BuildResult(
         system_prompt=prompt,

@@ -73,10 +73,10 @@ Four presets are available, combining language and personality style:
 
 | Preset | Language | Style | Characters |
 |--------|----------|-------|------------|
-| `en-anime` (default) | English | Anime-inspired casual | Alex, Kai, Nova |
-| `en-business` | English | Professional business | Alex, Kai, Nova |
+| `en-business` (default) | English | Realistic professional | Alex, Kai, Nova |
+| `en-anime` | English | Anime-inspired casual | Alex, Kai, Nova |
+| `ja-business` | Japanese | Realistic professional | Kaito, Sora, Hina |
 | `ja-anime` | Japanese | Anime-style casual | Kaito, Sora, Hina |
-| `ja-business` | Japanese | Professional business | Kaito, Sora, Hina |
 
 Switch presets with the `PRESET` environment variable:
 
@@ -100,7 +100,7 @@ PRESET=ja-anime docker compose up
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | (required) | Your Anthropic API key |
-| `PRESET` | `en-anime` | Which preset to use |
+| `PRESET` | `en-business` | Which preset to use |
 | `TZ` | `Asia/Tokyo` | Container timezone |
 
 All variables can be set in the `.env` file or passed directly:

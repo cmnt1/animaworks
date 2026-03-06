@@ -1,5 +1,8 @@
 {
   "heartbeat": {
     "interval_minutes": 5
+  },
+  "image_gen": {
+    "image_style": "realistic"
   }
 }

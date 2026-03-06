@@ -77,6 +77,7 @@ Follow this flow to find the right document:
 | `communication/instruction-patterns.md` | Instruction patterns (how to write clear instructions, delegation patterns, progress checks) |
 | `communication/reporting-guide.md` | How to report and escalate (timing, format, urgent vs routine) |
 | `communication/sending-limits.md` | Sending limits in detail (3-layer rate limit, 30/h and 100/day caps, cascade detection, how to handle) |
+| `communication/slack-bot-token-guide.md` | Slack bot token configuration (shared vs per-Anima tokens, naming convention, critical rules) |
 
 ### operations/ — Operations & Task Management
 
@@ -127,6 +128,8 @@ Find the right document from relevant keywords.
 | model, models, execution mode, model change, models.json, provider | `operations/model-guide.md` |
 | model selection, context window, credential, set-model, models list, models info | `operations/model-guide.md` |
 | anima info, anima list, anima set-model | `operations/model-guide.md` |
+| background_model, background model, cost optimization, set-background-model | `operations/model-guide.md` |
+| background_credential, heartbeat model, cron model, inbox model | `operations/model-guide.md` |
 | add Anima, template, identity | `operations/project-setup.md` |
 | task, progress, block, priority | `operations/task-management.md` |
 | current_task, pending, state management | `operations/task-management.md` |
@@ -135,7 +138,7 @@ Find the right document from relevant keywords.
 | problem, error, stuck, not working | `troubleshooting/common-issues.md` |
 | Gmail, gmail_unread, token.json, OAuth, credential | `troubleshooting/gmail-credential-setup.md` |
 | permission, permission denied, access denied | `troubleshooting/common-issues.md` |
-| tool, discover_tools, not found | `troubleshooting/common-issues.md` |
+| tool, use_tool, skill, not found | `troubleshooting/common-issues.md` |
 | memory, search_memory, search, not found | `troubleshooting/common-issues.md` |
 | flowchart, decision, unsure, what to do | `troubleshooting/escalation-flowchart.md` |
 | urgent, critical, security | `troubleshooting/escalation-flowchart.md` |
@@ -146,12 +149,14 @@ Find the right document from relevant keywords.
 | skill, skill tool, procedure fetch, procedures | `operations/tool-usage-overview.md` |
 | execution mode, S-mode, A-mode, B-mode | `operations/tool-usage-overview.md` |
 | rate limit, sending limit, 30/hour, 100/day, outbound limit | `communication/sending-limits.md` |
+| Slack, bot token, SLACK_BOT_TOKEN, per-Anima, not_in_channel | `communication/slack-bot-token-guide.md` |
 | one-round rule, round-trip, loop, cascade | `communication/messaging-guide.md`, `communication/sending-limits.md` |
 | prompt injection, trust, untrusted, boundary tag | `security/prompt-injection-awareness.md` |
 | delegate_task, task delegation, task_tracker | `operations/task-management.md`, `organization/hierarchy-rules.md` |
 | add_task, task queue, TaskQueue | `operations/task-management.md` |
 | pending, TaskExec, 3-path, execution path | `operations/task-management.md`, `operations/heartbeat-cron-guide.md` |
 | org_dashboard, ping_subordinate, supervisor tools | `organization/hierarchy-rules.md` |
+| set_subordinate_background_model, subordinate model change | `organization/hierarchy-rules.md` |
 | status.json, SSoT, model change, set-model, reload | `operations/project-setup.md` |
 | blocked command, disallowed command, blocked | `operations/project-setup.md`, `troubleshooting/common-issues.md` |
 | tier, tiered, prompt shortening, T1, T2, T3, T4 | `troubleshooting/common-issues.md` |

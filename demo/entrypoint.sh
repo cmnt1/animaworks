@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────
-PRESET="${PRESET:-en-anime}"
+PRESET="${PRESET:-en-business}"
 PRESET_DIR="/demo/presets/${PRESET}"
 DATA_DIR="${ANIMAWORKS_DATA_DIR:-$HOME/.animaworks}"
 CONFIG_JSON="${DATA_DIR}/config.json"

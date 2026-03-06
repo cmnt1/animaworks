@@ -3,6 +3,8 @@
 How to switch the authentication method used by Mode S (Claude Agent SDK) per Anima.
 Authentication mode is specified by the explicit **`mode_s_auth`** setting (not auto-detected from credential).
 
+Implementation: `_build_env()` in `core/execution/agent_sdk.py` constructs the environment variables for the Claude Code child process.
+
 ## Authentication Modes
 
 | Mode | mode_s_auth value | Connection | Use case |
@@ -41,6 +43,9 @@ Connect directly to Anthropic API. Provides the smoothest streaming experience.
 }
 ```
 
+- `api_key`: Anthropic API key. Falls back to environment variable `ANTHROPIC_API_KEY` if empty
+- `base_url`: Custom endpoint (optional). When specified, passed to child process as `ANTHROPIC_BASE_URL` (for proxy or on-premises use)
+
 **status.json (per-Anima):**
 
 ```json
@@ -51,11 +56,11 @@ Connect directly to Anthropic API. Provides the smoothest streaming experience.
 }
 ```
 
-If `mode_s_auth` is `"api"` but the credential has no `api_key`, it falls back to Max plan.
+If `mode_s_auth` is `"api"` but the credential has no `api_key` and none is set in environment variables, it falls back to Max plan.
 
 ### 2. Bedrock Mode
 
-Connect via AWS Bedrock.
+Connect via AWS Bedrock. Credential `keys` are passed as `extra_keys` to ModelConfig and mapped to environment variables.
 
 **config.json credential:**
 
@@ -67,12 +72,24 @@ Connect via AWS Bedrock.
       "keys": {
         "aws_access_key_id": "AKIA...",
         "aws_secret_access_key": "...",
-        "aws_region_name": "us-east-1"
+        "aws_region_name": "us-east-1",
+        "aws_session_token": "",
+        "aws_profile": ""
       }
     }
   }
 }
 ```
+
+| keys key | Environment variable | Description |
+|----------|---------------------|-------------|
+| aws_access_key_id | AWS_ACCESS_KEY_ID | Required |
+| aws_secret_access_key | AWS_SECRET_ACCESS_KEY | Required |
+| aws_region_name | AWS_REGION | Region |
+| aws_session_token | AWS_SESSION_TOKEN | Temporary auth (optional) |
+| aws_profile | AWS_PROFILE | Profile name (optional) |
+
+Items with no value in `keys` fall back to the corresponding environment variable above. In production, you can use only `AWS_PROFILE` and avoid storing keys in config.
 
 **status.json (per-Anima):**
 
@@ -89,7 +106,7 @@ For Bedrock in Mode S, both `execution_mode: "S"` and `mode_s_auth: "bedrock"` a
 
 ### 3. Vertex AI Mode
 
-Connect via Google Vertex AI.
+Connect via Google Vertex AI. Credential `keys` are passed as `extra_keys` to ModelConfig and mapped to environment variables.
 
 **config.json credential:**
 
@@ -97,6 +114,7 @@ Connect via Google Vertex AI.
 {
   "credentials": {
     "vertex": {
+      "api_key": "",
       "keys": {
         "vertex_project": "my-gcp-project",
         "vertex_location": "us-central1",
@@ -106,6 +124,14 @@ Connect via Google Vertex AI.
   }
 }
 ```
+
+| keys key | Environment variable | Description |
+|----------|---------------------|-------------|
+| vertex_project | CLOUD_ML_PROJECT_ID | GCP project ID |
+| vertex_location | CLOUD_ML_REGION | Region (e.g. us-central1) |
+| vertex_credentials | GOOGLE_APPLICATION_CREDENTIALS | Service account JSON path |
+
+Items with no value in `keys` fall back to the corresponding environment variable above. When using ADC (Application Default Credentials), `vertex_credentials` can be omitted.
 
 **status.json (per-Anima):**
 
@@ -203,7 +229,8 @@ Individual Animas can override `mode_s_auth` in their status.json.
 
 - Auth mode is passed as environment variables to the Claude Code child process via `_build_env()`
 - `mode_s_auth` is not auto-detected from credential content. Explicit setting is required
-- When `mode_s_auth=api` but credential has no `api_key`, it falls back to Max plan
-- For Bedrock / Vertex, set provider-specific keys in credential `keys` and specify the mode with `mode_s_auth`
+- When `mode_s_auth=api` but credential has no `api_key` and none is in environment variables, it falls back to Max plan
+- For Bedrock / Vertex, credential `keys` are passed as `extra_keys` and mapped to environment variables. Items not set in `keys` fall back to the environment variable of the same name
+- For API mode with a custom endpoint, specifying `base_url` in credential passes it to the child process as `ANTHROPIC_BASE_URL`
 - Server restart is required after configuration changes
 - Mode A/B use credentials via LiteLLM as before (this setting is Mode S-specific)

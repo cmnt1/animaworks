@@ -1,8 +1,8 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
 import logging
 import os
 import re
@@ -29,8 +29,8 @@ class ConfigReader:
         from core.config import (
             get_config_path,
             load_config,
-            resolve_execution_mode,
             resolve_anima_config,
+            resolve_execution_mode,
         )
 
         config_path = get_config_path()
@@ -42,11 +42,15 @@ class ConfigReader:
             cred_name = resolved.credential
             api_key_env = f"{cred_name.upper()}_API_KEY"
             mode = resolve_execution_mode(
-                config, resolved.model, resolved.execution_mode,
+                config,
+                resolved.model,
+                resolved.execution_mode,
             )
             return ModelConfig(
                 model=resolved.model,
                 fallback_model=resolved.fallback_model,
+                background_model=resolved.background_model,
+                background_credential=resolved.background_credential,
                 max_tokens=resolved.max_tokens,
                 max_turns=resolved.max_turns,
                 api_key=credential.api_key or None,

@@ -85,6 +85,8 @@ submit は即座に以下のJSONを返して終了する:
   3. 修正して再度 submit する
   4. 解決できない場合は上司に報告する
 
+- 実行中にプロセスがクラッシュした場合、`state/background_tasks/pending/processing/` に残ったタスクは次回起動時に `pending/failed/` へ自動移動される
+
 ## よくある間違い
 
 ### 直接実行してしまう
@@ -107,9 +109,26 @@ submit したらすぐに次の作業に移ること。
 
 ## 技術的な仕組み（参考）
 
+### コマンド型タスク（animaworks-tool submit）
+
 1. `animaworks-tool submit` が `state/background_tasks/pending/` にタスクJSONを書く
-2. Runner の pending watcher が3秒間隔でこのディレクトリを監視
-3. タスクを検出すると BackgroundTaskManager に投入（Anima の _lock 外で実行）
-4. BackgroundTaskManager が asyncio.create_task() でスレッド実行
-5. 完了時に `state/background_notifications/` に通知ファイルを書く
-6. 次回 heartbeat で通知が処理される
+2. PendingTaskExecutor の watcher が3秒間隔でこのディレクトリを監視（`wake` で即時チェックも可能）
+3. タスクを検出すると `pending/` から `pending/processing/` に移動して実行開始
+4. BackgroundTaskManager に投入され、Anima のロック外でサブプロセス実行（タイムアウト30分）
+5. 成功時: processing 内のファイルを削除。失敗時: `pending/failed/` に移動
+6. 完了時に `_on_background_task_complete` コールバックが `state/background_notifications/{task_id}.md` に通知を書く
+7. 次回 heartbeat で `drain_background_notifications()` が通知を読み取り、コンテキストに注入される
+
+### ファイルのライフサイクル
+
+```
+pending/*.json → pending/processing/*.json → 成功: 削除 | 失敗: pending/failed/*.json
+```
+
+起動時には `processing/` に残った孤立ファイル（クラッシュ等）を `failed/` へ移動してリカバリする。
+
+### LLMタスク（state/pending/）との関係
+
+Heartbeat や `plan_tasks` ツールが書き出す LLM タスクは `state/pending/` に投入される（別ディレクトリ）。
+これらは DAG に基づく並列/直列実行が可能で、結果は `state/task_results/` に保存される。
+本ガイドの `submit` とは入口が異なる。

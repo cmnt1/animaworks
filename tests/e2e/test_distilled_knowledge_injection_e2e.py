@@ -312,14 +312,11 @@ class TestDistilledKnowledgeInjectionE2E:
             patch("core.prompt.builder._build_org_context", return_value=""),
             patch("core.prompt.builder._discover_other_animas", return_value=[]),
             patch("core.prompt.builder._build_messaging_section", return_value=""),
-            patch(
-                "core.prompt.context.resolve_context_window",
-                return_value=5000,  # 10% = 500 tokens budget
-            ),
         ):
             result = build_system_prompt(
                 mock_memory,
                 message="test",
+                context_window=5000,
             )
 
         assert isinstance(result, BuildResult)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -272,20 +273,7 @@ DEFAULT_DESCRIPTIONS: dict[str, dict[str, str]] = {
             "Use send_message for routine reports; call_human for urgent cases only."
         ),
     },
-    # -- Discovery --
-    "discover_tools": {
-        "ja": (
-            "利用可能な外部ツールカテゴリを確認する。"
-            "引数なしで呼ぶとカテゴリ一覧を返す。"
-            "カテゴリ名を指定して呼ぶとそのツール群が使えるようになる。"
-            "外部サービス（Slack, Chatwork, Gmail等）を使いたい時にまず呼ぶこと。"
-        ),
-        "en": (
-            "Discover available external tool categories. "
-            "Call without args for category list; with category name to activate that group. "
-            "Call this first when you need external services (Slack, Chatwork, Gmail, etc.)."
-        ),
-    },
+    # -- Discovery (deprecated — discover_tools is empty, kept for backward compat) --
     # -- Tool management --
     "refresh_tools": {
         "ja": (
@@ -400,8 +388,7 @@ DEFAULT_DESCRIPTIONS: dict[str, dict[str, str]] = {
             "heartbeat時の進捗確認やタスク割り当て時に使う。"
         ),
         "en": (
-            "List tasks in the task queue. Filter by status. "
-            "Use during heartbeat for progress and task assignment."
+            "List tasks in the task queue. Filter by status. Use during heartbeat for progress and task assignment."
         ),
     },
 }
@@ -426,6 +413,7 @@ def get_default_guide(key: str, locale: str | None = None) -> str:
     loc = locale or _get_locale()
     entry = DEFAULT_GUIDES.get(key, {})
     return entry.get(loc) or entry.get("en") or entry.get("ja", "")
+
 
 # ── Default guides ──────────────────────────────────────────
 #
@@ -475,14 +463,14 @@ Sモードでは **Writeツール**（ネイティブ）を使って直接記憶
   - Primingのスキルヒントに表示された名前を `name` パラメータに指定する
   - 手順書に従って作業する前に、必ずこのツールで全文を確認すること
 
-### 外部ツール（MCP経由）
+### 外部ツール（CLI経由）
 
 permissions.md で許可された外部サービス連携ツール（Chatwork, Slack, Gmail等）は
-MCPツール（`mcp__aw__*`）として直接利用可能。Bash経由の `animaworks-tool` は不要。
+`skill` ツールで使い方を確認し、Bash経由の `animaworks-tool` CLIで実行する。
 
 #### 使い方
-`mcp__aw__chatwork_send`, `mcp__aw__slack_post` 等、許可されたツールが
-MCPツールリストに自動的に含まれる。通常のMCPツールと同じように直接呼び出すこと。
+1. `mcp__aw__skill` でツール名（chatwork, slack等）のスキルを取得し、CLIコマンドを確認
+2. Bash で `animaworks-tool <ツール名> <サブコマンド> [引数...]` を実行
 
 #### 長時間ツールのバックグラウンド実行
 画像生成・ローカルLLM推論等の長時間ツールはBash経由で `submit` を使い非同期実行すること:
@@ -492,7 +480,7 @@ animaworks-tool submit <ツール名> <サブコマンド> [引数...]
 完了時は `state/background_notifications/` に通知が書かれ、次回heartbeatで確認できる。
 
 #### 注意事項
-- MCPツール（`mcp__aw__*`）: 内部機能も外部サービスも全てMCP経由で直接呼び出す
+- MCPツール（`mcp__aw__*`）: 内部機能（記憶・タスク・スキル等）のみ。外部ツールはCLI経由
 - 使えるツールは `permissions.md` で許可されたもののみ
 """,
         "en": """\
@@ -533,14 +521,14 @@ Write important discoveries immediately; do not wait for consolidation.
   - Specify the name shown in Priming skill hints as the `name` parameter
   - Always fetch full content before following a procedure
 
-### External tools (via MCP)
+### External tools (via CLI)
 
 External service tools (Chatwork, Slack, Gmail, etc.) permitted in permissions.md
-are available as MCP tools (`mcp__aw__*`) directly. No need for Bash `animaworks-tool`.
+are accessed via the `skill` tool and executed through the `animaworks-tool` CLI.
 
 #### Usage
-Tools like `mcp__aw__chatwork_send`, `mcp__aw__slack_post` are automatically
-included in the MCP tool list. Call them directly like any other MCP tool.
+1. Use `mcp__aw__skill` to look up the tool name (chatwork, slack, etc.) and confirm CLI commands
+2. Execute via Bash: `animaworks-tool <tool_name> <subcommand> [args...]`
 
 #### Background execution for long-running tools
 Image generation, local LLM inference, etc. hold the lock if run directly.
@@ -551,7 +539,7 @@ animaworks-tool submit <tool_name> <subcommand> [args...]
 On completion, notifications go to `state/background_notifications/` for the next heartbeat.
 
 #### Notes
-- MCP tools (`mcp__aw__*`): Both internal and external tools are called directly via MCP
+- MCP tools (`mcp__aw__*`): Internal features only (memory, tasks, skills, etc.). External tools use CLI
 - Allowed tools are those permitted in `permissions.md`
 """,
     },
@@ -816,8 +804,7 @@ class ToolPromptStore:
         """Return all tool descriptions as dicts."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT name, description, updated_at FROM tool_descriptions "
-                "ORDER BY name",
+                "SELECT name, description, updated_at FROM tool_descriptions ORDER BY name",
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -855,8 +842,7 @@ class ToolPromptStore:
         """Return all tool guides as dicts."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT key, content, updated_at FROM tool_guides "
-                "ORDER BY key",
+                "SELECT key, content, updated_at FROM tool_guides ORDER BY key",
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -871,9 +857,7 @@ class ToolPromptStore:
             ).fetchone()
         return row["content"] if row else None
 
-    def get_section_with_condition(
-        self, key: str
-    ) -> tuple[str, str | None] | None:
+    def get_section_with_condition(self, key: str) -> tuple[str, str | None] | None:
         """Return ``(content, condition)`` for *key*, or ``None``."""
         with self._connect() as conn:
             row = conn.execute(
@@ -909,8 +893,7 @@ class ToolPromptStore:
         """Return all system sections as dicts."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT key, content, condition, updated_at "
-                "FROM system_sections ORDER BY key",
+                "SELECT key, content, condition, updated_at FROM system_sections ORDER BY key",
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -938,8 +921,7 @@ class ToolPromptStore:
                     else:
                         flat[k] = v
                 conn.executemany(
-                    "INSERT OR IGNORE INTO tool_descriptions "
-                    "(name, description, updated_at) VALUES (?, ?, ?)",
+                    "INSERT OR IGNORE INTO tool_descriptions (name, description, updated_at) VALUES (?, ?, ?)",
                     [(k, v, ts) for k, v in flat.items()],
                 )
             if guides:
@@ -950,18 +932,13 @@ class ToolPromptStore:
                     else:
                         flat_g[k] = v
                 conn.executemany(
-                    "INSERT OR IGNORE INTO tool_guides "
-                    "(key, content, updated_at) VALUES (?, ?, ?)",
+                    "INSERT OR IGNORE INTO tool_guides (key, content, updated_at) VALUES (?, ?, ?)",
                     [(k, v, ts) for k, v in flat_g.items()],
                 )
             if sections:
                 conn.executemany(
-                    "INSERT OR IGNORE INTO system_sections "
-                    "(key, content, condition, updated_at) VALUES (?, ?, ?, ?)",
-                    [
-                        (k, content, cond, ts)
-                        for k, (content, cond) in sections.items()
-                    ],
+                    "INSERT OR IGNORE INTO system_sections (key, content, condition, updated_at) VALUES (?, ?, ?, ?)",
+                    [(k, content, cond, ts) for k, (content, cond) in sections.items()],
                 )
 
 
@@ -990,8 +967,7 @@ def get_prompt_store() -> ToolPromptStore | None:
         db_path = get_data_dir() / "tool_prompts.sqlite3"
         if not db_path.parent.exists():
             logger.warning(
-                "Data directory does not exist: %s — "
-                "tool prompt DB unavailable. Run 'animaworks init'.",
+                "Data directory does not exist: %s — tool prompt DB unavailable. Run 'animaworks init'.",
                 db_path.parent,
             )
             return None

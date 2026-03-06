@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -25,9 +26,11 @@ import threading
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from core.background import BackgroundTaskManager
+from core.exceptions import AnimaWorksError, ConfigError
+from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.activity import ActivityLogger
 from core.messenger import Messenger
@@ -36,7 +39,6 @@ from core.tooling.dispatch import ExternalToolDispatcher
 
 # ── Re-export all handler_base symbols for backward compatibility ──
 from core.tooling.handler_base import (  # noqa: F401
-    OnMessageSentFn,
     _BLOCKED_CMD_PATTERNS,
     _EPISODE_FILENAME_RE,
     _INJECTION_RE,
@@ -50,6 +52,9 @@ from core.tooling.handler_base import (  # noqa: F401
     _READ_MAX_LINE_CHARS,
     _READ_MAX_LINES,
     _READ_MIN_LINES,
+    MemoryWriteError,
+    OnMessageSentFn,
+    ToolExecutionError,
     _error_result,
     _extract_first_heading,
     _is_protected_write,
@@ -58,10 +63,6 @@ from core.tooling.handler_base import (  # noqa: F401
     _validate_skill_format,
     active_session_type,
     suppress_board_fanout,
-)
-from core.tooling.handler_base import (
-    ToolExecutionError,
-    MemoryWriteError,
 )
 
 # ── Import Mixins ──
@@ -72,9 +73,14 @@ from core.tooling.handler_org import OrgToolsMixin
 from core.tooling.handler_perms import PermissionsMixin
 from core.tooling.handler_skills import SkillsToolsMixin
 
-from core.i18n import t
-
 logger = logging.getLogger("animaworks.tool_handler")
+
+
+@runtime_checkable
+class ProcessSupervisorLike(Protocol):
+    """Minimal interface of ``ProcessSupervisor`` used by ``ToolHandler``."""
+
+    def get_process_status(self, anima_name: str) -> dict[str, Any]: ...
 
 
 class ToolHandler(
@@ -99,11 +105,11 @@ class ToolHandler(
         tool_registry: list[str] | None = None,
         personal_tools: dict[str, str] | None = None,
         on_message_sent: OnMessageSentFn | None = None,
-        on_schedule_changed: Callable[[str], Any] | None = None,
+        on_schedule_changed: Callable[[str], None] | None = None,
         human_notifier: HumanNotifier | None = None,
         background_manager: BackgroundTaskManager | None = None,
         context_window: int = 32_000,
-        process_supervisor: Any | None = None,
+        process_supervisor: ProcessSupervisorLike | None = None,
         superuser: bool = False,
     ) -> None:
         self._anima_dir = anima_dir
@@ -147,6 +153,7 @@ class ToolHandler(
         try:
             from core.config.models import load_config
             from core.paths import get_animas_dir
+
             _cfg = load_config()
             _animas_dir = get_animas_dir()
             _my_supervisor = None
@@ -177,7 +184,7 @@ class ToolHandler(
                 self._descendant_state_files.append(_desc_dir / "injection.md")
                 self._descendant_state_files.append(_desc_dir / "state" / "task_queue.jsonl")
                 self._descendant_state_dirs.append(_desc_dir / "state" / "pending")
-        except Exception:
+        except (ConfigError, OSError, PermissionError, KeyError, AttributeError):
             logger.debug("Failed to cache subordinate paths for %s", self._anima_name, exc_info=True)
 
         # ── Dispatch table: tool name → handler method ──
@@ -203,14 +210,15 @@ class ToolHandler(
             "disable_subordinate": self._handle_disable_subordinate,
             "enable_subordinate": self._handle_enable_subordinate,
             "set_subordinate_model": self._handle_set_subordinate_model,
-            "restart_subordinate":   self._handle_restart_subordinate,
-            "org_dashboard":         self._handle_org_dashboard,
-            "ping_subordinate":      self._handle_ping_subordinate,
+            "set_subordinate_background_model": self._handle_set_subordinate_background_model,
+            "restart_subordinate": self._handle_restart_subordinate,
+            "org_dashboard": self._handle_org_dashboard,
+            "ping_subordinate": self._handle_ping_subordinate,
             "read_subordinate_state": self._handle_read_subordinate_state,
-            "check_permissions":     self._handle_check_permissions,
-            "delegate_task":         self._handle_delegate_task,
-            "task_tracker":          self._handle_task_tracker,
-            "audit_subordinate":     self._handle_audit_subordinate,
+            "check_permissions": self._handle_check_permissions,
+            "delegate_task": self._handle_delegate_task,
+            "task_tracker": self._handle_task_tracker,
+            "audit_subordinate": self._handle_audit_subordinate,
             "refresh_tools": self._handle_refresh_tools,
             "share_tool": self._handle_share_tool,
             "report_procedure_outcome": self._handle_report_procedure_outcome,
@@ -221,8 +229,12 @@ class ToolHandler(
             "update_task": self._handle_update_task,
             "list_tasks": self._handle_list_tasks,
             "plan_tasks": self._handle_plan_tasks,
+            "use_tool": self._handle_use_tool,
             "check_background_task": self._handle_check_background_task,
             "list_background_tasks": self._handle_list_background_tasks,
+            "vault_get": self._handle_vault_get,
+            "vault_store": self._handle_vault_store,
+            "vault_list": self._handle_vault_list,
         }
 
     # ── Properties and session management ─────────────────────
@@ -236,11 +248,11 @@ class ToolHandler(
         self._on_message_sent = fn
 
     @property
-    def on_schedule_changed(self) -> Callable[[str], Any] | None:
+    def on_schedule_changed(self) -> Callable[[str], None] | None:
         return self._on_schedule_changed
 
     @on_schedule_changed.setter
-    def on_schedule_changed(self, fn: Callable[[str], Any] | None) -> None:
+    def on_schedule_changed(self, fn: Callable[[str], None] | None) -> None:
         self._on_schedule_changed = fn
 
     def drain_notifications(self) -> list[dict[str, Any]]:
@@ -338,7 +350,7 @@ class ToolHandler(
             entry = _json.dumps({"to": to, "success": success}, ensure_ascii=False)
             with replied_to_path.open("a", encoding="utf-8") as f:
                 f.write(entry + "\n")
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             logger.warning("Failed to persist replied_to for '%s': %s", to, e)
 
     def merge_replied_to(self, names: set[str], session_type: str = "chat") -> None:
@@ -368,13 +380,18 @@ class ToolHandler(
                 if self._background_manager and self._background_manager.is_eligible(name):
                     ext_args = {**args, "anima_dir": str(self._anima_dir)}
                     task_id = self._background_manager.submit(
-                        name, ext_args, self._external.dispatch,
+                        name,
+                        ext_args,
+                        self._external.dispatch,
                     )
-                    result = _json.dumps({
-                        "status": "background",
-                        "task_id": task_id,
-                        "message": t("handler.background_task_started", task_id=task_id),
-                    }, ensure_ascii=False)
+                    result = _json.dumps(
+                        {
+                            "status": "background",
+                            "task_id": task_id,
+                            "message": t("handler.background_task_started", task_id=task_id),
+                        },
+                        ensure_ascii=False,
+                    )
                 else:
                     ext_args = {**args, "anima_dir": str(self._anima_dir)}
                     result = self._external.dispatch(name, ext_args)
@@ -392,26 +409,22 @@ class ToolHandler(
             raise
         except Exception as e:
             logger.exception("Unhandled tool error in %s", name)
-            raise ToolExecutionError(
-                f"Tool execution failed: {name}: {e}"
-            ) from e
+            raise ToolExecutionError(f"Tool execution failed: {name}: {e}") from e
 
     def _truncate_output(self, output: str) -> str:
         """Truncate tool output if it exceeds the size limit."""
         size = len(output.encode("utf-8"))
         if size <= self._MAX_TOOL_OUTPUT_BYTES:
             return output
-        truncated = output[:self._MAX_TOOL_OUTPUT_BYTES]
+        truncated = output[: self._MAX_TOOL_OUTPUT_BYTES]
         while len(truncated.encode("utf-8")) > self._MAX_TOOL_OUTPUT_BYTES:
             truncated = truncated[:-1000]
         logger.warning(
             "Tool output truncated: original=%d bytes, limit=%d bytes",
-            size, self._MAX_TOOL_OUTPUT_BYTES,
+            size,
+            self._MAX_TOOL_OUTPUT_BYTES,
         )
-        return (
-            truncated
-            + "\n\n" + t("handler.output_truncated", size=size)
-        )
+        return truncated + "\n\n" + t("handler.output_truncated", size=size)
 
     # ── Activity logging ──────────────────────────────────────
 
@@ -433,13 +446,30 @@ class ToolHandler(
             if activity_type is None:
                 self._activity.log("tool_use", tool=name, summary=str(args)[:200], meta=meta or None)
             elif name == "post_channel":
-                self._activity.log(activity_type, content=args.get("text", "")[:200], channel=args.get("channel", ""), meta=meta or None)
+                self._activity.log(
+                    activity_type,
+                    content=args.get("text", "")[:200],
+                    channel=args.get("channel", ""),
+                    meta=meta or None,
+                )
             elif name == "read_channel":
-                self._activity.log(activity_type, channel=args.get("channel", ""), summary=t("handler.activity_recent_items", limit=args.get("limit", 20)), meta=meta or None)
+                self._activity.log(
+                    activity_type,
+                    channel=args.get("channel", ""),
+                    summary=t("handler.activity_recent_items", limit=args.get("limit", 20)),
+                    meta=meta or None,
+                )
             elif name == "read_dm_history":
-                self._activity.log(activity_type, channel=f"dm:{args.get('peer', '')}", summary=t("handler.activity_dm_history"), meta=meta or None)
+                self._activity.log(
+                    activity_type,
+                    channel=f"dm:{args.get('peer', '')}",
+                    summary=t("handler.activity_dm_history"),
+                    meta=meta or None,
+                )
             elif name == "call_human":
-                self._activity.log(activity_type, content=args.get("body", "")[:200], via="configured_channels", meta=meta or None)
+                self._activity.log(
+                    activity_type, content=args.get("body", "")[:200], via="configured_channels", meta=meta or None
+                )
         except Exception as e:
             logger.warning("Activity logging failed for tool '%s': %s", name, e)
 
@@ -472,3 +502,127 @@ class ToolHandler(
             )
         except Exception as e:
             logger.warning("Activity result logging failed for tool '%s': %s", name, e)
+
+    # ── use_tool dispatcher ──────────────────────────────────
+
+    def _handle_use_tool(self, args: dict[str, Any]) -> str:
+        """Dispatch to an external tool module via unified use_tool interface.
+
+        Resolves ``tool_name + "_" + action`` as the schema name and
+        delegates to the tool module's ``dispatch()`` function directly.
+        Supports core tools (TOOL_MODULES), common tools, and personal tools.
+        """
+        import importlib
+
+        from core.tools import TOOL_MODULES
+
+        tool_name = args.get("tool_name", "")
+        action = args.get("action", "")
+        tool_args = args.get("args") or {}
+        if not isinstance(tool_args, dict):
+            tool_args = {}
+
+        if not tool_name or not action:
+            return _error_result(
+                "InvalidArguments",
+                "use_tool requires both 'tool_name' and 'action'",
+            )
+
+        personal_tools = self._external._personal_tools or {}
+        is_core = tool_name in (self._external.registry or [])
+        is_personal = tool_name in personal_tools
+
+        if not is_core and not is_personal:
+            return _error_result(
+                "PermissionDenied",
+                f"Tool '{tool_name}' is not permitted. Check permissions.md for allowed external tools.",
+            )
+
+        schema_name = f"{tool_name}_{action}"
+        dispatch_args = {**tool_args, "anima_dir": str(self._anima_dir)}
+
+        try:
+            if is_personal and tool_name not in TOOL_MODULES:
+                import importlib.util
+
+                spec = importlib.util.spec_from_file_location(
+                    f"animaworks_tool_{tool_name}",
+                    personal_tools[tool_name],
+                )
+                if spec is None or spec.loader is None:
+                    return _error_result(
+                        "LoadError",
+                        f"Cannot load personal tool: {tool_name}",
+                    )
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            else:
+                if tool_name not in TOOL_MODULES:
+                    return _error_result(
+                        "InvalidArguments",
+                        f"Unknown tool module: {tool_name}",
+                    )
+                mod = importlib.import_module(TOOL_MODULES[tool_name])
+
+            result = ExternalToolDispatcher._call_module(mod, schema_name, dispatch_args)
+            return result
+        except AnimaWorksError:
+            raise
+        except Exception as e:
+            logger.warning("use_tool dispatch failed: %s %s – %s", tool_name, action, e)
+            raise ToolExecutionError(
+                f"use_tool execution failed: {tool_name}/{action}: {e}",
+            ) from e
+
+    # ── Vault tools ──────────────────────────────────────────
+
+    def _handle_vault_get(self, args: dict[str, Any]) -> str:
+        """Retrieve a decrypted value from the credential vault."""
+        from core.config.vault import get_vault_manager
+
+        section = args.get("section", "")
+        key = args.get("key", "")
+        if not section or not key:
+            return _error_result("InvalidArguments", "section and key are required")
+
+        vault = get_vault_manager()
+        value = vault.get(section, key)
+        if value is None:
+            return _error_result("NotFound", f"No entry for {section}/{key}")
+        return value
+
+    def _handle_vault_store(self, args: dict[str, Any]) -> str:
+        """Store an encrypted value in the credential vault."""
+        from core.config.vault import get_vault_manager
+
+        section = args.get("section", "")
+        key = args.get("key", "")
+        value = args.get("value", "")
+        if not section or not key or not value:
+            return _error_result(
+                "InvalidArguments",
+                "section, key, and value are required",
+            )
+
+        vault = get_vault_manager()
+        vault.store(section, key, value)
+        return _json.dumps(
+            {"status": "ok", "message": f"Stored {section}/{key}"},
+            ensure_ascii=False,
+        )
+
+    def _handle_vault_list(self, args: dict[str, Any]) -> str:
+        """List vault sections and keys (values are never shown)."""
+        from core.config.vault import get_vault_manager
+
+        vault = get_vault_manager()
+        data = vault.load_vault()
+        section = args.get("section")
+        if section:
+            keys = list(data.get(section, {}).keys())
+            return _json.dumps(
+                {"section": section, "keys": keys},
+                ensure_ascii=False,
+            )
+        sections = {s: list(v.keys()) for s, v in data.items()}
+        return _json.dumps({"sections": sections}, ensure_ascii=False)

@@ -3,7 +3,7 @@ name: animaworks-guide
 description: >-
   animaworksコマンド・CLIの完全リファレンス。
   サーバー操作(start/stop/restart/status/reset)、チャット・メッセージング(chat/send/board)、
-  Anima管理(list/info/create/enable/disable/delete/restart/set-model/set-role/reload)、
+  Anima管理(list/info/create/enable/disable/delete/restart/set-model/set-role/reload/audit)、
   モデル情報(models list/info/show)、ハートビート・cron、ログ・コスト(logs/cost)、
   タスク管理(task add/update/list)、設定管理(config get/set/list)、
   RAGインデックス管理(index)、アセット操作(optimize-assets/remake-assets)、
@@ -86,6 +86,8 @@ animaworks anima delete {名前}           # 削除（ZIPアーカイブ後）
 animaworks anima delete {名前} --no-archive  # アーカイブなしで削除
 animaworks anima delete {名前} --force   # 確認なしで削除
 animaworks anima restart {名前}          # プロセス再起動
+animaworks anima audit {名前}            # 部下の直近活動を包括監査（デフォルト: 1日）
+animaworks anima audit {名前} --days 7   # 直近7日間の監査
 ```
 
 ### モデル変更

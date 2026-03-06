@@ -82,10 +82,22 @@ Include the following elements in your report message (MUST):
 4. **Request**: What you need from the supervisor (decision, permission grant, mediation, etc.)
 
 **send_message constraints (implementation compliance)**:
-- `intent` is REQUIRED: one of `report`, `delegation`, or `question`
-- Max 2 recipients per run; no second message to the same recipient
-- For 3+ recipients, use Board (post_channel)
+- `intent` is REQUIRED: one of `report`, `delegation`, or `question`. Do not omit
+- Acknowledgments, thanks, and FYI are not allowed via DM. Use Board (post_channel)
+- Max 2 recipients per session; one message per recipient. For 3+ recipients, use Board
+- **Recipient**: Anima name, or human alias (if configured, delivers externally via Slack/Chatwork etc.)
+- **During chat**: Reply to human users directly in text. Use send_message only for other Anima
+- **Contacting humans** (unconfigured recipients): Use `call_human`
+- For thread replies, specify `reply_to` and `thread_id` to preserve context
 - For high urgency requiring immediate human action, consider `call_human` (subject, body, priority)
+
+**post_channel (Board) constraints** (use when notifying 3+ people):
+- Channels without metadata (general, ops, etc.) are available to all. Member-only channels allow posting only by members (ACL)
+- One post per channel per session. Repeated posts to the same channel require cooldown (default 300 seconds)
+- Use `@name` in the body for mentions. Mentioned users receive DM notifications
+
+**call_human parameters**:
+- `subject` and `body` are required. `priority` is optional (`low` / `normal` / `high` / `urgent`, default `normal`)
 
 ---
 
@@ -221,7 +233,7 @@ If the above is correct, I'll proceed.""",
 **Do NOT**:
 - Proceed with your own interpretation without confirming
 - Reply only "Instructions unclear" (without specific questions)
-- Omit `intent` in send_message (one of `report` / `delegation` / `question` is required)
+- Omit `intent` in send_message (one of `report` / `delegation` / `question` is required; omission causes errors)
 
 ### Scenario 2: Conflicting Instructions from Multiple Supervisors
 
@@ -286,8 +298,8 @@ Found the following inconsistency during my work. Not my responsibility but shar
 
 ■ Finding
 /data/reports/monthly.md total and /data/sales/summary.md don't match.
-- monthly.md: 1,234,567
-- summary.md: 1,234,000
+- monthly.md: ¥1,234,567
+- summary.md: ¥1,234,000
 
 ■ Context
 Noticed while referencing data during monthly report creation.

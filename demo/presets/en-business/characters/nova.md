@@ -7,6 +7,7 @@
 | Name | nova |
 | Age | 26 |
 | Birthday | March 3 |
+| Gender | Female |
 | Height | 165cm |
 | Role | Team Coordinator |
 | Supervisor | alex |

@@ -23,7 +23,7 @@ If it doesn't help, see `troubleshooting/escalation-flowchart.md` and escalate a
 3. Recipient is between Heartbeat intervals (message remains unread until next run)
 4. Send operation failed with an error
 5. `intent` is unspecified or invalid (only report / delegation / question allowed)
-6. Session DM limit exceeded (second send to same recipient, or sending to a third recipient)
+6. Session DM limit exceeded (one send per recipient, max 2 recipients per session)
 
 ### Steps
 
@@ -35,7 +35,7 @@ If it doesn't help, see `troubleshooting/escalation-flowchart.md` and escalate a
      search_memory(query="organization", scope="common_knowledge")
      ```
      Or `read_memory_file(path="common_knowledge/organization/structure.md")` to see all Anima names in the org
-   - **Note**: When chatting with a human, do not use `send_message`; reply directly in text (humans receive it). Use `call_human` to contact humans
+   - **Note**: When chatting with a human, do not use `send_message`; reply directly in text (humans receive it). Use `call_human` to contact humans outside of chat (e.g. during heartbeat)
 
 2. **Check server status**
    - If you are running, the server should be up
@@ -126,7 +126,7 @@ send_message(
    ```
 
 5. **Check for other work**
-   - Review `state/pending.md` and task queue (`list_tasks`)
+   - Review persistent task queue (`list_tasks`) and tasks under `state/pending/`
    - Start another task that is not blocked
 
 ---
@@ -192,7 +192,7 @@ send_message(
    - Check common knowledge (`common_knowledge/`) for related guides
    - Ask supervisor or peers if they have knowledge
    - MUST record as memory after completing the work (for next time)
-   - Old or duplicate memories can be archived with `archive_memory_file` to archive/ (moved, not deleted)
+   - Old or duplicate memories can be archived with `archive_memory_file(path="...", reason="...")` to archive/ (moved, not deleted; `reason` is required)
 
 ### Search Scope Reference
 
@@ -263,47 +263,36 @@ send_message(
 
 - "Tool not found" or similar error when calling a tool
 - External tools (Slack, Gmail, etc.) unavailable
-- `discover_tools` does not show the tool you need
 
 ### Causes
 
-1. External tool category not enabled
-2. Tool not allowed in `permissions.md`
+1. Tool not allowed in `permissions.md`
+2. Skill file not found
 3. External service credentials not configured
 
 ### Steps
 
-1. **Check available tool categories**
-   ```
-   discover_tools()
-   ```
-   - Call with no args to get a list of available categories
+1. **Look up tool usage via skill**
+   - Use the `skill` tool with the skill name to get the full procedure. Skill list is shown in the `<available_skills>` block of the tool description
+   - In B-mode, `use_tool` provides structured invocation when external tools are allowed
 
-2. **Enable the desired category**
-   ```
-   discover_tools(category="slack")
-   ```
-   - Enabling adds that category's tools dynamically (A-mode)
-   - Only categories allowed in permissions.md can be enabled
-
-3. **Check permissions**
+2. **Check permissions**
    ```
    check_permissions()
    ```
-   - `external_tools.enabled` shows currently enabled categories; `available_but_not_enabled` shows allowed but not yet enabled
+   - `external_tools.enabled` shows currently enabled categories; `external_tools.available_but_not_enabled` shows allowed but not yet enabled categories
    - Categories not allowed in permissions.md cannot be used
 
-4. **If category is not allowed**
+3. **If category is not allowed**
    - Ask supervisor for permission
    - Clearly state why the tool is needed when requesting
 
-5. **S-mode (Claude Agent SDK)**
-   - MCP tools (`mcp__aw__*`) are available automatically. Restart process if not found
-   - External tools are available via MCP if allowed in permissions.md (e.g. `mcp__aw__slack_post`)
+4. **S-mode (Claude Agent SDK / MCP)**
+   - Built-in tools are available with `mcp__aw__*` prefix (e.g. `mcp__aw__send_message`). Restart process if not found
+   - External tools: look up usage via `skill` tool and execute via `execute_command` with `animaworks-tool <tool> <subcommand>`
    - Long-running tools (image gen, local LLM, etc.) run asynchronously via `animaworks-tool submit`
-   - Use `mcp__aw__discover_tools` to check categories → after enabling, call as MCP tool
 
-6. **If tool returns an error**
+5. **If tool returns an error**
    - Record the error message accurately
    - Report to supervisor for auth errors (credential setup is admin responsibility)
    - Retry on timeout (up to 3 times)
@@ -377,20 +366,22 @@ See `operations/tool-usage-overview.md` for the full tool overview.
 
 - `send_message` or `post_channel` returns an error
 - Message like `GlobalOutboundLimitExceeded: Hourly send limit (30) reached...` is shown
+- `ConversationDepthExceeded: Conversation with {recipient} reached 6 turns in 10 minutes...` is shown
 
 ### Causes
 
 - Reached 30/hour or 100/day send limit (config.json `heartbeat.max_messages_per_hour` / `max_messages_per_day`)
-- Repeated post to same channel within cooldown period (default 300 seconds)
+- Repeated post to same channel within cooldown period (`heartbeat.channel_post_cooldown_s`, default 300 seconds)
+- DM exchange between two parties exceeded depth limit (6 turns in 10 minutes) (`heartbeat.depth_window_s` / `heartbeat.max_depth`)
 
 ### Steps
 
-1. **Check the error message**: Identify whether it's hourly or daily limit
+1. **Check the error message**: Identify whether it's hourly limit, 24-hour limit, or depth limit
 2. **Review send history**: Check if there were unnecessary sends
-3. **Wait**: Until next hour for hourly limit, or next day for daily limit
+3. **Wait**: Until next hour for hourly limit, next day for 24-hour limit, or next Heartbeat cycle for depth limit
 4. **Record what you wanted to send**: For this turn, don't use `send_message`; write the content to `state/current_task.md` and send in the next session
 5. **Urgent contact**: `call_human` is not rate-limited; human contact remains available
-6. **Combine sends**: Merge multiple reports into one message
+6. **Combine sends**: Merge multiple reports into one message. If depth limit is reached, move complex discussions to a Board channel
 
 See `communication/sending-limits.md` for details.
 
@@ -400,7 +391,7 @@ See `communication/sending-limits.md` for details.
 
 ### Symptoms
 
-- "Command blocked" or similar error when trying to run a command
+- "PermissionDenied", "Command blocked" or similar error when trying to run a command
 - Certain commands cannot be executed
 
 ### Causes
@@ -437,19 +428,19 @@ See `communication/sending-limits.md` for details.
 ### Causes
 
 When using a model with a small context window, the system prompt is reduced in stages (Tiered System Prompt).
+Context window is inferred from model name in `status.json`; can be overridden in config.json `model_context_windows`.
 
 | Tier | Context Window | Omitted Information |
 |------|----------------|----------------------|
 | T1 (FULL) | 128k+ tokens | None (all info shown) |
-| T2 (STANDARD) | 32k–128k tokens | Distilled knowledge, Priming budget reduced |
+| T2 (STANDARD) | 32k–128k tokens | Distilled knowledge (deprecated), Priming budget reduced |
 | T3 (LIGHT) | 16k–32k tokens | bootstrap, vision, specialty, distilled knowledge, memory guide omitted |
 | T4 (MINIMAL) | Under 16k tokens | Plus permissions, Priming, org, messaging, emotion omitted |
 
 ### Steps
 
-1. **Check your model**: Infer context window from model name in `status.json` (config.json `model_context_windows` can override)
-2. **Fetch needed info yourself**: Use `search_memory` or `read_memory_file` to get omitted information explicitly
-3. **Consult supervisor**: If model change is needed, ask supervisor
+1. **Fetch needed info yourself**: Use `search_memory` or `read_memory_file` to get omitted information explicitly
+2. **Consult supervisor**: If model change is needed, ask supervisor
 
 ---
 
@@ -460,6 +451,11 @@ When using a model with a small context window, the system prompt is reduced in 
 - **Cause**: Wrong path or file does not exist
 - **Fix**: Use `list_directory` to verify directory contents before specifying path
 - **Note**: `read_memory_file` uses paths relative to Anima dir (e.g. `knowledge/xxx.md`, `common_knowledge/organization/structure.md`). `read_file` uses absolute paths
+
+### Cannot Specify Inbox in read_channel
+
+- **Cause**: `read_channel` is for Board shared channels. Inbox (message inbox) is not a channel
+- **Fix**: Inbox messages are processed automatically by the system. Specifying `inbox` or `inbox/` in `read_channel` will cause an error
 
 ### Command Timeout
 

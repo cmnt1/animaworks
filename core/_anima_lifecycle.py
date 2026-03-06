@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,12 +15,11 @@ import logging
 import time
 from typing import Any
 
-from core.time_utils import now_jst
-
 from core.execution._sanitize import ORIGIN_SYSTEM
-from core.paths import load_prompt
 from core.i18n import t
+from core.paths import load_prompt
 from core.schemas import CycleResult
+from core.time_utils import now_jst
 
 logger = logging.getLogger("animaworks.anima")
 
@@ -56,13 +56,16 @@ class LifecycleMixin:
 
                     # 3. Execute agent cycle (plan-only, no inbox)
                     from core.tooling.handler import active_session_type
+
                     _session_token = self.agent._tool_handler.set_active_session_type("background")
                     self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
                     heartbeat_text = "\n\n".join(parts)
                     prior_msgs = self._build_prior_messages(heartbeat_text)
                     try:
                         result = await self._execute_heartbeat_cycle(
-                            heartbeat_text, [], 0,
+                            heartbeat_text,
+                            [],
+                            0,
                             prior_messages=prior_msgs,
                         )
                     finally:
@@ -71,7 +74,12 @@ class LifecycleMixin:
                     return result
 
                 except Exception as exc:
-                    await self._handle_heartbeat_failure(exc, [], 0)
+                    _unread = 0
+                    try:
+                        _unread = self.messenger.unread_count()
+                    except OSError:
+                        pass
+                    await self._handle_heartbeat_failure(exc, [], _unread)
                     raise
                 finally:
                     self._status_slots["background"] = "idle"
@@ -83,11 +91,12 @@ class LifecycleMixin:
 
     # ── Consolidation helpers ──────────────────────────────────
 
-    def _collect_episodes_summary(self) -> tuple[str, str, str]:
-        """Collect recent episodes, resolved events, and activity log as formatted text.
+    def _collect_episodes_summary(self) -> tuple[str, str, str, str]:
+        """Collect recent episodes, resolved events, activity log, and reflections.
 
         Returns:
-            Tuple of (episodes_summary, resolved_events_summary, activity_log_summary).
+            Tuple of (episodes_summary, resolved_events_summary,
+            activity_log_summary, reflections_summary).
             If no episodes are found, returns a placeholder message for episodes
             with empty strings for the other summaries.
         """
@@ -100,22 +109,20 @@ class LifecycleMixin:
 
         # Format episodes
         if episodes:
-            episodes_summary = "\n\n".join(
-                f"## {e['date']} {e['time']}\n{e['content']}"
-                for e in episodes
-            )
+            episodes_summary = "\n\n".join(f"## {e['date']} {e['time']}\n{e['content']}" for e in episodes)
         else:
-            return (t("anima.no_episodes_today"), "", activity_log_summary)
+            return (t("anima.no_episodes_today"), "", activity_log_summary, "")
+
+        # Extract reflections from episodes
+        reflections_summary = engine._extract_reflections_from_episodes(episodes_summary)
 
         # Format resolved events
         if resolved:
-            resolved_events_summary = "\n".join(
-                f"- {r['ts'][:16]}: {r['content']}" for r in resolved
-            )
+            resolved_events_summary = "\n".join(f"- {r['ts'][:16]}: {r['content']}" for r in resolved)
         else:
             resolved_events_summary = ""
 
-        return (episodes_summary, resolved_events_summary, activity_log_summary)
+        return (episodes_summary, resolved_events_summary, activity_log_summary, reflections_summary)
 
     def count_recent_episodes(self, hours: int = 24) -> int:
         """Count recent episode entries within the given time window.
@@ -153,9 +160,12 @@ class LifecycleMixin:
         """
         logger.info(
             "[%s] run_consolidation START type=%s max_turns=%d",
-            self.name, consolidation_type, max_turns,
+            self.name,
+            consolidation_type,
+            max_turns,
         )
         from core.tooling.handler import active_session_type
+
         try:
             async with self._background_lock:
                 self._status_slots["background"] = "consolidating"
@@ -166,15 +176,26 @@ class LifecycleMixin:
                 try:
                     # Build consolidation prompt
                     if consolidation_type == "daily":
-                        episodes_summary, resolved_events_summary, activity_log_summary = (
+                        episodes_summary, resolved_events_summary, activity_log_summary, reflections_summary = (
                             self._collect_episodes_summary()
                         )
+                        reflections_section = ""
+                        if reflections_summary:
+                            reflections_section = (
+                                "## "
+                                + t("anima.reflections_header")
+                                + "\n\n"
+                                + t("anima.reflections_intro")
+                                + "\n\n"
+                                + reflections_summary
+                            )
                         prompt = load_prompt(
                             "memory/consolidation_instruction",
                             anima_name=self.name,
                             episodes_summary=episodes_summary,
                             resolved_events_summary=resolved_events_summary,
                             activity_log_summary=activity_log_summary or t("anima.no_activity_log"),
+                            reflections_summary=reflections_section,
                         )
                     else:
                         prompt = load_prompt(
@@ -209,19 +230,23 @@ class LifecycleMixin:
 
                     logger.info(
                         "[%s] run_consolidation END type=%s duration_ms=%d",
-                        self.name, consolidation_type, result.duration_ms,
+                        self.name,
+                        consolidation_type,
+                        result.duration_ms,
                     )
                     return result
 
                 except Exception as exc:
                     logger.exception(
                         "[%s] run_consolidation FAILED type=%s",
-                        self.name, consolidation_type,
+                        self.name,
+                        consolidation_type,
                     )
                     self._activity.log(
                         "error",
                         summary=t("anima.consolidation_error", exc=type(exc).__name__),
                         meta={"phase": "run_consolidation", "error": str(exc)[:200]},
+                        safe=True,
                     )
                     raise
                 finally:
@@ -248,6 +273,7 @@ class LifecycleMixin:
         self.agent.set_interrupt_event(self._get_interrupt_event("_background"))
         logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
         from core.tooling.handler import active_session_type
+
         try:
             async with self._background_lock:
                 self._cron_idle.clear()
@@ -257,13 +283,20 @@ class LifecycleMixin:
                 self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 prompt = self._build_cron_prompt(
-                    task_name, description, command_output=command_output,
+                    task_name,
+                    description,
+                    command_output=command_output,
                 )
 
+                # ── Background model swap ──
+                original_config = None
+                bg_config = self._resolve_background_config()
+                if bg_config is not None:
+                    original_config = self.agent.model_config
+                    self.agent.update_model_config(bg_config)
+
                 try:
-                    result = await self.agent.run_cycle(
-                        prompt, trigger=f"cron:{task_name}"
-                    )
+                    result = await self.agent.run_cycle(prompt, trigger=f"cron:{task_name}")
                     self._last_activity = now_jst()
 
                     # Record cron execution result
@@ -286,21 +319,28 @@ class LifecycleMixin:
 
                     logger.info(
                         "[%s] run_cron_task END task=%s duration_ms=%d",
-                        self.name, task_name, result.duration_ms,
+                        self.name,
+                        task_name,
+                        result.duration_ms,
                     )
                     return result
                 except Exception as exc:
                     logger.exception(
-                        "[%s] run_cron_task FAILED task=%s", self.name, task_name,
+                        "[%s] run_cron_task FAILED task=%s",
+                        self.name,
+                        task_name,
                     )
-                    # Activity log: error
+                    # Activity log: error (safe=True to prevent double-fault)
                     self._activity.log(
                         "error",
                         summary=t("anima.cron_task_error", exc=type(exc).__name__),
                         meta={"phase": "run_cron_task", "error": str(exc)[:200]},
+                        safe=True,
                     )
                     raise
                 finally:
+                    if original_config is not None:
+                        self.agent.update_model_config(original_config)
                     active_session_type.reset(_session_token)
                     self._cron_idle.set()
                     self._status_slots["background"] = "idle"
@@ -335,6 +375,7 @@ class LifecycleMixin:
         exit_code = 0
 
         from core.tooling.handler import active_session_type
+
         try:
             async with self._background_lock:
                 self._cron_idle.clear()
@@ -373,14 +414,13 @@ class LifecycleMixin:
                 except Exception as exc:
                     stderr = f"{type(exc).__name__}: {exc}"
                     exit_code = 1
-                    logger.exception(
-                        "[%s] run_cron_command FAILED task=%s", self.name, task_name
-                    )
-                    # Activity log: error
+                    logger.exception("[%s] run_cron_command FAILED task=%s", self.name, task_name)
+                    # Activity log: error (safe=True to prevent double-fault)
                     self._activity.log(
                         "error",
                         summary=t("anima.cron_cmd_error", exc=type(exc).__name__),
                         meta={"phase": "run_cron_command", "error": str(exc)[:200]},
+                        safe=True,
                     )
                 finally:
                     active_session_type.reset(_session_token)

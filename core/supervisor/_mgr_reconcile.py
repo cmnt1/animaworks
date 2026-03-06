@@ -12,8 +12,6 @@ import asyncio
 import json
 import logging
 
-from core.supervisor.process_handle import ProcessState
-
 logger = logging.getLogger(__name__)
 
 
@@ -22,8 +20,7 @@ class ReconcileMixin:
 
     async def _reconciliation_loop(self) -> None:
         """Periodically reconcile desired state (disk) with actual state (processes)."""
-        logger.info("Reconciliation loop started (interval=%.0fs)",
-                     self.reconciliation_config.interval_sec)
+        logger.info("Reconciliation loop started (interval=%.0fs)", self.reconciliation_config.interval_sec)
 
         while not self._shutdown:
             try:
@@ -38,6 +35,8 @@ class ReconcileMixin:
 
     async def _reconcile(self) -> None:
         """Scan animas_dir and sync desired state with actual process state."""
+        self._check_config_freshness()
+
         if not self.animas_dir.exists():
             return
 
@@ -74,8 +73,7 @@ class ReconcileMixin:
             if now - failed_since < 60:
                 continue
             logger.info(
-                "Reconciliation: recovering permanently failed process %s "
-                "(cooldown elapsed, resetting retries)",
+                "Reconciliation: recovering permanently failed process %s (cooldown elapsed, resetting retries)",
                 name,
             )
             del self.processes[name]
@@ -88,7 +86,8 @@ class ReconcileMixin:
                     self.on_anima_added(name)
             except Exception:
                 logger.exception(
-                    "Reconciliation: failed to recover %s", name,
+                    "Reconciliation: failed to recover %s",
+                    name,
                 )
 
         # Update running set after recovery attempts
@@ -139,7 +138,8 @@ class ReconcileMixin:
                         self.on_anima_added(name)
                 except Exception:
                     logger.exception(
-                        "Reconciliation: failed to start %s", name,
+                        "Reconciliation: failed to start %s",
+                        name,
                     )
 
         # disabled + running → stop
@@ -149,7 +149,8 @@ class ReconcileMixin:
                     logger.info("Reconciliation: deferring stop for %s (bootstrap in progress)", name)
                     continue
                 logger.info(
-                    "Reconciliation: stopping anima %s (disabled)", name,
+                    "Reconciliation: stopping anima %s (disabled)",
+                    name,
                 )
                 try:
                     await self.stop_anima(name)
@@ -157,7 +158,8 @@ class ReconcileMixin:
                         self.on_anima_removed(name)
                 except Exception:
                     logger.exception(
-                        "Reconciliation: failed to stop %s", name,
+                        "Reconciliation: failed to stop %s",
+                        name,
                     )
 
         # removed from disk + running → stop
@@ -178,7 +180,8 @@ class ReconcileMixin:
                         self.on_anima_removed(name)
                 except Exception:
                     logger.exception(
-                        "Reconciliation: failed to stop %s", name,
+                        "Reconciliation: failed to stop %s",
+                        name,
                     )
 
         # Check for missing anima assets (fallback generation)
@@ -229,3 +232,24 @@ class ReconcileMixin:
                     )
         except Exception:
             logger.exception("Asset reconciliation failed")
+
+    def _check_config_freshness(self) -> None:
+        """Detect config.json changes and refresh the singleton cache.
+
+        This is a supplementary auto-detection mechanism.  The primary
+        trigger is the ``POST /api/system/hot-reload`` API endpoint.
+        """
+        try:
+            from core.config.models import get_config_path, load_config
+
+            config_path = get_config_path()
+            mtime = config_path.stat().st_mtime
+            if not hasattr(self, "_last_config_mtime"):
+                self._last_config_mtime = mtime
+                return
+            if mtime != self._last_config_mtime:
+                self._last_config_mtime = mtime
+                load_config()
+                logger.info("Reconciliation: config.json changed, cache refreshed")
+        except Exception:
+            logger.debug("Config freshness check failed", exc_info=True)

@@ -4,6 +4,7 @@ Default: do not narrate routine, low-risk tool calls
 ### Using Memory
 
 - **Search before acting**: Before executing commands, changing settings, or reporting, search memory for relevant procedures and past lessons
+- **Back advice with memory**: When answering questions about past events, negotiations, or decisions, search memory to verify facts before responding. Do not rely solely on auto-injected Priming context
 - **Record when you discover**: When you solve problems, find correct parameters, or establish procedures, immediately record important findings in knowledge/ or procedures/
 - **Report when you use**: After following a procedure, use report_procedure_outcome. After using knowledge, use report_knowledge_outcome to report results
 

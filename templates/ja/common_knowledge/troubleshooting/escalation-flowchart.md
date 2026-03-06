@@ -82,10 +82,22 @@
 4. **依頼**: 上司に何をしてほしいか（判断、権限付与、仲介 等）
 
 **send_message の制約（実装準拠）**:
-- `intent` は MUST: `report`（報告）, `delegation`（委譲）, `question`（質問）のいずれかを指定する
-- 1回の run で最大2人まで送信可能。同一宛先への2回目の送信は不可
-- 3人以上への伝達は Board（post_channel）を使用する
+- `intent` は MUST: `report`（報告）, `delegation`（委譲）, `question`（質問）のいずれかを指定する。省略不可
+- acknowledgment（確認応答）・感謝・FYI は DM 不可。Board（post_channel）を使用する
+- 1セッションあたり最大2宛先まで、同一宛先へは1通のみ。3人以上への伝達は Board を使用する
+- **宛先**: Anima名、または人間エイリアス（config で設定済みの場合は Slack/Chatwork 等へ外部配信）
+- **チャット中**: 人間ユーザーへの返答は直接テキストで行う。send_message は他Anima宛てにのみ使用する
+- **人間への連絡**（設定外の宛先）: `call_human` を使用する
+- スレッド返信時は `reply_to` と `thread_id` を指定して文脈を維持する
 - 緊急度が「高」で人間の即時対応が必要な場合は `call_human` を検討する（subject, body, priority）
+
+**post_channel（Board）の制約**（3人以上への伝達時に使用）:
+- メタ未設定のチャネル（general, ops 等）は全員利用可能。メンバー制チャネルはメンバーのみ投稿可能（ACL）
+- 同一チャネルへは1セッションにつき1投稿まで。同一チャネルへの連投はクールダウン（デフォルト300秒）が必要
+- 本文に `@名前` でメンション可能。メンション先には DM 通知が届く
+
+**call_human のパラメータ**:
+- `subject`, `body` は必須。`priority` は任意（`low` / `normal` / `high` / `urgent`、デフォルト `normal`）
 
 ---
 
@@ -221,7 +233,7 @@ send_message(
 **やってはいけない対応**:
 - 確認せずに独自解釈で作業を進める
 - 「指示が不明確です」とだけ返す（具体的な質問がない）
-- `send_message` で `intent` を省略する（`report` / `delegation` / `question` のいずれかが必須）
+- `send_message` で `intent` を省略する（`report` / `delegation` / `question` のいずれかが必須。省略するとエラーになる）
 
 ### シナリオ2: 複数の上司から矛盾する指示
 

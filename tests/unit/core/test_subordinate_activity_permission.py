@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.exceptions import ConfigError
 from core.memory import MemoryManager
 from core.tooling.handler import ToolHandler
 
@@ -184,7 +185,7 @@ class TestSupervisorActivityLogPermission:
         log_file.write_text('{"ts": "2026-02-22T10:00:00"}\n', encoding="utf-8")
 
         # Construct handler with broken config → empty cache
-        with patch("core.config.models.load_config", side_effect=RuntimeError("config broken")), \
+        with patch("core.config.models.load_config", side_effect=ConfigError("config broken")), \
              patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"):
             handler = _make_handler(tmp_path, "mio")
 

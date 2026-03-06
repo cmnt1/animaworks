@@ -6,12 +6,21 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from core.memory.cron_logger import CronLogger
+
+JST = ZoneInfo("Asia/Tokyo")
+
+
+def _jst_today() -> date:
+    return datetime.now(tz=JST).date()
 
 
 @pytest.fixture
@@ -33,12 +42,12 @@ class TestAppendCronLog:
     def test_creates_jsonl_file(self, cl: CronLogger, anima_dir: Path) -> None:
         cl.append_cron_log("daily-report", summary="Generated report", duration_ms=123)
         log_dir = anima_dir / "state" / "cron_logs"
-        path = log_dir / f"{date.today().isoformat()}.jsonl"
+        path = log_dir / f"{_jst_today().isoformat()}.jsonl"
         assert path.exists()
 
     def test_writes_correct_json_fields(self, cl: CronLogger, anima_dir: Path) -> None:
         cl.append_cron_log("daily-report", summary="Generated report", duration_ms=456)
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         lines = path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 1
         entry = json.loads(lines[0])
@@ -50,7 +59,7 @@ class TestAppendCronLog:
     def test_appends_multiple_entries(self, cl: CronLogger, anima_dir: Path) -> None:
         cl.append_cron_log("task-a", summary="First", duration_ms=100)
         cl.append_cron_log("task-b", summary="Second", duration_ms=200)
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         lines = path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 2
         assert json.loads(lines[0])["task"] == "task-a"
@@ -59,7 +68,7 @@ class TestAppendCronLog:
     def test_truncates_summary_at_500_chars(self, cl: CronLogger, anima_dir: Path) -> None:
         long_summary = "x" * 1000
         cl.append_cron_log("task", summary=long_summary, duration_ms=0)
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
         assert len(entry["summary"]) == 500
 
@@ -67,7 +76,7 @@ class TestAppendCronLog:
         """Writing more than MAX_LINES entries keeps only the last 50."""
         for i in range(55):
             cl.append_cron_log(f"task-{i}", summary=f"entry {i}", duration_ms=i)
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         lines = path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 50
         # The first 5 entries should be trimmed; first remaining is task-5
@@ -79,6 +88,44 @@ class TestAppendCronLog:
         assert not log_dir.exists()
         cl.append_cron_log("task", summary="ok", duration_ms=0)
         assert log_dir.is_dir()
+
+    def test_truncation_uses_atomic_write(self, cl: CronLogger, anima_dir: Path) -> None:
+        """Truncation beyond MAX_LINES uses atomic_write_text, not path.write_text."""
+        for i in range(50):
+            cl.append_cron_log(f"task-{i}", summary=f"entry {i}", duration_ms=i)
+
+        with patch("core.memory._io.atomic_write_text") as mock_atomic:
+            cl.append_cron_log("overflow-task", summary="triggers truncate", duration_ms=0)
+
+        mock_atomic.assert_called_once()
+
+    def test_concurrent_appends_no_data_loss(self, anima_dir: Path) -> None:
+        """Concurrent appends from multiple threads preserve all entries."""
+        n_threads = 8
+        entries_per_thread = 10
+
+        def append_batch(thread_id: int) -> None:
+            logger = CronLogger(anima_dir)
+            for i in range(entries_per_thread):
+                logger.append_cron_log(
+                    f"thread-{thread_id}-task-{i}",
+                    summary=f"entry {i} from thread {thread_id}",
+                    duration_ms=thread_id * 100 + i,
+                )
+
+        with ThreadPoolExecutor(max_workers=n_threads) as executor:
+            futures = [executor.submit(append_batch, tid) for tid in range(n_threads)]
+            for f in futures:
+                f.result()
+
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
+        lines = path.read_text(encoding="utf-8").strip().splitlines()
+        total_expected = n_threads * entries_per_thread
+        assert len(lines) <= CronLogger._MAX_LINES
+        for line in lines:
+            entry = json.loads(line)
+            assert "task" in entry
+            assert "summary" in entry
 
 
 # ── append_cron_command_log ──────────────────────────────
@@ -93,7 +140,7 @@ class TestAppendCronCommandLog:
             stderr="",
             duration_ms=350,
         )
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
         assert entry["task"] == "git-pull"
         assert entry["exit_code"] == 0
@@ -110,7 +157,7 @@ class TestAppendCronCommandLog:
         cl.append_cron_command_log(
             "task", exit_code=0, stdout=stdout, stderr="", duration_ms=0,
         )
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
         assert entry["stdout_lines"] == 8
         assert "..." not in entry["stdout_preview"]
@@ -121,7 +168,7 @@ class TestAppendCronCommandLog:
         cl.append_cron_command_log(
             "task", exit_code=0, stdout=stdout, stderr="", duration_ms=0,
         )
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
         assert entry["stdout_lines"] == 20
         preview_lines = entry["stdout_preview"].splitlines()
@@ -137,7 +184,7 @@ class TestAppendCronCommandLog:
         cl.append_cron_command_log(
             "task", exit_code=0, stdout=stdout, stderr="", duration_ms=0,
         )
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
         assert len(entry["stdout_preview"]) <= 1000
 
@@ -145,7 +192,7 @@ class TestAppendCronCommandLog:
         cl.append_cron_command_log(
             "task", exit_code=0, stdout="", stderr="", duration_ms=0,
         )
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
         assert entry["stdout_lines"] == 0
         assert entry["stderr_lines"] == 0
@@ -160,7 +207,7 @@ class TestAppendCronCommandLog:
             stderr="Error: something went wrong",
             duration_ms=50,
         )
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
         assert entry["exit_code"] == 1
         assert entry["stderr_lines"] == 1
@@ -172,9 +219,25 @@ class TestAppendCronCommandLog:
             cl.append_cron_command_log(
                 f"task-{i}", exit_code=0, stdout=f"out-{i}", stderr="", duration_ms=i,
             )
-        path = anima_dir / "state" / "cron_logs" / f"{date.today().isoformat()}.jsonl"
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         lines = path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 50
+
+    def test_command_truncation_uses_atomic_write(
+        self, cl: CronLogger, anima_dir: Path,
+    ) -> None:
+        """Command log truncation uses atomic_write_text."""
+        for i in range(50):
+            cl.append_cron_command_log(
+                f"task-{i}", exit_code=0, stdout="ok", stderr="", duration_ms=i,
+            )
+
+        with patch("core.memory._io.atomic_write_text") as mock_atomic:
+            cl.append_cron_command_log(
+                "overflow-cmd", exit_code=0, stdout="ok", stderr="", duration_ms=0,
+            )
+
+        mock_atomic.assert_called_once()
 
 
 # ── read_cron_log ────────────────────────────────────────
@@ -200,7 +263,7 @@ class TestReadCronLog:
         log_dir = anima_dir / "state" / "cron_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        today = date.today()
+        today = _jst_today()
         # Write today's log
         today_entry = json.dumps({
             "timestamp": "2026-01-20T10:00:00+09:00",
@@ -251,7 +314,7 @@ class TestReadCronLog:
         """Malformed JSON lines are silently skipped."""
         log_dir = anima_dir / "state" / "cron_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        path = log_dir / f"{date.today().isoformat()}.jsonl"
+        path = log_dir / f"{_jst_today().isoformat()}.jsonl"
 
         valid_entry = json.dumps({
             "timestamp": "2026-01-20T10:00:00+09:00",
@@ -270,7 +333,7 @@ class TestReadCronLog:
         """Entries missing required keys (e.g. 'task') are silently skipped."""
         log_dir = anima_dir / "state" / "cron_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        path = log_dir / f"{date.today().isoformat()}.jsonl"
+        path = log_dir / f"{_jst_today().isoformat()}.jsonl"
 
         incomplete = json.dumps({"timestamp": "2026-01-20T10:00:00+09:00"})
         valid = json.dumps({
@@ -287,20 +350,58 @@ class TestReadCronLog:
         """An empty log file returns empty string."""
         log_dir = anima_dir / "state" / "cron_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        (log_dir / f"{date.today().isoformat()}.jsonl").write_text(
+        (log_dir / f"{_jst_today().isoformat()}.jsonl").write_text(
             "", encoding="utf-8",
         )
         result = cl.read_cron_log(days=1)
         assert result == ""
 
-    def test_command_log_entries_skipped_by_read(
+    def test_command_log_entries_included_by_read(
         self, cl: CronLogger, anima_dir: Path,
     ) -> None:
-        """read_cron_log expects 'summary' key; command entries lack it and are skipped."""
+        """Command-type entries (no summary) are formatted with exit_code and preview."""
         cl.append_cron_command_log(
-            "cmd-task", exit_code=0, stdout="output", stderr="", duration_ms=10,
+            "cmd-task", exit_code=0, stdout="hello world", stderr="", duration_ms=10,
         )
         result = cl.read_cron_log(days=1)
-        # Command log entries lack the 'summary' key, so they cause KeyError
-        # and are skipped by the except clause
-        assert "cmd-task" not in result
+        assert "cmd-task" in result
+        assert "exit=0" in result
+        assert "hello world" in result
+        assert "10ms" in result
+
+    def test_command_log_stderr_fallback(
+        self, cl: CronLogger, anima_dir: Path,
+    ) -> None:
+        """When stdout_preview is empty, stderr_preview is used instead."""
+        cl.append_cron_command_log(
+            "err-task", exit_code=1, stdout="", stderr="fatal error", duration_ms=5,
+        )
+        result = cl.read_cron_log(days=1)
+        assert "err-task" in result
+        assert "exit=1" in result
+        assert "fatal error" in result
+
+    def test_mixed_llm_and_command_entries(
+        self, cl: CronLogger, anima_dir: Path,
+    ) -> None:
+        """Both LLM (summary) and command entries are read correctly."""
+        cl.append_cron_log("llm-task", summary="did something", duration_ms=100)
+        cl.append_cron_command_log(
+            "cmd-task", exit_code=0, stdout="ok", stderr="", duration_ms=50,
+        )
+        result = cl.read_cron_log(days=1)
+        assert "llm-task" in result
+        assert "did something" in result
+        assert "cmd-task" in result
+        assert "exit=0" in result
+
+    def test_now_jst_used_for_date(self, cl: CronLogger, anima_dir: Path) -> None:
+        """Verify that now_jst() determines the log file date, not date.today()."""
+        fake_jst = datetime(2026, 3, 6, 1, 30, 0, tzinfo=JST)
+        with patch("core.memory.cron_logger.now_jst", return_value=fake_jst):
+            cl.append_cron_log("jst-task", summary="jst check", duration_ms=1)
+
+        path = anima_dir / "state" / "cron_logs" / "2026-03-06.jsonl"
+        assert path.exists()
+        entry = json.loads(path.read_text(encoding="utf-8").strip())
+        assert entry["task"] == "jst-task"

@@ -3,7 +3,8 @@ name: tool-creator
 description: >-
   AnimaWorks用のPythonツールモジュールを正しいインターフェースで作成するメタスキル。
   個人ツール（animas/{name}/tools/）・共有ツール（common_tools/）の作成手順、
-  ExternalToolDispatcher連携、get_credentialによるAPIキー管理、permissions.md許可設定を提供。
+  ExternalToolDispatcher連携、use_tool経由の呼び出し、get_credentialによるAPIキー管理、
+  permissions.md許可設定を提供。
   Web API連携・外部サービス統合のカスタムツール開発時に使用。
   「ツールを作成」「ツール化」「新しいツール」「カスタムツール」「Python ツール」
 ---
@@ -16,11 +17,13 @@ AnimaWorksのツールは3種類に分かれる:
 
 | 種類 | 配置先 | 発見方法 |
 |------|--------|----------|
-| **コアツール** | `core/tools/*.py` | TOOL_MODULES（起動時固定） |
-| **共有ツール** | `~/.animaworks/common_tools/*.py` | discover_common_tools() |
-| **個人ツール** | `{anima_dir}/tools/*.py` | discover_personal_tools() |
+| **コアツール** | `core/tools/*.py` | `discover_core_tools()` → TOOL_MODULES（起動時固定） |
+| **共有ツール** | `{data_dir}/common_tools/*.py` | `discover_common_tools()` |
+| **個人ツール** | `{anima_dir}/tools/*.py` | `discover_personal_tools()` |
 
-個人ツール・共有ツールは `ExternalToolDispatcher` が自動発見し、`refresh_tools` でホットリロード可能。ToolHandler は `write_memory_file` で `tools/*.py` への書き込み時に permissions.md のツール作成許可をチェックする。
+`{data_dir}` は通常 `~/.animaworks/`。個人ツール・共有ツールは `ExternalToolDispatcher` が `refresh_tools` で再スキャンし、ホットリロード可能。ToolHandler は `write_memory_file` で `tools/*.py` への書き込み時に permissions.md の「ツール作成」セクションで許可をチェックする。
+
+個人ツール・共有ツールは `use_tool(tool_name="...", action="...", args={...})` 経由で呼び出される。スキーマ名は `{tool_name}_{action}` 形式（例: `my_tool` + `query` → `my_tool_query`）。
 
 ## 手順
 
@@ -35,6 +38,8 @@ AnimaWorksのツールは3種類に分かれる:
 以下のテンプレートに沿ってPythonファイルを作成します。
 
 #### 単一スキーマのツール（シンプル）
+
+ファイル名 `my_tool.py` の場合、`use_tool(tool_name="my_tool", action="action", args={...})` で呼ばれ、スキーマ名 `my_tool_action` として dispatch に渡される。
 
 ```python
 from __future__ import annotations
@@ -72,6 +77,7 @@ def get_tool_schemas() -> list[dict]:
 
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """スキーマ名に応じた処理を実行する（推奨）。"""
+    args.pop("anima_dir", None)  # use_tool 経由で注入されるが、本ツールでは未使用
     if name == "my_tool_action":
         return _do_action(
             param1=args["param1"],
@@ -87,6 +93,8 @@ def _do_action(param1: str, param2: int = 10) -> dict[str, Any]:
 ```
 
 #### 複数スキーマのツール（API連携等）
+
+スキーマ名は `{ツール名}_{アクション}` 形式にする。`use_tool(tool_name="myapi", action="query", args={...})` 呼び出し時に `myapi_query` として dispatch に渡される。ファイル名は `myapi.py`。
 
 ```python
 from __future__ import annotations
@@ -158,6 +166,7 @@ class MyAPIClient:
 
 
 def dispatch(name: str, args: dict[str, Any]) -> Any:
+    args.pop("anima_dir", None)  # use_tool 経由で注入されるが、本ツールでは未使用
     client = MyAPIClient()
     if name == "myapi_query":
         return client.query(
@@ -187,7 +196,7 @@ write_memory_file(path="tools/my_tool.py", content=<コード>)
 refresh_tools()
 ```
 
-これにより、セッションを再起動せずに即座にツールが使えるようになります。
+これにより、セッションを再起動せずに即座にツールが使えるようになる。個人ツールは permissions.md の external_tools に登録不要。`refresh_tools` で発見されれば `use_tool` から呼び出し可能。
 
 ### Step 5: 共有（任意）
 
@@ -204,18 +213,30 @@ share_tool(tool_name="my_tool")
 | 関数 | 必須 | 説明 |
 |------|------|------|
 | `get_tool_schemas()` | ✅ 必須 | ツールスキーマのリストを返す。`name`, `description`, `input_schema`（または `parameters`）を含む |
-| `dispatch(name, args)` | 🔵 推奨 | スキーマ名に基づくディスパッチ。ExternalToolDispatcher が優先して呼ぶ |
+| `dispatch(name, args)` | 🔵 推奨 | スキーマ名に基づくディスパッチ。ExternalToolDispatcher が優先して呼ぶ。`args` に `anima_dir` が注入される場合は `args.pop("anima_dir", None)` で除去 |
 | スキーマ名と同名の関数 | 🟡 代替 | `dispatch()` の代わりに使用可能 |
 | `cli_main(argv)` | ⚪ 任意 | `animaworks-tool <tool_name>` での単体実行用 |
 | `EXECUTION_PROFILE` | ⚪ 任意 | 長時間実行ツール向け。`animaworks-tool submit` でバックグラウンド投入可能にする |
 
+## use_tool 経由の呼び出し
+
+Anima が個人・共有ツールを呼ぶときは `use_tool` を使用する:
+
+```
+use_tool(tool_name="myapi", action="query", args={"query": "検索語", "limit": 10})
+```
+
+`schema_name = tool_name + "_" + action` として `dispatch(name, args)` に渡される。上記例では `name="myapi_query"`。
+
 ## スキーマ定義の規約
+
+`input_schema` と `parameters` の両方がサポートされ、正規化される（`core/tooling/schemas._normalise_schema`）。
 
 ```python
 {
-    "name": "tool_action_name",       # スネークケース、ツール名をプレフィックスに
+    "name": "tool_action_name",       # スネークケース。use_tool では {tool_name}_{action} 形式
     "description": "1-2文の説明",      # LLMがツール選択に使う
-    "input_schema": {                  # JSON Schema形式（parameters も可、正規化される）
+    "input_schema": {                  # JSON Schema形式（parameters も可）
         "type": "object",
         "properties": { ... },
         "required": [ ... ],
@@ -238,7 +259,7 @@ api_key = get_credential(
 )
 ```
 
-**解決順序**: config.json → shared/credentials.json → 環境変数。いずれにもない場合は ToolConfigError。
+**解決順序**: config.json → vault.json（暗号化vault）→ shared/credentials.json → 環境変数。いずれにもない場合は ToolConfigError。
 
 ## permissions.md のツール作成許可
 
@@ -257,8 +278,10 @@ api_key = get_credential(
 - [ ] ファイル名: スネークケース、`.py` 拡張子（例: `my_tool.py`）
 - [ ] `from __future__ import annotations` がファイル先頭にあるか
 - [ ] `get_tool_schemas()` が存在し、リストを返すか
+- [ ] スキーマ名が `{tool_name}_{action}` 形式か（use_tool 連携）
 - [ ] スキーマに `name`, `description`, `input_schema`（または `parameters`）があるか
 - [ ] `dispatch()` または同名関数が存在するか
+- [ ] `dispatch()` で `args.pop("anima_dir", None)` しているか（args を他関数に渡す場合）
 - [ ] 全スキーマに対応するハンドラがあるか
 - [ ] エラー時に適切な例外を発生させるか
 - [ ] 外部APIにタイムアウトを設定しているか
@@ -281,5 +304,6 @@ api_key = get_credential(
 - ツール作成には permissions.md の「ツール作成」セクションで **個人ツール: yes** の許可が必要です
 - 共有ツール化には **共有ツール: yes** の許可が必要です
 - 作成したツールは `refresh_tools` 呼び出しで即座に発見されます（ホットリロード）
-- スキーマ名はグローバルに一意である必要があります（他ツールと衝突しないこと）
-- コアツールと同名の個人・共有ツールはシャドウされるためスキップされます
+- 個人ツールは permissions.md の external_tools に登録不要。`refresh_tools` で発見されれば `use_tool` から利用可能
+- スキーマ名は `{tool_name}_{action}` 形式。他ツールと衝突しないよう一意にすること
+- コアツールと同名の個人・共有ツールはシャドウされるためスキップされます（`core/tools/__init__.py`）

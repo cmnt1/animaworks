@@ -12,7 +12,7 @@ import { showMessageEffect } from "./interactions.js";
 import { addTimelineEvent, localISOString } from "./timeline.js";
 import { addActivity } from "./activity.js";
 import { getSelectedBoard, appendBoardMessage } from "./board.js";
-import { updateAnimaStatus, addActivityItem } from "./org-dashboard.js";
+import { updateAnimaStatus, updateCardActivity, showMessageLine, updateAvatarExpression } from "./org-dashboard.js";
 import { playReveal } from "./reveal.js";
 import { createLogger } from "../../shared/logger.js";
 import { bustupCandidates, resolveAvatar, invalidateAvatarCache } from "../../modules/avatar-resolver.js";
@@ -70,8 +70,12 @@ export function setupWebSocket(deps) {
       lastAnimaStatus[data.name] = data.status;
       addActivity("system", data.name, `Status: ${data.status}`);
     }
+    updateAnimaStatus(data.name, data.status || data);
     if (getCurrentView() === "org") {
-      updateAnimaStatus(data.name, data.status || data);
+      const state = typeof data.status === "object"
+        ? (data.status.state || data.status.status || "idle")
+        : String(data.status || "idle");
+      updateAvatarExpression(data.name, state.toLowerCase());
     }
   }));
 
@@ -82,6 +86,9 @@ export function setupWebSocket(deps) {
 
     if (data.type === "message") {
       showMessageEffect(data.from_person, data.to_person, data.summary || "");
+      if (getCurrentView() === "org") {
+        showMessageLine(data.from_person, data.to_person, data.summary || "");
+      }
     }
 
     addTimelineEvent({
@@ -97,14 +104,6 @@ export function setupWebSocket(deps) {
         to_person: data.to_person,
       },
     });
-    if (getCurrentView() === "org") {
-      addActivityItem({
-        ts: data.ts || new Date().toISOString(),
-        type: "anima.interaction",
-        from: data.from_person || data.from || "",
-        summary: data.summary || "",
-      });
-    }
   }));
 
   wsUnsubscribers.push(onEvent("anima.heartbeat", (data) => {
@@ -120,14 +119,10 @@ export function setupWebSocket(deps) {
       ts: data.ts || localISOString(),
       summary: data.summary || "heartbeat completed",
     });
-    if (getCurrentView() === "org") {
-      addActivityItem({
-        ts: data.ts || new Date().toISOString(),
-        type: "anima.heartbeat",
-        from: data.name || "",
-        summary: data.summary || "heartbeat completed",
-      });
-    }
+    updateCardActivity(data.name, {
+      eventType: "heartbeat",
+      summary: data.summary || "heartbeat",
+    });
   }));
 
   wsUnsubscribers.push(onEvent("anima.cron", (data) => {
@@ -139,14 +134,10 @@ export function setupWebSocket(deps) {
       ts: data.ts || localISOString(),
       summary: data.summary || `cron: ${data.task || ""}`,
     });
-    if (getCurrentView() === "org") {
-      addActivityItem({
-        ts: data.ts || new Date().toISOString(),
-        type: "anima.cron",
-        from: data.name || "",
-        summary: data.summary || `cron: ${data.task || ""}`,
-      });
-    }
+    updateCardActivity(data.name, {
+      eventType: "cron",
+      summary: data.summary || `cron: ${data.task || ""}`,
+    });
   }));
 
   // ── anima.tool_activity — live tool usage ──
@@ -163,17 +154,16 @@ export function setupWebSocket(deps) {
     } else if (evtType) {
       addActivity("tool", data.name, `${data.summary || evtType}`);
     }
-    if (getCurrentView() === "org") {
-      addActivityItem({
-        ts: new Date().toISOString(),
-        type: "anima.tool_activity",
-        from: data.name || "",
-        summary: `${toolName} ${evtType === "tool_start" ? "実行中" : "完了"}`,
-      });
-    }
     document.dispatchEvent(
       new CustomEvent("anima-tool-activity", { detail: { ...data, event: evtType, tool_name: toolName } })
     );
+    updateCardActivity(data.name, {
+      eventType: evtType,
+      toolName,
+      toolId: data.tool_id,
+      isError: data.is_error,
+      detail: data.detail,
+    });
   }));
 
   // ── board.post — shared channel message ──
@@ -194,6 +184,12 @@ export function setupWebSocket(deps) {
 
     addActivity("chat", from, `[#${channel}] ${text}`);
 
+    updateCardActivity(from, {
+      eventType: "board_post",
+      channel,
+      summary: text.slice(0, 60),
+    });
+
     addTimelineEvent({
       id: Date.now().toString(),
       type: "board",
@@ -207,14 +203,6 @@ export function setupWebSocket(deps) {
         source: data.source || "",
       },
     });
-    if (getCurrentView() === "org") {
-      addActivityItem({
-        ts: data.ts || new Date().toISOString(),
-        type: "board.post",
-        from,
-        summary: `[#${channel}] ${text}`,
-      });
-    }
   }));
 
   // ── anima.proactive_message — autonomous outbound messages ──

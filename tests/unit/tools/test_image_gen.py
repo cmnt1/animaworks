@@ -434,20 +434,8 @@ class TestImageGenPipeline:
 
 
 class TestGetToolSchemas:
-    def test_returns_schemas(self):
+    def test_returns_empty_list(self):
+        """External tool modules return empty schema lists (schemas from dispatch layer)."""
         schemas = get_tool_schemas()
         assert isinstance(schemas, list)
-        assert len(schemas) == 7
-        names = {s["name"] for s in schemas}
-        expected = {
-            "generate_character_assets", "generate_fullbody",
-            "generate_bustup", "generate_chibi",
-            "generate_3d_model", "generate_rigged_model",
-            "generate_animations",
-        }
-        assert names == expected
-
-    def test_generate_character_assets_requires_prompt(self):
-        schemas = get_tool_schemas()
-        s = [s for s in schemas if s["name"] == "generate_character_assets"][0]
-        assert "prompt" in s["input_schema"]["required"]
+        assert schemas == []

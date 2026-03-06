@@ -84,6 +84,7 @@ def _ensure_tool_prompt_db(data_dir: Path) -> None:
     _migrate_memory_prompts_v1(tool_store, prompts_dir)
     _migrate_praise_loop_prevention_v1(tool_store, prompts_dir)
     _migrate_behavior_rules_must_v1(tool_store, prompts_dir)
+    _migrate_resync_sections_v1(tool_store, prompts_dir)
 
     logger.info("Tool prompt DB initialised: %s", tool_db_path)
 
@@ -106,10 +107,7 @@ def _migrate_memory_prompts_v1(
     # Ensure migrations table exists
     conn = tool_store._connect()
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS migrations "
-            "(key TEXT PRIMARY KEY, applied_at TEXT)"
-        )
+        conn.execute("CREATE TABLE IF NOT EXISTS migrations (key TEXT PRIMARY KEY, applied_at TEXT)")
         row = conn.execute(
             "SELECT 1 FROM migrations WHERE key = ?",
             ("memory_prompt_v1",),
@@ -173,10 +171,7 @@ def _migrate_praise_loop_prevention_v1(
 
     conn = tool_store._connect()
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS migrations "
-            "(key TEXT PRIMARY KEY, applied_at TEXT)"
-        )
+        conn.execute("CREATE TABLE IF NOT EXISTS migrations (key TEXT PRIMARY KEY, applied_at TEXT)")
         row = conn.execute(
             "SELECT 1 FROM migrations WHERE key = ?",
             ("praise_loop_prevention_v1",),
@@ -226,10 +221,7 @@ def _migrate_behavior_rules_must_v1(
 
     conn = tool_store._connect()
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS migrations "
-            "(key TEXT PRIMARY KEY, applied_at TEXT)"
-        )
+        conn.execute("CREATE TABLE IF NOT EXISTS migrations (key TEXT PRIMARY KEY, applied_at TEXT)")
         row = conn.execute(
             "SELECT 1 FROM migrations WHERE key = ?",
             ("behavior_rules_must_v1",),
@@ -252,6 +244,71 @@ def _migrate_behavior_rules_must_v1(
         )
         conn.commit()
         logger.info("Applied migration: behavior_rules_must_v1")
+    finally:
+        conn.close()
+
+
+def _migrate_resync_sections_v1(
+    tool_store: ToolPromptStore,
+    prompts_dir: Path,
+) -> None:
+    """One-shot migration: resync all system_sections from runtime prompts.
+
+    Fixes drift between SQLite DB and runtime prompt files that accumulated
+    because ``seed_defaults()`` uses INSERT OR IGNORE (preserving user edits)
+    while runtime prompts evolved through template updates.
+
+    Idempotent — records migration key ``resync_sections_v1``.
+    """
+    from core.tooling.prompt_db import SECTION_CONDITIONS
+
+    conn = tool_store._connect()
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS migrations (key TEXT PRIMARY KEY, applied_at TEXT)")
+        row = conn.execute(
+            "SELECT 1 FROM migrations WHERE key = ?",
+            ("resync_sections_v1",),
+        ).fetchone()
+        if row:
+            return  # already applied
+
+        _SECTION_FILES: dict[str, str] = {
+            "behavior_rules": "behavior_rules.md",
+            "environment": "environment.md",
+            "messaging_s": "messaging_s.md",
+            "messaging": "messaging.md",
+            "communication_rules_s": "communication_rules_s.md",
+            "communication_rules": "communication_rules.md",
+            "a_reflection": "a_reflection.md",
+            "hiring_context": "hiring_context.md",
+        }
+
+        updated = []
+        for key, filename in _SECTION_FILES.items():
+            filepath = prompts_dir / filename
+            if not filepath.exists():
+                continue
+            try:
+                content = filepath.read_text(encoding="utf-8").strip()
+                if content:
+                    condition = SECTION_CONDITIONS.get(key)
+                    tool_store.set_section(key, content, condition)
+                    updated.append(key)
+            except Exception:
+                logger.warning("Failed to read section: %s", filepath)
+
+        from core.time_utils import now_jst
+
+        conn.execute(
+            "INSERT INTO migrations (key, applied_at) VALUES (?, ?)",
+            ("resync_sections_v1", now_jst().isoformat()),
+        )
+        conn.commit()
+        logger.info(
+            "Applied migration: resync_sections_v1 (%d sections updated: %s)",
+            len(updated),
+            ", ".join(updated),
+        )
     finally:
         conn.close()
 
@@ -282,16 +339,14 @@ def ensure_runtime_dir(*, skip_animas: bool = False) -> Path:
         except Exception:
             logger.exception("Person-to-Anima migration failed")
         _maybe_migrate_config(data_dir)
+        _sync_shared_templates(data_dir)
         logger.debug("Runtime directory already initialized: %s", data_dir)
         return data_dir
 
     logger.info("Initializing runtime directory at %s", data_dir)
 
     if not TEMPLATES_DIR.exists():
-        raise FileNotFoundError(
-            f"Templates directory not found: {TEMPLATES_DIR}. "
-            "Is the project installed correctly?"
-        )
+        raise FileNotFoundError(f"Templates directory not found: {TEMPLATES_DIR}. Is the project installed correctly?")
 
     data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -321,6 +376,47 @@ def ensure_runtime_dir(*, skip_animas: bool = False) -> Path:
 
     logger.info("Runtime directory initialized: %s", data_dir)
     return data_dir
+
+
+# Directories synced incrementally on every startup (new entries only).
+_INCREMENTAL_SYNC_DIRS = {"common_skills", "common_knowledge"}
+
+
+def _sync_shared_templates(data_dir: Path) -> None:
+    """Incrementally sync new common_skills and common_knowledge from templates.
+
+    Only copies entries (directories/files) that do not yet exist in the
+    runtime data directory, preserving any user modifications to existing
+    entries.  Called on every startup so that version upgrades automatically
+    deliver new skill files without requiring ``animaworks init``.
+    """
+    from core.paths import _get_locale
+
+    locale = _get_locale()
+    locale_dir: Path | None = None
+    for loc in (locale, "en", "ja"):
+        candidate = TEMPLATES_DIR / loc
+        if candidate.exists():
+            locale_dir = candidate
+            break
+    if locale_dir is None:
+        return
+
+    for dir_name in _INCREMENTAL_SYNC_DIRS:
+        src_dir = locale_dir / dir_name
+        if not src_dir.is_dir():
+            continue
+        dst_dir = data_dir / dir_name
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        for entry in src_dir.iterdir():
+            target = dst_dir / entry.name
+            if target.exists():
+                continue
+            if entry.is_dir():
+                shutil.copytree(entry, target)
+            else:
+                shutil.copy2(entry, target)
+            logger.info("Synced new template %s → %s", entry.name, dir_name)
 
 
 def _copy_infrastructure(data_dir: Path) -> None:
@@ -384,10 +480,7 @@ def merge_templates(data_dir: Path) -> list[str]:
     Returns a list of newly added file paths (relative to data_dir).
     """
     if not TEMPLATES_DIR.exists():
-        raise FileNotFoundError(
-            f"Templates directory not found: {TEMPLATES_DIR}. "
-            "Is the project installed correctly?"
-        )
+        raise FileNotFoundError(f"Templates directory not found: {TEMPLATES_DIR}. Is the project installed correctly?")
 
     from core.paths import _get_locale
 
@@ -483,19 +576,16 @@ def _validate_safe_path(data_dir: Path) -> None:
     if data_dir.is_symlink():
         raise ValueError(f"Refusing to delete: {data_dir} is a symlink")
     if resolved == Path.home() or resolved == Path("/") or resolved.parent == Path("/"):
-        raise ValueError(
-            f"Refusing to delete {resolved} — path looks too broad. "
-            "Check ANIMAWORKS_DATA_DIR."
-        )
+        raise ValueError(f"Refusing to delete {resolved} — path looks too broad. Check ANIMAWORKS_DATA_DIR.")
 
 
 def _create_default_config(data_dir: Path) -> None:
     """Generate a default config.json for a freshly initialized runtime."""
     from core.config import (
         DEFAULT_MODEL_MODE_PATTERNS,
+        AnimaModelConfig,
         AnimaWorksConfig,
         CredentialConfig,
-        AnimaModelConfig,
         save_config,
     )
 
@@ -525,11 +615,7 @@ def _maybe_migrate_config(data_dir: Path) -> None:
     if not animas_dir.exists():
         return
 
-    has_legacy = any(
-        (d / "config.md").exists()
-        for d in animas_dir.iterdir()
-        if d.is_dir()
-    )
+    has_legacy = any((d / "config.md").exists() for d in animas_dir.iterdir() if d.is_dir())
     if not has_legacy:
         return
 

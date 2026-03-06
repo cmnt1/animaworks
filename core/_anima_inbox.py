@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,11 +12,8 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 
 import json
 import logging
-
 from dataclasses import dataclass, field
 from typing import Any
-
-from core.time_utils import now_jst
 
 from core.execution._sanitize import (
     ORIGIN_ANIMA,
@@ -24,11 +22,12 @@ from core.execution._sanitize import (
     ORIGIN_UNKNOWN,
     resolve_trust,
 )
+from core.i18n import t
 from core.memory.streaming_journal import StreamingJournal
 from core.messenger import InboxItem
 from core.paths import load_prompt
-from core.i18n import t
 from core.schemas import CycleResult
+from core.time_utils import now_jst
 
 logger = logging.getLogger("animaworks.anima")
 
@@ -38,6 +37,26 @@ _SOURCE_TO_ORIGIN: dict[str, str] = {
     "human": ORIGIN_HUMAN,
     "anima": ORIGIN_ANIMA,
 }
+
+
+def _build_reply_instruction(m: Any) -> str:
+    """Build platform-specific reply instruction metadata for external messages.
+
+    Returns a formatted ``[reply_instruction: ...]`` line that the LLM can
+    copy-paste to reply via the correct platform, channel, and thread.
+    """
+    if m.source == "slack":
+        mention = f"<@{m.external_user_id}> " if m.external_user_id else ""
+        cmd = f"animaworks-tool slack send '{m.external_channel_id}' '{mention}{{返信内容}}'"
+        if m.source_message_id:
+            cmd += f" --thread {m.source_message_id}"
+        return f"  [reply_instruction: {cmd}]"
+
+    if m.source == "chatwork":
+        cmd = f"animaworks-tool chatwork send {m.external_channel_id} '{{返信内容}}'"
+        return f"  [reply_instruction: {cmd}]"
+
+    return ""
 
 
 @dataclass
@@ -111,11 +130,9 @@ class InboxMixin:
                     )
 
                     # Suppress board fanout when replying to board_mention
-                    has_board_mention = any(
-                        item.msg.type == "board_mention"
-                        for item in inbox_result.inbox_items
-                    )
-                    from core.tooling.handler import suppress_board_fanout, active_session_type
+                    has_board_mention = any(item.msg.type == "board_mention" for item in inbox_result.inbox_items)
+                    from core.tooling.handler import active_session_type, suppress_board_fanout
+
                     _fanout_token = suppress_board_fanout.set(True) if has_board_mention else None
                     _session_token = self.agent._tool_handler.set_active_session_type("inbox")
 
@@ -130,9 +147,7 @@ class InboxMixin:
                     _unique_chains = list(dict.fromkeys(_batch_chains))
                     _worst_origin = min(
                         _batch_origins or [ORIGIN_ANIMA],
-                        key=lambda o: {"untrusted": 0, "medium": 1, "trusted": 2}.get(
-                            resolve_trust(o), 0
-                        ),
+                        key=lambda o: {"untrusted": 0, "medium": 1, "trusted": 2}.get(resolve_trust(o), 0),
                     )
                     self.agent._tool_handler.set_session_origin(_worst_origin, _unique_chains)
 
@@ -145,9 +160,16 @@ class InboxMixin:
                     accumulated_text = ""
                     result: CycleResult | None = None
 
+                    original_config = None
+                    bg_config = self._resolve_background_config()
+                    if bg_config is not None:
+                        original_config = self.agent.model_config
+                        self.agent.update_model_config(bg_config)
+
                     try:
                         async for chunk in self.agent.run_cycle_streaming(
-                            prompt, trigger=trigger,
+                            prompt,
+                            trigger=trigger,
                         ):
                             if chunk.get("type") == "text_delta":
                                 accumulated_text += chunk.get("text", "")
@@ -160,12 +182,8 @@ class InboxMixin:
                                     action=cycle_result.get("action", "responded"),
                                     summary=cycle_result.get("summary", ""),
                                     duration_ms=cycle_result.get("duration_ms", 0),
-                                    context_usage_ratio=cycle_result.get(
-                                        "context_usage_ratio", 0.0
-                                    ),
-                                    session_chained=cycle_result.get(
-                                        "session_chained", False
-                                    ),
+                                    context_usage_ratio=cycle_result.get("context_usage_ratio", 0.0),
+                                    session_chained=cycle_result.get("session_chained", False),
                                     total_turns=cycle_result.get("total_turns", 0),
                                 )
                                 journal.finalize(summary=result.summary[:500])
@@ -177,6 +195,8 @@ class InboxMixin:
                                 summary=accumulated_text[:500] or "(no result)",
                             )
                     finally:
+                        if original_config is not None:
+                            self.agent.update_model_config(original_config)
                         journal.close()
                         if _fanout_token is not None:
                             suppress_board_fanout.reset(_fanout_token)
@@ -210,7 +230,9 @@ class InboxMixin:
 
                     logger.info(
                         "[%s] process_inbox_message END duration_ms=%d unread=%d",
-                        self.name, result.duration_ms, inbox_result.unread_count,
+                        self.name,
+                        result.duration_ms,
+                        inbox_result.unread_count,
                     )
                     return result
 
@@ -223,12 +245,14 @@ class InboxMixin:
                         except Exception:
                             logger.warning(
                                 "[%s] Failed to crash-archive inbox messages",
-                                self.name, exc_info=True,
+                                self.name,
+                                exc_info=True,
                             )
                     self._activity.log(
                         "error",
                         summary=t("anima.inbox_error", exc=type(exc).__name__),
                         meta={"phase": "process_inbox_message", "error": str(exc)[:200]},
+                        safe=True,
                     )
                     raise
                 finally:
@@ -256,19 +280,14 @@ class InboxMixin:
 
         # ── Filter cascade-suppressed senders ──
         if cascade_suppressed_senders:
-            suppressed_items = [
-                item for item in inbox_items
-                if item.msg.from_person in cascade_suppressed_senders
-            ]
-            inbox_items = [
-                item for item in inbox_items
-                if item.msg.from_person not in cascade_suppressed_senders
-            ]
+            suppressed_items = [item for item in inbox_items if item.msg.from_person in cascade_suppressed_senders]
+            inbox_items = [item for item in inbox_items if item.msg.from_person not in cascade_suppressed_senders]
             messages = [item.msg for item in inbox_items]
             if suppressed_items:
                 logger.info(
                     "[%s] Cascade-suppressed %d messages from %s",
-                    self.name, len(suppressed_items),
+                    self.name,
+                    len(suppressed_items),
                     ", ".join(cascade_suppressed_senders & senders),
                 )
             senders = {m.from_person for m in messages}
@@ -277,12 +296,14 @@ class InboxMixin:
         # ── Message deduplication (Phase 4) ──
         try:
             from core.memory.dedup import MessageDeduplicator
+
             dedup = MessageDeduplicator(self.anima_dir)
 
             # Load previously deferred messages and prepend to inbox
             deferred_raw = dedup.load_deferred()
             if deferred_raw:
                 from core.schemas import Message as _Msg
+
                 for raw in deferred_raw:
                     try:
                         deferred_msg = _Msg(
@@ -328,7 +349,9 @@ class InboxMixin:
 
         logger.info(
             "[%s] Processing %d unread messages in heartbeat (senders: %s)",
-            self.name, unread_count, ", ".join(senders),
+            self.name,
+            unread_count,
+            ", ".join(senders),
         )
 
         # ── Retry counter: track how many times each inbox message is presented ──
@@ -336,9 +359,7 @@ class InboxMixin:
         _read_counts: dict[str, int] = {}
         try:
             if _read_counts_path.exists():
-                _read_counts = json.loads(
-                    _read_counts_path.read_text(encoding="utf-8")
-                )
+                _read_counts = json.loads(_read_counts_path.read_text(encoding="utf-8"))
         except Exception:
             _read_counts = {}
 
@@ -348,10 +369,7 @@ class InboxMixin:
 
         # Prune entries for inbox files that no longer exist
         inbox_dir = self.anima_dir.parent.parent / "shared" / "inbox" / self.name
-        _read_counts = {
-            k: v for k, v in _read_counts.items()
-            if (inbox_dir / k).exists()
-        }
+        _read_counts = {k: v for k, v in _read_counts.items() if (inbox_dir / k).exists()}
 
         try:
             _read_counts_path.write_text(
@@ -371,11 +389,21 @@ class InboxMixin:
                 prefix = t("anima.unread_prefix", from_person=m.from_person, count=count)
             else:
                 prefix = f"- {m.from_person}: "
-            lines.append(f"{prefix}{m.content[:800]}")
+            line = f"{prefix}{m.content[:800]}"
+            if m.source in ("slack", "chatwork") and m.external_channel_id:
+                reply_instr = _build_reply_instruction(m)
+                if reply_instr:
+                    line += f"\n{reply_instr}"
+            lines.append(line)
         # Deferred messages (no InboxItem) are appended without counter
         for m in messages:
             if not any(item.msg is m for item in inbox_items):
-                lines.append(f"- {m.from_person}: {m.content[:800]}")
+                line = f"- {m.from_person}: {m.content[:800]}"
+                if m.source in ("slack", "chatwork") and m.external_channel_id:
+                    reply_instr = _build_reply_instruction(m)
+                    if reply_instr:
+                        line += f"\n{reply_instr}"
+                lines.append(line)
         summary = "\n".join(lines)
         prompt_parts.append(load_prompt("unread_messages", summary=summary))
 
@@ -386,22 +414,28 @@ class InboxMixin:
         if len(_recordable) > 50:
             logger.warning(
                 "[%s] DM burst: %d messages, recording first 50",
-                self.name, len(_recordable),
+                self.name,
+                len(_recordable),
             )
         for _m in _recordable[:50]:
-            _episode = t(
-                "anima.msg_received_episode",
-                ts=_msg_ts,
-                from_person=_m.from_person,
-                content=_m.content[:1000],
-            ) + "\n"
+            _episode = (
+                t(
+                    "anima.msg_received_episode",
+                    ts=_msg_ts,
+                    from_person=_m.from_person,
+                    content=_m.content[:1000],
+                )
+                + "\n"
+            )
             _ep_origin = _SOURCE_TO_ORIGIN.get(_m.source, ORIGIN_UNKNOWN)
             try:
                 self.memory.append_episode(_episode, origin=_ep_origin)
             except Exception:
                 logger.debug(
                     "[%s] Failed to record message episode from %s",
-                    self.name, _m.from_person, exc_info=True,
+                    self.name,
+                    _m.from_person,
+                    exc_info=True,
                 )
 
         # Activity log: message received (full content, summary truncated)
@@ -445,12 +479,15 @@ class InboxMixin:
         unreplied = senders - replied_to
         if unreplied:
             logger.info(
-                "[%s] Archived %d messages "
-                "(unreplied senders: %s — processed, no retry)",
-                self.name, total_archived, ", ".join(unreplied),
+                "[%s] Archived %d messages (unreplied senders: %s — processed, no retry)",
+                self.name,
+                total_archived,
+                ", ".join(unreplied),
             )
         else:
             logger.info(
                 "[%s] Archived %d/%d messages",
-                self.name, total_archived, len(inbox_items),
+                self.name,
+                total_archived,
+                len(inbox_items),
             )

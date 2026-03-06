@@ -1,15 +1,15 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
 import json
 import logging
+from collections import deque
 from datetime import timedelta
-from pathlib import Path
 
-from core.time_utils import now_iso, now_jst
 from core.paths import get_shared_dir
+from core.time_utils import now_iso, now_jst
 
 logger = logging.getLogger("animaworks.memory")
 
@@ -40,13 +40,22 @@ class ResolutionTracker:
             return []
         cutoff = (now_jst() - timedelta(days=days)).isoformat()
         entries: list[dict[str, str]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
+
+        _MAX_LINES_TO_PARSE = 2000
+
+        with path.open("r", encoding="utf-8") as f:
+            lines = deque(f, maxlen=_MAX_LINES_TO_PARSE)
+
+        for line in reversed(lines):
             if not line.strip():
                 continue
             try:
                 entry = json.loads(line)
-                if entry.get("ts", "") >= cutoff:
-                    entries.append(entry)
+                if entry.get("ts", "") < cutoff:
+                    break
+                entries.append(entry)
             except json.JSONDecodeError:
                 continue
+
+        entries.reverse()
         return entries

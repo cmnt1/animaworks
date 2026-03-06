@@ -336,28 +336,11 @@ class TestChatworkMessageCache:
 
 
 class TestGetToolSchemas:
-    def test_returns_schemas(self):
+    def test_returns_empty_list(self):
+        """External tool modules' get_tool_schemas() returns empty list."""
         schemas = get_tool_schemas()
         assert isinstance(schemas, list)
-        names = {s["name"] for s in schemas}
-        # chatwork_send is disabled (commented out), so not in schemas
-        assert "chatwork_messages" in names
-        assert "chatwork_search" in names
-        assert "chatwork_unreplied" in names
-        assert "chatwork_rooms" in names
-        assert "chatwork_sync" in names
-        assert "chatwork_mentions" in names
-
-    def test_chatwork_sync_schema(self):
-        schemas = get_tool_schemas()
-        sync = [s for s in schemas if s["name"] == "chatwork_sync"][0]
-        assert "limit" in sync["input_schema"]["properties"]
-
-    def test_chatwork_mentions_schema(self):
-        schemas = get_tool_schemas()
-        mentions = [s for s in schemas if s["name"] == "chatwork_mentions"][0]
-        assert "include_toall" in mentions["input_schema"]["properties"]
-        assert "limit" in mentions["input_schema"]["properties"]
+        assert schemas == []
 
 
 # ── _sync_rooms ───────────────────────────────────────────────────

@@ -1,12 +1,11 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 #
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
-
-
 import asyncio
 import logging
 import time
@@ -20,41 +19,54 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from core.auth.manager import load_auth, validate_session, find_user
+from core.auth.manager import find_user, load_auth, validate_session
 from core.config import load_config
 from core.supervisor import ProcessSupervisor
 from server.localhost import _is_safe_localhost_request
 from server.routes import create_router
 from server.routes.setup import create_setup_router
-from server.websocket import WebSocketManager
 from server.stream_registry import StreamRegistry
+from server.websocket import WebSocketManager
 
 logger = logging.getLogger("animaworks.server")
 
 # Paths to exclude from request logging (noisy health checks, etc.)
-_NOISY_PATHS = frozenset({
-    "/api/system/health",
-    "/api/system/status",
-    "/ws",
-})
+_NOISY_PATHS = frozenset(
+    {
+        "/api/system/health",
+        "/api/system/status",
+        "/ws",
+    }
+)
 
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Log every HTTP request with method, path, status, and duration.
+class RequestLoggingMiddleware:
+    """Pure ASGI middleware for request logging.
 
-    Automatically binds a ``request_id`` into structlog contextvars so that
-    all log records emitted during request processing carry the ID.
+    Avoids BaseHTTPMiddleware which buffers StreamingResponse bodies,
+    causing stuttery SSE delivery. Binds ``request_id`` into structlog
+    contextvars so all log records carry the ID.
     """
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
-        structlog.contextvars.clear_contextvars()
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
         request_id = request.headers.get(
-            "X-Request-ID", uuid.uuid4().hex[:12],
+            "X-Request-ID",
+            uuid.uuid4().hex[:12],
         )
+        structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
             request_id=request_id,
             method=request.method,
@@ -62,23 +74,29 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         )
 
         start = time.perf_counter()
-        response = await call_next(request)
-        duration_ms = round((time.perf_counter() - start) * 1000, 1)
+        status_code = 500
 
-        response.headers["X-Request-ID"] = request_id
+        async def _send_wrapper(message: dict) -> None:  # type: ignore[type-arg]
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message.get("status", 500)
+                headers = MutableHeaders(scope=message)
+                headers.append("X-Request-ID", request_id)
+            await send(message)
 
-        # Skip noisy endpoints to reduce log volume
-        if request.url.path not in _NOISY_PATHS:
-            req_logger = logging.getLogger("animaworks.request")
-            req_logger.info(
-                "request %s %s -> %d (%.1fms)",
-                request.method,
-                request.url.path,
-                response.status_code,
-                duration_ms,
-            )
-
-        return response
+        try:
+            await self.app(scope, receive, _send_wrapper)
+        finally:
+            duration_ms = round((time.perf_counter() - start) * 1000, 1)
+            if request.url.path not in _NOISY_PATHS:
+                req_logger = logging.getLogger("animaworks.request")
+                req_logger.info(
+                    "request %s %s -> %d (%.1fms)",
+                    request.method,
+                    request.url.path,
+                    status_code,
+                    duration_ms,
+                )
 
 
 async def _reconcile_assets_at_startup(animas_dir: Path) -> None:
@@ -97,7 +115,9 @@ async def _reconcile_assets_at_startup(animas_dir: Path) -> None:
             pass
 
         results = await reconcile_all_assets(
-            animas_dir, enable_3d=enable_3d, image_style=image_style,
+            animas_dir,
+            enable_3d=enable_3d,
+            image_style=image_style,
         )
         if results:
             logger.info("Startup asset reconciliation: %d anima(s) processed", len(results))
@@ -134,17 +154,27 @@ async def _startup_animas_background(app: FastAPI) -> None:
             from core.memory.frontmatter import FrontmatterService
 
             _migrated_total = 0
+            _repaired_total = 0
             for _aname in app.state.anima_names:
                 _adir = app.state.animas_dir / _aname
                 _fm_svc = FrontmatterService(
-                    _adir, _adir / "knowledge", _adir / "procedures",
+                    _adir,
+                    _adir / "knowledge",
+                    _adir / "procedures",
                 )
                 _migrated_total += _fm_svc.ensure_procedure_frontmatter()
                 _migrated_total += _fm_svc.ensure_knowledge_frontmatter()
+                _repaired_total += _fm_svc.repair_knowledge_frontmatter()
+                _repaired_total += _fm_svc.repair_procedure_frontmatter()
             if _migrated_total:
                 logger.info(
                     "Frontmatter migration: added metadata to %d files",
                     _migrated_total,
+                )
+            if _repaired_total:
+                logger.info(
+                    "Frontmatter repair: fixed %d files",
+                    _repaired_total,
                 )
         except Exception:
             logger.exception("Frontmatter migration failed (non-fatal)")
@@ -173,6 +203,11 @@ async def _startup_animas_background(app: FastAPI) -> None:
         except Exception:
             logger.exception("Slack Socket Mode startup failed")
             app.state.slack_socket_manager = None
+
+        # ── ConfigReloadManager ───────────────────────────────
+        from server.reload_manager import ConfigReloadManager
+
+        app.state.reload_manager = ConfigReloadManager(app)
 
         logger.info("All anima processes started")
 
@@ -223,6 +258,7 @@ async def lifespan(app: FastAPI):
                 image_style = "realistic"
                 try:
                     from core.config.models import load_config
+
                     _cfg = load_config()
                     enable_3d = _cfg.image_gen.enable_3d
                     image_style = _cfg.image_gen.image_style or "realistic"
@@ -330,8 +366,17 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
 
     # Initialize ProcessSupervisor
     from core.paths import get_data_dir
+
     log_dir = get_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    from core.supervisor.manager import HealthConfig
+
+    health_cfg = HealthConfig()
+    try:
+        health_cfg.busy_hang_threshold_sec = float(config.server.busy_hang_threshold)
+    except Exception:
+        pass
 
     supervisor = ProcessSupervisor(
         animas_dir=animas_dir,
@@ -339,6 +384,7 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
         run_dir=run_dir,
         log_dir=log_dir,
         ws_manager=ws_manager,
+        health_config=health_cfg,
     )
 
     # Auto-migrate old Japanese cron.md format to standard cron expressions
@@ -377,7 +423,8 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
     async def global_exception_handler(request: Request, exc: Exception):
         logger.exception("Unhandled exception: %s", exc)
         return StarletteJSONResponse(
-            {"error": "Internal server error"}, status_code=500,
+            {"error": "Internal server error"},
+            status_code=500,
         )
 
     # ── Request logging middleware ─────────────────────────

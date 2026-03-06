@@ -263,16 +263,8 @@ class TestFormatTweetText:
 
 
 class TestGetToolSchemas:
-    def test_returns_two_schemas(self):
+    def test_returns_empty_list(self):
+        """External tool modules return empty schema lists (schemas from dispatch layer)."""
         schemas = get_tool_schemas()
-        assert len(schemas) == 2
-        names = {s["name"] for s in schemas}
-        assert names == {"x_search", "x_user_tweets"}
-
-    def test_x_search_schema(self):
-        schema = [s for s in get_tool_schemas() if s["name"] == "x_search"][0]
-        assert "query" in schema["input_schema"]["required"]
-
-    def test_x_user_tweets_schema(self):
-        schema = [s for s in get_tool_schemas() if s["name"] == "x_user_tweets"][0]
-        assert "username" in schema["input_schema"]["required"]
+        assert isinstance(schemas, list)
+        assert schemas == []

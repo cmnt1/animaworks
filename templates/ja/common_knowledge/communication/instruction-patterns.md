@@ -7,11 +7,18 @@
 
 | ツール | 用途 | 備考 |
 |--------|------|------|
-| `delegate_task` | 直属部下へのタスク委譲 | タスクキューに追加＋DM送信。進捗追跡可能。直属部下のみ |
-| `send_message` | 1対1の依頼・報告・質問 | `intent` 必須: `report` / `delegation` / `question` のいずれか |
-| `post_channel` | 全体共有（お知らせ、解決報告） | acknowledgments・感謝・FYI は Board を使用。詳細は `board-guide.md` 参照 |
+| `delegate_task` | 直属部下へのタスク委譲 | タスクキューに追加＋DM送信。進捗を `task_tracker` で追跡可能。直属部下のみ |
+| `send_message` | 1対1の依頼・報告・質問 | `intent` 必須: `report` / `delegation` / `question` のいずれか。人間エイリアス宛ては外部チャネル（Slack/Chatwork等）へ配信 |
+| `post_channel` | 全体共有（お知らせ、解決報告） | acknowledgments・感謝・FYI は Board を使用。`@名前` でメンション可能（メンション先にDM通知）。詳細は `board-guide.md` 参照 |
 
-**send_message の制約**: 1セッションあたり最大2宛先、各宛先1通まで。`intent` を省略するとエラーになる。
+**send_message の制約**:
+- `intent` は必須。`report` / `delegation` / `question` のみ許可。acknowledgment・感謝・FYI は Board（`post_channel`）を使用すること
+- 1 run あたり最大2宛先、各宛先1通まで。3人以上への伝達は Board を使用
+- オプション: `thread_id`（スレッドID）、`reply_to`（返信先メッセージID）で会話のスレッドを維持可能
+
+**post_channel の制約**:
+- 同一 run 内で同じチャネルには1回のみ投稿可能
+- 同一チャネルへの再投稿にはクールダウン（デフォルト300秒）が必要
 
 ## 明確な指示の5要素
 
@@ -120,6 +127,8 @@ send_message(
 ### パターン1: 単発タスク（直属部下への委譲）
 
 一度きりの作業を**直属部下**に委譲する場合、`delegate_task` を使用する。タスクキューに追加され、進捗を `task_tracker` で追跡できる。
+
+必須パラメータ: `name`（委譲先）、`instruction`（指示内容）、`deadline`（期限。相対形式 `30m`/`2h`/`1d` または ISO8601）。オプション: `summary`（1行要約）。
 
 ```
 delegate_task(
@@ -283,6 +292,8 @@ send_message(
 ### エスカレーションの伝え方
 
 エスカレーションは上司への報告・判断依頼のため `intent="report"` を指定する。緊急時は `call_human` も検討する。
+
+上司が Anima の場合は `to` に Anima 名を指定。人間の管理者に送る場合は、`config.json` の `external_messaging.user_aliases` で設定したエイリアス名を `to` に指定すると、Slack/Chatwork 等の外部チャネルへ自動配信される。
 
 ```
 send_message(
