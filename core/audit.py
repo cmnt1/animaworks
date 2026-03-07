@@ -126,8 +126,6 @@ def _extract_summary_for_entry(e: dict) -> str:
     if etype == "heartbeat_reflection":
         return content[:_KEY_ACTIVITY_TRUNCATE]
     if etype == "response_sent":
-        meta_copy = dict(meta)
-        meta_copy.pop("thinking_text", None)
         return content[:_KEY_ACTIVITY_TRUNCATE]
     if etype == "message_sent":
         to_person = e.get("to_person", "") or "unknown"

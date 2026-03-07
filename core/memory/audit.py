@@ -95,10 +95,7 @@ class AuditAggregator:
             return entry.content[:_REPORT_ENTRY_TRUNCATE]
 
         if etype == "response_sent":
-            text = entry.content[:_REPORT_ENTRY_TRUNCATE]
-            if isinstance(entry.meta, dict):
-                entry.meta.pop("thinking_text", None)
-            return text
+            return entry.content[:_REPORT_ENTRY_TRUNCATE]
 
         if etype == "cron_executed":
             return (entry.content or entry.summary)[:500]
