@@ -417,6 +417,30 @@ class UIConfig(BaseModel):
     demo_mode: bool = False
 
 
+# ── Activity Schedule ───────────────────────────────────────────────────────
+
+
+class ActivityScheduleEntry(BaseModel):
+    """A time-based activity level entry (e.g. daytime=100%, nighttime=30%)."""
+
+    start: str = Field(description="Start time in HH:MM format")
+    end: str = Field(description="End time in HH:MM format (may wrap past midnight)")
+    level: int = Field(ge=10, le=400, description="Activity level percentage for this period")
+
+    @model_validator(mode="after")
+    def _validate_times(self) -> ActivityScheduleEntry:
+        import re as _re
+
+        _TIME_RE = _re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+        if not _TIME_RE.match(self.start):
+            raise ValueError(f"Invalid start time: {self.start!r} (expected HH:MM)")
+        if not _TIME_RE.match(self.end):
+            raise ValueError(f"Invalid end time: {self.end!r} (expected HH:MM)")
+        if self.start == self.end:
+            raise ValueError(f"start and end must differ: {self.start}")
+        return self
+
+
 # ── Main Config ─────────────────────────────────────────────────────────────
 
 
@@ -448,6 +472,10 @@ class AnimaWorksConfig(BaseModel):
         ge=10,
         le=400,
         description="Global activity level (10-400%). Scales heartbeat interval and max_turns.",
+    )
+    activity_schedule: list[ActivityScheduleEntry] = Field(
+        default_factory=list,
+        description="Time-based activity level schedule. Empty = use fixed activity_level.",
     )
     ui: UIConfig = UIConfig()
 

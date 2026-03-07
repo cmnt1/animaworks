@@ -949,3 +949,176 @@ class TestParseCronJobs:
         jobs = _parse_cron_jobs(animas_dir, ["alice", "bob"])
         assert len(jobs) == 1
         assert jobs[0]["anima"] == "bob"
+
+
+# ── Activity Schedule API ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+class TestActivityScheduleAPI:
+    """Tests for GET /api/settings/activity-level and PUT /api/settings/activity-schedule."""
+
+    async def test_get_activity_level_returns_schedule(self):
+        """GET /api/settings/activity-level returns both activity_level and activity_schedule."""
+        from core.config.models import ActivityScheduleEntry
+
+        mock_config = MagicMock()
+        mock_config.activity_level = 100
+        mock_config.activity_schedule = [
+            ActivityScheduleEntry(start="08:00", end="22:00", level=100),
+            ActivityScheduleEntry(start="22:00", end="08:00", level=30),
+        ]
+
+        with (
+            patch("core.config.models.load_config", return_value=mock_config),
+        ):
+            app = _make_test_app()
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/settings/activity-level")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "activity_level" in data
+        assert data["activity_level"] == 100
+        assert "activity_schedule" in data
+        assert len(data["activity_schedule"]) == 2
+        assert data["activity_schedule"][0]["start"] == "08:00"
+        assert data["activity_schedule"][0]["end"] == "22:00"
+        assert data["activity_schedule"][0]["level"] == 100
+        assert data["activity_schedule"][1]["start"] == "22:00"
+        assert data["activity_schedule"][1]["end"] == "08:00"
+        assert data["activity_schedule"][1]["level"] == 30
+
+    async def test_put_activity_schedule_valid(self):
+        """PUT /api/settings/activity-schedule with valid schedule returns 200 and data."""
+        mock_config = MagicMock()
+        mock_config.activity_level = 100
+        mock_config.activity_schedule = []
+
+        with (
+            patch("core.config.models.load_config", return_value=mock_config),
+            patch("core.config.models.save_config") as save_mock,
+            patch(
+                "core.supervisor.scheduler_manager.SchedulerManager.resolve_scheduled_level",
+                return_value=100,
+            ),
+        ):
+            app = _make_test_app()
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.put(
+                    "/api/settings/activity-schedule",
+                    json={
+                        "activity_schedule": [
+                            {"start": "08:00", "end": "22:00", "level": 100},
+                            {"start": "22:00", "end": "08:00", "level": 30},
+                        ],
+                    },
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["activity_level"] == 100
+        assert len(data["activity_schedule"]) == 2
+        assert data["activity_schedule"][0]["start"] == "08:00"
+        assert data["activity_schedule"][0]["end"] == "22:00"
+        assert data["activity_schedule"][0]["level"] == 100
+        assert data["activity_schedule"][1]["start"] == "22:00"
+        assert data["activity_schedule"][1]["end"] == "08:00"
+        assert data["activity_schedule"][1]["level"] == 30
+        save_mock.assert_called_once()
+
+    async def test_put_activity_schedule_empty_list(self):
+        """PUT /api/settings/activity-schedule with empty list clears the schedule."""
+        mock_config = MagicMock()
+        mock_config.activity_level = 100
+        mock_config.activity_schedule = []
+
+        with (
+            patch("core.config.models.load_config", return_value=mock_config),
+            patch("core.config.models.save_config") as save_mock,
+        ):
+            app = _make_test_app()
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.put(
+                    "/api/settings/activity-schedule",
+                    json={"activity_schedule": []},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["activity_schedule"] == []
+        save_mock.assert_called_once()
+
+    async def test_put_activity_schedule_invalid_entry_missing_fields(self):
+        """PUT /api/settings/activity-schedule with missing fields returns 400."""
+        mock_config = MagicMock()
+        mock_config.activity_level = 100
+        mock_config.activity_schedule = []
+
+        with patch("core.config.models.load_config", return_value=mock_config):
+            app = _make_test_app()
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.put(
+                    "/api/settings/activity-schedule",
+                    json={
+                        "activity_schedule": [
+                            {"start": "08:00"},  # missing end, level
+                        ],
+                    },
+                )
+
+        assert resp.status_code == 400
+        data = resp.json()
+        assert "error" in data
+
+    async def test_put_activity_schedule_start_equals_end(self):
+        """PUT /api/settings/activity-schedule with start==end returns 400."""
+        mock_config = MagicMock()
+        mock_config.activity_level = 100
+        mock_config.activity_schedule = []
+
+        with patch("core.config.models.load_config", return_value=mock_config):
+            app = _make_test_app()
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.put(
+                    "/api/settings/activity-schedule",
+                    json={
+                        "activity_schedule": [
+                            {"start": "08:00", "end": "08:00", "level": 100},
+                        ],
+                    },
+                )
+
+        assert resp.status_code == 400
+        data = resp.json()
+        assert "error" in data
+
+    async def test_put_activity_schedule_level_out_of_range(self):
+        """PUT /api/settings/activity-schedule with level out of range returns 400."""
+        mock_config = MagicMock()
+        mock_config.activity_level = 100
+        mock_config.activity_schedule = []
+
+        with patch("core.config.models.load_config", return_value=mock_config):
+            app = _make_test_app()
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.put(
+                    "/api/settings/activity-schedule",
+                    json={
+                        "activity_schedule": [
+                            {"start": "08:00", "end": "22:00", "level": 500},
+                        ],
+                    },
+                )
+
+        assert resp.status_code == 400
+        data = resp.json()
+        assert "error" in data

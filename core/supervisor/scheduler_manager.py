@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from core.config.models import load_config
+from core.config.models import ActivityScheduleEntry, load_config, save_config
 from core.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
 from core.schemas import CronTask
 
@@ -51,6 +51,7 @@ class SchedulerManager:
         self._cron_running: set[str] = set()
         self._cron_md_mtime: float = 0.0
         self._heartbeat_md_mtime: float = 0.0
+        self._last_schedule_level: int | None = None
 
     # ── Public Properties ────────────────────────────────────────
 
@@ -74,7 +75,11 @@ class SchedulerManager:
             self.scheduler = AsyncIOScheduler(timezone="Asia/Tokyo")
             self._setup_heartbeat()
             self._setup_cron_tasks()
+            self._setup_activity_schedule()
             self.scheduler.start()
+
+            # Apply the correct activity level for the current time on startup
+            self._apply_current_schedule_level()
 
             # Wire up hot-reload callback
             self._anima.set_on_schedule_changed(self.reload_schedule)
@@ -207,6 +212,105 @@ class SchedulerManager:
             pass
         self._setup_heartbeat()
         logger.info("Heartbeat rescheduled for %s", self._anima_name)
+
+    # ── Activity Schedule ─────────────────────────────────────
+
+    @staticmethod
+    def resolve_scheduled_level(
+        schedule: list[ActivityScheduleEntry],
+        now_hhmm: str,
+    ) -> int | None:
+        """Return the activity level for *now_hhmm* (``"HH:MM"``), or None."""
+        for entry in schedule:
+            if _time_in_range(entry.start, entry.end, now_hhmm):
+                return entry.level
+        return None
+
+    def _setup_activity_schedule(self) -> None:
+        """Register a 1-minute job that checks activity_schedule boundaries."""
+        if not self.scheduler:
+            return
+        app_config = load_config()
+        if not app_config.activity_schedule:
+            return
+
+        self.scheduler.add_job(
+            self._activity_schedule_tick,
+            CronTrigger(minute="*"),
+            id=f"{self._anima_name}_activity_schedule",
+            name=f"{self._anima_name} activity schedule",
+            replace_existing=True,
+            misfire_grace_time=120,
+            max_instances=1,
+        )
+        logger.info(
+            "Activity schedule registered for %s: %d entries",
+            self._anima_name,
+            len(app_config.activity_schedule),
+        )
+
+    def _apply_current_schedule_level(self) -> None:
+        """Apply the correct activity level for the current time at startup."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        app_config = load_config()
+        if not app_config.activity_schedule:
+            return
+
+        now_hhmm = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%H:%M")
+        target = self.resolve_scheduled_level(app_config.activity_schedule, now_hhmm)
+        if target is not None and target != app_config.activity_level:
+            app_config.activity_level = target
+            save_config(app_config)
+            self._last_schedule_level = target
+            self.reschedule_heartbeat()
+            logger.info(
+                "Activity schedule startup: %s set level to %d%% (time=%s)",
+                self._anima_name,
+                target,
+                now_hhmm,
+            )
+        else:
+            self._last_schedule_level = app_config.activity_level
+
+    async def _activity_schedule_tick(self) -> None:
+        """Check current time against activity_schedule and switch level if needed."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        app_config = load_config()
+        if not app_config.activity_schedule:
+            return
+
+        now_hhmm = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%H:%M")
+        target = self.resolve_scheduled_level(app_config.activity_schedule, now_hhmm)
+        if target is None:
+            return
+
+        if target != self._last_schedule_level:
+            app_config.activity_level = target
+            save_config(app_config)
+            self._last_schedule_level = target
+            self.reschedule_heartbeat()
+            logger.info(
+                "Activity schedule switch: %s → %d%% (time=%s)",
+                self._anima_name,
+                target,
+                now_hhmm,
+            )
+
+    def reload_activity_schedule(self) -> None:
+        """Reload the activity schedule job (called after schedule config change)."""
+        if not self.scheduler:
+            return
+        job_id = f"{self._anima_name}_activity_schedule"
+        try:
+            self.scheduler.remove_job(job_id)
+        except Exception:
+            pass
+        self._setup_activity_schedule()
+        self._apply_current_schedule_level()
 
     def _setup_cron_tasks(self) -> None:
         """Register cron jobs from cron.md."""
@@ -401,6 +505,7 @@ class SchedulerManager:
         # Re-setup from current files
         self._setup_heartbeat()
         self._setup_cron_tasks()
+        self._setup_activity_schedule()
         self._record_schedule_mtimes()
 
         new_jobs = [j.id for j in self.scheduler.get_jobs()]
@@ -469,3 +574,17 @@ class SchedulerManager:
                     "Scheduler shutdown failed for %s (may not have been started)", self._anima_name, exc_info=True
                 )
             logger.info("Scheduler stopped for %s", self._anima_name)
+
+
+# ── Module helpers ────────────────────────────────────────────────────────
+
+
+def _time_in_range(start: str, end: str, now: str) -> bool:
+    """Check whether *now* (``HH:MM``) falls within [*start*, *end*).
+
+    Handles midnight-crossing ranges (e.g. ``22:00``–``08:00``).
+    """
+    if start <= end:
+        return start <= now < end
+    # Wraps past midnight
+    return now >= start or now < end

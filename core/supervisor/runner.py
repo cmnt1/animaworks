@@ -418,6 +418,7 @@ class AnimaRunner:
             "ping": self._handle_ping,
             "reload_config": self._handle_reload_config,
             "reschedule_heartbeat": self._handle_reschedule_heartbeat,
+            "reload_activity_schedule": self._handle_reload_activity_schedule,
             "shutdown": self._handle_shutdown,
             "interrupt": self._handle_interrupt,
         }
@@ -593,6 +594,12 @@ class AnimaRunner:
         if self._scheduler_mgr:
             self._scheduler_mgr.reschedule_heartbeat()
         return {"status": "rescheduled"}
+
+    async def _handle_reload_activity_schedule(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Reload activity schedule job after config change."""
+        if self._scheduler_mgr:
+            self._scheduler_mgr.reload_activity_schedule()
+        return {"status": "reloaded"}
 
     async def _handle_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle shutdown request."""

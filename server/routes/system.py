@@ -151,6 +151,17 @@ async def _reschedule_all_heartbeats(supervisor) -> None:
             logger.debug("Failed to send reschedule_heartbeat to %s", name, exc_info=True)
 
 
+async def _reload_activity_schedules(supervisor) -> None:
+    """Tell all running Anima processes to reload their activity schedule jobs."""
+    if not hasattr(supervisor, "processes"):
+        return
+    for name in list(supervisor.processes.keys()):
+        try:
+            await supervisor.send_request(name, "reload_activity_schedule", {})
+        except Exception:
+            logger.debug("Failed to send reload_activity_schedule to %s", name, exc_info=True)
+
+
 def create_system_router() -> APIRouter:
     router = APIRouter()
 
@@ -693,11 +704,14 @@ def create_system_router() -> APIRouter:
 
     @router.get("/settings/activity-level")
     async def get_activity_level(request: Request):
-        """Return the current global activity level."""
+        """Return the current global activity level and schedule."""
         from core.config.models import load_config
 
         config = load_config()
-        return {"activity_level": config.activity_level}
+        return {
+            "activity_level": config.activity_level,
+            "activity_schedule": [e.model_dump() for e in config.activity_schedule],
+        }
 
     @router.put("/settings/activity-level")
     async def set_activity_level(request: Request):
@@ -718,6 +732,17 @@ def create_system_router() -> APIRouter:
 
         config = load_config()
         config.activity_level = level
+
+        # When night mode is active, also update the matching schedule entry
+        if config.activity_schedule:
+            from core.supervisor.scheduler_manager import _time_in_range
+
+            now_hhmm = now_jst().strftime("%H:%M")
+            for entry in config.activity_schedule:
+                if _time_in_range(entry.start, entry.end, now_hhmm):
+                    entry.level = level
+                    break
+
         save_config(config)
 
         # Notify supervisor to reschedule all heartbeats
@@ -733,6 +758,84 @@ def create_system_router() -> APIRouter:
 
         logger.info("Activity level changed to %d%%", level)
         return {"ok": True, "activity_level": level}
+
+    @router.put("/settings/activity-schedule")
+    async def set_activity_schedule(request: Request):
+        """Update the time-based activity schedule (night mode).
+
+        Body: {"activity_schedule": [{"start":"08:00","end":"22:00","level":100}, ...]}
+        Empty list disables scheduled mode.
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+        raw_schedule = body.get("activity_schedule")
+        if not isinstance(raw_schedule, list):
+            return JSONResponse(
+                {"error": "activity_schedule must be a list"},
+                status_code=400,
+            )
+        if len(raw_schedule) > 24:
+            return JSONResponse(
+                {"error": "activity_schedule must have at most 24 entries"},
+                status_code=400,
+            )
+
+        from core.config.models import ActivityScheduleEntry, load_config, save_config
+
+        entries: list[ActivityScheduleEntry] = []
+        for i, item in enumerate(raw_schedule):
+            if not isinstance(item, dict):
+                return JSONResponse(
+                    {"error": f"Entry {i} must be an object"},
+                    status_code=400,
+                )
+            try:
+                entries.append(ActivityScheduleEntry.model_validate(item))
+            except Exception as exc:
+                return JSONResponse(
+                    {"error": f"Entry {i}: {exc}"},
+                    status_code=400,
+                )
+
+        config = load_config()
+        config.activity_schedule = entries
+
+        # Apply the level for the current time immediately
+        if entries:
+            from core.supervisor.scheduler_manager import SchedulerManager
+
+            now_hhmm = now_jst().strftime("%H:%M")
+            target: int | None = SchedulerManager.resolve_scheduled_level(entries, now_hhmm)
+            if target is not None:
+                config.activity_level = target
+
+        save_config(config)
+
+        # Reschedule heartbeats and activity schedule jobs
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is not None:
+            try:
+                await _reschedule_all_heartbeats(supervisor)
+                await _reload_activity_schedules(supervisor)
+            except Exception:
+                logger.warning(
+                    "Failed to reload schedules after activity_schedule change",
+                    exc_info=True,
+                )
+
+        logger.info(
+            "Activity schedule updated: %d entries, current level=%d%%",
+            len(entries),
+            config.activity_level,
+        )
+        return {
+            "ok": True,
+            "activity_level": config.activity_level,
+            "activity_schedule": [e.model_dump() for e in entries],
+        }
 
     # ── Token Usage / Cost ────────────────────────────────────
 

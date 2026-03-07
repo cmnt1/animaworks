@@ -42,6 +42,26 @@ export function render(container) {
           <div class="activity-level-value" id="activityLevelValue">100%</div>
         </div>
         <div class="activity-level-effect" id="activityLevelEffect"></div>
+
+        <div class="night-mode-section">
+          <label class="night-mode-toggle">
+            <input type="checkbox" id="nightModeToggle" />
+            \u{1F319} ${t("settings.night_mode.label")}
+          </label>
+          <div class="night-mode-settings" id="nightModeSettings" style="display:none">
+            <div class="night-mode-time">
+              <select id="nightStart">${_buildTimeOptions("22:00")}</select>
+              <span class="night-mode-separator">～</span>
+              <select id="nightEnd">${_buildTimeOptions("08:00")}</select>
+            </div>
+            <div class="night-mode-level-row">
+              <span class="night-mode-level-label">${t("settings.night_mode.level_label")}</span>
+              <input type="range" min="10" max="400" value="30" step="10"
+                     class="activity-level-slider night-level-slider" id="nightLevelSlider" />
+              <div class="activity-level-value night-level-value" id="nightLevelValue">30%</div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -101,6 +121,20 @@ export function render(container) {
 
 export function destroy() {}
 
+// ── Time Options Builder ────────────────────
+
+function _buildTimeOptions(selected) {
+  let html = "";
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      const val = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      const sel = val === selected ? " selected" : "";
+      html += `<option value="${val}"${sel}>${val}</option>`;
+    }
+  }
+  return html;
+}
+
 // ── Internal ────────────────────────────────
 
 async function _onModeChange(mode, container) {
@@ -137,11 +171,13 @@ function _updateThemeGrid(container, theme) {
 }
 
 async function _initActivityLevel(container) {
+  let schedule = [];
   try {
     const res = await fetch("/api/settings/activity-level");
     if (res.ok) {
       const data = await res.json();
       const level = data.activity_level || 100;
+      schedule = data.activity_schedule || [];
       const slider = container.querySelector("#activityLevelSlider");
       const display = container.querySelector("#activityLevelValue");
       if (slider) {
@@ -164,7 +200,7 @@ async function _initActivityLevel(container) {
     });
     slider.addEventListener("change", (e) => {
       const val = parseInt(e.target.value, 10);
-      _setActivityLevel(val);
+      _setActivityLevel(val, container);
     });
   }
 
@@ -177,9 +213,11 @@ async function _initActivityLevel(container) {
       _updateActivityDisplay(display, val);
       _updateActivityEffect(container, val);
       _updatePresetButtons(container, val);
-      _setActivityLevel(val);
+      _setActivityLevel(val, container);
     });
   });
+
+  _initNightMode(container, schedule);
 }
 
 function _updateActivityDisplay(el, value) {
@@ -210,12 +248,115 @@ function _updatePresetButtons(container, level) {
   });
 }
 
-async function _setActivityLevel(level) {
+async function _setActivityLevel(level, container) {
   try {
     await fetch("/api/settings/activity-level", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_level: level }),
+    });
+  } catch { /* best-effort */ }
+
+  // When night mode is ON, also update the schedule with the new day-level
+  if (container) {
+    const toggle = container.querySelector("#nightModeToggle");
+    if (toggle && toggle.checked) {
+      _saveNightMode(container);
+    }
+  }
+}
+
+// ── Night Mode ──────────────────────────────
+
+function _initNightMode(container, schedule) {
+  const toggle = container.querySelector("#nightModeToggle");
+  const settings = container.querySelector("#nightModeSettings");
+  const nightStart = container.querySelector("#nightStart");
+  const nightEnd = container.querySelector("#nightEnd");
+  const nightSlider = container.querySelector("#nightLevelSlider");
+  const nightDisplay = container.querySelector("#nightLevelValue");
+  if (!toggle || !settings) return;
+
+  // Restore from schedule: 2 entries = night mode ON
+  if (schedule.length >= 2) {
+    toggle.checked = true;
+    settings.style.display = "";
+    // Entry with lower level is the night entry
+    const sorted = [...schedule].sort((a, b) => a.level - b.level);
+    const nightEntry = sorted[0];
+    const dayEntry = sorted[1];
+    if (nightStart) nightStart.value = nightEntry.start;
+    if (nightEnd) nightEnd.value = nightEntry.end;
+    if (nightSlider) nightSlider.value = nightEntry.level;
+    if (nightDisplay) _updateActivityDisplay(nightDisplay, nightEntry.level);
+
+    // Sync main slider to day entry level
+    const mainSlider = container.querySelector("#activityLevelSlider");
+    const mainDisplay = container.querySelector("#activityLevelValue");
+    if (mainSlider && dayEntry) {
+      mainSlider.value = dayEntry.level;
+      _updateActivityDisplay(mainDisplay, dayEntry.level);
+      _updateActivityEffect(container, dayEntry.level);
+      _updatePresetButtons(container, dayEntry.level);
+    }
+  }
+
+  toggle.addEventListener("change", () => {
+    if (toggle.checked) {
+      settings.style.display = "";
+      _saveNightMode(container);
+    } else {
+      settings.style.display = "none";
+      _clearNightMode();
+    }
+  });
+
+  if (nightSlider) {
+    nightSlider.addEventListener("input", () => {
+      const val = parseInt(nightSlider.value, 10);
+      _updateActivityDisplay(nightDisplay, val);
+    });
+    nightSlider.addEventListener("change", () => _saveNightMode(container));
+  }
+
+  if (nightStart) nightStart.addEventListener("change", () => _saveNightMode(container));
+  if (nightEnd) nightEnd.addEventListener("change", () => _saveNightMode(container));
+}
+
+async function _saveNightMode(container) {
+  const nightStart = container.querySelector("#nightStart");
+  const nightEnd = container.querySelector("#nightEnd");
+  const nightSlider = container.querySelector("#nightLevelSlider");
+  const mainSlider = container.querySelector("#activityLevelSlider");
+  if (!nightStart || !nightEnd || !nightSlider || !mainSlider) return;
+
+  const ns = nightStart.value;
+  const ne = nightEnd.value;
+  if (ns === ne) return;
+
+  const nightLevel = parseInt(nightSlider.value, 10);
+  const dayLevel = parseInt(mainSlider.value, 10);
+
+  const schedule = [
+    { start: ne, end: ns, level: dayLevel },
+    { start: ns, end: ne, level: nightLevel },
+  ];
+
+  try {
+    await fetch("/api/settings/activity-schedule", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activity_schedule: schedule }),
+    });
+  } catch { /* best-effort */ }
+}
+
+async function _clearNightMode() {
+  try {
+    await fetch("/api/settings/activity-schedule", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activity_schedule: [] }),
     });
   } catch { /* best-effort */ }
 }
