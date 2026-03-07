@@ -39,9 +39,13 @@ tests/evaluation/_experiment_data/
 CLA.md
 CLAUDE.md
 mkdocs.yml
+uv.lock
 
 # Archive (deprecated code)
 archive/
+
+# Dev tools (internal debug scripts)
+tools/
 
 # Documentation (only docs/images/, docs/paper/, docs/release/ are public)
 docs/*
