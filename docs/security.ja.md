@@ -478,11 +478,11 @@ Inboxディレクトリは `0o700` で作成。
 
 | ドキュメント | 説明 |
 |-------------|------|
-| [Provenance Foundation](implemented/20260228_provenance-1-foundation.md) | 信頼解決とオリジンカテゴリ |
-| [Input Boundary Labeling](implemented/20260228_provenance-2-input-boundary.md) | ツール結果とPrimingの信頼タグ |
-| [Trust Propagation](implemented/20260228_provenance-3-propagation.md) | データフロー横断のオリジンチェーン |
-| [RAG Provenance](implemented/20260228_provenance-4-rag-provenance.md) | ベクトル検索の信頼追跡 |
-| [Mode S Trust](implemented/20260228_provenance-5-mode-s-trust.md) | Agent SDKセキュリティフック |
-| [Command Injection Fix](implemented/20260228_security-command-injection-fix.md) | パイプ・改行インジェクション |
-| [Path Traversal Fix](implemented/20260228_security-path-traversal-fix.md) | common_knowledge・create_animaのパス検証 |
-| [Memory Write Security](implemented/20260215_memory-write-security-20260216.md) | 保護ファイルとクロスモード強化 |
+| [Provenance Foundation](specs/20260228_provenance-1-foundation.md) | 信頼解決とオリジンカテゴリ |
+| [Input Boundary Labeling](specs/20260228_provenance-2-input-boundary.md) | ツール結果とPrimingの信頼タグ |
+| [Trust Propagation](specs/20260228_provenance-3-propagation.md) | データフロー横断のオリジンチェーン |
+| [RAG Provenance](specs/20260228_provenance-4-rag-provenance.md) | ベクトル検索の信頼追跡 |
+| [Mode S Trust](specs/20260228_provenance-5-mode-s-trust.md) | Agent SDKセキュリティフック |
+| [Command Injection Fix](specs/20260228_security-command-injection-fix.md) | パイプ・改行インジェクション |
+| [Path Traversal Fix](specs/20260228_security-path-traversal-fix.md) | common_knowledge・create_animaのパス検証 |
+| [Memory Write Security](specs/20260215_memory-write-security-20260216.md) | 保護ファイルとクロスモード強化 |

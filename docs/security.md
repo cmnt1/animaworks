@@ -478,11 +478,11 @@ Effort scale: XS = less than 1 hour, S = 1–4 hours, M = 4–16 hours, L = more
 
 | Document | Description |
 |----------|-------------|
-| [Provenance Foundation](implemented/20260228_provenance-1-foundation.md) | Trust resolution and origin categories |
-| [Input Boundary Labeling](implemented/20260228_provenance-2-input-boundary.md) | Tool result and priming trust tagging |
-| [Trust Propagation](implemented/20260228_provenance-3-propagation.md) | Origin chain across data flows |
-| [RAG Provenance](implemented/20260228_provenance-4-rag-provenance.md) | Trust tracking in vector search |
-| [Mode S Trust](implemented/20260228_provenance-5-mode-s-trust.md) | Agent SDK security hooks |
-| [Command Injection Fix](implemented/20260228_security-command-injection-fix.md) | Pipe and newline injection |
-| [Path Traversal Fix](implemented/20260228_security-path-traversal-fix.md) | common_knowledge and create_anima path validation |
-| [Memory Write Security](implemented/20260215_memory-write-security-20260216.md) | Protected files and cross-mode hardening |
+| [Provenance Foundation](specs/20260228_provenance-1-foundation.md) | Trust resolution and origin categories |
+| [Input Boundary Labeling](specs/20260228_provenance-2-input-boundary.md) | Tool result and priming trust tagging |
+| [Trust Propagation](specs/20260228_provenance-3-propagation.md) | Origin chain across data flows |
+| [RAG Provenance](specs/20260228_provenance-4-rag-provenance.md) | Trust tracking in vector search |
+| [Mode S Trust](specs/20260228_provenance-5-mode-s-trust.md) | Agent SDK security hooks |
+| [Command Injection Fix](specs/20260228_security-command-injection-fix.md) | Pipe and newline injection |
+| [Path Traversal Fix](specs/20260228_security-path-traversal-fix.md) | common_knowledge and create_anima path validation |
+| [Memory Write Security](specs/20260215_memory-write-security-20260216.md) | Protected files and cross-mode hardening |

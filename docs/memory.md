@@ -4,7 +4,7 @@
 
 > Created: 2026-02-14
 > Updated: 2026-03-05
-> Related: [vision.md](vision.md), [spec.md](spec.md), [implemented/20260214_priming-layer_design.md](implemented/20260214_priming-layer_design.md)
+> Related: [vision.md](vision.md), [spec.md](spec.md), [specs/20260214_priming-layer_design.md](specs/20260214_priming-layer_design.md)
 
 
 ---
@@ -830,17 +830,17 @@ The memory subsystem is implemented as a set of specialized modules under `core/
 - [vision.md](vision.md) — Foundational philosophy of Digital Anima
 - [spec.md](spec.md) — Requirements specification (basic design of archive-based memory)
 - [features.md](features.md) — Feature list (includes memory system implementation history)
-- [implemented/20260214_priming-layer_design.md](implemented/20260214_priming-layer_design.md) — Priming layer implementation plan (includes RAG design and consolidation architecture)
-- [implemented/20260218_unified-activity-log-implemented-20260218.md](implemented/20260218_unified-activity-log-implemented-20260218.md) — Unified activity log design document
-- [implemented/20260218_streaming-journal-implemented-20260218.md](implemented/20260218_streaming-journal-implemented-20260218.md) — Streaming journal design document
-- [implemented/20260218_activity-log-spec-compliance-fixes-implemented-20260218.md](implemented/20260218_activity-log-spec-compliance-fixes-implemented-20260218.md) — Activity log spec compliance fixes
-- [implemented/20260218_priming-format-redesign_implemented-20260218.md](implemented/20260218_priming-format-redesign_implemented-20260218.md) — Priming format redesign (ASCII labeling, topic grouping, pointer references)
-- [implemented/20260218_episode-dedup-state-autoupdate-resolution-propagation.md](implemented/20260218_episode-dedup-state-autoupdate-resolution-propagation.md) — Episode deduplication, auto state update, and resolution propagation mechanism
-- [implemented/20260218_memory-system-enhancement-checklist-20260218.md](implemented/20260218_memory-system-enhancement-checklist-20260218.md) — Memory system enhancement checklist
-- [implemented/20260218_consolidation-validation-pipeline-20260218.md](implemented/20260218_consolidation-validation-pipeline-20260218.md) — Daily consolidation validation pipeline
-- [implemented/20260218_knowledge-contradiction-detection-resolution-20260218.md](implemented/20260218_knowledge-contradiction-detection-resolution-20260218.md) — Knowledge contradiction detection and resolution
-- [implemented/20260218_procedural-memory-foundation-20260218.md](implemented/20260218_procedural-memory-foundation-20260218.md) — Procedural memory foundation (YAML frontmatter, 3-stage matching)
-- [implemented/20260218_procedural-memory-auto-distillation-20260218.md](implemented/20260218_procedural-memory-auto-distillation-20260218.md) — Procedural memory auto-distillation
-- [implemented/20260218_procedural-memory-reconsolidation-20260218.md](implemented/20260218_procedural-memory-reconsolidation-20260218.md) — Prediction-error-based reconsolidation
-- [implemented/20260218_procedural-memory-utility-forgetting-20260218.md](implemented/20260218_procedural-memory-utility-forgetting-20260218.md) — Procedural memory utility-based forgetting
+- [specs/20260214_priming-layer_design.md](specs/20260214_priming-layer_design.md) — Priming layer implementation plan (includes RAG design and consolidation architecture)
+- [specs/20260218_unified-activity-log-implemented-20260218.md](specs/20260218_unified-activity-log-implemented-20260218.md) — Unified activity log design document
+- [specs/20260218_streaming-journal-implemented-20260218.md](specs/20260218_streaming-journal-implemented-20260218.md) — Streaming journal design document
+- [specs/20260218_activity-log-spec-compliance-fixes-implemented-20260218.md](specs/20260218_activity-log-spec-compliance-fixes-implemented-20260218.md) — Activity log spec compliance fixes
+- [specs/20260218_priming-format-redesign_implemented-20260218.md](specs/20260218_priming-format-redesign_implemented-20260218.md) — Priming format redesign (ASCII labeling, topic grouping, pointer references)
+- [specs/20260218_episode-dedup-state-autoupdate-resolution-propagation.md](specs/20260218_episode-dedup-state-autoupdate-resolution-propagation.md) — Episode deduplication, auto state update, and resolution propagation mechanism
+- [specs/20260218_memory-system-enhancement-checklist-20260218.md](specs/20260218_memory-system-enhancement-checklist-20260218.md) — Memory system enhancement checklist
+- [specs/20260218_consolidation-validation-pipeline-20260218.md](specs/20260218_consolidation-validation-pipeline-20260218.md) — Daily consolidation validation pipeline
+- [specs/20260218_knowledge-contradiction-detection-resolution-20260218.md](specs/20260218_knowledge-contradiction-detection-resolution-20260218.md) — Knowledge contradiction detection and resolution
+- [specs/20260218_procedural-memory-foundation-20260218.md](specs/20260218_procedural-memory-foundation-20260218.md) — Procedural memory foundation (YAML frontmatter, 3-stage matching)
+- [specs/20260218_procedural-memory-auto-distillation-20260218.md](specs/20260218_procedural-memory-auto-distillation-20260218.md) — Procedural memory auto-distillation
+- [specs/20260218_procedural-memory-reconsolidation-20260218.md](specs/20260218_procedural-memory-reconsolidation-20260218.md) — Prediction-error-based reconsolidation
+- [specs/20260218_procedural-memory-utility-forgetting-20260218.md](specs/20260218_procedural-memory-utility-forgetting-20260218.md) — Procedural memory utility-based forgetting
 
