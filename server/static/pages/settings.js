@@ -27,6 +27,25 @@ export function render(container) {
     </div>
 
     <section class="settings-section">
+      <h3 class="settings-section-title">${t("settings.activity_level.title")}</h3>
+      <p class="settings-section-desc">${t("settings.activity_level.desc")}</p>
+      <div class="activity-level-control">
+        <div class="activity-level-presets">
+          <button class="preset-btn" data-level="30">\u{1F40C} ${t("settings.activity_level.eco")}</button>
+          <button class="preset-btn" data-level="100">\u{1F4CA} ${t("settings.activity_level.normal")}</button>
+          <button class="preset-btn" data-level="200">\u{1F680} ${t("settings.activity_level.fast")}</button>
+          <button class="preset-btn" data-level="400">\u{26A1} ${t("settings.activity_level.boost")}</button>
+        </div>
+        <div class="activity-level-slider-row">
+          <input type="range" min="10" max="400" value="100" step="10"
+                 class="activity-level-slider" id="activityLevelSlider" />
+          <div class="activity-level-value" id="activityLevelValue">100%</div>
+        </div>
+        <div class="activity-level-effect" id="activityLevelEffect"></div>
+      </div>
+    </section>
+
+    <section class="settings-section">
       <h3 class="settings-section-title">${t("settings.mode.title")}</h3>
       <p class="settings-section-desc">${t("settings.mode.desc")}</p>
       <div class="settings-mode-cards">
@@ -75,6 +94,9 @@ export function render(container) {
   container.querySelectorAll(".settings-theme-card").forEach(btn => {
     btn.addEventListener("click", () => _onThemeChange(btn.dataset.theme, container));
   });
+
+  // Activity Level
+  _initActivityLevel(container);
 }
 
 export function destroy() {}
@@ -112,4 +134,88 @@ function _updateThemeGrid(container, theme) {
   container.querySelectorAll(".settings-theme-card").forEach(c => {
     c.classList.toggle("active", c.dataset.theme === theme);
   });
+}
+
+async function _initActivityLevel(container) {
+  try {
+    const res = await fetch("/api/settings/activity-level");
+    if (res.ok) {
+      const data = await res.json();
+      const level = data.activity_level || 100;
+      const slider = container.querySelector("#activityLevelSlider");
+      const display = container.querySelector("#activityLevelValue");
+      if (slider) {
+        slider.value = level;
+        _updateActivityDisplay(display, level);
+        _updateActivityEffect(container, level);
+        _updatePresetButtons(container, level);
+      }
+    }
+  } catch { /* best-effort */ }
+
+  const slider = container.querySelector("#activityLevelSlider");
+  if (slider) {
+    slider.addEventListener("input", (e) => {
+      const val = parseInt(e.target.value, 10);
+      const display = container.querySelector("#activityLevelValue");
+      _updateActivityDisplay(display, val);
+      _updateActivityEffect(container, val);
+      _updatePresetButtons(container, val);
+    });
+    slider.addEventListener("change", (e) => {
+      const val = parseInt(e.target.value, 10);
+      _setActivityLevel(val);
+    });
+  }
+
+  container.querySelectorAll(".preset-btn[data-level]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const val = parseInt(btn.dataset.level, 10);
+      const slider = container.querySelector("#activityLevelSlider");
+      const display = container.querySelector("#activityLevelValue");
+      if (slider) slider.value = val;
+      _updateActivityDisplay(display, val);
+      _updateActivityEffect(container, val);
+      _updatePresetButtons(container, val);
+      _setActivityLevel(val);
+    });
+  });
+}
+
+function _updateActivityDisplay(el, value) {
+  if (!el) return;
+  el.textContent = `${value}%`;
+  if (value < 50) el.className = "activity-level-value level-low";
+  else if (value <= 150) el.className = "activity-level-value level-normal";
+  else if (value <= 300) el.className = "activity-level-value level-high";
+  else el.className = "activity-level-value level-boost";
+}
+
+function _updateActivityEffect(container, level) {
+  const el = container.querySelector("#activityLevelEffect");
+  if (!el) return;
+  const baseInterval = 30; // default
+  const effInterval = Math.max(5, Math.round(baseInterval / (level / 100)));
+  const baseTurns = 20;
+  const effTurns = level >= 100 ? baseTurns : Math.max(3, Math.ceil(baseTurns * level / 100));
+  el.textContent = t("settings.activity_level.effect", {
+    interval: effInterval,
+    turns: effTurns,
+  });
+}
+
+function _updatePresetButtons(container, level) {
+  container.querySelectorAll(".preset-btn[data-level]").forEach(btn => {
+    btn.classList.toggle("active", parseInt(btn.dataset.level, 10) === level);
+  });
+}
+
+async function _setActivityLevel(level) {
+  try {
+    await fetch("/api/settings/activity-level", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activity_level: level }),
+    });
+  } catch { /* best-effort */ }
 }

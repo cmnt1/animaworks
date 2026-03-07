@@ -152,6 +152,46 @@ See the "Background Model" section in `operations/model-guide.md` for details.
 When `heartbeat.md` is updated on disk, `_check_schedule_freshness()` detects the change on the next Heartbeat run and SchedulerManager reloads the schedule automatically.
 No server restart needed (MAY skip restart). APScheduler jobs are re-registered.
 
+## Per-anima Heartbeat Interval
+
+### Setting in status.json
+
+Set `heartbeat_interval_minutes` in each Anima's `status.json` to configure individual heartbeat intervals.
+
+```json
+{
+  "heartbeat_interval_minutes": 60
+}
+```
+
+- Valid range: 1-1440 minutes (1 day)
+- If not set: falls back to `config.json` `heartbeat.interval_minutes` (default 30 min)
+- Animas can self-adjust by updating `status.json` via `write_memory_file`
+
+### Recommended Guidelines
+
+| Situation | Recommended Interval | Reason |
+|-----------|---------------------|--------|
+| Active development project | 15-30 min | Frequent situation awareness needed |
+| Normal operations | 30-60 min | Default. Balanced frequency |
+| Low load / standby | 60-120 min | Cost saving. Longer intervals when idle |
+| Long dormancy / inactive | 120-1440 min | Minimal patrol for situation awareness |
+
+### Relationship with Activity Level
+
+When a global Activity Level (10%-400%) is set, the effective interval is calculated as:
+
+```
+effective_interval = base_interval / (activity_level / 100)
+```
+
+Example: base 30min, Activity Level 50% → effective 60min
+Example: base 30min, Activity Level 200% → effective 15min
+
+- Minimum effective interval is 5 minutes (never goes below 5 regardless of boost)
+- Below 100%: max_turns also scales down proportionally (floor of 3 turns)
+- At/above 100%: max_turns stays unchanged (only interval shortens)
+
 ## What is Cron
 
 Cron is "tasks that run at defined times". Heartbeat is "periodic check"; Cron is "scheduled work".

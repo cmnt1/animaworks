@@ -10,6 +10,7 @@ of heartbeat and cron schedules for a single Anima process.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import zlib
@@ -89,8 +90,21 @@ class SchedulerManager:
             logger.exception("Failed to setup scheduler for %s", self._anima_name)
             self.scheduler = None
 
+    def _read_per_anima_interval(self, app_config: Any) -> int:
+        """Read heartbeat_interval_minutes from status.json, fallback to global config."""
+        try:
+            status_path = self._anima_dir / "status.json"
+            if status_path.is_file():
+                data = json.loads(status_path.read_text(encoding="utf-8"))
+                val = data.get("heartbeat_interval_minutes")
+                if isinstance(val, (int, float)) and 1 <= val <= 1440:
+                    return int(val)
+        except (json.JSONDecodeError, OSError, ValueError):
+            logger.debug("Failed to read heartbeat_interval_minutes from %s", self._anima_dir)
+        return app_config.heartbeat.interval_minutes
+
     def _setup_heartbeat(self) -> None:
-        """Register heartbeat job from heartbeat.md + config.json."""
+        """Register heartbeat job from heartbeat.md + config.json + activity_level."""
         if not self._anima or not self.scheduler:
             return
 
@@ -100,21 +114,15 @@ class SchedulerManager:
 
         active_start, active_end = parse_heartbeat_config(hb_content)
 
-        # Interval from config.json (not parsed from heartbeat.md)
         app_config = load_config()
-        interval = app_config.heartbeat.interval_minutes
+        base_interval = self._read_per_anima_interval(app_config)
+        activity_pct = max(10, min(400, app_config.activity_level))
+        effective_interval = base_interval / (activity_pct / 100.0)
+        effective_interval = max(5.0, effective_interval)
+        interval = round(effective_interval)
 
         # Fixed offset: crc32(anima_name) % 10 → deterministic 0-9 min spread
         offset = zlib.crc32(self._anima_name.encode()) % 10
-
-        # Build minute spec: base slots (0, 30 for 30min interval) + offset
-        # e.g. offset=3, interval=30 → minute="3,33"
-        slots = []
-        m = offset
-        while m < 60:
-            slots.append(str(m))
-            m += interval
-        minute_spec = ",".join(slots)
 
         # Determine active hours
         if active_start is not None and active_end is not None:
@@ -124,26 +132,82 @@ class SchedulerManager:
             hour_spec = "*"
             log_active = "24h"
 
-        self.scheduler.add_job(
-            self.heartbeat_tick,
-            CronTrigger(
-                minute=minute_spec,
-                hour=hour_spec,
-            ),
-            id=f"{self._anima_name}_heartbeat",
-            name=f"{self._anima_name} heartbeat",
-            replace_existing=True,
-            misfire_grace_time=300,
-            max_instances=1,
-        )
-        logger.info(
-            "Heartbeat registered: %s minute=%s (offset=%d, interval=%dmin), %s",
-            self._anima_name,
-            minute_spec,
-            offset,
-            interval,
-            log_active,
-        )
+        if interval <= 60:
+            # CronTrigger: build minute spec with offset
+            slots = []
+            m = offset
+            while m < 60:
+                slots.append(str(m))
+                m += interval
+            minute_spec = ",".join(slots)
+
+            self.scheduler.add_job(
+                self.heartbeat_tick,
+                CronTrigger(
+                    minute=minute_spec,
+                    hour=hour_spec,
+                ),
+                id=f"{self._anima_name}_heartbeat",
+                name=f"{self._anima_name} heartbeat",
+                replace_existing=True,
+                misfire_grace_time=300,
+                max_instances=1,
+            )
+            logger.info(
+                "Heartbeat registered: %s minute=%s (offset=%d, interval=%dmin, activity=%d%%), %s",
+                self._anima_name,
+                minute_spec,
+                offset,
+                interval,
+                activity_pct,
+                log_active,
+            )
+        else:
+            # IntervalTrigger for intervals > 60 minutes
+            from datetime import datetime
+
+            from zoneinfo import ZoneInfo
+
+            from apscheduler.triggers.interval import IntervalTrigger as APIntervalTrigger
+
+            tz = ZoneInfo("Asia/Tokyo")
+            now = datetime.now(tz)
+            start_minute = now.minute + offset
+            start_time = now.replace(minute=start_minute % 60, second=0, microsecond=0)
+
+            trigger_kwargs: dict = {"minutes": interval}
+            if active_start is not None and active_end is not None:
+                trigger_kwargs["start_date"] = start_time.replace(hour=active_start)
+                trigger_kwargs["end_date"] = start_time.replace(hour=active_end)
+
+            self.scheduler.add_job(
+                self.heartbeat_tick,
+                APIntervalTrigger(**trigger_kwargs),
+                id=f"{self._anima_name}_heartbeat",
+                name=f"{self._anima_name} heartbeat",
+                replace_existing=True,
+                misfire_grace_time=300,
+                max_instances=1,
+            )
+            logger.info(
+                "Heartbeat registered (IntervalTrigger): %s every %dmin (activity=%d%%), %s",
+                self._anima_name,
+                interval,
+                activity_pct,
+                log_active,
+            )
+
+    def reschedule_heartbeat(self) -> None:
+        """Reschedule heartbeat job with current config (called on activity_level change)."""
+        if not self.scheduler:
+            return
+        job_id = f"{self._anima_name}_heartbeat"
+        try:
+            self.scheduler.remove_job(job_id)
+        except Exception:
+            pass
+        self._setup_heartbeat()
+        logger.info("Heartbeat rescheduled for %s", self._anima_name)
 
     def _setup_cron_tasks(self) -> None:
         """Register cron jobs from cron.md."""

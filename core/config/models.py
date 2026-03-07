@@ -347,7 +347,7 @@ class HeartbeatConfig(BaseModel):
     """Heartbeat scheduling and cascade prevention settings."""
 
     interval_minutes: int = Field(
-        default=30, ge=1, le=60
+        default=30, ge=1, le=1440
     )  # heartbeat interval (config-driven, not parsed from heartbeat.md)
     default_model: str | None = None  # global background model for heartbeat/cron (None = use main model)
     msg_heartbeat_cooldown_s: int = 300  # message-triggered heartbeat cooldown
@@ -443,6 +443,10 @@ class AnimaWorksConfig(BaseModel):
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     voice: VoiceConfig = VoiceConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
+    activity_level: int = Field(
+        default=100, ge=10, le=400,
+        description="Global activity level (10-400%). Scales heartbeat interval and max_turns.",
+    )
     ui: UIConfig = UIConfig()
 
 

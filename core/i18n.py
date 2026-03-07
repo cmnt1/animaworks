@@ -1828,6 +1828,19 @@ _STRINGS: dict[str, dict[str, str]] = {
             "current_task.md and send it in the next session."
         ),
     },
+    # ── settings (activity level) ──
+    "settings.activity_level.title": {
+        "ja": "アクティビティレベル",
+        "en": "Activity Level",
+    },
+    "settings.activity_level.desc": {
+        "ja": "Heartbeatの実行頻度と思考深度を調整します（10%〜400%）。100%が通常、低いほど省エネ、高いほど高頻度。",
+        "en": "Adjust heartbeat frequency and thinking depth (10%-400%). 100% is normal; lower saves cost, higher increases frequency.",
+    },
+    "settings.activity_level.updated": {
+        "ja": "アクティビティレベルを {level}% に変更しました",
+        "en": "Activity level changed to {level}%",
+    },
     # ── tooling/skill_creator.py ──
     "skill_creator.invalid_name": {
         "ja": "無効なスキル名: '{skill_name}'（パス区切り文字は使用不可）",

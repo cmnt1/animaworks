@@ -12,6 +12,7 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 
 import json
 import logging
+import math
 import re
 from typing import Any
 
@@ -24,6 +25,18 @@ from core.schemas import CycleResult
 from core.time_utils import now_iso, now_jst
 
 logger = logging.getLogger("animaworks.anima")
+
+
+def _calc_effective_max_turns(base_max_turns: int, activity_level: int) -> int | None:
+    """Calculate effective max_turns for heartbeat based on activity level.
+
+    Below 100%: linear scale (floor 3). At/above 100%: no change (None = use base).
+    """
+    if activity_level >= 100:
+        return None
+    scaled = max(3, math.ceil(base_max_turns * activity_level / 100))
+    return scaled
+
 
 # ── Reflection extraction ─────────────────────────────────────
 
@@ -351,10 +364,18 @@ class HeartbeatMixin:
             self.agent.update_model_config(bg_config)
 
         try:
+            from core.config.models import load_config as _load_config_fresh
+
+            _cfg = _load_config_fresh()
+            effective_max_turns = _calc_effective_max_turns(
+                base_max_turns=self.agent.model_config.max_turns,
+                activity_level=_cfg.activity_level,
+            )
             async for chunk in self.agent.run_cycle_streaming(
                 prompt,
                 trigger="heartbeat",
                 prior_messages=prior_messages,
+                max_turns_override=effective_max_turns,
             ):
                 # Relay text_delta chunks to waiting user stream
                 if chunk.get("type") == "text_delta":

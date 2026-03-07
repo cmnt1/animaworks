@@ -417,6 +417,7 @@ class AnimaRunner:
             "get_status": self._handle_get_status,
             "ping": self._handle_ping,
             "reload_config": self._handle_reload_config,
+            "reschedule_heartbeat": self._handle_reschedule_heartbeat,
             "shutdown": self._handle_shutdown,
             "interrupt": self._handle_interrupt,
         }
@@ -586,6 +587,12 @@ class AnimaRunner:
         if not self.anima:
             raise RuntimeError("Anima not initialized")
         return self.anima.reload_config()
+
+    async def _handle_reschedule_heartbeat(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Reschedule heartbeat job with current config (e.g. after activity_level change)."""
+        if self._scheduler_mgr:
+            self._scheduler_mgr.reschedule_heartbeat()
+        return {"status": "rescheduled"}
 
     async def _handle_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle shutdown request."""
