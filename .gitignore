@@ -52,6 +52,7 @@ tools/
 docs/*
 !docs/images/
 !docs/paper/
+docs/paper/evaluation_results.md
 !docs/release/
 
 # Experiments
