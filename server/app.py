@@ -112,7 +112,7 @@ async def _reconcile_assets_at_startup(animas_dir: Path) -> None:
             enable_3d = cfg.image_gen.enable_3d
             image_style = cfg.image_gen.image_style or "realistic"
         except Exception:
-            pass
+            logger.debug("Failed to load image_gen config for asset reconciliation; using defaults")
 
         results = await reconcile_all_assets(
             animas_dir,
