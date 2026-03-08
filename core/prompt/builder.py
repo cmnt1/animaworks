@@ -651,10 +651,8 @@ def build_system_prompt(
     # other_animas is needed by Group 5 (org_context, messaging)
     other_animas = _discover_other_animas(pd)
 
-    # Skill/procedure metadata needed by Group 4
+    # Skill metadata needed by hiring context check (Group 5)
     skill_metas = memory.list_skill_metas()
-    common_skill_metas = memory.list_common_skill_metas()
-    procedure_metas = memory.list_procedure_metas()
 
     # Read permissions early (needed by Group 2 and Group 4 external tools check)
     permissions = memory.read_permissions()
@@ -811,32 +809,17 @@ def build_system_prompt(
     # ── Group 4: 記憶と能力 ───────────────────────────────────
     _add(_ss.get("group4_header", "# 4. Memory and Capabilities"), "group4_header", 1)
 
-    # Memory directory guide
+    # Memory directory guide (simplified: counts instead of file listings)
     _none = _fs.get("none", "(none)")
-    _common = _ss.get("common_label", "(shared)")
-    knowledge_list = ", ".join(memory.list_knowledge_files()) or _none
-    episode_list = ", ".join(memory.list_episode_files()[:7]) or _none
-    procedure_list = ", ".join(memory.list_procedure_files()) or _none
-    skill_lines: list[str] = []
-    for m in skill_metas:
-        desc = f": {m.description}" if m.description else ""
-        skill_lines.append(f"- {m.name}{desc}")
-    for m in common_skill_metas:
-        desc = f": {m.description}" if m.description else ""
-        skill_lines.append(f"- {m.name}{_common}{desc}")
-    for m in procedure_metas:
-        desc = f": {m.description}" if m.description else ""
-        skill_lines.append(f"- {m.name} ({t('builder.procedure_label')}){desc}")
-    skill_names = "\n".join(skill_lines) or _none
+    knowledge_count = len(memory.list_knowledge_files())
+    procedure_count = len(memory.list_procedure_files())
     shared_users_list = ", ".join(memory.list_shared_users()) or _none
 
     memory_guide_content = load_prompt(
         "memory_guide",
         anima_dir=pd,
-        knowledge_list=knowledge_list,
-        episode_list=episode_list,
-        procedure_list=procedure_list,
-        skill_names=skill_names,
+        knowledge_count=knowledge_count,
+        procedure_count=procedure_count,
         shared_users_list=shared_users_list,
     )
     if memory_guide_content:

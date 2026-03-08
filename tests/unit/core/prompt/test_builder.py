@@ -8,8 +8,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.prompt.builder import (
     BuildResult,
     _build_messaging_section,
@@ -20,7 +18,6 @@ from core.prompt.builder import (
     inject_shortterm,
 )
 from core.schemas import SkillMeta
-
 
 _MOCK_SECTIONS = (
     "[group1_header]: # 1. 動作環境と行動ルール\n"
@@ -257,11 +254,8 @@ class TestBuildSystemPrompt:
             result = build_system_prompt(memory)
             assert "I am Alice" in result
 
-    def test_skills_not_in_system_prompt_table(self, tmp_path, data_dir):
-        """Skills are no longer injected as a table in the system prompt.
-
-        They are available via the skill tool instead.
-        """
+    def test_skills_not_in_system_prompt(self, tmp_path, data_dir):
+        """Skills are not listed in memory_guide — they live in the skill tool description."""
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text("I am Alice", encoding="utf-8")
@@ -276,9 +270,9 @@ class TestBuildSystemPrompt:
         memory.read_current_state.return_value = ""
         memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
-        memory.list_knowledge_files.return_value = []
+        memory.list_knowledge_files.return_value = ["topic-a", "topic-b"]
         memory.list_episode_files.return_value = []
-        memory.list_procedure_files.return_value = []
+        memory.list_procedure_files.return_value = ["proc-x"]
         memory.list_skill_summaries.return_value = [("coding", "Write code")]
         memory.list_common_skill_summaries.return_value = [("deploy", "Deploy apps")]
         memory.list_skill_metas.return_value = [SkillMeta(name="coding", description="Write code", path=Path("/tmp/test/skills/coding.md"), is_common=False)]
@@ -291,13 +285,58 @@ class TestBuildSystemPrompt:
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)
-            # The unified table header must NOT appear (table removed)
-            assert "| 名前 | 種別 | 概要 |" not in result
-            # Skills/procedures table section header must NOT appear
-            assert "スキルと手順書" not in result
-            # Skill names may appear in memory_guide listing but NOT as table rows
-            assert "| coding |" not in result
-            assert "| deploy |" not in result
+            prompt = result.system_prompt
+            assert "スキルと手順書" not in prompt
+            assert "- coding: Write code" not in prompt
+            assert "- deploy" not in prompt
+
+    def test_memory_guide_uses_counts(self, tmp_path, data_dir):
+        """memory_guide receives knowledge/procedure counts, not file name lists."""
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("I am Alice", encoding="utf-8")
+
+        memory = MagicMock()
+        memory.anima_dir = anima_dir
+        memory.read_company_vision.return_value = ""
+        memory.read_identity.return_value = ""
+        memory.read_injection.return_value = ""
+        memory.read_permissions.return_value = ""
+        memory.read_specialty_prompt.return_value = ""
+        memory.read_current_state.return_value = ""
+        memory.read_pending.return_value = ""
+        memory.read_bootstrap.return_value = ""
+        memory.list_knowledge_files.return_value = ["a", "b", "c"]
+        memory.list_episode_files.return_value = []
+        memory.list_procedure_files.return_value = ["p1"]
+        memory.list_skill_summaries.return_value = []
+        memory.list_common_skill_summaries.return_value = []
+        memory.list_skill_metas.return_value = []
+        memory.list_common_skill_metas.return_value = []
+        memory.list_procedure_metas.return_value = []
+        memory.collect_distilled_knowledge_separated.return_value = ([], [])
+        memory.common_skills_dir = data_dir / "common_skills"
+        memory.list_shared_users.return_value = ["taka"]
+        memory.collect_distilled_knowledge_separated.return_value = ([], [])
+
+        captured_calls: list[dict] = []
+
+        def _capture_load_prompt(name: str, **kwargs) -> str:
+            captured_calls.append({"name": name, "kwargs": kwargs})
+            base = _mock_load_prompt_with_builder()
+            return base(name, **kwargs)
+
+        with patch("core.prompt.builder.load_prompt", side_effect=_capture_load_prompt):
+            build_system_prompt(memory)
+
+        mg_calls = [c for c in captured_calls if c["name"] == "memory_guide"]
+        assert len(mg_calls) == 1
+        kw = mg_calls[0]["kwargs"]
+        assert kw["knowledge_count"] == 3
+        assert kw["procedure_count"] == 1
+        assert "skill_names" not in kw
+        assert "episode_list" not in kw
+        assert "knowledge_list" not in kw
 
     def test_includes_bootstrap(self, tmp_path, data_dir):
         anima_dir = tmp_path / "animas" / "alice"
