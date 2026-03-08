@@ -219,16 +219,3 @@ read_memory_file(path="common_knowledge/troubleshooting/common-issues.md")
 read_memory_file(path="common_knowledge/00_index.md")
 ```
 
----
-
-## ユースケースガイド（usecases/）
-| ファイル | 内容 |
-|---------|------|
-| usecase-overview.md | 概要・AnimaWorksでできること |
-| usecase-communication.md | 外部通信・メッセージング |
-| usecase-development.md | 開発支援・コードレビュー |
-| usecase-monitoring.md | インフラ・システム監視 |
-| usecase-secretary.md | 秘書業務・スケジュール管理 |
-| usecase-research.md | 調査・リサーチ・情報収集 |
-| usecase-customer-support.md | カスタマーサポート対応 |
-| usecase-knowledge.md | ナレッジ管理・ドキュメント化 |

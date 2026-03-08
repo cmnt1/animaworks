@@ -53,7 +53,10 @@ Follow this flow to find the right document:
 9. **Concerned about external data reliability / prompt injection?**
    → Read `security/prompt-injection-awareness.md`
 
-10. **None of the above applies**
+10. **Want to know what AnimaWorks can do / looking for use-case examples?**
+   → Read `usecases/usecase-overview.md`
+
+11. **None of the above applies**
    → Search with `search_memory(query="keyword", scope="common_knowledge")`
 
 ---
@@ -104,6 +107,19 @@ Follow this flow to find the right document:
 | `troubleshooting/common-issues.md` | Common problems and fixes (undelivered messages, rate limits, blocks, memory search, permissions, tools, context) |
 | `troubleshooting/escalation-flowchart.md` | Decision flowchart for when you're stuck (problem types, urgency, who to escalate to, templates) |
 | `troubleshooting/gmail-credential-setup.md` | Gmail tool credential setup guide (token.json placement, pickle conversion, client_id mismatch) |
+
+### usecases/ — Use Case Guides (Getting Started)
+
+| File | Description |
+|------|-------------|
+| `usecases/usecase-overview.md` | Use case guide overview (what AnimaWorks can do, getting started, full topic list) |
+| `usecases/usecase-communication.md` | Communication automation (chat/email monitoring, escalation, scheduled notifications) |
+| `usecases/usecase-development.md` | Software development support (code review, CI/CD monitoring, issue implementation, bug investigation) |
+| `usecases/usecase-monitoring.md` | Infrastructure & service monitoring (uptime checks, resource monitoring, SSL certificates, log analysis) |
+| `usecases/usecase-secretary.md` | Secretary & administrative support (scheduling, coordination, daily reports, reminders) |
+| `usecases/usecase-research.md` | Research & analysis (web search, competitor analysis, market research, report generation) |
+| `usecases/usecase-knowledge.md` | Knowledge management & documentation (procedure creation, FAQ building, lessons learned) |
+| `usecases/usecase-customer-support.md` | Customer support (first response, FAQ auto-reply, escalation management) |
 
 ---
 
@@ -164,6 +180,14 @@ Find the right document from relevant keywords.
 | VOICEVOX, ElevenLabs, Style-BERT-VITS2, SBV2 | `operations/voice-chat-guide.md` |
 | voice_id, voice, speaker, voice settings | `operations/voice-chat-guide.md` |
 | WebSocket, /ws/voice, barge-in, VAD, PTT | `operations/voice-chat-guide.md` |
+| use case, examples, what can it do, getting started | `usecases/usecase-overview.md` |
+| email automation, chat monitoring, notification | `usecases/usecase-communication.md` |
+| code review, PR, CI/CD, development | `usecases/usecase-development.md` |
+| monitoring, server, SSL, alert, incident | `usecases/usecase-monitoring.md` |
+| secretary, schedule, reminder, daily report | `usecases/usecase-secretary.md` |
+| research, competitor analysis, market research | `usecases/usecase-research.md` |
+| knowledge, procedure, FAQ, documentation | `usecases/usecase-knowledge.md` |
+| customer support, inquiry, support ticket | `usecases/usecase-customer-support.md` |
 
 ---
 
@@ -189,16 +213,3 @@ read_memory_file(path="common_knowledge/troubleshooting/common-issues.md")
 read_memory_file(path="common_knowledge/00_index.md")
 ```
 
----
-
-## Usecase Guides (usecases/)
-| File | Description |
-|------|-------------|
-| usecase-overview.md | Overview & what AnimaWorks can do |
-| usecase-communication.md | External communication & messaging |
-| usecase-development.md | Development support & code review |
-| usecase-monitoring.md | Infrastructure & system monitoring |
-| usecase-secretary.md | Secretary tasks & schedule management |
-| usecase-research.md | Research & information gathering |
-| usecase-customer-support.md | Customer support operations |
-| usecase-knowledge.md | Knowledge management & documentation |
