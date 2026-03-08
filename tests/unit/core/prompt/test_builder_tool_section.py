@@ -417,10 +417,10 @@ class TestBuildSystemPromptIntegration:
         memory.collect_distilled_knowledge_separated.return_value = ([], [])
         return memory
 
-    def test_tool_section_in_system_prompt(
+    def test_tool_section_in_system_prompt_mode_b(
         self, anima_dir: Path, model_config: ModelConfig, data_dir,
     ):
-        """When conversation has tool records, the section appears in the prompt."""
+        """Mode B + chat: tool section appears in the prompt."""
         record = _make_tool_record("web_search", "Found 3 results")
         state = _make_state(turns=[
             _make_turn(tool_records=[record]),
@@ -435,15 +435,38 @@ class TestBuildSystemPromptIntegration:
             mock_instance.load.return_value = state
 
             from core.prompt.builder import build_system_prompt
-            result = build_system_prompt(memory)
+            result = build_system_prompt(memory, execution_mode="B")
 
         assert "## Recent Tool Results" in result
         assert "- web_search: Found 3 results" in result
 
+    @pytest.mark.parametrize("mode", ["S", "s", "A"])
+    def test_no_tool_section_for_mode_s_and_a(
+        self, anima_dir: Path, model_config: ModelConfig, data_dir, mode: str,
+    ):
+        """Mode S/A + chat: tool section is NOT injected."""
+        record = _make_tool_record("web_search", "Found 3 results")
+        state = _make_state(turns=[
+            _make_turn(tool_records=[record]),
+        ])
+        memory = self._make_memory_mock(anima_dir, model_config)
+
+        with patch("core.prompt.builder.load_prompt", return_value="section"), \
+             patch(
+                 "core.memory.conversation.ConversationMemory",
+             ) as MockConvMem:
+            mock_instance = MockConvMem.return_value
+            mock_instance.load.return_value = state
+
+            from core.prompt.builder import build_system_prompt
+            result = build_system_prompt(memory, execution_mode=mode)
+
+        assert "## Recent Tool Results" not in result
+
     def test_no_tool_section_when_no_records(
         self, anima_dir: Path, model_config: ModelConfig, data_dir,
     ):
-        """When conversation has no tool records, the section is absent."""
+        """Mode B + no tool records: the section is absent."""
         state = _make_state(turns=[
             _make_turn(role="human", content="hello"),
             _make_turn(role="assistant", content="hi"),
@@ -458,7 +481,7 @@ class TestBuildSystemPromptIntegration:
             mock_instance.load.return_value = state
 
             from core.prompt.builder import build_system_prompt
-            result = build_system_prompt(memory)
+            result = build_system_prompt(memory, execution_mode="B")
 
         assert "## Recent Tool Results" not in result
 
@@ -474,8 +497,7 @@ class TestBuildSystemPromptIntegration:
                  side_effect=RuntimeError("broken"),
              ):
             from core.prompt.builder import build_system_prompt
-            result = build_system_prompt(memory)
+            result = build_system_prompt(memory, execution_mode="B")
 
-        # Prompt should still be valid (just missing the tool section)
         assert "## Recent Tool Results" not in result
         assert len(result) > 0

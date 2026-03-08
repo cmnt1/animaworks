@@ -796,8 +796,8 @@ def build_system_prompt(
     if pending_human_notifications and (is_chat or is_heartbeat):
         _add(pending_human_notifications, "pending_human_notifications", 3, "elastic")
 
-    # Recent tool results: only for chat
-    if is_chat:
+    # Recent tool results: Mode B only (S/A have tool results in messages)
+    if is_chat and execution_mode.upper() == "B":
         try:
             _model_cfg = memory.read_model_config()
             recent_tools = _build_recent_tool_section(pd, _model_cfg)
