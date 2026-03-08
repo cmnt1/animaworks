@@ -12,7 +12,9 @@ Covers:
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import datetime
+
+from core.time_utils import today_local
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -140,7 +142,7 @@ class TestLoadRecentHeartbeatSummary:
                 "summary": f"Performed action {i}",
                 "duration_ms": 100 + i,
             }, ensure_ascii=False))
-        (history_dir / f"{date.today().isoformat()}.jsonl").write_text(
+        (history_dir / f"{today_local().isoformat()}.jsonl").write_text(
             "\n".join(entries) + "\n", encoding="utf-8",
         )
 
@@ -185,7 +187,7 @@ class TestLoadRecentHeartbeatSummary:
                 "summary": "HEARTBEAT_OK",
             }, ensure_ascii=False),
         ]
-        (history_dir / f"{date.today().isoformat()}.jsonl").write_text(
+        (history_dir / f"{today_local().isoformat()}.jsonl").write_text(
             "\n".join(entries) + "\n", encoding="utf-8",
         )
 
@@ -219,7 +221,7 @@ class TestLoadRecentHeartbeatSummary:
                 "action": "checked",
                 "summary": f"Activity number {i}",
             }, ensure_ascii=False))
-        (history_dir / f"{date.today().isoformat()}.jsonl").write_text(
+        (history_dir / f"{today_local().isoformat()}.jsonl").write_text(
             "\n".join(entries) + "\n", encoding="utf-8",
         )
 

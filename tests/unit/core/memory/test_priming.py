@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
-from datetime import date
 from pathlib import Path
+
+from core.time_utils import today_local
 
 import pytest
 
@@ -28,9 +29,9 @@ def temp_anima_dir():
         (anima_dir / "skills").mkdir()
 
         # Create sample episode file (today)
-        today_episode = anima_dir / "episodes" / f"{date.today().isoformat()}.md"
+        today_episode = anima_dir / "episodes" / f"{today_local().isoformat()}.md"
         today_episode.write_text(
-            f"# {date.today().isoformat()} 行動ログ\n\n"
+            f"# {today_local().isoformat()} 行動ログ\n\n"
             "## 09:00 — 朝のタスク確認\n\n"
             "**相手**: システム\n"
             "**トピック**: タスク管理\n"
@@ -347,9 +348,9 @@ if __name__ == "__main__":
             users_dir.mkdir(parents=True)
 
             # Create sample data
-            today_episode = anima_dir / "episodes" / f"{date.today().isoformat()}.md"
+            today_episode = anima_dir / "episodes" / f"{today_local().isoformat()}.md"
             today_episode.write_text(
-                f"# {date.today().isoformat()} 行動ログ\n\n"
+                f"# {today_local().isoformat()} 行動ログ\n\n"
                 "## 09:00 — テスト\n\nテストエピソード\n",
                 encoding="utf-8",
             )

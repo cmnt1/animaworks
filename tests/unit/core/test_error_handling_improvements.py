@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from core.time_utils import today_local
+
 import pytest
 
 from core.exceptions import (
@@ -178,7 +180,7 @@ class TestMessengerErrorHandling:
         anima_dir = data_dir / "animas" / "msg-test"
         activity_dir = anima_dir / "activity_log"
         activity_dir.mkdir(parents=True, exist_ok=True)
-        today = __import__("datetime").date.today().isoformat()
+        today = today_local().isoformat()
         (activity_dir / f"{today}.jsonl").write_text(
             "{bad json\n", encoding="utf-8",
         )
