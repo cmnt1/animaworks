@@ -170,6 +170,7 @@ class RAGConfig(BaseModel):
     implicit_link_threshold: float = 0.75
     spreading_memory_types: list[str] = ["knowledge", "episodes"]
     min_retrieval_score: float = 0.3
+    skill_match_min_score: float = 0.75
 
 
 class PrimingConfig(BaseModel):
