@@ -154,9 +154,7 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
             if self._bootstrap_retries_file.exists():
                 data = json.loads(self._bootstrap_retries_file.read_text())
                 if isinstance(data, dict):
-                    self._bootstrap_retry_counts = {
-                        k: int(v) for k, v in data.items()
-                    }
+                    self._bootstrap_retry_counts = {k: int(v) for k, v in data.items()}
                     logger.info(
                         "Loaded bootstrap retry counts: %s",
                         self._bootstrap_retry_counts,
@@ -167,9 +165,7 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
     def _save_bootstrap_retries(self) -> None:
         """Persist bootstrap retry counts to disk."""
         try:
-            self._bootstrap_retries_file.write_text(
-                json.dumps(self._bootstrap_retry_counts, indent=2)
-            )
+            self._bootstrap_retries_file.write_text(json.dumps(self._bootstrap_retry_counts, indent=2))
         except Exception:
             logger.warning("Failed to save bootstrap retries file", exc_info=True)
 
