@@ -68,8 +68,8 @@ class StreamingIPCHandler:
         try:
             from core.memory.shortterm import ShortTermMemory
 
-            ShortTermMemory(self._anima_dir).clear_checkpoint()
-            logger.info("Stream checkpoint cleared: %s", reason)
+            ShortTermMemory(self._anima_dir, thread_id=thread_id).clear_checkpoint()
+            logger.info("Stream checkpoint cleared: %s (thread=%s)", reason, thread_id)
         except Exception as e:
             logger.warning("Failed to clear checkpoint: %s", e)
 

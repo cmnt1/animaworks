@@ -361,7 +361,7 @@ class CycleMixin:
         # Pre-flight: check prompt size to prevent Agent SDK buffer overflow
         from core.memory.conversation import ConversationMemory
 
-        conv_memory = ConversationMemory(self.anima_dir, self.model_config)
+        conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
         system_prompt, prompt, use_fallback = await self._preflight_size_check(
             system_prompt,
             prompt,
@@ -601,7 +601,7 @@ class CycleMixin:
         # Pre-flight size check for streaming path
         from core.memory.conversation import ConversationMemory
 
-        conv_memory = ConversationMemory(self.anima_dir, self.model_config)
+        conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
         system_prompt, prompt, use_fallback = await self._preflight_size_check(
             system_prompt,
             prompt,
