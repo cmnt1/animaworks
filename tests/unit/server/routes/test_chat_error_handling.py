@@ -116,7 +116,7 @@ class TestStreamErrorCodes:
     async def test_stream_anima_not_found_has_code(self):
         async def _raise_key_error(*args, **kwargs):
             raise KeyError("alice")
-            yield  # noqa: unreachable
+            yield  # noqa
 
         sup = _make_supervisor()
         sup.send_request_stream = _raise_key_error
@@ -135,7 +135,7 @@ class TestStreamErrorCodes:
     async def test_stream_generic_error_has_code(self):
         async def _raise_generic(*args, **kwargs):
             raise ValueError("something broke")
-            yield  # noqa: unreachable
+            yield  # noqa
 
         sup = _make_supervisor()
         sup.send_request_stream = _raise_generic
@@ -155,7 +155,7 @@ class TestStreamErrorCodes:
     async def test_stream_timeout_has_code(self):
         async def _raise_timeout(*args, **kwargs):
             raise TimeoutError("timed out")
-            yield  # noqa: unreachable
+            yield  # noqa
 
         sup = _make_supervisor()
         sup.send_request_stream = _raise_timeout

@@ -776,7 +776,7 @@ class TestProcessMessageStreamConversationSave:
 
             async def mock_stream(prompt, trigger="manual", **kwargs):
                 raise RuntimeError("immediate failure")
-                yield  # noqa: unreachable — makes this an async generator
+                yield  # noqa
 
             dp.agent.run_cycle_streaming = mock_stream
 

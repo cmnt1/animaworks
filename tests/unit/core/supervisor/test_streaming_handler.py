@@ -103,7 +103,7 @@ class TestStreamHandleBasicFlow:
 
         async def mock_stream(*args, **kwargs):
             raise RuntimeError("stream error")
-            yield  # noqa: unreachable - make it an async generator
+            yield  # noqa
 
         handler._anima.process_message_stream = mock_stream
         handler._anima.needs_bootstrap = False

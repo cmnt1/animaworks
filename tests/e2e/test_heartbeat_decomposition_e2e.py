@@ -75,7 +75,7 @@ def _attach_failing_stream(dp, error: Exception | None = None):
 
     async def mock_stream(prompt, trigger="manual", **kwargs):
         raise exc
-        yield  # noqa: unreachable — makes this an async generator
+        yield  # noqa
 
     dp.agent.run_cycle_streaming = mock_stream
 

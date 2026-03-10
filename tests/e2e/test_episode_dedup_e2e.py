@@ -93,7 +93,7 @@ class TestDifferentialFinalizationE2E:
         from tests.helpers.mocks import make_litellm_response, patch_litellm
         from core.memory.conversation import ConversationMemory, ConversationTurn
         from core.schemas import ModelConfig
-        
+
         anima_dir = create_anima_dir(data_dir, "e2e-dedup")
         model_config = ModelConfig(
             model="claude-sonnet-4-6",
