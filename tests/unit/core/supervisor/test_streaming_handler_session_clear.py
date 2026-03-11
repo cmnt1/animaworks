@@ -1,7 +1,7 @@
-"""Tests for streaming_handler.py session clear on done=False disconnection.
+"""Tests for streaming_handler.py abort state handling.
 
-Verifies that _clear_session_id and clear_checkpoint are called in all three
-error paths inside _stream_producer():
+Verifies that session IDs are PRESERVED and only clear_checkpoint is
+called in all three error paths inside _stream_producer():
   - done=False: stream ends without cycle_done
   - TimeoutError: timeout during streaming
   - Exception: general error during streaming
@@ -46,13 +46,13 @@ def _make_request(message: str = "test") -> IPCRequest:
 # ── done=False path (stream ends without cycle_done) ──────────
 
 
-class TestSessionClearOnDoneFalse:
-    """_stream_producer ends without cycle_done: chat session ID + checkpoint cleared."""
+class TestSessionPreservedOnDoneFalse:
+    """_stream_producer ends without cycle_done: session ID preserved, only checkpoint cleared."""
 
     @pytest.mark.asyncio
-    async def test_clear_session_id_called_chat_only_on_stream_abort(self, tmp_path: Path) -> None:
-        """_clear_session_id called for 'chat' only when stream ends
-        without cycle_done (background session types are never persisted)."""
+    async def test_session_id_not_cleared_on_stream_abort(self, tmp_path: Path) -> None:
+        """_clear_session_id is NOT called when stream ends without cycle_done
+        (session is preserved for next resume)."""
         handler = _make_handler(tmp_path)
 
         async def mock_stream_no_cycle_done(*args, **kwargs):
@@ -81,13 +81,7 @@ class TestSessionClearOnDoneFalse:
             async for resp in handler.handle_stream(_make_request()):
                 responses.append(resp)
 
-        cleared_types = [st for _, st in clear_calls]
-        assert "chat" in cleared_types, f"Expected 'chat' to be cleared, got: {clear_calls}"
-        assert "heartbeat" not in cleared_types, (
-            "heartbeat should NOT be cleared (background sessions are never persisted)"
-        )
-        for anima_dir_arg, _ in clear_calls:
-            assert anima_dir_arg == tmp_path
+        assert clear_calls == [], f"Expected NO session ID clears (session preserved), but got: {clear_calls}"
 
     @pytest.mark.asyncio
     async def test_clear_checkpoint_called_on_stream_abort(self, tmp_path: Path) -> None:
@@ -97,7 +91,6 @@ class TestSessionClearOnDoneFalse:
 
         async def mock_stream_no_cycle_done(*args, **kwargs):
             yield {"type": "text_delta", "text": "partial"}
-            # No cycle_done
 
         handler._anima.process_message_stream = mock_stream_no_cycle_done
 
@@ -108,7 +101,6 @@ class TestSessionClearOnDoneFalse:
 
         with (
             patch("core.config.load_config") as mock_config,
-            patch("core.execution._sdk_session._clear_session_id"),
             patch.object(
                 __import__("core.memory.shortterm", fromlist=["ShortTermMemory"]).ShortTermMemory,
                 "clear_checkpoint",
@@ -123,19 +115,17 @@ class TestSessionClearOnDoneFalse:
         assert len(checkpoint_cleared) >= 1, "clear_checkpoint() was not called on stream abort"
 
     @pytest.mark.asyncio
-    async def test_done_response_still_emitted_after_session_clear(self, tmp_path: Path) -> None:
-        """A done=True IPCResponse is still yielded even after session clear."""
+    async def test_done_response_still_emitted_on_stream_abort(self, tmp_path: Path) -> None:
+        """A done=True IPCResponse is still yielded even after stream abort."""
         handler = _make_handler(tmp_path)
 
         async def mock_stream_abort(*args, **kwargs):
             yield {"type": "text_delta", "text": "hello"}
-            # No cycle_done
 
         handler._anima.process_message_stream = mock_stream_abort
 
         with (
             patch("core.config.load_config") as mock_config,
-            patch("core.execution._sdk_session._clear_session_id"),
             patch("core.memory.shortterm.ShortTermMemory"),
         ):
             mock_config.return_value.server.keepalive_interval = 30
@@ -150,12 +140,12 @@ class TestSessionClearOnDoneFalse:
 # ── TimeoutError path ─────────────────────────────────────────
 
 
-class TestSessionClearOnTimeoutError:
-    """TimeoutError in _stream_producer: session IDs + checkpoint cleared."""
+class TestSessionPreservedOnTimeoutError:
+    """TimeoutError in _stream_producer: session IDs preserved, only checkpoint cleared."""
 
     @pytest.mark.asyncio
-    async def test_clear_session_id_called_on_timeout(self, tmp_path: Path) -> None:
-        """_clear_session_id called for 'chat' only on TimeoutError."""
+    async def test_session_id_not_cleared_on_timeout(self, tmp_path: Path) -> None:
+        """_clear_session_id is NOT called on TimeoutError (session preserved)."""
         handler = _make_handler(tmp_path)
 
         async def mock_stream_timeout(*args, **kwargs):
@@ -182,9 +172,7 @@ class TestSessionClearOnTimeoutError:
             async for resp in handler.handle_stream(_make_request()):
                 responses.append(resp)
 
-        cleared_types = [st for _, st in clear_calls]
-        assert "chat" in cleared_types
-        assert "heartbeat" not in cleared_types
+        assert clear_calls == [], f"Expected NO session ID clears on timeout, but got: {clear_calls}"
 
     @pytest.mark.asyncio
     async def test_ipc_timeout_error_returned_on_timeout(self, tmp_path: Path) -> None:
@@ -199,7 +187,6 @@ class TestSessionClearOnTimeoutError:
 
         with (
             patch("core.config.load_config") as mock_config,
-            patch("core.execution._sdk_session._clear_session_id"),
             patch("core.memory.shortterm.ShortTermMemory"),
         ):
             mock_config.return_value.server.keepalive_interval = 30
@@ -215,12 +202,12 @@ class TestSessionClearOnTimeoutError:
 # ── Exception path ────────────────────────────────────────────
 
 
-class TestSessionClearOnException:
-    """General Exception in _stream_producer: session IDs + checkpoint cleared."""
+class TestSessionPreservedOnException:
+    """General Exception in _stream_producer: session IDs preserved, only checkpoint cleared."""
 
     @pytest.mark.asyncio
-    async def test_clear_session_id_called_on_general_exception(self, tmp_path: Path) -> None:
-        """_clear_session_id called for 'chat' only on Exception."""
+    async def test_session_id_not_cleared_on_general_exception(self, tmp_path: Path) -> None:
+        """_clear_session_id is NOT called on general Exception (session preserved)."""
         handler = _make_handler(tmp_path)
 
         async def mock_stream_raises(*args, **kwargs):
@@ -247,9 +234,7 @@ class TestSessionClearOnException:
             async for resp in handler.handle_stream(_make_request()):
                 responses.append(resp)
 
-        cleared_types = [st for _, st in clear_calls]
-        assert "chat" in cleared_types
-        assert "heartbeat" not in cleared_types
+        assert clear_calls == [], f"Expected NO session ID clears on exception, but got: {clear_calls}"
 
     @pytest.mark.asyncio
     async def test_stream_error_returned_on_general_exception(self, tmp_path: Path) -> None:
@@ -264,7 +249,6 @@ class TestSessionClearOnException:
 
         with (
             patch("core.config.load_config") as mock_config,
-            patch("core.execution._sdk_session._clear_session_id"),
             patch("core.memory.shortterm.ShortTermMemory"),
         ):
             mock_config.return_value.server.keepalive_interval = 30
@@ -294,7 +278,6 @@ class TestSessionClearOnException:
 
         with (
             patch("core.config.load_config") as mock_config,
-            patch("core.execution._sdk_session._clear_session_id"),
             patch.object(
                 __import__("core.memory.shortterm", fromlist=["ShortTermMemory"]).ShortTermMemory,
                 "clear_checkpoint",

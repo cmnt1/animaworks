@@ -7,7 +7,7 @@ Covers:
   - _RESUMABLE_SESSION_TYPES only contains chat
   - _resolve_session_type() maps triggers correctly
   - _clear_session_id() file deletion logic
-  - _load_session_id() / _save_session_id() persistence
+  - _load_session_id() / _save_session_id() persistence (immortal sessions — no TTL)
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -53,8 +53,8 @@ def anima_dir(tmp_path: Path) -> Path:
 # ── Session resume timeout ────────────────────────────────────
 
 
-class TestSessionResumeTimeout:
-    """_load_session_id() returns None for sessions older than the timeout."""
+class TestSessionImmortal:
+    """_load_session_id() returns session ID regardless of age (no TTL)."""
 
     def test_recent_session_returns_id(self, anima_dir: Path) -> None:
         from core.execution._sdk_session import _load_session_id, _save_session_id
@@ -62,36 +62,45 @@ class TestSessionResumeTimeout:
         _save_session_id(anima_dir, "sess-recent", "chat")
         assert _load_session_id(anima_dir, "chat") == "sess-recent"
 
-    def test_old_session_returns_none(self, anima_dir: Path) -> None:
-        from core.execution._sdk_session import (
-            SESSION_RESUME_TIMEOUT_MIN,
-            _load_session_id,
-        )
+    def test_old_session_still_returns_id(self, anima_dir: Path) -> None:
+        """Sessions are immortal — old sessions are always returned."""
+        from core.execution._sdk_session import _load_session_id
 
         path = anima_dir / "state" / "current_session_chat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         from datetime import datetime, timedelta
 
-        old_ts = (datetime.now(UTC) - timedelta(minutes=SESSION_RESUME_TIMEOUT_MIN + 5)).isoformat()
+        old_ts = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
         path.write_text(
             json.dumps({"session_id": "sess-old", "timestamp": old_ts}),
             encoding="utf-8",
         )
-        assert _load_session_id(anima_dir, "chat") is None
+        assert _load_session_id(anima_dir, "chat") == "sess-old"
 
-    def test_naive_timestamp_treated_as_utc(self, anima_dir: Path) -> None:
-        """Legacy files without timezone info should still be handled."""
-        from core.execution._sdk_session import (
-            SESSION_RESUME_TIMEOUT_MIN,
-            _load_session_id,
-        )
+    def test_very_old_session_still_returns_id(self, anima_dir: Path) -> None:
+        """Even week-old sessions are returned (TTL was removed)."""
+        from core.execution._sdk_session import _load_session_id
 
         path = anima_dir / "state" / "current_session_chat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         from datetime import datetime, timedelta
 
-        old_ts = datetime.now(UTC) - timedelta(minutes=SESSION_RESUME_TIMEOUT_MIN + 1)
-        # Write naive (no tz info) — simulates pre-fix files
+        old_ts = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+        path.write_text(
+            json.dumps({"session_id": "sess-week-old", "timestamp": old_ts}),
+            encoding="utf-8",
+        )
+        assert _load_session_id(anima_dir, "chat") == "sess-week-old"
+
+    def test_naive_timestamp_handled_gracefully(self, anima_dir: Path) -> None:
+        """Legacy files without timezone info should still return session ID."""
+        from core.execution._sdk_session import _load_session_id
+
+        path = anima_dir / "state" / "current_session_chat.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime, timedelta
+
+        old_ts = datetime.now(UTC) - timedelta(hours=2)
         path.write_text(
             json.dumps(
                 {
@@ -101,7 +110,7 @@ class TestSessionResumeTimeout:
             ),
             encoding="utf-8",
         )
-        assert _load_session_id(anima_dir, "chat") is None
+        assert _load_session_id(anima_dir, "chat") == "sess-naive"
 
     def test_missing_timestamp_still_returns_id(self, anima_dir: Path) -> None:
         """Files without timestamp field (edge case) resume unconditionally."""
@@ -115,22 +124,20 @@ class TestSessionResumeTimeout:
         )
         assert _load_session_id(anima_dir, "chat") == "sess-no-ts"
 
-    def test_heartbeat_session_also_times_out(self, anima_dir: Path) -> None:
-        from core.execution._sdk_session import (
-            SESSION_RESUME_TIMEOUT_MIN,
-            _load_session_id,
-        )
+    def test_heartbeat_old_session_returns_id(self, anima_dir: Path) -> None:
+        """Heartbeat sessions are also immortal."""
+        from core.execution._sdk_session import _load_session_id
 
         path = anima_dir / "state" / "current_session_heartbeat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         from datetime import datetime, timedelta
 
-        old_ts = (datetime.now(UTC) - timedelta(minutes=SESSION_RESUME_TIMEOUT_MIN + 1)).isoformat()
+        old_ts = (datetime.now(UTC) - timedelta(hours=12)).isoformat()
         path.write_text(
             json.dumps({"session_id": "hb-old", "timestamp": old_ts}),
             encoding="utf-8",
         )
-        assert _load_session_id(anima_dir, "heartbeat") is None
+        assert _load_session_id(anima_dir, "heartbeat") == "hb-old"
 
 
 # ── Session persistence helpers ───────────────────────────────
