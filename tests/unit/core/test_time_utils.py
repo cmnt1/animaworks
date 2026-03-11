@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timezone, UTC
+from datetime import date, datetime, UTC
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 

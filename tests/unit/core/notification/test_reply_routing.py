@@ -6,7 +6,7 @@ from __future__ import annotations
 """Tests for call_human reply routing (notification_map + sanitization)."""
 
 import json
-from datetime import datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

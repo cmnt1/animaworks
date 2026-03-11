@@ -328,7 +328,7 @@ class TestRecentActivity:
         assert resp.status_code == 200
 
     async def test_activity_with_anima_filter(self, tmp_path):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
@@ -377,7 +377,7 @@ class TestActivityEndpoint:
 
     async def test_basic_activity_retrieval(self, tmp_path):
         """Activity entries from JSONL files appear in response."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)
@@ -419,7 +419,7 @@ class TestActivityEndpoint:
 
     async def test_filter_by_event_type(self, tmp_path):
         """event_type filter returns only matching types."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)
@@ -448,7 +448,7 @@ class TestActivityEndpoint:
 
     async def test_filter_by_anima(self, tmp_path):
         """anima filter returns only events from the specified anima."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)
@@ -483,7 +483,7 @@ class TestActivityEndpoint:
 
     async def test_pagination_offset_limit(self, tmp_path):
         """Offset and limit control pagination correctly."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)
@@ -532,7 +532,7 @@ class TestActivityEndpoint:
 
     async def test_events_sorted_descending(self, tmp_path):
         """Events are sorted by timestamp descending (newest first)."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)
@@ -569,7 +569,7 @@ class TestActivityEndpoint:
 
     async def test_events_capped_at_default_limit_200(self, tmp_path):
         """No more than 200 events are returned by default."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)
@@ -595,7 +595,7 @@ class TestActivityEndpoint:
 
     async def test_multiple_animas_merged(self, tmp_path):
         """Events from multiple animas are merged and sorted."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)
@@ -637,7 +637,7 @@ class TestActivityEndpoint:
 
     async def test_malformed_jsonl_lines_skipped(self, tmp_path):
         """Malformed JSONL lines are skipped without crashing."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)

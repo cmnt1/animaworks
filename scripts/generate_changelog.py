@@ -19,7 +19,7 @@ import argparse
 import re
 import subprocess
 from collections import defaultdict
-from datetime import datetime, timezone, UTC
+from datetime import datetime, UTC
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent

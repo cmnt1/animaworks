@@ -70,7 +70,7 @@ class TestSessionResumeTimeout:
 
         path = anima_dir / "state" / "current_session_chat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         old_ts = (datetime.now(UTC) - timedelta(minutes=SESSION_RESUME_TIMEOUT_MIN + 5)).isoformat()
         path.write_text(
@@ -88,7 +88,7 @@ class TestSessionResumeTimeout:
 
         path = anima_dir / "state" / "current_session_chat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         old_ts = datetime.now(UTC) - timedelta(minutes=SESSION_RESUME_TIMEOUT_MIN + 1)
         # Write naive (no tz info) — simulates pre-fix files
@@ -123,7 +123,7 @@ class TestSessionResumeTimeout:
 
         path = anima_dir / "state" / "current_session_heartbeat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         old_ts = (datetime.now(UTC) - timedelta(minutes=SESSION_RESUME_TIMEOUT_MIN + 1)).isoformat()
         path.write_text(

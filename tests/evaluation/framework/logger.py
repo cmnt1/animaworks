@@ -12,7 +12,7 @@ recording all metrics to JSON files for later analysis.
 
 import json
 import logging
-from datetime import datetime, timezone, UTC
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
