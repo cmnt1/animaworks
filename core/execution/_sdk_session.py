@@ -80,11 +80,6 @@ def _cleanup_prompt_files(files: list[Path]) -> None:
 
 # ── Session ID persistence ───────────────────────────────────
 
-# Align with conversation.py SESSION_GAP_MINUTES: if the session is older
-# than this, start fresh instead of resuming (avoids immediate compaction
-# when the restored transcript + new system prompt exceed context limits).
-SESSION_RESUME_TIMEOUT_MIN = 10
-
 # ── Session type constants ────────────────────────────────────
 
 SESSION_TYPE_CHAT = "chat"
@@ -126,14 +121,11 @@ def _load_session_id(
     anima_dir: Path,
     session_type: str = "chat",
     thread_id: str = "default",
-    *,
-    skip_timeout_check: bool = False,
 ) -> str | None:
     """Load persisted session ID for SDK session resume.
 
-    Returns ``None`` when the saved session is older than
-    ``SESSION_RESUME_TIMEOUT_MIN`` minutes so that idle conversations
-    start fresh and avoid immediate auto-compact on resume.
+    Sessions are immortal — no TTL.  The timestamp is retained for
+    debug logging only and never used for expiry decisions.
     """
     path = anima_dir / "state" / _session_file(session_type, thread_id)
     if not path.exists():
@@ -150,15 +142,13 @@ def _load_session_id(
             if saved.tzinfo is None:
                 saved = saved.replace(tzinfo=UTC)
             elapsed_min = (datetime.now(UTC) - saved).total_seconds() / 60
-            if not skip_timeout_check and elapsed_min > SESSION_RESUME_TIMEOUT_MIN:
-                logger.info(
-                    "Session resume skipped (%s/%s): idle %.1f min > %d min threshold",
-                    session_type,
-                    anima_dir.name,
-                    elapsed_min,
-                    SESSION_RESUME_TIMEOUT_MIN,
-                )
-                return None
+            logger.debug(
+                "Session loaded (%s/%s, thread=%s): age %.1f min",
+                session_type,
+                anima_dir.name,
+                thread_id,
+                elapsed_min,
+            )
 
         return session_id
     except (json.JSONDecodeError, OSError, ValueError) as exc:
@@ -186,6 +176,12 @@ def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: st
     """Clear persisted session ID (e.g., after resume failure)."""
     path = anima_dir / "state" / _session_file(session_type, thread_id)
     if path.exists():
+        logger.debug(
+            "Clearing session ID (%s/%s, thread=%s)",
+            session_type,
+            anima_dir.name,
+            thread_id,
+        )
         path.unlink(missing_ok=True)
 
 

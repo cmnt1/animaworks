@@ -57,14 +57,13 @@ class StreamingIPCHandler:
         self._anima_dir = anima_dir
 
     def _clear_stream_abort_state(self, reason: str, thread_id: str = "default") -> None:
-        """Clear chat session ID and checkpoint after abnormal stream termination."""
-        try:
-            from core.execution._sdk_session import SESSION_TYPE_CHAT, _clear_session_id
+        """Clear checkpoint after abnormal stream termination.
 
-            _clear_session_id(self._anima_dir, SESSION_TYPE_CHAT, thread_id)
-            logger.info("Chat session ID cleared: %s (thread=%s)", reason, thread_id)
-        except Exception as e:
-            logger.warning("Failed to clear session IDs: %s", e)
+        Session ID is intentionally preserved so that the next chat
+        message can resume from the compacted (or pre-compaction) state.
+        Only the streaming checkpoint is cleared.
+        """
+        logger.info("Stream abort: %s (thread=%s) — session ID preserved", reason, thread_id)
         try:
             from core.memory.shortterm import ShortTermMemory
 
