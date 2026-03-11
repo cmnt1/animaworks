@@ -127,9 +127,10 @@ class ResponseStream:
             )
         else:
             logger.debug(
-                "[SSE-BUF] add_event stream=%s seq=%d event=text_delta delta_len=%d total_text=%d",
+                "[SSE-BUF] add_event stream=%s seq=%d event=%s delta_len=%d total_text=%d",
                 self.response_id,
                 seq,
+                event,
                 len(payload.get("text", "")),
                 len(self.full_text),
             )
