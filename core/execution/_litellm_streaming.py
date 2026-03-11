@@ -489,6 +489,21 @@ class StreamingMixin:
                 # ── No tool calls (or repetition detected): final response ──
                 if not tool_calls_acc or _repetition_detected:
                     full_text = "\n".join(all_response_text)
+                    # Safety net: strip any residual <think> tags that the
+                    # streaming filter missed (e.g. vLLM returning thinking
+                    # in content without proper <think> opening tag).
+                    _leaked_think, _clean = strip_thinking_tags(full_text)
+                    if _leaked_think:
+                        logger.info(
+                            "A stream: post-stream strip_thinking_tags caught leaked thinking (%d chars)",
+                            len(_leaked_think),
+                        )
+                        full_text = _clean
+                        if not _reasoning_seen:
+                            _reasoning_seen = True
+                            yield {"type": "thinking_start"}
+                        yield {"type": "thinking_delta", "text": _leaked_think}
+                        yield {"type": "thinking_end"}
                     logger.debug(
                         "A stream final response at iteration=%d",
                         iteration,

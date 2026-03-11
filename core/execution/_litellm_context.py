@@ -109,6 +109,8 @@ class ContextMixin:
             elif model.startswith("openai/"):
                 kwargs.setdefault("extra_body", {})
                 kwargs["extra_body"]["enable_thinking"] = self._model_config.thinking
+                kwargs["extra_body"].setdefault("chat_template_kwargs", {})
+                kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] = self._model_config.thinking
             else:
                 kwargs["think"] = self._model_config.thinking
         elif self._model_config.model.startswith("ollama/"):
