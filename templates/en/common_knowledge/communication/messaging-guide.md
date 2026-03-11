@@ -13,7 +13,7 @@ Use the `send_message` tool for sending messages (recommended).
 |-----------|------|----------|-------------|
 | `to` | string | MUST | Recipient. Anima name (e.g. `alice`) or human alias (e.g. `user`, `taka`). Human aliases are delivered via external channels (Slack/Chatwork) |
 | `content` | string | MUST | Message body |
-| `intent` | string | MUST | Message intent. Allowed values only: `report` (progress/result report), `delegation` (task delegation), `question` (question requiring a response). Use Board (post_channel) for acknowledgments, thanks, and FYI |
+| `intent` | string | MUST | Message intent. Allowed values only: `report` (progress/result report), `question` (question requiring a response). Use delegate_task for task delegation. Use Board (post_channel) for acknowledgments, thanks, and FYI |
 | `reply_to` | string | MAY | ID of the message being replied to (e.g. `20260215_093000_123456`) |
 | `thread_id` | string | MAY | Thread ID. Specify when joining an existing thread |
 
@@ -48,8 +48,9 @@ send_message(
 | intent | Use case | Example |
 |--------|----------|---------|
 | `report` | Progress or result report | Task completion report, status update to supervisor |
-| `delegation` | Task delegation (instruction to subordinate) | Receipt confirmation used with delegate_task |
 | `question` | Question requiring a response | Clarification, consultation requiring a decision |
+
+**Deprecated**: `intent="delegation"` has been deprecated. Use the `delegate_task` tool for task delegation.
 
 **Note**: Acknowledgments, thanks, and FYI (e.g. "Understood", "Thank you") cannot be sent via DM. Use Board (post_channel).
 
@@ -58,7 +59,7 @@ send_message(
 | Use case | Tool | Example |
 |----------|------|---------|
 | Progress/result report | send_message (intent=report) | Task completion report to supervisor |
-| Task delegation | send_message (intent=delegation) | Delegation receipt confirmation to subordinate |
+| Task delegation | delegate_task | Assign task to subordinate (writes to state/pending/ for immediate execution) |
 | Question/inquiry | send_message (intent=question) | Clarification request |
 | Acknowledgment/thanks/FYI | post_channel (Board) | "Understood", "Shared" |
 | Communication to 3+ people | post_channel (Board) | Team-wide announcement |
@@ -109,7 +110,7 @@ For when tools are unavailable or sending via Bash.
 ### Basic Syntax
 
 ```bash
-animaworks send {sender_name} {recipient} "message content" [--intent report|delegation|question] [--reply-to ID] [--thread-id ID]
+animaworks send {sender_name} {recipient} "message content" [--intent report|question] [--reply-to ID] [--thread-id ID]
 ```
 
 ### Examples
@@ -148,7 +149,7 @@ Received messages include the following fields:
 | `to_person` | Recipient name (you) | `bob` |
 | `type` | Message type | `message` (normal), `board_mention` (Board mention), `ack` (read receipt) |
 | `content` | Message body | `Please review` |
-| `intent` | Sender's intent | `report`, `delegation`, `question` |
+| `intent` | Sender's intent | `report`, `question` (delegation via delegate_task assigns `delegation`) |
 | `timestamp` | Sent time | `2026-02-15T09:30:00` |
 
 ### Reply Obligation
@@ -247,11 +248,11 @@ Please review. Reply requested.
 
 ### Wrong intent
 
-**Symptom**: `Error: DM intent must be one of 'report', 'delegation', 'question'`
+**Symptom**: `Error: DM intent must be 'report' or 'question' only`
 
-**Cause**: Omitted `intent`, or tried to send acknowledgment/thanks/FYI via DM
+**Cause**: Omitted `intent`, used `intent="delegation"` (deprecated), or tried to send acknowledgment/thanks/FYI via DM
 
-**Fix**: Always specify `report`, `delegation`, or `question` for `intent` in DMs. Use Board (post_channel) for acknowledgments, thanks, and FYI
+**Fix**: Always specify `report` or `question` for `intent` in DMs. Use delegate_task for task delegation. Use Board (post_channel) for acknowledgments, thanks, and FYI
 
 ### Wrong Recipient Name
 
@@ -351,7 +352,6 @@ For DMs (`send_message`), **one topic per round-trip** is the principle.
 
 ### Exceptions
 
-- One receipt confirmation for task delegation (`intent: delegation`) is allowed
 - Urgent blocker reports are not subject to count limits
 
 ## Communication Path Rules
@@ -361,7 +361,7 @@ Message recipients follow org structure:
 | Situation | Recipient | Example |
 |-----------|-----------|---------|
 | Important progress or issue report | Supervisor | `send_message(to="manager", content="Task A complete", intent="report")` |
-| Task instruction or confirmation | Subordinate | `send_message(to="worker", content="Please create the report", intent="delegation")` |
+| Task instruction or delegation | Subordinate | `delegate_task(name="worker", instruction="Please create the report", deadline="1d")` |
 | Peer coordination | Peer (same supervisor) | `send_message(to="peer", content="Please review", intent="question")` |
 | Contact to other department | Via your supervisor | `send_message(to="manager", content="Need dev team X to check...", intent="question")` |
 

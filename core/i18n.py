@@ -87,9 +87,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ja": "⚠️ 手順書フォーマット検証:\n{msg}",
         "en": "⚠️ Procedure format validation:\n{msg}",
     },
+    "handler.delegation_intent_deprecated": {
+        "ja": "Error: intent='delegation' は廃止されました。タスクを委任するには delegate_task ツールを使用してください。send_message は report / question のみ対応しています。",
+        "en": "Error: intent='delegation' has been deprecated. Use the delegate_task tool to assign tasks to subordinates. send_message only supports 'report' and 'question' intents.",
+    },
     "handler.dm_intent_error": {
-        "ja": "Error: DMのintentは 'report', 'delegation', 'question' のみ許可されています。acknowledgment・感謝・FYIはBoardを使用してください（post_channel ツール）。",
-        "en": "Error: DM intent must be 'report', 'delegation', or 'question' only. Use Board (post_channel tool) for acknowledgments, thanks, or FYI.",
+        "ja": "Error: DMのintentは 'report', 'question' のみ許可されています。acknowledgment・感謝・FYIはBoardを使用してください（post_channel ツール）。",
+        "en": "Error: DM intent must be 'report' or 'question' only. Use Board (post_channel tool) for acknowledgments, thanks, or FYI.",
     },
     "handler.dm_already_sent": {
         "ja": "Error: このrunで既に {to} にメッセージを送信済みです。追加の連絡はBoardを使用してください。",
@@ -1317,8 +1321,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
     },
     "prompt_db.send_message": {
-        "ja": "他のAnimaまたは人間ユーザーにDMを送信する。人間ユーザーへのメッセージは設定された外部チャネル（Slack等）経由で自動配信される。intentパラメータで即時処理（delegation/report/question）か次回heartbeat処理（未指定）かが決まる。1対1の指示・報告・質問に使う。全体共有にはpost_channelを使う。",
-        "en": "Send a DM to another Anima or human user. Messages to humans are delivered via configured external channel (e.g. Slack). intent parameter controls immediate handling (delegation/report/question) vs next heartbeat. Use for 1:1 instructions, reports, questions. Use post_channel for broadcast.",
+        "ja": "他のAnimaまたは人間ユーザーにDMを送信する。人間ユーザーへのメッセージは設定された外部チャネル（Slack等）経由で自動配信される。intentは report または question のみ。タスク委譲には delegate_task を使う。1対1の報告・質問に使う。全体共有にはpost_channelを使う。",
+        "en": "Send a DM to another Anima or human user. Messages to humans are delivered via configured external channel (e.g. Slack). intent must be 'report' or 'question' only. Use delegate_task for task delegation. Use for 1:1 reports, questions. Use post_channel for broadcast.",
     },
     "prompt_db.share_tool": {
         "ja": "個人ツールをcommon_tools/にコピーして全Animaで共有する。自分のtools/ディレクトリにあるツールファイルが共有のcommon_tools/ディレクトリにコピーされる。",
@@ -1501,8 +1505,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Deadline (relative format: '30m', '2h', '1d' or ISO8601)",
     },
     "schema.delegate_task.desc": {
-        "ja": "直属部下にタスクを委譲する。部下のタスクキューにタスクを追加し、同時にDMで指示を送信する。自分側にも追跡用エントリが作成される。直属部下のみ操作可能。",
-        "en": "Delegate a task to a direct subordinate. Adds the task to the subordinate's task queue and sends a DM with instructions. A tracking entry is also created on your side. Only direct subordinates can be targeted.",
+        "ja": "直属部下にタスクを委譲する。部下のタスクキューに追加し、state/pending/ に書き出して即時実行をトリガーする。同時にDMで指示を送信。自分側にも追跡用エントリが作成される。直属部下のみ操作可能。",
+        "en": "Delegate a task to a direct subordinate. Adds to the subordinate's task queue and writes to state/pending/ to trigger immediate execution. Also sends a DM with instructions. A tracking entry is created on your side. Only direct subordinates can be targeted.",
     },
     "schema.delegate_task.instruction": {"ja": "タスクの指示内容", "en": "Task instructions"},
     "schema.delegate_task.name": {

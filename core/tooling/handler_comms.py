@@ -53,7 +53,9 @@ class CommsToolsMixin:
         intent = args.get("intent", "")
 
         # ── Per-run DM limits ──
-        if intent not in ("report", "delegation", "question"):
+        if intent == "delegation":
+            return t("handler.delegation_intent_deprecated")
+        if intent not in ("report", "question"):
             return t("handler.dm_intent_error")
 
         current_replied = self.replied_to_for(active_session_type.get())

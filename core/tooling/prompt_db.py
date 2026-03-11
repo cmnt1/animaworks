@@ -129,15 +129,14 @@ DEFAULT_DESCRIPTIONS: dict[str, dict[str, str]] = {
         "ja": (
             "他のAnimaまたは人間ユーザーにDMを送信する。"
             "人間ユーザーへのメッセージは設定された外部チャネル（Slack等）経由で自動配信される。"
-            "intentパラメータで即時処理（delegation/report/question）か"
-            "次回heartbeat処理（未指定）かが決まる。"
-            "1対1の指示・報告・質問に使う。全体共有にはpost_channelを使う。"
+            "intentは report または question のみ。タスク委譲には delegate_task を使う。"
+            "1対1の報告・質問に使う。全体共有にはpost_channelを使う。"
         ),
         "en": (
             "Send a DM to another Anima or human user. "
             "Messages to humans are delivered via configured external channel (e.g. Slack). "
-            "intent parameter controls immediate handling (delegation/report/question) vs next heartbeat. "
-            "Use for 1:1 instructions, reports, questions. Use post_channel for broadcast."
+            "intent must be 'report' or 'question' only. Use delegate_task for task delegation. "
+            "Use for 1:1 reports, questions. Use post_channel for broadcast."
         ),
     },
     # -- Channel tools --
