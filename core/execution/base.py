@@ -175,6 +175,68 @@ class StreamingThinkFilter:
         return ""
 
 
+# ── Repetition detection ────────────────────────────────────
+
+
+class RepetitionDetector:
+    """Detect degenerate repetition in streaming token output.
+
+    Uses n-gram frequency counting on word-level tokens. When any single
+    n-gram appears *threshold* times after *min_tokens* words have been
+    accumulated, the detector fires.
+    """
+
+    def __init__(
+        self,
+        n: int = 4,
+        threshold: int = 5,
+        min_tokens: int = 100,
+    ) -> None:
+        self._n = n
+        self._threshold = threshold
+        self._min_tokens = min_tokens
+        self._tokens: list[str] = []
+        self._ngram_counts: dict[tuple[str, ...], int] = {}
+
+    def feed(self, text: str) -> bool:
+        """Feed a text chunk and check for repetition.
+
+        Returns ``True`` if degenerate repetition is detected.
+        """
+        words = text.split()
+        if not words:
+            return False
+        self._tokens.extend(words)
+        if len(self._tokens) < self._min_tokens:
+            return False
+        for i in range(len(self._tokens) - len(words), len(self._tokens)):
+            start = i - self._n + 1
+            if start < 0:
+                continue
+            ngram = tuple(self._tokens[start : i + 1])
+            self._ngram_counts[ngram] = self._ngram_counts.get(ngram, 0) + 1
+            if self._ngram_counts[ngram] >= self._threshold:
+                return True
+        return False
+
+    def check_full_text(self, text: str) -> bool:
+        """Check complete response text for repetition (post-hoc).
+
+        Useful for iteration-level streaming where tokens aren't
+        available incrementally.
+        """
+        words = text.split()
+        if len(words) < self._min_tokens:
+            return False
+        counts: dict[tuple[str, ...], int] = {}
+        for i in range(len(words) - self._n + 1):
+            ngram = tuple(words[i : i + self._n])
+            counts[ngram] = counts.get(ngram, 0) + 1
+            if counts[ngram] >= self._threshold:
+                return True
+        return False
+
+
 # ── Dynamic tool-record budget ───────────────────────────────
 
 # Per-tool base budgets (character count) calibrated for a 128K context model.
