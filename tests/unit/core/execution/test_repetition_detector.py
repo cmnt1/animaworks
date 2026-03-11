@@ -20,10 +20,14 @@ class TestRepetitionDetector:
         assert detector.feed(text) is False
 
     def test_detection_of_repeated_ngram(self) -> None:
-        """Feed 100+ words with a repeated 4-gram pattern appearing 5+ times, should trigger."""
+        """Feed 100+ words with a repeated pattern appearing 10+ times, should trigger.
+
+        With defaults n=10/threshold=10, a 4-word cycle repeated 13 times yields
+        11 distinct 10-gram occurrences (>=threshold), so detection fires.
+        """
         detector = RepetitionDetector()
-        # "x y z w" repeated 6 times = 24 words, then pad to 100+ with unique words
-        repeated = ["x", "y", "z", "w"] * 6  # 24 words, 6 occurrences of 4-gram
+        # "x y z w" repeated 13 times = 52 words; 10-gram appears 11 times (>=threshold=10)
+        repeated = ["x", "y", "z", "w"] * 13  # 52 words
         pad = [f"word{i}" for i in range(80)]  # 80 unique words
         text = " ".join(pad + repeated)
         assert detector.feed(text) is True
@@ -37,10 +41,14 @@ class TestRepetitionDetector:
         assert detector.feed(text) is False
 
     def test_check_full_text_detects_repetition(self) -> None:
-        """Use check_full_text() on repeated text."""
+        """Use check_full_text() on repeated text.
+
+        With defaults n=10/threshold=10, a 4-word cycle repeated 13 times yields
+        11 distinct 10-gram occurrences (>=threshold), so detection fires.
+        """
         detector = RepetitionDetector()
-        # 100+ words with repeated 4-gram 5 times
-        repeated = ["alpha", "beta", "gamma", "delta"] * 5  # 20 words
+        # 4-word cycle repeated 13 times = 52 words; 10-gram appears 11 times (>=threshold=10)
+        repeated = ["alpha", "beta", "gamma", "delta"] * 13  # 52 words
         pad = [f"unique{i}" for i in range(90)]  # 90 words
         text = " ".join(pad + repeated)
         assert detector.check_full_text(text) is True
