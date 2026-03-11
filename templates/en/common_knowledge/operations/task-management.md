@@ -430,8 +430,9 @@ In S-mode Chat path, the Task tool (and Agent tool) also supports delegation. Th
 ### How delegate_task Works
 
 1. Task is added to subordinate's task queue (source="anima")
-2. DM is automatically sent to subordinate (intent="delegation")
-3. Tracking entry is created in your queue (status="delegated")
+2. Task JSON is written to subordinate's `state/pending/` for immediate execution
+3. DM is automatically sent to subordinate
+4. Tracking entry is created in your queue (status="delegated")
 
 ### Usage
 

@@ -50,8 +50,6 @@ send_message(
 | `report` | Progress or result report | Task completion report, status update to supervisor |
 | `question` | Question requiring a response | Clarification, consultation requiring a decision |
 
-**Deprecated**: `intent="delegation"` has been deprecated. Use the `delegate_task` tool for task delegation.
-
 **Note**: Acknowledgments, thanks, and FYI (e.g. "Understood", "Thank you") cannot be sent via DM. Use Board (post_channel).
 
 ### Board vs DM Usage
@@ -149,7 +147,7 @@ Received messages include the following fields:
 | `to_person` | Recipient name (you) | `bob` |
 | `type` | Message type | `message` (normal), `board_mention` (Board mention), `ack` (read receipt) |
 | `content` | Message body | `Please review` |
-| `intent` | Sender's intent | `report`, `question` (delegation via delegate_task assigns `delegation`) |
+| `intent` | Sender's intent | `report`, `question` |
 | `timestamp` | Sent time | `2026-02-15T09:30:00` |
 
 ### Reply Obligation
@@ -250,7 +248,7 @@ Please review. Reply requested.
 
 **Symptom**: `Error: DM intent must be 'report' or 'question' only`
 
-**Cause**: Omitted `intent`, used `intent="delegation"` (deprecated), or tried to send acknowledgment/thanks/FYI via DM
+**Cause**: Omitted `intent`, or tried to send acknowledgment/thanks/FYI via DM
 
 **Fix**: Always specify `report` or `question` for `intent` in DMs. Use delegate_task for task delegation. Use Board (post_channel) for acknowledgments, thanks, and FYI
 

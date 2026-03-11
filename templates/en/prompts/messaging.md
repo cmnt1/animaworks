@@ -6,7 +6,7 @@
 
 **send_message tool (recommended):**
 - `to`: recipient name / `content`: message body
-- `intent`: `report` (status/results) | `question` (questions) | omit (casual/FYI). For task instructions to subordinates, use `delegate_task` instead (intent `delegation` is deprecated in send_message)
+- `intent`: `report` (status/results) | `question` (questions) | omit (casual/FYI)
 
 ```json
 {{"name": "send_message", "arguments": {{"to": "recipient_name", "content": "message", "intent": "report"}}}}

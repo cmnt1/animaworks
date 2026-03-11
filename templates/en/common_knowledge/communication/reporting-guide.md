@@ -14,7 +14,7 @@ Use the `send_message` tool for reporting. Observe the following constraints:
 | `call_human` | Urgent notification to humans | Service outage, security incident, etc. |
 
 **send_message constraints**:
-- `intent` is required. Use `report` for reports, `question` for questions. Use delegate_task for task delegation (intent `delegation` is deprecated in send_message)
+- `intent` is required. Use `report` for reports, `question` for questions. Use delegate_task for task delegation
 - Maximum 2 recipients per run; one message per recipient
 - Use Board (post_channel) for additional follow-up
 

@@ -6,7 +6,7 @@
 
 **send_message ツール（推奨）:**
 - `to`: 宛先名 / `content`: メッセージ本文
-- `intent`: `report`（報告）| `question`（質問）| 省略（雑談・FYI）。タスク委譲は `delegate_task` を使用（`delegation` は廃止済み）
+- `intent`: `report`（報告）| `question`（質問）| 省略（雑談・FYI）
 
 ```json
 {{"name": "send_message", "arguments": {{"to": "相手名", "content": "メッセージ", "intent": "report"}}}}

@@ -151,7 +151,7 @@ Please reply when done.""",
 
 ### Pattern 1b: One-Off Task (Request to Peer / Non-Subordinate)
 
-For requests to someone who is not a direct subordinate, use `send_message` with `intent="question"` (intent `delegation` is deprecated; delegate_task is for subordinates only).
+For requests to someone who is not a direct subordinate, use `send_message` with `intent="question"`.
 
 ```
 send_message(
@@ -173,7 +173,7 @@ Please reply when done.""",
 
 ### Pattern 2: Recurring Task (Delegation of Regular Work)
 
-Pattern for instructing recurring tasks that should be added to Heartbeat or cron. Recurring tasks are not suitable for `delegate_task`; use `send_message` with `intent="question"` (intent `delegation` is deprecated).
+Pattern for instructing recurring tasks that should be added to Heartbeat or cron. Recurring tasks are not suitable for `delegate_task`; use `send_message` with `intent="question"`.
 
 ```
 send_message(
@@ -257,7 +257,7 @@ Let me know if you're stuck; we can extend the deadline if needed.""",
 
 ### Feedback After Deliverable
 
-Revision requests: use `intent="question"` (intent `delegation` is deprecated). For direct subordinates, consider `delegate_task` if it is a formal task.
+Revision requests: use `intent="question"`. For direct subordinates, consider `delegate_task` if it is a formal task.
 
 ```
 send_message(

@@ -26,8 +26,6 @@ When you use the Task tool, the framework automatically routes based on your org
 
 Use delegate_task for delegation from paths that don't have the Task tool (Heartbeat, Inbox, etc.).
 
-**Note**: `send_message(intent="delegation")` has been deprecated. Always use the `delegate_task` tool for task delegation. `send_message` only supports 'report' and 'question' intents.
-
 ### Writing to state/pending/ (for later self-execution)
 
 When writing tasks to state/pending/, follow these principles.

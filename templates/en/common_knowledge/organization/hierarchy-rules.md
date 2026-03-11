@@ -83,7 +83,7 @@ Anima with subordinates have dedicated tools for organizational management autom
    - `deadline` can be relative format (`30m`, `2h`, `1d`) or ISO8601 format (e.g., `2026-02-20`)
    - `summary` is optional (first 100 characters of instruction when omitted)
 2. Task is automatically added to dave's task queue (`state/task_queue.jsonl`)
-3. DM is automatically sent to dave (intent="delegation")
+3. DM is automatically sent to dave
 4. Tracking entry is created in your queue (status="delegated")
 5. Use `task_tracker(status="active")` to track in-progress delegated tasks (`status="all"` for all, `status="completed"` for completed only)
 

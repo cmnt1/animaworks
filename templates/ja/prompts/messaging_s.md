@@ -6,7 +6,7 @@
 
 **mcp__aw__send_message** ツール:
 - `to`: 宛先名 / `content`: メッセージ本文
-- `intent`: `report`（報告）| `question`（質問）| 省略（雑談・FYI）。タスク委譲は `delegate_task` を使用（`delegation` は廃止済み）
+- `intent`: `report`（報告）| `question`（質問）| 省略（雑談・FYI）
 - `reply_to` / `thread_id`: スレッド返信時に指定
 
 **intentの効果**: 設定あり → 受信者が即時処理。設定なし → 定時巡回（30分間隔）で処理（取りこぼしなし）。

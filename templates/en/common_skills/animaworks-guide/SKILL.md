@@ -156,7 +156,6 @@ animaworks chat {name} "message" --local  # Direct execution (no API)
 animaworks send {sender} {recipient} "message"
 animaworks send {sender} {recipient} "message" --intent report
 animaworks send {sender} {recipient} "message" --intent question
-# For task delegation: animaworks task add --assignee {recipient} --instruction "..." (--intent delegation is deprecated)
 animaworks send {sender} {recipient} "message" --reply-to {message_id}
 animaworks send {sender} {recipient} "message" --thread-id {thread_id}
 
