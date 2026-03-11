@@ -121,30 +121,18 @@ def create_webhooks_router() -> APIRouter:
         # Process message events
         event = data.get("event", {})
         if event.get("type") == "message" and "subtype" not in event:
-            # Thread-reply routing for call_human notifications
-            try:
-                from core.notification.reply_routing import route_thread_reply
-
-                if route_thread_reply(event, get_data_dir() / "shared"):
-                    return {"ok": True}
-            except Exception:
-                logger.debug("Reply routing lookup failed", exc_info=True)
-
             channel_id = event.get("channel", "")
             if anima_from_app:
                 anima_name = anima_from_app
             else:
                 anima_name = slack_config.anima_mapping.get(channel_id) or slack_config.default_anima
-            if not anima_name:
-                logger.warning("No anima mapping for Slack channel %s and no default_anima", channel_id)
-                return {"ok": True}
 
             text = event.get("text", "")
             user_id = event.get("user", "")
             message_ts = event.get("ts", "")
             thread_ts = event.get("thread_ts", "")
 
-            # Resolve bot user ID for mention detection (cached per app_id)
+            # Resolve bot token early (needed for both reply routing and thread context)
             cache_key = anima_from_app or "__shared__"
             bot_user_id = _slack_bot_user_ids.get(cache_key, "")
             _token: str | None = None
@@ -169,21 +157,39 @@ def create_webhooks_router() -> APIRouter:
                 except Exception:
                     logger.debug("Failed to resolve bot user ID for webhook", exc_info=True)
 
+            # Resolve token if not yet resolved (for thread context / reply routing)
+            if _token is None:
+                if anima_from_app:
+                    from server.slack_socket import SlackSocketModeManager
+
+                    _token = SlackSocketModeManager._get_per_anima_credential(
+                        "SLACK_BOT_TOKEN",
+                        anima_from_app,
+                    )
+                if not _token:
+                    try:
+                        _token = get_credential("slack", "slack_webhook", env_var="SLACK_BOT_TOKEN")
+                    except Exception:
+                        _token = ""
+
+            # Thread-reply routing for call_human notifications
+            try:
+                from core.notification.reply_routing import route_thread_reply
+
+                if route_thread_reply(event, get_data_dir() / "shared", slack_token=_token or ""):
+                    return {"ok": True}
+            except Exception:
+                logger.debug("Reply routing lookup failed", exc_info=True)
+
+            if not anima_name:
+                logger.warning("No anima mapping for Slack channel %s and no default_anima", channel_id)
+                return {"ok": True}
+
             from server.slack_socket import _detect_slack_intent, _fetch_thread_context
 
             intent = _detect_slack_intent(text, channel_id, bot_user_id)
 
             if thread_ts:
-                if _token is None:
-                    if anima_from_app:
-                        from server.slack_socket import SlackSocketModeManager
-
-                        _token = SlackSocketModeManager._get_per_anima_credential(
-                            "SLACK_BOT_TOKEN",
-                            anima_from_app,
-                        )
-                    if not _token:
-                        _token = get_credential("slack", "slack_webhook", env_var="SLACK_BOT_TOKEN")
                 import asyncio
 
                 ctx = await asyncio.to_thread(_fetch_thread_context, _token or "", channel_id, thread_ts)

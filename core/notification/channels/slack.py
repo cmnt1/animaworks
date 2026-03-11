@@ -126,6 +126,7 @@ class SlackChannel(NotificationChannel):
                             ts=data["ts"],
                             channel=data.get("channel", channel),
                             anima_name=anima_name,
+                            notification_text=f"{subject}\n{body}"[:2000],
                         )
                     except Exception:
                         logger.debug(

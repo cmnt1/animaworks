@@ -306,10 +306,12 @@ class SlackSocketModeManager:
             if _is_duplicate_ts(ts):
                 return
 
+            token = self._get_per_anima_credential("SLACK_BOT_TOKEN", anima_name) or ""
+
             try:
                 from core.notification.reply_routing import route_thread_reply
 
-                if route_thread_reply(event, get_data_dir() / "shared"):
+                if route_thread_reply(event, get_data_dir() / "shared", slack_token=token):
                     return
             except Exception:
                 logger.debug("Reply routing lookup failed", exc_info=True)
@@ -320,7 +322,6 @@ class SlackSocketModeManager:
             intent = _detect_slack_intent(text, channel_id, bot_user_id)
 
             if thread_ts:
-                token = self._get_per_anima_credential("SLACK_BOT_TOKEN", anima_name) or ""
                 ctx = await asyncio.to_thread(_fetch_thread_context, token, channel_id, thread_ts)
                 if ctx:
                     text = ctx + text
@@ -397,10 +398,12 @@ class SlackSocketModeManager:
             if _is_duplicate_ts(ts):
                 return
 
+            _shared_token = get_credential("slack", "slack_webhook", env_var="SLACK_BOT_TOKEN") or ""
+
             try:
                 from core.notification.reply_routing import route_thread_reply
 
-                if route_thread_reply(event, get_data_dir() / "shared"):
+                if route_thread_reply(event, get_data_dir() / "shared", slack_token=_shared_token):
                     return
             except Exception:
                 logger.debug("Reply routing lookup failed", exc_info=True)
@@ -421,8 +424,7 @@ class SlackSocketModeManager:
             intent = _detect_slack_intent(text, channel_id, bot_user_id)
 
             if thread_ts:
-                token = get_credential("slack", "slack_webhook", env_var="SLACK_BOT_TOKEN") or ""
-                ctx = await asyncio.to_thread(_fetch_thread_context, token, channel_id, thread_ts)
+                ctx = await asyncio.to_thread(_fetch_thread_context, _shared_token, channel_id, thread_ts)
                 if ctx:
                     text = ctx + text
 

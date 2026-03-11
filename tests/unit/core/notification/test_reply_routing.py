@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -6,14 +7,13 @@ from __future__ import annotations
 """Tests for call_human reply routing (notification_map + sanitization)."""
 
 import json
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.notification.reply_routing import route_thread_reply
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -44,6 +44,25 @@ class TestNotificationMapping:
         assert result is not None
         assert result["anima"] == "mikoto"
         assert result["channel"] == "C0123ABC"
+        assert result["notification_text"] == ""
+
+    def test_save_and_lookup_with_notification_text(self, routing_dir: Path) -> None:
+        from core.notification.reply_routing import (
+            lookup_notification_mapping,
+            save_notification_mapping,
+        )
+
+        save_notification_mapping(
+            "1234567890.123456",
+            "C0123ABC",
+            "mikoto",
+            notification_text="Alert: disk full\nPlease investigate.",
+        )
+
+        result = lookup_notification_mapping("1234567890.123456")
+        assert result is not None
+        assert result["anima"] == "mikoto"
+        assert result["notification_text"] == "Alert: disk full\nPlease investigate."
 
     def test_lookup_unknown_ts(self, routing_dir: Path) -> None:
         from core.notification.reply_routing import lookup_notification_mapping
@@ -253,14 +272,80 @@ class TestRouteThreadReply:
             result = route_thread_reply(event, shared_dir)
 
         assert result is True
-        messenger_mock.receive_external.assert_called_once_with(
-            content="Got it, looking into this now",
-            source="slack",
-            source_message_id="reply.ts",
-            external_user_id="U_HUMAN",
-            external_channel_id="C001",
-            external_thread_ts="parent.ts",
+        call_kwargs = messenger_mock.receive_external.call_args[1]
+        assert call_kwargs["source"] == "slack"
+        assert call_kwargs["source_message_id"] == "reply.ts"
+        assert call_kwargs["external_user_id"] == "U_HUMAN"
+        assert call_kwargs["external_channel_id"] == "C001"
+        assert call_kwargs["external_thread_ts"] == "parent.ts"
+        assert "Got it, looking into this now" in call_kwargs["content"]
+
+    def test_thread_reply_includes_stored_notification_text(self, routing_dir: Path) -> None:
+        from core.notification.reply_routing import save_notification_mapping
+
+        save_notification_mapping(
+            "parent.ts",
+            "C001",
+            "mikoto",
+            notification_text="Server alert\nDisk usage is at 95%",
         )
+
+        event = {
+            "type": "message",
+            "text": "対応した",
+            "user": "U_HUMAN",
+            "channel": "C001",
+            "ts": "reply.ts",
+            "thread_ts": "parent.ts",
+        }
+
+        shared_dir = routing_dir / "shared"
+        messenger_mock = MagicMock()
+        with patch("core.messenger.Messenger", return_value=messenger_mock):
+            result = route_thread_reply(event, shared_dir)
+
+        assert result is True
+        call_kwargs = messenger_mock.receive_external.call_args[1]
+        assert "対応した" in call_kwargs["content"]
+        assert "Server alert" in call_kwargs["content"]
+        assert "Disk usage is at 95%" in call_kwargs["content"]
+        assert "[Thread context" in call_kwargs["content"]
+
+    def test_thread_reply_with_slack_token_fetches_api_context(self, routing_dir: Path) -> None:
+        from core.notification.reply_routing import save_notification_mapping
+
+        save_notification_mapping("parent.ts", "C001", "mikoto")
+
+        event = {
+            "type": "message",
+            "text": "対応した",
+            "user": "U_HUMAN",
+            "channel": "C001",
+            "ts": "reply.ts",
+            "thread_ts": "parent.ts",
+        }
+
+        thread_ctx = (
+            "[Thread context — this message is a reply in a Slack thread]\n"
+            "  <@UBOT>: Server alert: disk 95%\n"
+            "[/Thread context]\n\n"
+        )
+
+        shared_dir = routing_dir / "shared"
+        messenger_mock = MagicMock()
+        with (
+            patch("core.messenger.Messenger", return_value=messenger_mock),
+            patch(
+                "core.notification.reply_routing._fetch_thread_context_for_reply",
+                return_value=thread_ctx,
+            ),
+        ):
+            result = route_thread_reply(event, shared_dir, slack_token="xoxb-test")
+
+        assert result is True
+        call_kwargs = messenger_mock.receive_external.call_args[1]
+        assert "対応した" in call_kwargs["content"]
+        assert "Server alert: disk 95%" in call_kwargs["content"]
 
     def test_no_thread_ts_returns_false(self, routing_dir: Path) -> None:
         event = {

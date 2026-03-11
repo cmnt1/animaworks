@@ -52,8 +52,18 @@ def save_notification_mapping(
     ts: str,
     channel: str,
     anima_name: str,
+    *,
+    notification_text: str = "",
 ) -> None:
-    """Persist a Slack message ts → Anima mapping for reply routing."""
+    """Persist a Slack message ts → Anima mapping for reply routing.
+
+    Args:
+        ts: Slack message timestamp of the notification.
+        channel: Slack channel ID where the notification was posted.
+        anima_name: Name of the Anima that sent the notification.
+        notification_text: Original notification content (subject + body)
+            so that thread replies can include context about what was notified.
+    """
     path = _map_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -65,11 +75,14 @@ def save_notification_mapping(
                 raw = fd.read()
                 data: dict[str, Any] = json.loads(raw) if raw.strip() else {}
 
-                data[ts] = {
+                entry: dict[str, Any] = {
                     "anima": anima_name,
                     "channel": channel,
                     "created_at": datetime.now(UTC).isoformat(),
                 }
+                if notification_text:
+                    entry["notification_text"] = notification_text[:2000]
+                data[ts] = entry
                 _prune_old_entries_inplace(data)
 
                 fd.seek(0)
@@ -85,7 +98,8 @@ def save_notification_mapping(
 def lookup_notification_mapping(thread_ts: str) -> dict[str, str] | None:
     """Look up which Anima sent the notification with the given ts.
 
-    Returns ``{"anima": "...", "channel": "..."}`` or ``None``.
+    Returns ``{"anima": "...", "channel": "...", "notification_text": "..."}``
+    or ``None``.  ``notification_text`` may be empty for older mappings.
     """
     path = _map_path()
     if not path.exists():
@@ -102,7 +116,11 @@ def lookup_notification_mapping(thread_ts: str) -> dict[str, str] | None:
     entry = data.get(thread_ts)
     if entry is None:
         return None
-    return {"anima": entry["anima"], "channel": entry["channel"]}
+    return {
+        "anima": entry["anima"],
+        "channel": entry["channel"],
+        "notification_text": entry.get("notification_text", ""),
+    }
 
 
 def prune_old_entries(max_age_days: int = _MAX_AGE_DAYS) -> None:
@@ -151,17 +169,24 @@ def _age_days(iso_str: str, now: datetime) -> float:
         return float("inf")
 
 
-def route_thread_reply(event: dict, shared_dir: Path) -> bool:
+def route_thread_reply(
+    event: dict,
+    shared_dir: Path,
+    *,
+    slack_token: str = "",
+) -> bool:
     """Route a Slack thread reply to the originating Anima if applicable.
 
     Checks event.thread_ts against the notification mapping. If a match
-    is found, sanitizes the reply text and delivers it to the originating
-    Anima's inbox via Messenger.receive_external().
+    is found, sanitizes the reply text, fetches thread context (so the
+    Anima knows what the reply is about), and delivers it to the
+    originating Anima's inbox via Messenger.receive_external().
 
     Args:
         event: Slack message event dict containing at minimum 'thread_ts',
                'text', 'ts', 'user', 'channel' keys.
         shared_dir: Path to the AnimaWorks shared directory.
+        slack_token: Bot token for fetching thread context via Slack API.
 
     Returns:
         True if the reply was routed (caller should stop processing),
@@ -180,11 +205,34 @@ def route_thread_reply(event: dict, shared_dir: Path) -> bool:
     if not text:
         return False
 
+    # Fetch full thread context via Slack API so the Anima knows
+    # what the reply is about (e.g. which call_human notification).
+    thread_ctx = ""
+    ctx_source = "none"
+    channel_id = event.get("channel", "")
+    if slack_token and channel_id:
+        thread_ctx = _fetch_thread_context_for_reply(slack_token, channel_id, thread_ts)
+        if thread_ctx:
+            ctx_source = "api"
+
+    # Fallback: use stored notification text if API fetch failed or unavailable
+    if not thread_ctx:
+        notification_text = mapping.get("notification_text", "")
+        if notification_text:
+            thread_ctx = (
+                f"[Thread context — this is a reply to a call_human notification]\n"
+                f"  {target}: {notification_text}\n"
+                f"[/Thread context]\n\n"
+            )
+            ctx_source = "stored"
+
+    content = thread_ctx + text if thread_ctx else text
+
     from core.messenger import Messenger
 
     messenger = Messenger(shared_dir, target)
     messenger.receive_external(
-        content=text,
+        content=content,
         source="slack",
         source_message_id=event.get("ts", ""),
         external_user_id=event.get("user", ""),
@@ -192,11 +240,50 @@ def route_thread_reply(event: dict, shared_dir: Path) -> bool:
         external_thread_ts=event.get("thread_ts", ""),
     )
     logger.info(
-        "Thread reply routed: thread_ts=%s -> anima=%s",
+        "Thread reply routed: thread_ts=%s -> anima=%s (ctx=%s)",
         thread_ts,
         target,
+        ctx_source,
     )
     return True
+
+
+def _fetch_thread_context_for_reply(
+    token: str,
+    channel_id: str,
+    thread_ts: str,
+    *,
+    limit: int = 10,
+) -> str:
+    """Fetch Slack thread context for call_human reply routing.
+
+    Similar to ``server.slack_socket._fetch_thread_context`` but importable
+    from core without depending on server modules.
+    """
+    if not token or not thread_ts:
+        return ""
+    try:
+        from core.tools.slack import SlackClient
+
+        client = SlackClient(token=token)
+        replies = client.thread_replies(channel_id, thread_ts)
+        if len(replies) <= 1:
+            return ""
+        if len(replies) > limit:
+            selected = [replies[0]] + replies[-(limit - 1) :]
+        else:
+            selected = replies
+        lines = ["[Thread context — this message is a reply in a Slack thread]"]
+        for msg in selected[:-1]:
+            user = msg.get("user", "unknown")
+            txt = msg.get("text", "")
+            lines.append(f"  <@{user}>: {txt}")
+        lines.append("[/Thread context]")
+        lines.append("")
+        return "\n".join(lines)
+    except Exception:
+        logger.warning("Failed to fetch thread context for reply routing", exc_info=True)
+        return ""
 
 
 def sanitize_slack_reply(text: str, max_length: int = _MAX_REPLY_LENGTH) -> str:
