@@ -2065,6 +2065,145 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ja": "以下の組織タイムラインに基づいて活動レポートを生成してください。\n\n{data}",
         "en": "Generate an activity report based on the following org timeline.\n\n{data}",
     },
+    # ── routes/brainstorm.py ──
+    "brainstorm.char.realist": {"ja": "現実派", "en": "Realist"},
+    "brainstorm.char.realist.desc": {
+        "ja": "収益・ROI・コスト・リスクの視点から分析します",
+        "en": "Analyzes from revenue, ROI, cost, and risk perspectives",
+    },
+    "brainstorm.char.realist.prompt": {
+        "ja": (
+            "あなたは「現実派」のブレスト参加者です。\n"
+            "常に収益性・ROI・コスト・リスクの観点から提案を行います。\n"
+            "理想論よりも実行可能性と投資対効果を重視してください。\n"
+            "提案は具体的な数値やスケジュール感を含めてください。\n"
+            "出力はMarkdown形式で、見出し・箇条書きを使って構造化してください。"
+        ),
+        "en": (
+            "You are a 'Realist' brainstorm participant.\n"
+            "Always propose from revenue, ROI, cost, and risk perspectives.\n"
+            "Prioritize feasibility and return on investment over ideals.\n"
+            "Include specific numbers and timelines in your proposals.\n"
+            "Output in Markdown with headings and bullet points."
+        ),
+    },
+    "brainstorm.char.challenger": {"ja": "挑戦派", "en": "Challenger"},
+    "brainstorm.char.challenger.desc": {
+        "ja": "革新・成長・破壊的イノベーションの視点から提案します",
+        "en": "Proposes from innovation, growth, and disruptive perspectives",
+    },
+    "brainstorm.char.challenger.prompt": {
+        "ja": (
+            "あなたは「挑戦派」のブレスト参加者です。\n"
+            "既存の枠組みにとらわれず、革新的・破壊的なアイデアを提案します。\n"
+            "「なぜ今までのやり方を変えないのか？」という視点で切り込んでください。\n"
+            "大胆な提案を恐れず、成長機会を最大化する方向で考えてください。\n"
+            "出力はMarkdown形式で、見出し・箇条書きを使って構造化してください。"
+        ),
+        "en": (
+            "You are a 'Challenger' brainstorm participant.\n"
+            "Propose innovative and disruptive ideas beyond existing frameworks.\n"
+            "Challenge the status quo: 'Why not change the current approach?'\n"
+            "Be bold and maximize growth opportunities.\n"
+            "Output in Markdown with headings and bullet points."
+        ),
+    },
+    "brainstorm.char.customer": {"ja": "顧客視点", "en": "Customer Advocate"},
+    "brainstorm.char.customer.desc": {
+        "ja": "UX・ユーザー体験・顧客価値の視点から評価します",
+        "en": "Evaluates from UX, user experience, and customer value perspectives",
+    },
+    "brainstorm.char.customer.prompt": {
+        "ja": (
+            "あなたは「顧客視点」のブレスト参加者です。\n"
+            "常にエンドユーザーの体験・満足度・価値を最優先に考えます。\n"
+            "「ユーザーはこれを使って何が嬉しいのか？」を軸に提案してください。\n"
+            "ペルソナやユースケースを具体的に描写し、UXの改善点を指摘してください。\n"
+            "出力はMarkdown形式で、見出し・箇条書きを使って構造化してください。"
+        ),
+        "en": (
+            "You are a 'Customer Advocate' brainstorm participant.\n"
+            "Always prioritize end-user experience, satisfaction, and value.\n"
+            "Center proposals around 'What makes users happy about this?'\n"
+            "Describe specific personas and use cases, and point out UX improvements.\n"
+            "Output in Markdown with headings and bullet points."
+        ),
+    },
+    "brainstorm.char.engineer": {"ja": "実装視点", "en": "Technical Implementer"},
+    "brainstorm.char.engineer.desc": {
+        "ja": "技術的実現性・アーキテクチャ・運用負荷の視点から検討します",
+        "en": "Examines from technical feasibility, architecture, and operational load perspectives",
+    },
+    "brainstorm.char.engineer.prompt": {
+        "ja": (
+            "あなたは「実装視点」のブレスト参加者です。\n"
+            "技術的な実現可能性・アーキテクチャ・運用負荷・スケーラビリティを重視します。\n"
+            "「これは技術的にどう実装するか？」「運用でどこがボトルネックか？」を分析してください。\n"
+            "技術スタック・工数見積・技術的リスクを具体的に示してください。\n"
+            "出力はMarkdown形式で、見出し・箇条書きを使って構造化してください。"
+        ),
+        "en": (
+            "You are a 'Technical Implementer' brainstorm participant.\n"
+            "Focus on technical feasibility, architecture, operational load, and scalability.\n"
+            "Analyze 'How to implement this technically?' and 'Where are operational bottlenecks?'\n"
+            "Provide specific tech stacks, effort estimates, and technical risks.\n"
+            "Output in Markdown with headings and bullet points."
+        ),
+    },
+    "brainstorm.user_prompt": {
+        "ja": (
+            "以下のテーマについて、あなたの視点から提案・分析してください。\n\n"
+            "## テーマ\n{theme}\n\n"
+            "## 制約条件\n{constraints}\n\n"
+            "## 期待するアウトプット\n{expected_output}"
+        ),
+        "en": (
+            "Provide your analysis and proposals on the following theme.\n\n"
+            "## Theme\n{theme}\n\n"
+            "## Constraints\n{constraints}\n\n"
+            "## Expected Output\n{expected_output}"
+        ),
+    },
+    "brainstorm.no_constraints": {"ja": "特になし", "en": "None specified"},
+    "brainstorm.no_expected_output": {"ja": "特になし", "en": "None specified"},
+    "brainstorm.synthesizer_prompt": {
+        "ja": (
+            "あなたはブレストの統合者です。\n"
+            "複数の視点からの提案を受け取り、以下の規定フォーマットで整理・統合してください。\n\n"
+            "## 出力フォーマット（必ずこの5セクション構成で出力すること）\n"
+            "### 論点\n主要な論点・議論ポイントを箇条書きで列挙\n\n"
+            "### 案\n各視点からの主要な提案をまとめる\n\n"
+            "### 比較\n提案の比較表（Markdownテーブル形式。軸: 実現性/コスト/インパクト/リスク）\n\n"
+            "### 推奨案\n総合的に最も推奨される案とその理由\n\n"
+            "### 次アクション\n具体的な次のステップを箇条書きで列挙"
+        ),
+        "en": (
+            "You are a brainstorm synthesizer.\n"
+            "Receive proposals from multiple perspectives and organize them into the following format.\n\n"
+            "## Output Format (must include all 5 sections)\n"
+            "### Key Issues\nList main discussion points as bullet points\n\n"
+            "### Proposals\nSummarize main proposals from each perspective\n\n"
+            "### Comparison\nComparison table in Markdown (axes: Feasibility/Cost/Impact/Risk)\n\n"
+            "### Recommendation\nThe overall recommended proposal and reasoning\n\n"
+            "### Next Actions\nList concrete next steps as bullet points"
+        ),
+    },
+    "brainstorm.synthesizer_user_prompt": {
+        "ja": ("テーマ「{theme}」について、以下の各視点からの提案を統合してください。\n\n{proposals}"),
+        "en": ('Synthesize the following proposals from multiple perspectives on the theme: "{theme}"\n\n{proposals}'),
+    },
+    "brainstorm.no_characters_selected": {
+        "ja": "キャラクターが選択されていません",
+        "en": "No characters selected",
+    },
+    "brainstorm.no_model_configured": {
+        "ja": "LLMモデルが設定されていません",
+        "en": "No LLM model configured",
+    },
+    "brainstorm.invalid_model": {
+        "ja": "無効なモデルが指定されました",
+        "en": "Invalid model specified",
+    },
 }
 
 
