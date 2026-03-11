@@ -126,6 +126,8 @@ class LiteLLMExecutor(
         """
         import litellm
 
+        litellm.modify_params = True
+
         tools = self._build_base_tools()
         _active_categories: set[str] = set()
         context_window = self._resolve_cw()

@@ -323,6 +323,8 @@ class AssistedExecutor(BaseExecutor):
         """Call LiteLLM ``acompletion`` without tools parameter."""
         import litellm
 
+        litellm.modify_params = True
+
         from core.config.models import resolve_max_tokens
         from core.execution.base import (
             is_adaptive_model,
