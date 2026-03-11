@@ -53,6 +53,17 @@ def anima_dir(tmp_path: Path) -> Path:
 class TestSchedulerManagerE2E:
     """E2E: SchedulerManager reads real config files and sets up APScheduler."""
 
+    @pytest.fixture(autouse=True)
+    def mock_config(self):
+        """Isolate from system config so activity_schedule does not add extra jobs."""
+        cfg = MagicMock()
+        cfg.activity_schedule = []
+        cfg.activity_level = 100
+        cfg.heartbeat.interval_minutes = 30
+        cfg.heartbeat.anima_overrides = {}
+        with patch("core.supervisor.scheduler_manager.load_config", return_value=cfg):
+            yield
+
     @pytest.mark.asyncio
     async def test_starts_scheduler_with_real_config(self, anima_dir, tmp_path):
         """SchedulerManager should read heartbeat.md and cron.md and register jobs."""
