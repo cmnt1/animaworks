@@ -9,6 +9,7 @@ from server.routes.activity_report import create_activity_report_router
 from server.routes.animas import create_animas_router
 from server.routes.assets import create_assets_router
 from server.routes.auth import create_auth_router
+from server.routes.brainstorm import create_brainstorm_router
 from server.routes.channels import create_channels_router
 from server.routes.chat import create_chat_router
 from server.routes.chat_ui_state import create_chat_ui_state_router
@@ -45,6 +46,7 @@ def create_router() -> APIRouter:
     api.include_router(create_tool_prompts_router())
     api.include_router(create_users_router())
     api.include_router(create_activity_report_router())
+    api.include_router(create_brainstorm_router())
     api.include_router(create_external_tasks_router())
     api.include_router(create_webhooks_router())
 
