@@ -172,14 +172,7 @@ class SchedulerManager:
             # IntervalTrigger for intervals > 60 minutes
             from apscheduler.triggers.interval import IntervalTrigger as APIntervalTrigger
 
-            now = now_local()
-            start_minute = now.minute + offset
-            start_time = now.replace(minute=start_minute % 60, second=0, microsecond=0)
-
             trigger_kwargs: dict = {"minutes": interval}
-            if active_start is not None and active_end is not None:
-                trigger_kwargs["start_date"] = start_time.replace(hour=active_start)
-                trigger_kwargs["end_date"] = start_time.replace(hour=active_end)
 
             self.scheduler.add_job(
                 self.heartbeat_tick,
