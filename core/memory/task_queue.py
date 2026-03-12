@@ -155,13 +155,13 @@ class TaskQueueManager:
             assignee: Anima name responsible for the task.
             summary: One-line summary.
             deadline: Optional. Relative ('30m', '2h', '1d') or ISO8601.
-                None for tasks without deadline (e.g. plan_tasks).
+                None for tasks without deadline (e.g. submit_tasks).
             relay_chain: Optional delegation path.
-            task_id: Optional. Use LLM-specified ID (e.g. from plan_tasks).
+            task_id: Optional. Use LLM-specified ID (e.g. from submit_tasks).
                 If None, a UUID-based ID is generated.
             meta: Optional metadata (e.g. executor for TaskExec tracking).
             status: Initial status. Default "pending"; "in_progress" for
-                plan_tasks tasks picked up by TaskExec.
+                submit_tasks tasks picked up by TaskExec.
 
         Returns:
             The created TaskEntry.
