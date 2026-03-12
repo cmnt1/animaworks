@@ -128,7 +128,13 @@ class MemoryToolsMixin:
                     )
         if path.exists() and path.is_file():
             logger.debug("read_memory_file path=%s", rel)
-            return path.read_text(encoding="utf-8")
+            content = path.read_text(encoding="utf-8")
+            lines = content.splitlines(keepends=True)
+            MAX_LINES = 2000
+            if len(lines) > MAX_LINES:
+                truncated = "".join(lines[:MAX_LINES])
+                return truncated + f"\n[Truncated: showing {MAX_LINES} of {len(lines)} lines. Use offset/limit to read more.]"
+            return content
         logger.debug("read_memory_file NOT FOUND path=%s", rel)
         parent = path.parent
         hint = ""
