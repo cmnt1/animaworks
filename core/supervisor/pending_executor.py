@@ -130,6 +130,32 @@ class PendingTaskExecutor:
         """Write a failure marker for a task."""
         self._save_task_result(task_id, f"FAILED: {reason}")
 
+    def _sync_task_queue(
+        self,
+        task_id: str,
+        status: str,
+        *,
+        summary: str | None = None,
+    ) -> None:
+        """Sync task status to task_queue.jsonl (Layer 2).
+
+        Silently skips if the task is not registered in task_queue
+        (e.g., legacy tasks created before this sync was implemented).
+        """
+        try:
+            from core.memory.task_queue import TaskQueueManager
+
+            manager = TaskQueueManager(self._anima_dir)
+            manager.update_status(task_id, status, summary=summary)
+        except Exception:
+            logger.warning(
+                "[%s] Failed to sync task %s status=%s to task_queue",
+                self._anima_name,
+                task_id,
+                status,
+                exc_info=True,
+            )
+
     # ── Watcher loop ─────────────────────────────────────────
 
     @staticmethod
@@ -353,6 +379,7 @@ class PendingTaskExecutor:
             )
             for td in tasks:
                 self._write_failed_result(td["task_id"], "cycle_in_batch")
+                self._sync_task_queue(td["task_id"], "failed", summary="FAILED: cycle_in_batch")
             return
 
         completed: dict[str, str] = {}  # task_id -> result_summary
@@ -365,6 +392,7 @@ class PendingTaskExecutor:
                 for td in remaining:
                     failed.add(td["task_id"])
                     self._write_failed_result(td["task_id"], "failed_dependency")
+                    self._sync_task_queue(td["task_id"], "failed", summary="FAILED: failed_dependency")
                 break
 
             parallel_ready = [td for td in ready if td.get("parallel")]
@@ -385,6 +413,11 @@ class PendingTaskExecutor:
                         )
                         failed.add(task["task_id"])
                         self._write_failed_result(task["task_id"], str(result))
+                        self._sync_task_queue(
+                            task["task_id"],
+                            "failed",
+                            summary=f"FAILED: {str(result)[:200]}",
+                        )
                         reply_to = task.get("reply_to")
                         if isinstance(reply_to, dict):
                             reply_to = reply_to.get("name")
@@ -445,6 +478,11 @@ class PendingTaskExecutor:
                     )
                     failed.add(task["task_id"])
                     self._write_failed_result(task["task_id"], str(exc))
+                    self._sync_task_queue(
+                        task["task_id"],
+                        "failed",
+                        summary=f"FAILED: {str(exc)[:200]}",
+                    )
                     reply_to = task.get("reply_to")
                     if isinstance(reply_to, dict):
                         reply_to = reply_to.get("name")
@@ -511,6 +549,7 @@ class PendingTaskExecutor:
             try:
                 result = await self._run_llm_task(task_desc, completed_results)
                 self._save_task_result(task_id, result)
+                self._sync_task_queue(task_id, "done", summary=(result or "")[:200])
                 return result
             finally:
                 self._anima._active_parallel_tasks.pop(task_id, None)
@@ -525,6 +564,7 @@ class PendingTaskExecutor:
         task_id = task_desc.get("task_id", "unknown")
         result = await self._run_llm_task(task_desc, completed_results)
         self._save_task_result(task_id, result)
+        self._sync_task_queue(task_id, "done", summary=(result or "")[:200])
         return result
 
     async def _run_llm_task(
@@ -823,7 +863,8 @@ class PendingTaskExecutor:
                 self._anima._status_slots["background"] = "task_exec"
                 self._anima._task_slots["background"] = task_id
                 try:
-                    await self._run_llm_task(task_desc)
+                    result = await self._run_llm_task(task_desc)
+                    self._sync_task_queue(task_id, "done", summary=(result or "")[:200])
                 finally:
                     self._anima._status_slots["background"] = "idle"
                     self._anima._task_slots["background"] = ""
@@ -838,6 +879,11 @@ class PendingTaskExecutor:
             self._write_failed_result(
                 task_id,
                 f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
+            self._sync_task_queue(
+                task_id,
+                "failed",
+                summary=f"FAILED: {type(exc).__name__}: {str(exc)[:200]}",
             )
             reply_to = task_desc.get("reply_to")
             if isinstance(reply_to, dict):

@@ -139,36 +139,64 @@ class TaskQueueManager:
         original_instruction: str,
         assignee: str,
         summary: str,
-        deadline: str,
+        deadline: str | None = None,
         relay_chain: list[str] | None = None,
+        task_id: str | None = None,
+        meta: dict[str, Any] | None = None,
+        status: str = "pending",
     ) -> TaskEntry:
         """Add a new task to the queue.
 
         Returns the created TaskEntry.
 
+        Args:
+            source: Origin of the task ('human' or 'anima').
+            original_instruction: Full instruction text.
+            assignee: Anima name responsible for the task.
+            summary: One-line summary.
+            deadline: Optional. Relative ('30m', '2h', '1d') or ISO8601.
+                None for tasks without deadline (e.g. plan_tasks).
+            relay_chain: Optional delegation path.
+            task_id: Optional. Use LLM-specified ID (e.g. from plan_tasks).
+                If None, a UUID-based ID is generated.
+            meta: Optional metadata (e.g. executor for TaskExec tracking).
+            status: Initial status. Default "pending"; "in_progress" for
+                plan_tasks tasks picked up by TaskExec.
+
+        Returns:
+            The created TaskEntry.
+
         Raises:
-            ValueError: If source is invalid or deadline is missing/malformed.
+            ValueError: If source is invalid or deadline format is invalid
+                when deadline is explicitly provided (non-empty).
         """
         if source not in _VALID_SOURCES:
             raise ValueError(f"Invalid source: {source!r} (must be 'human' or 'anima')")
-        if not deadline:
-            raise ValueError("deadline is required. Use relative format ('30m', '2h', '1d') or ISO8601.")
-        parsed_deadline = _parse_deadline(deadline)
+        if status not in ("pending", "in_progress"):
+            raise ValueError(f"Invalid status: {status!r} (must be 'pending' or 'in_progress')")
+        if deadline is not None and deadline != "":
+            parsed_deadline: str | None = _parse_deadline(deadline)
+        elif deadline == "":
+            raise ValueError("deadline is required when provided. Use relative format ('30m', '2h', '1d') or ISO8601.")
+        else:
+            parsed_deadline = None
         if len(original_instruction) > _MAX_INSTRUCTION_CHARS:
             original_instruction = original_instruction[:_MAX_INSTRUCTION_CHARS]
             logger.warning("original_instruction truncated to %d chars", _MAX_INSTRUCTION_CHARS)
         now = now_iso()
+        resolved_task_id = task_id if task_id else uuid.uuid4().hex[:12]
         entry = TaskEntry(
-            task_id=uuid.uuid4().hex[:12],
+            task_id=resolved_task_id,
             ts=now,
             source=source,
             original_instruction=original_instruction,
             assignee=assignee,
-            status="pending",
+            status=status,
             summary=summary,
             deadline=parsed_deadline,
             relay_chain=relay_chain or [],
             updated_at=now,
+            meta=meta or {},
         )
         self._append(entry.model_dump())
         logger.info(
@@ -341,6 +369,14 @@ class TaskQueueManager:
         tasks = self._load_all()
         return [t for t in tasks.values() if t.status == "delegated"]
 
+    def get_failed_taskexec(self) -> list[TaskEntry]:
+        """Return failed tasks executed by TaskExec (meta.executor == 'taskexec').
+
+        Used for format_for_priming to show tasks that need human attention.
+        """
+        tasks = self._load_all()
+        return [t for t in tasks.values() if t.status == "failed" and t.meta.get("executor") == "taskexec"]
+
     def get_task_by_id(self, task_id: str) -> TaskEntry | None:
         """Look up a single task by its ID."""
         return self._load_all().get(task_id)
@@ -352,49 +388,70 @@ class TaskQueueManager:
 
         Human-origin tasks are displayed with 🔴 HIGH priority marker.
         Includes elapsed time, ⚠️ STALE (>30min), and 🔴 OVERDUE markers.
+        In-progress TaskExec tasks show (auto: TaskExec).
+        Failed TaskExec tasks are shown in a separate section.
         """
         tasks = self.get_pending()
-        if not tasks:
-            return ""
-
         now = now_local()
         chars_per_token = 4
         max_chars = budget_tokens * chars_per_token
         lines: list[str] = []
         total = 0
 
-        # Sort: human tasks first, then by creation time
-        tasks.sort(key=lambda t: (0 if t.source == "human" else 1, t.ts))
+        if tasks:
+            # Sort: human tasks first, then by creation time
+            tasks.sort(key=lambda t: (0 if t.source == "human" else 1, t.ts))
 
-        for task in tasks:
-            priority = "🔴 HIGH" if task.source == "human" else "⚪"
-            status_icon = "🔄" if task.status == "in_progress" else "📋"
-            line = f"- {status_icon} {priority} [{task.task_id[:8]}] {task.summary} (assignee: {task.assignee})"
-            if task.relay_chain:
-                line += f" chain: {' → '.join(task.relay_chain)}"
+            for task in tasks:
+                priority = "🔴 HIGH" if task.source == "human" else "⚪"
+                status_icon = "🔄" if task.status == "in_progress" else "📋"
+                line = f"- {status_icon} {priority} [{task.task_id[:8]}] {task.summary} (assignee: {task.assignee})"
+                if task.status == "in_progress" and task.meta.get("executor") == "taskexec":
+                    line += f" {t('task_queue.auto_taskexec')}"
+                if task.relay_chain:
+                    line += f" chain: {' → '.join(task.relay_chain)}"
 
-            # Elapsed time from updated_at (compute once, reuse)
-            elapsed_sec = _elapsed_seconds(task.updated_at, now)
-            elapsed_str = _format_elapsed_from_sec(elapsed_sec)
-            if elapsed_str:
-                line += f" {elapsed_str}"
+                # Elapsed time from updated_at (compute once, reuse)
+                elapsed_sec = _elapsed_seconds(task.updated_at, now)
+                elapsed_str = _format_elapsed_from_sec(elapsed_sec)
+                if elapsed_str:
+                    line += f" {elapsed_str}"
 
-            # STALE marker (>30min since updated_at)
-            if elapsed_sec is not None and elapsed_sec >= _STALE_TASK_THRESHOLD_SEC:
-                line += " ⚠️ STALE"
+                # STALE marker (>30min since updated_at)
+                if elapsed_sec is not None and elapsed_sec >= _STALE_TASK_THRESHOLD_SEC:
+                    line += " ⚠️ STALE"
 
-            # Deadline display and OVERDUE marker
-            if task.deadline:
-                deadline_str = _format_deadline_display(task.deadline, now)
-                if deadline_str:
-                    line += f" {deadline_str}"
+                # Deadline display and OVERDUE marker
+                if task.deadline:
+                    deadline_str = _format_deadline_display(task.deadline, now)
+                    if deadline_str:
+                        line += f" {deadline_str}"
 
-            if total + len(line) > max_chars:
-                break
-            lines.append(line)
-            total += len(line) + 1
+                if total + len(line) > max_chars:
+                    break
+                lines.append(line)
+                total += len(line) + 1
 
-        return "\n".join(lines)
+        # Failed TaskExec tasks (within remaining budget)
+        failed = self.get_failed_taskexec()
+        if failed and total < max_chars:
+            header = t("task_queue.failed_section_header")
+            if total + len(header) <= max_chars:
+                lines.append(header)
+                total += len(header) + 1
+            for task in failed:
+                if total >= max_chars:
+                    break
+                line = t(
+                    "task_queue.failed_line",
+                    task_id=task.task_id[:8],
+                    summary=task.summary,
+                )
+                if total + len(line) <= max_chars:
+                    lines.append(line)
+                    total += len(line) + 1
+
+        return "\n".join(lines) if lines else ""
 
     def get_stale_tasks(self) -> list[TaskEntry]:
         """Return pending/in_progress tasks not updated for 30+ minutes."""

@@ -584,6 +584,18 @@ _STRINGS: dict[str, dict[str, str]] = {
     "task_queue.elapsed_hours": {"ja": "⏱️ {hours}時間経過", "en": "⏱️ {hours}h elapsed"},
     "task_queue.overdue": {"ja": "🔴 OVERDUE({time}期限)", "en": "🔴 OVERDUE(deadline {time})"},
     "task_queue.deadline_by": {"ja": "📅 {time}まで", "en": "📅 By {time}"},
+    "task_queue.failed_section_header": {
+        "ja": "\n❌ Failed (要対処):",
+        "en": "\n❌ Failed (action required):",
+    },
+    "task_queue.failed_line": {
+        "ja": "- [{task_id}] {summary}",
+        "en": "- [{task_id}] {summary}",
+    },
+    "task_queue.auto_taskexec": {
+        "ja": "(auto: TaskExec)",
+        "en": "(auto: TaskExec)",
+    },
     # ── agent.py ──
     "agent.recent_dialogue_header": {"ja": "## 直近の対話履歴", "en": "## Recent dialogue history"},
     "agent.recent_dialogue_intro": {

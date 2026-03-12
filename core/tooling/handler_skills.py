@@ -19,6 +19,7 @@ from core.tooling.handler_base import _error_result
 if TYPE_CHECKING:
     from core.memory import MemoryManager
     from core.memory.activity import ActivityLogger
+    from core.schemas import TaskEntry
     from core.tooling.dispatch import ExternalToolDispatcher
 
 logger = logging.getLogger("animaworks.tool_handler")
@@ -356,7 +357,55 @@ class SkillsToolsMixin:
             meta={"task_id": task_id, "status": status},
         )
 
+        # Retry flow: if status changed to "pending" and task has task_desc in meta,
+        # regenerate Layer 1 JSON and re-submit to PendingTaskExecutor
+        if status == "pending" and entry and entry.meta.get("task_desc"):
+            try:
+                self._regenerate_pending_json(entry)
+                # Immediately set to in_progress since TaskExec will pick it up
+                entry = manager.update_status(task_id, "in_progress") or entry
+            except Exception:
+                logger.warning(
+                    "Failed to regenerate pending JSON for retry: %s",
+                    task_id,
+                    exc_info=True,
+                )
+
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
+
+    def _regenerate_pending_json(self, entry: TaskEntry) -> None:
+        """Regenerate Layer 1 JSON from task_queue entry for retry execution."""
+        task_desc_meta = entry.meta.get("task_desc", {})
+        task_desc = {
+            "task_type": "llm",
+            "task_id": entry.task_id,
+            "batch_id": entry.meta.get("batch_id", ""),
+            "title": task_desc_meta.get("title", entry.summary),
+            "description": task_desc_meta.get("description", entry.original_instruction),
+            "parallel": False,  # retry は常に単体実行
+            "depends_on": [],  # retry は依存なし
+            "context": task_desc_meta.get("context", ""),
+            "acceptance_criteria": task_desc_meta.get("acceptance_criteria", []),
+            "constraints": task_desc_meta.get("constraints", []),
+            "file_paths": task_desc_meta.get("file_paths", []),
+            "submitted_by": self._anima_name,
+            "submitted_at": now_iso(),
+            "reply_to": task_desc_meta.get("reply_to", self._anima_name),
+        }
+
+        pending_dir = self._anima_dir / "state" / "pending"
+        pending_dir.mkdir(parents=True, exist_ok=True)
+        path = pending_dir / f"{entry.task_id}.json"
+        path.write_text(
+            _json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        # Wake the pending executor
+        if hasattr(self, "_pending_executor_wake") and self._pending_executor_wake:
+            self._pending_executor_wake()
+
+        logger.info("Regenerated pending JSON for retry: %s", entry.task_id)
 
     def _handle_list_tasks(self, args: dict[str, Any]) -> str:
         from core.memory.task_queue import TaskQueueManager
@@ -420,10 +469,14 @@ class SkillsToolsMixin:
         except ValueError:
             return _error_result("InvalidArguments", "Cycle detected in depends_on references")
 
-        # Write task files to state/pending/
+        # Write task files to state/pending/ AND register in task_queue.jsonl
         pending_dir = self._anima_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
         submitted_at = now_iso()
+
+        from core.memory.task_queue import TaskQueueManager
+
+        manager = TaskQueueManager(self._anima_dir)
 
         written: list[str] = []
         for t in tasks:
@@ -443,11 +496,46 @@ class SkillsToolsMixin:
                 "submitted_at": submitted_at,
                 "reply_to": t.get("reply_to", self._anima_name),
             }
+
+            # Layer 1: Write JSON to state/pending/
             path = pending_dir / f"{t['task_id']}.json"
             path.write_text(
                 _json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
+
+            # Layer 2: Register in task_queue.jsonl
+            try:
+                manager.add_task(
+                    source="anima",
+                    original_instruction=t["description"][:5000],
+                    assignee=self._anima_name,
+                    summary=t["title"],
+                    task_id=t["task_id"],
+                    status="in_progress",
+                    meta={
+                        "executor": "taskexec",
+                        "batch_id": batch_id,
+                        "depends_on": t.get("depends_on", []),
+                        "parallel": t.get("parallel", False),
+                        "task_desc": {
+                            "title": t["title"],
+                            "description": t["description"],
+                            "acceptance_criteria": t.get("acceptance_criteria", []),
+                            "constraints": t.get("constraints", []),
+                            "file_paths": t.get("file_paths", []),
+                            "context": t.get("context", ""),
+                            "reply_to": t.get("reply_to", self._anima_name),
+                        },
+                    },
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to register plan_task in task_queue: %s",
+                    t["task_id"],
+                    exc_info=True,
+                )
+
             written.append(t["task_id"])
 
         # Wake the pending executor
