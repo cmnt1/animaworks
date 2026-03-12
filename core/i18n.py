@@ -18,27 +18,44 @@ _STRINGS: dict[str, dict[str, str]] = {
     "handler.episode_filename_warning": {
         "ja": "WARNING: エピソードファイル名 '{filename}' は標準パターン (YYYY-MM-DD.md または YYYY-MM-DD_suffix.md) に合致しません。 推奨: episodes/{date}.md に '## HH:MM — タイトル' 形式で追記してください。",
         "en": "WARNING: Episode filename '{filename}' does not match the standard pattern (YYYY-MM-DD.md or YYYY-MM-DD_suffix.md). Recommended: append to episodes/{date}.md in '## HH:MM — Title' format.",
+        "zh": "警告：剧集文件名 '{filename}' 不符合标准模式 (YYYY-MM-DD.md 或 YYYY-MM-DD_suffix.md)。建议：以 '## HH:MM — 标题' 格式追加到 episodes/{date}.md。",
+        "ko": "경고: 에피소드 파일 이름 '{filename}'이 표준 패턴(YYYY-MM-DD.md 또는 YYYY-MM-DD_suffix.md)과 일치하지 않습니다. 권장: episodes/{date}.md에 '## HH:MM — 제목' 형식으로 추가하십시오.",
     },
     "handler.skill_frontmatter_required": {
         "ja": "スキルファイルにはYAMLフロントマター(---)が必要です。",
         "en": "Skill files require YAML frontmatter (---).",
+        "zh": "技能文件需要 YAML 前言 (---)。",
+        "ko": "스킬 파일에는 YAML 프론트매터(---)가 필요합니다.",
     },
-    "handler.name_field_required": {"ja": "`name` フィールドが必要です。", "en": "The `name` field is required."},
+    "handler.name_field_required": {
+        "ja": "`name` フィールドが必要です。",
+        "en": "The `name` field is required.",
+        "zh": "需要 `name` 字段。",
+        "ko": "`name` 필드가 필요합니다.",
+    },
     "handler.description_field_required": {
         "ja": "`description` フィールドが必要です。",
         "en": "The `description` field is required.",
+        "zh": "需要 `description` 字段。",
+        "ko": "`description` 필드가 필요합니다.",
     },
     "handler.description_keyword_warning": {
         "ja": "descriptionに「」キーワードがありません。自動マッチング精度が低下する可能性があります。",
         "en": "No 「」keywords in description. Auto-matching accuracy may be reduced.",
+        "zh": "描述中缺少「」关键词。自动匹配精度可能会降低。",
+        "ko": "설명에 「」 키워드가 없습니다. 자동 매칭 정확도가 떨어질 수 있습니다.",
     },
     "handler.legacy_skill_sections": {
         "ja": "旧形式のセクション(## 概要 / ## 発動条件)が検出されました。Claude Code形式(YAMLフロントマター)への移行を推奨します。",
         "en": "Legacy sections (## 概要 / ## 発動条件) detected. Migration to Claude Code format (YAML frontmatter) is recommended.",
+        "zh": "检测到旧格式的部分 (## 概要 / ## 发动条件)。建议迁移到 Claude Code 格式 (YAML 前言)。",
+        "ko": "이전 형식의 섹션(## 概要 / ## 発動条件)이 감지되었습니다. Claude Code 형식(YAML 프론트매터)으로의 마이그레이션을 권장합니다.",
     },
     "handler.procedure_frontmatter_recommended": {
         "ja": "手順書ファイルにはYAMLフロントマター(---)を推奨します。description フィールドで自動マッチングが有効になります。",
         "en": "Procedure files should have YAML frontmatter (---). The description field enables auto-matching.",
+        "zh": "建议程序文件使用 YAML 前言 (---)。description 字段将启用自动匹配。",
+        "ko": "절차서 파일에는 YAML 프론트매터(---)를 권장합니다. description 필드에서 자동 매칭이 활성화됩니다.",
     },
     "handler.procedure_frontmatter_recommended_short": {
         "ja": "手順書ファイルにはYAMLフロントマター(---)を推奨します。",
