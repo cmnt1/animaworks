@@ -21,7 +21,7 @@ EXPECTED_INTERNAL_TOOL_NAMES: frozenset[str] = frozenset(
         "post_channel",
         "read_channel",
         "read_dm_history",
-        "add_task",
+        "backlog_task",
         "update_task",
         "list_tasks",
         "call_human",

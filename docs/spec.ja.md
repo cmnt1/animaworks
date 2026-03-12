@@ -833,7 +833,7 @@ Group 6: メタ設定
 - **Anima生成** — テンプレート / 空白（_blank）/ MDファイル（create --from-md）からの生成
 - **スキル段階開示** — マッチしたスキル名のみ注入。全文は `skill` ツールでオンデマンド読み込み
 - **外部メッセージング統合** — Slack Socket Mode（リアルタイム双方向）, Chatwork Webhook（受信）
-- **永続タスクキュー** — task_queue.jsonl。滞留検知・DAG並列実行（plan_tasks）・委任プロンプト注入
+- **永続タスクキュー** — task_queue.jsonl。滞留検知・DAG並列実行（submit_tasks）・委任プロンプト注入
 - **解決レジストリ** — shared/resolutions.jsonlによるAnima横断の課題解決追跡
 - **人間通知** — call_human 統合。Slack, Chatwork, LINE, Telegram, ntfy チャネル
 - **外部ツール** — web_search, x_search, slack, chatwork, gmail, github, google_calendar, transcribe, aws_collector, local_llm, image_gen, call_human
@@ -868,10 +868,10 @@ Group 6: メタ設定
 
 | ツール | 説明 |
 |--------|------|
-| `add_task` | タスクキューへの追加 |
+| `backlog_task` | タスクキューへの追加 |
 | `update_task` | タスク状態の更新 |
 | `list_tasks` | タスク一覧の取得 |
-| `plan_tasks` | 複数タスクのDAG投入（依存関係解決・並列実行） |
+| `submit_tasks` | 複数タスクのDAG投入（依存関係解決・並列実行） |
 
 **スキル:**
 

@@ -310,7 +310,7 @@ class TestBuildToolSchemas:
     def test_task_tools_included(self, _anima_dir):
         executor = self._make_executor(_anima_dir)
         names = executor._known_tools
-        assert "add_task" in names
+        assert "backlog_task" in names
         assert "update_task" in names
         assert "list_tasks" in names
 

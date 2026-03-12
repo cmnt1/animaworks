@@ -12,12 +12,12 @@ class TestTaskToolSchemas:
         task_tools = _task_tools()
         assert len(task_tools) == 3
         names = {t["name"] for t in task_tools}
-        assert names == {"add_task", "update_task", "list_tasks"}
+        assert names == {"backlog_task", "update_task", "list_tasks"}
 
-    def test_add_task_schema(self):
+    def test_backlog_task_schema(self):
         task_tools = _task_tools()
-        add_task = next(t for t in task_tools if t["name"] == "add_task")
-        required = add_task["parameters"]["required"]
+        backlog_task = next(t for t in task_tools if t["name"] == "backlog_task")
+        required = backlog_task["parameters"]["required"]
         assert "source" in required
         assert "original_instruction" in required
         assert "assignee" in required
@@ -39,14 +39,14 @@ class TestTaskToolSchemas:
     def test_build_tool_list_includes_task_tools(self):
         tools = build_tool_list(include_task_tools=True)
         names = {t["name"] for t in tools}
-        assert "add_task" in names
+        assert "backlog_task" in names
         assert "update_task" in names
         assert "list_tasks" in names
 
     def test_build_tool_list_excludes_task_tools_by_default(self):
         tools = build_tool_list()
         names = {t["name"] for t in tools}
-        assert "add_task" not in names
+        assert "backlog_task" not in names
 
 
 class TestTaskToolHandler:
@@ -61,8 +61,8 @@ class TestTaskToolHandler:
         memory = MemoryManager(anima_dir)
         return ToolHandler(anima_dir, memory)
 
-    def test_handle_add_task(self, handler):
-        result = handler.handle("add_task", {
+    def test_handle_backlog_task(self, handler):
+        result = handler.handle("backlog_task", {
             "source": "human",
             "original_instruction": "Test instruction",
             "assignee": "rin",
@@ -75,8 +75,8 @@ class TestTaskToolHandler:
         assert data["status"] == "pending"
         assert "task_id" in data
 
-    def test_handle_add_task_missing_instruction(self, handler):
-        result = handler.handle("add_task", {
+    def test_handle_backlog_task_missing_instruction(self, handler):
+        result = handler.handle("backlog_task", {
             "source": "human",
             "assignee": "rin",
             "summary": "s",
@@ -87,7 +87,7 @@ class TestTaskToolHandler:
 
     def test_handle_update_task(self, handler):
         # First add a task
-        add_result = json.loads(handler.handle("add_task", {
+        add_result = json.loads(handler.handle("backlog_task", {
             "source": "human",
             "original_instruction": "test",
             "assignee": "rin",
@@ -113,14 +113,14 @@ class TestTaskToolHandler:
         assert data["status"] == "error"
 
     def test_handle_list_tasks(self, handler):
-        handler.handle("add_task", {
+        handler.handle("backlog_task", {
             "source": "human",
             "original_instruction": "t1",
             "assignee": "a",
             "summary": "s1",
             "deadline": "1h",
         })
-        handler.handle("add_task", {
+        handler.handle("backlog_task", {
             "source": "anima",
             "original_instruction": "t2",
             "assignee": "b",
@@ -131,7 +131,7 @@ class TestTaskToolHandler:
         assert len(result) == 2
 
     def test_handle_list_tasks_with_filter(self, handler):
-        add_result = json.loads(handler.handle("add_task", {
+        add_result = json.loads(handler.handle("backlog_task", {
             "source": "human",
             "original_instruction": "t1",
             "assignee": "a",
@@ -142,7 +142,7 @@ class TestTaskToolHandler:
             "task_id": add_result["task_id"],
             "status": "done",
         })
-        handler.handle("add_task", {
+        handler.handle("backlog_task", {
             "source": "human",
             "original_instruction": "t2",
             "assignee": "b",

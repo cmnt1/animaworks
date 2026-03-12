@@ -7,6 +7,10 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Renamed `plan_tasks` tool to `submit_tasks` for clearer async execution semantics
+- Renamed `add_task` tool to `backlog_task` to distinguish from auto-executed tasks
+
 ## [0.5.2] - 2026-03-09
 
 ### Added

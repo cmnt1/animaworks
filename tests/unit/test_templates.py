@@ -35,7 +35,7 @@ class TestBehaviorRulesTemplate:
     def test_task_recording_rules(self):
         path = TEMPLATES_DIR / "behavior_rules.md"
         content = path.read_text(encoding="utf-8")
-        assert "add_task" in content
+        assert "backlog_task" in content
         assert "解決済み案件の再報告禁止" in content
 
     def test_existing_sections_preserved(self):

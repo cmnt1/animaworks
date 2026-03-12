@@ -1,4 +1,4 @@
-"""Tests for deadline validation in ToolHandler._handle_add_task()."""
+"""Tests for deadline validation in ToolHandler._handle_backlog_task()."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -49,12 +49,12 @@ def handler(anima_dir: Path, memory: MagicMock) -> ToolHandler:
 
 
 class TestHandlerDeadlineValidation:
-    """Tests that _handle_add_task returns errors for missing/invalid deadline."""
+    """Tests that _handle_backlog_task returns errors for missing/invalid deadline."""
 
     def test_missing_deadline_returns_error(self, handler: ToolHandler):
         """Handler should return a structured error when deadline is not provided."""
         result = handler.handle(
-            "add_task",
+            "backlog_task",
             {
                 "source": "human",
                 "original_instruction": "Do something",
@@ -71,7 +71,7 @@ class TestHandlerDeadlineValidation:
     def test_empty_deadline_returns_error(self, handler: ToolHandler):
         """Handler should return error for empty string deadline."""
         result = handler.handle(
-            "add_task",
+            "backlog_task",
             {
                 "source": "human",
                 "original_instruction": "Do something",
@@ -88,7 +88,7 @@ class TestHandlerDeadlineValidation:
     def test_none_deadline_returns_error(self, handler: ToolHandler):
         """Handler should return error when deadline is None."""
         result = handler.handle(
-            "add_task",
+            "backlog_task",
             {
                 "source": "human",
                 "original_instruction": "Do something",
@@ -105,7 +105,7 @@ class TestHandlerDeadlineValidation:
     def test_invalid_deadline_format_returns_error(self, handler: ToolHandler):
         """Handler should catch ValueError from _parse_deadline for bad formats."""
         result = handler.handle(
-            "add_task",
+            "backlog_task",
             {
                 "source": "human",
                 "original_instruction": "Do something",
@@ -122,7 +122,7 @@ class TestHandlerDeadlineValidation:
     def test_valid_relative_deadline_succeeds(self, handler: ToolHandler):
         """Handler should successfully create a task with a relative deadline."""
         result = handler.handle(
-            "add_task",
+            "backlog_task",
             {
                 "source": "human",
                 "original_instruction": "Do something",
@@ -144,7 +144,7 @@ class TestHandlerDeadlineValidation:
     def test_valid_iso8601_deadline_succeeds(self, handler: ToolHandler):
         """Handler should successfully create a task with an ISO8601 deadline."""
         result = handler.handle(
-            "add_task",
+            "backlog_task",
             {
                 "source": "human",
                 "original_instruction": "Do something",
@@ -160,7 +160,7 @@ class TestHandlerDeadlineValidation:
     def test_missing_instruction_still_returns_error(self, handler: ToolHandler):
         """Missing instruction should be caught before deadline validation."""
         result = handler.handle(
-            "add_task",
+            "backlog_task",
             {
                 "source": "human",
                 "original_instruction": "",
@@ -176,7 +176,7 @@ class TestHandlerDeadlineValidation:
     def test_missing_assignee_returns_error(self, handler: ToolHandler):
         """Missing assignee should be caught before deadline validation."""
         result = handler.handle(
-            "add_task",
+            "backlog_task",
             {
                 "source": "human",
                 "original_instruction": "Do something",

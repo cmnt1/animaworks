@@ -378,8 +378,8 @@ class TestDeadlineMandatoryEnforcement:
         return ToolHandler(anima_dir, memory)
 
     def test_add_task_without_deadline_returns_error(self, handler):
-        """ToolHandler rejects add_task when deadline is missing."""
-        result = handler.handle("add_task", {
+        """ToolHandler rejects backlog_task when deadline is missing."""
+        result = handler.handle("backlog_task", {
             "source": "human",
             "original_instruction": "Do something",
             "assignee": "rin",
@@ -392,8 +392,8 @@ class TestDeadlineMandatoryEnforcement:
         assert "deadline" in data["message"].lower()
 
     def test_add_task_with_empty_deadline_returns_error(self, handler):
-        """ToolHandler rejects add_task when deadline is empty string."""
-        result = handler.handle("add_task", {
+        """ToolHandler rejects backlog_task when deadline is empty string."""
+        result = handler.handle("backlog_task", {
             "source": "human",
             "original_instruction": "Do something",
             "assignee": "rin",
@@ -406,8 +406,8 @@ class TestDeadlineMandatoryEnforcement:
         assert "deadline" in data["message"].lower()
 
     def test_add_task_with_invalid_deadline_returns_error(self, handler):
-        """ToolHandler rejects add_task when deadline format is invalid."""
-        result = handler.handle("add_task", {
+        """ToolHandler rejects backlog_task when deadline format is invalid."""
+        result = handler.handle("backlog_task", {
             "source": "human",
             "original_instruction": "Do something",
             "assignee": "rin",
@@ -419,8 +419,8 @@ class TestDeadlineMandatoryEnforcement:
         assert data["error_type"] == "InvalidArguments"
 
     def test_add_task_with_valid_deadline_succeeds(self, handler):
-        """ToolHandler accepts add_task when deadline is provided."""
-        result = handler.handle("add_task", {
+        """ToolHandler accepts backlog_task when deadline is provided."""
+        result = handler.handle("backlog_task", {
             "source": "human",
             "original_instruction": "Deploy to production",
             "assignee": "rin",

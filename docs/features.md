@@ -151,7 +151,7 @@ Tasks with no updates for 30 minutes are flagged as stale; overdue tasks are fla
 
 ### Parallel Execution
 
-`plan_tasks` submits multiple tasks as a DAG. Dependencies are resolved and independent tasks run concurrently.
+`submit_tasks` submits multiple tasks as a DAG. Dependencies are resolved and independent tasks run concurrently.
 
 ---
 

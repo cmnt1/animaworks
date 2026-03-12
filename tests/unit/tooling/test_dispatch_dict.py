@@ -78,7 +78,7 @@ EXPECTED_BUILTIN_TOOLS = frozenset({
     "share_tool",
     "report_procedure_outcome",
     "report_knowledge_outcome",
-    "add_task",
+    "backlog_task",
     "update_task",
     "list_tasks",
     "skill",

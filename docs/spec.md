@@ -833,7 +833,7 @@ Including "Making decisions without searching memory is prohibited" in `behavior
 - **Supervisor tools** — Auto-enabled for Animas with subordinates: disable/enable_subordinate, delegate_task, org_dashboard, audit_subordinate, etc.
 - **Unified configuration** — config.json + Pydantic validation. status.json SSoT, models.json for execution mode override
 - **Credential Vault** — Encrypted secret storage accessible to Animas via vault_get/vault_store/vault_list tools
-- **plan_tasks** — DAG-based parallel task execution with dependency resolution
+- **submit_tasks** — DAG-based parallel task execution with dependency resolution
 - **FastAPI server** — REST + WebSocket + Web UI (3D office, conversation view)
 - **Voice chat** — WebSocket /ws/voice/{name}. STT (faster-whisper) → Chat IPC → TTS (VOICEVOX/ElevenLabs/SBV2)
 - **External tools** — web_search, x_search, slack, chatwork, gmail, github, transcribe, aws_collector, local_llm, image_gen, google_calendar, call_human
@@ -859,10 +859,10 @@ Internal tools provided by the framework (MCP tools in Mode S, ToolHandler dispa
 |  | `read_channel` | Read shared channel history |
 |  | `read_channel_mentions` | Search for mentions in a channel |
 |  | `read_dm_history` | Read DM history |
-| **Task** | `add_task` | Add a task to the persistent queue |
+| **Task** | `backlog_task` | Add a task to the persistent queue |
 |  | `update_task` | Update task status |
 |  | `list_tasks` | List tasks by status |
-|  | `plan_tasks` | Submit a batch of tasks with dependency DAG for parallel execution |
+|  | `submit_tasks` | Submit a batch of tasks with dependency DAG for parallel execution |
 | **Skill** | `skill` | Look up a skill (progressive disclosure: name only → full text on demand) |
 |  | `create_skill` | Create a new skill |
 | **Vault** | `vault_get` | Retrieve a secret from the Vault |

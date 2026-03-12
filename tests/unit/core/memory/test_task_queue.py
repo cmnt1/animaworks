@@ -531,7 +531,7 @@ def test_handle_list_tasks_no_indent(tmp_path: Path) -> None:
     assert "\n  " not in result
 
 
-# ── Test: add_task task_id, meta, status (plan_tasks support) ────────────────
+# ── Test: add_task task_id, meta, status (submit_tasks support) ────────────────
 
 
 def test_add_task_with_task_id_uses_provided_id(tmp_path: Path) -> None:
