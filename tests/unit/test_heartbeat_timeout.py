@@ -89,6 +89,14 @@ class TestHeartbeatConfigValidation:
         cfg = HeartbeatConfig(max_turns=None)
         assert cfg.max_turns is None
 
+    def test_soft_must_be_less_than_hard(self):
+        with pytest.raises(ValidationError):
+            HeartbeatConfig(soft_timeout_seconds=600, hard_timeout_seconds=300)
+
+    def test_soft_equal_hard_rejected(self):
+        with pytest.raises(ValidationError):
+            HeartbeatConfig(soft_timeout_seconds=300, hard_timeout_seconds=300)
+
 
 # ── Mode A soft timeout (reminder_queue) ──────────────────────
 

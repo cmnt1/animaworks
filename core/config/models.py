@@ -366,6 +366,16 @@ class HeartbeatConfig(BaseModel):
         default=None, ge=3, le=200,
         description="HB-specific max_turns override (None = use per-anima model_config.max_turns)",
     )
+
+    @model_validator(mode="after")
+    def _validate_soft_lt_hard(self) -> HeartbeatConfig:
+        if self.soft_timeout_seconds >= self.hard_timeout_seconds:
+            raise ValueError(
+                f"soft_timeout_seconds ({self.soft_timeout_seconds}) must be "
+                f"less than hard_timeout_seconds ({self.hard_timeout_seconds})"
+            )
+        return self
+
     default_model: str | None = None  # global background model for heartbeat/cron (None = use main model)
     msg_heartbeat_cooldown_s: int = 300  # message-triggered heartbeat cooldown
     cascade_window_s: int = 1800  # sliding window for cascade detection
