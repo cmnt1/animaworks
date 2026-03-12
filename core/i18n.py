@@ -2357,7 +2357,7 @@ def t(key: str, locale: str | None = None, **kwargs: object) -> str:
     from core.paths import _get_locale
 
     loc = locale or _get_locale()
-    if not isinstance(loc, str) or loc not in ("ja", "en"):
+    if not isinstance(loc, str) or loc not in ("ja", "en", "zh", "ko"):
         loc = "ja"
     entry = _STRINGS.get(key, {})
     template = entry.get(loc) or entry.get("en") or entry.get("ja", key)

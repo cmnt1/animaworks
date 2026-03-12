@@ -21,8 +21,8 @@ class TestTranslationFunction:
     def test_fallback_to_en_for_unknown_locale(self):
         """t() falls back to 'ja' for unrecognized locales."""
         from core.i18n import t
-        result = t("anima.status_idle", locale="zh")
-        # Should fall back to ja since zh is not in ("ja", "en")
+        result = t("anima.status_idle", locale="fr")
+        # Should fall back to ja since fr is not in ("ja", "en", "zh", "ko")
         assert result == "待機中"
 
     def test_returns_key_for_missing_entry(self):
