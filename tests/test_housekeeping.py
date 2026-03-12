@@ -35,6 +35,8 @@ class TestHousekeepingConfig:
         assert cfg.dm_log_archive_retention_days == 30
         assert cfg.cron_log_retention_days == 30
         assert cfg.shortterm_retention_days == 7
+        assert cfg.task_results_retention_days == 7
+        assert cfg.pending_failed_retention_days == 14
 
     def test_custom_values(self):
         from core.config.models import HousekeepingConfig
@@ -390,6 +392,20 @@ class TestRunHousekeeping:
         # Set up logs dir (no daemon log for this test)
         (data_dir / "logs").mkdir(parents=True)
 
+        # Set up task_results
+        task_results_dir = animas_dir / "alice" / "state" / "task_results"
+        task_results_dir.mkdir(parents=True, exist_ok=True)
+        old_tr = task_results_dir / "old_task.md"
+        old_tr.write_text("old result")
+        os.utime(old_tr, (old_time, old_time))
+
+        # Set up pending/failed
+        pf_dir = animas_dir / "alice" / "state" / "pending" / "failed"
+        pf_dir.mkdir(parents=True)
+        old_pf = pf_dir / "failed_task.json"
+        old_pf.write_text("{}")
+        os.utime(old_pf, (old_time, old_time))
+
         from core.memory.housekeeping import run_housekeeping
 
         results = await run_housekeeping(
@@ -397,6 +413,8 @@ class TestRunHousekeeping:
             prompt_log_retention_days=3,
             cron_log_retention_days=30,
             shortterm_retention_days=7,
+            task_results_retention_days=7,
+            pending_failed_retention_days=7,
         )
 
         assert "prompt_logs" in results
@@ -408,6 +426,8 @@ class TestRunHousekeeping:
         assert "daemon_log" in results
         assert results["daemon_log"]["skipped"] is True
         assert "dm_archives" in results
+        assert results["task_results"]["deleted_files"] == 1
+        assert results["pending_failed"]["deleted_files"] == 1
 
     @pytest.mark.asyncio
     async def test_handles_missing_dirs_gracefully(self, tmp_path: Path):
@@ -420,3 +440,125 @@ class TestRunHousekeeping:
         assert "dm_archives" in results
         assert "cron_logs" in results
         assert "shortterm" in results
+        assert "task_results" in results
+        assert "pending_failed" in results
+
+
+# ── Task results cleanup tests ──────────────────────────────────
+
+
+class TestCleanupTaskResults:
+    """Tests for _cleanup_task_results."""
+
+    def test_deletes_old_files(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_task_results
+
+        results_dir = tmp_path / "alice" / "state" / "task_results"
+        results_dir.mkdir(parents=True)
+
+        old_time = time.time() - (10 * 86400)
+        old_file = results_dir / "task_old.md"
+        old_file.write_text("old result")
+        os.utime(old_file, (old_time, old_time))
+
+        new_file = results_dir / "task_new.md"
+        new_file.write_text("new result")
+
+        result = _cleanup_task_results(tmp_path, retention_days=7)
+        assert result["deleted_files"] == 1
+        assert not old_file.exists()
+        assert new_file.exists()
+
+    def test_skips_missing_dir(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_task_results
+
+        result = _cleanup_task_results(tmp_path / "nonexistent", retention_days=7)
+        assert result["skipped"] is True
+
+    def test_skips_anima_without_task_results(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_task_results
+
+        (tmp_path / "alice" / "state").mkdir(parents=True)
+        result = _cleanup_task_results(tmp_path, retention_days=7)
+        assert result["deleted_files"] == 0
+
+    def test_cleans_multiple_animas(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_task_results
+
+        old_time = time.time() - (10 * 86400)
+        for name in ("alice", "bob"):
+            d = tmp_path / name / "state" / "task_results"
+            d.mkdir(parents=True)
+            f = d / "old_task.md"
+            f.write_text("result")
+            os.utime(f, (old_time, old_time))
+
+        result = _cleanup_task_results(tmp_path, retention_days=7)
+        assert result["deleted_files"] == 2
+
+
+# ── Pending failed cleanup tests ────────────────────────────────
+
+
+class TestCleanupPendingFailed:
+    """Tests for _cleanup_pending_failed."""
+
+    def test_deletes_old_llm_failed(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_pending_failed
+
+        failed_dir = tmp_path / "alice" / "state" / "pending" / "failed"
+        failed_dir.mkdir(parents=True)
+
+        old_time = time.time() - (20 * 86400)
+        old_file = failed_dir / "task_old.json"
+        old_file.write_text("{}")
+        os.utime(old_file, (old_time, old_time))
+
+        new_file = failed_dir / "task_new.json"
+        new_file.write_text("{}")
+
+        result = _cleanup_pending_failed(tmp_path, retention_days=14)
+        assert result["deleted_files"] == 1
+        assert not old_file.exists()
+        assert new_file.exists()
+
+    def test_deletes_old_cmd_failed(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_pending_failed
+
+        failed_dir = tmp_path / "alice" / "state" / "background_tasks" / "pending" / "failed"
+        failed_dir.mkdir(parents=True)
+
+        old_time = time.time() - (20 * 86400)
+        old_file = failed_dir / "cmd_old.json"
+        old_file.write_text("{}")
+        os.utime(old_file, (old_time, old_time))
+
+        result = _cleanup_pending_failed(tmp_path, retention_days=14)
+        assert result["deleted_files"] == 1
+        assert not old_file.exists()
+
+    def test_cleans_both_failed_dirs(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_pending_failed
+
+        old_time = time.time() - (20 * 86400)
+
+        llm_failed = tmp_path / "alice" / "state" / "pending" / "failed"
+        llm_failed.mkdir(parents=True)
+        f1 = llm_failed / "llm_old.json"
+        f1.write_text("{}")
+        os.utime(f1, (old_time, old_time))
+
+        cmd_failed = tmp_path / "alice" / "state" / "background_tasks" / "pending" / "failed"
+        cmd_failed.mkdir(parents=True)
+        f2 = cmd_failed / "cmd_old.json"
+        f2.write_text("{}")
+        os.utime(f2, (old_time, old_time))
+
+        result = _cleanup_pending_failed(tmp_path, retention_days=14)
+        assert result["deleted_files"] == 2
+
+    def test_skips_missing_dir(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_pending_failed
+
+        result = _cleanup_pending_failed(tmp_path / "nonexistent", retention_days=14)
+        assert result["skipped"] is True

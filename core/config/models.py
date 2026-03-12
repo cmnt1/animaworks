@@ -346,6 +346,8 @@ class HousekeepingConfig(BaseModel):
     dm_log_archive_retention_days: int = 30
     cron_log_retention_days: int = 30
     shortterm_retention_days: int = 7
+    task_results_retention_days: int = 7
+    pending_failed_retention_days: int = 14
 
 
 class HeartbeatConfig(BaseModel):

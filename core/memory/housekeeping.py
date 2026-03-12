@@ -33,6 +33,8 @@ async def run_housekeeping(
     dm_log_archive_retention_days: int = 30,
     cron_log_retention_days: int = 30,
     shortterm_retention_days: int = 7,
+    task_results_retention_days: int = 7,
+    pending_failed_retention_days: int = 14,
 ) -> dict[str, Any]:
     """Run all housekeeping tasks. Returns summary of actions taken."""
     loop = asyncio.get_running_loop()
@@ -105,6 +107,32 @@ async def run_housekeeping(
     except Exception:
         logger.exception("Housekeeping: shortterm cleanup failed")
         results["shortterm"] = {"error": True}
+
+    # 6. Task results
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _cleanup_task_results,
+            animas_dir,
+            task_results_retention_days,
+        )
+        results["task_results"] = r
+    except Exception:
+        logger.exception("Housekeeping: task_results cleanup failed")
+        results["task_results"] = {"error": True}
+
+    # 7. Pending failed tasks
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _cleanup_pending_failed,
+            animas_dir,
+            pending_failed_retention_days,
+        )
+        results["pending_failed"] = r
+    except Exception:
+        logger.exception("Housekeeping: pending_failed cleanup failed")
+        results["pending_failed"] = {"error": True}
 
     return results
 
@@ -279,4 +307,71 @@ def _cleanup_shortterm(
 
     if total_deleted:
         logger.info("Shortterm cleanup: deleted %d files", total_deleted)
+    return {"deleted_files": total_deleted}
+
+
+def _cleanup_task_results(
+    animas_dir: Path,
+    retention_days: int,
+) -> dict[str, Any]:
+    """Delete old task result files from state/task_results/."""
+    if not animas_dir.exists():
+        return {"skipped": True}
+
+    cutoff_ts = (now_local() - timedelta(days=retention_days)).timestamp()
+    total_deleted = 0
+
+    for anima_dir in sorted(animas_dir.iterdir()):
+        if not anima_dir.is_dir():
+            continue
+        results_dir = anima_dir / "state" / "task_results"
+        if not results_dir.is_dir():
+            continue
+        for f in results_dir.glob("*.md"):
+            try:
+                if f.stat().st_mtime < cutoff_ts:
+                    f.unlink()
+                    total_deleted += 1
+            except OSError:
+                logger.warning("Failed to delete task result: %s", f)
+
+    if total_deleted:
+        logger.info("Task results cleanup: deleted %d files", total_deleted)
+    return {"deleted_files": total_deleted}
+
+
+def _cleanup_pending_failed(
+    animas_dir: Path,
+    retention_days: int,
+) -> dict[str, Any]:
+    """Delete old failed task files from state/pending/failed/ and
+    state/background_tasks/pending/failed/."""
+    if not animas_dir.exists():
+        return {"skipped": True}
+
+    cutoff_ts = (now_local() - timedelta(days=retention_days)).timestamp()
+    total_deleted = 0
+
+    _FAILED_SUBDIRS = (
+        Path("state") / "pending" / "failed",
+        Path("state") / "background_tasks" / "pending" / "failed",
+    )
+
+    for anima_dir in sorted(animas_dir.iterdir()):
+        if not anima_dir.is_dir():
+            continue
+        for rel in _FAILED_SUBDIRS:
+            failed_dir = anima_dir / rel
+            if not failed_dir.is_dir():
+                continue
+            for f in failed_dir.glob("*.json"):
+                try:
+                    if f.stat().st_mtime < cutoff_ts:
+                        f.unlink()
+                        total_deleted += 1
+                except OSError:
+                    logger.warning("Failed to delete failed task: %s", f)
+
+    if total_deleted:
+        logger.info("Pending failed cleanup: deleted %d files", total_deleted)
     return {"deleted_files": total_deleted}

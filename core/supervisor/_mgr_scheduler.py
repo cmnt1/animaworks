@@ -704,6 +704,8 @@ class SchedulerMixin:
                 dm_log_archive_retention_days=hk_cfg.dm_log_archive_retention_days,
                 cron_log_retention_days=hk_cfg.cron_log_retention_days,
                 shortterm_retention_days=hk_cfg.shortterm_retention_days,
+                task_results_retention_days=hk_cfg.task_results_retention_days,
+                pending_failed_retention_days=hk_cfg.pending_failed_retention_days,
             )
             logger.info("Housekeeping complete: %s", results)
         except Exception:
