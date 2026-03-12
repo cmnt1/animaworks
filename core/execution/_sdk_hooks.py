@@ -791,7 +791,7 @@ def _build_post_tool_hook(anima_dir: Path) -> Callable:
             return {}
 
         file_path = input_data.get("tool_input", {}).get("file_path", "")
-        if not file_path.startswith(knowledge_dir_str) or not file_path.endswith(".md"):
+        if not file_path.startswith(knowledge_dir_str + "/") or not file_path.endswith(".md"):
             return {}
 
         import asyncio
