@@ -150,6 +150,34 @@ def _intercept_task_to_pending(
         encoding="utf-8",
     )
 
+    # Layer 2: Register in task_queue.jsonl for tracking
+    try:
+        from core.memory.task_queue import TaskQueueManager
+
+        manager = TaskQueueManager(anima_dir)
+        manager.add_task(
+            source="anima",
+            original_instruction=prompt[:5000],
+            assignee=anima_dir.name,
+            summary=description[:200],
+            task_id=task_id,
+            status="in_progress",
+            meta={
+                "executor": "taskexec",
+                "task_desc": {
+                    "title": description,
+                    "description": prompt,
+                    "context": "\n\n".join(context_parts),
+                    "acceptance_criteria": [],
+                    "constraints": [],
+                    "file_paths": [],
+                    "reply_to": anima_dir.name,
+                },
+            },
+        )
+    except Exception:
+        logger.warning("Failed to register intercepted task in task_queue: %s", task_id, exc_info=True)
+
     _log_tool_use(
         anima_dir,
         actual_tool_name,

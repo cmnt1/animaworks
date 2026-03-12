@@ -12,3 +12,7 @@ Do not perform actual work yourself during Heartbeat. Task execution is handled 
 
 Completed background task results are in state/task_results/.
 Check for important results and plan follow-up actions as needed.
+
+If the task queue has tasks with **failed** status, action is required:
+- `update_task(task_id="...", status="pending")` to retry
+- `update_task(task_id="...", status="cancelled")` to discard

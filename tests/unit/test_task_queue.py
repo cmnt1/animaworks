@@ -441,17 +441,17 @@ class TestParseDeadline:
 
 
 class TestDeadlineMandatory:
-    """Tests that deadline is a required parameter for add_task()."""
+    """Tests for deadline handling in add_task()."""
 
-    def test_add_task_without_deadline_raises(self, task_queue):
-        """Calling add_task without a deadline keyword raises TypeError (missing arg)."""
-        with pytest.raises(TypeError):
-            task_queue.add_task(
-                source="human",
-                original_instruction="test",
-                assignee="rin",
-                summary="test",
-            )
+    def test_add_task_with_deadline_none_creates_task_without_deadline(self, task_queue):
+        """add_task with deadline=None (or omitted) creates a task without deadline."""
+        entry = task_queue.add_task(
+            source="human",
+            original_instruction="test",
+            assignee="rin",
+            summary="test",
+        )
+        assert entry.deadline is None
 
     def test_add_task_with_relative_deadline_converts(self, task_queue):
         """A relative deadline ('1h') should be converted to ISO8601 in the stored entry."""

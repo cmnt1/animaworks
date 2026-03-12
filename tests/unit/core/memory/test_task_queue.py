@@ -529,3 +529,120 @@ def test_handle_list_tasks_no_indent(tmp_path: Path) -> None:
 
     result = mixin._handle_list_tasks({})
     assert "\n  " not in result
+
+
+# ── Test: add_task task_id, meta, status (plan_tasks support) ────────────────
+
+
+def test_add_task_with_task_id_uses_provided_id(tmp_path: Path) -> None:
+    """add_task with task_id uses the provided ID instead of generating one."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    entry = tqm.add_task(
+        source="anima",
+        original_instruction="compile",
+        assignee="self",
+        summary="コンパイル",
+        task_id="compile123",
+    )
+    assert entry.task_id == "compile123"
+
+
+def test_add_task_with_meta_and_status_in_progress(tmp_path: Path) -> None:
+    """add_task with meta and status=in_progress for TaskExec tracking."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    entry = tqm.add_task(
+        source="anima",
+        original_instruction="run build",
+        assignee="self",
+        summary="ビルド実行",
+        task_id="build001",
+        meta={"executor": "taskexec"},
+        status="in_progress",
+    )
+    assert entry.status == "in_progress"
+    assert entry.meta.get("executor") == "taskexec"
+
+
+# ── Test: get_failed_taskexec and format_for_priming failed section ─────────
+
+
+def test_get_failed_taskexec_returns_only_taskexec_failed(tmp_path: Path) -> None:
+    """get_failed_taskexec returns only failed tasks with meta.executor=taskexec."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    e1 = tqm.add_task(
+        source="human",
+        original_instruction="t1",
+        assignee="a",
+        summary="s1",
+        deadline="1h",
+    )
+    tqm.update_status(e1.task_id, "failed")
+
+    e2 = tqm.add_task(
+        source="anima",
+        original_instruction="t2",
+        assignee="self",
+        summary="s2",
+        task_id="taskexec2",
+        meta={"executor": "taskexec"},
+        status="in_progress",
+    )
+    tqm.update_status(e2.task_id, "failed", summary="API timeout")
+
+    failed = tqm.get_failed_taskexec()
+    assert len(failed) == 1
+    assert failed[0].task_id == "taskexec2"
+    assert failed[0].summary == "API timeout"
+
+
+def test_format_for_priming_shows_auto_taskexec_for_in_progress(tmp_path: Path) -> None:
+    """format_for_priming shows (auto: TaskExec) for in_progress tasks with meta.executor."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    tqm.add_task(
+        source="anima",
+        original_instruction="compile",
+        assignee="self",
+        summary="コンパイル",
+        task_id="abc12345",
+        meta={"executor": "taskexec"},
+        status="in_progress",
+    )
+
+    result = tqm.format_for_priming(budget_tokens=500)
+    assert "(auto: TaskExec)" in result
+    assert "abc12345" in result or "abc1234" in result
+
+
+def test_format_for_priming_includes_failed_section(tmp_path: Path) -> None:
+    """format_for_priming includes failed TaskExec tasks when present."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    tqm.add_task(
+        source="anima",
+        original_instruction="fetch data",
+        assignee="self",
+        summary="データ取得",
+        task_id="xyz99999",
+        meta={"executor": "taskexec"},
+        status="in_progress",
+    )
+    tqm.update_status("xyz99999", "failed", summary="データ取得 — FAILED: API timeout")
+
+    result = tqm.format_for_priming(budget_tokens=500)
+    assert "❌ Failed" in result or "Failed (要対処)" in result or "Failed (action required)" in result
+    assert "xyz99999" in result or "xyz9999" in result  # truncated to 8 chars
+    assert "データ取得" in result
