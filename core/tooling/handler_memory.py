@@ -133,7 +133,10 @@ class MemoryToolsMixin:
             MAX_LINES = 2000
             if len(lines) > MAX_LINES:
                 truncated = "".join(lines[:MAX_LINES])
-                return truncated + f"\n[Truncated: showing {MAX_LINES} of {len(lines)} lines. Use offset/limit to read more.]"
+                return (
+                    truncated
+                    + f"\n[Truncated: showing {MAX_LINES} of {len(lines)} lines. Use offset/limit to read more.]"
+                )
             return content
         logger.debug("read_memory_file NOT FOUND path=%s", rel)
         parent = path.parent
