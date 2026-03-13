@@ -2418,6 +2418,47 @@ _STRINGS: dict[str, dict[str, str]] = {
     "preset.task.monthly_close": {"ja": "月次決算準備", "en": "Monthly closing preparation"},
     "preset.task.process_improvement": {"ja": "業務プロセス改善", "en": "Process improvement"},
     "preset.task.compliance_check": {"ja": "コンプライアンスチェック", "en": "Compliance check"},
+    # ── machine tool ──
+    "machine.engine_not_found": {
+        "ja": "工作機械 '{engine}' が見つかりません。インストールされているか確認してください。",
+        "en": "Machine engine '{engine}' not found. Please verify it is installed.",
+    },
+    "machine.working_directory_not_found": {
+        "ja": "作業ディレクトリ '{path}' が存在しません。",
+        "en": "Working directory '{path}' does not exist.",
+    },
+    "machine.invalid_engine": {
+        "ja": "無効なエンジン '{engine}' です。有効なエンジン: {valid}",
+        "en": "Invalid engine '{engine}'. Valid engines: {valid}",
+    },
+    "machine.empty_instruction": {
+        "ja": "instruction が空です。工作機械への詳細な作業指示を記述してください。",
+        "en": "Instruction is empty. Provide detailed task instructions for the machine.",
+    },
+    "machine.missing_working_directory": {
+        "ja": "working_directory が指定されていません。",
+        "en": "working_directory is required.",
+    },
+    "machine.forbidden_directory": {
+        "ja": "作業ディレクトリ '{path}' はAnima記憶領域と重複するため使用できません。",
+        "en": "Working directory '{path}' overlaps with Anima memory directories and cannot be used.",
+    },
+    "machine.rate_limit_exceeded": {
+        "ja": "工作機械の呼び出し上限に達しました（{limit}回/{period}）。",
+        "en": "Machine tool call limit reached ({limit} calls per {period}).",
+    },
+    "machine.engine_failed": {
+        "ja": "工作機械 '{engine}' がエラーコード {code} で終了しました。",
+        "en": "Machine engine '{engine}' exited with code {code}.",
+    },
+    "machine.timeout": {
+        "ja": "工作機械 '{engine}' が {seconds} 秒でタイムアウトしました。",
+        "en": "Machine engine '{engine}' timed out after {seconds} seconds.",
+    },
+    "machine.unexpected_error": {
+        "ja": "工作機械 '{engine}' の実行中に予期しないエラー: {error}",
+        "en": "Unexpected error running machine engine '{engine}': {error}",
+    },
 }
 
 
