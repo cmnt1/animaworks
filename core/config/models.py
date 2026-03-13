@@ -333,6 +333,15 @@ class ActivityLogConfig(BaseModel):
     rotation_time: str = "05:00"  # 実行時刻 (configured TZ)
 
 
+class MachineConfig(BaseModel):
+    """Configuration for machine tool (external agent CLI)."""
+
+    engine_priority: list[str] = Field(
+        default_factory=list,
+        description="Engine priority order. First = recommended. Empty = use default.",
+    )
+
+
 class HousekeepingConfig(BaseModel):
     """Configuration for periodic disk cleanup."""
 
@@ -502,6 +511,7 @@ class AnimaWorksConfig(BaseModel):
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     voice: VoiceConfig = VoiceConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
+    machine: MachineConfig = MachineConfig()
     activity_level: int = Field(
         default=100,
         ge=10,

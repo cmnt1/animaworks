@@ -2459,6 +2459,26 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ja": "工作機械 '{engine}' の実行中に予期しないエラー: {error}",
         "en": "Unexpected error running machine engine '{engine}': {error}",
     },
+    "machine.engine_desc_claude": {
+        "ja": "Claude CLI — 高品質・豊富なツール。コード実装・リファクタ・ドキュメント生成に最適",
+        "en": "Claude CLI — High quality, rich tools. Best for implementation, refactoring, documentation",
+    },
+    "machine.engine_desc_codex": {
+        "ja": "Codex CLI — ネイティブサンドボックス。安全性重視のファイル操作に最適",
+        "en": "Codex CLI — Native sandbox. Best for safety-critical file operations",
+    },
+    "machine.engine_desc_cursor_agent": {
+        "ja": "Cursor Agent — IDE統合・高速。コード実装・ワークスペース操作に最適",
+        "en": "Cursor Agent — IDE-integrated, fast. Best for code implementation and workspace operations",
+    },
+    "machine.engine_desc_gemini": {
+        "ja": "Gemini CLI — Google AI。探索・分析に最適",
+        "en": "Gemini CLI — Google AI. Best for exploration and analysis",
+    },
+    "machine.list_hint": {
+        "ja": "使用するエンジン名をengineパラメータに指定してmachine_runを再度呼び出してください。",
+        "en": "Call machine_run again with the desired engine name in the engine parameter.",
+    },
 }
 
 

@@ -54,10 +54,11 @@ class TestToolSchemas:
         assert "instruction" in required
         assert "working_directory" in required
 
-    def test_schema_engine_enum_matches_valid_engines(self):
+    def test_schema_engine_no_enum(self):
         schema = self._schemas_with_all_engines()[0]
-        engine_enum = schema["parameters"]["properties"]["engine"]["enum"]
-        assert set(engine_enum) == _VALID_ENGINES
+        engine_prop = schema["parameters"]["properties"]["engine"]
+        assert "enum" not in engine_prop
+        assert "type" in engine_prop
 
     def test_schema_has_background_param(self):
         schema = self._schemas_with_all_engines()[0]
@@ -65,10 +66,11 @@ class TestToolSchemas:
         assert "background" in props
         assert props["background"]["type"] == "boolean"
 
-    def test_schema_description_lists_engines(self):
+    def test_schema_description_shows_recommended_engine(self):
         schema = self._schemas_with_all_engines()[0]
-        for engine in _VALID_ENGINES:
-            assert engine in schema["description"]
+        desc = schema["description"]
+        assert "cursor-agent" in desc  # default top-priority engine
+        assert "__list__" in desc
 
 
 # ── Engine Availability Tests ─────────────────────────────
@@ -94,22 +96,22 @@ class TestEngineAvailability:
         with patch("core.tools.machine.shutil.which", side_effect=selective_which):
             available = _get_available_engines()
             assert set(available) == {"claude", "cursor-agent"}
-            assert available == sorted(available)
+            assert available[0] == "cursor-agent"  # priority order
 
     def test_schemas_empty_when_no_engines(self):
         with patch("core.tools.machine.shutil.which", return_value=None):
             schemas = get_tool_schemas()
             assert schemas == []
 
-    def test_schemas_only_available_engines_in_enum(self):
+    def test_schemas_description_shows_recommended(self):
         def selective_which(name):
             return "/usr/bin/fake" if name == "cursor-agent" else None
 
         with patch("core.tools.machine.shutil.which", side_effect=selective_which):
             schemas = get_tool_schemas()
             assert len(schemas) == 1
-            engine_enum = schemas[0]["parameters"]["properties"]["engine"]["enum"]
-            assert engine_enum == ["cursor-agent"]
+            desc = schemas[0]["description"]
+            assert "cursor-agent" in desc
 
     def test_schema_description_reflects_available_engines(self):
         def selective_which(name):
@@ -118,9 +120,9 @@ class TestEngineAvailability:
         with patch("core.tools.machine.shutil.which", side_effect=selective_which):
             schemas = get_tool_schemas()
             desc = schemas[0]["description"]
-            assert "codex" in desc
-            assert "gemini" in desc
-            assert "claude" not in desc.split("利用可能エンジン:")[1].split("\n")[0]
+            engine_desc = schemas[0]["parameters"]["properties"]["engine"]["description"]
+            assert "codex" in engine_desc  # codex is higher priority than gemini
+            assert "__list__" in desc
 
     def test_engine_description_reflects_available(self):
         def selective_which(name):
@@ -690,3 +692,57 @@ class TestAutoDiscovery:
         from core.tools import TOOL_MODULES
 
         assert "machine" in TOOL_MODULES
+
+
+# ── Engine Priority Tests ─────────────────────────────────
+
+
+class TestEnginePriority:
+    """Tests for engine priority ordering and __list__ dispatch."""
+
+    def test_default_priority_order(self):
+        from core.tools.machine import _DEFAULT_ENGINE_PRIORITY
+
+        assert _DEFAULT_ENGINE_PRIORITY[0] == "cursor-agent"
+        assert set(_DEFAULT_ENGINE_PRIORITY) == _VALID_ENGINES
+
+    def test_available_engines_respect_priority(self):
+        with patch("core.tools.machine.shutil.which", return_value="/usr/bin/fake"):
+            available = _get_available_engines()
+            assert available[0] == "cursor-agent"
+
+    def test_config_priority_override(self):
+        with (
+            patch("core.tools.machine.shutil.which", return_value="/usr/bin/fake"),
+            patch("core.tools.machine._get_engine_priority", return_value=["gemini", "claude"]),
+        ):
+            available = _get_available_engines()
+            assert available[0] == "gemini"
+            assert available[1] == "claude"
+
+    def test_list_sentinel_dispatch(self):
+        with patch("core.tools.machine.shutil.which", return_value="/usr/bin/fake"):
+            result_str = dispatch("machine_run", {"engine": "__list__"})
+            result = json.loads(result_str)
+            assert "engines" in result
+            assert result["total"] == len(_VALID_ENGINES)
+            assert result["recommended"] == "cursor-agent"
+            assert result["engines"][0]["rank"] == 1
+            assert result["engines"][0]["recommended"] is True
+
+    def test_list_sentinel_does_not_count_rate_limit(self):
+        reset_call_counts()
+        with patch("core.tools.machine.shutil.which", return_value="/usr/bin/fake"):
+            dispatch("machine_run", {"engine": "__list__"})
+            from core.tools.machine import _session_call_counts
+
+            assert sum(_session_call_counts.values()) == 0
+
+    def test_single_engine_no_list_mention(self):
+        def selective_which(name):
+            return "/usr/bin/fake" if name == "claude" else None
+
+        with patch("core.tools.machine.shutil.which", side_effect=selective_which):
+            schemas = get_tool_schemas()
+            desc = schemas[0]["description"]
+            assert "__list__" not in desc

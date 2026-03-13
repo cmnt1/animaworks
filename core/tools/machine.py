@@ -157,17 +157,45 @@ _ENGINE_PERMISSION_FLAGS: dict[str, list[str]] = {
 
 _VALID_ENGINES = frozenset(_ENGINE_COMMANDS.keys())
 
+_DEFAULT_ENGINE_PRIORITY: list[str] = [
+    "cursor-agent",
+    "claude",
+    "codex",
+    "gemini",
+]
+
+_LIST_SENTINEL = "__list__"
 
 # ── Engine Availability ───────────────────────────────────
 
 
-def _get_available_engines() -> list[str]:
-    """Return engines whose CLI binary is found in PATH.
+def _get_engine_priority() -> list[str]:
+    """Return engine priority order from config, falling back to default."""
+    try:
+        from core.config.models import load_config
 
-    Called once at schema generation time (module import / tool discovery).
-    Changes to PATH require an Anima restart to take effect.
+        config = load_config()
+        if config.machine.engine_priority:
+            return list(config.machine.engine_priority)
+    except Exception:
+        pass
+    return list(_DEFAULT_ENGINE_PRIORITY)
+
+
+def _get_available_engines() -> list[str]:
+    """Return engines whose CLI binary is found in PATH, ordered by priority.
+
+    Priority is determined by ``config.json`` ``machine.engine_priority``
+    (if set) or :data:`_DEFAULT_ENGINE_PRIORITY`.  Engines not listed in
+    the priority table are appended alphabetically.
     """
-    return [e for e in sorted(_VALID_ENGINES) if shutil.which(_ENGINE_COMMANDS[e][0])]
+    priority = _get_engine_priority()
+    available = {e for e in _VALID_ENGINES if shutil.which(_ENGINE_COMMANDS[e][0])}
+    result = [e for e in priority if e in available]
+    for e in sorted(available):
+        if e not in result:
+            result.append(e)
+    return result
 
 
 # ── Rate Limiting ──────────────────────────────────────────
@@ -395,16 +423,27 @@ def get_tool_schemas() -> list[dict[str, Any]]:
 
     Dynamically probes PATH for available engine CLIs.  If no engines are
     found, returns an empty list — the tool is effectively hidden from the
-    Anima.  Only engines whose binary is present appear in the ``enum``.
+    Anima.
+
+    Only the top-priority engine is shown in the description.  Animas can
+    pass ``engine="__list__"`` to discover all available engines.
     """
     available = _get_available_engines()
     if not available:
         return []
 
-    engines_str = ", ".join(available)
+    top = available[0]
+    others = len(available) - 1
+
+    if others > 0:
+        engine_line = f'推奨エンジン: {top}（他{others}エンジン利用可能。engine="__list__"で一覧取得）\n'
+        engine_desc = f"使用する工作機械。推奨: {top}（「__list__」で全エンジン一覧取得）"
+    else:
+        engine_line = f"利用可能エンジン: {top}\n"
+        engine_desc = f"使用する工作機械: {top}"
+
     description = (
-        f"外部エージェントCLI（工作機械）にタスクを委託する。"
-        f"利用可能エンジン: {engines_str}\n"
+        f"外部エージェントCLI（工作機械）にタスクを委託する。{engine_line}"
         f"工作機械は指示されたタスクのみを実行するステートレスな道具であり、"
         f"Animaの記憶・通信・組織情報にはアクセスできない。\n\n"
         f"【重要】instruction には以下を必ず含めること:\n"
@@ -425,8 +464,7 @@ def get_tool_schemas() -> list[dict[str, Any]]:
                 "properties": {
                     "engine": {
                         "type": "string",
-                        "enum": available,
-                        "description": f"使用する工作機械（外部エージェントCLI）。利用可能: {engines_str}",
+                        "description": engine_desc,
                     },
                     "instruction": {
                         "type": "string",
@@ -458,6 +496,35 @@ def get_tool_schemas() -> list[dict[str, Any]]:
     ]
 
 
+# ── Engine List ────────────────────────────────────────────
+
+
+def _handle_list_engines() -> str:
+    """Return a priority-ordered list of available engines with descriptions."""
+    available = _get_available_engines()
+    engines = []
+    for i, e in enumerate(available):
+        desc_key = f"machine.engine_desc_{e.replace('-', '_')}"
+        engines.append(
+            {
+                "rank": i + 1,
+                "name": e,
+                "description": t(desc_key),
+                "recommended": i == 0,
+            }
+        )
+    return json.dumps(
+        {
+            "engines": engines,
+            "recommended": available[0] if available else None,
+            "total": len(available),
+            "hint": t("machine.list_hint"),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 # ── Dispatch ───────────────────────────────────────────────
 
 
@@ -467,6 +534,10 @@ def dispatch(name: str, args: dict[str, Any]) -> str:
         return json.dumps({"error": f"Unknown action: {name}"}, ensure_ascii=False)
 
     engine = args.get("engine", "")
+
+    if engine == _LIST_SENTINEL:
+        return _handle_list_engines()
+
     instruction = args.get("instruction", "")
     working_directory = args.get("working_directory", "")
     background = args.get("background", False)
