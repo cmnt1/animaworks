@@ -864,10 +864,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         results = client.get_attachments(args["message_id"], save_dir)
         return {
             "count": len(results),
-            "attachments": [
-                {"filename": filename, "path": str(save_path)}
-                for filename, save_path in results
-            ],
+            "attachments": [{"filename": filename, "path": str(save_path)} for filename, save_path in results],
         }
     if name == "gmail_draft":
         raw_attachments = args.get("attachments")

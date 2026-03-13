@@ -95,19 +95,53 @@ def discover_personal_tools(anima_dir: Path) -> dict[str, str]:
 # Known CLI subcommands for fallback routing.
 # When animaworks-tool receives a command not found in TOOL_MODULES,
 # it transparently forwards to the main CLI (cli_main).
-_MAIN_CLI_COMMANDS: frozenset[str] = frozenset({
-    "init", "start", "serve", "stop", "restart", "reset",
-    "chat", "heartbeat", "send", "list", "status", "logs",
-    "board", "anima", "config", "task", "models", "cost",
-    "migrate-cron", "optimize-assets", "remake", "profile",
-    "create-anima",
-})
+_MAIN_CLI_COMMANDS: frozenset[str] = frozenset(
+    {
+        "init",
+        "start",
+        "serve",
+        "stop",
+        "restart",
+        "reset",
+        "chat",
+        "heartbeat",
+        "send",
+        "list",
+        "status",
+        "logs",
+        "board",
+        "anima",
+        "config",
+        "task",
+        "models",
+        "cost",
+        "migrate-cron",
+        "optimize-assets",
+        "remake",
+        "profile",
+        "create-anima",
+    }
+)
 
-_ANIMA_SUBCOMMANDS: frozenset[str] = frozenset({
-    "list", "info", "status", "restart", "create", "delete",
-    "enable", "disable", "set-model", "set-background-model",
-    "set-outbound-limit", "reload", "set-role", "rename", "audit",
-})
+_ANIMA_SUBCOMMANDS: frozenset[str] = frozenset(
+    {
+        "list",
+        "info",
+        "status",
+        "restart",
+        "create",
+        "delete",
+        "enable",
+        "disable",
+        "set-model",
+        "set-background-model",
+        "set-outbound-limit",
+        "reload",
+        "set-role",
+        "rename",
+        "audit",
+    }
+)
 
 _SUBMIT_TASK_ID_LENGTH = 12
 
@@ -302,11 +336,13 @@ def cli_dispatch():
     if tool_name in _MAIN_CLI_COMMANDS:
         sys.argv = ["animaworks"] + sys.argv[1:]
         from cli import cli_main
+
         cli_main()
         return
     if tool_name in _ANIMA_SUBCOMMANDS:
         sys.argv = ["animaworks", "anima"] + sys.argv[1:]
         from cli import cli_main
+
         cli_main()
         return
 
