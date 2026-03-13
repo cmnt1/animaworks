@@ -32,7 +32,15 @@ from core.tooling.schemas import (
 
 logger = logging.getLogger("animaworks.execution.litellm_loop")
 
-_WRITE_TOOLS = frozenset({"write_file", "edit_file", "write_memory_file"})
+_WRITE_TOOLS = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "write_memory_file",
+        "Write",
+        "Edit",
+    }
+)
 
 _tool_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tool-quick")
 

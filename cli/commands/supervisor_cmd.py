@@ -152,6 +152,9 @@ def _cmd_ping(args: argparse.Namespace) -> None:
 
     target_name = getattr(args, "name", None)
     if target_name:
+        if ".." in target_name or "/" in target_name or "\\" in target_name:
+            print("Error: invalid target name", file=sys.stderr)
+            sys.exit(1)
         targets = [target_name]
     else:
         supervisor_map = _load_supervisor_map(animas_dir)
@@ -169,6 +172,10 @@ def _cmd_read_state(args: argparse.Namespace) -> None:
     target_name = getattr(args, "name", "")
     if not target_name:
         print("Error: NAME is required", file=sys.stderr)
+        sys.exit(1)
+
+    if ".." in target_name or "/" in target_name or "\\" in target_name:
+        print("Error: invalid target name", file=sys.stderr)
         sys.exit(1)
 
     anima_dir = _get_anima_dir()

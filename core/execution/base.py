@@ -301,6 +301,8 @@ _TOOL_RESULT_BASE_BUDGET: dict[str, int] = {
     "Bash": 2000,
     "web_search": 1500,
     "x_search": 1500,
+    "Write": 500,
+    "Edit": 500,
     "write_file": 500,
     "edit_file": 500,
     "search_memory": 1500,
