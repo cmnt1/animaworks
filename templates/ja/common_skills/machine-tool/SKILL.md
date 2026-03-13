@@ -8,8 +8,19 @@ tags: [machine, agent, external, delegation]
 
 # Machine ツール（工作機械）
 
-外部エージェントCLI（claude, codex, cursor-agent, gemini）にタスクを委託するツール。
+外部エージェントCLI にタスクを委託するツール。
 コード変更・調査・分析など、自分で直接やると重い作業を外部エージェントに丸投げできる。
+
+## 推奨エンジン: cursor-agent
+
+| 優先順位 | エンジン | 特徴 |
+|---------|---------|------|
+| 1（推奨） | **cursor-agent** | 高速・低コスト。通常はこれを使う |
+| 2 | claude | Anthropic Claude。高品質だがコスト高 |
+| 3 | codex | OpenAI Codex |
+| 4 | gemini | Google Gemini |
+
+**特に理由がなければ cursor-agent を使うこと。** `-e` を省略するとシステムの推奨エンジンが自動選択される。
 
 ## 設計思想
 
@@ -20,10 +31,10 @@ tags: [machine, agent, external, delegation]
 ## CLI使用法（Sモード）
 
 ```bash
-# 基本形
+# 基本形（推奨エンジンが自動選択される）
 animaworks-tool machine run "詳細な作業指示" -d /path/to/workdir
 
-# エンジン指定
+# エンジンを明示的に指定
 animaworks-tool machine run -e cursor-agent "指示" -d /path/to/workdir
 animaworks-tool machine run -e claude "指示" -d /path/to/workdir
 animaworks-tool machine run -e gemini "指示" -d /path/to/workdir

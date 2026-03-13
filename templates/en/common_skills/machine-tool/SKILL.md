@@ -9,8 +9,19 @@ tags: [machine, agent, external, delegation]
 
 # Machine Tool
 
-Delegate tasks to external agent CLIs (claude, codex, cursor-agent, gemini).
+Delegate tasks to external agent CLIs.
 Offload heavy work like code changes, investigation, and analysis to external agents.
+
+## Recommended Engine: cursor-agent
+
+| Priority | Engine | Notes |
+|----------|--------|-------|
+| 1 (recommended) | **cursor-agent** | Fast, low cost. Use this by default |
+| 2 | claude | Anthropic Claude. High quality but expensive |
+| 3 | codex | OpenAI Codex |
+| 4 | gemini | Google Gemini |
+
+**Use cursor-agent unless you have a specific reason not to.** Omitting `-e` auto-selects the system's recommended engine.
 
 ## Design Philosophy
 
@@ -22,10 +33,10 @@ It has no memory, no communication, no identity.
 ## CLI Usage (Mode S)
 
 ```bash
-# Basic
+# Basic (recommended engine auto-selected)
 animaworks-tool machine run "detailed instruction" -d /path/to/workdir
 
-# Specify engine
+# Explicitly specify engine
 animaworks-tool machine run -e cursor-agent "instruction" -d /path/to/workdir
 animaworks-tool machine run -e claude "instruction" -d /path/to/workdir
 animaworks-tool machine run -e gemini "instruction" -d /path/to/workdir
