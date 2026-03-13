@@ -436,9 +436,7 @@ def get_tool_schemas() -> list[dict[str, Any]]:
     others = len(available) - 1
 
     if others > 0:
-        description = t(
-            "machine.schema.description_multi", top=top, others=others
-        )
+        description = t("machine.schema.description_multi", top=top, others=others)
         engine_desc = t("machine.schema.engine_multi", top=top)
     else:
         description = t("machine.schema.description_single", top=top)
