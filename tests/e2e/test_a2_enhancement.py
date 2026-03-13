@@ -229,25 +229,27 @@ class TestBaseToolCount:
     """Verify the base tool set matches the design spec."""
 
     def test_base_tool_count(self, executor):
-        """Base tools should be 30 (use_tool is Mode B only, not in Mode A)."""
+        """Base tools should be 16 (CC 8 + AW-essential 8, no notification/supervisor)."""
         tools = executor._build_base_tools()
-        assert len(tools) == 30
+        assert len(tools) == 16
         names = {t["function"]["name"] for t in tools}
-        assert "search_code" in names
-        assert "list_directory" in names
-        assert "use_tool" not in names
-        assert "read_file" in names
+        # CC built-in tools (8)
+        assert "Read" in names
+        assert "Write" in names
+        assert "Edit" in names
+        assert "Bash" in names
+        assert "Grep" in names
+        assert "Glob" in names
+        assert "WebSearch" in names
+        assert "WebFetch" in names
+        # AW-essential tools (8)
         assert "search_memory" in names
-        assert "refresh_tools" in names
-        assert "share_tool" in names
+        assert "read_memory_file" in names
+        assert "write_memory_file" in names
+        assert "send_message" in names
         assert "post_channel" in names
-        assert "backlog_task" in names
-        assert "update_task" in names
-        assert "list_tasks" in names
-        assert "read_channel" in names
-        assert "read_dm_history" in names
-        assert "report_procedure_outcome" in names
-        assert "skill" in names
-        assert "create_skill" in names
         assert "submit_tasks" in names
-        assert "manage_channel" in names
+        assert "update_task" in names
+        assert "skill" in names
+        # Mode B only tools should NOT be present
+        assert "use_tool" not in names

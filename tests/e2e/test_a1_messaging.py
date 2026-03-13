@@ -22,7 +22,7 @@ class TestSModeMessagingPrompt:
     """Verify system prompts differ by execution mode for messaging."""
 
     def test_s_mode_prompt_has_mcp_send_message(self, data_dir, make_anima):
-        """S mode system prompt should reference mcp__aw__send_message tool."""
+        """S mode system prompt should reference send_message tool."""
         anima_dir = make_anima("alice")
         # Create a second anima so messaging section is populated
         make_anima("bob", supervisor="alice")
@@ -30,7 +30,7 @@ class TestSModeMessagingPrompt:
         memory = MemoryManager(anima_dir)
         prompt = build_system_prompt(memory, execution_mode="s")
 
-        assert "mcp__aw__send_message" in prompt
+        assert "send_message" in prompt
         # bash send should NOT appear (abolished)
         assert "bash send" not in prompt
 

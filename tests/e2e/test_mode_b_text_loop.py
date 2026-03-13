@@ -239,5 +239,5 @@ class TestModeBModeRouting:
         executor = agent._executor
         assert isinstance(executor, AssistedExecutor)
         assert "search_memory" in executor._known_tools
-        assert "read_file" in executor._known_tools
+        assert "Read" in executor._known_tools
         assert "write_memory_file" in executor._known_tools
