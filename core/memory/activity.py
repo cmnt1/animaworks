@@ -183,9 +183,7 @@ class ActivityLogger(
             origin_chain=origin_chain or [],
         )
         self._append(entry, safe=safe)
-        if event_type in self._LIVE_EVENT_TYPES:
-            self._emit_live_event(entry)
-        elif event_type == "tool_use" and entry.tool in self._VISIBLE_TOOL_NAMES:
+        if event_type in self._LIVE_EVENT_TYPES or event_type == "tool_use" and entry.tool in self._VISIBLE_TOOL_NAMES:
             self._emit_live_event(entry)
         return entry
 
