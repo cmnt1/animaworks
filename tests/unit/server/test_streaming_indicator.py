@@ -7,6 +7,7 @@ Verifies that:
 1. CSS files contain breathe-bg animation for .streaming bubbles
 2. JS files clear activeTool on tool_end and done events
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -31,17 +32,13 @@ class TestStreamingIndicatorCSS:
     @pytest.mark.parametrize("css_path", [_DASHBOARD_CSS, _WORKSPACE_CSS])
     def test_streaming_cursor_class_defined(self, css_path: Path):
         content = css_path.read_text()
-        assert ".streaming-cursor" in content, (
-            f".streaming-cursor class not found in {css_path.name}"
-        )
+        assert ".streaming-cursor" in content, f".streaming-cursor class not found in {css_path.name}"
 
     @pytest.mark.parametrize("css_path", [_DASHBOARD_CSS, _WORKSPACE_CSS])
     def test_streaming_cursor_has_animation(self, css_path: Path):
         content = css_path.read_text()
         cursor_start = content.index(".streaming-cursor")
-        assert "animation" in content[cursor_start:], (
-            f".streaming-cursor missing animation in {css_path.name}"
-        )
+        assert "animation" in content[cursor_start:], f".streaming-cursor missing animation in {css_path.name}"
 
 
 # ── JS: tool_end Behavior ─────────────────────────────────
@@ -58,10 +55,8 @@ class TestToolEndBehaviorJS:
         tool_end_idx = content.find("onToolEnd")
         assert tool_end_idx != -1, f"onToolEnd handler not found in {js_path.name}"
 
-        after_tool_end = content[tool_end_idx:tool_end_idx + 300]
-        assert "activeTool = null" in after_tool_end, (
-            f"onToolEnd handler should clear activeTool in {js_path.name}"
-        )
+        after_tool_end = content[tool_end_idx : tool_end_idx + 300]
+        assert "activeTool = null" in after_tool_end, f"onToolEnd handler should clear activeTool in {js_path.name}"
 
 
 class TestDoneHandlerClearsActiveTool:
@@ -75,7 +70,5 @@ class TestDoneHandlerClearsActiveTool:
         done_idx = content.find("onDone")
         assert done_idx != -1, f"onDone handler not found in {js_path.name}"
 
-        after_done = content[done_idx:done_idx + 1000]
-        assert "activeTool = null" in after_done, (
-            f"onDone handler should clear activeTool in {js_path.name}"
-        )
+        after_done = content[done_idx : done_idx + 1200]
+        assert "activeTool = null" in after_done, f"onDone handler should clear activeTool in {js_path.name}"

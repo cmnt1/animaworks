@@ -3997,5 +3997,164 @@ html, body {
   filter: hue-rotate(10deg) brightness(1.02) saturate(1.15);
 }
 
+/* ── Replay Control Bar ─────────────────────── */
+
+.org-replay-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  background: var(--aw-color-bg-primary, #fff);
+  border-bottom: 1px solid var(--aw-color-border, #e5e5e5);
+  flex-shrink: 0;
+}
+
+.org-replay-bar--loading {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.org-replay-controls {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.org-replay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--aw-color-border, #e5e5e5);
+  border-radius: 6px;
+  background: var(--aw-color-bg-tertiary, #f8f8f8);
+  color: var(--aw-color-text-primary, #1a1a1a);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.org-replay-btn:hover,
+.org-replay-btn:active {
+  background: var(--aw-color-bg-hover, #eee);
+  border-color: var(--aw-color-border-medium, #cbd5e1);
+}
+
+.org-replay-btn--play {
+  width: 36px;
+  font-size: 14px;
+  background: var(--aw-color-accent, #3b82f6);
+  color: #fff;
+  border-color: transparent;
+}
+
+.org-replay-btn--play:hover,
+.org-replay-btn--play:active {
+  background: color-mix(in srgb, var(--aw-color-accent, #3b82f6) 85%, #000);
+  border-color: transparent;
+}
+
+.org-replay-seek {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.org-replay-slider {
+  flex: 1;
+  height: 4px;
+  appearance: none;
+  background: var(--aw-color-border, #e5e5e5);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.org-replay-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--aw-color-accent, #3b82f6);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.org-replay-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--aw-color-accent, #3b82f6);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.org-replay-time {
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--aw-color-text-muted, #888);
+  white-space: nowrap;
+  min-width: 36px;
+  text-align: center;
+}
+
+.org-replay-speed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border: 1px solid var(--aw-color-border, #e5e5e5);
+  border-radius: 6px;
+  background: var(--aw-color-bg-tertiary, #f8f8f8);
+  color: var(--aw-color-text-primary, #1a1a1a);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.org-replay-speed:hover,
+.org-replay-speed:active {
+  background: var(--aw-color-bg-hover, #eee);
+}
+
+/* Replay trigger button in view toggle */
+.ws-replay-btn {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--aw-color-border, #e5e5e5);
+  border-radius: 6px;
+  background: var(--aw-color-bg-tertiary, #f8f8f8);
+  color: var(--aw-color-text-primary, #1a1a1a);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ws-replay-btn:hover,
+.ws-replay-btn:active {
+  background: var(--aw-color-bg-hover, #eee);
+}
+
+.ws-replay-btn--active {
+  background: var(--aw-color-accent, #3b82f6);
+  color: #fff;
+  border-color: transparent;
+}
+
+.ws-replay-btn--active:hover,
+.ws-replay-btn--active:active {
+  background: color-mix(in srgb, var(--aw-color-accent, #3b82f6) 85%, #000);
+}
+
 /* ── Realistic Mode Overrides ─────────────────────── */
 /* (avatar display is now handled by avatar-resolver regardless of mode) */

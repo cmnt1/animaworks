@@ -15,6 +15,8 @@ import {
   bustupExpressionCandidates,
   resolveCachedAvatar,
 } from "../../modules/avatar-resolver.js";
+import { ReplayEngine } from "./replay-engine.js";
+import { ReplayUI } from "./replay-ui.js";
 
 const logger = createLogger("org-dashboard");
 
@@ -62,6 +64,11 @@ let _connectionsGroup = null;
 let _msgLinesGroup = null;
 let _msgLineCounter = 0;
 
+// ── Replay State ──────────────────────
+let _replayEngine = null;
+let _replayUI = null;
+let _replayMode = false;
+
 // ── External Channel Nodes ──────────────────────
 const _EXTERNAL_CHANNELS = [
   { id: "ext_slack", name: "Slack", icon: "💬", color: "#4A154B" },
@@ -70,6 +77,32 @@ const _EXTERNAL_CHANNELS = [
   { id: "ext_gmail", name: "Gmail", icon: "📧", color: "#EA4335" },
   { id: "ext_web", name: "Web", icon: "🌐", color: "#4285F4" },
 ];
+
+// ── Card Stream Visibility Filter ──────────────────────
+const _CARD_VISIBLE_TYPES = new Set([
+  "heartbeat_start", "heartbeat_end",
+  "cron_executed",
+  "message_sent", "message_received",
+  "response_sent",
+  "channel_post",
+  "task_created", "task_updated", "issue_resolved",
+  "inbox_processing_start", "inbox_processing_end",
+  "human_notify",
+]);
+
+// Keep in sync with core/memory/activity.py _VISIBLE_TOOL_NAMES
+export const VISIBLE_TOOL_NAMES = new Set([
+  "delegate_task", "update_task", "backlog_task",
+  "submit_tasks", "call_human",
+  "post_channel", "send_message",
+]);
+
+function _isCardVisible(ev) {
+  const type = ev.type || ev.name || "";
+  if (_CARD_VISIBLE_TYPES.has(type)) return true;
+  if (type === "tool_use" && VISIBLE_TOOL_NAMES.has(ev.tool)) return true;
+  return false;
+}
 
 // ── Avatar Variant State ──────────────────────
 const MESSAGE_LINE_DURATION = 2000;
@@ -507,6 +540,10 @@ export function showMessageLine(fromName, toName, _summary, options = {}) {
   if (!fromPos || !toPos) return;
 
   const lineType = options.lineType || "internal";
+  const replaySpeed = options.replaySpeed || 0;
+
+  // 50x+: particle-only mode (skip bezier trail)
+  const simplified = replaySpeed >= 50;
 
   const { w: cardW, h: cardH } = _getCardDimensions();
   const x1 = fromPos.x + cardW / 2;
@@ -529,20 +566,25 @@ export function showMessageLine(fromName, toName, _summary, options = {}) {
 
   const pathD = `M${x1},${y1} Q${cx1},${cy1} ${x2},${y2}`;
 
+  const dur = replaySpeed >= 100 ? 200 : replaySpeed >= 50 ? 500 : replaySpeed >= 10 ? 1000 : MESSAGE_LINE_DURATION;
+  const fade = replaySpeed >= 50 ? 200 : MESSAGE_LINE_FADE;
+
   const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
   group.classList.add("org-msg-line-group");
 
-  const trail = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  trail.setAttribute("d", pathD);
-  trail.setAttribute("class", `org-msg-trail org-msg-trail--${lineType}`);
-  group.appendChild(trail);
+  if (!simplified) {
+    const trail = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    trail.setAttribute("d", pathD);
+    trail.setAttribute("class", `org-msg-trail org-msg-trail--${lineType}`);
+    group.appendChild(trail);
+  }
 
   const packet = document.createElementNS("http://www.w3.org/2000/svg", "circle");
   packet.setAttribute("r", lineType === "internal" ? "5" : "6");
   packet.setAttribute("class", `org-msg-packet org-msg-packet--${lineType}`);
 
   const anim = document.createElementNS("http://www.w3.org/2000/svg", "animateMotion");
-  anim.setAttribute("dur", `${MESSAGE_LINE_DURATION}ms`);
+  anim.setAttribute("dur", `${dur}ms`);
   anim.setAttribute("repeatCount", "1");
   anim.setAttribute("fill", "freeze");
   anim.setAttribute("path", pathD);
@@ -553,8 +595,8 @@ export function showMessageLine(fromName, toName, _summary, options = {}) {
 
   setTimeout(() => {
     group.classList.add("org-msg-line--fading");
-    setTimeout(() => group.remove(), MESSAGE_LINE_FADE);
-  }, MESSAGE_LINE_DURATION);
+    setTimeout(() => group.remove(), fade);
+  }, dur);
 }
 
 function _createExternalNodes(container) {
@@ -745,7 +787,7 @@ async function _loadInitialStreams(animas) {
   for (const r of flatResults) {
     if (r.status !== "fulfilled" || !r.value) continue;
     const { name, events } = r.value;
-    const entries = events.slice(0, MAX_STREAM_ENTRIES).reverse().map(ev => ({
+    const entries = events.filter(_isCardVisible).slice(0, MAX_STREAM_ENTRIES).reverse().map(ev => ({
       id: ev.id || String(Date.now() + Math.random()),
       type: _mapEventType(ev.type || ev.name),
       text: _summarizeEvent(ev),
@@ -823,7 +865,7 @@ function _mapEventType(type) {
 function _summarizeEvent(ev) {
   if (ev.summary) return ev.summary.slice(0, 80);
   const type = ev.type || ev.name || "";
-  if (type.includes("tool_use")) return ev.tool || ev.tool_name || type;
+  if (type.includes("tool_use")) return `⚙ ${ev.tool || ev.tool_name || type}`;
   if (type.includes("heartbeat")) return "heartbeat";
   if (type.includes("cron")) return ev.task || "cron";
   if (type.includes("message")) return ev.intent ? `${type} (${ev.intent})` : type;
@@ -939,6 +981,9 @@ export function disposeOrgDashboard() {
   window.removeEventListener("resize", _onResize);
   _stopKpiPolling();
   if (_staleTimerId) { clearInterval(_staleTimerId); _staleTimerId = null; }
+  if (_replayMode) { _replayMode = false; }
+  _replayEngine?.dispose(); _replayEngine = null;
+  _replayUI?.dispose(); _replayUI = null;
   if (_container) {
     _container.innerHTML = "";
   }
@@ -1036,6 +1081,7 @@ export function updateCardActivity(name, data) {
       ts: Date.now(),
     });
   } else if (eventType === "tool_start") {
+    if (!VISIBLE_TOOL_NAMES.has(toolName)) return;
     for (const e of entries) {
       if (e.type === "tool" && e.status === "running") e.status = "done";
     }
@@ -1047,6 +1093,7 @@ export function updateCardActivity(name, data) {
       ts: Date.now(),
     });
   } else if (eventType === "tool_end" || eventType === "tool_use") {
+    if (!VISIBLE_TOOL_NAMES.has(toolName)) return;
     const existing = toolId
       ? entries.find(e => e.id === toolId)
       : [...entries].reverse().find(e => e.type === "tool" && e.status === "running");
@@ -1054,6 +1101,7 @@ export function updateCardActivity(name, data) {
       existing.status = isError ? "error" : "done";
     }
   } else if (eventType === "tool_detail") {
+    if (!VISIBLE_TOOL_NAMES.has(toolName)) return;
     const existing = toolId
       ? entries.find(e => e.id === toolId && e.status === "running")
       : [...entries].reverse().find(e => e.type === "tool" && e.status === "running");
@@ -1198,6 +1246,159 @@ function _toggleCardExpand(name) {
   `;
   card.appendChild(detail);
   _updateConnections();
+}
+
+// ── Replay Mode API ──────────────────────
+
+export function isReplayMode() {
+  return _replayMode;
+}
+
+/**
+ * Enter replay mode: load events and show replay controls.
+ * @param {number} [hours=12]
+ */
+export async function startReplay(hours = 12) {
+  if (_replayMode) return;
+  _replayMode = true;
+
+  const root = _container?.querySelector(".org-canvas-root");
+  if (!root) { _replayMode = false; return; }
+
+  _replayEngine = new ReplayEngine({
+    onEvent: _handleReplayEvent,
+    onSeekRebuild: _handleSeekRebuild,
+    onComplete: _handleReplayComplete,
+    onTimeUpdate: (ms, progress) => _replayUI?.updateTime(ms, progress),
+  });
+
+  _replayUI = new ReplayUI({
+    container: root,
+    onPlay: () => { _replayEngine?.play(); _replayUI?.setPlaying(true); },
+    onPause: () => { _replayEngine?.pause(); _replayUI?.setPlaying(false); },
+    onSeek: (ms) => _replayEngine?.seek(ms),
+    onSpeedChange: (s) => _replayEngine?.setSpeed(s),
+    onExit: () => stopReplay(),
+  });
+
+  _replayUI.setLoading(true);
+  _replayUI.show();
+  _clearAllCardStreams();
+
+  try {
+    await _replayEngine.load(hours);
+    const range = _replayEngine.getTimeRange();
+    _replayUI.updateTimeRange(range.start, range.end);
+    _replayUI.setLoading(false);
+    _replayEngine.seek(range.start);
+  } catch {
+    _replayUI.setLoading(false);
+    stopReplay();
+  }
+}
+
+/**
+ * Exit replay mode: dispose engine/UI, restore live state.
+ */
+export function stopReplay() {
+  if (!_replayMode) return;
+  _replayMode = false;
+
+  const buffered = _replayEngine?.flushLiveBuffer() ?? [];
+  _replayEngine?.dispose();
+  _replayEngine = null;
+
+  _replayUI?.dispose();
+  _replayUI = null;
+
+  // Restore live card streams
+  _clearAllCardStreams();
+  const animas = getState().animas || [];
+  _loadInitialStreams(animas);
+
+  // Re-apply buffered WS events
+  for (const evt of buffered) {
+    if (evt.handler) evt.handler(evt.data);
+  }
+
+  logger.info("Replay stopped, live mode restored");
+}
+
+/**
+ * Buffer a WS event during replay for later application.
+ * @param {object} handler - function to call when applying
+ * @param {object} data - event data
+ */
+export function bufferReplayEvent(handler, data) {
+  if (_replayMode && _replayEngine) {
+    _replayEngine.bufferLiveEvent({ handler, data });
+  }
+}
+
+function _clearAllCardStreams() {
+  _cardStreams.clear();
+  for (const [name] of _cardEls) {
+    const streamEl = document.getElementById(`orgStream_${CSS.escape(name)}`);
+    if (streamEl) streamEl.innerHTML = '<div class="org-stream-idle">\u{1F4A4} idle</div>';
+  }
+  if (_msgLinesGroup) _msgLinesGroup.innerHTML = "";
+}
+
+function _handleReplayEvent(evt, speed) {
+  const type = evt.type || evt.name || "";
+  const anima = evt.anima || (evt.animas && evt.animas[0]) || "";
+
+  if (anima && _cardEls.has(anima)) {
+    const data = {
+      eventType: type,
+      summary: evt.summary || "",
+      content: evt.content || "",
+      from_person: evt.meta?.from_person || "",
+      to_person: evt.meta?.to_person || "",
+      channel: evt.meta?.channel || evt.channel || "",
+      toolName: evt.tool || evt.tool_name || "",
+      toolId: evt.tool_id || "",
+      isError: evt.is_error || false,
+    };
+
+    if (speed < 50 || type.includes("message") || type.includes("heartbeat") || type.includes("response") || type.includes("cron")) {
+      updateCardActivity(anima, data);
+    }
+  }
+
+  if (type === "message_sent" && evt.meta?.to_person && _cardEls.has(anima)) {
+    const intent = evt.meta?.intent || "";
+    let msgLineType = "internal";
+    if (intent === "delegation") msgLineType = "delegation";
+    showMessageLine(anima, evt.meta.to_person, evt.summary || "", { lineType: msgLineType, replaySpeed: speed });
+  } else if (type === "dm_sent" || type === "dm_received") {
+    const from = evt.meta?.from_person || anima;
+    const to = evt.meta?.to_person || "";
+    if (from && to) showMessageLine(from, to, evt.summary || "", { replaySpeed: speed });
+  }
+}
+
+function _handleSeekRebuild({ cardStreams, cardStatus, kpiCounts }) {
+  _clearAllCardStreams();
+
+  for (const [name, entries] of cardStreams) {
+    _cardStreams.set(name, entries);
+    const streamEl = document.getElementById(`orgStream_${CSS.escape(name)}`);
+    if (streamEl) _renderStream(streamEl, entries.slice(-MAX_STREAM_ENTRIES));
+  }
+
+  for (const [name, status] of cardStatus) {
+    const card = _cardEls.get(name);
+    if (card) card.dataset.status = status === "working" ? "working" : "idle";
+  }
+
+  const evH = document.getElementById("orgKpiEventsH");
+  if (evH) evH.textContent = String(kpiCounts.eventsInLastHour);
+}
+
+function _handleReplayComplete() {
+  _replayUI?.setPlaying(false);
+  logger.info("Replay completed");
 }
 
 /** @deprecated Right-column activity feed removed. Kept as no-op for backward compat. */

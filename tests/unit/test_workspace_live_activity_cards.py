@@ -219,7 +219,7 @@ class TestWebSocketEventDispatches:
 
     def test_tool_activity_dispatches_to_card(self):
         tool_section = self.src[self.src.index("anima.tool_activity"):]
-        assert "updateCardActivity" in tool_section[:1200]
+        assert "updateCardActivity" in tool_section[:1600]
 
     def test_heartbeat_dispatches_to_card(self):
         hb_section = self.src[self.src.index("anima.heartbeat"):]
