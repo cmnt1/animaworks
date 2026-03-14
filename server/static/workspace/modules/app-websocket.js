@@ -13,7 +13,7 @@ import { showMessageEffect } from "./interactions.js";
 import { addTimelineEvent, localISOString } from "./timeline.js";
 import { addActivity } from "./activity.js";
 import { getSelectedBoard, appendBoardMessage } from "./board.js";
-import { updateAnimaStatus, updateCardActivity, showMessageLine, showExternalLine, updateAvatarExpression } from "./org-dashboard.js";
+import { updateAnimaStatus, updateCardActivity, showMessageLine, showExternalLine, updateAvatarExpression, isReplayMode, bufferReplayEvent } from "./org-dashboard.js";
 import { playReveal } from "./reveal.js";
 import { createLogger } from "../../shared/logger.js";
 import { bustupCandidates, resolveAvatar, invalidateAvatarCache } from "../../modules/avatar-resolver.js";
@@ -120,10 +120,14 @@ export function setupWebSocket(deps) {
       ts: data.ts || localISOString(),
       summary: data.summary || "heartbeat completed",
     });
-    updateCardActivity(data.name, {
-      eventType: "heartbeat",
-      summary: data.summary || "heartbeat",
-    });
+    if (isReplayMode()) {
+      bufferReplayEvent((d) => updateCardActivity(d.name, { eventType: "heartbeat", summary: d.summary || "heartbeat" }), data);
+    } else {
+      updateCardActivity(data.name, {
+        eventType: "heartbeat",
+        summary: data.summary || "heartbeat",
+      });
+    }
   }));
 
   wsUnsubscribers.push(onEvent("anima.cron", (data) => {
@@ -135,10 +139,14 @@ export function setupWebSocket(deps) {
       ts: data.ts || localISOString(),
       summary: data.summary || `cron: ${data.task || ""}`,
     });
-    updateCardActivity(data.name, {
-      eventType: "cron",
-      summary: data.summary || `cron: ${data.task || ""}`,
-    });
+    if (isReplayMode()) {
+      bufferReplayEvent((d) => updateCardActivity(d.name, { eventType: "cron", summary: d.summary || `cron: ${d.task || ""}` }), data);
+    } else {
+      updateCardActivity(data.name, {
+        eventType: "cron",
+        summary: data.summary || `cron: ${data.task || ""}`,
+      });
+    }
   }));
 
   // ── anima.tool_activity — live tool usage ──
@@ -155,7 +163,7 @@ export function setupWebSocket(deps) {
     } else if (evtType) {
       addActivity("tool", data.name, `${data.summary || evtType}`);
     }
-    updateCardActivity(data.name, {
+    const _cardUpdatePayload = {
       eventType: evtType,
       toolName,
       toolId: data.tool_id,
@@ -166,7 +174,12 @@ export function setupWebSocket(deps) {
       from_person: data.from_person || "",
       to_person: data.to_person || "",
       channel: data.channel || "",
-    });
+    };
+    if (isReplayMode()) {
+      bufferReplayEvent((d) => updateCardActivity(d.name, d.payload), { name: data.name, payload: _cardUpdatePayload });
+    } else {
+      updateCardActivity(data.name, _cardUpdatePayload);
+    }
     if (evtType === "message_sent" && data.to_person) {
       if (getCurrentView() === "org") {
         const intent = data.meta?.intent || "";

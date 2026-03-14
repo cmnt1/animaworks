@@ -9,7 +9,7 @@ import { initAnima, loadAnimas, selectAnima } from "./anima.js";
 import { initMemory, loadMemoryTab } from "./memory.js";
 import { initSession, loadSessions } from "./session.js";
 import { disposeOffice, highlightDesk } from "./office3d.js";
-import { initOrgDashboard, disposeOrgDashboard } from "./org-dashboard.js";
+import { initOrgDashboard, disposeOrgDashboard, startReplay, stopReplay, isReplayMode } from "./org-dashboard.js";
 import { isVisible as isMessagePopupVisible, hide as hideMessagePopup } from "./message-popup.js";
 import { initActivity } from "./activity.js";
 import { initSidebar, activateRightTab } from "./sidebar.js";
@@ -121,6 +121,30 @@ function updateViewToggle() {
   const is3d = _currentView === "3d";
   dom.viewToggle.querySelector(".ws-view-toggle-3d").style.fontWeight = is3d ? "700" : "400";
   dom.viewToggle.querySelector(".ws-view-toggle-org").style.fontWeight = is3d ? "400" : "700";
+
+  let replayBtn = dom.viewToggle.querySelector(".ws-replay-btn");
+  if (_currentView === "org" && !replayBtn) {
+    replayBtn = document.createElement("button");
+    replayBtn.className = "ws-replay-btn";
+    replayBtn.textContent = "▶ Replay";
+    replayBtn.title = "Replay activity";
+    replayBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (isReplayMode()) {
+        stopReplay();
+        replayBtn.textContent = "▶ Replay";
+        replayBtn.classList.remove("ws-replay-btn--active");
+      } else {
+        startReplay(12);
+        replayBtn.textContent = "■ Live";
+        replayBtn.classList.add("ws-replay-btn--active");
+      }
+    });
+    dom.viewToggle.appendChild(replayBtn);
+  } else if (_currentView !== "org" && replayBtn) {
+    if (isReplayMode()) stopReplay();
+    replayBtn.remove();
+  }
 }
 
 // ── Dashboard Bootstrap ──────────────────────
