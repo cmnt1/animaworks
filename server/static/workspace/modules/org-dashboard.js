@@ -83,6 +83,7 @@ const _CARD_VISIBLE_TYPES = new Set([
   "human_notify",
 ]);
 
+// Keep in sync with core/memory/activity.py _VISIBLE_TOOL_NAMES
 export const VISIBLE_TOOL_NAMES = new Set([
   "delegate_task", "update_task", "backlog_task",
   "submit_tasks", "call_human",

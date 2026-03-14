@@ -110,6 +110,7 @@ class ActivityLogger(
         }
     )
 
+    # Keep in sync with org-dashboard.js VISIBLE_TOOL_NAMES
     _VISIBLE_TOOL_NAMES = frozenset(
         {
             "delegate_task",
