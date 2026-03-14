@@ -9,6 +9,7 @@ Read, Write, Edit, Bash, Grep, Glob
 
 ## 書ける場所
 - 自分のディレクトリ配下すべて
+- {animaworks_home}/shared/
 
 ## 実行できるコマンド
 全般的なコマンド

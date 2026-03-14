@@ -9,6 +9,7 @@ Read, Write, Edit, Bash, Grep, Glob
 
 ## Writable Locations
 - Your directory and all subdirectories
+- {animaworks_home}/shared/
 
 ## Executable Commands
 General commands
