@@ -734,7 +734,8 @@ def build_system_prompt(
     is_heartbeat = trigger == "heartbeat"
     is_cron = trigger.startswith("cron:")
     is_task = trigger.startswith("task:")
-    is_background_auto = is_heartbeat or is_cron
+    is_consolidation = trigger.startswith("consolidation:")
+    is_background_auto = is_heartbeat or is_cron or is_consolidation
     is_chat = not (is_inbox or is_background_auto or is_task)
 
     # ── Pre-compute values needed across multiple groups ──────────

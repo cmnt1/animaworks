@@ -88,7 +88,12 @@ class PrimingMixin:
                 # Inject callback for active parallel tasks (DAG scheduler)
                 if hasattr(self, "_active_parallel_tasks_getter"):
                     self._priming_engine._get_active_parallel_tasks = self._active_parallel_tasks_getter
-            channel = "heartbeat" if trigger == "heartbeat" else "cron" if trigger.startswith("cron") else "chat"
+            if trigger == "heartbeat" or trigger.startswith("consolidation:"):
+                channel = "heartbeat"
+            elif trigger.startswith("cron"):
+                channel = "cron"
+            else:
+                channel = "chat"
 
             result = await self._priming_engine.prime_memories(
                 message,

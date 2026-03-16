@@ -21,6 +21,14 @@ When extracting knowledge from it, note the following:
 
 {reflections_summary}
 
+## Existing knowledge files list
+
+{knowledge_files_list}
+
+## Merge candidates (similar file pairs)
+
+{merge_candidates}
+
 ## Workflow
 
 ### 1. Review episodes
@@ -35,8 +43,16 @@ If relevant files are found, use `read_memory_file` to review their content.
 - **Create new knowledge**: If there are new patterns or lessons, create new files in knowledge/ with `write_memory_file`
 - **Procedural knowledge**: Record repeatable steps or workflows in procedures/
 
-### 4. Clean up unnecessary memory
-- Merge duplicate knowledge/ files and archive the older one with `archive_memory_file`
+### 4. Memory consolidation (MUST)
+When merge candidates are provided, follow these steps **without fail**:
+1. Use `read_memory_file` to review both file contents
+2. Write the merged content to the better file with `write_memory_file` (or create a new file)
+3. Archive the obsolete one with `archive_memory_file`
+4. If the `[IMPORTANT]` tag exists, preserve it in the merged file
+
+Even when no merge candidates are provided, check the existing knowledge files list above against
+any knowledge you are about to create. If duplicates exist, prefer updating existing files over creating new ones.
+
 - Update or archive outdated procedures/
 - If there are contradictory knowledge items, keep the more accurate one and archive the older one
 

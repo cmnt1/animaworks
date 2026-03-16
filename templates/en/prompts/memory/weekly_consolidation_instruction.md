@@ -2,19 +2,30 @@
 
 {anima_name}, it is time to organize your memory for the past week.
 
+## Current knowledge files ({total_knowledge_count} total)
+
+{knowledge_files_list}
+
+## Merge candidates (similar file pairs)
+
+{merge_candidates}
+
 ## Workflow
 
-### 1. Knowledge file inventory
-Use `Glob` to check the list of files in knowledge/.
-If there are many files, use `search_memory` to find similar topics and identify duplicate candidates.
+### 1. Merge candidate consolidation (highest priority, MUST)
+The merge candidates above are file pairs detected for consolidation based on RAG vector similarity.
+**For every pair**, perform the following:
+1. Use `read_memory_file` to review both file contents
+2. Merge the content and write with `write_memory_file`
+3. Archive the obsolete one with `archive_memory_file`
+4. If the `[IMPORTANT]` tag exists, preserve it in the merged file
 
-### 2. Merge duplicate or similar files
-When duplicate or similar knowledge/ files are found:
-1. Use `read_memory_file` to review both contents
-2. Create a new file with the merged content using `write_memory_file` (or append to the better one)
-3. Archive the older one with `archive_memory_file`
+Skip this step if no merge candidates are provided.
 
-**Note**: When merging, if the original file contains an `[IMPORTANT]` tag, always preserve it in the merged file (used for forgetting protection)
+### 2. Additional duplicate check
+Review the file list above; even if not in the merge candidates, if similar files exist:
+- Use `read_memory_file` to review the content
+- If they should be merged, follow the same procedure
 
 ### 3. Conceptual integration of [IMPORTANT] knowledge
 Consolidate `[IMPORTANT]`-tagged knowledge/ files that are 30+ days old. Transform specific incident records into universal principles and rules.
@@ -41,14 +52,5 @@ Use `Glob` to check episodes/; if there are files older than 30 days:
 Check for contradictory knowledge files:
 - Keep the accurate one based on the latest information
 - Archive the outdated one with `archive_memory_file`
-
-### 7. injection.md cleanup
-Check the character count of injection.md. If it exceeds 5000 characters:
-1. Use `read_memory_file(path="injection.md")` to review contents
-2. Identify content that is not "role definition" or "absolute rules"
-3. Business rules → Move to knowledge/ with `[IMPORTANT]` tag
-4. Procedural content → Move to procedures/
-5. Temporary directives (expired or already completed) → Delete
-6. Overwrite injection.md with the cleaned-up version
 
 After completion, output a summary of what was done.

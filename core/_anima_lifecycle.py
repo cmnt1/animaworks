@@ -24,6 +24,31 @@ from core.time_utils import now_local
 logger = logging.getLogger("animaworks.anima")
 
 
+# ── Consolidation prompt helpers ─────────────────────────────────
+
+
+def _format_knowledge_list(files: list[dict[str, Any]]) -> str:
+    """Format knowledge files into a concise list for prompt injection."""
+    if not files:
+        return "（knowledgeファイルなし / No knowledge files）"
+    lines: list[str] = []
+    for f in files:
+        conf = f.get("confidence", "?")
+        created = str(f.get("created_at", "?"))[:10]
+        lines.append(f"- {f['path']} [conf={conf}, created={created}]")
+    return "\n".join(lines)
+
+
+def _format_merge_candidates(candidates: list[tuple[str, str, float]]) -> str:
+    """Format merge candidate pairs for prompt injection."""
+    if not candidates:
+        return "（マージ候補なし / No merge candidates）"
+    lines: list[str] = []
+    for a, b, sim in candidates:
+        lines.append(f"- {a} ↔ {b} (similarity: {sim:.2f})")
+    return "\n".join(lines)
+
+
 class LifecycleMixin:
     """Mixin: heartbeat orchestration, memory consolidation, cron task execution."""
 
@@ -213,6 +238,21 @@ class LifecycleMixin:
                 self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 try:
+                    from core.memory.consolidation import ConsolidationEngine
+
+                    engine = ConsolidationEngine(self.anima_dir, self.name)
+                    knowledge_files = engine._list_knowledge_files_with_meta()
+                    knowledge_list_text = _format_knowledge_list(knowledge_files)
+
+                    try:
+                        merge_candidates = engine._find_merge_candidates(
+                            max_pairs=20 if consolidation_type == "daily" else 30,
+                        )
+                    except Exception:
+                        logger.debug("[%s] merge candidate detection failed", self.name, exc_info=True)
+                        merge_candidates = []
+                    merge_candidates_text = _format_merge_candidates(merge_candidates)
+
                     # Build consolidation prompt
                     if consolidation_type == "daily":
                         episodes_summary, resolved_events_summary, activity_log_summary, reflections_summary = (
@@ -235,11 +275,16 @@ class LifecycleMixin:
                             resolved_events_summary=resolved_events_summary,
                             activity_log_summary=activity_log_summary or t("anima.no_activity_log"),
                             reflections_summary=reflections_section,
+                            knowledge_files_list=knowledge_list_text,
+                            merge_candidates=merge_candidates_text,
                         )
                     else:
                         prompt = load_prompt(
                             "memory/weekly_consolidation_instruction",
                             anima_name=self.name,
+                            knowledge_files_list=knowledge_list_text,
+                            merge_candidates=merge_candidates_text,
+                            total_knowledge_count=len(knowledge_files),
                         )
 
                     # Activity log

@@ -503,6 +503,144 @@ class ConsolidationEngine:
 
         return sorted(files)
 
+    # ── Merge Candidate Detection ─────────────────────────────────
+
+    def _list_knowledge_files_with_meta(self) -> list[dict[str, Any]]:
+        """List all existing knowledge files with frontmatter metadata.
+
+        Returns:
+            List of dicts with keys: path, created_at, confidence,
+            auto_consolidated, success_count.  Files in archive/ are excluded.
+        """
+        if not self.knowledge_dir.exists():
+            return []
+
+        from core.memory.frontmatter import parse_frontmatter
+
+        results: list[dict[str, Any]] = []
+        for path in sorted(self.knowledge_dir.rglob("*.md")):
+            # Skip archive subdirectories
+            rel = path.relative_to(self.knowledge_dir)
+            if str(rel).startswith("archive"):
+                continue
+
+            meta_fields: dict[str, Any] = {"path": str(rel)}
+            try:
+                text = path.read_text(encoding="utf-8")
+                meta, _ = parse_frontmatter(text)
+                meta_fields["created_at"] = meta.get("created_at", "")
+                meta_fields["confidence"] = meta.get("confidence", "")
+                meta_fields["auto_consolidated"] = meta.get("auto_consolidated", False)
+                meta_fields["success_count"] = meta.get("success_count", 0)
+            except Exception:
+                pass
+            results.append(meta_fields)
+
+        return results
+
+    def _find_merge_candidates(
+        self,
+        similarity_threshold: float = 0.75,
+        max_pairs: int = 20,
+    ) -> list[tuple[str, str, float]]:
+        """Find knowledge file pairs that are candidates for merging.
+
+        Uses RAG vector similarity to detect semantically similar files.
+        All knowledge files are eligible (no low-activation requirement).
+        Files in archive/ subdirectories are excluded.
+
+        Args:
+            similarity_threshold: Minimum vector similarity for a pair (0.0-1.0).
+            max_pairs: Maximum number of pairs to return.
+
+        Returns:
+            List of (file_a, file_b, similarity) tuples, sorted by
+            similarity descending.  Paths are relative to knowledge/.
+        """
+        try:
+            from core.memory.rag import MemoryIndexer
+            from core.memory.rag.retriever import MemoryRetriever
+            from core.memory.rag.singleton import get_vector_store
+
+            vector_store = self._rag_store or get_vector_store(self.anima_name)
+            if vector_store is None:
+                logger.debug("RAG vector store unavailable for merge candidate search")
+                return []
+            indexer = MemoryIndexer(vector_store, self.anima_name, self.anima_dir)
+            retriever = MemoryRetriever(vector_store, indexer, self.knowledge_dir)
+        except (ImportError, Exception) as exc:
+            logger.debug("RAG not available for merge candidate search: %s", exc)
+            return []
+
+        # Read all non-archived knowledge files
+        file_contents: dict[str, str] = {}
+        for path in sorted(self.knowledge_dir.rglob("*.md")):
+            rel = path.relative_to(self.knowledge_dir)
+            if str(rel).startswith("archive"):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+                # Strip frontmatter for content comparison
+                from core.memory.frontmatter import parse_frontmatter
+
+                _, body = parse_frontmatter(text)
+                if body.strip():
+                    file_contents[str(rel)] = body.strip()
+            except Exception:
+                continue
+
+        if len(file_contents) < 2:
+            return []
+
+        # Query each file against RAG to find similar peers
+        seen_pairs: set[tuple[str, str]] = set()
+        candidates: list[tuple[str, str, float]] = []
+
+        for rel_path, content in file_contents.items():
+            try:
+                results = retriever.search(
+                    query=content[:500],
+                    anima_name=self.anima_name,
+                    memory_type="knowledge",
+                    top_k=5,
+                )
+            except Exception:
+                continue
+
+            for result in results:
+                if result.score < similarity_threshold:
+                    continue
+
+                source_file = str(result.metadata.get("source_file", ""))
+                if not source_file:
+                    continue
+
+                # Normalise to relative path under knowledge/
+                if source_file.startswith("knowledge/"):
+                    match_rel = source_file[len("knowledge/") :]
+                elif source_file.startswith("knowledge\\"):
+                    match_rel = source_file[len("knowledge\\") :]
+                else:
+                    match_rel = source_file
+
+                # Skip self-match and archived files
+                if match_rel == rel_path or match_rel.startswith("archive"):
+                    continue
+                # Skip if the matched file isn't in our content map
+                if match_rel not in file_contents:
+                    continue
+
+                pair_key = tuple(sorted([rel_path, match_rel]))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                candidates.append((rel_path, match_rel, result.score))
+
+        # Sort by similarity descending, cap at max_pairs
+        candidates.sort(key=lambda x: x[2], reverse=True)
+        return candidates[:max_pairs]
+
     # ── Origin detection ─────────────────────────────────────────
 
     _EXTERNAL_ORIGINS = frozenset({"external_web", "mixed", "consolidation_external"})

@@ -278,6 +278,7 @@ class SchedulerMixin:
             consolidation_cfg = None
 
         from core.config.models import ConsolidationConfig
+        from core.memory.consolidation import ConsolidationEngine
 
         max_turns = ConsolidationConfig().max_turns
         if consolidation_cfg:
@@ -291,6 +292,22 @@ class SchedulerMixin:
                     anima_name,
                 )
                 continue
+
+            try:
+                engine = ConsolidationEngine(anima_dir, anima_name)
+                episodes = engine._collect_recent_episodes(hours=24)
+                if not episodes:
+                    logger.info(
+                        "Skipping consolidation for %s: no recent episodes",
+                        anima_name,
+                    )
+                    continue
+            except Exception:
+                logger.debug(
+                    "Failed to check episodes for %s, proceeding with consolidation",
+                    anima_name,
+                    exc_info=True,
+                )
 
             try:
                 response = await handle.send_request(
@@ -333,8 +350,6 @@ class SchedulerMixin:
 
                 # Post-processing: Rebuild RAG index
                 try:
-                    from core.memory.consolidation import ConsolidationEngine
-
                     engine = ConsolidationEngine(anima_dir, anima_name)
                     engine._rebuild_rag_index()
                 except Exception:
