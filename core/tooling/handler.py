@@ -46,7 +46,6 @@ from core.tooling.handler_base import (  # noqa: F401
     _PROTECTED_DIRS,
     _PROTECTED_FILES,
     _READ_FILE_SAFETY_NOTICE,
-    _READ_MAX_LINE_CHARS,
     MemoryWriteError,
     OnMessageSentFn,
     ToolExecutionError,

@@ -30,7 +30,6 @@ from core.tooling.handler_base import (
     _READ_CONTEXT_FRACTION,
     _READ_FILE_SAFETY_NOTICE,
     _READ_MAX_CHARS,
-    _READ_MAX_LINE_CHARS,
     _READ_MAX_LINES,
     _READ_MIN_LINES,
     _READ_TOKEN_HARD_CAP,
@@ -400,16 +399,8 @@ class FileToolsMixin:
         end_idx = min(start_idx + limit, total_lines)
         selected = all_lines[start_idx:end_idx]
 
-        capped: list[str] = []
-        for line in selected:
-            if len(line) > _READ_MAX_LINE_CHARS:
-                excess = len(line) - _READ_MAX_LINE_CHARS
-                capped.append(f"{line[:_READ_MAX_LINE_CHARS]} …(+{excess} chars)")
-            else:
-                capped.append(line)
-
         width = len(str(end_idx)) if end_idx > 0 else 1
-        numbered = [f"{str(i).rjust(width)}|{line}" for i, line in enumerate(capped, start=offset)]
+        numbered = [f"{str(i).rjust(width)}|{line}" for i, line in enumerate(selected, start=offset)]
 
         parts: list[str] = [_READ_FILE_SAFETY_NOTICE, ""]
         parts.append(f"File: {path_str} ({total_lines} lines total)")

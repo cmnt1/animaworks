@@ -190,7 +190,7 @@ class TestOutputGuardConstants:
         assert _BASH_TAIL_BYTES == 3_000
 
     def test_read_default_limit(self) -> None:
-        assert _READ_DEFAULT_LIMIT == 500
+        assert _READ_DEFAULT_LIMIT == 2_000
 
     def test_grep_default_head_limit(self) -> None:
         assert _GREP_DEFAULT_HEAD_LIMIT == 200

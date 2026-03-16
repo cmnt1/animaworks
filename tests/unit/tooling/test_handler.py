@@ -25,7 +25,6 @@ from core.tooling.handler import (
     _is_protected_write,
     _validate_episode_path,
     _READ_FILE_SAFETY_NOTICE,
-    _READ_MAX_LINE_CHARS,
 )
 
 PERMISSIONS_WITH_DENIED_LIST = """\
@@ -513,13 +512,13 @@ class TestFileOperations:
         assert "Showing lines 10-14 of 20" in result
         assert "6 more lines not shown" in result
 
-    def test_read_file_long_line_truncation(self, handler: ToolHandler, anima_dir: Path):
-        """Lines exceeding 500 chars are truncated with …(+N chars)."""
+    def test_read_file_long_line_preserved(self, handler: ToolHandler, anima_dir: Path):
+        """Long lines are preserved without per-line truncation (CC compatible)."""
         long_line = "A" * 600
         (anima_dir / "long.txt").write_text(long_line, encoding="utf-8")
         result = handler.handle("read_file", {"path": str(anima_dir / "long.txt")})
-        assert "…(+100 chars)" in result
-        assert "A" * _READ_MAX_LINE_CHARS in result
+        assert "A" * 600 in result
+        assert "…(+" not in result
 
     def test_read_file_empty_file(self, handler: ToolHandler, anima_dir: Path):
         """Empty files produce no error."""

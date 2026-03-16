@@ -71,7 +71,7 @@ _WRITE_COMMANDS = frozenset(
 _BASH_TRUNCATE_BYTES = 10_000  # 10 KB
 _BASH_HEAD_BYTES = 5_000  # head display
 _BASH_TAIL_BYTES = 3_000  # tail display
-_READ_DEFAULT_LIMIT = 500  # lines
+_READ_DEFAULT_LIMIT = 2_000  # lines (Claude Code compatible)
 _GREP_DEFAULT_HEAD_LIMIT = 200  # entries
 _GLOB_DEFAULT_HEAD_LIMIT = 500  # entries
 
