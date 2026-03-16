@@ -112,7 +112,7 @@ When limits are reached, errors like the following are returned:
 ### What to Do
 
 1. **Hour limit**: Wait for the next hour slot. If not urgent, retry in the next heartbeat
-2. **24h limit**: Focus on truly necessary messages. Record content in `current_task.md` for the next session
+2. **24h limit**: Focus on truly necessary messages. Record content in `current_state.md` for the next session
 3. **Depth limit**: Wait until the next heartbeat cycle. Move complex discussions to a Board channel
 4. **Urgent contact needed**: `call_human` uses a different channel and is not subject to DM rate limits. Human notification remains available
 

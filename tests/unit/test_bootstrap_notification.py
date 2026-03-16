@@ -39,7 +39,7 @@ class TestProcessMessageStreamBootstrapGuard:
             "state", "shortterm", "shortterm/archive", "transcripts",
         ]:
             (anima_dir / sub).mkdir(parents=True, exist_ok=True)
-        (anima_dir / "state" / "current_task.md").write_text(
+        (anima_dir / "state" / "current_state.md").write_text(
             "status: idle\n", encoding="utf-8",
         )
         (anima_dir / "state" / "pending.md").write_text("", encoding="utf-8")
@@ -87,7 +87,7 @@ class TestProcessMessageStreamBootstrapGuard:
             "state", "shortterm", "shortterm/archive", "transcripts",
         ]:
             (anima_dir / sub).mkdir(parents=True, exist_ok=True)
-        (anima_dir / "state" / "current_task.md").write_text(
+        (anima_dir / "state" / "current_state.md").write_text(
             "status: idle\n", encoding="utf-8",
         )
         (anima_dir / "state" / "pending.md").write_text("", encoding="utf-8")

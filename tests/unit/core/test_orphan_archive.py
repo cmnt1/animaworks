@@ -58,7 +58,7 @@ class TestArchiveAndRemoveOrphan:
         orphan_dir = data_dir / "animas" / "carol"
         orphan_dir.mkdir()
         (orphan_dir / "state").mkdir()
-        (orphan_dir / "state" / "current_task.md").write_text("busy", encoding="utf-8")
+        (orphan_dir / "state" / "current_state.md").write_text("busy", encoding="utf-8")
         (orphan_dir / "procedures").mkdir()
         (orphan_dir / "procedures" / "howto.md").write_text("steps", encoding="utf-8")
         (orphan_dir / "status.json").write_text('{"enabled":true}', encoding="utf-8")
@@ -69,7 +69,7 @@ class TestArchiveAndRemoveOrphan:
 
         archive_root = data_dir / "archive" / "orphans"
         archive = next(archive_root.iterdir())
-        assert (archive / "state" / "current_task.md").read_text(encoding="utf-8") == "busy"
+        assert (archive / "state" / "current_state.md").read_text(encoding="utf-8") == "busy"
         assert (archive / "procedures" / "howto.md").read_text(encoding="utf-8") == "steps"
         assert (archive / "status.json").read_text(encoding="utf-8") == '{"enabled":true}'
 

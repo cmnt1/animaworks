@@ -112,7 +112,7 @@ class DigitalAnima(
         self._background_lock = asyncio.Lock()
         self._cron_idle = asyncio.Event()
         self._cron_idle.set()  # initially idle (no cron running)
-        self._state_file_lock = threading.Lock()  # protects current_task.md / pending.md
+        self._state_file_lock = threading.Lock()  # protects current_state.md / pending.md
 
         # Parallel task execution (DAG scheduler)
         self._task_semaphore: asyncio.Semaphore | None = None  # lazy init from config
@@ -392,7 +392,7 @@ class DigitalAnima(
         return AnimaStatus(
             name=self.name,
             status=self.primary_status,
-            current_task=self.primary_task,
+            active_label=self.primary_task,
             last_heartbeat=self._last_heartbeat,
             last_activity=self._last_activity,
             pending_messages=self.messenger.unread_count(),

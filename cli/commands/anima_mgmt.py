@@ -180,8 +180,8 @@ def _print_anima_status(name: str, status: dict) -> None:
     if status.get("restart_count"):
         print(f"  Restarts: {status['restart_count']}")
 
-    if status.get("current_task"):
-        print(f"  Current task: {status['current_task']}")
+    if status.get("active_label"):
+        print(f"  Active label: {status['active_label']}")
 
 
 def _read_model_from_status_json(anima_dir: Path) -> tuple[str, str]:
@@ -891,15 +891,15 @@ def cmd_anima_audit(args: argparse.Namespace) -> None:
 
     # ── Task status ──
     print("--- Task Status ---")
-    task_file = anima_dir / "state" / "current_task.md"
-    if task_file.exists():
+    state_file = anima_dir / "state" / "current_state.md"
+    if state_file.exists():
         try:
-            task_text = task_file.read_text(encoding="utf-8").strip()
-            print(f"Current task: {task_text[:200] if task_text else '(none)'}")
+            state_text = state_file.read_text(encoding="utf-8").strip()
+            print(f"Current state: {state_text[:200] if state_text else '(none)'}")
         except Exception:
-            print("Current task: (unreadable)")
+            print("Current state: (unreadable)")
     else:
-        print("Current task: (none)")
+        print("Current state: (none)")
 
     try:
         from core.memory.task_queue import TaskQueueManager

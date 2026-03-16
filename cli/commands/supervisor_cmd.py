@@ -107,11 +107,11 @@ def _cmd_org_dashboard(args: argparse.Namespace) -> None:
 
     def _node(name: str) -> dict:
         desc_dir = animas_dir / name
-        current_task = ""
-        current_task_path = desc_dir / "state" / "current_task.md"
-        if current_task_path.exists():
+        active_label = ""
+        state_path = desc_dir / "state" / "current_state.md"
+        if state_path.exists():
             try:
-                current_task = current_task_path.read_text(encoding="utf-8").strip()
+                active_label = state_path.read_text(encoding="utf-8").strip()
             except OSError:
                 pass
 
@@ -131,7 +131,7 @@ def _cmd_org_dashboard(args: argparse.Namespace) -> None:
         return {
             "name": name,
             "status": "alive" if alive else "stopped",
-            "current_task": current_task or None,
+            "active_label": active_label or None,
             "last_activity_time": last_activity_time,
         }
 
@@ -192,13 +192,13 @@ def _cmd_read_state(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     target_dir = animas_dir / target_name
-    current_task = ""
+    active_label = ""
     pending = ""
-    current_task_path = target_dir / "state" / "current_task.md"
+    state_path = target_dir / "state" / "current_state.md"
     pending_path = target_dir / "state" / "pending.md"
-    if current_task_path.exists():
+    if state_path.exists():
         try:
-            current_task = current_task_path.read_text(encoding="utf-8").strip()
+            active_label = state_path.read_text(encoding="utf-8").strip()
         except OSError:
             pass
     if pending_path.exists():
@@ -207,7 +207,7 @@ def _cmd_read_state(args: argparse.Namespace) -> None:
         except OSError:
             pass
 
-    result = {"current_task": current_task or None, "pending": pending or None}
+    result = {"active_label": active_label or None, "pending": pending or None}
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
@@ -233,7 +233,7 @@ def register_supervisor_command(subparsers) -> None:
     p_ping = sup_sub.add_parser("ping", help="Check if subordinate animas are alive")
     p_ping.add_argument("--name", default=None, help="Specific anima name (omit for all subordinates)")
 
-    p_read = sup_sub.add_parser("read-state", help="Read subordinate state (current_task, pending)")
+    p_read = sup_sub.add_parser("read-state", help="Read subordinate state (current_state.md, pending)")
     p_read.add_argument("name", help="Target anima name")
 
     p_tracker = sup_sub.add_parser("task-tracker", help="Track delegated tasks")

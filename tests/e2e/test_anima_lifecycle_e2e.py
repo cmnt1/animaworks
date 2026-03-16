@@ -64,7 +64,7 @@ def anima_env(tmp_path: Path):
         # Create some memory dirs
         for subdir in ["episodes", "knowledge", "state"]:
             (anima_dir / subdir).mkdir()
-        (anima_dir / "state" / "current_task.md").write_text("status: idle\n", encoding="utf-8")
+        (anima_dir / "state" / "current_state.md").write_text("status: idle\n", encoding="utf-8")
 
         # Register in config
         cfg = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))

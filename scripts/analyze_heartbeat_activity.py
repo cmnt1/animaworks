@@ -19,7 +19,7 @@ PRODUCTIVE_TYPES = frozenset({
 
 # Tool names that indicate task creation or meaningful output
 TASK_CREATION_TOOLS = frozenset({"Edit", "Bash"})
-TASK_CREATION_PATHS = ("pending", "task_queue", "current_task.md")
+TASK_CREATION_PATHS = ("pending", "task_queue", "current_state.md")
 
 
 def parse_ts(ts_str: str) -> datetime:

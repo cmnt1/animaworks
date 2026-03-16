@@ -464,7 +464,7 @@ protected: false
 
 **統合ポイント**: `finalize_session()` は差分要約に加え、以下を同時実行する:
 1. **エピソード記録**: 未記録ターンのLLM要約を `episodes/` に追記
-2. **ステート自動更新**: LLM要約から「解決済みアイテム」「新規タスク」を自動パースし `state/current_task.md` に追記
+2. **ステート自動更新**: LLM要約から「解決済みアイテム」「新規タスク」を自動パースし `state/current_state.md` に追記
 3. **解決伝播**: 解決アイテムを ActivityLogger（`issue_resolved` イベント）と `shared/resolutions.jsonl` に記録
 4. **ターン圧縮**: 記録済みターンを `compressed_summary` に統合し conversation.json の肥大化を防止
 

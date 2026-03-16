@@ -197,7 +197,7 @@ class CycleResult(BaseModel):
 class AnimaStatus(BaseModel):
     name: str
     status: str = "idle"
-    current_task: str = ""
+    active_label: str = ""
     last_heartbeat: datetime | None = None
     last_activity: datetime | None = None
     pending_messages: int = 0

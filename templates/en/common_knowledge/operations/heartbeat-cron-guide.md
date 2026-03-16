@@ -258,7 +258,7 @@ schedule: 0 9 * * *
 type: llm
 Check yesterday's progress from long-term memory and plan today's tasks.
 Prioritize based on vision and goals.
-Write results to state/current_task.md.
+Write results to state/current_state.md.
 
 ## Weekly Reflection
 schedule: 0 17 * * 5
@@ -303,7 +303,7 @@ schedule: 0 9 * * *
 type: llm
 Review yesterday's episodes/ and plan today's tasks.
 Prioritize by vision and goals.
-Write results to state/current_task.md.
+Write results to state/current_state.md.
 Also check pending.md and adjust priorities if needed.
 ```
 
@@ -442,7 +442,7 @@ LLM task results are recorded as `CycleResult` with:
 schedule: 0 9 * * *
 type: llm
 Check yesterday's activity in episodes/, review pending.md.
-Set today's top priorities and update state/current_task.md.
+Set today's top priorities and update state/current_state.md.
 
 ## Weekly Reflection
 schedule: 0 17 * * 5

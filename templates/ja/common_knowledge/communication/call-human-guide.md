@@ -54,7 +54,7 @@ call_human(
 
 `call_human` を送った後、返信を待つ必要がある場合:
 
-1. 待機状態を `state/current_task.md` に記録する
+1. 待機状態を `state/current_state.md` に記録する
 2. 返信は次の Inbox 処理で自動的に届く
 3. 即座に返信がなくても、人間が返信した時点で自動配信される
 

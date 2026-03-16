@@ -144,7 +144,7 @@ class TestDifferentialFinalizationE2E:
         assert "サーバー障害修正とデプロイタスク" in episode_content
 
         # Verify state was updated
-        state_content = (anima_dir / "state" / "current_task.md").read_text(encoding="utf-8")
+        state_content = (anima_dir / "state" / "current_state.md").read_text(encoding="utf-8")
         assert "デプロイ作業" in state_content
 
         # Verify resolution was recorded

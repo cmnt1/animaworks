@@ -69,8 +69,8 @@ class TestInterceptTaskToPending:
         assert len(task_id) == 12
 
     def test_context_from_state_files(self, anima_dir: Path):
-        """Context should include current_task.md content."""
-        (anima_dir / "state" / "current_task.md").write_text(
+        """Context should include current_state.md content."""
+        (anima_dir / "state" / "current_state.md").write_text(
             "Working on API refactor", encoding="utf-8",
         )
         tool_input = {"description": "related task", "prompt": "do stuff"}

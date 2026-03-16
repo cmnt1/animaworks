@@ -134,7 +134,7 @@ class ConversationDepthLimiter:
                 f"（現在{hourly_count}通/1h, {daily_count}通/24h）。"
                 f"{reset_at}"
                 f" このターンではsend_messageを使わず、送信内容を"
-                f"current_task.mdに記録して次のセッションで送信してください。"
+                f"current_state.mdに記録して次のセッションで送信してください。"
             )
         if daily_count >= max_per_day:
             logger.warning(
@@ -147,7 +147,7 @@ class ConversationDepthLimiter:
                 f"（{max_per_day}通）に到達しています"
                 f"（現在{daily_count}通/24h）。"
                 f" このターンではsend_messageを使わず、送信内容を"
-                f"current_task.mdに記録して次のセッションで送信してください。"
+                f"current_state.mdに記録して次のセッションで送信してください。"
             )
         return True
 

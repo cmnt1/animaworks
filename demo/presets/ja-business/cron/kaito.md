@@ -8,7 +8,7 @@
 - description: |
     チームの状況を確認し、今日の優先事項を整理する。
     1. org_dashboardで部下の状態を確認
-    2. 各メンバーのcurrent_taskを確認
+    2. 各メンバーのcurrent_stateを確認
     3. ブロッカーがあれば対処方針を検討
     4. generalチャネルに今日のポイントを共有
 

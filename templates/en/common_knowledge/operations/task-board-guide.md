@@ -5,7 +5,7 @@ A shared file for the organization's owner (human) to get a bird's-eye view of a
 ## Purpose
 
 AnimaWorks task management is self-contained for agents via `task_queue.jsonl` +
-`current_task.md` + `delegate_task`. However, **humans lack a single place to see
+`current_state.md` + `delegate_task`. However, **humans lack a single place to see
 everything at a glance**. `shared/task-board.md` solves this as a human-facing dashboard.
 
 ## Positioning
@@ -13,7 +13,7 @@ everything at a glance**. `shared/task-board.md` solves this as a human-facing d
 | Resource | Purpose | Audience |
 |----------|---------|----------|
 | `state/task_queue.jsonl` | Task tracking (append-only) | Agents |
-| `state/current_task.md` | Current work notes | Individual agent |
+| `state/current_state.md` | Current work notes | Individual agent |
 | `state/pending.md` | Backlog | Individual agent |
 | **`shared/task-board.md`** | **All-task overview** | **Human (owner)** |
 

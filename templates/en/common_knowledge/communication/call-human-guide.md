@@ -54,7 +54,7 @@ Received replies have these attributes:
 
 If you need to wait for a reply after sending `call_human`:
 
-1. Record the waiting state in `state/current_task.md`
+1. Record the waiting state in `state/current_state.md`
 2. The reply will arrive automatically in the next Inbox processing cycle
 3. Even if no immediate reply comes, it will be delivered when the human responds
 

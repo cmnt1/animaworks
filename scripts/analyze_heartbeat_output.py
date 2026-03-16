@@ -3,7 +3,7 @@
 
 Analyzes:
 - Token usage: output_tokens per heartbeat session (last 12h)
-- State files: current_task.md, pending/, task_queue
+- State files: current_state.md, pending/, task_queue
 - Tasks created by heartbeats in past 12h
 - Assessment: are output tokens justified by task creation?
 
@@ -117,7 +117,7 @@ def main() -> int:
             print(f"    - {s['ts'][11:19]}  out={s['output_tokens']:5}  turns={s['turns']}")
 
     # 2. State files
-    print("\n## 2. STATE FILES (current_task.md, pending/, task_queue)")
+    print("\n## 2. STATE FILES (current_state.md, pending/, task_queue)")
     print("-" * 70)
 
     state_summaries: dict[str, dict] = {}
@@ -128,14 +128,14 @@ def main() -> int:
         if not state_dir.exists():
             continue
 
-        summary: dict = {"current_task": "", "pending_files": [], "heartbeat_tasks_12h": 0}
+        summary: dict = {"current_state": "", "pending_files": [], "heartbeat_tasks_12h": 0}
 
-        ct_path = state_dir / "current_task.md"
+        ct_path = state_dir / "current_state.md"
         if ct_path.exists():
             mtime = datetime.fromtimestamp(ct_path.stat().st_mtime, tz=JST)
             content = ct_path.read_text(encoding="utf-8").strip()
-            summary["current_task"] = f"mtime={mtime.strftime('%Y-%m-%d %H:%M')}  "
-            summary["current_task"] += content[:120] + "..." if len(content) > 120 else content
+            summary["current_state"] = f"mtime={mtime.strftime('%Y-%m-%d %H:%M')}  "
+            summary["current_state"] += content[:120] + "..." if len(content) > 120 else content
 
         pending_dir = state_dir / "pending"
         if pending_dir.exists():
@@ -157,16 +157,16 @@ def main() -> int:
 
     for name in sorted(state_summaries.keys()):
         s = state_summaries[name]
-        if not s["current_task"] and not s["pending_files"] and s["heartbeat_tasks_12h"] == 0:
+        if not s["current_state"] and not s["pending_files"] and s["heartbeat_tasks_12h"] == 0:
             if name not in heartbeat_tokens:
                 continue
         print(f"\n  {name}:")
-        if s["current_task"]:
-            print(f"    current_task.md: {s['current_task'][:100]}...")
+        if s["current_state"]:
+            print(f"    current_state.md: {s['current_state'][:100]}...")
         if s["pending_files"]:
             for fn, mt in s["pending_files"]:
                 print(f"    pending (12h): {fn} @ {mt}")
-        if not s["current_task"] and not s["pending_files"] and s["heartbeat_tasks_12h"] == 0 and name in heartbeat_tokens:
+        if not s["current_state"] and not s["pending_files"] and s["heartbeat_tasks_12h"] == 0 and name in heartbeat_tokens:
             print("    (no state changes in 12h)")
 
     # 3. Pending files created in last 12h

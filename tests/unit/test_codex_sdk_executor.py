@@ -40,7 +40,7 @@ def anima_dir(tmp_path: Path) -> Path:
     (d / "shortterm" / "heartbeat").mkdir(parents=True)
     (d / "identity.md").write_text("# Test Codex Anima", encoding="utf-8")
     (d / "state").mkdir()
-    (d / "state" / "current_task.md").write_text("status: idle\n", encoding="utf-8")
+    (d / "state" / "current_state.md").write_text("status: idle\n", encoding="utf-8")
     return d
 
 

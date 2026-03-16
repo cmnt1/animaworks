@@ -90,10 +90,50 @@ class TestReadCurrentState:
 
     def test_with_file(self, mm, anima_dir):
         (anima_dir / "state").mkdir(parents=True, exist_ok=True)
-        (anima_dir / "state" / "current_task.md").write_text(
+        (anima_dir / "state" / "current_state.md").write_text(
             "status: busy\ntask: testing", encoding="utf-8"
         )
         assert "busy" in mm.read_current_state()
+
+
+class TestCurrentStateMigration:
+    """Tests for _migrate_current_task_to_state() — current_task.md → current_state.md."""
+
+    def test_migrates_old_file_when_new_absent(self, anima_dir, data_dir):
+        """When current_task.md exists and current_state.md does not → file is renamed."""
+        (anima_dir / "state").mkdir(parents=True, exist_ok=True)
+        old_path = anima_dir / "state" / "current_task.md"
+        old_path.write_text("status: working\ntask: migrate me", encoding="utf-8")
+
+        mm = MemoryManager(anima_dir)
+
+        assert not old_path.exists()
+        assert (anima_dir / "state" / "current_state.md").exists()
+        assert "working" in mm.read_current_state()
+
+    def test_uses_current_state_when_both_exist(self, anima_dir, data_dir, caplog):
+        """When both exist → current_state.md is used (warning logged)."""
+        (anima_dir / "state").mkdir(parents=True, exist_ok=True)
+        (anima_dir / "state" / "current_task.md").write_text(
+            "status: old", encoding="utf-8"
+        )
+        (anima_dir / "state" / "current_state.md").write_text(
+            "status: new\ntask: preferred", encoding="utf-8"
+        )
+
+        mm = MemoryManager(anima_dir)
+
+        assert "new" in mm.read_current_state()
+        assert "preferred" in mm.read_current_state()
+        assert "Both current_task.md and current_state.md" in caplog.text
+
+    def test_returns_idle_when_neither_exists(self, anima_dir, data_dir):
+        """When neither exists → read_current_state() returns 'status: idle'."""
+        (anima_dir / "state").mkdir(parents=True, exist_ok=True)
+
+        mm = MemoryManager(anima_dir)
+
+        assert mm.read_current_state() == "status: idle"
 
 
 class TestReadPending:

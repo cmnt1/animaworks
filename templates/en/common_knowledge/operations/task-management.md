@@ -9,12 +9,12 @@ Task state is managed by files in the `state/` directory and the task queue.
 
 | Resource | Role |
 |----------|------|
-| `state/current_task.md` | Current task being worked on (one at a time) |
+| `state/current_state.md` | Current task being worked on (one at a time) |
 | `state/pending.md` | Manual backlog (free-form) |
 | `state/pending/` directory | LLM tasks (JSON format). Written by Heartbeat, submit_tasks, Task tool, and Agent tool. TaskExec path automatically picks them up and runs them |
 | `state/task_queue.jsonl` | Persistent task queue (append-only JSONL). Tracks requests from humans and Anima |
 
-`state/current_task.md` MUST always reflect the latest state. Update it whenever the task state changes.
+`state/current_state.md` MUST always reflect the latest state. Update it whenever the task state changes.
 
 ### Three-Path Execution Model
 
@@ -103,9 +103,9 @@ Bash: animaworks-tool task list --status failed
 
 In Priming display, human-originated tasks (source=human) get the 🔴 HIGH marker, tasks not updated for 30+ minutes get the ⚠️ STALE marker, and overdue tasks get the 🔴 OVERDUE marker.
 
-## Using current_task.md
+## Using current_state.md
 
-`current_task.md` records the task you are currently working on.
+`current_state.md` records the task you are currently working on.
 Record only one task (MUST). Even with multiple parallel tasks, write only the top-priority one here.
 
 ### Format
@@ -188,7 +188,7 @@ Tasks without a specified priority are treated as `[MEDIUM]` (SHOULD).
 
 ## Task State Transitions
 
-Tasks transition through the following states. Always update current_task.md when the state changes (MUST).
+Tasks transition through the following states. Always update current_state.md when the state changes (MUST).
 
 ```
 received → in-progress → completed
@@ -201,26 +201,26 @@ received → in-progress → completed
 | State | Meaning | Where to record |
 |-------|---------|-----------------|
 | `received` | Task received but not started | pending.md |
-| `in-progress` | Currently working on it | current_task.md |
+| `in-progress` | Currently working on it | current_state.md |
 | `completed` | Completed | Return to idle + log in episodes/ |
-| `blocked` | Blocked by blocker | current_task.md with blockers noted |
+| `blocked` | Blocked by blocker | current_state.md with blockers noted |
 | `cancelled` | Cancelled | Return to idle + log in episodes/ |
 
 ### Transition Steps
 
 **received → in-progress (start)**:
 1. Remove the task from pending.md
-2. Write current_task.md with `status: in-progress`
+2. Write current_state.md with `status: in-progress`
 3. Log "task started" in episodes/ (SHOULD)
 
 **in-progress → completed**:
-1. Set current_task.md to `status: idle`
+1. Set current_state.md to `status: idle`
 2. Log "task completed" and result summary in episodes/ (MUST)
 3. Report results to the assigner (MUST if assigned_by is someone else)
-4. If there is a next task in pending.md, move the top-priority one to current_task.md
+4. If there is a next task in pending.md, move the top-priority one to current_state.md
 
 **in-progress → blocked**:
-1. Change current_task.md `status` to `blocked`
+1. Change current_state.md `status` to `blocked`
 2. Document the specific block reason in the `blockers` field (MUST)
 3. Take action to resolve the block (see blocked-task flow below)
 4. If there is a next-priority task in pending.md, consider starting it in parallel (MAY)
@@ -238,9 +238,9 @@ When multiple tasks exist, use these criteria:
 
 When a higher-priority task interrupts:
 
-1. Note current progress in current_task.md (MUST)
+1. Note current progress in current_state.md (MUST)
 2. Move the current task back to pending.md (with state and progress notes)
-3. Write the new task in current_task.md
+3. Write the new task in current_state.md
 
 Format when moving back to pending.md:
 
@@ -259,7 +259,7 @@ When a task is blocked, follow these steps.
 
 ### Step 1: Identify and Record the Blocker
 
-Document the specific cause in `blockers` in current_task.md (MUST).
+Document the specific cause in `blockers` in current_state.md (MUST).
 
 ```markdown
 status: blocked
@@ -297,18 +297,18 @@ blocked_reason: AWS credentials not configured. Requested from aoi (2026-02-15 1
 
 When the block is resolved (e.g. notified by message):
 1. Take the task from pending.md
-2. Re-evaluate priority and decide whether to move it to current_task.md
+2. Re-evaluate priority and decide whether to move it to current_state.md
 3. If starting, change to `status: in-progress` and resume work
 
 ## Task File Templates
 
-### current_task.md — Idle
+### current_state.md — Idle
 
 ```markdown
 status: idle
 ```
 
-### current_task.md — In Progress
+### current_state.md — In Progress
 
 ```markdown
 status: in-progress
@@ -320,7 +320,7 @@ context: |
 blockers: None
 ```
 
-### current_task.md — Blocked
+### current_state.md — Blocked
 
 ```markdown
 status: blocked

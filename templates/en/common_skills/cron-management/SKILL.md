@@ -143,7 +143,7 @@ schedule: 0 9 * * *
 type: llm
 Check yesterday's progress from long-term memory and plan today's tasks.
 Determine priorities based on vision and goals.
-Write the result to state/current_task.md.
+Write the result to state/current_state.md.
 ```
 
 - The description is passed directly as the LLM prompt
@@ -332,7 +332,7 @@ schedule: 0 9 * * *
 type: llm
 Check yesterday's progress from long-term memory and plan today's tasks.
 Determine priorities based on vision and goals.
-Write the result to state/current_task.md.
+Write the result to state/current_state.md.
 
 ## Chatwork Unreplied Check
 schedule: */5 9-18 * * 0-4

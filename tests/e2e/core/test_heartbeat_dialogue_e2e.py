@@ -7,7 +7,7 @@ Tests cross-context flows WITHOUT mocking file-system operations:
   A-1: HB execution injects recent dialogue context
   A-2: Dialogue sessions inject recent HB summary into system prompt
   A-3: Non-HEARTBEAT_OK results are recorded to episodes
-  B-1: current_task.md gets emphasized header when status != idle
+  B-1: current_state.md gets emphasized header when status != idle
   E:   receive_and_archive() sends read ACK with loop prevention
 """
 from __future__ import annotations
@@ -82,7 +82,7 @@ def _setup_anima_dir(tmp_path: Path, name: str = "alice") -> Path:
     for sub in ("state", "episodes", "knowledge", "procedures", "skills",
                 "shortterm", "shortterm/archive", "transcripts"):
         (d / sub).mkdir(parents=True, exist_ok=True)
-    (d / "state" / "current_task.md").write_text("status: idle\n", encoding="utf-8")
+    (d / "state" / "current_state.md").write_text("status: idle\n", encoding="utf-8")
     return d
 
 
@@ -510,15 +510,15 @@ class TestMessengerAckFlow:
 
 
 # =====================================================================
-# Test 3: current_task.md emphasis (B-1)
+# Test 3: current_state.md emphasis (B-1)
 # =====================================================================
 
 
-class TestCurrentTaskEmphasis:
-    """Test B-1: current_task.md gets emphasized header when status != idle."""
+class TestCurrentStateEmphasis:
+    """Test B-1: current_state.md gets emphasized header when status != idle."""
 
     def test_working_status_gets_emphasis(self, tmp_path, monkeypatch):
-        """When current_task.md has non-idle status, prompt has emphasized header."""
+        """When current_state.md has non-idle status, prompt has emphasized header."""
         # Set up isolated data_dir
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()
@@ -540,7 +540,7 @@ class TestCurrentTaskEmphasis:
         anima_dir = _setup_anima_dir(tmp_path, "tester")
 
         # Write an active task
-        (anima_dir / "state" / "current_task.md").write_text(
+        (anima_dir / "state" / "current_state.md").write_text(
             "status: working\ntask: Deploy v2.0 to production\nprogress: 60%\n",
             encoding="utf-8",
         )
@@ -572,7 +572,7 @@ class TestCurrentTaskEmphasis:
         _prompt_cache.clear()
 
     def test_idle_status_gets_normal_header(self, tmp_path, monkeypatch):
-        """When current_task.md has idle status, prompt uses normal header."""
+        """When current_state.md has idle status, prompt uses normal header."""
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
@@ -590,7 +590,7 @@ class TestCurrentTaskEmphasis:
 
         anima_dir = _setup_anima_dir(tmp_path, "tester")
 
-        (anima_dir / "state" / "current_task.md").write_text(
+        (anima_dir / "state" / "current_state.md").write_text(
             "status: idle\n", encoding="utf-8",
         )
 

@@ -223,7 +223,7 @@ All methods produce the following directories and files:
 ├── procedures/          # Procedural memory (procedures)
 ├── skills/              # Personal skills
 ├── state/               # Working memory
-│   ├── current_task.md  # Current task
+│   ├── current_state.md  # Current task
 │   └── pending.md       # Pending tasks list
 └── shortterm/           # Short-term memory (session continuity)
     └── archive/

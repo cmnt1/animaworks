@@ -45,7 +45,7 @@ Therefore, including sufficient information in the task's `description` and `con
 ### Description Writing Principles
 
 - **Always include file paths and line numbers**: The executor can search memory, but specifying exact locations ensures it reaches the right files
-- **Include current work state**: Copy relevant parts of current_task.md into the `context` field (auto-injected but explicit additions improve accuracy)
+- **Include current work state**: Copy relevant parts of current_state.md into the `context` field (auto-injected but explicit additions improve accuracy)
 - **State the "why"**: Without background and purpose, the executor may make incorrect decisions
 
 ### What to Include in description
@@ -64,7 +64,7 @@ Single task:
 submit_tasks(batch_id="hb-20260301-api-fix", tasks=[
   {{"task_id": "api-fix", "title": "Convert API auth to async",
    "description": "Convert verify_token() in core/auth/manager.py (L45-60) to async. Blocking synchronous I/O is causing latency in FastAPI async handlers.",
-   "context": "current_task.md: Investigating API response delays. verify_token blocks with synchronous I/O",
+   "context": "current_state.md: Investigating API response delays. verify_token blocks with synchronous I/O",
    "file_paths": ["core/auth/manager.py:45"],
    "acceptance_criteria": ["verify_token is async def", "existing tests pass"],
    "constraints": ["Do not change public API arguments or return values"]}}
@@ -91,7 +91,7 @@ submit_tasks(batch_id="deploy-20260301", tasks=[
 | `description` | MUST | Concrete work content (follow the writing principles above) |
 | `parallel` | MAY | `true` for parallel execution (default: `false`) |
 | `depends_on` | MAY | Array of predecessor task IDs |
-| `context` | MAY | Background information (include relevant parts of current_task.md) |
+| `context` | MAY | Background information (include relevant parts of current_state.md) |
 | `file_paths` | MAY | Related file paths |
 | `acceptance_criteria` | MAY | Completion criteria |
 | `constraints` | MAY | Constraints |

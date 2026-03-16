@@ -3,7 +3,7 @@ Greet them and share your current status.
 
 ## Your Current Status
 - Status: {status}
-- Current task: {current_task}
+- Current task: {active_label}
 
 ## Instructions
 - Start with a brief greeting

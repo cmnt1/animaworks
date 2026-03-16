@@ -672,7 +672,7 @@ class MessagingMixin:
             prompt = load_prompt(
                 "greet",
                 status=status_text,
-                current_task=task_text,
+                active_label=task_text,
             )
 
             self._status_slots["conversation:default"] = "greeting"

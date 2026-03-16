@@ -1706,7 +1706,7 @@ class TestValidateEpisodePath:
         assert _validate_episode_path("knowledge/topic.md") is None
 
     def test_state_path_no_validation(self):
-        assert _validate_episode_path("state/current_task.md") is None
+        assert _validate_episode_path("state/current_state.md") is None
 
     def test_episode_subdirectory_no_validation(self):
         """Subdirectories under episodes/ are not validated."""
