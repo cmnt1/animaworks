@@ -401,7 +401,7 @@ def _stream_to_file(
         finally:
             try:
                 pipe.close()
-            except Exception:
+            except OSError:
                 pass
 
     stdout_thread = _threading.Thread(target=_drain, args=(proc.stdout,), daemon=True)

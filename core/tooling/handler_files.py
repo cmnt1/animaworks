@@ -252,7 +252,7 @@ class CommandRunner:
         finally:
             try:
                 pipe.close()
-            except Exception:
+            except OSError:
                 pass
 
     def _wait_for_completion(self, stdout_thread: threading.Thread, stderr_thread: threading.Thread) -> None:
