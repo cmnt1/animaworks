@@ -140,7 +140,7 @@ class TestEntriesToMessages:
                 "tool_use",
                 "2026-03-10T09:01:00+09:00",
                 tool="read_memory_file",
-                meta={"tool_use_id": "tu_1", "args": {"path": "state/current_task.md"}},
+                meta={"tool_use_id": "tu_1", "args": {"path": "state/current_state.md"}},
             ),
             _make_entry(
                 "tool_result",

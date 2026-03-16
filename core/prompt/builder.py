@@ -162,7 +162,7 @@ class BuildResult:
         return self.system_prompt.count(sub, *args)
 
 
-_CURRENT_TASK_MAX_CHARS = 3000
+_CURRENT_STATE_MAX_CHARS = 3000
 
 # ── Prompt tier constants ─────────────────────────────────────
 TIER_FULL = "full"  # 128k+
@@ -846,7 +846,7 @@ def build_system_prompt(
 
     # current_state: skip for task; summary (500 chars) for inbox
     if not is_task:
-        _state_max = max(int(_CURRENT_TASK_MAX_CHARS * scale), 500)
+        _state_max = max(int(_CURRENT_STATE_MAX_CHARS * scale), 500)
         if is_inbox:
             _state_max = min(_state_max, 500)
         state = memory.read_current_state()

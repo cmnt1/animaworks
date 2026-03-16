@@ -14,7 +14,7 @@ Higher layers are more strictly managed by the system; lower layers are left to 
 │  state/task_queue.jsonl                          │
 ├─────────────────────────────────────────────────┤
 │  Layer 3: Working Notes                          │  ← Free-form. Self-managed
-│  state/current_task.md / state/pending.md        │
+│  state/current_state.md / state/pending.md        │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -54,7 +54,7 @@ Holds task summary information (task_id, summary, status, deadline, assignee).
 Priming Channel E injects pending/in_progress tasks into the system prompt.
 This is the official record of "what needs to be done." Human-origin tasks (source=human) must always be registered here.
 
-## Layer 3: Working Notes (state/current_task.md, state/pending.md)
+## Layer 3: Working Notes (state/current_state.md, state/pending.md)
 
 Analogous to sticky notes / personal notes.
 
@@ -64,9 +64,9 @@ Analogous to sticky notes / personal notes.
 | Lifecycle | Anima creates, updates, and deletes freely |
 | Managed by | Anima (full discretion) |
 | Writers | Anima (direct file operations) |
-| Readers | Anima itself, Priming (current_task.md only) |
+| Readers | Anima itself, Priming (current_state.md only) |
 
-`current_task.md` is "what I'm doing right now." `pending.md` is "my personal backlog."
+`current_state.md` is "what I'm doing right now." `pending.md` is "my personal backlog."
 Content may overlap with Layer 2. Layer 3 is Anima's thinking space for organizing in their own words.
 
 ## Inter-Layer Relationships
@@ -75,7 +75,7 @@ Content may overlap with Layer 2. Layer 3 is Anima's thinking space for organizi
 
 ```
 Human instruction ─┬─► submit_tasks ───────────────► Layer 2 (task_queue.jsonl)
-                   └─► Anima writes current_task.md ► Layer 3
+                   └─► Anima writes current_state.md ► Layer 3
 
 submit_tasks ─┬─► state/pending/*.json ──────► Layer 1 (Execution Queue)
             └─► Register in task_queue.jsonl ► Layer 2 (Task Registry)
@@ -96,7 +96,7 @@ PendingTaskExecutor ─┬─► Success → Update task_queue to done
 | delegate_task submission | JSON created (subordinate) | Registered in both queues | — |
 | TaskExec completion | JSON deleted | Updated to done | — |
 | TaskExec failure | Moved to failed/ | Updated to failed | — |
-| Anima starts work | — | Updated to in_progress | current_task.md updated |
+| Anima starts work | — | Updated to in_progress | current_state.md updated |
 | Anima completes work | — | Updated to done | Reset to idle |
 | After Heartbeat | — | compact runs | — |
 

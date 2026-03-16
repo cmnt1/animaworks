@@ -4,7 +4,7 @@
 
 ## 目的
 
-AnimaWorks のタスク管理は `task_queue.jsonl` + `current_task.md` + `delegate_task` で
+AnimaWorks のタスク管理は `task_queue.jsonl` + `current_state.md` + `delegate_task` で
 エージェント間では完結しているが、**人間がひと目で全体を把握する手段がない**。
 `shared/task-board.md` はこの問題を解決する人間向けダッシュボード。
 
@@ -13,7 +13,7 @@ AnimaWorks のタスク管理は `task_queue.jsonl` + `current_task.md` + `deleg
 | リソース | 用途 | 対象者 |
 |---------|------|--------|
 | `state/task_queue.jsonl` | タスク追跡（append-only） | エージェント |
-| `state/current_task.md` | 現在の作業メモ | エージェント自身 |
+| `state/current_state.md` | 現在の作業メモ | エージェント自身 |
 | `state/pending.md` | バックログ | エージェント自身 |
 | **`shared/task-board.md`** | **全タスク俯瞰** | **人間（オーナー）** |
 

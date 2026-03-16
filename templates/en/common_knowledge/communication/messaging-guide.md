@@ -322,7 +322,7 @@ Controlled by `config.json`'s `heartbeat.depth_window_s` (time window) and `hear
 ### When Limits Are Reached
 
 1. Limits are computed from activity_log sliding window
-2. Hourly limit reached: Record send content in current_task.md and send in next session
+2. Hourly limit reached: Record send content in current_state.md and send in next session
 3. Daily limit reached: Send only essential messages; wait until next day
 4. Urgent contact needed: Use `call_human` (not subject to rate limits)
 

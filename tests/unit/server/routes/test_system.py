@@ -39,7 +39,7 @@ def _make_test_app(
     supervisor.start_anima = AsyncMock()
     supervisor.stop_anima = AsyncMock()
     supervisor.restart_anima = AsyncMock()
-    supervisor.send_request = AsyncMock(return_value={"status": "idle", "current_task": ""})
+    supervisor.send_request = AsyncMock(return_value={"status": "idle", "active_label": ""})
     app.state.supervisor = supervisor
 
     # Mock stream registry
@@ -227,7 +227,7 @@ class TestReloadAnimas:
             anima_names=["alice"],
         )
         app.state.supervisor.send_request = AsyncMock(
-            return_value={"status": "thinking", "current_task": "Responding to user"},
+            return_value={"status": "thinking", "active_label": "Responding to user"},
         )
 
         transport = ASGITransport(app=app)

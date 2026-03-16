@@ -1,4 +1,4 @@
-- **MUST**: Check if current_task.md has a task in progress. If so, verify its status. Always check before deciding "idle," "waiting," or "HEARTBEAT_OK"
+- **MUST**: Check if current_state.md has a task in progress. If so, verify its status. Always check before deciding "idle," "waiting," or "HEARTBEAT_OK"
 - **MUST**: Check task queue for STALE tasks (marked ⚠️ STALE). For overdue or near-deadline tasks, follow up with the assignee (send_message) or escalate to supervisor. Never return HEARTBEAT_OK while STALE tasks exist
 - **MUST**: Check for waiting tasks ("awaiting reply", "pending approval", etc.) stalled for 24+ hours. If stalled, send a status check or reminder
 - Board check: `read_channel(channel="general", limit=5)` to see latest posts. **Respond only to posts where you are assigned** or `@all`. Do **not** post praise/acknowledgment replies ("great," "understood," etc.) to others' reports

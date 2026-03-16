@@ -243,7 +243,7 @@ command: /usr/local/bin/backup.sh
 
 ## Work State (state/)
 
-### state/current_task.md — Current Task
+### state/current_state.md — Current Task
 
 The task you are currently working on (one at a time). Records the goal, progress, and blockers.
 

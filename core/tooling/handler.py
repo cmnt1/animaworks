@@ -179,7 +179,7 @@ class ToolHandler(
                     self._subordinate_management_files.append(_desc_dir / _fname)
                 self._subordinate_root_dirs.append(_desc_dir)
                 self._descendant_activity_dirs.append(_desc_dir / "activity_log")
-                self._descendant_state_files.append(_desc_dir / "state" / "current_task.md")
+                self._descendant_state_files.append(_desc_dir / "state" / "current_state.md")
                 self._descendant_state_files.append(_desc_dir / "state" / "pending.md")
                 self._descendant_state_files.append(_desc_dir / "status.json")
                 self._descendant_state_files.append(_desc_dir / "identity.md")
@@ -297,14 +297,14 @@ class ToolHandler(
         self._task_cwd = cwd
 
     def _is_state_file(self, path: Path) -> bool:
-        """Return True if *path* resolves to state/current_task.md or state/pending.md."""
+        """Return True if *path* resolves to state/current_state.md or state/pending.md."""
         try:
             resolved = path.resolve()
             anima_resolved = self._anima_dir.resolve()
             if not resolved.is_relative_to(anima_resolved):
                 return False
             rel = str(resolved.relative_to(anima_resolved))
-            return rel in ("state/current_task.md", "state/pending.md")
+            return rel in ("state/current_state.md", "state/pending.md")
         except (OSError, ValueError):
             return False
 

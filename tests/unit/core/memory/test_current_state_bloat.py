@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-"""Tests for current_task.md bloat prevention.
+"""Tests for current_state.md bloat prevention.
 
 Issue: 20260312_current-task-md-bloat-prevention
 
@@ -195,7 +195,7 @@ class TestUpdateStatePruning:
 
         existing_lines = [f"- ✅ Old {i}（自動検出: 03/{i + 1:02d} 10:00）" for i in range(12)]
         state_text = "## 現在の状態\n" + "\n".join(existing_lines)
-        (anima_dir / "state" / "current_task.md").write_text(state_text, encoding="utf-8")
+        (anima_dir / "state" / "current_state.md").write_text(state_text, encoding="utf-8")
 
         parsed = ParsedSessionSummary(
             title="test",
@@ -211,10 +211,10 @@ class TestUpdateStatePruning:
         episode_file = anima_dir / "episodes" / f"{today_local().isoformat()}.md"
         assert episode_file.exists()
         episode_content = episode_file.read_text(encoding="utf-8")
-        assert "current_task.md" in episode_content
+        assert "current_state.md" in episode_content
         assert "Old 0" in episode_content or "Old 1" in episode_content
 
-        updated_state = (anima_dir / "state" / "current_task.md").read_text(encoding="utf-8")
+        updated_state = (anima_dir / "state" / "current_state.md").read_text(encoding="utf-8")
         auto_lines = [ln for ln in updated_state.split("\n") if "自動検出" in ln and "✅" in ln]
         assert len(auto_lines) <= 10
 
@@ -230,7 +230,7 @@ class TestUpdateStatePruning:
 
         existing_lines = [f"- ✅ Task {i}（自動検出: 03/{i + 1:02d} 10:00）" for i in range(5)]
         state_text = "\n".join(existing_lines)
-        (anima_dir / "state" / "current_task.md").write_text(state_text, encoding="utf-8")
+        (anima_dir / "state" / "current_state.md").write_text(state_text, encoding="utf-8")
 
         parsed = ParsedSessionSummary(
             title="test",
@@ -243,7 +243,7 @@ class TestUpdateStatePruning:
 
         conv_memory._update_state_from_summary(memory_mgr, parsed)
 
-        updated = (anima_dir / "state" / "current_task.md").read_text(encoding="utf-8")
+        updated = (anima_dir / "state" / "current_state.md").read_text(encoding="utf-8")
         auto_lines = [ln for ln in updated.split("\n") if "自動検出" in ln and "✅" in ln]
         assert len(auto_lines) == 6  # 5 existing + 1 newly added resolved
 
@@ -260,7 +260,7 @@ class TestHeartbeatCleanupInstruction:
         from core._anima_heartbeat import HeartbeatMixin
 
         mixin = MagicMock(spec=HeartbeatMixin)
-        mixin._CURRENT_TASK_CLEANUP_THRESHOLD = HeartbeatMixin._CURRENT_TASK_CLEANUP_THRESHOLD
+        mixin._CURRENT_STATE_CLEANUP_THRESHOLD = HeartbeatMixin._CURRENT_STATE_CLEANUP_THRESHOLD
         mixin.name = "test-bloat"
         mixin.anima_dir = anima_dir
 
@@ -271,7 +271,7 @@ class TestHeartbeatCleanupInstruction:
 
     @pytest.mark.asyncio
     async def test_cleanup_injected_when_over_threshold(self, mock_heartbeat_mixin, anima_dir):
-        """Cleanup instruction is injected when current_task.md exceeds threshold."""
+        """Cleanup instruction is injected when current_state.md exceeds threshold."""
         from core._anima_heartbeat import HeartbeatMixin
 
         big_state = "x" * 4000
@@ -282,13 +282,13 @@ class TestHeartbeatCleanupInstruction:
         with patch("core._anima_heartbeat.load_prompt", return_value="heartbeat prompt"):
             parts = await HeartbeatMixin._build_heartbeat_prompt(mock_heartbeat_mixin)
 
-        cleanup_parts = [p for p in parts if "current_task.md" in p and ("圧縮" in p or "cleanup" in p)]
+        cleanup_parts = [p for p in parts if "current_state.md" in p and ("圧縮" in p or "cleanup" in p)]
         assert len(cleanup_parts) == 1
         assert "4000" in cleanup_parts[0]
 
     @pytest.mark.asyncio
     async def test_no_cleanup_when_under_threshold(self, mock_heartbeat_mixin):
-        """No cleanup instruction when current_task.md is under threshold."""
+        """No cleanup instruction when current_state.md is under threshold."""
         from core._anima_heartbeat import HeartbeatMixin
 
         small_state = "x" * 500
@@ -304,7 +304,7 @@ class TestHeartbeatCleanupInstruction:
 
     @pytest.mark.asyncio
     async def test_no_cleanup_at_exact_threshold(self, mock_heartbeat_mixin):
-        """No cleanup instruction when current_task.md is exactly at threshold."""
+        """No cleanup instruction when current_state.md is exactly at threshold."""
         from core._anima_heartbeat import HeartbeatMixin
 
         exact_state = "x" * 3000
@@ -323,10 +323,10 @@ class TestHeartbeatCleanupInstruction:
 
 
 class TestBuilderTruncation:
-    """Verify builder.py's existing _CURRENT_TASK_MAX_CHARS defense."""
+    """Verify builder.py's existing _CURRENT_STATE_MAX_CHARS defense."""
 
     def test_constant_exists(self):
-        """_CURRENT_TASK_MAX_CHARS is defined and equals 3000."""
-        from core.prompt.builder import _CURRENT_TASK_MAX_CHARS
+        """_CURRENT_STATE_MAX_CHARS is defined and equals 3000."""
+        from core.prompt.builder import _CURRENT_STATE_MAX_CHARS
 
-        assert _CURRENT_TASK_MAX_CHARS == 3000
+        assert _CURRENT_STATE_MAX_CHARS == 3000

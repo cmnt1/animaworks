@@ -114,7 +114,7 @@ function handleWsMessage(raw) {
         const existing = state.animas.find((p) => p.name === animaName);
         if (existing) {
           existing.status = statusVal;
-          if (data.current_task !== undefined) existing.current_task = data.current_task;
+          if (data.active_label !== undefined) existing.active_label = data.active_label;
         }
         renderAnimaDropdown();
         addActivity("system", animaName, `${t("websocket.status")} ${statusVal || t("common.unknown")}`);

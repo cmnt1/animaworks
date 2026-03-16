@@ -50,7 +50,7 @@ def _make_anima_dir(tmp_path: Path, *, with_bootstrap: bool = True) -> Path:
         "state", "shortterm", "shortterm/archive", "transcripts",
     ]:
         (anima_dir / sub).mkdir(parents=True, exist_ok=True)
-    (anima_dir / "state" / "current_task.md").write_text(
+    (anima_dir / "state" / "current_state.md").write_text(
         "status: idle\n", encoding="utf-8"
     )
     (anima_dir / "state" / "pending.md").write_text("", encoding="utf-8")
@@ -284,7 +284,7 @@ class TestAnimaRunnerBootstrap:
 
         mock_anima = MagicMock()
         mock_anima._status = "idle"
-        mock_anima._current_task = ""
+        mock_anima._task_slots = {}
         mock_anima.needs_bootstrap = True
         runner.anima = mock_anima
 
@@ -307,7 +307,7 @@ class TestAnimaRunnerBootstrap:
 
         mock_anima = MagicMock()
         mock_anima._status = "idle"
-        mock_anima._current_task = ""
+        mock_anima._task_slots = {}
         mock_anima.needs_bootstrap = False
         runner.anima = mock_anima
 

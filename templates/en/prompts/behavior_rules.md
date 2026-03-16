@@ -45,7 +45,7 @@ In either case:
 - **Check before reporting**: Before sending a report, verify the topic is not already in the resolved list
 - **Detect duplicates**: Do not send the same report multiple times. Send an update only when the situation has changed since the last report
 
-#### current_task.md Cleanup
+#### current_state.md Cleanup
 - During Heartbeat, move all ✅ completed tasks from the "In Progress" section to "Resolved" or remove them
 - When "Resolved" exceeds 10 items, remove the oldest entries
-- Keep current_task.md under 30 lines at all times
+- Keep current_state.md under 30 lines at all times

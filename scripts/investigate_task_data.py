@@ -15,7 +15,7 @@ TASK_RESULTS_FILES_WARN = 50
 TASK_RESULTS_SIZE_WARN = 500_000  # 500KB
 PENDING_FILES_WARN = 10
 PENDING_FAILED_WARN = 5
-CURRENT_TASK_SIZE_WARN = 5_000  # 5KB
+CURRENT_STATE_SIZE_WARN = 5_000  # 5KB
 PENDING_MD_SIZE_WARN = 10_000  # 10KB
 BG_NOTIF_WARN = 20
 
@@ -165,8 +165,8 @@ def analyze_anima(name: str) -> dict:
     pending_path = state / "pending"
     pend = analyze_pending(pending_path)
 
-    current_task_path = state / "current_task.md"
-    ct_size = current_task_path.stat().st_size if current_task_path.exists() else 0
+    current_state_path = state / "current_state.md"
+    ct_size = current_state_path.stat().st_size if current_state_path.exists() else 0
 
     pending_md_path = state / "pending.md"
     pm_size = pending_md_path.stat().st_size if pending_md_path.exists() else 0
@@ -189,8 +189,8 @@ def analyze_anima(name: str) -> dict:
         flags.append("pending多")
     if pend["failed_count"] > PENDING_FAILED_WARN:
         flags.append("failed多")
-    if ct_size > CURRENT_TASK_SIZE_WARN:
-        flags.append("current_task大")
+    if ct_size > CURRENT_STATE_SIZE_WARN:
+        flags.append("current_state大")
     if pm_size > PENDING_MD_SIZE_WARN:
         flags.append("pending.md大")
     if bg_count > BG_NOTIF_WARN:
@@ -201,7 +201,7 @@ def analyze_anima(name: str) -> dict:
         "task_queue": tq,
         "task_results": {"count": tr_count, "size": tr_size, "oldest": tr_old, "newest": tr_new},
         "pending": pend,
-        "current_task_size": ct_size,
+        "current_state_size": ct_size,
         "pending_md_size": pm_size,
         "background_notifications": bg_count,
         "flags": flags,
@@ -250,7 +250,7 @@ def main() -> None:
         f"{'task_queue':<35} | "
         f"{'task_results':<18} | "
         f"{'pending/':<18} | "
-        f"{'current_task':<10} | "
+        f"{'current_state':<12} | "
         f"{'pending.md':<10} | "
         f"フラグ"
     )
@@ -272,7 +272,7 @@ def main() -> None:
         pend = r["pending"]
         pend_str = f"{pend['files']}f (failed:{pend['failed_count']})"
 
-        ct = fmt_size(r["current_task_size"])
+        ct = fmt_size(r["current_state_size"])
         pm = fmt_size(r["pending_md_size"])
         flags_str = ", ".join(r["flags"]) if r["flags"] else "-"
 

@@ -48,7 +48,7 @@
 
 4. **送信エラーが出た場合**
    - エラーメッセージを記録する
-   - `state/current_task.md` にブロック理由として記載する
+   - `state/current_state.md` にブロック理由として記載する
    - 上司に報告する
 
 ### 具体例
@@ -94,10 +94,10 @@ send_message(
    - 何が足りないのかを具体的に特定する
    - 「誰の」「何の作業が」「いつまでに」必要かを整理する
 
-2. **`state/current_task.md` を更新する**
+2. **`state/current_state.md` を更新する**
    ```
    write_memory_file(
-       path="state/current_task.md",
+       path="state/current_state.md",
        content="## 現在のタスク\n\nXXXの実装\n\n### ブロック中\n- 原因: YYYの作業完了待ち\n- 待ち先: ZZZさん\n- 発生日時: 2026-02-15 10:00",
        mode="overwrite"
    )
@@ -327,10 +327,10 @@ send_message(
    ```
    - ハートビートセッション時は `shortterm/heartbeat/session_state.md` を使用
 
-2. **`state/current_task.md` を更新する**（MUST）
+2. **`state/current_state.md` を更新する**（MUST）
    ```
    write_memory_file(
-       path="state/current_task.md",
+       path="state/current_state.md",
        content="## 現在のタスク\n\nXXXの実装\n\n### 進捗\n- 50%完了\n- 次回はYYYから再開\n\n### メモ\n- 重要な発見事項をここに記載",
        mode="overwrite"
    )
@@ -349,12 +349,12 @@ send_message(
 4. **セッション継続を待つ**
    - システムが自動的に新しいセッションを開始する
    - 新セッションでは `shortterm/chat/`（または `shortterm/heartbeat/`）の内容がコンテキストに含まれる
-   - `state/current_task.md` を読み直して作業を再開する
+   - `state/current_state.md` を読み直して作業を再開する
 
 ### 予防策
 
 - 大きなファイルは全体を読まず、必要な部分だけ検索する
-- 長い作業は定期的に `state/current_task.md` を更新する
+- 長い作業は定期的に `state/current_state.md` を更新する
 - 中間結果はこまめに記憶に書き出す
 
 ---
@@ -378,7 +378,7 @@ send_message(
 1. **エラーメッセージを確認する**: 時間制限・24時間制限・深度制限のいずれかを特定する
 2. **送信履歴を振り返る**: 不要な送信がなかったか確認する
 3. **待機する**: 時間制限なら次の1時間枠まで、24時間制限なら翌日まで、深度制限なら次のハートビートサイクルまで待つ
-4. **送信内容を記録する**: このターンでは `send_message` を使わず、送信したい内容を `state/current_task.md` に記録し、次のセッションで送信する
+4. **送信内容を記録する**: このターンでは `send_message` を使わず、送信したい内容を `state/current_state.md` に記録し、次のセッションで送信する
 5. **緊急連絡**: `call_human` は制限対象外なので、人間への連絡は引き続き可能
 6. **送信を統合する**: 複数の報告を1通にまとめる。深度制限に達した場合は、複雑な議論を Board チャネルに移行する
 

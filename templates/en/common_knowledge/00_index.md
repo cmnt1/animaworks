@@ -117,7 +117,7 @@ then read it with `read_memory_file(path="common_knowledge/...")`.
 | File | Description |
 |------|-------------|
 | `project-setup.md` | → Moved to `reference/operations/project-setup.md`. Project configuration |
-| `task-management.md` | Task management (current_task.md / pending.md usage, state transitions, priorities) |
+| `task-management.md` | Task management (current_state.md / pending.md usage, state transitions, priorities) |
 | `task-board-guide.md` | Task board (human-facing dashboard) — structure and operational guidelines |
 | `heartbeat-cron-guide.md` | Scheduling and running Heartbeat and cron (how Heartbeat works, cron definitions, self-updates) |
 | `tool-usage-overview.md` | Tool usage overview (S/A/B mode tool sets, internal/external tools, how to call them) |
@@ -172,7 +172,7 @@ then read it with `read_memory_file(path="common_knowledge/...")`.
 | role, responsibility, speciality, specialty | `organization/roles.md` |
 | hierarchy, communication path, org_dashboard, ping_subordinate | `organization/hierarchy-rules.md` |
 | delegate_task, task delegation, task_tracker | `organization/hierarchy-rules.md`, `operations/task-management.md` |
-| task, current_task, pending, progress, priority | `operations/task-management.md` |
+| task, current_state, pending, progress, priority | `operations/task-management.md` |
 | task queue, submit_tasks, update_task, TaskExec, animaworks-tool task list | `operations/task-management.md` |
 | task board, dashboard, human-facing | `operations/task-board-guide.md` |
 | config, status.json, SSoT, reload, settings | `reference/operations/project-setup.md` |

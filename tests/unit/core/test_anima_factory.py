@@ -134,7 +134,7 @@ class TestInitStateFiles:
         anima_dir = tmp_path / "anima"
         (anima_dir / "state").mkdir(parents=True)
         _init_state_files(anima_dir)
-        ct = anima_dir / "state" / "current_task.md"
+        ct = anima_dir / "state" / "current_state.md"
         assert ct.exists()
         assert ct.read_text(encoding="utf-8") == "status: idle\n"
         pending = anima_dir / "state" / "pending.md"
@@ -144,7 +144,7 @@ class TestInitStateFiles:
     def test_does_not_overwrite_existing(self, tmp_path):
         anima_dir = tmp_path / "anima"
         (anima_dir / "state").mkdir(parents=True)
-        ct = anima_dir / "state" / "current_task.md"
+        ct = anima_dir / "state" / "current_state.md"
         ct.write_text("status: busy\n", encoding="utf-8")
         _init_state_files(anima_dir)
         assert ct.read_text(encoding="utf-8") == "status: busy\n"
@@ -332,7 +332,7 @@ class TestCreateBlank:
             anima_dir = create_blank(animas_dir, "alice")
             assert anima_dir.exists()
             assert (anima_dir / "episodes").is_dir()
-            assert (anima_dir / "state" / "current_task.md").exists()
+            assert (anima_dir / "state" / "current_state.md").exists()
 
     def test_blank_with_template(self, tmp_path):
         blank_dir = tmp_path / "blank"

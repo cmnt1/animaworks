@@ -688,9 +688,9 @@ def _ensure_runtime_subdirs(anima_dir: Path) -> None:
 
 def _init_state_files(anima_dir: Path) -> None:
     """Create initial state files if they don't exist."""
-    current_task = anima_dir / "state" / "current_task.md"
-    if not current_task.exists():
-        current_task.write_text("status: idle\n", encoding="utf-8")
+    current_state = anima_dir / "state" / "current_state.md"
+    if not current_state.exists():
+        current_state.write_text("status: idle\n", encoding="utf-8")
 
     pending = anima_dir / "state" / "pending.md"
     if not pending.exists():

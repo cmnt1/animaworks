@@ -72,15 +72,15 @@ class TestArchiveMemoryFile:
     def test_reject_non_memory_directory(self, handler, anima_dir):
         """Reject archiving from non-knowledge/procedures directories."""
         (anima_dir / "state").mkdir(exist_ok=True)
-        (anima_dir / "state" / "current_task.md").write_text("task")
+        (anima_dir / "state" / "current_state.md").write_text("state")
 
         result = handler.handle("archive_memory_file", {
-            "path": "state/current_task.md",
+            "path": "state/current_state.md",
             "reason": "test",
         })
 
         assert "knowledge" in result.lower() or "procedures" in result.lower()
-        assert (anima_dir / "state" / "current_task.md").exists()
+        assert (anima_dir / "state" / "current_state.md").exists()
 
     def test_nonexistent_file(self, handler, anima_dir):
         """Return error for nonexistent file."""

@@ -174,8 +174,8 @@ class TestOrgDashboard:
     def test_shows_descendants(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
-        # Write a current task
-        (tmp_path / "animas" / "hinata" / "state" / "current_task.md").write_text(
+        # Write a current state
+        (tmp_path / "animas" / "hinata" / "state" / "current_state.md").write_text(
             "レポート作成中", encoding="utf-8",
         )
 
@@ -246,7 +246,7 @@ class TestReadSubordinateState:
     def test_read_with_task(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
         sub_dir = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
-        (sub_dir / "state" / "current_task.md").write_text(
+        (sub_dir / "state" / "current_state.md").write_text(
             "API実装中", encoding="utf-8",
         )
         (sub_dir / "state" / "pending.md").write_text(
@@ -294,7 +294,7 @@ class TestReadSubordinateState:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
         sub_dir = _setup_subordinate(tmp_path, "natsume", supervisor="hinata")
-        (sub_dir / "state" / "current_task.md").write_text(
+        (sub_dir / "state" / "current_state.md").write_text(
             "設計中", encoding="utf-8",
         )
 
@@ -538,7 +538,7 @@ class TestDescendantFilePermission:
         natsume_dir = animas_dir / "natsume"
         natsume_dir.mkdir(parents=True)
         (natsume_dir / "state").mkdir()
-        (natsume_dir / "state" / "current_task.md").write_text("busy", encoding="utf-8")
+        (natsume_dir / "state" / "current_state.md").write_text("busy", encoding="utf-8")
 
         mock_cfg = _mock_config(tmp_path, {
             "sakura": {},
@@ -560,7 +560,7 @@ class TestDescendantFilePermission:
             )
 
         result = handler._check_file_permission(
-            str(natsume_dir / "state" / "current_task.md"),
+            str(natsume_dir / "state" / "current_state.md"),
         )
         assert result is None
 
@@ -584,7 +584,7 @@ def _make_handler_with_hierarchy(tmp_path: Path, *, anima_name: str = "sakura") 
         (d / "activity_log").mkdir(exist_ok=True)
         for fname in ("cron.md", "heartbeat.md", "status.json", "injection.md", "identity.md"):
             (d / fname).write_text("", encoding="utf-8")
-        (d / "state" / "current_task.md").write_text("", encoding="utf-8")
+        (d / "state" / "current_state.md").write_text("", encoding="utf-8")
         (d / "state" / "pending.md").write_text("", encoding="utf-8")
         (d / "state" / "task_queue.jsonl").write_text("", encoding="utf-8")
 

@@ -53,7 +53,7 @@ schedule: 0 9 * * *
 type: llm
 長期記憶から昨日の進捗を確認し、今日のタスクを計画する。
 理念と目標に照らして優先順位を判断する。
-結果は state/current_task.md に書き出す。
+結果は state/current_state.md に書き出す。
 
 ## 週次振り返り
 schedule: 0 17 * * 4

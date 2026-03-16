@@ -179,7 +179,7 @@ Each Anima is composed of the following files and directories:
 |`transcripts/`              |Conversation transcripts             |
 |`skills/`                   |Personal skills (YAML frontmatter + Markdown body)|
 |`activity_log/`             |Unified activity log (daily JSONL)   |
-|`state/`                    |Working memory (current_task.md, pending.md, pending/, task_queue.jsonl)|
+|`state/`                    |Working memory (current_state.md, pending.md, pending/, task_queue.jsonl)|
 |`episodes/`                 |Episodic memory (daily logs)         |
 |`knowledge/`                |Semantic memory (learned knowledge)  |
 |`procedures/`               |Procedural memory (runbooks)         |
@@ -782,7 +782,7 @@ Group 2: Who you are
   - permissions.md (tool and command permissions)
 
 Group 3: Current situation
-  - state/current_task.md + pending.md (in-progress tasks)
+  - state/current_state.md + pending.md (in-progress tasks)
   - Task Queue (persistent task queue — conditional)
   - Resolution Registry (resolved issues, last 7 days — conditional)
   - Recent Outbound (send history, last 2 hours, max 3 — conditional)
@@ -871,7 +871,7 @@ Internal tools provided by the framework (MCP tools in Mode S, ToolHandler dispa
 | **Supervisor** | `delegate_task` | Delegate a task to a direct subordinate |
 |  | `org_dashboard` | Display organization tree with process states and tasks |
 |  | `ping_subordinate` | Liveness check for subordinates |
-|  | `read_subordinate_state` | Read subordinate's current_task.md and pending.md |
+|  | `read_subordinate_state` | Read subordinate's current_state.md and pending.md |
 |  | `audit_subordinate` | Activity summary, error frequency, and tool usage stats |
 |  | `task_tracker` | Track progress of delegated tasks |
 |  | `disable/enable_subordinate` | Suspend or resume a subordinate |

@@ -172,7 +172,7 @@ PrimingがRAG経由で関連知識を取得する際、各チャンクの `origi
 | パス | 直属部下 | 全配下 |
 |------|:---:|:---:|
 | `activity_log/` | 読み取り | 読み取り |
-| `state/current_task.md`, `pending.md` | — | 読み取り |
+| `state/current_state.md`, `pending.md` | — | 読み取り |
 | `state/task_queue.jsonl`, `pending/` | — | 読み取り |
 | `status.json` | 読み書き | 読み取り |
 | `identity.md` | — | 読み取り |

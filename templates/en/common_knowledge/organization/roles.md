@@ -45,7 +45,7 @@ Located at the top of the organization; responsible for overall direction and fi
 1. Check subordinate reports and messages
 2. Check for unresolved blockers
 3. Give instructions and decisions as needed
-4. Record overall progress in state/current_task.md
+4. Record overall progress in state/current_state.md
 
 [When a decision is needed]
 1. Receive escalation from subordinate: "Should we do A or B?"
@@ -90,7 +90,7 @@ Between supervisor and subordinates; responsible for task decomposition, delegat
 1. Understand the request and break it into necessary tasks
 2. Assign each task to subordinates based on their speciality
 3. Send instructions via message (include purpose, deliverables, deadline)
-4. Record in-progress tasks in state/current_task.md
+4. Record in-progress tasks in state/current_state.md
 
 [When receiving issue report from subordinate]
 1. Confirm the issue content and impact scope

@@ -223,7 +223,7 @@ class TestAnimaStatus:
         ps = AnimaStatus(name="alice")
         assert ps.name == "alice"
         assert ps.status == "idle"
-        assert ps.current_task == ""
+        assert ps.active_label == ""
         assert ps.last_heartbeat is None
         assert ps.last_activity is None
         assert ps.pending_messages == 0
@@ -233,12 +233,12 @@ class TestAnimaStatus:
         ps = AnimaStatus(
             name="bob",
             status="thinking",
-            current_task="Responding to human",
+            active_label="Responding to human",
             last_heartbeat=now,
             last_activity=now,
             pending_messages=3,
         )
         assert ps.status == "thinking"
-        assert ps.current_task == "Responding to human"
+        assert ps.active_label == "Responding to human"
         assert ps.last_heartbeat == now
         assert ps.pending_messages == 3

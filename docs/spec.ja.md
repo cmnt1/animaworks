@@ -179,7 +179,7 @@ animaworks/
 |`transcripts/`        |会話トランスクリプト                   |
 |`skills/`             |個人スキル（YAML frontmatter + Markdown本文）|
 |`activity_log/`       |統一活動ログ（日付別JSONL）            |
-|`state/`              |作業記憶（current_task.md, pending.md, pending/, task_queue.jsonl）|
+|`state/`              |作業記憶（current_state.md, pending.md, pending/, task_queue.jsonl）|
 |`episodes/`           |エピソード記憶（日次ログ）               |
 |`knowledge/`          |意味記憶（学習済み知識）                |
 |`procedures/`         |手続き記憶（手順書）                   |
@@ -779,7 +779,7 @@ Group 2: あなた自身
   - permissions.md（ツール・コマンド許可）
 
 Group 3: 現在の状況
-  - state/current_task.md + pending.md（進行中タスク）
+  - state/current_state.md + pending.md（進行中タスク）
   - Task Queue（永続タスクキュー、条件付き）
   - Resolution Registry（解決済み問題、直近7日、条件付き）
   - Recent Outbound（直近2時間の送信履歴、最大3件）
@@ -900,7 +900,7 @@ Group 6: メタ設定
 |--------|------|------|
 | `org_dashboard` | 全配下 | プロセス状態・タスク・アクティビティをツリー表示 |
 | `ping_subordinate` | 全配下 | 生存確認（name省略で全員一括） |
-| `read_subordinate_state` | 全配下 | current_task.md + pending.md 読み取り |
+| `read_subordinate_state` | 全配下 | current_state.md + pending.md 読み取り |
 | `delegate_task` | 直属部下 | タスク委譲（部下キューに追加＋DM送信） |
 | `task_tracker` | 自分の委譲タスク | 進捗追跡 |
 | `audit_subordinate` | 全配下 | 活動サマリー・エラー頻度・ツール使用統計 |

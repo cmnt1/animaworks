@@ -53,7 +53,7 @@ schedule: 0 9 * * *
 type: llm
 Review yesterday's progress from long-term memory and plan today's tasks.
 Prioritize according to vision and goals.
-Write results to state/current_task.md.
+Write results to state/current_state.md.
 
 ## Weekly Reflection
 schedule: 0 17 * * 4

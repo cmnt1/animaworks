@@ -48,7 +48,7 @@ If it doesn't help, see `troubleshooting/escalation-flowchart.md` and escalate a
 
 4. **If send failed**
    - Log the error message
-   - Record it in `state/current_task.md` as a blocker
+   - Record it in `state/current_state.md` as a blocker
    - Report to supervisor
 
 ### Examples
@@ -94,10 +94,10 @@ send_message(
    - Identify specifically what is missing
    - Organize: whose work, what work, and by when
 
-2. **Update `state/current_task.md`**
+2. **Update `state/current_state.md`**
    ```
    write_memory_file(
-       path="state/current_task.md",
+       path="state/current_state.md",
        content="## Current Task\n\nXXX implementation\n\n### Blocked\n- Cause: Waiting for YYY to complete\n- Waiting on: ZZZ\n- Since: 2026-02-15 10:00",
        mode="overwrite"
    )
@@ -327,10 +327,10 @@ See `operations/tool-usage-overview.md` for the full tool overview.
    ```
    - Use `shortterm/heartbeat/session_state.md` for Heartbeat sessions
 
-2. **Update `state/current_task.md`** (MUST)
+2. **Update `state/current_state.md`** (MUST)
    ```
    write_memory_file(
-       path="state/current_task.md",
+       path="state/current_state.md",
        content="## Current Task\n\nXXX implementation\n\n### Progress\n- 50% done\n- Resume from YYY next time\n\n### Notes\n- Important findings here",
        mode="overwrite"
    )
@@ -349,12 +349,12 @@ See `operations/tool-usage-overview.md` for the full tool overview.
 4. **Wait for session continuation**
    - System will start a new session automatically
    - New session will include `shortterm/chat/` (or `shortterm/heartbeat/`) in context
-   - Re-read `state/current_task.md` and resume work
+   - Re-read `state/current_state.md` and resume work
 
 ### Prevention
 
 - Don't read whole large files; search for needed parts only
-- Update `state/current_task.md` regularly during long work
+- Update `state/current_state.md` regularly during long work
 - Save interim results to memory frequently
 
 ---
@@ -378,7 +378,7 @@ See `operations/tool-usage-overview.md` for the full tool overview.
 1. **Check the error message**: Identify whether it's hourly limit, 24-hour limit, or depth limit
 2. **Review send history**: Check if there were unnecessary sends
 3. **Wait**: Until next hour for hourly limit, next day for 24-hour limit, or next Heartbeat cycle for depth limit
-4. **Record what you wanted to send**: For this turn, don't use `send_message`; write the content to `state/current_task.md` and send in the next session
+4. **Record what you wanted to send**: For this turn, don't use `send_message`; write the content to `state/current_state.md` and send in the next session
 5. **Urgent contact**: `call_human` is not rate-limited; human contact remains available
 6. **Combine sends**: Merge multiple reports into one message. If depth limit is reached, move complex discussions to a Board channel
 

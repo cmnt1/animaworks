@@ -18,7 +18,7 @@ Priming Issue（`20260218_priming-format-redesign.md`）が先行実装される
 ### Current State
 
 1. **エピソード記憶の大量重複**: sakura の `episodes/2026-02-17.md` に同一会話の要約が30回以上追記されている。同じ会話内容がタイムスタンプ違いで繰り返し記録される
-2. **ステートファイルの非更新**: ユーザーが「AIシュライバーのエラーは解決した」と何度伝えても、sakura は毎回同じ問題を報告し続ける。`state/current_task.md` が更新されないため
+2. **ステートファイルの非更新**: ユーザーが「AIシュライバーのエラーは解決した」と何度伝えても、sakura は毎回同じ問題を報告し続ける。`state/current_state.md` が更新されないため
 3. **解決情報の非伝播**: sakura に伝えた解決情報がミオ等の他 Anima に伝わらない。各 Anima が独立して古い情報を保持し続ける
 
 ### Root Cause
@@ -289,7 +289,7 @@ def _parse_session_summary(raw: str) -> ParsedSessionSummary:
 def _update_state_from_summary(
     self, memory_mgr: MemoryManager, parsed: ParsedSessionSummary
 ) -> None:
-    """current_task.md を会話の結論に基づいて自動更新。"""
+    """current_state.md を会話の結論に基づいて自動更新。"""
     current = memory_mgr.read_current_state()
     updated = False
 
@@ -558,7 +558,7 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 |---|------|--------|
 | 2-1 | `_summarize_session_with_state()` — 要約プロンプトにステート抽出セクション追加 | `core/memory/conversation.py` |
 | 2-2 | `ParsedSessionSummary` dataclass + `_parse_session_summary()` パーサー新設 | `core/memory/conversation.py` |
-| 2-3 | `_update_state_from_summary()` — パース結果から state/current_task.md を自動更新 | `core/memory/conversation.py` |
+| 2-3 | `_update_state_from_summary()` — パース結果から state/current_state.md を自動更新 | `core/memory/conversation.py` |
 
 **テスト**:
 
@@ -571,7 +571,7 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 | `test_update_state_appends_new_tasks` | 新規タスクが state に追記されること |
 | `test_update_state_no_duplicate` | 既に state に含まれるアイテムは重複追記されないこと |
 
-**完了条件**: 会話で「この問題は解決した」と伝えた後の finalize_session で、state/current_task.md に解決マークが自動追記される。
+**完了条件**: 会話で「この問題は解決した」と伝えた後の finalize_session で、state/current_state.md に解決マークが自動追記される。
 
 ### Phase 3: 解決伝播メカニズム
 
@@ -606,7 +606,7 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 - セッション境界検出（10分アイドル + heartbeat）
 - 記録済みターンの compressed_summary 統合
 - SessionSummary パーサー（Markdown セクション形式）
-- state/current_task.md の自動更新（解決・新規タスク）
+- state/current_state.md の自動更新（解決・新規タスク）
 - ActivityLogger への `issue_resolved` イベント（ASCII ラベル `RSLV` 付き）
 - `shared/resolutions.jsonl` 解決レジストリ
 - builder.py 解決レジストリ注入セクション
@@ -638,7 +638,7 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 - [ ] per-message の fire-and-forget `finalize_session()` 呼び出しが process_message / process_message_streaming から削除されている
 - [ ] セッション境界（10分アイドル or heartbeat）でのみエピソード記録が実行される
 - [ ] finalize_session 後、記録済みターンが compressed_summary に統合されている
-- [ ] LLM 応答から「解決済みアイテム」がパースされ、`state/current_task.md` に自動追記される
+- [ ] LLM 応答から「解決済みアイテム」がパースされ、`state/current_state.md` に自動追記される
 - [ ] SessionSummary のパース失敗時、エピソード記録は正常に動作する（ステート更新のみスキップ）
 - [ ] 解決イベントが ActivityLogger に `issue_resolved` タイプで記録される
 - [ ] `shared/resolutions.jsonl` に解決情報が書き込まれる

@@ -387,7 +387,7 @@ The previous design re-summarized all turns on every message response, which cau
 
 **Integration point**: `finalize_session()` executes the following in addition to diff summarization:
 1. **Episode recording**: Append LLM summary of unrecorded turns to `episodes/`
-2. **Auto state update**: Auto-parse "resolved items" and "new tasks" from LLM summary and append to `state/current_task.md`
+2. **Auto state update**: Auto-parse "resolved items" and "new tasks" from LLM summary and append to `state/current_state.md`
 3. **Resolution propagation**: Record resolved items to ActivityLogger (`issue_resolved` event) and `shared/resolutions.jsonl`
 4. **Turn compression**: Integrate recorded turns into `compressed_summary` to prevent conversation.json bloat
 

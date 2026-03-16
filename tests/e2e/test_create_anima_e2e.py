@@ -190,9 +190,9 @@ class TestCreateFromMdFullFlow:
 
         anima_dir = create_from_md(animas_dir, sheet_path)
 
-        current_task = anima_dir / "state" / "current_task.md"
-        assert current_task.exists()
-        assert current_task.read_text(encoding="utf-8") == "status: idle\n"
+        current_state = anima_dir / "state" / "current_state.md"
+        assert current_state.exists()
+        assert current_state.read_text(encoding="utf-8") == "status: idle\n"
 
         pending = anima_dir / "state" / "pending.md"
         assert pending.exists()

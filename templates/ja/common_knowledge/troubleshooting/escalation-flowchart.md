@@ -269,7 +269,7 @@ send_message(
 ```
 # エラーを記録
 write_memory_file(
-    path="state/current_task.md",
+    path="state/current_state.md",
     content="## ブロック中\n\nChatwork API連続エラー\n- 1回目: 10:00 - 500 Internal Server Error\n- 2回目: 10:05 - 500 Internal Server Error\n- 3回目: 10:10 - 500 Internal Server Error\n\n上司に報告済み。他タスクに着手中。",
     mode="overwrite"
 )

@@ -8,7 +8,7 @@
 - description: |
     Review team status and organize today's priorities.
     1. Check subordinate status via org_dashboard
-    2. Review each member's current_task
+    2. Review each member's current_state
     3. Address any blockers
     4. Share today's focus points in the general channel
 

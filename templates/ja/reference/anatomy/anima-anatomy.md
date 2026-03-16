@@ -243,7 +243,7 @@ command: /usr/local/bin/backup.sh
 
 ## 作業状態（state/）
 
-### state/current_task.md — 今のタスク
+### state/current_state.md — 今のタスク
 
 今まさに取り組んでいるタスク（1つ）。タスクの目標・進捗・ブロッカーを記録する。
 

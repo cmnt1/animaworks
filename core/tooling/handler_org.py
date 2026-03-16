@@ -521,15 +521,15 @@ class OrgToolsMixin:
             except Exception:
                 entry["last_activity"] = t("handler.last_activity_unknown")
 
-            task_file = desc_dir / "state" / "current_task.md"
+            task_file = desc_dir / "state" / "current_state.md"
             if task_file.exists():
                 try:
                     task_text = task_file.read_text(encoding="utf-8").strip()
-                    entry["current_task"] = task_text[:100] if task_text else t("handler.current_task_none")
+                    entry["current_state"] = task_text[:100] if task_text else t("handler.current_state_none")
                 except Exception:
-                    entry["current_task"] = t("handler.current_task_unreadable")
+                    entry["current_state"] = t("handler.current_state_unreadable")
             else:
-                entry["current_task"] = t("handler.current_task_none")
+                entry["current_state"] = t("handler.current_state_none")
 
             try:
                 from core.memory.task_queue import TaskQueueManager
@@ -562,13 +562,13 @@ class OrgToolsMixin:
                 line = f"{prefix}{status_icon} **{child['name']}** [{child['process_status']}]"
                 line += " | " + t("handler.dashboard_last", activity=child["last_activity"])
                 line += " | " + t("handler.dashboard_tasks", count=child["active_tasks"])
-                none_str = t("handler.current_task_none")
-                if child["current_task"] != none_str:
+                none_str = t("handler.current_state_none")
+                if child["current_state"] != none_str:
                     line += (
                         "\n"
                         + "  " * (indent + 1)
                         + "└ "
-                        + t("handler.dashboard_working_on", task=child["current_task"])
+                        + t("handler.dashboard_working_on", task=child["current_state"])
                     )
                 lines.append(line)
                 _render_tree(child["name"], indent + 1)
@@ -692,17 +692,17 @@ class OrgToolsMixin:
 
         parts: list[str] = [t("handler.state_title", target_name=target_name), ""]
 
-        task_file = desc_dir / "state" / "current_task.md"
+        task_file = desc_dir / "state" / "current_state.md"
         if task_file.exists():
             try:
                 content = task_file.read_text(encoding="utf-8").strip()
-                parts.append(t("handler.state_current_task"))
+                parts.append(t("handler.state_current_state"))
                 parts.append(content if content else t("handler.state_none"))
             except Exception:
-                parts.append(t("handler.state_current_task"))
+                parts.append(t("handler.state_current_state"))
                 parts.append(t("handler.state_unreadable"))
         else:
-            parts.append(t("handler.state_current_task"))
+            parts.append(t("handler.state_current_state"))
             parts.append(t("handler.state_none"))
 
         parts.append("")

@@ -234,8 +234,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     "handler.no_subordinates": {"ja": "配下の Anima はいません", "en": "No subordinate Animas"},
     "handler.last_activity_none": {"ja": "なし", "en": "None"},
     "handler.last_activity_unknown": {"ja": "不明", "en": "Unknown"},
-    "handler.current_task_none": {"ja": "なし", "en": "None"},
-    "handler.current_task_unreadable": {"ja": "読取不可", "en": "Unreadable"},
+    "handler.current_state_none": {"ja": "なし", "en": "None"},
+    "handler.current_state_unreadable": {"ja": "読取不可", "en": "Unreadable"},
     "handler.org_dashboard_title": {"ja": "## 組織ダッシュボード", "en": "## Organization Dashboard"},
     "handler.dashboard_last": {"ja": "最終: {activity}", "en": "Last: {activity}"},
     "handler.dashboard_tasks": {"ja": "タスク: {count}件", "en": "Tasks: {count}"},
@@ -248,7 +248,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "handler.since_hours": {"ja": "{hours}時間{minutes}分前", "en": "{hours}h {minutes}m ago"},
     "handler.ping_summary": {"ja": "{target}の生存確認", "en": "Ping {target}"},
     "handler.state_title": {"ja": "## {target_name} の作業状態", "en": "## {target_name}'s work status"},
-    "handler.state_current_task": {"ja": "### 進行中タスク", "en": "### Current task"},
+    "handler.state_current_state": {"ja": "### 現在の状態", "en": "### Current state"},
     "handler.state_pending": {"ja": "### 保留タスク", "en": "### Pending tasks"},
     "handler.state_none": {"ja": "(なし)", "en": "(none)"},
     "handler.state_unreadable": {"ja": "(読取不可)", "en": "(unreadable)"},
@@ -586,13 +586,13 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "conversation.resolution_summary": {"ja": "解決済み: {item}", "en": "Resolved: {item}"},
     "conversation.pruned_auto_detected_header": {
-        "ja": "## 自動検出タスク（current_task.mdから退避）",
-        "en": "## Auto-detected tasks (pruned from current_task.md)",
+        "ja": "## 自動検出タスク（current_state.mdから退避）",
+        "en": "## Auto-detected tasks (pruned from current_state.md)",
     },
     # ── _anima_heartbeat.py ──
-    "heartbeat.current_task_cleanup_required": {
+    "heartbeat.current_state_cleanup_required": {
         "ja": (
-            "⚠ **current_task.md 圧縮が必要です**"
+            "⚠ **current_state.md 圧縮が必要です**"
             "（現在 {current_chars} 文字 / 上限 {max_chars} 文字）\n\n"
             "**このHBの最初のアクション**として以下を実行してください:\n"
             "1. 解決済み・完了済みのタスクをすべて削除する\n"
@@ -601,7 +601,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "4. その後、通常のHBチェックリストを実行する"
         ),
         "en": (
-            "⚠ **current_task.md cleanup required**"
+            "⚠ **current_state.md cleanup required**"
             " (current: {current_chars} chars / limit: {max_chars} chars)\n\n"
             "**As the first action of this heartbeat**, do the following:\n"
             "1. Delete all resolved/completed tasks\n"
@@ -1521,13 +1521,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ja": (
             "⏰ Heartbeatの制限時間が近づいています。今すぐ以下を実行して終了してください:\n"
             "1. 未完了の作業があれば backlog_task ツールでタスクキューに登録する\n"
-            "2. 観察結果・計画を current_task.md に update_task または write_memory_file で記録する\n"
+            "2. 観察結果・計画を current_state.md に update_task または write_memory_file で記録する\n"
             "3. [REFLECTION] ブロックを出力してHeartbeatを終了する"
         ),
         "en": (
             "⏰ Heartbeat time limit approaching. Execute the following immediately and finish:\n"
             "1. Use backlog_task tool to register any remaining work in the task queue\n"
-            "2. Record observations/plans in current_task.md via update_task or write_memory_file\n"
+            "2. Record observations/plans in current_state.md via update_task or write_memory_file\n"
             "3. Output a [REFLECTION] block and end the heartbeat"
         ),
     },
@@ -1785,8 +1785,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.read_dm_history.peer": {"ja": "DM相手の名前", "en": "Name of the DM peer"},
     "schema.read_subordinate_state.desc": {
-        "ja": "配下のAnimaの現在のタスク状態を読み取る。current_task.md（進行中タスク）と pending.md（保留タスク）の内容を返す。直属部下だけでなく孫以下の配下も指定可能。",
-        "en": "Read a subordinate Anima's current task state. Returns contents of current_task.md (active task) and pending.md (pending tasks). Can target any descendant, not just direct subordinates.",
+        "ja": "配下のAnimaの現在のタスク状態を読み取る。current_state.md（進行中タスク）と pending.md（保留タスク）の内容を返す。直属部下だけでなく孫以下の配下も指定可能。",
+        "en": "Read a subordinate Anima's current task state. Returns contents of current_state.md (active task) and pending.md (pending tasks). Can target any descendant, not just direct subordinates.",
     },
     "schema.read_subordinate_state.name": {"ja": "読み取る配下のAnima名", "en": "Subordinate Anima name to read"},
     "schema.restart_subordinate.desc": {
@@ -2095,14 +2095,14 @@ _STRINGS: dict[str, dict[str, str]] = {
             "（現在{hourly_count}通/1h, {daily_count}通/24h）。"
             "{reset_at}"
             " このターンではsend_messageを使わず、送信内容を"
-            "current_task.mdに記録して次のセッションで送信してください。"
+            "current_state.mdに記録して次のセッションで送信してください。"
         ),
         "en": (
             "GlobalOutboundLimitExceeded: Hourly send limit "
             "({max_per_hour} messages) reached "
             "({hourly_count} msgs/1h, {daily_count} msgs/24h).{reset_at}"
             " Do not use send_message this turn. Record the message content in "
-            "current_task.md and send it in the next session."
+            "current_state.md and send it in the next session."
         ),
     },
     "cascade.daily_limit": {
@@ -2111,14 +2111,14 @@ _STRINGS: dict[str, dict[str, str]] = {
             "（{max_per_day}通）に到達しています"
             "（現在{daily_count}通/24h）。"
             " このターンではsend_messageを使わず、送信内容を"
-            "current_task.mdに記録して次のセッションで送信してください。"
+            "current_state.mdに記録して次のセッションで送信してください。"
         ),
         "en": (
             "GlobalOutboundLimitExceeded: Daily send limit "
             "({max_per_day} messages) reached "
             "({daily_count} msgs/24h)."
             " Do not use send_message this turn. Record the message content in "
-            "current_task.md and send it in the next session."
+            "current_state.md and send it in the next session."
         ),
     },
     # ── settings (activity level) ──

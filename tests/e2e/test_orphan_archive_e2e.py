@@ -113,7 +113,7 @@ class TestOrphanArchiveFullPipeline:
             files={
                 "episodes/2026-02-20.jsonl": '{"event":"test"}\n',
                 "knowledge/notes.md": "# Notes\nImportant info.",
-                "state/current_task.md": "status: idle\n",
+                "state/current_state.md": "status: idle\n",
             },
         )
 
@@ -138,7 +138,7 @@ class TestOrphanArchiveFullPipeline:
         assert "Important info" in (archive / "knowledge" / "notes.md").read_text(
             encoding="utf-8"
         )
-        assert (archive / "state" / "current_task.md").exists()
+        assert (archive / "state" / "current_state.md").exists()
 
         # Step 3: Archive is preserved when young
         removed = cleanup_orphan_archives(data_dir, max_age_days=30)

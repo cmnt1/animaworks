@@ -309,7 +309,7 @@ class TestUpdateState:
     """Tests for _update_state_from_summary."""
 
     def test_appends_resolved_items(self, conv_memory, anima_dir):
-        """Resolved items are appended to current_task.md."""
+        """Resolved items are appended to current_state.md."""
         from core.memory.manager import MemoryManager
 
         mm = MemoryManager(anima_dir)

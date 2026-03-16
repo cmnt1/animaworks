@@ -269,7 +269,7 @@ Task B details: YYY (request from XXX)""",
 ```
 # Record errors
 write_memory_file(
-    path="state/current_task.md",
+    path="state/current_state.md",
     content="## Blocked\n\nChatwork API repeated errors\n- 1st: 10:00 - 500 Internal Server Error\n- 2nd: 10:05 - 500 Internal Server Error\n- 3rd: 10:10 - 500 Internal Server Error\n\nReported to supervisor. Working on other tasks.",
     mode="overwrite"
 )

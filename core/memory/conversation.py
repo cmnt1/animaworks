@@ -45,7 +45,7 @@ def _sanitize_tool_id(tool_id: str) -> str:
 
 
 def _prune_auto_detected_resolved(text: str, max_keep: int = _AUTO_DETECTED_MAX_KEEP) -> tuple[str, list[str]]:
-    """Prune old auto-detected resolved lines from current_task.md content.
+    """Prune old auto-detected resolved lines from current_state.md content.
 
     Only targets lines matching ``- ✅ ... （自動検出: ...）`` or
     ``- ✅ ... (auto-detected: ...)``.  Lines written by the LLM in
@@ -1175,7 +1175,7 @@ class ConversationMemory:
         memory_mgr: MemoryManager,
         parsed: ParsedSessionSummary,
     ) -> None:
-        """Auto-update state/current_task.md based on conversation conclusions.
+        """Auto-update state/current_state.md based on conversation conclusions.
 
         After appending new items, prunes old auto-detected resolved
         lines to prevent unbounded growth.  Pruned lines are archived
@@ -1205,7 +1205,7 @@ class ConversationMemory:
                 episode_entry = header + "\n" + "\n".join(pruned)
                 memory_mgr.append_episode(episode_entry)
                 logger.info(
-                    "Pruned %d auto-detected resolved lines from current_task.md",
+                    "Pruned %d auto-detected resolved lines from current_state.md",
                     len(pruned),
                 )
 

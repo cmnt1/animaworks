@@ -69,6 +69,10 @@ class MemoryToolsMixin:
 
     def _handle_read_memory_file(self, args: dict[str, Any]) -> str:
         rel = args["path"]
+
+        if rel == "state/current_task.md":
+            rel = args["path"] = "state/current_state.md"
+
         # Support common_knowledge/ prefix — resolve to shared dir
         if rel.startswith("common_knowledge/"):
             from core.paths import get_common_knowledge_dir
@@ -151,6 +155,9 @@ class MemoryToolsMixin:
 
     def _handle_write_memory_file(self, args: dict[str, Any]) -> str:
         rel = args["path"]
+
+        if rel == "state/current_task.md":
+            rel = args["path"] = "state/current_state.md"
 
         if rel.startswith("reference/"):
             return _error_result(

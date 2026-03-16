@@ -172,7 +172,7 @@ These cannot be written by the agent that owns them:
 | Path | Direct Report | All Descendants |
 |------|:---:|:---:|
 | `activity_log/` | Read | Read |
-| `state/current_task.md`, `pending.md` | — | Read |
+| `state/current_state.md`, `pending.md` | — | Read |
 | `state/task_queue.jsonl`, `pending/` | — | Read |
 | `status.json` | Read/Write | Read |
 | `identity.md` | — | Read |

@@ -150,7 +150,7 @@ New task description
 
         mock_anima = MagicMock()
         mock_anima._status = "idle"
-        mock_anima._current_task = None
+        mock_anima._task_slots = {}
         mock_anima.needs_bootstrap = False
         mock_anima.memory.read_heartbeat_config.return_value = "5分ごと\n8:00 - 23:00"
         mock_anima.memory.read_cron_config.return_value = ""

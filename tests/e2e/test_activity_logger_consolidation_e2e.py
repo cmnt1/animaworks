@@ -40,7 +40,7 @@ class TestAnimaActivityLogging:
         anima._lock = asyncio.Lock()
         anima._user_waiting = asyncio.Event()
         anima._status = "idle"
-        anima._current_task = ""
+        anima._task_slots = {}
         anima._last_heartbeat = None
         anima._last_activity = None
         anima._on_lock_released = None

@@ -67,9 +67,38 @@ class MemoryManager:
         ):
             d.mkdir(parents=True, exist_ok=True)
 
+        self._migrate_current_task_to_state()
+
         # Eagerly initialize delegates (also available lazily via properties
         # for code that bypasses __init__ via __new__).
         self._init_delegates()
+
+    def _migrate_current_task_to_state(self) -> None:
+        """Migrate current_task.md to current_state.md (one-time rename).
+
+        - If state/current_task.md exists and state/current_state.md does NOT:
+          rename (os.rename).
+        - If both exist: log warning, use current_state.md.
+        - If anima_dir/current_task.md (legacy root-level) exists: log warning.
+        """
+        old_task = self.state_dir / "current_task.md"
+        new_state = self.state_dir / "current_state.md"
+        legacy_root = self.anima_dir / "current_task.md"
+
+        if legacy_root.exists():
+            logger.warning("Legacy root-level current_task.md found at %s", legacy_root)
+
+        if old_task.exists() and not new_state.exists():
+            try:
+                os.rename(old_task, new_state)
+                logger.info("Migrated %s -> %s", old_task.name, new_state.name)
+            except OSError:
+                logger.warning("Failed to migrate %s to %s", old_task, new_state, exc_info=True)
+        elif old_task.exists() and new_state.exists():
+            logger.warning(
+                "Both current_task.md and current_state.md exist in %s; using current_state.md",
+                self.state_dir,
+            )
 
     def _init_delegates(self) -> None:
         """Create delegate instances.  Safe to call multiple times.
@@ -185,7 +214,7 @@ class MemoryManager:
         return self._read(self.anima_dir / "permissions.md")
 
     def read_current_state(self) -> str:
-        return self._read(self.state_dir / "current_task.md") or "status: idle"
+        return self._read(self.state_dir / "current_state.md") or "status: idle"
 
     def read_pending(self) -> str:
         return self._read(self.state_dir / "pending.md")
@@ -293,7 +322,7 @@ class MemoryManager:
         self._rag.index_file(path, "episodes", origin=origin)
 
     def update_state(self, content: str) -> None:
-        atomic_write_text(self.state_dir / "current_task.md", content)
+        atomic_write_text(self.state_dir / "current_state.md", content)
 
     def update_pending(self, content: str) -> None:
         atomic_write_text(self.state_dir / "pending.md", content)

@@ -658,7 +658,7 @@ class TestStateFileLock:
         handler = ToolHandler(anima_dir=anima_dir, memory=mm)
         state_dir = anima_dir / "state"
         state_dir.mkdir(exist_ok=True)
-        assert handler._is_state_file(state_dir / "current_task.md")
+        assert handler._is_state_file(state_dir / "current_state.md")
         assert handler._is_state_file(state_dir / "pending.md")
         assert not handler._is_state_file(anima_dir / "identity.md")
 

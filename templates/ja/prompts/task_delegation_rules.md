@@ -45,7 +45,7 @@ TaskExec はサブエージェントとして動作する。あなたと同じ i
 ### description の記述原則
 
 - **ファイルパスと行番号は必ず記載する**: 実行者は記憶検索ができるが、具体的な場所を指定した方が確実に正しいファイルに到達できる
-- **現在の作業状態を含める**: current_task.md の関連部分を `context` フィールドにコピーすること（自動注入されるが、明示的に補足すると精度が上がる）
+- **現在の作業状態を含める**: current_state.md の関連部分を `context` フィールドにコピーすること（自動注入されるが、明示的に補足すると精度が上がる）
 - **「なぜやるか」を明記する**: 背景と目的がないと実行者が判断を誤る
 
 ### description に含めるべき情報
@@ -64,7 +64,7 @@ TaskExec はサブエージェントとして動作する。あなたと同じ i
 submit_tasks(batch_id="hb-20260301-api-fix", tasks=[
   {{"task_id": "api-fix", "title": "API認証のasync化",
    "description": "core/auth/manager.py の verify_token()（L45-60）を async 化する。FastAPI の非同期ハンドラからの呼び出しでブロッキングが発生しているため。",
-   "context": "current_task.md: API応答遅延の調査中。verify_token が同期I/Oでブロックしている",
+   "context": "current_state.md: API応答遅延の調査中。verify_token が同期I/Oでブロックしている",
    "file_paths": ["core/auth/manager.py:45"],
    "acceptance_criteria": ["verify_token が async def になっている", "既存テストが通る"],
    "constraints": ["公開APIの引数・戻り値を変えない"]}}
@@ -91,7 +91,7 @@ submit_tasks(batch_id="deploy-20260301", tasks=[
 | `description` | MUST | 具体的な作業内容（上記の記述原則に従う） |
 | `parallel` | MAY | `true` で並列実行可能（デフォルト: `false`） |
 | `depends_on` | MAY | 依存する先行タスクIDの配列 |
-| `context` | MAY | 背景情報（current_task.md の関連部分を含める） |
+| `context` | MAY | 背景情報（current_state.md の関連部分を含める） |
 | `file_paths` | MAY | 関連ファイルパス |
 | `acceptance_criteria` | MAY | 完了条件 |
 | `constraints` | MAY | 制約事項 |

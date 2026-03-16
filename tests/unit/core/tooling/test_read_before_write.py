@@ -95,11 +95,11 @@ class TestReadBeforeWriteGuard:
 
     def test_skip_state(self, handler, anima_dir):
         """State directory should skip read-before-write check."""
-        (anima_dir / "state" / "current_task.md").write_text("old task")
+        (anima_dir / "state" / "current_state.md").write_text("old state")
 
         result = handler.handle(
             "write_memory_file",
-            {"path": "state/current_task.md", "content": "new task"},
+            {"path": "state/current_state.md", "content": "new state"},
         )
 
         assert "Written" in result

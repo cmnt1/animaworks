@@ -205,7 +205,7 @@ def create_system_router() -> APIRouter:
             result: dict[str, object] = {
                 "streaming": False,
                 "status": "",
-                "current_task": "",
+                "active_label": "",
                 "reasons": [],
             }
 
@@ -227,14 +227,14 @@ def create_system_router() -> APIRouter:
                     timeout=3.0,
                 )
                 status_text = str(status_resp.get("status", "") or "")
-                current_task = str(status_resp.get("current_task", "") or "")
+                active_label = str(status_resp.get("active_label", "") or "")
                 result["status"] = status_text
-                result["current_task"] = current_task
+                result["active_label"] = active_label
                 if status_text and status_text != "idle":
                     cast_reasons = result["reasons"]
                     if isinstance(cast_reasons, list):
                         cast_reasons.append(f"status:{status_text}")
-                elif current_task:
+                elif active_label:
                     cast_reasons = result["reasons"]
                     if isinstance(cast_reasons, list):
                         cast_reasons.append("task_running")
@@ -286,7 +286,7 @@ def create_system_router() -> APIRouter:
                                 "name": name,
                                 "reasons": reasons,
                                 "status": busy.get("status", ""),
-                                "current_task": busy.get("current_task", ""),
+                                "active_label": busy.get("active_label", ""),
                             }
                         )
                         logger.info(
@@ -294,7 +294,7 @@ def create_system_router() -> APIRouter:
                             name,
                             ",".join(str(r) for r in reasons),
                             busy.get("status", ""),
-                            busy.get("current_task", ""),
+                            busy.get("active_label", ""),
                         )
                         continue
                     # Existing anima — restart to pick up file changes

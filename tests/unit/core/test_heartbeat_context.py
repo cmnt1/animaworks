@@ -7,7 +7,7 @@ Covers:
 - A-1: run_heartbeat() loads recent conversation turns into the heartbeat prompt
 - A-2: load_recent_heartbeat_summary() returns formatted entries, filters HEARTBEAT_OK
 - A-3: Non-HEARTBEAT_OK heartbeat results are recorded to episodes
-- B-1: build_system_prompt() uses emphasized header for non-idle current_task
+- B-1: build_system_prompt() uses emphasized header for non-idle current_state
 """
 from __future__ import annotations
 
@@ -242,12 +242,12 @@ class TestLoadRecentHeartbeatSummary:
 
 
 # ══════════════════════════════════════════════════════════
-# 2. TestBuildSystemPromptCurrentTask (B-1)
+# 2. TestBuildSystemPromptCurrentState (B-1)
 # ══════════════════════════════════════════════════════════
 
 
-class TestBuildSystemPromptCurrentTask:
-    """Tests that build_system_prompt uses correct headers based on current_task state."""
+class TestBuildSystemPromptCurrentState:
+    """Tests that build_system_prompt uses correct headers based on current_state."""
 
     def test_idle_uses_normal_header(self, mock_memory: MagicMock):
         """When state is 'status: idle', uses the '## 現在の状態' header."""
