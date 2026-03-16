@@ -37,6 +37,7 @@ class _FakeWriteHandler(MemoryToolsMixin):
         self._state_file_lock: threading.Lock | None = None
         self._on_schedule_changed = None
         self._min_trust_seen = 2
+        self._read_paths: set[str] = set()
 
     def _is_state_file(self, path: Path) -> bool:
         return False
@@ -99,6 +100,7 @@ class TestParsefailedFrontmatterFallback:
             encoding="utf-8",
         )
 
+        handler._read_paths.add('knowledge/existing.md')
         broken_content = "---\n!!!broken!!!\n---\n\nNew content here."
         handler._handle_write_memory_file({
             "path": "knowledge/existing.md",
