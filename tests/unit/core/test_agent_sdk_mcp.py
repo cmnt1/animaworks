@@ -268,7 +268,7 @@ class TestMcpServerConfig:
         assert "aw" in mcp_servers
         # Extra servers should be merged as-is
         assert mcp_servers["browser"]["command"] == "npx"
-        assert mcp_servers["jira"]["args"] == ["python", "-m", "jira_mcp"] or mcp_servers["jira"]["args"] == ["-m", "jira_mcp"]
+        assert mcp_servers["jira"]["args"] == ["-m", "jira_mcp"]
 
     @pytest.mark.asyncio
     async def test_extra_mcp_servers_add_allowed_tool_wildcards(
