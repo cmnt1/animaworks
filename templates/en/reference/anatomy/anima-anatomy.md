@@ -17,6 +17,10 @@ Refer to this when you need to know "what is this file for?" or "can I modify it
 ├── heartbeat.md         # Periodic patrol settings
 ├── cron.md              # Scheduled task definitions
 ├── state/               # Work state
+│   ├── current_state.md
+│   ├── task_queue.jsonl
+│   ├── pending/         # Execution queue
+│   └── task_results/   # Task execution results
 ├── episodes/            # Episodic memory
 ├── knowledge/           # Semantic memory
 ├── procedures/          # Procedural memory
@@ -243,13 +247,12 @@ command: /usr/local/bin/backup.sh
 
 ## Work State (state/)
 
-### state/current_state.md — Current Task
+### state/current_state.md — Current State
 
-The task you are currently working on (one at a time). Records the goal, progress, and blockers.
+The task or situation you are currently working on (one at a time). Records the goal, progress, and blockers.
+Size limit is 3000 characters. When exceeded, older content is automatically archived to that day's episode during Heartbeat.
 
-### state/pending.md — Backlog
-
-Free-form notes for tasks not yet started or things to remember.
+> **About legacy `pending.md`**: The former `state/pending.md` (backlog) has been deprecated. Its contents were merged into `current_state.md` and the file was removed (automatic migration). Task backlog management is now unified in `task_queue.jsonl` (Layer 2).
 
 ### state/task_queue.jsonl — Task Queue
 
@@ -260,6 +263,11 @@ Tasks with `source: human` MUST be processed with highest priority.
 
 Execution queue for tasks submitted via `submit_tasks` / `delegate_task` tools.
 TaskExec polls every 3 seconds, automatically picking up and executing them. Do not manually create JSON files here.
+
+### state/task_results/ — Task Execution Results
+
+Directory where TaskExec stores result summaries for completed tasks (`{task_id}.md`, max 2000 characters).
+Dependent tasks automatically receive these results as context. Automatically deleted after 7 days (TTL).
 
 | Property | Value |
 |----------|-------|

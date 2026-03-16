@@ -17,6 +17,10 @@
 ├── heartbeat.md         # 定期巡回の設定
 ├── cron.md              # 定時タスクの設定
 ├── state/               # 作業状態
+│   ├── current_state.md
+│   ├── task_queue.jsonl
+│   ├── pending/         # 実行キュー
+│   └── task_results/    # タスク実行結果
 ├── episodes/            # エピソード記憶
 ├── knowledge/           # 意味記憶
 ├── procedures/          # 手続き記憶
@@ -243,13 +247,12 @@ command: /usr/local/bin/backup.sh
 
 ## 作業状態（state/）
 
-### state/current_state.md — 今のタスク
+### state/current_state.md — 今の状態
 
-今まさに取り組んでいるタスク（1つ）。タスクの目標・進捗・ブロッカーを記録する。
+今まさに取り組んでいるタスクや状況（1つ）。タスクの目標・進捗・ブロッカーを記録する。
+サイズ上限は3000文字。超過した場合、Heartbeat時に古い内容が当日のエピソードに自動アーカイブされる。
 
-### state/pending.md — バックログ
-
-まだ着手していないタスクや覚えておきたいことの自由形式メモ。
+> **旧 `pending.md` について**: 以前存在した `state/pending.md`（バックログ）は廃止済み。内容は `current_state.md` に統合された後、ファイルが削除される（自動マイグレーション）。タスクのバックログ管理は `task_queue.jsonl`（Layer 2）に一本化されている。
 
 ### state/task_queue.jsonl — タスクキュー
 
@@ -260,6 +263,11 @@ command: /usr/local/bin/backup.sh
 
 `submit_tasks` / `delegate_task` ツール経由で投入されたタスクの実行キュー。
 TaskExec が3秒間隔でポーリングし、自動的に取得・実行する。手動でJSONを作成してはならない。
+
+### state/task_results/ — タスク実行結果
+
+TaskExec が完了したタスクの結果要約を保存するディレクトリ（`{task_id}.md`、最大2000文字）。
+依存タスクはこの結果をコンテキストとして自動的に受け取る。7日間のTTLで自動削除される。
 
 | 項目 | 値 |
 |------|-----|

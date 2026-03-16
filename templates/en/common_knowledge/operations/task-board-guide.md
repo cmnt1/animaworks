@@ -14,7 +14,7 @@ everything at a glance**. `shared/task-board.md` solves this as a human-facing d
 |----------|---------|----------|
 | `state/task_queue.jsonl` | Task tracking (append-only) | Agents |
 | `state/current_state.md` | Current work notes | Individual agent |
-| `state/pending.md` | Backlog | Individual agent |
+| `state/task_results/` | Task execution results | System auto |
 | **`shared/task-board.md`** | **All-task overview** | **Human (owner)** |
 
 ## Format

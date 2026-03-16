@@ -141,18 +141,23 @@ create_skill(name="deploy-procedure", description="Production deploy procedure",
 
 ### Priming (Automatic Recall)
 
-Every time you start a conversation, the Priming engine searches relevant memories in parallel across 6 channels and automatically injects them into the system prompt:
+Every time you start a conversation, the Priming engine searches relevant memories in parallel across multiple channels and automatically injects them into the system prompt:
 
-| Channel | What It Searches |
-|---------|-----------------|
-| Sender profile | User information about the other party |
-| Recent activity | Recent action timeline |
-| Related knowledge | Knowledge via RAG vector search |
-| Skill match | Skill names relevant to the message |
-| Pending tasks | Task queue summary |
-| Episodes | Past experiences via RAG search |
+| Channel | What It Searches | Budget |
+|---------|-----------------|--------|
+| A: Sender profile | User information about the other party | 500 |
+| B: Recent activity | Recent action timeline | 1300 |
+| C: Related knowledge | Knowledge via RAG vector search | 1200 |
+| C0: Important knowledge | Knowledge tagged with `[IMPORTANT]` (summary pointers) | 300 |
+| D: Skill match | Skill names relevant to the message | 200 |
+| E: Pending tasks | Task queue summary + completed task results | 500 |
+| F: Episodes | Past experiences via RAG search | 500 |
 
-**[IMPORTANT]** Knowledge tagged with `[IMPORTANT]` is always injected as summary pointers in Priming, in addition to RAG search results. Only the summary is shown; use `read_memory_file` for full details. When moving important business rules to knowledge/, add the `[IMPORTANT]` tag.
+Additionally injected:
+- **Recent outbound**: Messages sent and channel posts in the last 2 hours (max 3 items)
+- **Pending human notifications**: `human_notify` events in the last 24 hours (500 tokens)
+
+**`[IMPORTANT]` tag and Channel C0**: Knowledge tagged with `[IMPORTANT]` is injected as summary pointers via Channel C0 in addition to normal RAG search (Channel C). Only the summary is shown; use `read_memory_file` for full details. When moving important business rules to knowledge/, add the `[IMPORTANT]` tag at the beginning.
 
 Priming runs automatically, so no explicit action is needed.
 
@@ -170,13 +175,24 @@ Processes that automatically organize and refine memories:
 
 Accumulating memories indefinitely degrades search accuracy, so active forgetting occurs in 3 stages:
 
-| Stage | Frequency | Process |
-|-------|-----------|---------|
-| Synaptic downscaling | Daily | Mark chunks with no access for 90 days and fewer than 3 references |
-| Neurogenesis reorganization | Weekly | Merge low-activity chunks with similarity above 0.80 |
-| Complete forgetting | Monthly | Archive and delete chunks with low activity for 60+ days |
+| Stage | Frequency | Condition | Process |
+|-------|-----------|-----------|---------|
+| Synaptic downscaling | Daily | No access for 90 days **and** fewer than 3 references | Mark activity level as `low` |
+| Neurogenesis reorganization | Weekly | Activity level `low` **and** similarity ≥ 0.80 between pairs | LLM merges; original chunks deleted |
+| Complete forgetting | Monthly | Low activity for 90+ days **and** 2 or fewer references | Move to archive; remove from index |
 
-**Protected (never forgotten)**: `procedures/`, `skills/`, `shared/users/`
+**Protection rules** (conditions under which items are not forgotten):
+
+| Target | Protection Condition |
+|-------|----------------------|
+| `skills/`, `shared/users/` | Always protected (never forgotten) |
+| `[IMPORTANT]` tagged | Protected for 365 days from last access |
+| Knowledge: `success_count >= 2` | Protected |
+| Procedures: `importance == "important"` | Protected |
+| Procedures: `protected == True` | Protected |
+| Procedures: `version >= 3` | Protected |
+
+**Procedures special rule**: Subject to downscaling if inactive for 180 days with fewer than 3 uses, or if `failure_count >= 3` and `utility < 0.3`.
 
 ---
 

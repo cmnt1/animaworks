@@ -17,6 +17,8 @@ read_memory_file(path="reference/anatomy/anima-anatomy.md")  # Example
 | File | Content |
 |------|---------|
 | `anima-anatomy.md` | Complete guide to Anima configuration files (roles, change rules, encapsulation) |
+| `working-memory.md` | Working memory (state/) technical reference (current_state.md spec, size limits, migration) |
+| `priming-channels.md` | Priming engine full channel technical spec (budgets, search sources, dynamic adjustment) |
 
 ### communication/ — External Integration Setup
 

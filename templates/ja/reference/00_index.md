@@ -17,6 +17,8 @@ read_memory_file(path="reference/anatomy/anima-anatomy.md")  # 例
 | ファイル | 内容 |
 |---------|------|
 | `anima-anatomy.md` | Anima構成ファイル完全ガイド（全ファイルの役割・変更ルール・カプセル化） |
+| `working-memory.md` | ワーキングメモリ（state/）技術リファレンス（current_state.md仕様・サイズ制御・マイグレーション） |
+| `priming-channels.md` | Primingエンジン全チャネル技術仕様（バジェット・検索ソース・動的調整） |
 
 ### communication/ — 外部連携設定
 

@@ -25,18 +25,21 @@ The 5 pathways through which Animas access common_knowledge, and the background 
 - **Exclusion**: Omitted when `is_task=True` (TaskExec)
 - **Anima behavior**: Sees hint, then actively accesses via `search_memory` or `read_memory_file`
 
-## Path 2: Priming Channel C — RAG Vector Search
+## Path 2: Priming Channel C / C0 — RAG Vector Search
 
-`PrimingEngine` automatically performs vector search using message keywords, merging personal knowledge with shared common_knowledge results into the system prompt.
+`PrimingEngine` automatically performs vector search using message keywords, merging personal knowledge with shared common_knowledge into the system prompt.
 
-- **Budget**: 700 tokens (Channel C allocation)
+- **Channel C budget**: 1200 tokens
+- **Channel C0 budget**: 300 tokens (dedicated to overview pointers for chunks tagged with `[IMPORTANT]`)
 - **Search target**: `shared_common_knowledge` collection (ChromaDB)
 - **Merge method**: Personal knowledge results merged with shared results by score
+- **Trust separation**: Channel C results are separated by trust level (medium / untrusted). Chunks from external platforms are treated as untrusted
 - **Anima behavior**: Relevant common_knowledge fragments auto-displayed in Priming section
 
 ### Note
-- Only fragments within the 700-token budget, not full documents
-- Risk of personal knowledge being displaced if common_knowledge chunk count grows too large
+- The 1200-token constraint means only relevant fragments, not full documents
+- Risk of personal knowledge being displaced if common_knowledge document count grows too large
+- `[IMPORTANT]` chunks are always injected via Channel C0, making them effective for reliable recall of critical business rules
 
 ## Path 3: `search_memory` Tool
 

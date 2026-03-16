@@ -14,7 +14,7 @@ AnimaWorks のタスク管理は `task_queue.jsonl` + `current_state.md` + `dele
 |---------|------|--------|
 | `state/task_queue.jsonl` | タスク追跡（append-only） | エージェント |
 | `state/current_state.md` | 現在の作業メモ | エージェント自身 |
-| `state/pending.md` | バックログ | エージェント自身 |
+| `state/task_results/` | タスク実行結果 | システム自動 |
 | **`shared/task-board.md`** | **全タスク俯瞰** | **人間（オーナー）** |
 
 ## フォーマット

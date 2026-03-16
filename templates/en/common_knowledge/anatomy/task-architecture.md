@@ -13,8 +13,8 @@ Higher layers are more strictly managed by the system; lower layers are left to 
 │  Layer 2: Task Registry                          │  ← Structured. Managed via tools
 │  state/task_queue.jsonl                          │
 ├─────────────────────────────────────────────────┤
-│  Layer 3: Working Notes                          │  ← Free-form. Self-managed
-│  state/current_state.md / state/pending.md        │
+│  Layer 3: Working Memory                         │  ← Free-form. Self-managed
+│  state/current_state.md                          │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -34,7 +34,8 @@ Contains the full task description (description, acceptance_criteria, constraint
 PendingTaskExecutor detects tasks, moves them to `processing/`, executes, and deletes on completion.
 Failed tasks are moved to `failed/`.
 
-When a task has a `workspace` field, the resolved absolute path is injected as `working_directory` into the TaskExec prompt. Resolution order: task's `workspace` → `status.json` `default_workspace` → none.
+- **workspace**: When a task has a `workspace` field, the resolved absolute path is injected as `working_directory` into the TaskExec prompt.
+- **task_results**: Completed task result summaries are saved to `state/task_results/{task_id}.md` (max 2,000 characters). Dependent tasks automatically receive these results as context. 7-day TTL for auto-deletion.
 
 Animas do not directly manipulate this layer. They write indirectly through tools.
 
@@ -54,28 +55,30 @@ Holds task summary information (task_id, summary, status, deadline, assignee).
 Priming Channel E injects pending/in_progress tasks into the system prompt.
 This is the official record of "what needs to be done." Human-origin tasks (source=human) must always be registered here.
 
-## Layer 3: Working Notes (state/current_state.md, state/pending.md)
+## Layer 3: Working Memory (state/current_state.md)
 
 Analogous to sticky notes / personal notes.
 
 | Property | Description |
 |----------|-------------|
 | Format | Markdown (free-form) |
-| Lifecycle | Anima creates, updates, and deletes freely |
+| Lifecycle | Anima creates and updates freely. Auto-archived by Heartbeat when exceeding 3,000 characters |
 | Managed by | Anima (full discretion) |
 | Writers | Anima (direct file operations) |
-| Readers | Anima itself, Priming (current_state.md only) |
+| Readers | Anima itself, Priming (current_state.md), supervisor (read_subordinate_state) |
 
-`current_state.md` is "what I'm doing right now." `pending.md` is "my personal backlog."
-Content may overlap with Layer 2. Layer 3 is Anima's thinking space for organizing in their own words.
+`current_state.md` is working memory that records "what I'm doing right now," "what I observed," and "what blockers exist."
+Task tracking and management are handled by Layer 2 (task_queue.jsonl).
+
+> **pending.md is deprecated**: The former `state/pending.md` was merged into `current_state.md` and is auto-deleted. Backlog management is now unified in Layer 2.
 
 ## Inter-Layer Relationships
 
 ### Data Flow
 
 ```
-Human instruction ─┬─► submit_tasks ───────────────► Layer 2 (task_queue.jsonl)
-                   └─► Anima writes current_state.md ► Layer 3
+Human instruction ─┬─► submit_tasks ─────────────────► Layer 2 (task_queue.jsonl)
+                   └─► Anima records in current_state.md ► Layer 3
 
 submit_tasks ─┬─► state/pending/*.json ──────► Layer 1 (Execution Queue)
             └─► Register in task_queue.jsonl ► Layer 2 (Task Registry)
@@ -86,6 +89,11 @@ delegate_task ─┬─► Subordinate's state/pending/ ► Layer 1
 
 PendingTaskExecutor ─┬─► Success → Update task_queue to done
                      └─► Failure → Update task_queue to failed
+
+update_task(status="pending") ─► Regenerate Layer 1 JSON from meta.task_desc ► Layer 1 (retry)
+
+Session end ─┬─► Resolved tasks → Update task_queue.jsonl to done
+             └─► New tasks detected → Auto-register in task_queue.jsonl
 ```
 
 ### Synchronization Rules
@@ -96,6 +104,9 @@ PendingTaskExecutor ─┬─► Success → Update task_queue to done
 | delegate_task submission | JSON created (subordinate) | Registered in both queues | — |
 | TaskExec completion | JSON deleted | Updated to done | — |
 | TaskExec failure | Moved to failed/ | Updated to failed | — |
+| TaskExec retry | JSON regenerated | pending→in_progress | — |
+| Session end: resolved | — | Updated to done | — |
+| Session end: new tasks | — | Registered as pending | — |
 | Anima starts work | — | Updated to in_progress | current_state.md updated |
 | Anima completes work | — | Updated to done | Reset to idle |
 | After Heartbeat | — | compact runs | — |
@@ -103,7 +114,7 @@ PendingTaskExecutor ─┬─► Success → Update task_queue to done
 ### What Each Layer Does NOT Need to Know
 
 - **Layer 1** does not know about Layer 2/3 (PendingTaskExecutor just consumes JSON)
-- **Layer 3** does not need to know about Layer 1/2 (Anima's free notes)
+- **Layer 3** does not need to know about Layer 1/2 (Anima's working memory)
 - **Layer 2** bridges Layer 1 and Layer 3 as the central tracking layer
 
 ## Design Principles

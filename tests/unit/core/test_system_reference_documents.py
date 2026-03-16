@@ -862,6 +862,8 @@ _TEMPLATES_REF_DIR = Path(__file__).resolve().parent.parent.parent.parent / "tem
 _EXPECTED_REFERENCE_FILES = [
     "00_index.md",
     "anatomy/anima-anatomy.md",
+    "anatomy/priming-channels.md",
+    "anatomy/working-memory.md",
     "communication/slack-bot-token-guide.md",
     "internals/common-knowledge-access-paths.md",
     "operations/browser-automation-guide.md",
