@@ -126,9 +126,8 @@ class TestConversationTurnLimitE2E:
                 "core.prompt.context.resolve_context_window",
                 return_value=200_000,
             ),
-            patch.object(
-                conv,
-                "_call_compression_llm",
+            patch(
+                "core.memory.conversation_compression._call_compression_llm",
                 new_callable=AsyncMock,
                 return_value="Summary of older conversation turns.",
             ),
