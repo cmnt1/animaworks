@@ -160,7 +160,8 @@ class TestBuildLlmKwargs:
     def test_includes_model_and_max_tokens(self, executor):
         kwargs = executor._build_llm_kwargs()
         assert kwargs["model"] == "openai/gpt-4o"
-        assert kwargs["max_tokens"] == 1024
+        # openai/ models default to thinking=True, which enforces a 16384 minimum
+        assert kwargs["max_tokens"] == 16384
 
     def test_includes_api_key(self, executor):
         kwargs = executor._build_llm_kwargs()

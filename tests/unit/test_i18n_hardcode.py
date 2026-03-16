@@ -75,6 +75,8 @@ _REGEX_METACHAR_RE = re.compile(
 # When you fix violations, lower the count so the ratchet tightens.
 
 KNOWN_VIOLATIONS: dict[str, int] = {
+    # bilingual empty-state placeholders for prompt injection (ja/en)
+    "core/_anima_lifecycle.py": 2,
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)
     "core/_anima_inbox.py": 2,
     # MD section names used for parsing (基本情報, 人格, etc.)
