@@ -309,6 +309,32 @@ def _build_emotion_instruction() -> str:
 EMOTION_INSTRUCTION = _build_emotion_instruction()
 
 
+def _read_default_workspace(anima_dir: Path) -> str:
+    """Read default_workspace from status.json and resolve via workspace registry.
+
+    Returns a formatted string for prompt injection, or empty string if not set.
+    """
+    import json
+
+    status_path = anima_dir / "status.json"
+    if not status_path.is_file():
+        return ""
+    try:
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return ""
+    alias = (data.get("default_workspace") or "").strip()
+    if not alias:
+        return ""
+    try:
+        from core.workspace import resolve_workspace
+
+        resolved = resolve_workspace(alias)
+        return t("builder.default_workspace", path=str(resolved), alias=alias)
+    except ValueError:
+        return t("builder.default_workspace_unresolved", alias=alias)
+
+
 def _discover_other_animas(anima_dir: Path) -> list[str]:
     """List sibling anima directories."""
     animas_root = anima_dir.parent
@@ -741,6 +767,11 @@ def build_system_prompt(
     # ── Group 1: 動作環境と行動ルール ─────────────────────────
     _add(_ss.get("group1_header", "# 1. Environment and Action Rules"), "group1_header", 1)
 
+    # Default workspace from status.json (resolved via workspace registry)
+    _default_workspace = _read_default_workspace(pd)
+    if _default_workspace:
+        _add(_default_workspace, "default_workspace", 2)
+
     if is_task:
         _add(f"Anima: {pd.name}\nData directory: {data_dir}", "environment", 1)
     else:
@@ -765,6 +796,25 @@ def build_system_prompt(
     injection = memory.read_injection()
     if injection:
         _add(injection, "injection", 1)
+        try:
+            from core.config import load_config
+
+            config = load_config()
+            threshold = config.prompt.injection_size_warning_chars
+            if len(injection) > threshold:
+                warn_text = t(
+                    "builder.injection_size_warning",
+                    size=len(injection),
+                    threshold=threshold,
+                )
+                _add(warn_text, "injection_size_warning", 1)
+                logger.warning(
+                    "injection.md oversized: %d chars (threshold=%d)",
+                    len(injection),
+                    threshold,
+                )
+        except Exception:
+            pass
 
     current_time = now_local().strftime("%Y-%m-%d %H:%M (%Z)")
     _add(f"{_ss.get('current_time_label', '**Current time**:')} {current_time}", "current_time", 1)
