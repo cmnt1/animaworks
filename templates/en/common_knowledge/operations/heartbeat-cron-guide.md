@@ -304,7 +304,7 @@ type: llm
 Review yesterday's episodes/ and plan today's tasks.
 Prioritize by vision and goals.
 Write results to state/current_state.md.
-Also check pending.md and adjust priorities if needed.
+Also check task_queue.jsonl for pending tasks and adjust priorities if needed.
 ```
 
 For description (body after `type:` line), SHOULD include:
@@ -441,7 +441,7 @@ LLM task results are recorded as `CycleResult` with:
 ## Daily Plan
 schedule: 0 9 * * *
 type: llm
-Check yesterday's activity in episodes/, review pending.md.
+Check yesterday's activity in episodes/, review task_queue.jsonl for pending tasks.
 Set today's top priorities and update state/current_state.md.
 
 ## Weekly Reflection

@@ -25,7 +25,7 @@ description: >-
 | `delegate_task` | 直属部下にタスクを委譲（キュー追加 + DM送信 + 自分側追跡エントリ作成） |
 | `org_dashboard` | 配下全体のプロセス状態・最終アクティビティ・現在タスク・タスク数をツリー表示 |
 | `ping_subordinate` | 配下の生存確認（`name` 省略で全員一括、指定で単一） |
-| `read_subordinate_state` | 配下の `current_state.md` と `pending.md` を読み取り |
+| `read_subordinate_state` | 配下の `current_state.md` を読み取り |
 | `audit_subordinate` | 配下の直近活動を包括監査（活動サマリー・タスク状況・エラー頻度・ツール使用統計・通信パターン） |
 
 ### 委譲タスク追跡

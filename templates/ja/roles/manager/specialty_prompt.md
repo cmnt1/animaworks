@@ -91,7 +91,7 @@
 ### 状態把握
 - `org_dashboard` — 配下全体のプロセス状態・最終アクティビティ・現在タスク・タスク数をツリー表示。heartbeatの冒頭で使うと全体像を即座に把握できる
 - `ping_subordinate` — 配下の生存確認。name省略で全員一括、指定で単一Anima。無応答の部下がいないか確認
-- `read_subordinate_state` — 配下のcurrent_state.md + pending.mdを読み取り。孫以下も指定可能
+- `read_subordinate_state` — 配下のcurrent_state.md を読み取り。孫以下も指定可能
 - `check_permissions` — 自分に許可されているツール・ファイルアクセスの一覧。試行→失敗を防ぐ
 - `audit_subordinate` — 配下Animaの直近活動を包括監査。活動サマリー・タスク状況・エラー頻度・ツール使用統計・通信パターンをレポートする。パラメータ: name（必須）、days（任意、デフォルト1）。**部下の行動に異常（エラー多発、長時間アイドル、タスク未消化、不自然な通信パターン等）を感じたときは積極的に使うこと。** 問題の早期発見・早期対処がマネージャーの最重要責務
 

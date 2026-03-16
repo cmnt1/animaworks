@@ -224,7 +224,7 @@ All methods produce the following directories and files:
 ├── skills/              # Personal skills
 ├── state/               # Working memory
 │   ├── current_state.md  # Current task
-│   └── pending.md       # Pending tasks list
+│   └── task_queue.jsonl # Persistent task queue (pending tasks, etc.)
 └── shortterm/           # Short-term memory (session continuity)
     └── archive/
 ```

@@ -91,7 +91,7 @@ Managers have access to these dedicated tools. Use them before asking individual
 ### Status
 - `org_dashboard` — Tree view of process state, last activity, current task, and task count for all subordinates. Use at Heartbeat start for quick overview
 - `ping_subordinate` — Subordinate liveness check. Omit name for all, specify for single Anima. Check for unresponsive subordinates
-- `read_subordinate_state` — Read subordinates' current_state.md and pending.md. Can specify descendants
+- `read_subordinate_state` — Read subordinates' current_state.md. Can specify descendants
 - `check_permissions` — List your allowed tools and file access. Avoid trial-and-error failures
 - `audit_subordinate` — Comprehensive audit of a subordinate's recent activity. Reports activity summary, task status, error frequency, tool usage statistics, and communication patterns. Parameters: name (required), days (optional, default 1). **Proactively use this when you sense anomalies in subordinate behavior (frequent errors, prolonged idle, unprocessed tasks, unusual communication patterns, etc.).** Early detection and early response is a manager's most critical responsibility
 

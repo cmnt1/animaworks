@@ -117,7 +117,7 @@ then read it with `read_memory_file(path="common_knowledge/...")`.
 | File | Description |
 |------|-------------|
 | `project-setup.md` | → Moved to `reference/operations/project-setup.md`. Project configuration |
-| `task-management.md` | Task management (current_state.md / pending.md usage, state transitions, priorities) |
+| `task-management.md` | Task management (current_state.md usage and task queue, state transitions, priorities) |
 | `task-board-guide.md` | Task board (human-facing dashboard) — structure and operational guidelines |
 | `heartbeat-cron-guide.md` | Scheduling and running Heartbeat and cron (how Heartbeat works, cron definitions, self-updates) |
 | `tool-usage-overview.md` | Tool usage overview (S/A/B mode tool sets, internal/external tools, how to call them) |

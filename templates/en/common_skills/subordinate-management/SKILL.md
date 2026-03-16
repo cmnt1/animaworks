@@ -26,7 +26,7 @@ Supervisor tools automatically enabled for Anima that have subordinates. Most to
 | `delegate_task` | Delegate task to direct subordinate only (queue add + DM send + tracking entry on your side) |
 | `org_dashboard` | Tree view of process status, last activity, current task, and task count for all descendants |
 | `ping_subordinate` | Liveness check for descendants (`name` omitted = all at once, specified = single) |
-| `read_subordinate_state` | Read descendant's `current_state.md` and `pending.md` |
+| `read_subordinate_state` | Read descendant's `current_state.md` |
 | `audit_subordinate` | Comprehensive audit of descendant's recent activity (summary, tasks, errors, tool usage, communication) |
 
 ### Delegated Task Tracking

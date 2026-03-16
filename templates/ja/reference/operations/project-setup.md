@@ -224,7 +224,7 @@ animaworks anima create --name aoi
 ├── skills/              # 個人スキル
 ├── state/               # ワーキングメモリ
 │   ├── current_state.md  # 現在のタスク
-│   └── pending.md       # 未処理タスク一覧
+│   └── task_queue.jsonl # 永続タスクキュー（未着手タスク等）
 └── shortterm/           # 短期記憶（セッション継続用）
     └── archive/
 ```
