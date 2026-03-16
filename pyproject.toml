@@ -106,6 +106,7 @@ ignore = [
 "core/tools/image_gen.py" = ["F401"]
 "core/config/__init__.py" = ["F401"]
 "core/prompt/__init__.py" = ["F401"]
+"core/lifecycle/__init__.py" = ["F401"]
 
 [tool.ruff.format]
 quote-style = "double"

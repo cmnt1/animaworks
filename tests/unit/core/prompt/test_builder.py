@@ -133,7 +133,7 @@ class TestBuildMessagingSection:
         anima_dir.mkdir()
         with (
             patch("core.tooling.prompt_db.get_prompt_store", return_value=None),
-            patch("core.prompt.builder.load_prompt", return_value="messaging section"),
+            patch("core.prompt.messaging.load_prompt", return_value="messaging section"),
         ):
             result = _build_messaging_section(anima_dir, ["bob", "charlie"])
             assert result == "messaging section"
@@ -149,7 +149,8 @@ class TestBuildMessagingSection:
 
         with (
             patch("core.tooling.prompt_db.get_prompt_store", return_value=None),
-            patch("core.prompt.builder.load_prompt", side_effect=_mock_lp) as mock_lp,
+            patch("core.prompt.sections.load_prompt", side_effect=_mock_lp),
+            patch("core.prompt.messaging.load_prompt", side_effect=_mock_lp) as mock_lp,
         ):
             _build_messaging_section(anima_dir, [])
             call_kwargs = mock_lp.call_args[1]
@@ -161,7 +162,7 @@ class TestBuildMessagingSection:
         anima_dir.mkdir()
         with (
             patch("core.tooling.prompt_db.get_prompt_store", return_value=None),
-            patch("core.prompt.builder.load_prompt", return_value="s messaging") as mock_lp,
+            patch("core.prompt.messaging.load_prompt", return_value="s messaging") as mock_lp,
         ):
             result = _build_messaging_section(anima_dir, ["bob"], execution_mode="s")
             assert result == "s messaging"
@@ -174,7 +175,7 @@ class TestBuildMessagingSection:
         anima_dir.mkdir()
         with (
             patch("core.tooling.prompt_db.get_prompt_store", return_value=None),
-            patch("core.prompt.builder.load_prompt", return_value="a messaging") as mock_lp,
+            patch("core.prompt.messaging.load_prompt", return_value="a messaging") as mock_lp,
         ):
             result = _build_messaging_section(anima_dir, ["bob"], execution_mode="a")
             assert result == "a messaging"
@@ -187,7 +188,7 @@ class TestBuildMessagingSection:
         anima_dir.mkdir()
         with (
             patch("core.tooling.prompt_db.get_prompt_store", return_value=None),
-            patch("core.prompt.builder.load_prompt", return_value="section") as mock_lp,
+            patch("core.prompt.messaging.load_prompt", return_value="section") as mock_lp,
         ):
             _build_messaging_section(anima_dir, ["bob"])
             template_names = [c[0][0] for c in mock_lp.call_args_list]

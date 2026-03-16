@@ -19,7 +19,7 @@ class TestMessagingSectionBranching:
     """Verify _build_messaging_section selects the correct template by execution_mode."""
 
     @patch("core.tooling.prompt_db.get_prompt_store", return_value=None)
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
     def test_s_mode_loads_messaging_s_template(self, mock_load: MagicMock, _mock_store: MagicMock) -> None:
         """When execution_mode='s', the messaging_s template must be loaded."""
         from core.prompt.builder import _build_messaging_section
@@ -31,7 +31,7 @@ class TestMessagingSectionBranching:
         assert "messaging_s" in template_names
 
     @patch("core.tooling.prompt_db.get_prompt_store", return_value=None)
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
     def test_a_mode_loads_messaging_template(self, mock_load: MagicMock, _mock_store: MagicMock) -> None:
         """When execution_mode='a', the standard messaging template must be loaded."""
         from core.prompt.builder import _build_messaging_section
@@ -44,7 +44,7 @@ class TestMessagingSectionBranching:
         assert "messaging_s" not in template_names
 
     @patch("core.tooling.prompt_db.get_prompt_store", return_value=None)
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
     def test_default_execution_mode_is_s(self, mock_load: MagicMock, _mock_store: MagicMock) -> None:
         """Default execution_mode should be 's', loading messaging_s template."""
         from core.prompt.builder import _build_messaging_section
@@ -64,7 +64,7 @@ class TestOrgContextCommunicationRules:
 
     @patch("core.config.load_config")
     @patch("core.tooling.prompt_db.get_prompt_store", return_value=None)
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.org_context.load_prompt", return_value="mocked prompt")
     def test_s_mode_loads_communication_rules_s(
         self, mock_load: MagicMock, _mock_store: MagicMock, mock_config: MagicMock
     ) -> None:
@@ -93,7 +93,7 @@ class TestOrgContextCommunicationRules:
 
     @patch("core.config.load_config")
     @patch("core.tooling.prompt_db.get_prompt_store", return_value=None)
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.org_context.load_prompt", return_value="mocked prompt")
     def test_a_mode_loads_communication_rules(
         self, mock_load: MagicMock, _mock_store: MagicMock, mock_config: MagicMock
     ) -> None:
@@ -121,7 +121,7 @@ class TestOrgContextCommunicationRules:
 
     @patch("core.config.load_config")
     @patch("core.tooling.prompt_db.get_prompt_store", return_value=None)
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.org_context.load_prompt", return_value="mocked prompt")
     def test_empty_other_animas_skips_communication_rules(
         self, mock_load: MagicMock, _mock_store: MagicMock, mock_config: MagicMock
     ) -> None:
@@ -149,7 +149,7 @@ class TestOrgContextCommunicationRules:
 class TestHumanNotificationGuidanceBranching:
     """Verify _build_human_notification_guidance selects the correct howto template."""
 
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
     def test_s_mode_loads_howto_s(self, mock_load: MagicMock) -> None:
         """When execution_mode='s', builder/human_notification_howto_s must be loaded."""
         from core.prompt.builder import _build_human_notification_guidance
@@ -160,7 +160,7 @@ class TestHumanNotificationGuidanceBranching:
         assert "builder/human_notification_howto_s" in template_names
         assert "builder/human_notification_howto_other" not in template_names
 
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
     def test_a_mode_loads_howto_other(self, mock_load: MagicMock) -> None:
         """When execution_mode='a', builder/human_notification_howto_other must be loaded."""
         from core.prompt.builder import _build_human_notification_guidance
@@ -171,7 +171,7 @@ class TestHumanNotificationGuidanceBranching:
         assert "builder/human_notification_howto_other" in template_names
         assert "builder/human_notification_howto_s" not in template_names
 
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
     def test_empty_mode_loads_howto_other(self, mock_load: MagicMock) -> None:
         """When execution_mode is empty string, builder/human_notification_howto_other must be loaded."""
         from core.prompt.builder import _build_human_notification_guidance
@@ -182,7 +182,7 @@ class TestHumanNotificationGuidanceBranching:
         assert "builder/human_notification_howto_other" in template_names
         assert "builder/human_notification_howto_s" not in template_names
 
-    @patch("core.prompt.builder.load_prompt", return_value="mocked prompt")
+    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
     def test_all_modes_load_human_notification_wrapper(self, mock_load: MagicMock) -> None:
         """Regardless of mode, builder/human_notification wrapper template is always loaded."""
         from core.prompt.builder import _build_human_notification_guidance
