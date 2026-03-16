@@ -451,7 +451,12 @@ def create_system_router() -> APIRouter:
 
         target_names = [anima] if anima and anima in anima_names else list(anima_names)
 
-        limit = max(1, min(limit, 500))
+        replay = request.query_params.get("replay") == "true"
+
+        if replay:
+            limit = max(1, min(limit, 50_000))
+        else:
+            limit = max(1, min(limit, 500))
         offset = max(0, offset)
         group_limit = max(1, min(group_limit, 200))
         group_offset = max(0, group_offset)
@@ -460,9 +465,12 @@ def create_system_router() -> APIRouter:
         # Any entry in the global top-(offset+limit) must be in its own
         # Anima's top-(offset+limit), so this is safe for flat mode.
         # For grouped mode, estimate ~20 events/group with 2x headroom.
+        # For replay mode, load all events within the time window.
         if grouped:
             per_anima_limit = (group_offset + group_limit) * 40
             per_anima_limit = max(per_anima_limit, 500)
+        elif replay:
+            per_anima_limit = 50_000
         else:
             per_anima_limit = offset + limit
 
