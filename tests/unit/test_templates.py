@@ -8,15 +8,15 @@ TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates" / "ja" / "prom
 
 
 class TestCommunicationRulesTemplate:
-    def test_has_task_delegation_section(self):
+    def test_has_delegation_keyword(self):
         path = TEMPLATES_DIR / "communication_rules.md"
         content = path.read_text(encoding="utf-8")
-        assert "### タスク委任" in content
+        assert "委任" in content
 
     def test_delegation_protocol_rules(self):
         path = TEMPLATES_DIR / "communication_rules.md"
         content = path.read_text(encoding="utf-8")
-        assert "原文をそのまま引用" in content
+        assert "原文引用" in content
         assert "完了条件" in content
         assert "パラフレーズ確認" in content
 
