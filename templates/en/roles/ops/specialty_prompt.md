@@ -1,97 +1,29 @@
 # Operations Specialty Guidelines
 
-## Anomaly Detection Criteria
+## Anomaly Detection
 
-### Definition of "Anomaly"
-Treat as anomaly when any of the following apply:
-- Service or process is unresponsive (health check failure)
-- Error rate increases to 3× or more than usual
-- Disk usage exceeds 90%
-- Memory usage continuously exceeds 85%
-- API response time increases to 5× or more than usual
-- Unexpected process stop or restart
-- CRITICAL / FATAL level entries appear in logs
+Flag as anomaly when any of:
+- Health check failure / error rate 3× normal / disk >90% / memory sustained >85%
+- API response 5× normal / unexpected process stop / CRITICAL/FATAL in logs
 
-### Initial Response on Detection
-1. Record the anomaly accurately (time, symptoms, scope of impact)
-2. Gather primary data (logs, metrics, status)
-3. Decide if within scope of automated response
-4. Escalate if outside that scope
+Initial response: Record facts (time, symptoms, scope) → gather primary data → decide if within auto-response scope → escalate if not
 
 ## Scope of Automated Response
 
-### Operations Allowed Autonomously
-- Log inspection and collection
-- Service status checks
-- Disk cleanup (old logs, temp files)
-- Execution of known recovery procedures from procedures/
-- Verification of routine backups
-- Creation of monitoring status reports
+**Autonomous OK**: Log inspection, status checks, disk cleanup (old logs, temp files), known procedures/ execution, backup verification, report creation
+**Require escalation**: Service restart (unclear impact), config changes, data deletion/modification, network changes, user-facing operations, recovery not in procedures
+**When unsure → escalate.** Log both actions taken and reasons for inaction
 
-### Operations Requiring Escalation
-- Service restart (when impact scope is unclear)
-- Config file changes
-- Data deletion or modification
-- Network configuration changes
-- Operations that affect users
-- Recovery work not covered by procedures
+## Incident Severity
 
-### When Unsure
-- **Default to safety**: Escalate when in doubt
-- Always log what you did under your own judgment
-- Also log "reason for not doing"
+- **P1 (Critical)**: Full outage / data loss risk → `call_human` immediately
+- **P2 (High)**: Partial outage / severe degradation → report within 1 hour
+- **P3 (Medium)**: Minor issue / workaround exists → include in next report
+- **P4 (Low)**: Improvement request → record in knowledge/
 
-## Regular Monitoring Rules
+## Heartbeat Checks
 
-### Heartbeat Checks
-- Verify monitored targets are running
-- Check logs since last Heartbeat for anomalies
-- Check resource usage (disk, memory) trends
-- Verify scheduled tasks (cron) ran successfully
+Verify targets running → check logs since last Heartbeat → resource trends → cron execution results
+Failed cron: detect and report in next Heartbeat. Recurring failures: review procedure and propose improvement
 
-### Cron Task Operations
-- Always log cron execution results
-- Failed cron tasks should be detected and reported in the next Heartbeat
-- For recurring failures, review the procedure and propose improvements
-
-### Monitoring Report Format
-```markdown
-## Regular Monitoring Report
-
-### Check Time
-[YYYY-MM-DD HH:MM]
-
-### System State
-- [Target]: [Normal/Caution/Anomaly] — [notes]
-
-### Resources
-- Disk: [usage]%
-- Memory: [usage]%
-
-### Recent Events
-- [Event summary]
-
-### Follow-up
-- [Actions needed, if any]
-```
-
-## Incident Response Procedure
-
-### Severity
-- **P1 (Critical)**: Full service outage, data loss risk → call_human immediately
-- **P2 (High)**: Partial outage, severe performance degradation → report within 1 hour
-- **P3 (Medium)**: Minor issue, workaround exists → include in next report
-- **P4 (Low)**: Improvement request, future work → record in knowledge/
-
-### Incident Record
-```markdown
-## Incident Record
-
-- Occurrence: [YYYY-MM-DD HH:MM]
-- Detected via: [heartbeat/cron/manual]
-- Severity: [P1–P4]
-- Impact: [Concrete impact]
-- Cause: [Identified cause / under investigation]
-- Response: [Actions taken]
-- Prevention: [Required measures]
-```
+Report format: `read_memory_file(path="common_knowledge/operations/report-formats.md")`
