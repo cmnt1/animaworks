@@ -529,36 +529,63 @@ class TestCmdRestart:
     @patch("cli.commands.server._clear_pycache", return_value=0)
     @patch("cli.commands.server._stop_server", return_value=True)
     @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
     @patch("cli.commands.server._is_process_alive", return_value=False)
     @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_restart_stale_pid_passes_none(
+    def test_restart_stale_pid_falls_back_to_scan(
         self,
         mock_pid,
         mock_alive,
+        mock_find,
         mock_helper,
         mock_stop,
         mock_clear,
     ):
-        """When PID exists but process is dead, old_pid=None is passed to helper."""
+        """When PID exists but process is dead, falls back to process scan."""
         from cli.commands.server import cmd_restart
 
         args = argparse.Namespace(host="0.0.0.0", port=18500, force=False)
         cmd_restart(args)
 
+        mock_find.assert_called_once()
         mock_helper.assert_called_once_with(args, None)
 
     @patch("cli.commands.server._clear_pycache", return_value=0)
     @patch("cli.commands.server._stop_server", return_value=True)
     @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
     @patch("cli.commands.server._read_pid", return_value=None)
-    def test_restart_no_pid(self, mock_pid, mock_helper, mock_stop, mock_clear):
-        """When no PID file exists, old_pid=None is passed to helper."""
+    def test_restart_no_pid_no_process(self, mock_pid, mock_find, mock_helper, mock_stop, mock_clear):
+        """When no PID file and no process found, old_pid=None."""
         from cli.commands.server import cmd_restart
 
         args = argparse.Namespace(host="0.0.0.0", port=18500, force=False)
         cmd_restart(args)
 
+        mock_find.assert_called_once()
         mock_helper.assert_called_once_with(args, None)
+
+    @patch("cli.commands.server._clear_pycache", return_value=0)
+    @patch("cli.commands.server._stop_server", return_value=True)
+    @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=54321)
+    @patch("cli.commands.server._read_pid", return_value=None)
+    def test_restart_no_pid_file_finds_by_scan(
+        self,
+        mock_pid,
+        mock_find,
+        mock_helper,
+        mock_stop,
+        mock_clear,
+    ):
+        """When PID file is missing but process scan finds server, passes scanned PID."""
+        from cli.commands.server import cmd_restart
+
+        args = argparse.Namespace(host="0.0.0.0", port=18500, force=False)
+        cmd_restart(args)
+
+        mock_find.assert_called_once()
+        mock_helper.assert_called_once_with(args, 54321)
 
 
 class TestSpawnRestartHelper:

@@ -522,17 +522,50 @@ def _spawn_restart_helper(args: argparse.Namespace, old_pid: int | None) -> int:
 
     helper_code = f"""
 import os, sys, time, signal, subprocess, socket
+from pathlib import Path
 os.chdir({project_root!r})
 old_pid = {old_pid!r}
 host = {host!r}
 port = {port!r}
+_SERVER_CMD_MARKERS = {_SERVER_CMD_MARKERS!r}
 
 def _alive(pid):
     try:
         os.kill(pid, 0)
         return True
-    except (ProcessLookupError, PermissionError):
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True
+
+def _find_server_process():
+    my_uid = os.getuid()
+    my_pid = os.getpid()
+    proc = Path("/proc")
+    if not proc.exists():
+        return None
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            st = entry.stat()
+            if st.st_uid != my_uid:
+                continue
+            cmdline = (entry / "cmdline").read_bytes().decode("utf-8", errors="replace").replace("\\x00", " ")
+            if any(m in cmdline for m in _SERVER_CMD_MARKERS):
+                pid = int(entry.name)
+                if pid == my_pid:
+                    continue
+                try:
+                    exe_name = (entry / "exe").resolve().name
+                except OSError:
+                    exe_name = ""
+                if "python" not in exe_name:
+                    continue
+                return pid
+        except (OSError, ValueError, PermissionError):
+            continue
+    return None
 
 if old_pid is not None:
     deadline = time.monotonic() + 30
@@ -547,6 +580,12 @@ if old_pid is not None:
             except (OSError, ProcessLookupError):
                 pass
         time.sleep(1)
+
+scan_deadline = time.monotonic() + 15
+while time.monotonic() < scan_deadline:
+    if _find_server_process() is None:
+        break
+    time.sleep(0.5)
 
 time.sleep(0.5)
 cmd = [sys.executable, "-m", "cli", "start", "--host", host, "--port", str(port)]
@@ -578,6 +617,8 @@ def cmd_restart(args: argparse.Namespace) -> None:
     old_pid = _read_pid()
     if old_pid is not None and not _is_process_alive(old_pid):
         old_pid = None
+    if old_pid is None:
+        old_pid = _find_server_pid_by_process()
 
     helper_pid = _spawn_restart_helper(args, old_pid)
     print(f"Restart helper spawned (pid={helper_pid}). Stopping server...")
