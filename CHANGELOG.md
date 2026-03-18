@@ -7,6 +7,23 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-03-18
+
+### Added
+- overhaul MessageDeduplicator with overflow_inbox individual file approach
+- fully separate ChromaDB from runner processes — server-only ownership
+- enforce MUST rules for memory verification and file reading before acting
+
+### Fixed
+- apply ruff format to dedup.py and handler_skills.py
+- replace silent except with logger.warning in http_store.close()
+- harden RAG process separation — bool returns, ABC bug, CLI safety
+- eliminate remaining ChromaDB ABC bypass and direct instantiation
+- use dedicated COMPACT_TIMEOUT_SEC (300s) for SDK idle compaction
+- save shortterm in idle compaction (Mode A/B/S fallback) and preserve in Mode A blocking threshold path
+- add extra_mcp_servers mock in test_loads_from_config_json
+
+
 ## [0.5.3] - 2026-03-17
 
 ### Added
@@ -1115,8 +1132,8 @@ memory, and decision-making criteria.
 - Moved model mode patterns from config.json to models.json
 - Tool permissions changed from whitelist to default-allow (blacklist) model
 
-[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.5.3...HEAD
-[0.5.3]: https://github.com/xuiltul/animaworks/compare/v0.5.2...v0.5.3
+[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/xuiltul/animaworks/compare/v0.5.3...v0.5.4
 [0.4.3]: https://github.com/xuiltul/animaworks/compare/v0.4.2...v0.4.3
 [0.4.0]: https://github.com/xuiltul/animaworks/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/xuiltul/animaworks/compare/v0.3.0...v0.3.1
