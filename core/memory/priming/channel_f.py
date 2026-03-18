@@ -59,7 +59,7 @@ async def channel_f_episodes(
             queries,
             anima_name,
             memory_type="episodes",
-            top_k=3,
+            top_k=5,
             min_score=_min_score,
         )
 

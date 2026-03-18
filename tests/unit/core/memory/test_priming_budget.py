@@ -70,9 +70,9 @@ def test_budget_adjustment(temp_anima_dir):
     greeting_budget = engine._adjust_token_budget("こんにちは", "chat")
     assert greeting_budget == 500
 
-    # Test question budget (1500 tokens)
+    # Test question budget (2000 tokens)
     question_budget = engine._adjust_token_budget("これは何ですか?", "chat")
-    assert question_budget == 1500
+    assert question_budget == 2000
 
     # Test request budget (3000 tokens)
     long_message = "これは非常に長いメッセージで、複雑な業務依頼を含んでいます。" * 10
@@ -89,8 +89,8 @@ def test_budget_adjustment_by_intent(temp_anima_dir):
     engine = PrimingEngine(temp_anima_dir)
 
     assert engine._adjust_token_budget("ok", "chat", intent="delegation") == 3000
-    assert engine._adjust_token_budget("ok", "chat", intent="report") == 1500
-    assert engine._adjust_token_budget("ok", "chat", intent="question") == 1500
+    assert engine._adjust_token_budget("ok", "chat", intent="report") == 2000
+    assert engine._adjust_token_budget("ok", "chat", intent="question") == 2000
     # Unknown/empty intent falls back to keyword heuristics
     assert engine._adjust_token_budget("こんにちは", "chat", intent="unknown") == 500
 
@@ -249,7 +249,7 @@ def test_non_heartbeat_budget_unaffected_by_context_window(temp_anima_dir):
     engine = PrimingEngine(temp_anima_dir, context_window=200_000)
 
     assert engine._adjust_token_budget("こんにちは", "chat") == 500
-    assert engine._adjust_token_budget("これは何ですか?", "chat") == 1500
+    assert engine._adjust_token_budget("これは何ですか?", "chat") == 2000
 
     long_message = "これは長い業務依頼のメッセージです。" * 10
     assert engine._adjust_token_budget(long_message, "chat") == 3000

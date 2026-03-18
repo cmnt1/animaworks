@@ -50,7 +50,7 @@ class TestChannelFEpisodes:
     async def test_channel_f_calls_retriever_with_episodes_type(
         self, temp_anima_dir: Path,
     ) -> None:
-        """Channel F uses dual queries with memory_type='episodes' and top_k=3."""
+        """Channel F uses dual queries with memory_type='episodes' and top_k=5."""
         engine = PrimingEngine(temp_anima_dir)
 
         mock_retriever = MagicMock()
@@ -62,7 +62,7 @@ class TestChannelFEpisodes:
         assert mock_retriever.search.call_count == 2, "Dual query should issue 2 searches"
         for call in mock_retriever.search.call_args_list:
             assert call.kwargs.get("memory_type") == "episodes"
-            assert call.kwargs.get("top_k") == 3
+            assert call.kwargs.get("top_k") == 5
 
     @pytest.mark.asyncio
     async def test_channel_f_query_includes_message(
