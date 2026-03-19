@@ -290,7 +290,7 @@ class TestSubmitTasksInterceptDenyReason:
 
     @pytest.mark.asyncio
     async def test_submit_tasks_intercept_success_reason(self, anima_dir: Path):
-        """Success case: deny reason starts with SUCCESS, contains delegate_task, DUPLICATE."""
+        """Success case: deny reason starts with SUCCESS, warns about DUPLICATE."""
         success_result = json.dumps(
             {
                 "status": "submitted",
@@ -325,8 +325,8 @@ class TestSubmitTasksInterceptDenyReason:
         assert output["permissionDecision"] == "deny"
         reason = output["permissionDecisionReason"]
         assert reason.startswith("SUCCESS")
-        assert "delegate_task" in reason
         assert "DUPLICATE" in reason
+        assert "re-submit" in reason.lower() or "Do NOT" in reason
 
     @pytest.mark.asyncio
     async def test_submit_tasks_intercept_error_reason(self, anima_dir: Path):

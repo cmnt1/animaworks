@@ -108,8 +108,9 @@ class TestIssueA_WSEventMismatch:
             "No message_received log with from_type meta and to_person found"
         )
         for call in anima_dm_calls:
-            assert "to_person=self.name" in call, (
-                f"to_person=self.name missing from message_received log: {call[:150]}"
+            # Accept both self.name (method) and anima_mixin.name (module function)
+            assert "to_person=self.name" in call or "to_person=anima_mixin.name" in call, (
+                f"to_person=self.name or to_person=anima_mixin.name missing from message_received log: {call[:150]}"
             )
 
 

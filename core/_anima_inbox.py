@@ -172,7 +172,7 @@ def _rescue_regenerate_pending(anima_dir: Path, task_id: str, msg: Any) -> None:
         if entry and entry.original_instruction:
             instruction = entry.original_instruction
     except Exception:
-        pass
+        logger.debug("Failed to retrieve original instruction for task %s", task_id, exc_info=True)
 
     task_desc = {
         "task_type": "llm",

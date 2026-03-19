@@ -71,9 +71,16 @@ def data_dir(tmp_path, monkeypatch):
     )
 
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(d))
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
+
+    from core.memory.rag.singleton import _reset_for_testing
+    _reset_for_testing()
+
     invalidate_cache()
     _prompt_cache.clear()
     yield d
+    _reset_for_testing()
     invalidate_cache()
     _prompt_cache.clear()
 
@@ -341,7 +348,7 @@ class TestRAGProceduresSearch:
 
         assert RAGMemorySearch._resolve_search_types("common_knowledge") == ["knowledge"]
 
-    def test_procedures_keyword_search(self, anima_dir):
+    def test_procedures_keyword_search(self, anima_dir, data_dir):
         """Procedures are included in keyword search."""
         from core.memory.rag_search import RAGMemorySearch
         from core.paths import get_common_knowledge_dir, get_common_skills_dir

@@ -148,6 +148,10 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # Redirect all path resolution to the temp directory
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(d))
 
+    # Clear HTTP delegation env vars so tests use local ChromaDB / models
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
+
     # Invalidate caches to pick up the new data dir
     invalidate_cache()
     _prompt_cache.clear()

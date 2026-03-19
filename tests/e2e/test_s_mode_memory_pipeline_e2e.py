@@ -194,6 +194,10 @@ class TestCompressedSummaryToRAGSearchPipeline:
         2. Use RAGMemorySearch.search_memory_text with keyword
         3. Verify matching lines are returned from conversation_summary
         """
+        # Clear HTTP delegation env vars so tests use local ChromaDB
+        monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+        monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
+
         # Set up isolated data directory
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()

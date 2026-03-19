@@ -3086,7 +3086,8 @@
   color: #fff;
   border-color: var(--aw-color-accent);
 }
-.meeting-mode-toggle:hover {
+.meeting-mode-toggle:hover,
+.meeting-mode-toggle:active {
   opacity: 0.85;
 }
 
@@ -3142,7 +3143,8 @@
   opacity: 0.6;
   margin-left: 2px;
 }
-.meeting-participant-chip .chip-remove:hover {
+.meeting-participant-chip .chip-remove:hover,
+.meeting-participant-chip .chip-remove:active {
   opacity: 1;
 }
 
@@ -3155,7 +3157,8 @@
   font-size: 0.75rem;
   color: var(--aw-color-text-secondary, #666);
 }
-.meeting-add-btn:hover {
+.meeting-add-btn:hover,
+.meeting-add-btn:active {
   border-color: var(--aw-color-accent);
   color: var(--aw-color-accent);
 }
@@ -3170,7 +3173,8 @@
   cursor: pointer;
   font-size: 0.75rem;
 }
-.meeting-end-btn:hover {
+.meeting-end-btn:hover,
+.meeting-end-btn:active {
   background: #dc3545;
   color: #fff;
 }
@@ -3259,6 +3263,7 @@
   color: var(--aw-color-text-primary);
   text-align: left;
 }
-.meeting-add-item:hover {
+.meeting-add-item:hover,
+.meeting-add-item:active {
   background: var(--aw-color-bg-hover);
 }
