@@ -143,11 +143,12 @@ class TestDifferentialFinalizationE2E:
         episode_content = episode_path.read_text(encoding="utf-8")
         assert "サーバー障害修正とデプロイタスク" in episode_content
 
-        # Verify new task was routed to task_queue.jsonl (Issue #114)
+        # Verify new tasks are NOT auto-registered from session summary (disabled per 9198efcc)
+        # Auto-detection produced noise (wrong assignees, stale items); heartbeat covers this.
         from core.memory.task_queue import TaskQueueManager
         tqm = TaskQueueManager(anima_dir)
         active = tqm.load_active_tasks()
-        assert any("デプロイ作業" in t.summary for t in active.values())
+        assert not any("デプロイ作業" in t.summary for t in active.values())
 
         # Verify resolution was recorded
         from core.memory.manager import MemoryManager
