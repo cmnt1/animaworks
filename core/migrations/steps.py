@@ -637,6 +637,22 @@ def step_tool_descriptions_resync(data_dir: Path, dry_run: bool, verbose: bool) 
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_v056_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.5.6: Resync common_knowledge + prompts for message-quality-protocol."""
+    details: list[str] = []
+    total = 0
+    r1 = step_common_knowledge_resync(data_dir, dry_run, verbose)
+    total += r1.changed
+    details.extend(r1.details)
+    r2 = step_prompt_resync(data_dir, dry_run, verbose)
+    total += r2.changed
+    details.extend(r2.details)
+    r3 = step_system_sections_resync(data_dir, dry_run, verbose)
+    total += r3.changed
+    details.extend(r3.details)
+    return StepResult(changed=total, skipped=0, details=details)
+
+
 def step_stale_sections_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Remove stale entries from system_sections (e.g. hiring_context)."""
     details: list[str] = []
@@ -715,6 +731,12 @@ def register_all_steps(runner: Any) -> None:
             "tool_descriptions_resync", "Resync tool descriptions/guides", "db_sync", step_tool_descriptions_resync
         ),
         MigrationStep("stale_sections_cleanup", "Remove stale DB sections", "db_sync", step_stale_sections_cleanup),
+        MigrationStep(
+            "v056_resync",
+            "v0.5.6: Resync common_knowledge + prompts (message-quality-protocol)",
+            "template_sync",
+            step_v056_resync,
+        ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]
     for s in steps:
