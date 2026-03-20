@@ -164,9 +164,7 @@ class HeartbeatMixin:
                     ts_short = e.ts[11:19] if len(e.ts) >= 19 else e.ts
                     plan = (e.meta or {}).get("plan_summary", "")
                     if plan:
-                        lines.append(
-                            t("heartbeat.history_plan_entry", ts=ts_short, plan=plan[:limit])
-                        )
+                        lines.append(t("heartbeat.history_plan_entry", ts=ts_short, plan=plan[:limit]))
                     else:
                         summary = (e.summary or e.content)[:limit]
                         lines.append(f"- {ts_short}: {summary}")
