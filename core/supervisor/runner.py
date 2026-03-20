@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import fcntl
 import json
 import logging
 import os
@@ -29,6 +28,7 @@ from core.anima import DigitalAnima
 from core.exceptions import AnimaNotRunningError, ExecutionError, MemoryWriteError, ProcessError  # noqa: F401
 from core.i18n import t
 from core.memory.streaming_journal import StreamingJournal
+from core.platform.locks import acquire_file_lock, release_file_lock
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer
 from core.supervisor.pending_executor import PendingTaskExecutor
@@ -85,9 +85,9 @@ class AnimaRunner:
         lock_path = lock_dir / f"{self.anima_name}.lock"
         pid_path = lock_dir / f"{self.anima_name}.pid"
 
-        self._lock_file = open(lock_path, "w")  # noqa: SIM115
+        self._lock_file = open(lock_path, "a+")  # noqa: SIM115
         try:
-            fcntl.flock(self._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquire_file_lock(self._lock_file, exclusive=True, blocking=False)
         except OSError:
             existing_pid = pid_path.read_text().strip() if pid_path.exists() else "unknown"
             logger.error(
@@ -626,7 +626,7 @@ class AnimaRunner:
                 pid_path = self.shared_dir.parent / "run" / "animas" / f"{self.anima_name}.pid"
                 if pid_path.exists():
                     pid_path.unlink(missing_ok=True)
-                fcntl.flock(self._lock_file, fcntl.LOCK_UN)
+                release_file_lock(self._lock_file)
                 self._lock_file.close()
             except OSError:
                 logger.debug("Lock file cleanup error", exc_info=True)

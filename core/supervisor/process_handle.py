@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal as _signal
 import subprocess
 import sys
 import uuid
@@ -23,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from core.exceptions import AnimaNotRunningError, IPCConnectionError, ProcessError
+from core.platform.process import subprocess_session_kwargs, terminate_subprocess
 from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse
 from core.time_utils import ensure_aware, now_local
 
@@ -169,8 +169,8 @@ class ProcessHandle:
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=self._stderr_file if self._stderr_file else subprocess.DEVNULL,
-                start_new_session=True,
                 env=child_env,
+                **subprocess_session_kwargs(),
             )
             logger.info("Process started: %s (PID %s)", self.anima_name, self.process.pid)
 
@@ -478,10 +478,7 @@ class ProcessHandle:
             # Step 3: Send SIGTERM to process session group
             logger.warning("Process did not exit gracefully, sending SIGTERM: %s", self.anima_name)
             try:
-                try:
-                    os.killpg(os.getpgid(self.process.pid), _signal.SIGTERM)
-                except OSError:
-                    self.process.terminate()
+                terminate_subprocess(self.process, force=False)
                 async with asyncio.timeout(timeout / 2):
                     while self.process.poll() is None:
                         await asyncio.sleep(0.1)
@@ -504,10 +501,7 @@ class ProcessHandle:
             return
 
         logger.warning("Killing process: %s (PID %s)", self.anima_name, self.process.pid)
-        try:
-            os.killpg(os.getpgid(self.process.pid), _signal.SIGKILL)
-        except OSError:
-            self.process.kill()
+        terminate_subprocess(self.process, force=True)
         await asyncio.get_running_loop().run_in_executor(None, self.process.wait)
         self.stats.exit_code = self.process.returncode
         self.state = ProcessState.FAILED
@@ -523,17 +517,11 @@ class ProcessHandle:
                     self.anima_name,
                     self.process.pid,
                 )
-                try:
-                    os.killpg(os.getpgid(self.process.pid), _signal.SIGTERM)
-                except OSError:
-                    self.process.terminate()
+                terminate_subprocess(self.process, force=False)
                 try:
                     self.process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
-                    try:
-                        os.killpg(os.getpgid(self.process.pid), _signal.SIGKILL)
-                    except OSError:
-                        self.process.kill()
+                    terminate_subprocess(self.process, force=True)
                     self.process.wait()
             else:
                 # Already exited — explicitly reap to prevent zombie

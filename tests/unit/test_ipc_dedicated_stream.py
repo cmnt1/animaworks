@@ -26,6 +26,7 @@ from core.supervisor.ipc import (
     IPCServer,
 )
 from core.supervisor.process_handle import ProcessHandle
+from core.supervisor.transport import resolve_client_endpoint
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -226,7 +227,7 @@ async def test_stream_dedicated_connection_closes_on_cancel():
     async def mock_open_unix(*args, **kwargs):
         return mock_reader, mock_writer
 
-    with patch("asyncio.open_unix_connection", side_effect=mock_open_unix):
+    with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
         stream_gen = client.send_request_stream(IPCRequest(id="cancel_001", method="slow_stream"), timeout=5.0)
         async for response in stream_gen:
             assert response.chunk == "first"
@@ -265,7 +266,7 @@ async def test_stream_dedicated_connection_closes_on_timeout():
         coro.close()
         raise TimeoutError()
 
-    with patch("asyncio.open_unix_connection", side_effect=mock_open_unix):
+    with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
         with patch.object(asyncio, "wait_for", side_effect=mock_wait_for):
             with pytest.raises(asyncio.TimeoutError):
                 async for _ in client.send_request_stream(
@@ -381,7 +382,7 @@ async def test_stream_id_mismatch_raises():
     async def mock_open_unix(*args, **kwargs):
         return mock_reader, mock_writer
 
-    with patch("asyncio.open_unix_connection", side_effect=mock_open_unix):
+    with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
         with pytest.raises(IPCConnectionError, match="IPC protocol error: response ID mismatch"):
             async for _ in client.send_request_stream(
                 IPCRequest(id="req_correct_id", method="stream_test"),
@@ -419,7 +420,7 @@ async def test_stream_non_streaming_response_with_wrong_id():
     async def mock_open_unix(*args, **kwargs):
         return mock_reader, mock_writer
 
-    with patch("asyncio.open_unix_connection", side_effect=mock_open_unix):
+    with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
         with pytest.raises(IPCConnectionError, match="IPC protocol error"):
             async for _ in client.send_request_stream(
                 IPCRequest(id="req_fresh_001", method="process_message"),
@@ -723,12 +724,7 @@ async def test_concurrent_unary_requests_no_interference():
 
 @pytest.mark.asyncio
 async def test_send_request_opens_connection_per_call():
-    """Each send_request() opens a new connection and closes it after completion.
-
-    Patches asyncio.open_unix_connection to count calls while delegating
-    to the real implementation, then verifies 3 sequential send_request()
-    calls result in 3 open_unix_connection invocations (not 1).
-    """
+    """Each send_request() opens a new connection and closes it after completion."""
     with TemporaryDirectory() as tmpdir:
         socket_path = Path(tmpdir) / "per_call.sock"
 
@@ -743,14 +739,23 @@ async def test_send_request_opens_connection_per_call():
             await client.connect()
 
             open_call_count = 0
-            real_open = asyncio.open_unix_connection
 
-            async def counting_open(*args, **kwargs):
+            async def counting_open(path, *, limit):
                 nonlocal open_call_count
                 open_call_count += 1
-                return await real_open(*args, **kwargs)
+                endpoint = resolve_client_endpoint(path)
+                if endpoint.transport == "tcp":
+                    return await asyncio.open_connection(
+                        host=endpoint.host,
+                        port=endpoint.port,
+                        limit=limit,
+                    )
+                return await asyncio.open_unix_connection(
+                    path=str(path),
+                    limit=limit,
+                )
 
-            with patch("asyncio.open_unix_connection", side_effect=counting_open):
+            with patch("core.supervisor.ipc.open_ipc_connection", side_effect=counting_open):
                 for i in range(3):
                     req = IPCRequest(id=f"seq_{i:03d}", method="test", params={})
                     resp = await client.send_request(req, timeout=5.0)
@@ -758,12 +763,43 @@ async def test_send_request_opens_connection_per_call():
                     assert resp.result == {"ok": True}
 
             # Each send_request should have opened its own connection
-            assert open_call_count == 3, f"Expected 3 open_unix_connection calls, got {open_call_count}"
+            assert open_call_count == 3, f"Expected 3 connection opens, got {open_call_count}"
 
             await client.close()
 
         finally:
             await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_forced_tcp_transport_round_trip():
+    """Server/client can communicate over forced loopback TCP transport."""
+    with TemporaryDirectory() as tmpdir:
+        socket_path = Path(tmpdir) / "forced_tcp.sock"
+
+        async def handler(request: IPCRequest) -> IPCResponse:
+            return IPCResponse(id=request.id, result={"transport": "tcp", "ok": True})
+
+        with patch.dict("os.environ", {"ANIMAWORKS_IPC_TRANSPORT": "tcp"}):
+            server = IPCServer(socket_path, handler)
+            await server.start()
+
+            try:
+                endpoint = resolve_client_endpoint(socket_path)
+                assert endpoint.transport == "tcp"
+                assert endpoint.port is not None
+
+                client = IPCClient(socket_path)
+                await client.connect()
+
+                req = IPCRequest(id="tcp_001", method="test", params={})
+                response = await client.send_request(req, timeout=5.0)
+
+                assert response.id == "tcp_001"
+                assert response.result == {"transport": "tcp", "ok": True}
+
+            finally:
+                await server.stop()
 
 
 # ── Test 14: connect() only tests connectivity ─────────────────

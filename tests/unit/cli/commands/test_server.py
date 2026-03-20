@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import argparse
 import os
-import signal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from core.platform.process import subprocess_session_kwargs
 
 
 # ── PID helpers ──────────────────────────────────────────
@@ -95,40 +96,23 @@ class TestPidHelpers:
 
 
 class TestFindServerPidByProcess:
-    def test_returns_none_when_no_proc(self, tmp_path, monkeypatch):
-        """Returns None when /proc doesn't exist (non-Linux)."""
+    @patch("cli.commands.server.find_first_matching_pid", return_value=None)
+    def test_returns_none_when_no_match(self, mock_find):
+        """Returns None when no matching process is found."""
         from cli.commands.server import _find_server_pid_by_process
 
-        # Point Path("/proc") to a non-existent directory
-        with patch("cli.commands.server.Path") as mock_path:
-            mock_proc = MagicMock()
-            mock_proc.exists.return_value = False
-            # Only intercept Path("/proc"), pass through others
-            mock_path.side_effect = lambda p: mock_proc if p == "/proc" else Path(p)
-            result = _find_server_pid_by_process()
+        result = _find_server_pid_by_process()
+
         assert result is None
+        mock_find.assert_called_once()
 
-    @patch("cli.commands.server.os.getuid", return_value=1000)
-    def test_finds_matching_process(self, mock_uid, tmp_path):
-        """Finds a process whose cmdline matches the server marker."""
+    @patch("cli.commands.server.find_first_matching_pid", return_value=12345)
+    def test_finds_matching_process(self, mock_find):
+        """Delegates process lookup to the adapter."""
         from cli.commands.server import _find_server_pid_by_process
 
-        # Create a fake /proc/<pid>/cmdline
-        fake_proc = tmp_path / "proc"
-        fake_proc.mkdir()
-        fake_pid_dir = fake_proc / "12345"
-        fake_pid_dir.mkdir()
-        (fake_pid_dir / "cmdline").write_bytes(b".venv/bin/python\x00main.py\x00start")
-
-        with patch("cli.commands.server.Path", side_effect=lambda p: fake_proc if p == "/proc" else Path(p)):
-            with patch.object(Path, "stat") as mock_stat:
-                mock_stat_result = MagicMock()
-                mock_stat_result.st_uid = 1000
-                mock_stat.return_value = mock_stat_result
-                _find_server_pid_by_process()
-
-        # Can't easily assert the exact PID because we're mocking Path
-        # but the function should not raise
+        assert _find_server_pid_by_process() == 12345
+        mock_find.assert_called_once()
 
 
 # ── _stop_server ─────────────────────────────────────────
@@ -155,30 +139,30 @@ class TestStopServer:
         assert "Stale" in capsys.readouterr().out
 
     @patch("cli.commands.server._remove_pid_file")
-    @patch("os.kill")
+    @patch("cli.commands.server.terminate_pid")
     @patch("cli.commands.server._is_process_alive", side_effect=[True, False])
     @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_successful_stop(self, mock_pid, mock_alive, mock_kill, mock_remove, capsys):
+    def test_successful_stop(self, mock_pid, mock_alive, mock_terminate, mock_remove, capsys):
         from cli.commands.server import _stop_server
 
         result = _stop_server()
         assert result is True
-        mock_kill.assert_called_once_with(12345, signal.SIGTERM)
+        mock_terminate.assert_called_once_with(12345, force=False, include_children=False)
 
-    @patch("os.kill", side_effect=ProcessLookupError)
+    @patch("cli.commands.server.terminate_pid", side_effect=ProcessLookupError)
     @patch("cli.commands.server._is_process_alive", return_value=True)
     @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_process_already_exited_on_kill(self, mock_pid, mock_alive, mock_kill, capsys):
+    def test_process_already_exited_on_kill(self, mock_pid, mock_alive, mock_terminate, capsys):
         from cli.commands.server import _stop_server
 
         result = _stop_server()
         assert result is True
         assert "already exited" in capsys.readouterr().out
 
-    @patch("os.kill", side_effect=PermissionError)
+    @patch("cli.commands.server.terminate_pid", side_effect=PermissionError)
     @patch("cli.commands.server._is_process_alive", return_value=True)
     @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_permission_error(self, mock_pid, mock_alive, mock_kill, capsys):
+    def test_permission_error(self, mock_pid, mock_alive, mock_terminate, capsys):
         from cli.commands.server import _stop_server
 
         result = _stop_server()
@@ -186,7 +170,7 @@ class TestStopServer:
         assert "Permission denied" in capsys.readouterr().out
 
     @patch("cli.commands.server._remove_pid_file")
-    @patch("os.kill")
+    @patch("cli.commands.server.terminate_pid")
     @patch("cli.commands.server._is_process_alive", side_effect=[True, False])
     @patch("cli.commands.server._find_server_pid_by_process", return_value=54321)
     @patch("cli.commands.server._read_pid", return_value=None)
@@ -195,7 +179,7 @@ class TestStopServer:
         mock_pid,
         mock_find,
         mock_alive,
-        mock_kill,
+        mock_terminate,
         mock_remove,
         capsys,
     ):
@@ -207,15 +191,13 @@ class TestStopServer:
         out = capsys.readouterr().out
         assert "PID file missing" in out
         assert "54321" in out
-        mock_kill.assert_called_once_with(54321, signal.SIGTERM)
+        mock_terminate.assert_called_once_with(54321, force=False, include_children=False)
 
     # ── Force mode tests ─────────────────────────────────
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._remove_pid_file")
-    @patch("os.killpg")
-    @patch("os.getpgid", return_value=12345)
-    @patch("os.kill")
+    @patch("cli.commands.server.terminate_pid")
     @patch("time.sleep")
     @patch("time.monotonic")
     @patch("cli.commands.server._is_process_alive")
@@ -226,9 +208,7 @@ class TestStopServer:
         mock_alive,
         mock_monotonic,
         mock_sleep,
-        mock_kill,
-        mock_getpgid,
-        mock_killpg,
+        mock_terminate,
         mock_remove,
         mock_orphans,
         capsys,
@@ -257,8 +237,17 @@ class TestStopServer:
         out = capsys.readouterr().out
         assert "SIGKILL" in out
         assert "force-killed" in out
-        mock_kill.assert_called_with(12345, signal.SIGTERM)
-        mock_killpg.assert_called_with(12345, signal.SIGKILL)
+        assert mock_terminate.call_count == 2
+        assert mock_terminate.call_args_list[0].args == (12345,)
+        assert mock_terminate.call_args_list[0].kwargs == {
+            "force": False,
+            "include_children": False,
+        }
+        assert mock_terminate.call_args_list[1].args == (12345,)
+        assert mock_terminate.call_args_list[1].kwargs == {
+            "force": True,
+            "include_children": True,
+        }
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=3)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
@@ -280,9 +269,9 @@ class TestStopServer:
         mock_orphans.assert_called_once()
 
     @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("os.kill")
+    @patch("cli.commands.server.terminate_pid")
     @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_non_force_timeout_returns_false(self, mock_pid, mock_kill, mock_alive, capsys):
+    def test_non_force_timeout_returns_false(self, mock_pid, mock_terminate, mock_alive, capsys):
         """Without --force, timeout returns False without SIGKILL."""
         from cli.commands.server import _stop_server
 
@@ -607,7 +596,13 @@ class TestSpawnRestartHelper:
 
         assert pid == 77777
         call_kwargs = mock_popen.call_args
-        assert call_kwargs.kwargs["start_new_session"] is True
+        for key, value in subprocess_session_kwargs().items():
+            assert call_kwargs.kwargs[key] == value
+        helper_code = mock_popen.call_args.args[0][2]
+        assert "find_first_matching_pid" in helper_code
+        assert "terminate_pid" in helper_code
+        assert "/proc" not in helper_code
+        assert "os.killpg" not in helper_code
 
     @patch("cli.commands.server._get_daemon_log_path")
     def test_helper_accepts_none_old_pid(self, mock_log_path, tmp_path):

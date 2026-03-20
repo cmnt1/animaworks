@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import json as _json
 import logging
-import os
 import re
 import shlex
-import signal
 import subprocess
 import threading
 import time
@@ -36,6 +34,7 @@ from core.tooling.handler_base import (
     _error_result,
     _extract_first_heading,
 )
+from core.platform.process import subprocess_session_kwargs, terminate_subprocess
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -154,7 +153,7 @@ class CommandRunner:
                     text=True,
                     cwd=str(self.cwd),
                     executable="/bin/bash",
-                    start_new_session=True,
+                    **subprocess_session_kwargs(),
                 )
             else:
                 argv = shlex.split(self.command)
@@ -164,7 +163,7 @@ class CommandRunner:
                     stderr=subprocess.PIPE,
                     text=True,
                     cwd=str(self.cwd),
-                    start_new_session=True,
+                    **subprocess_session_kwargs(),
                 )
         except Exception as e:
             self._write_error_file(str(e))
@@ -271,17 +270,11 @@ class CommandRunner:
             proc.wait(timeout=self.timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except (OSError, ProcessLookupError):
-                pass
+            terminate_subprocess(proc, force=False)
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (OSError, ProcessLookupError):
-                    pass
+                terminate_subprocess(proc, force=True)
                 try:
                     proc.wait(timeout=3)
                 except subprocess.TimeoutExpired:

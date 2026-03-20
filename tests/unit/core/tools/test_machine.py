@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
@@ -28,6 +29,12 @@ from core.tools.machine import (
     get_tool_schemas,
     reset_call_counts,
 )
+
+
+def _set_pipe_output(mock_proc: MagicMock, stdout_text: str, stderr_text: str = "") -> None:
+    """Provide file-like stdout/stderr mocks compatible with _stream_to_file()."""
+    mock_proc.stdout = io.StringIO(stdout_text)
+    mock_proc.stderr = io.StringIO(stderr_text)
 
 # ── Schema Tests ──────────────────────────────────────────
 
@@ -320,8 +327,7 @@ class TestRateLimiting:
         anima_dir.mkdir()
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["ok\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "ok\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
@@ -345,8 +351,7 @@ class TestRateLimiting:
 
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["ok\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "ok\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
@@ -384,8 +389,7 @@ class TestRateLimiting:
 
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["ok\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "ok\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
@@ -501,8 +505,7 @@ class TestDispatch:
         anima_dir.mkdir()
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["Implementation complete.\nFiles modified: 3\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "Implementation complete.\nFiles modified: 3\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
@@ -530,8 +533,7 @@ class TestDispatch:
         anima_dir.mkdir()
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/codex"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["partial output\n"])
-            mock_proc.stderr = iter(["error occurred\n"])
+            _set_pipe_output(mock_proc, "partial output\n", "error occurred\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 1
             mock_proc.pid = 99999
@@ -558,8 +560,7 @@ class TestDispatch:
         anima_dir.mkdir()
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["partial output\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "partial output\n")
             mock_proc.stdin = MagicMock()
             mock_proc.pid = 12345
             mock_proc.returncode = -1
@@ -567,22 +568,25 @@ class TestDispatch:
                 side_effect=subprocess.TimeoutExpired(cmd=["claude"], timeout=10)
             )
             with patch("core.tools.machine.subprocess.Popen", return_value=mock_proc):
-                with patch("core.tools.machine.os.killpg"):
-                    with patch("core.tools.machine.os.getpgid", return_value=12345):
-                        result = json.loads(
-                            dispatch(
-                                "machine_run",
-                                {
-                                    "engine": "claude",
-                                    "instruction": "long task",
-                                    "working_directory": str(wd),
-                                    "anima_dir": str(anima_dir),
-                                    "timeout": 10,
-                                },
-                            )
+                with patch("core.tools.machine.terminate_subprocess") as mock_terminate:
+                    result = json.loads(
+                        dispatch(
+                            "machine_run",
+                            {
+                                "engine": "claude",
+                                "instruction": "long task",
+                                "working_directory": str(wd),
+                                "anima_dir": str(anima_dir),
+                                "timeout": 10,
+                            },
                         )
-                        assert result["success"] is False
-                        assert result.get("timed_out") is True
+                    )
+                    assert result["success"] is False
+                    assert result.get("timed_out") is True
+                    assert mock_terminate.call_args_list[0].args == (mock_proc,)
+                    assert mock_terminate.call_args_list[0].kwargs == {"force": False}
+                    assert mock_terminate.call_args_list[1].args == (mock_proc,)
+                    assert mock_terminate.call_args_list[1].kwargs == {"force": True}
 
     def test_unknown_action(self):
         result = json.loads(dispatch("unknown_action", {}))
@@ -595,8 +599,7 @@ class TestDispatch:
         anima_dir.mkdir()
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["ok\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "ok\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
@@ -627,8 +630,7 @@ class TestDispatch:
         anima_dir.mkdir()
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["ok\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "ok\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
@@ -667,8 +669,7 @@ class TestOutputTruncation:
         large_output = "x" * 60_000
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter([large_output])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, large_output)
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
@@ -706,8 +707,7 @@ class TestCliMain:
 
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["Hello from CLI\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "Hello from CLI\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
@@ -722,8 +722,7 @@ class TestCliMain:
 
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["JSON result\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "JSON result\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
@@ -746,8 +745,7 @@ class TestCliMain:
 
         with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
             mock_proc = MagicMock()
-            mock_proc.stdout = iter(["bg output\n"])
-            mock_proc.stderr = iter([""])
+            _set_pipe_output(mock_proc, "bg output\n")
             mock_proc.stdin = MagicMock()
             mock_proc.returncode = 0
             mock_proc.pid = 99999
