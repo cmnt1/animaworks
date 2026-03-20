@@ -255,7 +255,7 @@ class TestIPCPerChunkTimeout:
         # Per-chunk timeout of 0.8s — total time ~1.2s would fail with a
         # single-shot timeout of 0.8s, but per-chunk should succeed.
         collected: list[IPCResponse] = []
-        with patch("asyncio.open_unix_connection", side_effect=mock_open_unix):
+        with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
             async for resp in client.send_request_stream(request, timeout=0.8):
                 collected.append(resp)
 
@@ -298,7 +298,7 @@ class TestIPCPerChunkTimeout:
 
         request = IPCRequest(id="req_2", method="test", params={})
 
-        with patch("asyncio.open_unix_connection", side_effect=mock_open_unix):
+        with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
             with pytest.raises(TimeoutError):
                 async for _ in client.send_request_stream(request, timeout=0.5):
                     pass

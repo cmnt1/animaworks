@@ -208,6 +208,26 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "OpenAI APIキー",
         "en": "OpenAI API key",
     },
+    "config.openai_api_key_required": {
+        "ja": "auth_mode=api_key の場合、api_key は必須です",
+        "en": "api_key is required for auth_mode=api_key",
+    },
+    "config.openai_auth": {
+        "ja": "OpenAI APIキー / Codex Login",
+        "en": "OpenAI API key / Codex login",
+    },
+    "config.openai_auth_invalid_mode": {
+        "ja": "auth_mode は 'api_key' または 'codex_login' である必要があります",
+        "en": "auth_mode must be 'api_key' or 'codex_login'",
+    },
+    "config.codex_cli_not_installed": {
+        "ja": "Codex CLI がインストールされていません",
+        "en": "Codex CLI is not installed",
+    },
+    "config.codex_login_not_available": {
+        "ja": "Codex ログインが利用できません",
+        "en": "Codex login is not available",
+    },
     "config.shared_dir": {
         "ja": "共有ディレクトリ",
         "en": "Shared directory",

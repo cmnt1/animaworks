@@ -135,7 +135,7 @@ def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
     tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     tmp_path.write_text(text, encoding="utf-8")
     os.chmod(tmp_path, 0o600)
-    tmp_path.rename(path)
+    os.replace(tmp_path, path)
 
     logger.debug("Config saved to %s", path)
 

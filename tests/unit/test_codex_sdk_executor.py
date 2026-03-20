@@ -19,6 +19,7 @@ from core.execution.codex_sdk import (
     CodexSDKExecutor,
     _clear_thread_id,
     _codex_item_tool_name,
+    _default_home_dir,
     _extract_item_text,
     _extract_tool_records,
     _get_thread_id,
@@ -224,6 +225,10 @@ class TestExecutorInit:
         assert env.get("OPENAI_API_KEY") == "test-key-123"
         assert "CODEX_HOME" in env
 
+    def test_default_home_dir_prefers_userprofile_when_home_missing(self):
+        with patch.dict("os.environ", {"USERPROFILE": r"C:\Users\Tester"}, clear=True):
+            assert _default_home_dir() == r"C:\Users\Tester"
+
     def test_build_mcp_env(self, executor):
         env = executor._build_mcp_env()
         assert "ANIMAWORKS_ANIMA_DIR" in env
@@ -282,6 +287,25 @@ class TestConfigWriting:
 
         assert _escape_toml_string('path/with"quote') == 'path/with\\"quote'
         assert _escape_toml_string("path\\back") == "path\\\\back"
+
+    def test_propagate_auth_copies_when_links_unavailable(self, executor, anima_dir):
+        default_codex = anima_dir.parent.parent / "home" / ".codex"
+        default_codex.mkdir(parents=True)
+        source_auth = default_codex / "auth.json"
+        source_auth.write_text('{"token":"abc"}', encoding="utf-8")
+
+        with (
+            patch("core.execution.codex_sdk.Path.home", return_value=default_codex.parent),
+            patch("pathlib.Path.symlink_to", side_effect=OSError("symlink blocked")),
+            patch("core.execution.codex_sdk.os.link", side_effect=OSError("hardlink blocked")),
+        ):
+            executor._codex_home.mkdir(parents=True, exist_ok=True)
+            executor._propagate_auth()
+
+        target_auth = executor._codex_home / "auth.json"
+        assert target_auth.exists()
+        assert not target_auth.is_symlink()
+        assert target_auth.read_text(encoding="utf-8") == '{"token":"abc"}'
 
 
 # ── Blocking execution tests ─────────────────────────────────

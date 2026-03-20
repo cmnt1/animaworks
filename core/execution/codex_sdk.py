@@ -24,6 +24,7 @@ mechanism with thread IDs persisted to the shortterm directory.
 import asyncio
 import logging
 import os
+import shutil
 import sys
 from collections.abc import AsyncGenerator
 from dataclasses import asdict, dataclass
@@ -38,6 +39,7 @@ from core.execution.base import (
     ToolCallRecord,
     _truncate_for_record,
 )
+from core.platform.codex import default_home_dir
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
@@ -88,6 +90,19 @@ def _is_openai_api_key(key: str) -> bool:
 def _escape_toml_string(value: str) -> str:
     """Escape a string for safe embedding in a TOML double-quoted value."""
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _default_home_dir() -> str:
+    """Return a stable HOME value for Codex child processes across platforms."""
+    return default_home_dir()
+
+
+def _default_path_env() -> str:
+    """Return a non-empty PATH fallback for Codex child processes."""
+    existing = os.environ.get("PATH")
+    if existing:
+        return existing
+    return str(Path(sys.executable).resolve().parent)
 
 
 # ── Session (thread) ID persistence ──────────────────────────
@@ -421,9 +436,9 @@ class CodexSDKExecutor(BaseExecutor):
         env: dict[str, str] = {
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "PATH": _default_path_env(),
             "CODEX_HOME": str(self._codex_home),
-            "HOME": os.environ.get("HOME", "/tmp"),
+            "HOME": _default_home_dir(),
         }
         api_key = self._resolve_api_key()
         if api_key and _is_openai_api_key(api_key):
@@ -445,17 +460,19 @@ class CodexSDKExecutor(BaseExecutor):
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PYTHONPATH": str(PROJECT_DIR),
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "PATH": _default_path_env(),
         }
 
     def _propagate_auth(self) -> None:
-        """Symlink ``auth.json`` from the default CODEX_HOME into per-anima CODEX_HOME.
+        """Propagate ``auth.json`` from the default CODEX_HOME into per-anima CODEX_HOME.
 
         This lets animas share the ChatGPT subscription auth obtained via
         ``codex auth`` (or ``login_with_device_code``).  Token refreshes
-        propagate automatically through the symlink.  If the per-anima
-        directory already has a real ``auth.json`` (e.g. written by a prior
-        API-key login), it is left untouched.
+        propagate automatically when a symlink or hardlink is available.
+        On Windows, symlink creation may be disallowed for non-admin users,
+        so we gracefully fall back to a hardlink and then to a plain file
+        copy.  If the per-anima directory already has a real ``auth.json``
+        (e.g. written by a prior API-key login), it is left untouched.
         """
         default_auth = Path.home() / ".codex" / "auth.json"
         target = self._codex_home / "auth.json"
@@ -469,8 +486,26 @@ class CodexSDKExecutor(BaseExecutor):
             target.unlink()
 
         if default_auth.is_file():
-            target.symlink_to(default_auth)
-            logger.info("Symlinked auth.json → %s", default_auth)
+            try:
+                target.symlink_to(default_auth)
+                logger.info("Symlinked auth.json -> %s", default_auth)
+                return
+            except OSError as exc:
+                logger.debug("auth.json symlink unavailable; falling back: %s", exc)
+
+            try:
+                os.link(default_auth, target)
+                logger.info("Hardlinked auth.json -> %s", default_auth)
+                return
+            except OSError as exc:
+                logger.debug("auth.json hardlink unavailable; falling back to copy: %s", exc)
+
+            shutil.copy2(default_auth, target)
+            logger.warning(
+                "Copied auth.json from %s into %s; future token refreshes may require re-sync",
+                default_auth,
+                target,
+            )
 
     # Injected via config.toml ``developer_instructions`` so the Codex
     # model always produces a visible text response, even when it only

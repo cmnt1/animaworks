@@ -31,6 +31,13 @@ export function render(container) {
     </div>
 
     <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header">${t("setup.openai_auth")}</div>
+      <div class="card-body" id="openaiAuthSettings">
+        <div class="loading-placeholder">${t("common.loading")}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 1.5rem;">
       <div class="card-header">${t("setup.auth_settings")}</div>
       <div class="card-body" id="authSettings">
         <div class="loading-placeholder">${t("common.loading")}</div>
@@ -40,6 +47,7 @@ export function render(container) {
 
   _loadChecklist();
   _loadConfig();
+  _loadOpenAIAuthSettings();
   _loadAuthSettings();
 }
 
@@ -353,5 +361,143 @@ async function _loadAuthSettings() {
     }
   } catch {
     el.innerHTML = `<div class="loading-placeholder">${t("setup.auth_fetch_failed")}</div>`;
+  }
+}
+
+// ── OpenAI / Codex Auth ───────────────────
+
+async function _loadOpenAIAuthSettings() {
+  const el = document.getElementById("openaiAuthSettings");
+  if (!el) return;
+
+  try {
+    const state = await api("/api/settings/openai-auth");
+    const modeLabel = state.auth_mode === "codex_login"
+      ? t("setup.openai_auth_mode_codex")
+      : t("setup.openai_auth_mode_api");
+
+    const runtimeBadges = [
+      {
+        label: t("setup.openai_auth_env_key"),
+        ok: !!state.env_api_key_configured,
+      },
+      {
+        label: t("setup.openai_auth_codex_cli"),
+        ok: !!state.codex_cli_available,
+      },
+      {
+        label: t("setup.openai_auth_codex_login"),
+        ok: !!state.codex_login_available,
+      },
+    ];
+
+    el.innerHTML = `
+      <div style="margin-bottom: 1rem;">
+        <strong>${t("setup.openai_auth_current")}:</strong>
+        <code>${escapeHtml(modeLabel)}</code>
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <strong>${t("setup.openai_auth_saved")}:</strong>
+        <span>${state.config_present ? t("setup.openai_auth_saved_yes") : t("setup.openai_auth_saved_no")}</span>
+      </div>
+      <div style="display:grid; gap:0.5rem; margin-bottom: 1.25rem;">
+        ${runtimeBadges.map(item => `
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <span style="font-size:1.1rem;">${item.ok ? "\u2705" : "\u274C"}</span>
+            <span>${escapeHtml(item.label)}</span>
+          </div>
+        `).join("")}
+      </div>
+
+      <form id="openaiAuthForm" style="display:flex; flex-direction:column; gap:0.75rem; max-width:420px;">
+        <label style="display:flex; flex-direction:column; gap:0.35rem;">
+          <span>${t("setup.openai_auth_mode_label")}</span>
+          <select id="openaiAuthMode">
+            <option value="api_key"${state.auth_mode === "api_key" ? " selected" : ""}>${t("setup.openai_auth_mode_api")}</option>
+            <option value="codex_login"${state.auth_mode === "codex_login" ? " selected" : ""}>${t("setup.openai_auth_mode_codex")}</option>
+          </select>
+        </label>
+        <label id="openaiApiKeyWrap" style="display:${state.auth_mode === "api_key" ? "flex" : "none"}; flex-direction:column; gap:0.35rem;">
+          <span>${t("setup.openai_auth_api_key")}</span>
+          <input type="password" id="openaiApiKeyInput" placeholder="${t("setup.openai_auth_api_key_placeholder")}">
+          <small style="color:var(--text-secondary, #666);">${t("setup.openai_auth_api_key_hint")}</small>
+        </label>
+        <div id="openaiAuthResult" class="login-error hidden"></div>
+        <button type="submit" class="btn-login" style="width:auto;">${t("setup.openai_auth_save")}</button>
+      </form>
+    `;
+
+    const modeEl = document.getElementById("openaiAuthMode");
+    const apiKeyWrap = document.getElementById("openaiApiKeyWrap");
+    modeEl?.addEventListener("change", () => {
+      if (apiKeyWrap) {
+        apiKeyWrap.style.display = modeEl.value === "api_key" ? "flex" : "none";
+      }
+    });
+
+    const form = document.getElementById("openaiAuthForm");
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const result = document.getElementById("openaiAuthResult");
+      const authMode = document.getElementById("openaiAuthMode").value;
+      const apiKey = document.getElementById("openaiApiKeyInput")?.value || "";
+
+      if (authMode === "api_key" && !apiKey.trim()) {
+        result.style.color = "#ef4444";
+        result.textContent = t("setup.openai_auth_api_key_required");
+        result.classList.remove("hidden");
+        return;
+      }
+
+      try {
+        const validateRes = await fetch("/api/setup/validate-key", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            provider: "openai",
+            auth_mode: authMode,
+            api_key: apiKey,
+          }),
+        });
+        const validateData = await validateRes.json();
+        if (!validateRes.ok || !validateData.valid) {
+          result.style.color = "#ef4444";
+          result.textContent = validateData.message || validateData.detail || t("setup.openai_auth_save_failed");
+          result.classList.remove("hidden");
+          return;
+        }
+
+        const saveRes = await fetch("/api/settings/openai-auth", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            auth_mode: authMode,
+            api_key: apiKey,
+          }),
+        });
+        const saveData = await saveRes.json();
+        if (!saveRes.ok) {
+          result.style.color = "#ef4444";
+          result.textContent = saveData.detail || t("setup.openai_auth_save_failed");
+          result.classList.remove("hidden");
+          return;
+        }
+
+        result.style.color = "#22c55e";
+        result.textContent = t("setup.openai_auth_saved_success");
+        result.classList.remove("hidden");
+        await _loadConfig();
+        await _loadChecklist();
+        await _loadOpenAIAuthSettings();
+      } catch {
+        result.style.color = "#ef4444";
+        result.textContent = t("setup.network_error");
+        result.classList.remove("hidden");
+      }
+    });
+  } catch {
+    el.innerHTML = `<div class="loading-placeholder">${t("setup.openai_auth_fetch_failed")}</div>`;
   }
 }

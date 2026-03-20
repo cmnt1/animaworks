@@ -177,9 +177,10 @@ class TestCleanupZombieReap:
         handle.ipc_client = None
         handle.socket_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with patch("os.killpg"), patch("os.getpgid", return_value=12345):
+        with patch("core.supervisor.process_handle.terminate_subprocess") as mock_terminate:
             await handle._cleanup()
 
+        mock_terminate.assert_called_with(mock_process, force=False)
         mock_process.wait.assert_called()
         assert handle.process is None
 

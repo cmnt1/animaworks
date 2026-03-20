@@ -329,6 +329,10 @@ class TestSaveConfig:
         path = tmp_path / "config.json"
         save_config(config, path)
         stat = path.stat()
+        if os.name == "nt":
+            assert os.access(path, os.R_OK)
+            assert os.access(path, os.W_OK)
+            return
         # 0o600 = owner read/write only
         assert stat.st_mode & 0o777 == 0o600
 
@@ -355,6 +359,16 @@ class TestSaveConfig:
         text = path.read_text(encoding="utf-8")
         assert "\n" in text  # pretty-printed
         assert text.endswith("\n")
+
+    def test_save_overwrites_existing_file(self, tmp_path):
+        path = tmp_path / "config.json"
+        path.write_text('{"version": 1, "locale": "ja"}\n', encoding="utf-8")
+
+        config = AnimaWorksConfig(locale="en")
+        save_config(config, path)
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data["locale"] == "en"
 
 
 # ── resolve_anima_config ─────────────────────────────────

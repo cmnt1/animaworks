@@ -21,6 +21,7 @@ export function populateConfirm(data) {
   const userName = data.userinfo?.username || "-";
   const userDisplayName = data.userinfo?.display_name || "";
   const provider = data.environment?.provider || "-";
+  const authMode = data.environment?.auth_mode || "api_key";
   const imageStyle = data.environment?.image_style || "realistic";
   const leaderName = data.leader?.name || "-";
   const imageKeys = data.environment?.image_keys || {};
@@ -76,6 +77,10 @@ export function populateConfirm(data) {
           <span class="confirm-key">${t("confirm.provider")}</span>
           <span class="confirm-value">${t(`env.provider.${provider}`) || provider}</span>
         </div>
+        ${provider === "openai" ? `<div class="confirm-row">
+          <span class="confirm-key">${t("confirm.auth")}</span>
+          <span class="confirm-value">${authMode === "codex_login" ? t("confirm.codex_login") : t("confirm.api_key")}</span>
+        </div>` : ""}
         <div class="confirm-row">
           <span class="confirm-key">${t("confirm.imagestyle")}</span>
           <span class="confirm-value">${t(`env.imagestyle.${imageStyle}`)}</span>
@@ -121,8 +126,11 @@ export async function completeSetup(data) {
 
   // Add credentials from environment step
   const env = data.environment || {};
-  if (env.provider && env.api_key) {
-    payload.credentials[env.provider] = { api_key: env.api_key };
+  if (env.provider && (env.api_key || env.auth_mode === "codex_login")) {
+    payload.credentials[env.provider] = {
+      type: env.auth_mode === "codex_login" ? "codex_login" : "api_key",
+      ...(env.api_key ? { api_key: env.api_key } : {}),
+    };
   }
   // Add image generation keys
   const imageKeys = env.image_keys || {};

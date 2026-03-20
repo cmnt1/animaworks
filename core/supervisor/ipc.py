@@ -1,5 +1,5 @@
 """
-IPC communication layer using Unix Domain Sockets and JSON Lines protocol.
+IPC communication layer using JSON Lines over a platform-specific transport.
 """
 
 # AnimaWorks - Digital Anima Framework
@@ -17,6 +17,12 @@ from pathlib import Path
 from typing import Any
 
 from core.exceptions import IPCConnectionError
+from core.supervisor.transport import (
+    cleanup_ipc_endpoint,
+    open_ipc_connection,
+    resolve_client_endpoint,
+    start_ipc_server,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -118,10 +124,10 @@ RequestHandler = Callable[[IPCRequest], Awaitable[IPCResponse | AsyncIterator[IP
 
 class IPCServer:
     """
-    Unix Domain Socket server for child process.
+    IPC server for child process.
 
-    Listens on a socket file and handles incoming requests by dispatching
-    to registered handlers.
+    Listens on a platform-specific endpoint resolved from ``socket_path`` and
+    handles incoming requests by dispatching to registered handlers.
 
     Supports both single-response and streaming-response handlers:
     - If handler returns an IPCResponse, a single JSON line is sent.
@@ -133,19 +139,17 @@ class IPCServer:
         self.socket_path = socket_path
         self.request_handler = request_handler
         self.server: asyncio.Server | None = None
+        self.endpoint_description = str(socket_path)
 
     async def start(self) -> None:
-        """Start the Unix socket server."""
-        # Remove stale socket file if exists
-        if self.socket_path.exists():
-            self.socket_path.unlink()
-
-        self.server = await asyncio.start_unix_server(
+        """Start the IPC server."""
+        self.server, endpoint = await start_ipc_server(
+            self.socket_path,
             self._handle_connection,
-            path=str(self.socket_path),
             limit=IPC_BUFFER_LIMIT,
         )
-        logger.info("IPC server started on %s", self.socket_path)
+        self.endpoint_description = endpoint.describe()
+        logger.info("IPC server started on %s", self.endpoint_description)
 
     @staticmethod
     async def _chunked_write(
@@ -233,9 +237,7 @@ class IPCServer:
             await self.server.wait_closed()
             logger.info("IPC server stopped")
 
-        # Clean up socket file
-        if self.socket_path.exists():
-            self.socket_path.unlink()
+        cleanup_ipc_endpoint(self.socket_path)
 
 
 # ── IPC Client (Parent Process) ────────────────────────────────────────
@@ -243,9 +245,10 @@ class IPCServer:
 
 class IPCClient:
     """
-    Unix Domain Socket client for parent process.
+    IPC client for parent process.
 
-    Connects to a child process socket and sends requests.
+    Connects to a child process endpoint resolved from ``socket_path`` and
+    sends requests.
     """
 
     def __init__(self, socket_path: Path):
@@ -264,28 +267,26 @@ class IPCClient:
             return 60.0
 
     async def connect(self, timeout: float = 5.0) -> None:
-        """Test connectivity to the Unix socket.
+        """Test connectivity to the active IPC endpoint.
 
-        Opens a temporary connection to verify the socket is reachable,
-        then closes it immediately.  Used by ``_wait_for_ready()`` during
-        process startup to confirm the IPC server is listening.
+        Opens a temporary connection to verify the endpoint is reachable, then
+        closes it immediately. Used by ``_wait_for_ready()`` during process
+        startup to confirm the IPC server is listening.
 
         Actual request traffic uses per-request dedicated connections
         opened inside :meth:`send_request` and :meth:`send_request_stream`.
         """
         async with asyncio.timeout(timeout):
-            reader, writer = await asyncio.open_unix_connection(
-                path=str(self.socket_path),
-                limit=IPC_BUFFER_LIMIT,
-            )
+            _reader, writer = await open_ipc_connection(self.socket_path, limit=IPC_BUFFER_LIMIT)
             writer.close()
             await writer.wait_closed()
-            logger.debug("IPC client connectivity verified: %s", self.socket_path)
+            endpoint = resolve_client_endpoint(self.socket_path)
+            logger.debug("IPC client connectivity verified: %s", endpoint.describe())
 
     async def send_request(self, request: IPCRequest, timeout: float = 60.0) -> IPCResponse:
         """Send a request over a dedicated connection and wait for response.
 
-        Opens a fresh Unix socket connection for each request so that
+        Opens a fresh dedicated connection for each request so that
         concurrent traffic cannot contaminate the response with stale
         buffered data (the same pattern used by :meth:`send_request_stream`).
 
@@ -304,10 +305,7 @@ class IPCClient:
 
         async with asyncio.timeout(timeout):
             try:
-                reader, writer = await asyncio.open_unix_connection(
-                    path=str(self.socket_path),
-                    limit=IPC_BUFFER_LIMIT,
-                )
+                reader, writer = await open_ipc_connection(self.socket_path, limit=IPC_BUFFER_LIMIT)
             except (ConnectionRefusedError, FileNotFoundError, OSError) as e:
                 raise IPCConnectionError(f"Not connected: {e}") from e
 
@@ -349,7 +347,7 @@ class IPCClient:
         """
         Send a request and yield streaming responses over a dedicated connection.
 
-        Opens a fresh Unix socket connection for each streaming request (the
+        Opens a fresh dedicated connection for each streaming request (the
         same per-request pattern used by :meth:`send_request`).
 
         The first readline uses a generous timeout (``max(timeout, 120s)``)
@@ -382,16 +380,13 @@ class IPCClient:
 
         # Open a dedicated connection for this streaming request.
         logger.info(
-            "[IPC-STREAM] opening dedicated connection socket=%s method=%s id=%s",
-            self.socket_path,
+            "[IPC-STREAM] opening dedicated connection endpoint=%s method=%s id=%s",
+            resolve_client_endpoint(self.socket_path).describe(),
             request.method,
             request.id,
         )
         try:
-            stream_reader, stream_writer = await asyncio.open_unix_connection(
-                path=str(self.socket_path),
-                limit=IPC_BUFFER_LIMIT,
-            )
+            stream_reader, stream_writer = await open_ipc_connection(self.socket_path, limit=IPC_BUFFER_LIMIT)
         except (ConnectionRefusedError, FileNotFoundError, OSError) as e:
             raise IPCConnectionError(f"Not connected: {e}") from e
 
@@ -401,12 +396,12 @@ class IPCClient:
             stream_writer.write(request_line.encode("utf-8"))
             await stream_writer.drain()
             logger.info(
-                "[IPC-STREAM] request sent method=%s id=%s timeout=%.1fs first_chunk_timeout=%.1fs socket=%s",
+                "[IPC-STREAM] request sent method=%s id=%s timeout=%.1fs first_chunk_timeout=%.1fs endpoint=%s",
                 request.method,
                 request.id,
                 timeout,
                 first_chunk_timeout,
-                self.socket_path,
+                resolve_client_endpoint(self.socket_path).describe(),
             )
 
             # Read streaming responses until done

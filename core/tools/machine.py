@@ -39,12 +39,13 @@ import json
 import logging
 import os
 import shutil
-import signal
 import subprocess
 import threading as _threading
 import time
 from pathlib import Path
 from typing import Any
+
+from core.platform.process import subprocess_session_kwargs, terminate_subprocess
 
 _machine_counter = 0
 _machine_counter_lock = _threading.Lock()
@@ -414,17 +415,11 @@ def _stream_to_file(
         proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         timed_out = True
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except (OSError, ProcessLookupError):
-            pass
+        terminate_subprocess(proc, force=False)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (OSError, ProcessLookupError):
-                pass
+            terminate_subprocess(proc, force=True)
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
@@ -486,7 +481,7 @@ def _execute(
             text=True,
             cwd=working_directory,
             env=env,
-            start_new_session=True,
+            **subprocess_session_kwargs(),
         )
 
         # Write instruction to stdin and close

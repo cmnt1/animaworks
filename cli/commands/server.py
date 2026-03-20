@@ -8,12 +8,21 @@ import argparse
 import atexit
 import logging
 import os
-import signal
 import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+from core.platform.process import (
+    find_first_matching_pid,
+    subprocess_session_kwargs,
+    terminate_matching_processes,
+    terminate_pid,
+)
+from core.platform.process import (
+    is_process_alive as is_pid_alive,
+)
 
 logger = logging.getLogger("animaworks")
 
@@ -72,55 +81,16 @@ def _read_pid() -> int | None:
 
 def _is_process_alive(pid: int) -> bool:
     """Check whether a process with the given PID is currently running."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+    return is_pid_alive(pid)
 
 
 def _find_server_pid_by_process() -> int | None:
-    """Scan /proc to find the animaworks server process by command pattern.
-
-    This is a fallback when the PID file is missing.  Looks for a process
-    owned by the current user whose cmdline contains the server marker
-    **and** is a Python interpreter (to avoid matching shell wrappers).
-
-    Returns the PID if found, or None.
-    """
-    my_uid = os.getuid()
-    proc = Path("/proc")
-    if not proc.exists():
-        return None
-
-    exclude_pids = {os.getpid(), os.getppid()}
-
-    for entry in proc.iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            stat = entry.stat()
-            if stat.st_uid != my_uid:
-                continue
-            cmdline = (entry / "cmdline").read_bytes().decode("utf-8", errors="replace").replace("\x00", " ")
-            if any(m in cmdline for m in _SERVER_CMD_MARKERS):
-                pid = int(entry.name)
-                if pid in exclude_pids:
-                    continue
-                # Only match Python processes to avoid shell wrappers
-                # whose cmdline contains the marker as an eval argument
-                try:
-                    exe_name = (entry / "exe").resolve().name
-                except OSError:
-                    exe_name = ""
-                if "python" not in exe_name:
-                    continue
-                return pid
-        except (OSError, ValueError, PermissionError):
-            continue
-    return None
+    """Find the animaworks server process by command pattern."""
+    return find_first_matching_pid(
+        _SERVER_CMD_MARKERS,
+        exclude_pids={os.getpid(), os.getppid()},
+        require_python=True,
+    )
 
 
 def _stop_server(timeout: int = 10, *, force: bool = False) -> bool:
@@ -166,7 +136,7 @@ def _stop_server(timeout: int = 10, *, force: bool = False) -> bool:
 
     print(f"Stopping server (pid={pid})...")
     try:
-        os.kill(pid, signal.SIGTERM)
+        terminate_pid(pid, force=False, include_children=False)
     except ProcessLookupError:
         print("Server already exited.")
         _remove_pid_file()
@@ -175,7 +145,7 @@ def _stop_server(timeout: int = 10, *, force: bool = False) -> bool:
             if orphans:
                 print(f"Killed {orphans} orphan runner process(es).")
         return True
-    except PermissionError:
+    except Exception:
         print(f"Error: Permission denied sending signal to pid={pid}.")
         return False
 
@@ -198,13 +168,10 @@ def _stop_server(timeout: int = 10, *, force: bool = False) -> bool:
     # Force mode: escalate to SIGKILL
     print(f"Server (pid={pid}) did not stop within {timeout}s. Sending SIGKILL...")
     try:
-        try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-        except (OSError, ProcessLookupError):
-            os.kill(pid, signal.SIGKILL)
+        terminate_pid(pid, force=True, include_children=True)
     except ProcessLookupError:
         pass
-    except PermissionError:
+    except Exception:
         print(f"Error: Permission denied sending SIGKILL to pid={pid}.")
         return False
 
@@ -236,51 +203,22 @@ _RUNNER_CMD_MARKER = "core.supervisor.runner"
 def _kill_orphan_runners() -> int:
     """Kill orphaned Anima runner processes from previous server instances.
 
-    Scans /proc for processes whose cmdline contains the runner module marker
-    and references the ~/.animaworks/ data directory.  Sends SIGTERM and waits
-    briefly for each.
+    Uses psutil to find processes whose command line contains the runner module
+    marker and references the ~/.animaworks/ data directory.
 
-    Returns the number of processes killed.
+    Returns the number of processes targeted.
     """
     from core.paths import get_data_dir
 
     data_prefix = str(get_data_dir())
-    my_uid = os.getuid()
-    proc = Path("/proc")
-    if not proc.exists():
-        return 0
-
-    killed = 0
-    for entry in proc.iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            stat = entry.stat()
-            if stat.st_uid != my_uid:
-                continue
-            cmdline = (
-                (entry / "cmdline")
-                .read_bytes()
-                .decode(
-                    "utf-8",
-                    errors="replace",
-                )
-                .replace("\x00", " ")
-            )
-            if _RUNNER_CMD_MARKER not in cmdline:
-                continue
-            if data_prefix not in cmdline:
-                continue
-            pid = int(entry.name)
-            if pid == os.getpid():
-                continue
-            logger.info("Killing orphan runner (PID %d): %s", pid, cmdline[:120])
-            os.kill(pid, signal.SIGTERM)
-            killed += 1
-        except (OSError, ValueError, PermissionError):
-            continue
-
-    # Brief wait for processes to exit
+    killed = terminate_matching_processes(
+        (_RUNNER_CMD_MARKER,),
+        path_contains=data_prefix,
+        exclude_pids={os.getpid(), os.getppid()},
+        force=False,
+        include_children=False,
+        require_python=True,
+    )
     if killed:
         time.sleep(1)
 
@@ -335,8 +273,8 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
         cmd,
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
         cwd=Path(__file__).resolve().parent.parent.parent,
+        **subprocess_session_kwargs(),
     )
     log_file.close()
 
@@ -521,8 +459,15 @@ def _spawn_restart_helper(args: argparse.Namespace, old_pid: int | None) -> int:
     project_root = str(Path(__file__).resolve().parent.parent.parent)
 
     helper_code = f"""
-import os, sys, time, signal, subprocess, socket
+import os, sys, time, subprocess
 from pathlib import Path
+from core.platform.process import (
+    find_first_matching_pid,
+    is_process_alive,
+    subprocess_session_kwargs,
+    terminate_pid,
+)
+
 os.chdir({project_root!r})
 old_pid = {old_pid!r}
 host = {host!r}
@@ -530,42 +475,14 @@ port = {port!r}
 _SERVER_CMD_MARKERS = {_SERVER_CMD_MARKERS!r}
 
 def _alive(pid):
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+    return is_process_alive(pid)
 
 def _find_server_process():
-    my_uid = os.getuid()
-    my_pid = os.getpid()
-    proc = Path("/proc")
-    if not proc.exists():
-        return None
-    for entry in proc.iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            st = entry.stat()
-            if st.st_uid != my_uid:
-                continue
-            cmdline = (entry / "cmdline").read_bytes().decode("utf-8", errors="replace").replace("\\x00", " ")
-            if any(m in cmdline for m in _SERVER_CMD_MARKERS):
-                pid = int(entry.name)
-                if pid == my_pid:
-                    continue
-                try:
-                    exe_name = (entry / "exe").resolve().name
-                except OSError:
-                    exe_name = ""
-                if "python" not in exe_name:
-                    continue
-                return pid
-        except (OSError, ValueError, PermissionError):
-            continue
-    return None
+    return find_first_matching_pid(
+        _SERVER_CMD_MARKERS,
+        exclude_pids={{os.getpid(), os.getppid()}},
+        require_python=True,
+    )
 
 if old_pid is not None:
     deadline = time.monotonic() + 30
@@ -573,12 +490,9 @@ if old_pid is not None:
         time.sleep(0.3)
     if _alive(old_pid):
         try:
-            os.killpg(os.getpgid(old_pid), signal.SIGKILL)
+            terminate_pid(old_pid, force=True, include_children=True)
         except (OSError, ProcessLookupError):
-            try:
-                os.kill(old_pid, signal.SIGKILL)
-            except (OSError, ProcessLookupError):
-                pass
+            pass
         time.sleep(1)
 
 scan_deadline = time.monotonic() + 15
@@ -589,7 +503,7 @@ while time.monotonic() < scan_deadline:
 
 time.sleep(0.5)
 cmd = [sys.executable, "-m", "cli", "start", "--host", host, "--port", str(port)]
-subprocess.Popen(cmd, cwd={project_root!r})
+subprocess.Popen(cmd, cwd={project_root!r}, **subprocess_session_kwargs())
 """
 
     log_path = _get_daemon_log_path()
@@ -599,8 +513,8 @@ subprocess.Popen(cmd, cwd={project_root!r})
         [sys.executable, "-c", helper_code],
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
         cwd=project_root,
+        **subprocess_session_kwargs(),
     )
     log_file.close()
     return proc.pid

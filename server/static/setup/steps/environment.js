@@ -5,12 +5,16 @@ import { t } from "../setup.js";
 let container = null;
 let envData = {
   claude_code_available: false,
+  codex_cli_available: false,
+  codex_login_available: false,
   python_version: "",
   os_info: "",
 };
 let selectedProvider = "";
+let openaiAuthMode = "api_key";
 let apiKey = "";
 let apiKeyValid = null; // null = unchecked, true/false
+let codexLoginValid = null; // null = unchecked, true/false
 let ollamaUrl = "http://localhost:11434";
 let selectedImageStyle = "realistic";
 let imageKeys = {
@@ -49,6 +53,9 @@ async function fetchEnvironment() {
       if (envData.claude_code_available && !selectedProvider) {
         selectedProvider = "claude_code";
       }
+      if (selectedProvider === "openai" && envData.codex_login_available && !apiKey) {
+        openaiAuthMode = "codex_login";
+      }
       render();
     }
   } catch {
@@ -58,7 +65,8 @@ async function fetchEnvironment() {
 
 function render() {
   const provider = PROVIDERS.find((p) => p.id === selectedProvider);
-  const needsKey = provider?.keyRequired;
+  const isOpenAI = selectedProvider === "openai";
+  const needsKey = provider?.keyRequired && !(isOpenAI && openaiAuthMode === "codex_login");
   const isOllama = selectedProvider === "ollama";
 
   container.innerHTML = `
@@ -84,6 +92,8 @@ function render() {
       <div class="provider-cards">
         ${renderProviders()}
       </div>
+      ${isOpenAI ? renderOpenAIAuthModes() : ""}
+      ${isOpenAI && openaiAuthMode === "codex_login" ? renderCodexLoginInput() : ""}
       ${needsKey ? renderApiKeyInput() : ""}
       ${isOllama ? renderOllamaInput() : ""}
     </div>
@@ -164,6 +174,59 @@ function renderApiKeyInput() {
   `;
 }
 
+function renderOpenAIAuthModes() {
+  return `
+    <div class="api-key-section">
+      <label class="form-label" data-i18n="env.openai.auth.title">${t("env.openai.auth.title")}</label>
+      <div class="provider-cards">
+        <div class="provider-card${openaiAuthMode === "api_key" ? " selected" : ""}" data-openai-auth="api_key">
+          <div class="provider-radio"></div>
+          <div>
+            <div class="provider-name" data-i18n="env.openai.auth.api_key">${t("env.openai.auth.api_key")}</div>
+            <div class="provider-desc" data-i18n="env.openai.auth.api_key.desc">${t("env.openai.auth.api_key.desc")}</div>
+          </div>
+        </div>
+        <div class="provider-card${openaiAuthMode === "codex_login" ? " selected" : ""}" data-openai-auth="codex_login">
+          <div class="provider-radio"></div>
+          <div>
+            <div class="provider-name" data-i18n="env.openai.auth.codex_login">${t("env.openai.auth.codex_login")}</div>
+            <div class="provider-desc" data-i18n="env.openai.auth.codex_login.desc">${t("env.openai.auth.codex_login.desc")}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCodexLoginInput() {
+  let statusMessage = "";
+  let statusClass = "checking";
+
+  if (codexLoginValid === true || envData.codex_login_available) {
+    statusMessage = t("env.codex.status.ready");
+    statusClass = "valid";
+  } else if (!envData.codex_cli_available) {
+    statusMessage = t("env.codex.status.not_installed");
+    statusClass = "invalid";
+  } else if (codexLoginValid === false || !envData.codex_login_available) {
+    statusMessage = t("env.codex.status.not_logged_in");
+    statusClass = "invalid";
+  }
+
+  return `
+    <div class="api-key-section">
+      <label class="form-label" data-i18n="env.openai.auth.codex_login">${t("env.openai.auth.codex_login")}</label>
+      <div class="api-key-row">
+        <div class="api-key-input" style="display:flex;align-items:center;">
+          ${statusMessage}
+        </div>
+        <button class="btn-validate" id="btnValidateCodexLogin" data-i18n="btn.validate">${t("btn.validate")}</button>
+      </div>
+      <div id="codexLoginStatus">${statusMessage ? `<div class="validation-status ${statusClass}">${statusClass === "valid" ? "\u2713" : "\u2717"} ${statusMessage}</div>` : ""}</div>
+    </div>
+  `;
+}
+
 function renderOllamaInput() {
   return `
     <div class="api-key-section">
@@ -230,8 +293,22 @@ function bindEvents() {
   // Provider selection
   container.querySelectorAll(".provider-card").forEach((card) => {
     card.addEventListener("click", () => {
+      if (card.dataset.openaiAuth) return;
       selectedProvider = card.dataset.provider;
       apiKeyValid = null;
+      codexLoginValid = null;
+      if (selectedProvider === "openai") {
+        openaiAuthMode = envData.codex_login_available ? "codex_login" : "api_key";
+      }
+      render();
+    });
+  });
+
+  container.querySelectorAll("[data-openai-auth]").forEach((card) => {
+    card.addEventListener("click", () => {
+      openaiAuthMode = card.dataset.openaiAuth;
+      apiKeyValid = null;
+      codexLoginValid = null;
       render();
     });
   });
@@ -240,6 +317,11 @@ function bindEvents() {
   const validateBtn = container.querySelector("#btnValidateKey");
   if (validateBtn) {
     validateBtn.addEventListener("click", () => validateApiKey());
+  }
+
+  const validateCodexBtn = container.querySelector("#btnValidateCodexLogin");
+  if (validateCodexBtn) {
+    validateCodexBtn.addEventListener("click", () => validateCodexLogin());
   }
 
   const apiInput = container.querySelector("#apiKeyInput");
@@ -288,7 +370,7 @@ async function validateApiKey() {
     const res = await fetch("/api/setup/validate-key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: selectedProvider, api_key: apiKey }),
+      body: JSON.stringify({ provider: selectedProvider, auth_mode: openaiAuthMode, api_key: apiKey }),
     });
     const data = await res.json();
     apiKeyValid = data.valid;
@@ -301,6 +383,33 @@ async function validateApiKey() {
   } catch {
     statusEl.innerHTML = `<div class="validation-status invalid">\u2717 ${t("error.network")}</div>`;
     apiKeyValid = false;
+  }
+}
+
+async function validateCodexLogin() {
+  const statusEl = container.querySelector("#codexLoginStatus");
+  if (!statusEl) return;
+
+  statusEl.innerHTML = `<div class="validation-status checking"><span class="loading-spinner"></span> ${t("btn.validating")}</div>`;
+
+  try {
+    const res = await fetch("/api/setup/validate-key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "openai", auth_mode: "codex_login" }),
+    });
+    const data = await res.json();
+    codexLoginValid = data.valid;
+    envData.codex_login_available = !!data.valid;
+
+    if (data.valid) {
+      statusEl.innerHTML = `<div class="validation-status valid">\u2713 ${data.message || t("env.codex.status.ready")}</div>`;
+    } else {
+      statusEl.innerHTML = `<div class="validation-status invalid">\u2717 ${data.message || t("env.codex.status.not_logged_in")}</div>`;
+    }
+  } catch {
+    statusEl.innerHTML = `<div class="validation-status invalid">\u2717 ${t("error.network")}</div>`;
+    codexLoginValid = false;
   }
 }
 
@@ -354,12 +463,18 @@ export function validateEnvironment() {
   const errorEl = container.querySelector("#envError");
 
   if (!selectedProvider) {
-    errorEl.innerHTML = `<div class="error-message">${t("error.apikey_required")}</div>`;
+    errorEl.innerHTML = `<div class="error-message">${t("error.provider_required")}</div>`;
     return false;
   }
 
   const provider = PROVIDERS.find((p) => p.id === selectedProvider);
-  if (provider?.keyRequired && !apiKey.trim()) {
+  if (selectedProvider === "openai" && openaiAuthMode === "codex_login") {
+    if (!(envData.codex_login_available || codexLoginValid === true)) {
+      errorEl.innerHTML = `<div class="error-message">${t("error.codex_login_required")}</div>`;
+      return false;
+    }
+  }
+  if (provider?.keyRequired && !(selectedProvider === "openai" && openaiAuthMode === "codex_login") && !apiKey.trim()) {
     errorEl.innerHTML = `<div class="error-message">${t("error.apikey_required")}</div>`;
     return false;
   }
@@ -371,6 +486,7 @@ export function validateEnvironment() {
 export function getEnvironmentData() {
   return {
     provider: selectedProvider,
+    auth_mode: selectedProvider === "openai" ? openaiAuthMode : "api_key",
     api_key: apiKey || undefined,
     ollama_url: selectedProvider === "ollama" ? ollamaUrl : undefined,
     image_style: selectedImageStyle,

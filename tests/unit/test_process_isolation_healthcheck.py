@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import signal
 from datetime import timedelta
 from core.time_utils import now_jst
 from pathlib import Path
@@ -22,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.platform.process import subprocess_session_kwargs
 from core.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
@@ -79,11 +79,11 @@ def handle(tmp_path: Path) -> ProcessHandle:
 
 
 class TestProcessGroupIsolation:
-    """Tests for subprocess session isolation (start_new_session=True)."""
+    """Tests for subprocess isolation through the process adapter."""
 
     @pytest.mark.asyncio
     async def test_popen_uses_start_new_session(self, tmp_path: Path):
-        """Verify Popen is called with start_new_session=True."""
+        """Verify Popen is called with the platform session kwargs."""
         handle = ProcessHandle(
             anima_name="test-anima",
             socket_path=tmp_path / "test.sock",
@@ -104,18 +104,16 @@ class TestProcessGroupIsolation:
 
             mock_popen.assert_called_once()
             call_kwargs = mock_popen.call_args
-            assert call_kwargs.kwargs.get("start_new_session") is True \
-                or (len(call_kwargs.args) > 0 and False) \
-                or call_kwargs[1].get("start_new_session") is True
+            for key, value in subprocess_session_kwargs().items():
+                assert call_kwargs.kwargs.get(key) == value
 
     @pytest.mark.asyncio
-    async def test_stop_uses_killpg_for_sigterm(self, handle: ProcessHandle):
-        """Verify stop() uses os.killpg() for SIGTERM instead of process.terminate()."""
-        killpg_called = False
+    async def test_stop_uses_adapter_for_graceful_terminate(self, handle: ProcessHandle):
+        """Verify stop() delegates graceful termination to the process adapter."""
+        terminate_called = False
 
-        # Process stays alive until killpg sends SIGTERM, then exits
         def poll_side_effect():
-            if killpg_called:
+            if terminate_called:
                 return 0
             return None
 
@@ -127,99 +125,86 @@ class TestProcessGroupIsolation:
             raise ConnectionError("IPC lost")
         handle.send_request = fail_send
 
-        def killpg_side_effect(pgid, sig):
-            nonlocal killpg_called
-            killpg_called = True
+        def terminate_side_effect(proc, *, force, include_children=True):
+            nonlocal terminate_called
+            terminate_called = True
+            assert proc is handle.process
+            assert force is False
 
-        with patch("core.supervisor.process_handle.os.killpg", side_effect=killpg_side_effect) as mock_killpg, \
-             patch("core.supervisor.process_handle.os.getpgid", return_value=12345):
+        with patch("core.supervisor.process_handle.terminate_subprocess", side_effect=terminate_side_effect):
             await handle.stop(timeout=2.0)
 
-            # killpg should have been called with SIGTERM
-            assert any(
-                call.args == (12345, signal.SIGTERM)
-                for call in mock_killpg.call_args_list
-            )
+        assert terminate_called
 
     @pytest.mark.asyncio
-    async def test_stop_falls_back_to_terminate_on_os_error(
+    async def test_stop_escalates_to_force_kill_via_adapter(
         self, handle: ProcessHandle,
     ):
-        """Verify stop() falls back to process.terminate() if killpg raises OSError."""
-        terminate_called = False
+        """Verify stop() escalates from graceful terminate to force kill via the adapter."""
+        call_forces: list[bool] = []
 
         def poll_side_effect():
-            if terminate_called:
-                return 0
             return None
 
         handle.process.poll.side_effect = poll_side_effect
         handle.process.returncode = 0
-
-        original_terminate = handle.process.terminate
-
-        def track_terminate():
-            nonlocal terminate_called
-            terminate_called = True
-
-        handle.process.terminate.side_effect = track_terminate
 
         # IPC shutdown fails so we reach SIGTERM step
         async def fail_send(*args, **kwargs):
             raise ConnectionError("IPC lost")
         handle.send_request = fail_send
 
-        with patch("core.supervisor.process_handle.os.killpg", side_effect=OSError("ESRCH")), \
-             patch("core.supervisor.process_handle.os.getpgid", return_value=12345):
+        def terminate_side_effect(proc, *, force, include_children=True):
+            call_forces.append(force)
+            if force:
+                handle.process.poll.side_effect = lambda: 0
+
+        with patch("core.supervisor.process_handle.terminate_subprocess", side_effect=terminate_side_effect):
             await handle.stop(timeout=2.0)
 
-            # Should have fallen back to terminate()
-            assert terminate_called
+        assert call_forces == [False, True]
 
     @pytest.mark.asyncio
-    async def test_kill_uses_killpg_for_sigkill(self, handle: ProcessHandle):
-        """Verify kill() uses os.killpg() with SIGKILL."""
+    async def test_kill_uses_adapter_for_force_terminate(self, handle: ProcessHandle):
+        """Verify kill() uses the adapter with force=True."""
+        mock_process = handle.process
         handle.process.wait.return_value = -9
         handle.process.returncode = -9
-        # After kill, process is dead so poll() returns exit code
         handle.process.poll.return_value = -9
 
-        with patch("core.supervisor.process_handle.os.killpg") as mock_killpg, \
-             patch("core.supervisor.process_handle.os.getpgid", return_value=12345):
+        with patch("core.supervisor.process_handle.terminate_subprocess") as mock_terminate:
             await handle.kill()
 
-            # The first killpg call should be SIGKILL (from kill())
-            assert any(
-                call.args == (12345, signal.SIGKILL)
-                for call in mock_killpg.call_args_list
-            )
+        assert mock_terminate.call_args_list[0].args == (mock_process,)
+        assert mock_terminate.call_args_list[0].kwargs == {"force": True}
 
     @pytest.mark.asyncio
-    async def test_kill_falls_back_on_os_error(
+    async def test_kill_calls_adapter_even_with_mocked_process(
         self, handle: ProcessHandle,
     ):
-        """Verify kill() falls back to process.kill() if killpg raises OSError."""
+        """Verify kill() delegates to the adapter for mocked processes."""
         mock_process = handle.process
         mock_process.wait.return_value = -9
         mock_process.returncode = -9
 
-        with patch("core.supervisor.process_handle.os.killpg", side_effect=OSError("ESRCH")), \
-             patch("core.supervisor.process_handle.os.getpgid", return_value=12345):
+        with patch("core.supervisor.process_handle.terminate_subprocess") as mock_terminate:
             await handle.kill()
 
-            mock_process.kill.assert_called()
+        assert mock_terminate.call_count >= 1
+        assert mock_terminate.call_args_list[0].args == (mock_process,)
+        assert mock_terminate.call_args_list[0].kwargs == {"force": True}
 
     @pytest.mark.asyncio
-    async def test_cleanup_uses_killpg(self, handle: ProcessHandle):
-        """Verify _cleanup() uses os.killpg() for orphaned subprocess termination."""
+    async def test_cleanup_uses_adapter(self, handle: ProcessHandle):
+        """Verify _cleanup() uses the process adapter for orphaned subprocess termination."""
+        mock_process = handle.process
         handle.process.poll.return_value = None  # Still alive
         handle.process.wait.side_effect = [None]  # Exits after SIGTERM
 
-        with patch("core.supervisor.process_handle.os.killpg") as mock_killpg, \
-             patch("core.supervisor.process_handle.os.getpgid", return_value=12345):
+        with patch("core.supervisor.process_handle.terminate_subprocess") as mock_terminate:
             await handle._cleanup()
 
-            mock_killpg.assert_called_with(12345, signal.SIGTERM)
+        mock_terminate.assert_called_with(mock_process, force=False)
 
 
 # ── Bug 2: FAILED log spam suppression ────────────────────────

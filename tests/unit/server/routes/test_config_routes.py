@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
 
+from core.config.models import AnimaWorksConfig, CredentialConfig
 from server.routes.config_routes import _mask_secrets
 
 
@@ -146,12 +148,85 @@ class TestGetConfig:
         assert "Invalid config JSON" in resp.json()["detail"]
 
 
+class TestOpenAIAuthSettings:
+    async def test_get_openai_auth_uses_config_and_runtime_status(self, monkeypatch):
+        config = AnimaWorksConfig(
+            credentials={
+                "openai": CredentialConfig(type="codex_login"),
+            }
+        )
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.is_codex_cli_available", return_value=True),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=True),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/settings/openai-auth")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["auth_mode"] == "codex_login"
+        assert data["config_present"] is True
+        assert data["codex_cli_available"] is True
+        assert data["codex_login_available"] is True
+        assert data["configured"] is True
+
+    async def test_put_openai_auth_saves_api_key(self):
+        config = AnimaWorksConfig()
+        saved = {}
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        def _save_config(updated):
+            saved["config"] = updated
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.save_config", side_effect=_save_config),
+            patch("server.routes.config_routes.is_codex_cli_available", return_value=True),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.put(
+                    "/api/settings/openai-auth",
+                    json={"auth_mode": "api_key", "api_key": "sk-test-openai"},
+                )
+
+        assert resp.status_code == 200
+        saved_config = saved["config"]
+        assert saved_config.credentials["openai"].type == "api_key"
+        assert saved_config.credentials["openai"].api_key == "sk-test-openai"
+
+    async def test_put_openai_auth_rejects_missing_codex_login(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=AnimaWorksConfig()),
+            patch("server.routes.config_routes.is_codex_cli_available", return_value=True),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.put(
+                    "/api/settings/openai-auth",
+                    json={"auth_mode": "codex_login"},
+                )
+
+        assert resp.status_code == 400
+        assert resp.status_code == 400
+
+
 # ── GET /system/init-status ─────────────────────────────────
 
 
 class TestInitStatus:
     async def test_nothing_initialized(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
         # Remove API keys from environment
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -187,6 +262,7 @@ class TestInitStatus:
 
     async def test_with_config_and_animas(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -230,6 +306,7 @@ class TestInitStatus:
 
     async def test_api_key_detection(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -247,13 +324,32 @@ class TestInitStatus:
         checks = data["checks"]
         anthropic_check = next(c for c in checks if c["label"] == "Anthropic APIキー")
         assert anthropic_check["ok"] is True
-        openai_check = next(c for c in checks if c["label"] == "OpenAI APIキー")
+        openai_check = next(c for c in checks if c["label"] == "OpenAI APIキー / Codex Login")
         assert openai_check["ok"] is True
         google_check = next(c for c in checks if c["label"] == "Google APIキー")
         assert google_check["ok"] is False
 
+    async def test_codex_login_counts_as_openai_auth(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: True)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/init-status")
+        data = resp.json()
+
+        assert data["api_keys"]["openai"] is True
+        assert data["api_keys"]["codex_login"] is True
+        openai_check = next(c for c in data["checks"] if c["label"] == "OpenAI APIキー / Codex Login")
+        assert openai_check["ok"] is True
+
     async def test_animas_without_identity_not_counted(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -283,6 +379,7 @@ class TestInitStatus:
     async def test_checks_array_has_all_expected_labels(self, tmp_path, monkeypatch):
         """Verify that the checks array contains all expected labels."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -298,7 +395,7 @@ class TestInitStatus:
             "Anima登録",
             "共有ディレクトリ",
             "Anthropic APIキー",
-            "OpenAI APIキー",
+            "OpenAI APIキー / Codex Login",
             "Google APIキー",
             "初期化完了",
         }
@@ -308,6 +405,7 @@ class TestInitStatus:
     async def test_checks_items_have_ok_field(self, tmp_path, monkeypatch):
         """Every check item must have at least 'label' and 'ok' fields."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -325,6 +423,7 @@ class TestInitStatus:
     async def test_animas_detail_with_multiple(self, tmp_path, monkeypatch):
         """Anima check detail should show correct count with multiple animas."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)

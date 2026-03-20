@@ -19,7 +19,6 @@ be persisted in the mapping.  Slack Incoming Webhooks do **not** return a
 and thread replies to them will not be routed back.
 """
 
-import fcntl
 import json
 import logging
 import re
@@ -27,6 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.platform.locks import file_lock
 from core.paths import get_data_dir
 
 logger = logging.getLogger("animaworks.notification.reply_routing")
@@ -70,8 +70,7 @@ def save_notification_mapping(
 
     try:
         with path.open("a+") as fd:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            try:
+            with file_lock(fd, exclusive=True):
                 fd.seek(0)
                 raw = fd.read()
                 data: dict[str, Any] = json.loads(raw) if raw.strip() else {}
@@ -90,8 +89,6 @@ def save_notification_mapping(
                 fd.truncate()
                 fd.write(json.dumps(data, ensure_ascii=False, indent=2))
                 fd.flush()
-            finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
     except OSError:
         logger.exception("Failed to save notification mapping for ts=%s", ts)
 
@@ -107,11 +104,8 @@ def lookup_notification_mapping(thread_ts: str) -> dict[str, str] | None:
         return None
     try:
         with path.open("r") as fd:
-            fcntl.flock(fd, fcntl.LOCK_SH)
-            try:
+            with file_lock(fd, exclusive=False):
                 data = json.load(fd)
-            finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
     except (json.JSONDecodeError, OSError):
         return None
     entry = data.get(thread_ts)
@@ -131,8 +125,7 @@ def prune_old_entries(max_age_days: int = _MAX_AGE_DAYS) -> None:
         return
     try:
         with path.open("a+") as fd:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            try:
+            with file_lock(fd, exclusive=True):
                 fd.seek(0)
                 raw = fd.read()
                 data: dict[str, Any] = json.loads(raw) if raw.strip() else {}
@@ -143,8 +136,6 @@ def prune_old_entries(max_age_days: int = _MAX_AGE_DAYS) -> None:
                     fd.truncate()
                     fd.write(json.dumps(data, ensure_ascii=False, indent=2))
                     fd.flush()
-            finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
     except OSError:
         logger.exception("Failed to prune notification mapping")
 

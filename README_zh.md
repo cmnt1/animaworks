@@ -26,7 +26,7 @@
 | **记忆** | 脑科学启发：巩固、三阶段遗忘、六通道自动激活（含信任标签） | 认知记忆（手动遗忘） | 检查点 + 跨线程存储 | SuperMemory 知识图谱 | 仅会话级别 |
 | **自主性** | 心跳（观察→计划→反思）+ Cron + TaskExec — 7×24 运行 | 人工触发 | 人工触发 | Cron + 心跳 | 人工触发 |
 | **组织结构** | 上级→下级层级、委派、审计、仪表盘 | Crew 内扁平角色 | — | 单一智能体 | 仅 Handoff |
-| **进程模型** | 每个智能体独立 Unix 进程、Socket IPC、自动重启 | 共享进程 | 共享进程 | 单一进程 | 共享进程 |
+| **进程模型** | 每个智能体独立 OS 进程、IPC、自动重启 | 共享进程 | 共享进程 | 单一进程 | 共享进程 |
 | **多模型** | 4 引擎：Claude SDK / Codex / LiteLLM / Assisted | LiteLLM | LangChain 模型 | OpenAI 兼容 | 以 OpenAI 为主 |
 
 > AnimaWorks 不是任务运行器——它是一个会思考、记忆、遗忘和成长的组织。它可以作为团队支撑业务，作为公司来运营。
@@ -52,24 +52,37 @@ docker compose up              # 打开 http://localhost:18500
 
 ## 快速开始
 
+macOS / Linux / WSL:
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
 cd animaworks
 uv run animaworks start     # 启动服务器 — 首次运行时会打开设置向导
 ```
 
+Windows (PowerShell):
+
+```powershell
+git clone https://github.com/xuiltul/animaworks.git
+cd animaworks
+uv sync
+uv run animaworks start
+```
+
+如果你想在没有 API 密钥的情况下使用 OpenAI Codex，请在首次启动前执行 `codex login`。
+
 打开 **http://localhost:18500/** — 设置向导会引导你完成以下步骤：
 
 1. **语言** — 选择界面语言
 2. **用户信息** — 创建所有者账户
-3. **API 密钥** — 输入你的大语言模型 API 密钥（实时验证）
+3. **提供商认证** — 输入 API 密钥，或在 OpenAI 中选择 Codex Login
 4. **第一个 Anima** — 为你的第一个智能体命名
 
 无需手动编辑 `.env`。向导会自动将所有内容保存到 `config.json`。
 
-安装脚本会自动安装 [uv](https://docs.astral.sh/uv/)、克隆仓库，并下载 Python 3.12+ 及所有依赖项。支持 **macOS、Linux 和 WSL**，无需预先安装 Python。
+安装脚本会自动安装 [uv](https://docs.astral.sh/uv/)、克隆仓库，并下载 Python 3.12+ 及所有依赖项。它覆盖 **macOS、Linux 和 WSL**，无需预先安装 Python。**Windows** 请使用上面的 PowerShell / 手动安装步骤。
 
-> **想使用其他大语言模型？** AnimaWorks 支持 Claude、GPT、Gemini、本地模型等。在设置向导中输入 API 密钥，或稍后从仪表盘的**设置**中添加。详见下方 [API 密钥参考](#api-密钥参考)。
+> **想使用其他大语言模型？** AnimaWorks 支持 Claude、GPT、Gemini、本地模型等。你可以在设置向导中输入 API 密钥，或在 OpenAI/Codex 场景下使用 **Codex Login**。之后也可以在仪表盘的**设置**中修改。详见下方 [API 密钥参考](#api-密钥参考)。
 
 <details>
 <summary><strong>备选方案：运行前先检查脚本</strong></summary>
@@ -218,8 +231,10 @@ animaworks start
 | 密钥 | 服务 | 模式 | 获取地址 |
 |------|------|------|---------|
 | `ANTHROPIC_API_KEY` | Anthropic API | S / A | [console.anthropic.com](https://console.anthropic.com/) |
-| `OPENAI_API_KEY` | OpenAI | A / C | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `OPENAI_API_KEY` | OpenAI | A / C（使用 Codex Login 时可选） | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | `GOOGLE_API_KEY` | Google AI (Gemini) | A | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+
+**OpenAI Codex（Mode C）** 除了 `OPENAI_API_KEY` 之外，也可以使用本地 **Codex Login**（`codex login`），并在设置向导或 Settings 页面中选择。
 
 **Azure OpenAI**、**Vertex AI (Gemini)**、**AWS Bedrock** 和 **vLLM** — 在 `config.json` 的 `credentials` 部分配置。详见[技术规格](docs/spec.md)。
 
@@ -269,7 +284,7 @@ animaworks start
 
 经理会自动获得**主管工具**：任务委派、进度跟踪、下属重启/禁用、组织仪表盘、下属状态读取——与真实经理的工作内容相同。
 
-每个 Anima 作为独立进程运行，由 ProcessSupervisor 管理，通过 Unix Domain Socket 通信。
+每个 Anima 作为独立进程运行，由 ProcessSupervisor 管理，并通过本地 IPC 通信（Unix 系统使用 Unix socket，Windows 使用 loopback TCP）。
 
 </details>
 
@@ -283,7 +298,7 @@ animaworks start
 | **信任边界标记** | 所有外部数据（网络搜索、Slack、邮件）均标记为 `untrusted`——模型被明确告知不得遵循来自不可信来源的指令 |
 | **5 层命令安全** | Shell 注入检测 → 硬编码黑名单 → 每智能体禁止命令 → 每智能体允许列表 → 路径遍历检查 |
 | **文件沙箱** | 每个智能体被限制在自己的目录中。关键文件（`permissions.json`、`identity.md`）对智能体不可修改 |
-| **进程隔离** | 每个智能体一个独立 OS 进程，通过 Unix Domain Socket 通信——不使用 TCP |
+| **进程隔离** | 每个智能体一个独立 OS 进程，通过本地 IPC 通信（Unix socket 或 loopback TCP） |
 | **3 层速率限制** | 会话内去重 → 基于角色的出站配额 → 通过提示词注入近期发送记录实现自我感知 |
 | **级联防止** | 深度限制器 + 级联检测。5 分钟冷却期，延迟处理 |
 | **认证与会话** | Argon2id 哈希、48 字节随机令牌、最多 10 个会话 |

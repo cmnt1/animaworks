@@ -26,7 +26,7 @@ A framework that treats AI agents not as tools, but as autonomous people. Each A
 | **Memory** | Brain-inspired: consolidation, 3-stage forgetting, 6-channel priming with trust tags | Cognitive memory with manual forget | Checkpoint + cross-thread store | SuperMemory knowledge graph | Session-scoped |
 | **Autonomy** | Heartbeat (observe/plan/reflect) + Cron + TaskExec — runs 24/7 | Human-triggered | Human-triggered | Cron + heartbeat | Human-triggered |
 | **Org structure** | Supervisor→subordinate hierarchy, delegation, audit, dashboard | Flat roles in a crew | — | Single agent | Handoffs only |
-| **Process model** | One Unix process per agent, socket IPC, auto-restart | Shared process | Shared process | Single process | Shared process |
+| **Process model** | One OS process per agent, IPC, auto-restart | Shared process | Shared process | Single process | Shared process |
 | **Multi-model** | 4 engines: Claude SDK / Codex / LiteLLM / Assisted | LiteLLM | LangChain models | OpenAI-compatible | OpenAI-focused |
 
 > AnimaWorks is not a task runner — it's an organization that thinks, remembers, forgets, and grows. It supports your business as a team and can be operated as a company.
@@ -52,24 +52,37 @@ A 3-person team (manager + engineer + coordinator) starts working immediately, w
 
 ## Quick Start
 
+macOS / Linux / WSL:
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
 cd animaworks
 uv run animaworks start     # start the server — setup wizard opens on first run
 ```
 
+Windows (PowerShell):
+
+```powershell
+git clone https://github.com/xuiltul/animaworks.git
+cd animaworks
+uv sync
+uv run animaworks start
+```
+
+If you want to use OpenAI Codex without an API key, run `codex login` before the first launch.
+
 Open **http://localhost:18500/** — the setup wizard walks you through it:
 
 1. **Language** — pick your UI language
 2. **User info** — create your owner account
-3. **API key** — enter your LLM API key (validated in real time)
+3. **Provider auth** — enter an API key, or choose Codex Login for OpenAI
 4. **First Anima** — name your first agent
 
 No `.env` editing needed. The wizard saves everything to `config.json` automatically.
 
-The setup script installs [uv](https://docs.astral.sh/uv/), clones the repo, and downloads Python 3.12+ with all dependencies. Works on **macOS, Linux, and WSL** with no pre-installed Python required.
+The setup script installs [uv](https://docs.astral.sh/uv/), clones the repo, and downloads Python 3.12+ with all dependencies. It covers **macOS, Linux, and WSL** with no pre-installed Python required. On **Windows**, use the PowerShell/manual steps above.
 
-> **Want to use a different LLM?** AnimaWorks supports Claude, GPT, Gemini, local models, and more. Enter your API key in the setup wizard, or add it later from **Settings** in the dashboard. See [API Key Reference](#api-key-reference) below.
+> **Want to use a different LLM?** AnimaWorks supports Claude, GPT, Gemini, local models, and more. Enter your API key in the setup wizard, or use **Codex Login** for OpenAI/Codex. You can change it later from **Settings** in the dashboard. See [API Key Reference](#api-key-reference) below.
 
 <details>
 <summary><strong>Alternative: inspect the script before running</strong></summary>
@@ -218,8 +231,10 @@ Three principles make this work:
 | Key | Service | Mode | Get it at |
 |-----|---------|------|-----------|
 | `ANTHROPIC_API_KEY` | Anthropic API | S / A | [console.anthropic.com](https://console.anthropic.com/) |
-| `OPENAI_API_KEY` | OpenAI | A / C | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `OPENAI_API_KEY` | OpenAI | A / C (optional for Codex Login) | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | `GOOGLE_API_KEY` | Google AI (Gemini) | A | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+
+For **OpenAI Codex (Mode C)**, you can either set `OPENAI_API_KEY` or use local **Codex Login** (`codex login`) and select it in the setup wizard / Settings page.
 
 For **Azure OpenAI**, **Vertex AI (Gemini)**, **AWS Bedrock**, and **vLLM** — configure in the `credentials` section of `config.json`. See the [technical spec](docs/spec.md) for details.
 
@@ -269,7 +284,7 @@ Role templates automatically apply role-specific prompts, permissions, and model
 
 Managers get **supervisor tools** automatically: task delegation, progress tracking, subordinate restart/disable, org dashboard, subordinate state reading — the same things a real manager does.
 
-Each Anima runs as an isolated process managed by ProcessSupervisor, communicating over Unix Domain Sockets.
+Each Anima runs as an isolated process managed by ProcessSupervisor, communicating over local IPC (Unix sockets on Unix-like systems, loopback TCP on Windows).
 
 </details>
 
@@ -283,7 +298,7 @@ When you give autonomous agents real tools, security has to be serious. We actua
 | **Trust boundary labeling** | All external data (web search, Slack, email) is tagged `untrusted` — the model is told never to follow directives from untrusted sources |
 | **5-layer command security** | Shell injection detection → hardcoded blocklist → per-agent denied commands → per-agent allowlist → path traversal check |
 | **File sandboxing** | Each agent is confined to its own directory. Critical files (`permissions.json`, `identity.md`) are immutable to the agent |
-| **Process isolation** | One OS process per agent, communicating via Unix Domain Sockets — not TCP |
+| **Process isolation** | One OS process per agent, communicating via local IPC (Unix sockets or loopback TCP depending on platform) |
 | **3-layer rate limiting** | Per-session dedup → role-based outbound budgets → self-awareness via prompt injection of recent sends |
 | **Cascade prevention** | Depth limiter + cascade detection. 5-minute cooldown with deferred processing |
 | **Auth & sessions** | Argon2id hashing, 48-byte random tokens, max 10 sessions |
