@@ -220,6 +220,107 @@ class TestOpenAIAuthSettings:
         assert resp.status_code == 400
 
 
+class TestLocalLLMSettings:
+    async def test_get_local_llm_returns_runtime_state(self):
+        config = AnimaWorksConfig()
+        config.anima_defaults.model = "ollama/qwen2.5-coder:14b"
+        config.anima_defaults.credential = "ollama"
+        config.credentials["ollama"] = CredentialConfig(type="ollama", base_url="http://127.0.0.1:11434")
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch(
+                "server.routes.config_routes._list_ollama_models",
+                return_value=[
+                    "ollama/qwen2.5-coder:14b",
+                    "ollama/deepseek-r1:8b",
+                    "ollama/glm4:9b",
+                ],
+            ),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/settings/local-llm")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["reachable"] is True
+        assert data["configured"] is True
+        assert data["default_model"] == "ollama/qwen2.5-coder:14b"
+        assert data["role_presets"]["engineer"] == "coding"
+
+    async def test_put_local_llm_sets_ollama_as_default(self):
+        config = AnimaWorksConfig()
+        saved = {}
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        def _save_config(updated):
+            saved["config"] = updated
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.save_config", side_effect=_save_config),
+            patch(
+                "server.routes.config_routes._list_ollama_models",
+                return_value=[
+                    "ollama/qwen2.5-coder:14b",
+                    "ollama/deepseek-r1:8b",
+                    "ollama/glm4:9b",
+                ],
+            ),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.put(
+                    "/api/settings/local-llm",
+                    json={
+                        "base_url": "http://127.0.0.1:11434/v1",
+                        "default_model": "qwen2.5-coder:14b",
+                        "presets": {
+                            "coding": "ollama/qwen2.5-coder:14b",
+                            "reasoning": "deepseek-r1:8b",
+                            "general": "glm4:9b",
+                        },
+                    },
+                )
+
+        assert resp.status_code == 200
+        saved_config = saved["config"]
+        assert saved_config.local_llm.base_url == "http://127.0.0.1:11434"
+        assert saved_config.credentials["ollama"].type == "ollama"
+        assert saved_config.anima_defaults.credential == "ollama"
+        assert saved_config.anima_defaults.model == "ollama/qwen2.5-coder:14b"
+
+    async def test_apply_local_llm_role_presets_updates_existing_animas(self, tmp_path):
+        config = AnimaWorksConfig()
+        config.credentials["ollama"] = CredentialConfig(type="ollama", base_url="http://127.0.0.1:11434")
+        config.anima_defaults.credential = "ollama"
+        animas_dir = tmp_path / "animas"
+        engineer_dir = animas_dir / "alice"
+        engineer_dir.mkdir(parents=True)
+        (engineer_dir / "status.json").write_text(
+            json.dumps({"role": "engineer", "enabled": True}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.get_animas_dir", return_value=animas_dir),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/settings/local-llm/apply-role-presets")
+
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 1
+        status = json.loads((engineer_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["model"] == "ollama/qwen2.5-coder:14b"
+        assert status["credential"] == "ollama"
+
+
 # ── GET /system/init-status ─────────────────────────────────
 
 

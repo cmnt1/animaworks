@@ -17,8 +17,10 @@ from core.config.models import (
     AnimaModelConfig,
     AnimaWorksConfig,
     CredentialConfig,
+    DEFAULT_LOCAL_LLM_MODEL,
     GatewaySystemConfig,
     ImageGenConfig,
+    LocalLLMConfig,
     RAGConfig,
     SystemConfig,
     WorkerSystemConfig,
@@ -102,6 +104,7 @@ class TestAnimaWorksConfig:
         assert isinstance(config.system, SystemConfig)
         assert "anthropic" in config.credentials
         assert config.animas == {}
+        assert config.local_llm.default_model == DEFAULT_LOCAL_LLM_MODEL
 
     def test_roundtrip_json(self):
         config = AnimaWorksConfig()
@@ -110,6 +113,27 @@ class TestAnimaWorksConfig:
         restored = AnimaWorksConfig.model_validate(data)
         assert restored.animas["alice"].supervisor == "bob"
         assert restored.animas["alice"].speciality == "engineer"
+
+
+class TestLocalLLMConfig:
+    def test_defaults(self):
+        config = LocalLLMConfig()
+        assert config.base_url == "http://127.0.0.1:11434"
+        assert config.default_model == "ollama/qwen2.5-coder:14b"
+        assert config.presets["coding"] == "ollama/qwen2.5-coder:14b"
+        assert config.presets["reasoning"] == "ollama/deepseek-r1:8b"
+        assert config.role_presets["engineer"] == "coding"
+        assert config.role_presets["manager"] == "reasoning"
+
+    def test_missing_presets_are_backfilled(self):
+        config = LocalLLMConfig(
+            presets={"coding": "ollama/gemma3:12b"},
+            role_presets={"engineer": "coding", "writer": "general"},
+        )
+        assert config.presets["coding"] == "ollama/gemma3:12b"
+        assert config.presets["general"] == "ollama/glm4:9b"
+        assert config.role_presets["engineer"] == "coding"
+        assert config.role_presets["researcher"] == "reasoning"
 
 
 class TestImageGenConfig:
@@ -457,6 +481,18 @@ class TestResolveAnimaConfig:
         config.animas["bob"] = AnimaModelConfig(supervisor="sakura")
         resolved, _ = resolve_anima_config(config, "bob", anima_dir=tmp_path)
         assert resolved.supervisor == "sakura"
+
+    def test_local_llm_role_preset_applies_when_model_is_not_explicit(self, tmp_path):
+        status = {"role": "engineer"}
+        (tmp_path / "status.json").write_text(json.dumps(status), encoding="utf-8")
+        config = AnimaWorksConfig()
+        config.credentials["ollama"] = CredentialConfig(type="ollama", base_url="http://127.0.0.1:11434")
+        config.anima_defaults.credential = "ollama"
+        config.local_llm.default_model = "ollama/qwen2.5-coder:14b"
+        resolved, credential = resolve_anima_config(config, "bob", anima_dir=tmp_path)
+        assert resolved.model == "ollama/qwen2.5-coder:14b"
+        assert resolved.credential == "ollama"
+        assert credential.base_url == "http://127.0.0.1:11434"
 
 
 # ── Pattern specificity ───────────────────────────────────

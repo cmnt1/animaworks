@@ -549,6 +549,13 @@ def _create_status_json(
         if key in role_defaults:
             status[key] = role_defaults[key]
 
+    # When Ollama is the configured default backend, use the role preset
+    # instead of the static template model.
+    from core.config.local_llm import apply_local_llm_role_to_status
+    from core.config.models import load_config
+
+    apply_local_llm_role_to_status(status, load_config(), role)
+
     # Character sheet model/credential override role defaults if specified
     sheet_model = info.get("model", "")
     if sheet_model:

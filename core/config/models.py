@@ -55,6 +55,10 @@ from core.config.resolver import _load_status_json, resolve_anima_config
 from core.config.schemas import (
     DEFAULT_ANIMA_MODEL,
     DEFAULT_CONSOLIDATION_MODEL,
+    DEFAULT_LOCAL_LLM_BASE_URL,
+    DEFAULT_LOCAL_LLM_MODEL,
+    DEFAULT_LOCAL_LLM_PRESETS,
+    DEFAULT_LOCAL_LLM_ROLE_PRESETS,
     ROLE_OUTBOUND_DEFAULTS,
     ActivityLogConfig,
     ActivityScheduleEntry,
@@ -75,6 +79,7 @@ from core.config.schemas import (
     HousekeepingConfig,
     HumanNotificationConfig,
     ImageGenConfig,
+    LocalLLMConfig,
     MachineConfig,
     MediaProxyConfig,
     NotificationChannelConfig,

@@ -29,6 +29,7 @@ from core.anima_factory import (
     list_anima_templates,
     validate_anima_name,
 )
+from core.config.models import AnimaWorksConfig, CredentialConfig
 
 
 # ── validate_anima_name ──────────────────────────────────
@@ -688,6 +689,30 @@ class TestCreateStatusJson:
         _create_status_json(person_dir, info, supervisor_override="rin")
         status = json.loads((person_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "rin"
+
+    def test_local_llm_role_preset_overrides_template_model(self, tmp_path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        roles_root = tmp_path / "roles"
+        engineer_dir = roles_root / "engineer"
+        engineer_dir.mkdir(parents=True)
+        (engineer_dir / "defaults.json").write_text(
+            json.dumps({"model": "claude-opus-4-6"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        config = AnimaWorksConfig()
+        config.credentials["ollama"] = CredentialConfig(type="ollama", base_url="http://127.0.0.1:11434")
+        config.anima_defaults.credential = "ollama"
+
+        with (
+            patch("core.anima_factory.SHARED_ROLES_DIR", roles_root),
+            patch("core.config.models.load_config", return_value=config),
+        ):
+            _create_status_json(anima_dir, {}, role="engineer")
+
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["model"] == "ollama/qwen2.5-coder:14b"
+        assert status["credential"] == "ollama"
 
 
 # ── _ensure_status_json ──────────────────────────────────

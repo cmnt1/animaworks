@@ -45,7 +45,12 @@ AVAILABLE_PROVIDERS = [
     {
         "id": "ollama",
         "name": "Ollama (Local)",
-        "models": ["ollama/gemma3:27b", "ollama/llama3.3:70b"],
+        "models": [
+            "ollama/qwen2.5-coder:14b",
+            "ollama/deepseek-r1:8b",
+            "ollama/glm4:9b",
+            "ollama/gemma3:12b",
+        ],
         "env_key": None,
     },
 ]

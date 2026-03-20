@@ -8,11 +8,26 @@ import logging
 import os
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from core.config.models import CredentialConfig, load_config, save_config
+from core.config.local_llm import (
+    apply_local_llm_presets_to_animas,
+    normalize_ollama_base_url,
+    normalize_ollama_model_name,
+)
+from core.config.models import (
+    CredentialConfig,
+    DEFAULT_LOCAL_LLM_BASE_URL,
+    DEFAULT_LOCAL_LLM_PRESETS,
+    DEFAULT_LOCAL_LLM_ROLE_PRESETS,
+    LocalLLMConfig,
+    load_config,
+    save_config,
+)
 from core.i18n import t
+from core.paths import get_animas_dir
 from core.platform.codex import is_codex_cli_available, is_codex_login_available
 
 logger = logging.getLogger("animaworks.routes.config")
@@ -21,6 +36,13 @@ logger = logging.getLogger("animaworks.routes.config")
 class UpdateOpenAIAuthRequest(BaseModel):
     auth_mode: str = "api_key"
     api_key: str = ""
+
+
+class UpdateLocalLLMRequest(BaseModel):
+    base_url: str = DEFAULT_LOCAL_LLM_BASE_URL
+    default_model: str = DEFAULT_LOCAL_LLM_PRESETS["coding"]
+    presets: dict[str, str] = {}
+    role_presets: dict[str, str] = {}
 
 
 def _mask_secrets(obj: object) -> object:
@@ -68,6 +90,66 @@ def _serialize_openai_auth() -> dict[str, object]:
         "codex_cli_available": codex_cli_available,
         "codex_login_available": codex_login_available,
         "configured": configured,
+    }
+
+
+def _list_ollama_models(base_url: str) -> list[str]:
+    response = httpx.get(
+        f"{base_url}/api/tags",
+        timeout=httpx.Timeout(10.0, connect=5.0),
+    )
+    response.raise_for_status()
+    data = response.json()
+    models = sorted(
+        {
+            normalize_ollama_model_name(str(item.get("name", "")).strip())
+            for item in data.get("models", [])
+            if item.get("name")
+        }
+    )
+    return [model for model in models if model]
+
+
+def _serialize_local_llm() -> dict[str, object]:
+    config = load_config()
+    local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
+    base_url = normalize_ollama_base_url(local_llm.base_url)
+    default_model = normalize_ollama_model_name(local_llm.default_model)
+    presets = {
+        name: normalize_ollama_model_name(model)
+        for name, model in local_llm.presets.items()
+    }
+
+    available_models: list[str] = []
+    reachable = False
+    error: str | None = None
+    try:
+        available_models = _list_ollama_models(base_url)
+        reachable = True
+    except Exception as exc:  # pragma: no cover
+        error = str(exc)
+
+    ollama_credential = config.credentials.get("ollama")
+    configured = (
+        config.anima_defaults.credential == "ollama"
+        and normalize_ollama_model_name(config.anima_defaults.model) == default_model
+        and ollama_credential is not None
+        and normalize_ollama_base_url(ollama_credential.base_url) == base_url
+    )
+
+    return {
+        "base_url": base_url,
+        "default_model": default_model,
+        "presets": presets,
+        "role_presets": dict(local_llm.role_presets),
+        "recommended_presets": dict(DEFAULT_LOCAL_LLM_PRESETS),
+        "recommended_role_presets": dict(DEFAULT_LOCAL_LLM_ROLE_PRESETS),
+        "available_models": available_models,
+        "reachable": reachable,
+        "error": error,
+        "configured": configured,
+        "current_default_model": config.anima_defaults.model,
+        "current_default_credential": config.anima_defaults.credential,
     }
 
 
@@ -144,6 +226,11 @@ def create_config_router() -> APIRouter:
         """Return current OpenAI auth mode and runtime availability."""
         return _serialize_openai_auth()
 
+    @router.get("/settings/local-llm")
+    async def get_local_llm(request: Request):
+        """Return local Ollama-backed model settings and runtime availability."""
+        return _serialize_local_llm()
+
     @router.put("/settings/openai-auth")
     async def update_openai_auth(body: UpdateOpenAIAuthRequest, request: Request):
         """Persist OpenAI auth mode in config.json for the settings UI."""
@@ -178,5 +265,56 @@ def create_config_router() -> APIRouter:
 
         save_config(config)
         return _serialize_openai_auth()
+
+    @router.put("/settings/local-llm")
+    async def update_local_llm(body: UpdateLocalLLMRequest, request: Request):
+        """Persist local LLM settings and make Ollama the default execution target."""
+        base_url = normalize_ollama_base_url(body.base_url)
+        config = load_config()
+        current_local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
+
+        default_model = normalize_ollama_model_name(body.default_model)
+        presets = dict(current_local_llm.presets)
+        for name, model in body.presets.items():
+            if name in presets and model.strip():
+                presets[name] = normalize_ollama_model_name(model)
+
+        role_presets = dict(current_local_llm.role_presets)
+        for role_name, preset_name in body.role_presets.items():
+            if role_name in role_presets and preset_name in presets:
+                role_presets[role_name] = preset_name
+
+        available_models = set(_list_ollama_models(base_url))
+        requested_models = {default_model, *presets.values()}
+        missing = sorted(model for model in requested_models if model not in available_models)
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ollama models not found on {base_url}: {', '.join(missing)}",
+            )
+
+        config.local_llm = LocalLLMConfig(
+            base_url=base_url,
+            default_model=default_model,
+            presets=presets,
+            role_presets=role_presets,
+        )
+        config.credentials["ollama"] = CredentialConfig(
+            type="ollama",
+            api_key="",
+            base_url=base_url,
+        )
+        config.anima_defaults.model = default_model
+        config.anima_defaults.credential = "ollama"
+
+        save_config(config)
+        return _serialize_local_llm()
+
+    @router.post("/settings/local-llm/apply-role-presets")
+    async def apply_local_llm_role_presets(request: Request):
+        """Apply the configured role-based local LLM presets to existing animas."""
+        config = load_config()
+        updated = apply_local_llm_presets_to_animas(get_animas_dir(), config)
+        return {"updated": updated, "count": len(updated)}
 
     return router

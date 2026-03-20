@@ -97,6 +97,51 @@ class AnimaDefaults(BaseModel):
     default_workspace: str = ""
 
 
+# ── Local LLM defaults ───────────────────────────────────────────────────────
+DEFAULT_LOCAL_LLM_BASE_URL: str = "http://127.0.0.1:11434"
+DEFAULT_LOCAL_LLM_MODEL: str = "ollama/qwen2.5-coder:14b"
+DEFAULT_LOCAL_LLM_PRESETS: dict[str, str] = {
+    "coding": "ollama/qwen2.5-coder:14b",
+    "reasoning": "ollama/deepseek-r1:8b",
+    "general": "ollama/glm4:9b",
+}
+DEFAULT_LOCAL_LLM_ROLE_PRESETS: dict[str, str] = {
+    "engineer": "coding",
+    "researcher": "reasoning",
+    "manager": "reasoning",
+    "writer": "general",
+    "ops": "general",
+    "general": "general",
+}
+
+
+class LocalLLMConfig(BaseModel):
+    """User-facing defaults for local Ollama-backed models."""
+
+    base_url: str = DEFAULT_LOCAL_LLM_BASE_URL
+    default_model: str = DEFAULT_LOCAL_LLM_MODEL
+    presets: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_LOCAL_LLM_PRESETS))
+    role_presets: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_LOCAL_LLM_ROLE_PRESETS))
+
+    @model_validator(mode="after")
+    def ensure_required_presets(self) -> "LocalLLMConfig":
+        merged_presets = dict(DEFAULT_LOCAL_LLM_PRESETS)
+        for key, value in self.presets.items():
+            if value:
+                merged_presets[key] = value
+        self.presets = merged_presets
+
+        merged_role_presets = dict(DEFAULT_LOCAL_LLM_ROLE_PRESETS)
+        for key, value in self.role_presets.items():
+            if value in merged_presets:
+                merged_role_presets[key] = value
+        self.role_presets = merged_role_presets
+
+        if not self.default_model:
+            self.default_model = merged_presets["coding"]
+        return self
+
+
 # ── Outbound budget defaults per role ─────────────────────────────────────────
 ROLE_OUTBOUND_DEFAULTS: dict[str, dict[str, int]] = {
     "manager": {"max_outbound_per_hour": 60, "max_outbound_per_day": 300, "max_recipients_per_run": 10},
@@ -614,6 +659,7 @@ class AnimaWorksConfig(BaseModel):
     voice: VoiceConfig = VoiceConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
     machine: MachineConfig = MachineConfig()
+    local_llm: LocalLLMConfig = LocalLLMConfig()
     workspaces: dict[str, str] = {}  # alias → absolute path
     activity_level: int = Field(
         default=100,
@@ -640,6 +686,10 @@ __all__ = [
     "CredentialConfig",
     "DEFAULT_ANIMA_MODEL",
     "DEFAULT_CONSOLIDATION_MODEL",
+    "DEFAULT_LOCAL_LLM_BASE_URL",
+    "DEFAULT_LOCAL_LLM_MODEL",
+    "DEFAULT_LOCAL_LLM_PRESETS",
+    "DEFAULT_LOCAL_LLM_ROLE_PRESETS",
     "ElevenLabsVoiceConfig",
     "ExternalMessagingChannelConfig",
     "ExternalMessagingConfig",
@@ -648,6 +698,7 @@ __all__ = [
     "HousekeepingConfig",
     "HumanNotificationConfig",
     "ImageGenConfig",
+    "LocalLLMConfig",
     "MachineConfig",
     "MediaProxyConfig",
     "NotificationChannelConfig",

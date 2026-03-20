@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from core.config.local_llm import is_local_llm_default, resolve_local_llm_role_model
 from core.config.schemas import AnimaDefaults, AnimaModelConfig, AnimaWorksConfig, CredentialConfig
 
 logger = logging.getLogger("animaworks.config")
@@ -70,6 +71,21 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
     return result
 
 
+def _load_status_role(anima_dir: Path | None) -> str:
+    """Read the role from status.json, defaulting to ``general``."""
+    if anima_dir is None:
+        return "general"
+    status_path = anima_dir / "status.json"
+    if not status_path.is_file():
+        return "general"
+    try:
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return "general"
+    role = data.get("role")
+    return role if isinstance(role, str) and role.strip() else "general"
+
+
 def resolve_anima_config(
     config: AnimaWorksConfig,
     anima_name: str,
@@ -100,6 +116,7 @@ def resolve_anima_config(
     defaults = config.anima_defaults
 
     status_values = _load_status_json(anima_dir) if anima_dir else {}
+    role = _load_status_role(anima_dir)
 
     # Merge priority (strongest first):
     #   1. status.json (including explicit null for supervisor/speciality)
@@ -109,6 +126,10 @@ def resolve_anima_config(
     for field_name in AnimaDefaults.model_fields:
         if field_name in status_values:
             resolved[field_name] = status_values[field_name]
+        elif field_name == "model" and is_local_llm_default(config):
+            resolved[field_name] = resolve_local_llm_role_model(config.local_llm, role)
+        elif field_name == "credential" and is_local_llm_default(config):
+            resolved[field_name] = "ollama"
         elif field_name in ("supervisor", "speciality"):
             # Fallback to config.animas for org structure fields
             anima_value = getattr(anima_entry, field_name)
