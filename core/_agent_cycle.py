@@ -335,7 +335,22 @@ class CycleMixin:
                 session_id=self._tool_handler.session_id,
                 tool_call_count=len(result.tool_call_records),
             )
-            shortterm.clear()
+            if result.session_rotation_pending:
+                from dataclasses import asdict as _d_asdict
+
+                shortterm.save(
+                    SessionState(
+                        timestamp=now_iso(),
+                        trigger=trigger,
+                        original_prompt=prompt,
+                        accumulated_response=result.text[-2000:] if result.text else "",
+                        tool_uses=[_d_asdict(r) for r in result.tool_call_records],
+                        turn_count=0,
+                    )
+                )
+                logger.info("Mode D rotation pending — saved shortterm for next turn")
+            else:
+                shortterm.clear()
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info(
                 "run_cycle END (d) trigger=%s duration_ms=%d response_len=%d",

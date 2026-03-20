@@ -477,6 +477,8 @@ class ExecutionResult:
     tool_call_records: list[ToolCallRecord] = field(default_factory=list)
     force_chain: bool = False
     usage: TokenUsage | None = None
+    session_rotated: bool = False
+    session_rotation_pending: bool = False
 
 
 class BaseExecutor(ABC):

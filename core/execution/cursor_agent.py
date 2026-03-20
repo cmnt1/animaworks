@@ -39,6 +39,7 @@ logger = logging.getLogger("animaworks.execution.cursor_agent")
 __all__ = [
     "CursorAgentExecutor",
     "is_cursor_agent_available",
+    "_MAX_RESUME_TURNS",
     "_RESUMABLE_TRIGGERS",
     "_chat_id_path",
     "_clear_chat_id",
@@ -53,6 +54,7 @@ _CURSOR_AGENT_BINARY_NAMES = ("agent", "cursor-agent", "cursor")
 _DEFAULT_TIMEOUT_SECONDS = 600
 _GRACEFUL_KILL_WAIT = 3.0
 _RESUMABLE_TRIGGERS = frozenset({"chat"})
+_MAX_RESUME_TURNS = 10
 
 # ── Binary discovery ───────────────────────────────────────────
 
@@ -92,23 +94,55 @@ def _chat_id_path(anima_dir: Path, session_type: str, thread_id: str = "default"
     return base / "cursor_chat_id.txt"
 
 
-def _save_chat_id(anima_dir: Path, chat_id: str, session_type: str, thread_id: str = "default") -> None:
+def _save_chat_id(
+    anima_dir: Path,
+    chat_id: str,
+    session_type: str,
+    thread_id: str = "default",
+    turn_count: int = 1,
+) -> None:
     p = _chat_id_path(anima_dir, session_type, thread_id)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(chat_id, encoding="utf-8")
+    p.write_text(f"{chat_id}\n{turn_count}", encoding="utf-8")
 
 
-def _load_chat_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> str | None:
+def _load_chat_id(
+    anima_dir: Path,
+    session_type: str,
+    thread_id: str = "default",
+) -> tuple[str | None, int]:
+    """Load chat ID and turn count from persistence file.
+
+    Returns ``(chat_id, turn_count)``.  Backward-compatible with
+    the legacy 1-line format (returns turn_count=0).
+    """
     p = _chat_id_path(anima_dir, session_type, thread_id)
-    if p.is_file():
-        cid = p.read_text(encoding="utf-8").strip()
-        return cid or None
-    return None
+    if not p.is_file():
+        return (None, 0)
+    try:
+        lines = p.read_text(encoding="utf-8").strip().splitlines()
+    except OSError:
+        return (None, 0)
+    chat_id = lines[0].strip() if lines else None
+    if not chat_id:
+        return (None, 0)
+    try:
+        turn_count = int(lines[1].strip()) if len(lines) > 1 else 0
+    except (ValueError, IndexError):
+        turn_count = 0
+    return (chat_id, turn_count)
 
 
 def _clear_chat_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:
     p = _chat_id_path(anima_dir, session_type, thread_id)
     p.unlink(missing_ok=True)
+
+
+def _format_current_time() -> str:
+    """Return a short time-stamp string for resume-turn injection."""
+    from core.time_utils import now_local
+
+    return "[" + now_local().strftime("%Y-%m-%d %H:%M %Z") + "]"
 
 
 # ── Executor ───────────────────────────────────────────────────
@@ -173,6 +207,50 @@ class CursorAgentExecutor(BaseExecutor):
             }
         }
         mcp_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+    def _write_cursor_rules(self) -> None:
+        """Write static identity/rules to .cursor/rules/ for compaction resilience.
+
+        Writes identity.md, behavior_rules.md, and permissions.md into the
+        cursor-agent workspace so they are loaded as persistent rules that
+        survive context compaction.  Skips writing when the file content
+        has not changed (I/O reduction).
+        """
+        rules_dir = self._workspace / ".cursor" / "rules"
+        try:
+            rules_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.warning("Cannot create .cursor/rules/ directory")
+            return
+
+        file_sources: dict[str, Path] = {
+            "identity.md": self._anima_dir / "identity.md",
+            "permissions.md": self._anima_dir / "permissions.md",
+        }
+        for name, src in file_sources.items():
+            if not src.is_file():
+                continue
+            try:
+                content = src.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if not content:
+                continue
+            dest = rules_dir / name
+            if dest.exists() and dest.read_text(encoding="utf-8") == content:
+                continue
+            dest.write_text(content, encoding="utf-8")
+
+        try:
+            from core.paths import load_prompt
+
+            br_content = load_prompt("behavior_rules")
+            if br_content:
+                dest = rules_dir / "behavior_rules.md"
+                if not dest.exists() or dest.read_text(encoding="utf-8") != br_content:
+                    dest.write_text(br_content, encoding="utf-8")
+        except Exception:
+            logger.debug("Could not write behavior_rules to .cursor/rules", exc_info=True)
 
     def _resolve_cursor_model(self) -> str:
         """Strip cursor/ prefix from model name."""
@@ -320,8 +398,16 @@ class CursorAgentExecutor(BaseExecutor):
 
         For resumable triggers (currently ``chat`` only), persists the
         cursor-agent session ID to disk and passes ``--resume <chatId>``
-        on subsequent calls.  If resume fails the chatId is cleared and
-        a fresh session is attempted once.
+        on subsequent calls.
+
+        Turn-based session rotation (A+C hybrid):
+
+        * Turns 2–N (resume): only the current time is injected; the full
+          system prompt is skipped to reduce context bloat.
+        * When ``turn_count >= _MAX_RESUME_TURNS``, the chatId is cleared
+          and a fresh session starts with the full system prompt.
+        * Static identity/rules are persisted in ``.cursor/rules/`` so
+          they survive cursor-agent's internal context compaction.
         """
         if self._check_interrupted():
             return ExecutionResult(text="[Session interrupted by user]")
@@ -332,20 +418,47 @@ class CursorAgentExecutor(BaseExecutor):
 
         self._ensure_workspace()
         self._write_mcp_config()
-
-        if system_prompt:
-            combined_prompt = "<system_context>\n" + system_prompt + "\n</system_context>\n\n" + prompt
-        else:
-            combined_prompt = prompt
+        self._write_cursor_rules()
 
         session_type = _resolve_session_type(trigger)
         is_resumable = session_type in _RESUMABLE_TRIGGERS
-        resume_chat_id = _load_chat_id(self._anima_dir, session_type, thread_id) if is_resumable else None
+
+        loaded_chat_id: str | None = None
+        turn_count = 0
+        if is_resumable:
+            loaded_chat_id, turn_count = _load_chat_id(self._anima_dir, session_type, thread_id)
+
+        session_rotated = False
+        resume_chat_id = loaded_chat_id
+
+        if loaded_chat_id and turn_count >= _MAX_RESUME_TURNS:
+            session_rotated = True
+            _clear_chat_id(self._anima_dir, session_type, thread_id)
+            resume_chat_id = None
+            logger.info(
+                "Session rotation at turn %d (max=%d, type=%s)",
+                turn_count,
+                _MAX_RESUME_TURNS,
+                session_type,
+            )
+
+        # ── Build combined prompt ──────────────────────────
+        time_prefix = _format_current_time()
+        if resume_chat_id:
+            combined_prompt = time_prefix + "\n\n" + prompt
+        else:
+            if system_prompt:
+                combined_prompt = (
+                    "<system_context>\n" + system_prompt + "\n</system_context>\n\n" + time_prefix + "\n\n" + prompt
+                )
+            else:
+                combined_prompt = time_prefix + "\n\n" + prompt
 
         if resume_chat_id:
             logger.info(
-                "Resuming cursor-agent session %s (type=%s, thread=%s)",
+                "Resuming cursor-agent session %s (turn=%d, type=%s, thread=%s)",
                 resume_chat_id[:12],
+                turn_count + 1,
                 session_type,
                 thread_id,
             )
@@ -358,11 +471,36 @@ class CursorAgentExecutor(BaseExecutor):
                 resume_chat_id[:12],
             )
             _clear_chat_id(self._anima_dir, session_type, thread_id)
-            result, session_id, _failed = await self._run_subprocess(combined_prompt, resume_chat_id=None)
+            if system_prompt:
+                fresh_prompt = (
+                    "<system_context>\n" + system_prompt + "\n</system_context>\n\n" + time_prefix + "\n\n" + prompt
+                )
+            else:
+                fresh_prompt = time_prefix + "\n\n" + prompt
+            result, session_id, _failed = await self._run_subprocess(fresh_prompt, resume_chat_id=None)
+            session_rotated = True
+
+        # ── Persist session state ──────────────────────────
+        if session_rotated:
+            new_turn = 1
+        elif resume_chat_id:
+            new_turn = turn_count + 1
+        else:
+            new_turn = 1
 
         if session_id and is_resumable:
-            _save_chat_id(self._anima_dir, session_id, session_type, thread_id)
-            logger.debug("Saved cursor-agent chat_id %s for %s/%s", session_id[:12], session_type, thread_id)
+            _save_chat_id(self._anima_dir, session_id, session_type, thread_id, new_turn)
+            logger.debug(
+                "Saved cursor-agent chat_id %s turn=%d for %s/%s",
+                session_id[:12],
+                new_turn,
+                session_type,
+                thread_id,
+            )
+
+        rotation_pending = is_resumable and not session_rotated and new_turn >= _MAX_RESUME_TURNS
+        result.session_rotated = session_rotated
+        result.session_rotation_pending = rotation_pending
 
         return result
 

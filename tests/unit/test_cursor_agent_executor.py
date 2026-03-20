@@ -17,6 +17,7 @@ import pytest
 
 from core.execution.base import ExecutionResult
 from core.execution.cursor_agent import (
+    _MAX_RESUME_TURNS,
     _RESUMABLE_TRIGGERS,
     CursorAgentExecutor,
     _chat_id_path,
@@ -275,6 +276,7 @@ class TestExecute:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
             result = await executor.execute(prompt="hello", system_prompt="You are helpful")
@@ -303,6 +305,7 @@ class TestExecute:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", side_effect=mock_create),
         ):
             await executor.execute(prompt="do something", system_prompt="You are Alice")
@@ -348,6 +351,7 @@ class TestExecute:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
             result = await executor.execute(prompt="test")
@@ -370,6 +374,7 @@ class TestExecute:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
             result = await executor.execute(prompt="hello")
@@ -390,6 +395,7 @@ class TestExecute:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
             result = await executor.execute(prompt="hello")
@@ -428,37 +434,75 @@ class TestSessionTypeResolution:
 
 class TestChatIdPersistence:
     def test_save_and_load(self, anima_dir):
+        _save_chat_id(anima_dir, "sess-abc-123", "chat", turn_count=3)
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid == "sess-abc-123"
+        assert tc == 3
+
+    def test_save_default_turn_count(self, anima_dir):
         _save_chat_id(anima_dir, "sess-abc-123", "chat")
-        assert _load_chat_id(anima_dir, "chat") == "sess-abc-123"
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid == "sess-abc-123"
+        assert tc == 1
 
     def test_load_missing_returns_none(self, anima_dir):
-        assert _load_chat_id(anima_dir, "chat") is None
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid is None
+        assert tc == 0
 
     def test_load_empty_file_returns_none(self, anima_dir):
         p = _chat_id_path(anima_dir, "chat")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("", encoding="utf-8")
-        assert _load_chat_id(anima_dir, "chat") is None
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid is None
+        assert tc == 0
 
     def test_load_whitespace_only_returns_none(self, anima_dir):
         p = _chat_id_path(anima_dir, "chat")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("   \n  ", encoding="utf-8")
-        assert _load_chat_id(anima_dir, "chat") is None
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid is None
+        assert tc == 0
+
+    def test_backward_compatible_single_line(self, anima_dir):
+        """Legacy 1-line format (chatId only) → turn_count=0."""
+        p = _chat_id_path(anima_dir, "chat")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("legacy-session-id", encoding="utf-8")
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid == "legacy-session-id"
+        assert tc == 0
+
+    def test_corrupted_turn_count(self, anima_dir):
+        """Non-integer second line → turn_count=0."""
+        p = _chat_id_path(anima_dir, "chat")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("some-session\nNOT_A_NUMBER", encoding="utf-8")
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid == "some-session"
+        assert tc == 0
 
     def test_clear(self, anima_dir):
         _save_chat_id(anima_dir, "sess-abc-123", "chat")
         _clear_chat_id(anima_dir, "chat")
-        assert _load_chat_id(anima_dir, "chat") is None
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid is None
+        assert tc == 0
 
     def test_clear_missing_no_error(self, anima_dir):
         _clear_chat_id(anima_dir, "chat")
 
     def test_thread_id_isolation(self, anima_dir):
-        _save_chat_id(anima_dir, "sess-default", "chat", "default")
-        _save_chat_id(anima_dir, "sess-thread-a", "chat", "thread-a")
-        assert _load_chat_id(anima_dir, "chat", "default") == "sess-default"
-        assert _load_chat_id(anima_dir, "chat", "thread-a") == "sess-thread-a"
+        _save_chat_id(anima_dir, "sess-default", "chat", "default", turn_count=2)
+        _save_chat_id(anima_dir, "sess-thread-a", "chat", "thread-a", turn_count=5)
+        cid_d, tc_d = _load_chat_id(anima_dir, "chat", "default")
+        cid_a, tc_a = _load_chat_id(anima_dir, "chat", "thread-a")
+        assert cid_d == "sess-default"
+        assert tc_d == 2
+        assert cid_a == "sess-thread-a"
+        assert tc_a == 5
 
     def test_path_default_thread(self, anima_dir):
         p = _chat_id_path(anima_dir, "chat", "default")
@@ -500,18 +544,20 @@ class TestSessionResume:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
             result = await executor.execute(prompt="hello", trigger="chat")
 
         assert result.text == "Hi!"
-        saved = _load_chat_id(anima_dir, "chat")
-        assert saved == "sid-aaa-bbb-ccc"
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid == "sid-aaa-bbb-ccc"
+        assert tc == 1
 
     @pytest.mark.asyncio
     async def test_resume_uses_saved_chat_id(self, executor, anima_dir):
         """Second chat → --resume flag with saved chatId."""
-        _save_chat_id(anima_dir, "prev-session-id", "chat")
+        _save_chat_id(anima_dir, "prev-session-id", "chat", turn_count=2)
         captured_cmds: list[list[str]] = []
 
         async def mock_create(*args, **kwargs):
@@ -535,6 +581,7 @@ class TestSessionResume:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", side_effect=mock_create),
         ):
             await executor.execute(prompt="follow up", trigger="chat")
@@ -543,12 +590,14 @@ class TestSessionResume:
         assert "--resume" in flat_cmd
         ri = flat_cmd.index("--resume")
         assert flat_cmd[ri + 1] == "prev-session-id"
-        assert _load_chat_id(anima_dir, "chat") == "new-session-id"
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid == "new-session-id"
+        assert tc == 3
 
     @pytest.mark.asyncio
     async def test_resume_failure_retries_fresh(self, executor, anima_dir):
         """Resume fails → clear chatId → retry without --resume."""
-        _save_chat_id(anima_dir, "stale-session", "chat")
+        _save_chat_id(anima_dir, "stale-session", "chat", turn_count=3)
         call_count = 0
 
         async def mock_create(*args, **kwargs):
@@ -580,13 +629,16 @@ class TestSessionResume:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", side_effect=mock_create),
         ):
             result = await executor.execute(prompt="retry test", trigger="chat")
 
         assert call_count == 2
         assert result.text == "Recovered!"
-        assert _load_chat_id(anima_dir, "chat") == "fresh-session"
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid == "fresh-session"
+        assert tc == 1
 
     @pytest.mark.asyncio
     async def test_non_resumable_trigger_skips_resume(self, executor, anima_dir):
@@ -613,6 +665,7 @@ class TestSessionResume:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", side_effect=mock_create),
         ):
             await executor.execute(prompt="heartbeat check", trigger="heartbeat")
@@ -642,16 +695,18 @@ class TestSessionResume:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
             await executor.execute(prompt="hello", trigger="chat")
 
-        assert _load_chat_id(anima_dir, "chat") is None
+        cid, _ = _load_chat_id(anima_dir, "chat")
+        assert cid is None
 
     @pytest.mark.asyncio
     async def test_auth_error_does_not_retry(self, executor, anima_dir):
         """Auth errors should not trigger resume retry."""
-        _save_chat_id(anima_dir, "some-session", "chat")
+        _save_chat_id(anima_dir, "some-session", "chat", turn_count=2)
 
         mock_proc = AsyncMock()
         mock_proc.stdout = AsyncMock()
@@ -672,6 +727,7 @@ class TestSessionResume:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", side_effect=counting_create),
         ):
             result = await executor.execute(prompt="hello", trigger="chat")
@@ -701,12 +757,300 @@ class TestSessionResume:
             patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
             patch.object(executor, "_ensure_workspace"),
             patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
             await executor.execute(prompt="hello", trigger="chat", thread_id="thread-b")
 
-        assert _load_chat_id(anima_dir, "chat", "thread-b") == "thread-b-session"
-        assert _load_chat_id(anima_dir, "chat", "default") is None
+        cid_b, _ = _load_chat_id(anima_dir, "chat", "thread-b")
+        assert cid_b == "thread-b-session"
+        cid_d, _ = _load_chat_id(anima_dir, "chat", "default")
+        assert cid_d is None
+
+
+# ── Turn rotation tests ──────────────────────────────────────
+
+
+class TestTurnRotation:
+    """Tests for A+C hybrid session rotation."""
+
+    @pytest.mark.asyncio
+    async def test_rotation_at_max_turns(self, executor, anima_dir):
+        """When turn_count >= MAX → chatId cleared, fresh session."""
+        _save_chat_id(anima_dir, "old-session", "chat", turn_count=_MAX_RESUME_TURNS)
+        captured_cmds: list[list[str]] = []
+
+        async def mock_create(*args, **kwargs):
+            captured_cmds.append(list(args))
+            mock_proc = AsyncMock()
+            mock_proc.stdout = AsyncMock()
+            mock_proc.stderr = AsyncMock()
+            mock_proc.returncode = 0
+            mock_proc.wait = AsyncMock()
+            mock_proc.stderr.read = AsyncMock(return_value=b"")
+            events = [
+                {"type": "system", "subtype": "init", "session_id": "new-rotated-session"},
+                {"type": "assistant", "message": {"content": [{"type": "text", "text": "Fresh!"}]}},
+                {"type": "result", "result": "Fresh!"},
+            ]
+            line_data = _make_ndjson_lines(events)
+            line_iter = iter(line_data.split(b"\n"))
+            mock_proc.stdout.readline = AsyncMock(side_effect=lambda: next(line_iter, b""))
+            return mock_proc
+
+        with (
+            patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
+            patch.object(executor, "_ensure_workspace"),
+            patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
+            patch("asyncio.create_subprocess_exec", side_effect=mock_create),
+        ):
+            result = await executor.execute(prompt="hello", system_prompt="You are helpful", trigger="chat")
+
+        assert result.text == "Fresh!"
+        assert result.session_rotated is True
+        assert result.session_rotation_pending is False
+        flat_cmd = captured_cmds[0]
+        assert "--resume" not in flat_cmd
+        assert "<system_context>" in flat_cmd[-1]
+        cid, tc = _load_chat_id(anima_dir, "chat")
+        assert cid == "new-rotated-session"
+        assert tc == 1
+
+    @pytest.mark.asyncio
+    async def test_rotation_pending_on_last_turn(self, executor, anima_dir):
+        """When new turn_count reaches MAX → rotation_pending=True."""
+        _save_chat_id(anima_dir, "session-abc", "chat", turn_count=_MAX_RESUME_TURNS - 1)
+
+        async def mock_create(*args, **kwargs):
+            mock_proc = AsyncMock()
+            mock_proc.stdout = AsyncMock()
+            mock_proc.stderr = AsyncMock()
+            mock_proc.returncode = 0
+            mock_proc.wait = AsyncMock()
+            mock_proc.stderr.read = AsyncMock(return_value=b"")
+            events = [
+                {"type": "system", "subtype": "init", "session_id": "session-abc"},
+                {"type": "result", "result": "ok"},
+            ]
+            line_data = _make_ndjson_lines(events)
+            line_iter = iter(line_data.split(b"\n"))
+            mock_proc.stdout.readline = AsyncMock(side_effect=lambda: next(line_iter, b""))
+            return mock_proc
+
+        with (
+            patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
+            patch.object(executor, "_ensure_workspace"),
+            patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
+            patch("asyncio.create_subprocess_exec", side_effect=mock_create),
+        ):
+            result = await executor.execute(prompt="last turn", trigger="chat")
+
+        assert result.session_rotated is False
+        assert result.session_rotation_pending is True
+        _, tc = _load_chat_id(anima_dir, "chat")
+        assert tc == _MAX_RESUME_TURNS
+
+    @pytest.mark.asyncio
+    async def test_no_rotation_before_max(self, executor, anima_dir):
+        """Mid-session: neither rotated nor pending."""
+        _save_chat_id(anima_dir, "session-abc", "chat", turn_count=3)
+
+        async def mock_create(*args, **kwargs):
+            mock_proc = AsyncMock()
+            mock_proc.stdout = AsyncMock()
+            mock_proc.stderr = AsyncMock()
+            mock_proc.returncode = 0
+            mock_proc.wait = AsyncMock()
+            mock_proc.stderr.read = AsyncMock(return_value=b"")
+            events = [
+                {"type": "system", "subtype": "init", "session_id": "session-abc"},
+                {"type": "result", "result": "ok"},
+            ]
+            line_data = _make_ndjson_lines(events)
+            line_iter = iter(line_data.split(b"\n"))
+            mock_proc.stdout.readline = AsyncMock(side_effect=lambda: next(line_iter, b""))
+            return mock_proc
+
+        with (
+            patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
+            patch.object(executor, "_ensure_workspace"),
+            patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
+            patch("asyncio.create_subprocess_exec", side_effect=mock_create),
+        ):
+            result = await executor.execute(prompt="mid session", trigger="chat")
+
+        assert result.session_rotated is False
+        assert result.session_rotation_pending is False
+        _, tc = _load_chat_id(anima_dir, "chat")
+        assert tc == 4
+
+
+class TestResumePromptContent:
+    """Tests for prompt content on resume vs fresh sessions."""
+
+    @pytest.mark.asyncio
+    async def test_resume_skips_system_prompt(self, executor, anima_dir):
+        """Resume turns inject only time, not <system_context>."""
+        _save_chat_id(anima_dir, "prev-session", "chat", turn_count=2)
+        captured_cmds: list[list[str]] = []
+
+        async def mock_create(*args, **kwargs):
+            captured_cmds.append(list(args))
+            mock_proc = AsyncMock()
+            mock_proc.stdout = AsyncMock()
+            mock_proc.stderr = AsyncMock()
+            mock_proc.returncode = 0
+            mock_proc.wait = AsyncMock()
+            mock_proc.stderr.read = AsyncMock(return_value=b"")
+            events = [
+                {"type": "system", "subtype": "init", "session_id": "prev-session"},
+                {"type": "result", "result": "ok"},
+            ]
+            line_data = _make_ndjson_lines(events)
+            line_iter = iter(line_data.split(b"\n"))
+            mock_proc.stdout.readline = AsyncMock(side_effect=lambda: next(line_iter, b""))
+            return mock_proc
+
+        with (
+            patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
+            patch.object(executor, "_ensure_workspace"),
+            patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
+            patch("asyncio.create_subprocess_exec", side_effect=mock_create),
+        ):
+            await executor.execute(prompt="follow up", system_prompt="You are Alice", trigger="chat")
+
+        prompt_arg = captured_cmds[0][-1]
+        assert "<system_context>" not in prompt_arg
+        assert "You are Alice" not in prompt_arg
+        assert "follow up" in prompt_arg
+        assert "[" in prompt_arg  # time prefix
+
+    @pytest.mark.asyncio
+    async def test_fresh_session_includes_system_prompt(self, executor, anima_dir):
+        """First turn: full system_prompt in <system_context>."""
+        captured_cmds: list[list[str]] = []
+
+        async def mock_create(*args, **kwargs):
+            captured_cmds.append(list(args))
+            mock_proc = AsyncMock()
+            mock_proc.stdout = AsyncMock()
+            mock_proc.stderr = AsyncMock()
+            mock_proc.returncode = 0
+            mock_proc.wait = AsyncMock()
+            mock_proc.stderr.read = AsyncMock(return_value=b"")
+            events = [
+                {"type": "system", "subtype": "init", "session_id": "new-sess"},
+                {"type": "result", "result": "ok"},
+            ]
+            line_data = _make_ndjson_lines(events)
+            line_iter = iter(line_data.split(b"\n"))
+            mock_proc.stdout.readline = AsyncMock(side_effect=lambda: next(line_iter, b""))
+            return mock_proc
+
+        with (
+            patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
+            patch.object(executor, "_ensure_workspace"),
+            patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
+            patch("asyncio.create_subprocess_exec", side_effect=mock_create),
+        ):
+            await executor.execute(prompt="first message", system_prompt="You are Bob", trigger="chat")
+
+        prompt_arg = captured_cmds[0][-1]
+        assert "<system_context>" in prompt_arg
+        assert "You are Bob" in prompt_arg
+        assert "first message" in prompt_arg
+
+    @pytest.mark.asyncio
+    async def test_time_prefix_always_present(self, executor, anima_dir):
+        """Both resume and fresh sessions include time prefix."""
+        captured_cmds: list[list[str]] = []
+
+        async def mock_create(*args, **kwargs):
+            captured_cmds.append(list(args))
+            mock_proc = AsyncMock()
+            mock_proc.stdout = AsyncMock()
+            mock_proc.stderr = AsyncMock()
+            mock_proc.returncode = 0
+            mock_proc.wait = AsyncMock()
+            mock_proc.stderr.read = AsyncMock(return_value=b"")
+            events = [
+                {"type": "system", "subtype": "init", "session_id": "s1"},
+                {"type": "result", "result": "ok"},
+            ]
+            line_data = _make_ndjson_lines(events)
+            line_iter = iter(line_data.split(b"\n"))
+            mock_proc.stdout.readline = AsyncMock(side_effect=lambda: next(line_iter, b""))
+            return mock_proc
+
+        with (
+            patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
+            patch.object(executor, "_ensure_workspace"),
+            patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
+            patch("asyncio.create_subprocess_exec", side_effect=mock_create),
+        ):
+            await executor.execute(prompt="test", trigger="chat")
+
+        prompt_arg = captured_cmds[0][-1]
+        assert "[" in prompt_arg and "]" in prompt_arg
+
+
+class TestCursorRules:
+    """Tests for .cursor/rules static content writing."""
+
+    def test_write_cursor_rules_creates_files(self, executor, anima_dir):
+        executor._ensure_workspace()
+        (anima_dir / "identity.md").write_text("# Test Identity", encoding="utf-8")
+        (anima_dir / "permissions.md").write_text("# Permissions", encoding="utf-8")
+
+        executor._write_cursor_rules()
+
+        rules_dir = executor._workspace / ".cursor" / "rules"
+        assert (rules_dir / "identity.md").exists()
+        assert (rules_dir / "identity.md").read_text(encoding="utf-8") == "# Test Identity"
+        assert (rules_dir / "permissions.md").exists()
+        assert (rules_dir / "permissions.md").read_text(encoding="utf-8") == "# Permissions"
+
+    def test_write_cursor_rules_skips_empty(self, executor, anima_dir):
+        executor._ensure_workspace()
+        (anima_dir / "identity.md").write_text("", encoding="utf-8")
+
+        executor._write_cursor_rules()
+
+        rules_dir = executor._workspace / ".cursor" / "rules"
+        assert not (rules_dir / "identity.md").exists()
+
+    def test_write_cursor_rules_skips_unchanged(self, executor, anima_dir):
+        executor._ensure_workspace()
+        (anima_dir / "identity.md").write_text("# Same Content", encoding="utf-8")
+
+        rules_dir = executor._workspace / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True, exist_ok=True)
+        dest = rules_dir / "identity.md"
+        dest.write_text("# Same Content", encoding="utf-8")
+        mtime_before = dest.stat().st_mtime
+
+        import time
+
+        time.sleep(0.01)
+        executor._write_cursor_rules()
+
+        assert dest.stat().st_mtime == mtime_before
+
+    def test_write_cursor_rules_missing_files_no_error(self, executor, anima_dir):
+        executor._ensure_workspace()
+        (anima_dir / "identity.md").unlink(missing_ok=True)
+        (anima_dir / "permissions.md").unlink(missing_ok=True)
+
+        executor._write_cursor_rules()
+
+        rules_dir = executor._workspace / ".cursor" / "rules"
+        assert rules_dir.is_dir()
 
 
 # ── Mode D resolution test ────────────────────────────────────
