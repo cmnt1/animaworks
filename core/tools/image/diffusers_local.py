@@ -23,6 +23,7 @@ _ASPECT_SIZES: dict[str, tuple[int, int]] = {
     "4:3": (1024, 768),
 }
 _PIPELINE_CACHE: dict[tuple[str, str, str, str], Any] = {}
+_IP_ADAPTER_LOADED: set[tuple[str, str, str, str]] = set()
 
 
 def _import_torch() -> Any:
@@ -99,11 +100,22 @@ class LocalDiffusersClient:
         self._device = self._resolve_device(getattr(self._config, "diffusers_device", "auto"))
         self._dtype_name = getattr(self._config, "diffusers_torch_dtype", "auto")
         self._local_files_only = bool(getattr(self._config, "diffusers_local_files_only", True))
-        self._text2img_source = _resolve_model_source(getattr(self._config, "diffusers_text2img_model", "auto"))
+
+        # Resolve text2img model: style-specific override > generic > auto
+        image_style = getattr(self._config, "image_style", "realistic")
+        style_model = ""
+        if image_style == "realistic":
+            style_model = getattr(self._config, "diffusers_text2img_model_realistic", "") or ""
+        elif image_style == "anime":
+            style_model = getattr(self._config, "diffusers_text2img_model_anime", "") or ""
+        base_model = style_model or getattr(self._config, "diffusers_text2img_model", "auto")
+        self._text2img_source = _resolve_model_source(base_model)
+
         img2img_value = getattr(self._config, "diffusers_img2img_model", "auto")
         if not img2img_value or img2img_value == "auto":
             img2img_value = self._text2img_source
         self._img2img_source = _resolve_model_source(img2img_value)
+        logger.info("Diffusers model resolved: style=%s, text2img=%s", image_style, self._text2img_source)
 
     @staticmethod
     def _resolve_device(value: str) -> str:
@@ -128,13 +140,37 @@ class LocalDiffusersClient:
         snapped_height = max(64, (height // 8) * 8)
         return snapped_width, snapped_height
 
+    @staticmethod
+    def _is_sdxl(model_source: str) -> bool:
+        """Detect whether the model source points to an SDXL-class model."""
+        lower = model_source.lower()
+        sdxl_markers = ("stable-diffusion-xl", "sdxl", "realvis", "animagine")
+        return any(m in lower for m in sdxl_markers)
+
     def _pipeline_kwargs(self) -> dict[str, Any]:
-        return {
+        kwargs: dict[str, Any] = {
             "torch_dtype": self._resolve_torch_dtype(),
             "local_files_only": self._local_files_only,
-            "safety_checker": None,
-            "requires_safety_checker": False,
         }
+        # safety_checker is only used by SD 1.x pipelines; SDXL ignores it
+        if not self._is_sdxl(self._text2img_source):
+            kwargs["safety_checker"] = None
+            kwargs["requires_safety_checker"] = False
+        return kwargs
+
+    @staticmethod
+    def _apply_scheduler(pipe: Any, model_source: str) -> None:
+        """Replace the default scheduler with DPM++ 2M Karras for better quality."""
+        try:
+            from diffusers import DPMSolverMultistepScheduler
+            pipe.scheduler = DPMSolverMultistepScheduler.from_config(
+                pipe.scheduler.config,
+                algorithm_type="dpmsolver++",
+                use_karras_sigmas=True,
+            )
+            logger.info("Scheduler set to DPM++ 2M Karras for %s", model_source)
+        except Exception:
+            logger.debug("Failed to set DPM++ scheduler, keeping default", exc_info=True)
 
     def _load_text2img_pipeline(self) -> Any:
         cache_key = ("text2img", self._text2img_source, self._device, self._dtype_name)
@@ -145,6 +181,7 @@ class LocalDiffusersClient:
         auto_text2img, _ = _import_diffusers()
         pipe = auto_text2img.from_pretrained(self._text2img_source, **self._pipeline_kwargs())
         pipe = pipe.to(self._device)
+        self._apply_scheduler(pipe, self._text2img_source)
         _PIPELINE_CACHE[cache_key] = pipe
         return pipe
 
@@ -161,6 +198,7 @@ class LocalDiffusersClient:
         else:
             pipe = auto_img2img.from_pretrained(self._img2img_source, **self._pipeline_kwargs())
             pipe = pipe.to(self._device)
+            self._apply_scheduler(pipe, self._img2img_source)
         _PIPELINE_CACHE[cache_key] = pipe
         return pipe
 
@@ -184,6 +222,32 @@ class LocalDiffusersClient:
         torch = _import_torch()
         return torch.Generator().manual_seed(seed)
 
+    def _ensure_ip_adapter(self, pipe: Any, cache_key: tuple) -> None:
+        """Load IP-Adapter face weights onto a pipeline (lazy, once per pipeline)."""
+        if cache_key in _IP_ADAPTER_LOADED:
+            return
+
+        if not self._is_sdxl(self._text2img_source):
+            logger.warning("IP-Adapter face reference is only supported for SDXL models")
+            return
+
+        ip_model = getattr(self._config, "ip_adapter_model", "h94/IP-Adapter")
+        ip_weight = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+
+        logger.info("Loading IP-Adapter: %s (subfolder=sdxl_models, weight=%s)", ip_model, ip_weight)
+        try:
+            pipe.load_ip_adapter(
+                ip_model,
+                subfolder="sdxl_models",
+                weight_name=ip_weight,
+                image_encoder_folder="models/image_encoder",
+                local_files_only=self._local_files_only,
+            )
+            _IP_ADAPTER_LOADED.add(cache_key)
+            logger.info("IP-Adapter loaded successfully")
+        except Exception:
+            logger.exception("Failed to load IP-Adapter — generating without face reference")
+
     def _image2image_strength(self, requested: float | None = None) -> float:
         strength = requested
         if strength is None:
@@ -197,19 +261,25 @@ class LocalDiffusersClient:
         width: int = 768,
         height: int = 1152,
         seed: int | None = None,
-        steps: int = 28,
-        scale: float = 5.0,
+        steps: int = 40,
+        scale: float = 7.5,
         sampler: str = "k_euler_ancestral",
         vibe_image: bytes | None = None,
         vibe_strength: float = 0.6,
         vibe_info_extracted: float = 0.8,
+        face_reference_image: bytes | None = None,
     ) -> bytes:
-        """Generate a full-body character image locally."""
+        """Generate a full-body character image locally.
+
+        If *face_reference_image* is provided, IP-Adapter (Plus Face) is used
+        to inject the facial features from the reference into the generation.
+        This takes priority over *vibe_image* when both are supplied.
+        """
         del sampler, vibe_info_extracted
 
         width, height = self._snap_size(width, height)
         generator = self._make_generator(seed)
-        common_kwargs = {
+        common_kwargs: dict[str, Any] = {
             "prompt": prompt,
             "negative_prompt": negative_prompt or None,
             "guidance_scale": scale,
@@ -217,21 +287,42 @@ class LocalDiffusersClient:
             "generator": generator,
         }
 
-        if vibe_image is not None:
+        text2img_key = ("text2img", self._text2img_source, self._device, self._dtype_name)
+
+        if face_reference_image is not None:
+            # IP-Adapter face reference → text2img + adapter
+            pipe = self._load_text2img_pipeline()
+            self._ensure_ip_adapter(pipe, text2img_key)
+
+            if text2img_key in _IP_ADAPTER_LOADED:
+                ip_scale = float(getattr(self._config, "ip_adapter_scale", 0.6))
+                pipe.set_ip_adapter_scale(ip_scale)
+                face_img = self._read_image(face_reference_image)
+                common_kwargs["ip_adapter_image"] = face_img
+                logger.info("Generating with IP-Adapter face reference (scale=%.2f)", ip_scale)
+
+            result = pipe(**common_kwargs, width=width, height=height)
+
+        elif vibe_image is not None:
             pipe = self._load_img2img_pipeline()
+            # Disable IP-Adapter if it was previously loaded on the text2img pipe
+            if text2img_key in _IP_ADAPTER_LOADED:
+                t2i_pipe = _PIPELINE_CACHE.get(text2img_key)
+                if t2i_pipe is not None:
+                    t2i_pipe.set_ip_adapter_scale(0.0)
             reference = self._read_image(vibe_image).resize((width, height))
             result = pipe(
                 **common_kwargs,
                 image=reference,
                 strength=self._image2image_strength(vibe_strength),
             )
+
         else:
             pipe = self._load_text2img_pipeline()
-            result = pipe(
-                **common_kwargs,
-                width=width,
-                height=height,
-            )
+            # Disable IP-Adapter if loaded but no face reference this time
+            if text2img_key in _IP_ADAPTER_LOADED:
+                pipe.set_ip_adapter_scale(0.0)
+            result = pipe(**common_kwargs, width=width, height=height)
 
         return self._to_png_bytes(result.images[0])
 
@@ -276,8 +367,10 @@ class LocalDiffusersClient:
         prompt: str,
         aspect_ratio: str = "3:4",
         output_format: str = "png",
-        guidance_scale: float = 3.5,
+        guidance_scale: float = 5.5,
         seed: int | None = None,
+        negative_prompt: str = "",
+        strength: float | None = None,
     ) -> bytes:
         """Generate a derivative image from a reference image locally."""
         del output_format
@@ -289,10 +382,10 @@ class LocalDiffusersClient:
         result = self._run_img2img_pipeline(
             pipe=pipe,
             prompt=prompt,
-            negative_prompt="",
+            negative_prompt=negative_prompt,
             image=reference,
             guidance_scale=guidance_scale,
-            strength=self._image2image_strength(),
+            strength=self._image2image_strength(strength),
             generator=generator,
             steps=max(1, int(getattr(self._config, "diffusers_num_inference_steps", 28))),
         )

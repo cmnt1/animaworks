@@ -418,6 +418,13 @@ def _resolve_prompt(anima_dir: Path, style: str) -> str | None:
         text = prompt_path.read_text(encoding="utf-8").strip()
         if text:
             return text
+    # Fallback: convert realistic prompt to anime-friendly tags
+    realistic_path = assets_dir / "prompt_realistic.txt"
+    if realistic_path.exists():
+        text = realistic_path.read_text(encoding="utf-8").strip()
+        if text:
+            logger.debug("Falling back to realistic prompt for anime style: %s", anima_dir.name)
+            return text
     return None
 
 

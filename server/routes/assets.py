@@ -55,6 +55,7 @@ class RemakePreviewRequest(BaseModel):
     seed: int | None = None
     image_style: str | None = None
     backup_id: str | None = None
+    face_reference_url: str | None = None  # URL of a face photo for IP-Adapter
 
     @field_validator("vibe_strength", "vibe_info_extracted")
     @classmethod
@@ -184,19 +185,21 @@ def create_assets_router() -> APIRouter:
             for key, filename_ in anime_asset_files.items():
                 path = assets_dir / filename_
                 if path.exists():
+                    st = path.stat()
                     result["assets"][key] = {
                         "filename": filename_,
-                        "url": f"{base_url}/{filename_}",
-                        "size": path.stat().st_size,
+                        "url": f"{base_url}/{filename_}?v={int(st.st_mtime)}",
+                        "size": st.st_size,
                     }
 
             for key, filename_ in realistic_asset_files.items():
                 path = assets_dir / filename_
                 if path.exists():
+                    st = path.stat()
                     result["assets_realistic"][key] = {
                         "filename": filename_,
-                        "url": f"{base_url}/{filename_}",
-                        "size": path.stat().st_size,
+                        "url": f"{base_url}/{filename_}?v={int(st.st_mtime)}",
+                        "size": st.st_size,
                     }
 
             # Scan expression variants
@@ -209,10 +212,11 @@ def create_assets_router() -> APIRouter:
                 fname = f"avatar_bustup_{emotion}.png"
                 path = assets_dir / fname
                 if path.exists():
+                    st = path.stat()
                     expressions[emotion] = {
                         "filename": fname,
-                        "url": f"{base_url}/{fname}",
-                        "size": path.stat().st_size,
+                        "url": f"{base_url}/{fname}?v={int(st.st_mtime)}",
+                        "size": st.st_size,
                     }
             result["expressions"] = expressions
 
@@ -223,20 +227,22 @@ def create_assets_router() -> APIRouter:
                 fname = f"avatar_bustup_{emotion}_realistic.png"
                 path = assets_dir / fname
                 if path.exists():
+                    st = path.stat()
                     realistic_expressions[emotion] = {
                         "filename": fname,
-                        "url": f"{base_url}/{fname}",
-                        "size": path.stat().st_size,
+                        "url": f"{base_url}/{fname}?v={int(st.st_mtime)}",
+                        "size": st.st_size,
                     }
             result["expressions_realistic"] = realistic_expressions
 
             for f in sorted(assets_dir.iterdir()):
                 if f.is_file() and f.name.startswith("anim_") and f.suffix == ".glb":
                     anim_name = f.stem[len("anim_") :]
+                    st = f.stat()
                     result["animations"][anim_name] = {
                         "filename": f.name,
-                        "url": f"{base_url}/{f.name}",
-                        "size": f.stat().st_size,
+                        "url": f"{base_url}/{f.name}?v={int(st.st_mtime)}",
+                        "size": st.st_size,
                     }
 
         # Extract image_color from identity.md
@@ -253,7 +259,12 @@ def create_assets_router() -> APIRouter:
             except OSError:
                 pass
 
-        return result
+        from starlette.responses import JSONResponse as _StlJSONResponse
+
+        return _StlJSONResponse(
+            content=result,
+            headers={"Cache-Control": "no-store"},
+        )
 
     @router.api_route("/animas/{name}/assets/{filename}", methods=["GET", "HEAD"])
     async def get_asset(name: str, filename: str, request: Request):
@@ -275,34 +286,10 @@ def create_assets_router() -> APIRouter:
         suffix = file_path.suffix.lower()
         content_type = _ASSET_CONTENT_TYPES.get(suffix, "application/octet-stream")
 
-        # Generate ETag from file metadata
-        stat = file_path.stat()
-        etag = f'"{stat.st_mtime_ns}-{stat.st_size}"'
-
-        # Return 304 Not Modified if ETag matches
-        if_none_match = request.headers.get("if-none-match")
-        if if_none_match and (
-            if_none_match == etag
-            or etag in [t.strip() for t in if_none_match.split(",")]
-            or if_none_match.strip() == "*"
-        ):
-            from starlette.responses import Response
-
-            return Response(
-                status_code=304,
-                headers={
-                    "ETag": etag,
-                    "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
-                },
-            )
-
         return FileResponse(
             file_path,
             media_type=content_type,
-            headers={
-                "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
-                "ETag": etag,
-            },
+            headers={"Cache-Control": "no-store"},
         )
 
     @router.api_route("/animas/{name}/attachments/{filename}", methods=["GET", "HEAD"])
@@ -328,29 +315,10 @@ def create_assets_router() -> APIRouter:
         suffix = file_path.suffix.lower()
         content_type = _ASSET_CONTENT_TYPES.get(suffix, "application/octet-stream")
 
-        stat = file_path.stat()
-        etag = f'"{stat.st_mtime_ns}-{stat.st_size}"'
-        if_none_match = request.headers.get("if-none-match")
-        if if_none_match and (
-            if_none_match == etag
-            or etag in [t.strip() for t in if_none_match.split(",")]
-            or if_none_match.strip() == "*"
-        ):
-            return Response(
-                status_code=304,
-                headers={
-                    "ETag": etag,
-                    "Cache-Control": "public, no-cache",
-                },
-            )
-
         return FileResponse(
             file_path,
             media_type=content_type,
-            headers={
-                "Cache-Control": "public, no-cache",
-                "ETag": etag,
-            },
+            headers={"Cache-Control": "no-store"},
         )
 
     @router.get("/media/proxy")
@@ -530,6 +498,22 @@ def create_assets_router() -> APIRouter:
                 )
             vibe_image = style_fullbody.read_bytes()
 
+        # Download face reference image if URL is provided
+        face_reference_bytes: bytes | None = None
+        if body.face_reference_url:
+            logger.info("Downloading face reference from: %s", body.face_reference_url)
+            try:
+                face_resp = await proxy_external_image(body.face_reference_url, request)
+                face_reference_bytes = face_resp.body
+                logger.info("Face reference downloaded: %d bytes", len(face_reference_bytes))
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to download face reference image: {exc}",
+                ) from exc
+
         # Resolve prompt (style-aware)
         prompt = body.prompt
         if not prompt:
@@ -577,6 +561,8 @@ def create_assets_router() -> APIRouter:
             gen_kwargs["vibe_image"] = vibe_image
             gen_kwargs["vibe_strength"] = body.vibe_strength
             gen_kwargs["vibe_info_extracted"] = body.vibe_info_extracted
+        if face_reference_bytes is not None:
+            gen_kwargs["face_reference_image"] = face_reference_bytes
 
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
@@ -609,7 +595,8 @@ def create_assets_router() -> APIRouter:
 
             _sh.copy2(source_path, assets_dir / preview_filename)
 
-        preview_url = f"/api/animas/{name}/assets/{preview_filename}"
+        import time as _time
+        preview_url = f"/api/animas/{name}/assets/{preview_filename}?v={int(_time.time())}"
 
         await emit(
             request,
@@ -752,6 +739,14 @@ def create_assets_router() -> APIRouter:
                     completed.append("rigging")
                 if result.animation_paths:
                     completed.append("animations")
+
+                # Clean up backup after successful rebuild — the new assets
+                # are canonical now; keeping the backup would let a stale
+                # DELETE /remake-preview restore outdated files.
+                if backup_dir.exists():
+                    import shutil as _sh2
+                    _sh2.rmtree(backup_dir, ignore_errors=True)
+                    logger.info("Removed backup after successful rebuild: %s", backup_dir.name)
 
                 await _emit_ws(
                     "anima.remake_complete",

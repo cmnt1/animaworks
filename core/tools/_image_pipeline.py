@@ -132,6 +132,20 @@ class ImageGenPipeline:
             return f"avatar_bustup{suffix}.png"
         return f"avatar_bustup_{expression}{suffix}.png"
 
+    def _resolve_character_prompt(self) -> str:
+        """Load the cached character appearance prompt for the current style.
+
+        Returns the prompt text or empty string if unavailable.
+        This allows expression/bustup generation to include the character's
+        appearance (ethnicity, hair, features) so the model preserves identity.
+        """
+        style = "realistic" if self._is_realistic else "anime"
+        from core.asset_reconciler import _resolve_prompt
+        try:
+            return _resolve_prompt(self._anima_dir, style) or ""
+        except Exception:
+            return ""
+
     @staticmethod
     def _append_prompt_clause(prompt: str, clause: str) -> str:
         prompt = prompt.strip()
@@ -141,6 +155,39 @@ class ImageGenPipeline:
         if clause.lower() in prompt.lower():
             return prompt
         return f"{prompt}, {clause}"
+
+    def _boost_prompt_quality(self, prompt: str, negative_prompt: str) -> tuple[str, str]:
+        """Add model/style-specific quality tags for Diffusers generation."""
+        if not self._use_diffusers:
+            return prompt, negative_prompt
+
+        if self._is_realistic:
+            quality_prefix = (
+                "RAW photo, 8k uhd, high quality, sharp focus, photorealistic, "
+                "professional portrait photography, DSLR, 85mm lens, studio lighting, "
+                "film grain, Fujifilm XT3"
+            )
+            quality_negative = (
+                "deformed, bad anatomy, bad hands, missing fingers, extra fingers, "
+                "mutated hands, poorly drawn face, mutation, extra limbs, "
+                "ugly, worst quality, low quality, blurry, watermark, text, signature, "
+                "anime, cartoon, illustration, drawing, comic, manga, "
+                "cel shading, flat colors, stylized, 2d, sketch, painting"
+            )
+        else:
+            quality_prefix = (
+                "masterpiece, best quality, very aesthetic, absurdres, highres"
+            )
+            quality_negative = (
+                "lowres, bad anatomy, bad hands, missing fingers, extra fingers, "
+                "mutated hands, poorly drawn face, mutation, extra limbs, "
+                "ugly, worst quality, low quality, normal quality, blurry, "
+                "watermark, text, signature, jpeg artifacts"
+            )
+
+        prompt = quality_prefix + ", " + prompt
+        negative_prompt = self._append_prompt_clause(negative_prompt, quality_negative)
+        return prompt, negative_prompt
 
     def _enforce_single_subject(self, prompt: str, negative_prompt: str) -> tuple[str, str]:
         """Bias realistic local generation toward one clearly isolated subject."""
@@ -166,6 +213,7 @@ class ImageGenPipeline:
         reference_image: bytes,
         expression: str,
         skip_existing: bool = True,
+        is_from_fullbody: bool = False,
     ) -> Path | None:
         """Generate a single expression variant of the bustup image.
 
@@ -173,6 +221,10 @@ class ImageGenPipeline:
             reference_image: Full-body reference image bytes.
             expression: Expression name (e.g. "smile", "troubled").
             skip_existing: Skip if output file already exists.
+            is_from_fullbody: True when the reference is a fullbody image
+                (needs higher strength for composition change).
+                False when the reference is another bustup expression
+                (needs lower strength to preserve identity).
 
         Returns:
             Path to generated image, or None on failure.
@@ -193,10 +245,19 @@ class ImageGenPipeline:
         else:
             prompt = _EXPRESSION_PROMPTS[expression]
 
+        # Prepend character appearance so the model preserves ethnicity/features
+        char_prompt = self._resolve_character_prompt()
+        if char_prompt:
+            prompt = char_prompt + ", " + prompt
+
         if self._config.style_prefix:
             prompt = self._config.style_prefix + prompt
         if self._config.style_suffix:
             prompt = prompt + self._config.style_suffix
+
+        # Apply quality boost (adds quality tags + negative prompt)
+        negative_prompt = ""
+        prompt, negative_prompt = self._boost_prompt_quality(prompt, negative_prompt)
 
         self._assets_dir.mkdir(parents=True, exist_ok=True)
 
@@ -210,11 +271,21 @@ class ImageGenPipeline:
             guidance = _REALISTIC_EXPRESSION_GUIDANCE.get(expression, 4.5)
         else:
             guidance = _EXPRESSION_GUIDANCE.get(expression, 5.0)
+
+        extra_kwargs: dict = {}
+        if self._use_diffusers and negative_prompt:
+            extra_kwargs["negative_prompt"] = negative_prompt
+        # Use higher strength when transforming fullbody → bustup (composition change),
+        # lower strength for expression variants to preserve character identity.
+        if self._use_diffusers:
+            extra_kwargs["strength"] = 0.50 if is_from_fullbody else 0.20
+
         result_bytes = kontext.generate_from_reference(
             reference_image=reference_image,
             prompt=prompt,
             aspect_ratio="3:4",
             guidance_scale=guidance,
+            **extra_kwargs,
         )
 
         output_path.write_bytes(result_bytes)
@@ -234,6 +305,7 @@ class ImageGenPipeline:
         vibe_info_extracted: float | None = None,
         seed: int | None = None,
         progress_callback: Callable[[str, str, int], None] | None = None,
+        face_reference_image: bytes | None = None,
     ) -> PipelineResult:
         """Run the 6-step pipeline synchronously.
 
@@ -254,6 +326,8 @@ class ImageGenPipeline:
             seed: Seed for reproducibility (fullbody generation only).
             progress_callback: Optional callback ``(step, status, pct)`` for
                 real-time progress reporting.
+            face_reference_image: Optional face photo bytes for IP-Adapter.
+                Injects facial features from the reference into fullbody generation.
 
         Returns:
             PipelineResult with paths and error info.
@@ -280,6 +354,7 @@ class ImageGenPipeline:
         # ── Step 1: Full-body ──
         fullbody_bytes: bytes | None = None
         fullbody_path = self._assets_dir / self._asset_name("fullbody")
+        fullbody_freshly_generated = False  # Track for cascade invalidation
 
         if "fullbody" in enabled:
             if skip_existing and fullbody_path.exists():
@@ -344,6 +419,10 @@ class ImageGenPipeline:
                         styled_prompt,
                         styled_negative,
                     )
+                    styled_prompt, styled_negative = self._boost_prompt_quality(
+                        styled_prompt,
+                        styled_negative,
+                    )
 
                     fullbody_bytes = client.generate_fullbody(
                         prompt=styled_prompt,
@@ -352,9 +431,11 @@ class ImageGenPipeline:
                         vibe_image=effective_vibe,
                         vibe_strength=effective_vibe_strength,
                         vibe_info_extracted=effective_vibe_info,
+                        face_reference_image=face_reference_image,
                     )
                     fullbody_path.write_bytes(fullbody_bytes)
                     result.fullbody_path = fullbody_path
+                    fullbody_freshly_generated = True
                     logger.info("Step 1 complete: %s", fullbody_path)
                     _notify("fullbody", "completed", 100)
                 except Exception as exc:
@@ -372,6 +453,9 @@ class ImageGenPipeline:
             return result
 
         # ── Step 2 & 3: Bust-up and Chibi (sequential, same client) ──
+        # When fullbody was freshly generated, derived assets are stale
+        # and must be regenerated regardless of skip_existing.
+        skip_derived = skip_existing and not fullbody_freshly_generated
         chibi_bytes: bytes | None = None
 
         if "bustup" in enabled:
@@ -391,7 +475,8 @@ class ImageGenPipeline:
                     path = self.generate_bustup_expression(
                         reference_image=fullbody_bytes,
                         expression="neutral",
-                        skip_existing=skip_existing,
+                        skip_existing=skip_derived,
+                        is_from_fullbody=True,
                     )
                     if path and path.exists():
                         bustup_ref_bytes = path.read_bytes()
@@ -419,7 +504,7 @@ class ImageGenPipeline:
                     path = self.generate_bustup_expression(
                         reference_image=ref_for_expressions,
                         expression=expr,
-                        skip_existing=skip_existing,
+                        skip_existing=skip_derived,
                     )
                     if path:
                         result.bustup_paths[expr] = path
@@ -434,7 +519,7 @@ class ImageGenPipeline:
 
         if "chibi" in enabled:
             chibi_path = self._assets_dir / self._asset_name("chibi")
-            if skip_existing and chibi_path.exists():
+            if skip_derived and chibi_path.exists():
                 result.skipped.append("chibi")
                 chibi_bytes = chibi_path.read_bytes()
                 result.chibi_path = chibi_path

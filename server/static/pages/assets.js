@@ -223,11 +223,16 @@ async function _loadGallery() {
   _bindExpressionButtons();
 }
 
+function _cacheBust(url) {
+  if (!url) return url;
+  return url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+}
+
 function _renderThumbnail(label, assetInfo) {
   if (assetInfo && assetInfo.url) {
     return `
       <div class="assets-thumb-card">
-        <img class="assets-thumb-img" src="${escapeHtml(assetInfo.url)}" alt="${escapeHtml(label)}" loading="lazy">
+        <img class="assets-thumb-img" src="${escapeHtml(_cacheBust(assetInfo.url))}" alt="${escapeHtml(label)}" loading="lazy">
         <div class="assets-thumb-label">${escapeHtml(label)}</div>
       </div>
     `;
@@ -248,7 +253,7 @@ function _renderThumbnailSmall(label, assetInfo) {
   if (assetInfo && assetInfo.url) {
     return `
       <div class="assets-thumb-card assets-thumb-card--small">
-        <img class="assets-thumb-img" src="${escapeHtml(assetInfo.url)}" alt="${escapeHtml(label)}" loading="lazy">
+        <img class="assets-thumb-img" src="${escapeHtml(_cacheBust(assetInfo.url))}" alt="${escapeHtml(label)}" loading="lazy">
         <div class="assets-thumb-label">${escapeHtml(label)} <span class="${badgeClass}">${escapeHtml(badge)}</span></div>
       </div>
     `;
@@ -284,7 +289,7 @@ function _renderExpressionGrid(style) {
     const info = expressions[emotion];
     const label = t(`assets.expr_${emotion}`) || emotion;
     const imgHtml = info?.url
-      ? `<img class="assets-expression-img" src="${escapeHtml(info.url)}?t=${Date.now()}" alt="${escapeHtml(label)}" loading="lazy">`
+      ? `<img class="assets-expression-img" src="${escapeHtml(_cacheBust(info.url))}" alt="${escapeHtml(label)}" loading="lazy">`
       : `<div class="assets-expression-placeholder">${t("assets.not_generated")}</div>`;
 
     html += `
@@ -343,12 +348,12 @@ async function _regenerateExpression(emotion, style) {
       const existingImg = card.querySelector(".assets-expression-img");
       const placeholder = card.querySelector(".assets-expression-placeholder");
       if (existingImg) {
-        existingImg.src = result.url + "?t=" + Date.now();
+        existingImg.src = _cacheBust(result.url);
         existingImg.style.opacity = "";
       } else if (placeholder) {
         const img = document.createElement("img");
         img.className = "assets-expression-img";
-        img.src = result.url + "?t=" + Date.now();
+        img.src = _cacheBust(result.url);
         img.alt = emotion;
         placeholder.replaceWith(img);
       }
@@ -471,6 +476,18 @@ function _openRemakeModal() {
             </label>
             <input type="range" id="assetsInfoExtract" min="0" max="1" step="0.05" value="0.8" class="assets-modal-range">
           </div>
+
+          <div class="assets-modal-control-row">
+            <label class="assets-modal-label" for="assetsFaceRefUrl">
+              Face Reference (URL):
+            </label>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+              <input type="url" id="assetsFaceRefUrl" class="assets-modal-input"
+                     placeholder="https://... (paste face image URL)"
+                     style="flex:1;padding:0.3rem 0.5rem;font-size:0.85rem;border:1px solid var(--aw-color-border,#ccc);border-radius:4px;">
+              <img id="assetsFaceRefPreview" style="display:none;width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--aw-color-border,#ccc);">
+            </div>
+          </div>
         </div>
 
         <!-- Action buttons: 3-zone layout -->
@@ -518,6 +535,26 @@ function _openRemakeModal() {
   if (styleSelect) {
     styleSelect.addEventListener("change", () => _updateVibeSliderState());
     _updateVibeSliderState();
+  }
+
+  // Face reference URL preview thumbnail
+  const faceRefInput = document.getElementById("assetsFaceRefUrl");
+  const faceRefPreview = document.getElementById("assetsFaceRefPreview");
+  if (faceRefInput && faceRefPreview) {
+    let _faceDebounce = null;
+    faceRefInput.addEventListener("input", () => {
+      clearTimeout(_faceDebounce);
+      _faceDebounce = setTimeout(() => {
+        const url = faceRefInput.value.trim();
+        if (url && url.startsWith("http")) {
+          faceRefPreview.src = url;
+          faceRefPreview.style.display = "";
+          faceRefPreview.onerror = () => { faceRefPreview.style.display = "none"; };
+        } else {
+          faceRefPreview.style.display = "none";
+        }
+      }, 500);
+    });
   }
 
   const imageStyleSelect = document.getElementById("assetsImageStyle");
@@ -598,6 +635,8 @@ async function _generatePreview() {
   const enc = encodeURIComponent(_selectedAnima);
 
   const imageStyle = document.getElementById("assetsImageStyle")?.value || _currentImageStyle();
+  const faceRefUrl = document.getElementById("assetsFaceRefUrl")?.value?.trim() || null;
+
   const requestBody = {
     vibe_strength: vibeStrength,
     vibe_info_extracted: infoExtracted,
@@ -605,6 +644,7 @@ async function _generatePreview() {
   };
   if (styleFrom) requestBody.style_from = styleFrom;
   if (_previewBackupId) requestBody.backup_id = _previewBackupId;
+  if (faceRefUrl) requestBody.face_reference_url = faceRefUrl;
 
   try {
     const result = await api(`/api/animas/${enc}/assets/remake-preview`, {
@@ -645,7 +685,7 @@ function _showCurrentPreview() {
     const img = document.createElement("img");
     img.className = "assets-modal-preview-img";
     img.alt = "Preview";
-    img.src = entry.url + (entry.url.includes("?") ? "&" : "?") + "t=" + Date.now();
+    img.src = _cacheBust(entry.url);
     img.addEventListener("error", () => {
       previewContainer.innerHTML = `<div class="assets-error">${t("assets.preview_load_failed")}</div>`;
       previewContainer.className = "assets-modal-preview-placeholder";
@@ -911,6 +951,10 @@ function _onRemakeComplete(data) {
   const statusText = document.getElementById("assetsStatusText");
 
   if (data.success !== false) {
+    // Prevent _cancelRemake from restoring the backup — rebuild succeeded,
+    // the new files are the canonical assets now.
+    _previewBackupId = null;
+
     // Hide action buttons, show only Close
     if (acceptBtn) acceptBtn.style.display = "none";
     if (retryBtn) retryBtn.style.display = "none";

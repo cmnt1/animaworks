@@ -258,11 +258,15 @@ class ImageGenConfig(BaseModel):
     enable_3d: bool = True  # Enable 3D model generation (Meshy API)
     diffusers_text2img_model: str = "auto"
     diffusers_img2img_model: str = "auto"
+    diffusers_text2img_model_realistic: str = ""  # Override for realistic style
+    diffusers_text2img_model_anime: str = ""  # Override for anime style
     diffusers_device: Literal["auto", "cuda", "cpu"] = "auto"
     diffusers_torch_dtype: Literal["auto", "float16", "float32", "bfloat16"] = "auto"
     diffusers_local_files_only: bool = True
     diffusers_num_inference_steps: int = 28
     diffusers_img2img_strength: float = 0.55
+    ip_adapter_model: str = "h94/IP-Adapter"
+    ip_adapter_scale: float = 0.6  # IP-Adapter face reference blend weight (0.0-1.0)
 
 
 class NotificationChannelConfig(BaseModel):

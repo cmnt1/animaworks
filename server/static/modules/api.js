@@ -92,6 +92,8 @@ export async function api(path, opts = {}) {
   try {
     // Always include credentials for cookie-based auth
     opts.credentials = "same-origin";
+    // Prevent browser from caching API responses (stale metadata, etc.)
+    if (!opts.cache) opts.cache = "no-store";
     const res = await fetch(path, opts);
 
     if (res.status === 401) {

@@ -85,13 +85,13 @@ assert set(_EXPRESSION_PROMPTS.keys()) == _VALID_EXPRESSION_NAMES, (
 
 # Per-expression guidance_scale for Flux Kontext.
 _EXPRESSION_GUIDANCE: dict[str, float] = {
-    "neutral": 4.0,
-    "smile": 5.0,
-    "laugh": 5.0,
-    "troubled": 5.5,
-    "surprised": 5.0,
-    "thinking": 5.0,
-    "embarrassed": 5.5,
+    "neutral": 3.5,
+    "smile": 4.0,
+    "laugh": 4.5,
+    "troubled": 4.5,
+    "surprised": 4.0,
+    "thinking": 4.0,
+    "embarrassed": 4.5,
 }
 
 assert set(_EXPRESSION_GUIDANCE.keys()) == _VALID_EXPRESSION_NAMES, (
@@ -166,13 +166,13 @@ assert set(_REALISTIC_EXPRESSION_PROMPTS.keys()) == _VALID_EXPRESSION_NAMES, (
 )
 
 _REALISTIC_EXPRESSION_GUIDANCE: dict[str, float] = {
-    "neutral": 4.0,
-    "smile": 4.5,
-    "laugh": 4.5,
-    "troubled": 5.0,
-    "surprised": 4.5,
-    "thinking": 4.5,
-    "embarrassed": 5.0,
+    "neutral": 3.0,
+    "smile": 3.5,
+    "laugh": 4.0,
+    "troubled": 4.0,
+    "surprised": 3.5,
+    "thinking": 3.5,
+    "embarrassed": 4.0,
 }
 
 assert set(_REALISTIC_EXPRESSION_GUIDANCE.keys()) == _VALID_EXPRESSION_NAMES, (

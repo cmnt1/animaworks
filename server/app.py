@@ -16,8 +16,8 @@ from pathlib import Path
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
@@ -556,8 +556,56 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
     app.include_router(create_router())
     app.include_router(create_setup_router())
 
-    # ── Static files ───────────────────────────────────────
-    setup_static_dir = Path(__file__).parent / "static" / "setup"
+    # ── Version stamp (changes on every server start) ────
+    _app_version = str(int(time.time()))
+    static_dir = Path(__file__).parent / "static"
+
+    # ── Serve index.html as template with version injection ─
+    # Replace __AW_VERSION__ so all resource URLs (CSS, JS, import-map)
+    # include the server-start timestamp.  This guarantees the browser
+    # loads fresh resources after every restart — no manual cache-clear
+    # needed, even on plain HTTP (where Clear-Site-Data is ignored).
+    from fastapi.responses import HTMLResponse
+
+    _index_raw = (static_dir / "index.html").read_text(encoding="utf-8")
+
+    @app.get("/", include_in_schema=False)
+    async def _serve_index():
+        html = _index_raw.replace("__AW_VERSION__", _app_version)
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    # ── Versioned static file route ───────────────────────
+    # Serves /_v/{version}/path → static/path with no-store.
+    # All CSS <link> hrefs, JS module imports, and the import-map use
+    # this prefix so the browser fetches fresh files after restart.
+    _MIME_MAP = {
+        ".js": "application/javascript",
+        ".mjs": "application/javascript",
+        ".css": "text/css",
+        ".html": "text/html",
+        ".json": "application/json",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".woff2": "font/woff2",
+        ".woff": "font/woff",
+        ".ttf": "font/ttf",
+    }
+
+    @app.get("/_v/{version}/{path:path}", include_in_schema=False)
+    async def _serve_versioned_static(version: str, path: str):
+        # Prevent path traversal
+        safe = Path(path)
+        if ".." in safe.parts:
+            raise HTTPException(status_code=400, detail="Invalid path")
+        file = static_dir / safe
+        if not file.exists() or not file.is_file():
+            raise HTTPException(status_code=404)
+        media = _MIME_MAP.get(file.suffix.lower(), "application/octet-stream")
+        return FileResponse(str(file), media_type=media, headers={"Cache-Control": "no-store"})
+
+    # ── Static files (fallback for non-versioned paths) ───
+    setup_static_dir = static_dir / "setup"
     if setup_static_dir.exists():
         app.mount(
             "/setup",
@@ -565,8 +613,7 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
             name="setup_static",
         )
 
-    static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+        app.mount("/", StaticFiles(directory=str(static_dir), html=False), name="static")
 
     return app
