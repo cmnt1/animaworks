@@ -744,7 +744,7 @@ function _confirmAcceptAndRebuild() {
   if (!_selectedAnima || !_previewBackupId) return;
   if (_rebuildInProgress) return;
 
-  // Show confirmation dialog
+  // Show choice dialog: generate all variants vs use fullbody for all
   const existing = document.getElementById("assetsConfirmDialog");
   if (existing) existing.remove();
 
@@ -752,10 +752,19 @@ function _confirmAcceptAndRebuild() {
   dialog.id = "assetsConfirmDialog";
   dialog.className = "assets-confirm-overlay";
   dialog.innerHTML = `
-    <div class="assets-confirm-dialog">
-      <p>${t("assets.confirm_rebuild")}</p>
+    <div class="assets-confirm-dialog" style="max-width:420px;">
+      <p style="margin-bottom:1rem; font-weight:600;">${t("assets.confirm_rebuild")}</p>
+      <div style="display:flex; flex-direction:column; gap:0.75rem; margin-bottom:1rem;">
+        <button class="btn-primary" id="assetsConfirmGenAll" style="background:#16a34a; text-align:left; padding:0.6rem 1rem;">
+          <div style="font-weight:600;">${t("assets.confirm_generate_all")}</div>
+          <div style="font-size:0.8rem; opacity:0.85; font-weight:normal;">${t("assets.confirm_generate_all_desc")}</div>
+        </button>
+        <button class="btn-primary" id="assetsConfirmFullbody" style="background:#2563eb; text-align:left; padding:0.6rem 1rem;">
+          <div style="font-weight:600;">${t("assets.confirm_fullbody_only")}</div>
+          <div style="font-size:0.8rem; opacity:0.85; font-weight:normal;">${t("assets.confirm_fullbody_only_desc")}</div>
+        </button>
+      </div>
       <div class="assets-confirm-actions">
-        <button class="btn-primary" id="assetsConfirmYes" style="background:#16a34a;">OK</button>
         <button class="btn-secondary" id="assetsConfirmNo">Cancel</button>
       </div>
     </div>
@@ -763,16 +772,20 @@ function _confirmAcceptAndRebuild() {
   document.body.appendChild(dialog);
   requestAnimationFrame(() => dialog.classList.add("active"));
 
-  document.getElementById("assetsConfirmYes")?.addEventListener("click", () => {
+  document.getElementById("assetsConfirmGenAll")?.addEventListener("click", () => {
     dialog.remove();
-    _acceptAndRebuild();
+    _acceptAndRebuild(false);
+  });
+  document.getElementById("assetsConfirmFullbody")?.addEventListener("click", () => {
+    dialog.remove();
+    _acceptAndRebuild(true);
   });
   document.getElementById("assetsConfirmNo")?.addEventListener("click", () => {
     dialog.remove();
   });
 }
 
-async function _acceptAndRebuild() {
+async function _acceptAndRebuild(fullbodyOnly = false) {
   if (!_selectedAnima || !_previewBackupId) return;
 
   const acceptBtn = document.getElementById("assetsAcceptBtn");
@@ -804,6 +817,7 @@ async function _acceptAndRebuild() {
         backup_id: _previewBackupId,
         image_style: document.getElementById("assetsImageStyle")?.value || _currentImageStyle(),
         preview_file: previewFile,
+        fullbody_only: fullbodyOnly,
       }),
     });
 

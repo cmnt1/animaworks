@@ -214,6 +214,7 @@ class ToolHandler(
             "execute_command": self._handle_execute_command,
             "search_code": self._handle_search_code,
             "list_directory": self._handle_list_directory,
+            "web_search": self._handle_web_search,
             "web_fetch": self._handle_web_fetch,
             "call_human": self._handle_call_human,
             "create_anima": self._handle_create_anima,

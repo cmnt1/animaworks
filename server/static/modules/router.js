@@ -73,7 +73,22 @@ async function handleRoute() {
   const hash = window.location.hash || "#/chat";
   const path = hash.slice(1) || "/chat"; // Remove leading '#'
 
-  const loader = routes[path];
+  // Try exact match first, then prefix match for parameterized routes
+  let loader = routes[path];
+  let subPath = "";
+  let navPath = path;
+  if (!loader) {
+    // Find longest matching route prefix (e.g. "/animas/sakura" → "/animas" + "sakura")
+    for (const route of Object.keys(routes)) {
+      if (path.startsWith(route + "/")) {
+        loader = routes[route];
+        subPath = decodeURIComponent(path.slice(route.length + 1));
+        navPath = route;
+        break;
+      }
+    }
+  }
+
   if (!loader) {
     // Fallback to chat
     window.location.hash = "#/chat";
@@ -93,14 +108,14 @@ async function handleRoute() {
   containerEl.innerHTML = "";
 
   // Update active nav item
-  updateActiveNav(path);
+  updateActiveNav(navPath);
 
   // Load and render new page
   try {
     const mod = await loader();
     currentPage = mod;
     if (typeof mod.render === "function") {
-      await mod.render(containerEl);
+      await mod.render(containerEl, { subPath });
     } else {
       console.error(`[Router] Page module for "${path}" has no render() function`);
       containerEl.innerHTML = `<div class="page-error">${t("router.page_load_failed")}</div>`;

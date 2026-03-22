@@ -172,7 +172,7 @@ function _saveState(state) {
 /**
  * Create a team from selected roles.
  * @param {Array<{roleId: string, count: number}>} selections
- * @returns {{id: string, members: Array}}
+ * @returns {{id: string, members: Array, department: string, reportTo: string}}
  */
 export function createTeam(selections) {
   _nameIndex = 0;
@@ -185,13 +185,24 @@ export function createTeam(selections) {
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
         roleId: sel.roleId,
         displayName: generateName(),
+        title: "",
+        isLead: false,
         tools: [...role.defaultTools],
+        model: "",
+        credential: "",
       });
     }
   }
 
+  // First member defaults to lead
+  if (members.length > 0) {
+    members[0].isLead = true;
+  }
+
   const team = {
     id: crypto.randomUUID ? crypto.randomUUID() : `team-${Date.now()}`,
+    department: "",
+    reportTo: "",
     members,
     createdAt: new Date().toISOString(),
   };
@@ -215,6 +226,18 @@ export function saveTeam(team) {
 }
 
 /**
+ * Update team-level settings (department, reportTo).
+ */
+export function updateTeamSettings(department, reportTo) {
+  const team = getTeam();
+  if (!team) return false;
+  if (department !== undefined) team.department = department;
+  if (reportTo !== undefined) team.reportTo = reportTo;
+  _saveState(team);
+  return true;
+}
+
+/**
  * Add a member to existing team.
  */
 export function addMember(roleId) {
@@ -235,7 +258,11 @@ export function addMember(roleId) {
     id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
     roleId,
     displayName: name,
+    title: "",
+    isLead: false,
     tools: [...role.defaultTools],
+    model: "",
+    credential: "",
   };
   team.members.push(member);
   _saveState(team);
@@ -265,6 +292,59 @@ export function updateMemberRole(memberId, newRoleId) {
   if (!role) return false;
   member.roleId = newRoleId;
   member.tools = [...role.defaultTools];
+  _saveState(team);
+  return true;
+}
+
+/**
+ * Update a member's display name.
+ */
+export function updateMemberName(memberId, newName) {
+  const team = getTeam();
+  if (!team) return false;
+  const member = team.members.find((m) => m.id === memberId);
+  if (!member) return false;
+  member.displayName = newName.trim() || member.displayName;
+  _saveState(team);
+  return true;
+}
+
+/**
+ * Update a member's model.
+ */
+export function updateMemberModel(memberId, modelId, credential) {
+  const team = getTeam();
+  if (!team) return false;
+  const member = team.members.find((m) => m.id === memberId);
+  if (!member) return false;
+  member.model = modelId || "";
+  member.credential = credential || "";
+  _saveState(team);
+  return true;
+}
+
+/**
+ * Update a member's title.
+ */
+export function updateMemberTitle(memberId, newTitle) {
+  const team = getTeam();
+  if (!team) return false;
+  const member = team.members.find((m) => m.id === memberId);
+  if (!member) return false;
+  member.title = (newTitle || "").trim();
+  _saveState(team);
+  return true;
+}
+
+/**
+ * Set a member as team lead (only one lead at a time).
+ */
+export function setTeamLead(memberId) {
+  const team = getTeam();
+  if (!team) return false;
+  for (const m of team.members) {
+    m.isLead = (m.id === memberId);
+  }
   _saveState(team);
   return true;
 }

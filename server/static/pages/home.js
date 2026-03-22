@@ -203,7 +203,11 @@ function _buildCard(node, isRoot = false) {
   if (isRoot) cls += " org-tree-card--root";
   if (disabled) cls += " org-tree-card--disabled";
   card.className = cls;
+  const department = node.department || "";
+  const title = node.title || "";
   const metaParts = [];
+  if (department) metaParts.push(`<span class="org-tree-dept">${escapeHtml(department)}</span>`);
+  if (title) metaParts.push(`<span class="org-tree-title">${escapeHtml(title)}</span>`);
   if (role) metaParts.push(`<span class="org-tree-role">${escapeHtml(role)}</span>`);
   if (model) metaParts.push(`<span class="org-tree-model">${escapeHtml(model)}</span>`);
 
@@ -219,7 +223,7 @@ function _buildCard(node, isRoot = false) {
       ${metaParts.length ? `<div class="org-tree-meta">${metaParts.join("")}</div>` : ""}
     </div>
   `;
-  card.addEventListener("click", () => { location.hash = "#/animas"; });
+  card.addEventListener("click", () => { location.hash = `#/animas/${encodeURIComponent(node.name)}`; });
   return card;
 }
 

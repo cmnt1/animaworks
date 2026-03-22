@@ -40,8 +40,12 @@ def create_animas_router() -> APIRouter:
         config = load_config()
 
         result = []
-        for name in anima_names:
+        for name in list(anima_names):
             anima_dir = animas_dir / name
+
+            # Skip animas whose identity.md no longer exists on disk
+            if not (anima_dir / "identity.md").exists():
+                continue
 
             # Get process status
             proc_status = supervisor.get_process_status(name)
@@ -215,6 +219,114 @@ def create_animas_router() -> APIRouter:
             "execution_mode": resolved.execution_mode,
             "config": resolved.model_dump(),
         }
+
+    # ── Permissions ────────────────────────────────────────
+
+    @router.get("/animas/{name}/permissions")
+    async def get_anima_permissions(name: str, request: Request):
+        """Return permissions.json for an anima."""
+        animas_dir = request.app.state.animas_dir
+        anima_dir = animas_dir / name
+        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        perm_path = anima_dir / "permissions.json"
+        if not perm_path.exists():
+            return {}
+        try:
+            data = json.loads(await asyncio.to_thread(perm_path.read_text, "utf-8"))
+            return data
+        except (json.JSONDecodeError, OSError) as e:
+            raise HTTPException(status_code=500, detail=str(e)) from None
+
+    @router.put("/animas/{name}/permissions")
+    async def update_anima_permissions(name: str, request: Request):
+        """Update permissions.json for an anima."""
+        animas_dir = request.app.state.animas_dir
+        anima_dir = animas_dir / name
+        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        data = await request.json()
+
+        # Validate: must be a dict
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="permissions must be a JSON object")
+
+        perm_path = anima_dir / "permissions.json"
+        content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+        await asyncio.to_thread(perm_path.write_text, content, "utf-8")
+        logger.info("Updated permissions.json for anima '%s'", name)
+        return {"status": "ok", "name": name}
+
+    # ── Edit Identity / Injection / Model ────────────────────
+
+    @router.put("/animas/{name}/identity")
+    async def update_anima_identity(name: str, request: Request):
+        """Update the identity.md content for an anima."""
+        animas_dir = request.app.state.animas_dir
+        anima_dir = animas_dir / name
+        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        data = await request.json()
+        content: str = data.get("content", "")
+
+        identity_path = anima_dir / "identity.md"
+        await asyncio.to_thread(identity_path.write_text, content, "utf-8")
+        logger.info("Updated identity.md for anima '%s' (%d chars)", name, len(content))
+        return {"status": "ok", "name": name, "field": "identity", "length": len(content)}
+
+    @router.put("/animas/{name}/injection")
+    async def update_anima_injection(name: str, request: Request):
+        """Update the injection.md content for an anima."""
+        animas_dir = request.app.state.animas_dir
+        anima_dir = animas_dir / name
+        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        data = await request.json()
+        content: str = data.get("content", "")
+
+        injection_path = anima_dir / "injection.md"
+        await asyncio.to_thread(injection_path.write_text, content, "utf-8")
+        logger.info("Updated injection.md for anima '%s' (%d chars)", name, len(content))
+        return {"status": "ok", "name": name, "field": "injection", "length": len(content)}
+
+    @router.put("/animas/{name}/model")
+    async def update_anima_model(name: str, request: Request):
+        """Update the model setting in status.json for an anima."""
+        animas_dir = request.app.state.animas_dir
+        anima_dir = animas_dir / name
+        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        data = await request.json()
+        model: str = data.get("model", "").strip()
+        credential: str = data.get("credential", "").strip()
+
+        if not model:
+            raise HTTPException(status_code=400, detail="model is required")
+
+        status_path = anima_dir / "status.json"
+        existing: dict[str, Any] = {}
+        if status_path.exists():
+            try:
+                existing = json.loads(status_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        existing["model"] = model
+        if credential:
+            existing["credential"] = credential
+
+        await asyncio.to_thread(
+            status_path.write_text,
+            json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
+            "utf-8",
+        )
+        logger.info("Updated model for anima '%s': model=%s credential=%s", name, model, credential)
+        return {"status": "ok", "name": name, "model": model, "credential": credential}
 
     # ── Enable / Disable ─────────────────────────────────────
 
@@ -442,6 +554,44 @@ def create_animas_router() -> APIRouter:
                 results[name] = {"status": "error", "error": str(e)}
         return {"status": "ok", "results": results}
 
+    @router.delete("/animas/{name}")
+    async def delete_anima(name: str, request: Request):
+        """Stop and delete an anima entirely (process + files)."""
+        import shutil
+
+        supervisor = request.app.state.supervisor
+        animas_dir: Path = request.app.state.animas_dir
+        anima_names: list[str] = request.app.state.anima_names
+        anima_dir = animas_dir / name
+
+        # Stop the process if running
+        if name in supervisor.processes:
+            try:
+                await supervisor.stop_anima(name)
+            except Exception:
+                logger.warning("Failed to stop anima '%s' before delete", name, exc_info=True)
+
+        # Remove from anima_names list
+        if name in anima_names:
+            anima_names.remove(name)
+
+        # Delete directory from disk
+        if anima_dir.exists():
+            try:
+                shutil.rmtree(anima_dir)
+                logger.info("Deleted anima directory: %s", name)
+            except Exception as exc:
+                # If locked files, strip identity.md so it won't appear
+                try:
+                    (anima_dir / "identity.md").unlink(missing_ok=True)
+                    (anima_dir / "status.json").unlink(missing_ok=True)
+                except Exception:
+                    pass
+                logger.warning("Partial delete for '%s': %s", name, exc)
+                return {"status": "partial", "name": name, "detail": str(exc)}
+
+        return {"status": "deleted", "name": name}
+
     # ── Org Chart ─────────────────────────────────────────
 
     @router.get("/org/chart")
@@ -477,6 +627,8 @@ def create_animas_router() -> APIRouter:
             model = None
             anima_supervisor = None
             anima_speciality = None
+            department = ""
+            title = ""
             enabled = name in request.app.state.anima_names
             try:
                 resolved, _ = resolve_anima_config(config, name, anima_dir=anima_dir)
@@ -485,6 +637,16 @@ def create_animas_router() -> APIRouter:
                 anima_speciality = resolved.speciality
             except Exception:
                 pass
+
+            # Read department/title from status.json
+            status_path = anima_dir / "status.json"
+            if status_path.exists():
+                try:
+                    sdata = json.loads(status_path.read_text(encoding="utf-8"))
+                    department = sdata.get("department", "")
+                    title = sdata.get("title", "")
+                except Exception:
+                    pass
 
             status = proc_status.get("status", "unknown")
             if not enabled:
@@ -495,6 +657,8 @@ def create_animas_router() -> APIRouter:
                 "speciality": anima_speciality,
                 "supervisor": anima_supervisor,
                 "model": model,
+                "department": department,
+                "title": title,
                 "status": status,
                 "enabled": enabled,
             }
@@ -507,6 +671,8 @@ def create_animas_router() -> APIRouter:
                 "name": name,
                 "speciality": info["speciality"],
                 "model": info["model"],
+                "department": info.get("department", ""),
+                "title": info.get("title", ""),
                 "status": info["status"],
                 "enabled": info["enabled"],
                 "children": [_build_node(c) for c in children_names],
@@ -551,5 +717,197 @@ def create_animas_router() -> APIRouter:
             "tree": tree,
             "flat": flat,
         }
+
+    # ── Team Deploy ─────────────────────────────────────
+    # Role → identity / injection content for each team-builder role
+    _TEAM_ROLE_CONTENT: dict[str, dict[str, str]] = {
+        "secretary": {
+            "identity": "あなたは優秀な秘書AIです。丁寧で正確、先回りして行動します。スケジュール管理、メール対応、タスク整理が得意です。",
+            "injection": "メール・カレンダー・Slackの確認と管理を行い、上司のスケジュールを最適化してください。重要な予定や期限のリマインドを積極的に行ってください。",
+        },
+        "customer_support": {
+            "identity": "あなたはカスタマーサポート専門のAIです。共感力が高く、問題解決に長けています。顧客満足度を最優先にします。",
+            "injection": "顧客からの問い合わせに迅速かつ丁寧に対応してください。FAQを活用し、解決できない場合は適切にエスカレーションしてください。",
+        },
+        "back_office": {
+            "identity": "あなたはバックオフィス業務を担当するAIです。正確で効率的なデータ処理が得意です。",
+            "injection": "スプレッドシートの管理、データ入力・集計、書類整理を正確に行ってください。定型業務の自動化を積極的に提案してください。",
+        },
+        "sales_assist": {
+            "identity": "あなたは営業アシスタントAIです。リード管理とフォローアップが得意で、営業チームの生産性向上に貢献します。",
+            "injection": "リードの進捗管理、見積もり作成の補助、フォローアップメールの下書き作成を行ってください。商談の状況を把握し、適切なタイミングでのアクションを提案してください。",
+        },
+        "pr_sns": {
+            "identity": "あなたはPR・SNS運用を担当するAIです。トレンドに敏感で、エンゲージメントの高いコンテンツ作成が得意です。",
+            "injection": "SNS投稿の企画・下書き作成、プレスリリースの作成補助、ブランディング戦略の提案を行ってください。",
+        },
+        "recruiter": {
+            "identity": "あなたは採用担当AIです。候補者とのコミュニケーションが丁寧で、採用プロセスを効率化します。",
+            "injection": "求人票の作成、候補者管理、面接日程の調整、フォローアップメールの作成を行ってください。",
+        },
+        "accounting": {
+            "identity": "あなたは経理アシスタントAIです。数字に正確で、経理業務を効率化します。",
+            "injection": "経費集計、請求書チェック、レポート作成を正確に行ってください。異常値を検知した場合は即座に報告してください。",
+        },
+        "project_manager": {
+            "identity": "あなたはプロジェクトマネージャーAIです。進捗管理とボトルネック検出が得意です。",
+            "injection": "タスクの進捗追跡、期限管理、ボトルネックの早期検出と報告を行ってください。チームメンバーの負荷バランスにも注意してください。",
+        },
+        "researcher": {
+            "identity": "あなたはリサーチャーAIです。情報収集と分析が得意で、正確で読みやすいレポートを作成します。",
+            "injection": "指定されたテーマについて情報を収集・分析し、要点をまとめたレポートを作成してください。情報源の信頼性を常に確認してください。",
+        },
+        "content_writer": {
+            "identity": "あなたはコンテンツライターAIです。読みやすく魅力的な文章を書くことが得意です。",
+            "injection": "ブログ記事、メルマガ、案内文などのコンテンツを作成してください。ターゲット読者に合わせたトーンで、SEOも意識して執筆してください。",
+        },
+    }
+    _DEFAULT_ROLE_CONTENT = {
+        "identity": "あなたは業務支援AIエージェントです。与えられたタスクを正確かつ効率的に遂行します。",
+        "injection": "与えられたタスクに集中し、不明点があれば確認してから行動してください。",
+    }
+
+    @router.post("/teams/deploy")
+    async def deploy_team(request: Request):
+        """Deploy team members as new Animas."""
+        from core.anima_factory import create_blank, validate_anima_name
+
+        data = await request.json()
+        members_raw: list[dict[str, Any]] = data.get("members", [])
+        team_department: str = data.get("department", "").strip()
+        team_report_to: str = data.get("reportTo", "").strip()
+        logger.info(
+            "deploy_team: received %d members (dept=%s, reportTo=%s): %s",
+            len(members_raw),
+            team_department,
+            team_report_to or "(owner)",
+            [m.get("displayName") for m in members_raw],
+        )
+
+        animas_dir: Path = request.app.state.animas_dir
+        created: list[dict[str, str]] = []
+        errors: list[str] = []
+
+        # Track the lead member's anima name for supervisor assignment
+        lead_anima_name: str | None = None
+
+        for member in members_raw:
+            display_name: str = member.get("displayName", "").strip()
+            role_id: str = member.get("roleId", "general")
+            tools: list[str] = member.get("tools", [])
+            member_model: str = member.get("model", "").strip()
+            member_credential: str = member.get("credential", "").strip()
+            member_title: str = member.get("title", "").strip()
+            member_is_lead: bool = member.get("isLead", False)
+
+            if not display_name:
+                errors.append("Empty display name — skipped")
+                continue
+
+            # Generate a valid anima name (lowercase, alphanumeric)
+            name = display_name.lower().replace(" ", "_").replace("-", "_")
+            # Strip invalid characters
+            name = "".join(c for c in name if c.isascii() and (c.isalnum() or c == "_"))
+            if not name or not name[0].isalpha():
+                name = f"agent_{name}" if name else f"agent_{len(created) + 1}"
+
+            err = validate_anima_name(name)
+            if err:
+                name = f"agent_{len(created) + 1}"
+
+            # Reject if name already exists (avoid silent duplicates)
+            if (animas_dir / name).exists():
+                errors.append(f"{display_name} ({name}): already exists — rename or delete the existing anima first")
+                continue
+
+            try:
+                anima_dir = create_blank(animas_dir, name)
+
+                # Write role-specific identity.md
+                content = _TEAM_ROLE_CONTENT.get(role_id, _DEFAULT_ROLE_CONTENT)
+                (anima_dir / "identity.md").write_text(
+                    f"# {display_name}\n\n{content['identity']}\n",
+                    encoding="utf-8",
+                )
+
+                # Write role-specific injection.md
+                tool_list = ", ".join(tools) if tools else "なし"
+                (anima_dir / "injection.md").write_text(
+                    f"{content['injection']}\n\n## 利用可能ツール\n{tool_list}\n",
+                    encoding="utf-8",
+                )
+
+                # Write status.json with role info, model, org data
+                status: dict[str, Any] = {
+                    "enabled": True,
+                    "role": role_id,
+                }
+
+                if team_department:
+                    status["department"] = team_department
+                if member_title:
+                    status["title"] = member_title
+
+                # Supervisor assignment:
+                #   Lead → reports to team_report_to (or null = owner)
+                #   Non-lead → will be updated later to report to lead
+                if member_is_lead:
+                    lead_anima_name = name
+                    if team_report_to:
+                        status["supervisor"] = team_report_to
+                    # else: supervisor stays unset → top-level (owner)
+
+                if member_model:
+                    status["model"] = member_model
+                    if member_credential:
+                        status["credential"] = member_credential
+                else:
+                    try:
+                        from core.config.local_llm import apply_local_llm_role_to_status
+                        cfg = load_config()
+                        apply_local_llm_role_to_status(status, cfg, "general")
+                    except Exception:
+                        pass
+
+                (anima_dir / "status.json").write_text(
+                    json.dumps(status, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+
+                created.append({"name": name, "displayName": display_name, "roleId": role_id, "isLead": member_is_lead})
+                logger.info("Deployed team member '%s' as anima '%s' (role=%s)", display_name, name, role_id)
+
+            except Exception as exc:
+                errors.append(f"{display_name}: {exc}")
+                logger.exception("Failed to deploy team member '%s'", display_name)
+
+        # Assign non-lead members' supervisor to the lead
+        if lead_anima_name and len(created) > 1:
+            for entry in created:
+                if entry.get("isLead"):
+                    continue
+                member_dir = animas_dir / entry["name"]
+                status_path = member_dir / "status.json"
+                if status_path.exists():
+                    try:
+                        sdata = json.loads(status_path.read_text(encoding="utf-8"))
+                        sdata["supervisor"] = lead_anima_name
+                        status_path.write_text(
+                            json.dumps(sdata, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        logger.warning("Failed to set supervisor for '%s'", entry["name"], exc_info=True)
+
+        # Trigger reconciliation so supervisor picks up new animas
+        if created:
+            try:
+                supervisor = request.app.state.supervisor
+                if supervisor and hasattr(supervisor, "reconcile"):
+                    await asyncio.get_running_loop().run_in_executor(None, supervisor.reconcile)
+            except Exception:
+                logger.debug("Reconciliation trigger failed (will auto-detect within 30s)", exc_info=True)
+
+        return {"created": created, "errors": errors}
 
     return router

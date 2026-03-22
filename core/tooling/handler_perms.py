@@ -87,13 +87,24 @@ class PermissionsMixin:
 
         if config.file_roots and config.file_roots != ["/"]:
             for root in config.file_roots:
-                if root.startswith("/"):
+                if Path(root).is_absolute():
                     file_read.append(root)
                     file_write.append(root)
 
         restrictions: list[str] = []
         for cmd in config.commands.deny:
             restrictions.append(t("handler.cmd_denied", cmd=cmd))
+
+        # Command execution permissions
+        commands_info: dict[str, Any] = {}
+        if config.commands.allow_all:
+            commands_info["policy"] = "allow_all"
+            commands_info["note"] = "All commands are allowed (except those in deny list and built-in security blocks)"
+        else:
+            commands_info["policy"] = "allowlist"
+            commands_info["allowed"] = config.commands.allow
+        if config.commands.deny:
+            commands_info["denied"] = config.commands.deny
 
         result = {
             "internal_tools": internal_tools,
@@ -105,6 +116,7 @@ class PermissionsMixin:
                 "read": file_read,
                 "write": file_write,
             },
+            "commands": commands_info,
             "restrictions": restrictions,
         }
 
@@ -235,7 +247,7 @@ class PermissionsMixin:
             )
 
         # Otherwise: check if path is under any of the file_roots
-        allowed_dirs = [Path(r).resolve() for r in config.file_roots if r.startswith("/")]
+        allowed_dirs = [Path(r).resolve() for r in config.file_roots if Path(r).is_absolute()]
         for allowed in allowed_dirs:
             if resolved.is_relative_to(allowed):
                 return None

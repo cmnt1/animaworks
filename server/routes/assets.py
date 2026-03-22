@@ -76,6 +76,7 @@ class RemakeConfirmRequest(BaseModel):
     backup_id: str
     image_style: str | None = None
     preview_file: str | None = None
+    fullbody_only: bool = False
 
     @field_validator("backup_id")
     @classmethod
@@ -514,17 +515,44 @@ def create_assets_router() -> APIRouter:
                     detail=f"Failed to download face reference image: {exc}",
                 ) from exc
 
-        # Resolve prompt (style-aware)
+        # Resolve prompt (style-aware) — try cached first, then LLM synthesis, then fallback
         prompt = body.prompt
         if not prompt:
-            from core.asset_reconciler import _resolve_prompt
+            from core.asset_reconciler import _extract_prompt, _resolve_prompt
 
+            # Fast path: check cached prompt files
             prompt = _resolve_prompt(anima_dir, style="realistic" if is_realistic else "anime")
             if not prompt:
-                raise HTTPException(
-                    status_code=400,
-                    detail="No prompt available. Provide prompt or create assets/prompt.txt.",
-                )
+                # Slow path: extract from identity.md / character_sheet.md via LLM
+                logger.info("No cached prompt for '%s', attempting LLM synthesis…", name)
+                prompt = await _extract_prompt(anima_dir, style="realistic" if is_realistic else "anime")
+            if not prompt:
+                # Fallback: generate a default prompt from the anima name
+                logger.info("No appearance data for '%s', using default prompt", name)
+                if is_realistic:
+                    prompt = (
+                        f"realistic full-length full-body photo of a professional young Japanese person "
+                        f"named {name}, solo, single subject, one person only, standing naturally, "
+                        f"centered composition, facing camera, plain modern office lobby background, "
+                        f"minimal background clutter, friendly approachable expression, neat appearance, "
+                        f"clean professional attire, polished office style, natural lighting, high detail, "
+                        f"no other people, no crowd, no duplicate body, no extra limbs"
+                    )
+                else:
+                    prompt = (
+                        f"1girl, {name}, solo, standing, full body, simple background, "
+                        f"office lady, professional attire, neat hair, smile, looking at viewer, "
+                        f"high quality, detailed"
+                    )
+                # Cache for future use
+                try:
+                    cache_dir = anima_dir / "assets"
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    cache_name = "prompt_realistic.txt" if is_realistic else "prompt.txt"
+                    (cache_dir / cache_name).write_text(prompt + "\n", encoding="utf-8")
+                    logger.info("Cached default %s prompt for '%s'", "realistic" if is_realistic else "anime", name)
+                except OSError:
+                    pass
 
         # Reuse existing backup or create a new one
         assets_dir = anima_dir / "assets"
@@ -670,6 +698,47 @@ def create_assets_router() -> APIRouter:
                 detail=f"No {fullbody_filename} preview found. Run remake-preview first.",
             )
 
+        # ── Fullbody-only mode: copy fullbody to all other slots ──
+        if body.fullbody_only:
+            app = request.app
+
+            async def _run_fullbody_copy() -> None:
+                try:
+                    import shutil as _sh2
+
+                    # Determine target files
+                    bustup_name = "avatar_bustup_realistic.png" if is_realistic else "avatar_bustup.png"
+                    _sh2.copy2(fullbody_path, assets_dir / bustup_name)
+                    await _emit_ws("anima.remake_progress", {"name": name, "step": "bustup", "status": "completed", "progress_pct": 100})
+
+                    # Copy fullbody to all expression variants
+                    style_suffix = "_realistic" if is_realistic else ""
+                    expressions = ["smile", "laugh", "troubled", "surprised", "thinking", "embarrassed"]
+                    for i, expr in enumerate(expressions):
+                        expr_name = f"avatar_bustup_{expr}{style_suffix}.png"
+                        _sh2.copy2(fullbody_path, assets_dir / expr_name)
+                        await _emit_ws("anima.remake_progress", {"name": name, "step": f"expression:{expr}", "status": "completed", "progress_pct": 100})
+
+                    # Clean up backup
+                    if backup_dir.exists():
+                        _sh2.rmtree(backup_dir, ignore_errors=True)
+                        logger.info("Removed backup after fullbody-only copy: %s", backup_dir.name)
+
+                    await _emit_ws("anima.remake_complete", {"name": name, "steps_completed": ["fullbody_copy"], "errors": []})
+                except Exception:
+                    logger.exception("Fullbody-only copy failed for %s", name)
+                    await _emit_ws("anima.remake_complete", {"name": name, "steps_completed": [], "errors": ["Internal error during fullbody copy"]})
+
+            async def _emit_ws(event_type: str, data: dict) -> None:
+                ws = getattr(app.state, "ws_manager", None)
+                if ws:
+                    await ws.broadcast({"type": event_type, "data": data})
+
+            remaining_steps = ["bustup"] + [f"expression:{e}" for e in ["smile", "laugh", "troubled", "surprised", "thinking", "embarrassed"]]
+            asyncio.create_task(_run_fullbody_copy())
+            return {"status": "started", "steps": remaining_steps, "mode": "fullbody_only"}
+
+        # ── Normal cascade rebuild ──
         # Resolve prompt (style-aware)
         from core.asset_reconciler import _resolve_prompt
 

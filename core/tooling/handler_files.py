@@ -594,6 +594,11 @@ class FileToolsMixin:
 
         try:
             if use_shell:
+                import platform as _platform
+
+                shell_kwargs: dict[str, Any] = {}
+                if _platform.system() != "Windows":
+                    shell_kwargs["executable"] = "/bin/bash"
                 proc = subprocess.run(
                     command,
                     shell=True,
@@ -601,7 +606,7 @@ class FileToolsMixin:
                     text=True,
                     timeout=timeout,
                     cwd=str(self._task_cwd or self._anima_dir),
-                    executable="/bin/bash",
+                    **shell_kwargs,
                 )
             else:
                 try:

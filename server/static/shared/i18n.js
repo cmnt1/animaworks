@@ -27,12 +27,12 @@ export async function loadTranslations(locale) {
   _locale = locale;
   document.documentElement.lang = locale;
   try {
-    const res = await fetch(`/i18n/${locale}.json`);
+    const res = await fetch(`/i18n/${locale}.json`, { cache: 'no-store' });
     _translations = await res.json();
   } catch {
     if (locale !== 'ja') {
       try {
-        const res = await fetch('/i18n/ja.json');
+        const res = await fetch('/i18n/ja.json', { cache: 'no-store' });
         _translations = await res.json();
       } catch { /* use empty dict */ }
     }

@@ -386,6 +386,126 @@ async function _loadAuthSettings() {
   }
 }
 
+// ── Anthropic Auth Settings ─────────────────
+
+async function _loadAnthropicAuthSettings() {
+  const el = document.getElementById("anthropicAuthSettings");
+  if (!el) return;
+
+  try {
+    const state = await api("/api/settings/anthropic-auth");
+    const modeLabel = state.auth_mode === "claude_code_login"
+      ? tl("setup.anthropic_auth_mode_subscription", "サブスクリプション認証", "Subscription Auth")
+      : tl("setup.anthropic_auth_mode_api", "APIキー", "API Key");
+
+    const runtimeBadges = [
+      {
+        label: tl("setup.anthropic_auth_env_key", "環境変数 ANTHROPIC_API_KEY", "Env ANTHROPIC_API_KEY"),
+        ok: !!state.env_api_key_configured,
+      },
+      {
+        label: tl("setup.anthropic_auth_config_key", "設定ファイル APIキー", "Config API Key"),
+        ok: !!state.config_api_key_configured,
+      },
+      {
+        label: tl("setup.anthropic_auth_claude_code", "Claude Code CLI", "Claude Code CLI"),
+        ok: !!state.claude_code_available,
+      },
+    ];
+
+    el.innerHTML = `
+      <div style="margin-bottom: 1rem;">
+        <strong>${tl("setup.anthropic_auth_current", "現在の認証方式", "Current auth mode")}:</strong>
+        <code>${escapeHtml(modeLabel)}</code>
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <strong>${tl("setup.anthropic_auth_saved", "設定保存済み", "Config saved")}:</strong>
+        <span>${state.config_present ? "\u2705" : "\u274C"}</span>
+      </div>
+      <div style="display:grid; gap:0.5rem; margin-bottom: 1.25rem;">
+        ${runtimeBadges.map(item => `
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <span style="font-size:1.1rem;">${item.ok ? "\u2705" : "\u274C"}</span>
+            <span>${escapeHtml(item.label)}</span>
+          </div>
+        `).join("")}
+      </div>
+
+      <form id="anthropicAuthForm" style="display:flex; flex-direction:column; gap:0.75rem; max-width:420px;">
+        <label style="display:flex; flex-direction:column; gap:0.35rem;">
+          <span>${tl("setup.anthropic_auth_mode_label", "認証方式", "Auth mode")}</span>
+          <select id="anthropicAuthMode">
+            <option value="api_key"${state.auth_mode === "api_key" ? " selected" : ""}>${tl("setup.anthropic_auth_mode_api", "APIキー", "API Key")}</option>
+            <option value="claude_code_login"${state.auth_mode === "claude_code_login" ? " selected" : ""}>${tl("setup.anthropic_auth_mode_subscription", "サブスクリプション認証", "Subscription Auth")}</option>
+          </select>
+        </label>
+        <label id="anthropicApiKeyWrap" style="display:${state.auth_mode === "api_key" ? "flex" : "none"}; flex-direction:column; gap:0.35rem;">
+          <span>${tl("setup.anthropic_auth_api_key", "Anthropic APIキー", "Anthropic API Key")}</span>
+          <input type="password" id="anthropicApiKeyInput" placeholder="sk-ant-...">
+          <small style="color:var(--text-secondary, #666);">${tl("setup.anthropic_auth_api_key_hint", "空欄で保存すると既存キーを維持します", "Leave empty to keep existing key")}</small>
+        </label>
+        <div id="anthropicAuthResult" class="login-error hidden"></div>
+        <button type="submit" class="btn-login" style="width:auto;">${tl("setup.anthropic_auth_save", "保存", "Save")}</button>
+      </form>
+    `;
+
+    const modeEl = document.getElementById("anthropicAuthMode");
+    const apiKeyWrap = document.getElementById("anthropicApiKeyWrap");
+    modeEl?.addEventListener("change", () => {
+      if (apiKeyWrap) {
+        apiKeyWrap.style.display = modeEl.value === "api_key" ? "flex" : "none";
+      }
+    });
+
+    const form = document.getElementById("anthropicAuthForm");
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const result = document.getElementById("anthropicAuthResult");
+      const authMode = document.getElementById("anthropicAuthMode").value;
+      const apiKey = document.getElementById("anthropicApiKeyInput")?.value || "";
+
+      if (authMode === "api_key" && !apiKey.trim()) {
+        result.style.color = "#ef4444";
+        result.textContent = tl("setup.anthropic_auth_api_key_required", "APIキーを入力してください", "API key is required");
+        result.classList.remove("hidden");
+        return;
+      }
+
+      try {
+        const saveRes = await fetch("/api/settings/anthropic-auth", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            auth_mode: authMode,
+            api_key: apiKey,
+          }),
+        });
+        const saveData = await saveRes.json();
+        if (!saveRes.ok) {
+          result.style.color = "#ef4444";
+          result.textContent = saveData.detail || tl("setup.anthropic_auth_save_failed", "保存に失敗しました", "Failed to save");
+          result.classList.remove("hidden");
+          return;
+        }
+
+        result.style.color = "#22c55e";
+        result.textContent = tl("setup.anthropic_auth_saved_success", "Anthropic認証設定を保存しました", "Anthropic auth settings saved");
+        result.classList.remove("hidden");
+        await _loadConfig();
+        await _loadChecklist();
+        await _loadAnthropicAuthSettings();
+      } catch {
+        result.style.color = "#ef4444";
+        result.textContent = t("setup.network_error");
+        result.classList.remove("hidden");
+      }
+    });
+  } catch {
+    el.innerHTML = `<div class="loading-placeholder">${tl("setup.anthropic_auth_fetch_failed", "Anthropic認証設定を取得できませんでした", "Failed to load Anthropic auth settings")}</div>`;
+  }
+}
+
 // ── CLI tools (read-only detection) ─────────
 
 async function _loadCliToolsAuth() {

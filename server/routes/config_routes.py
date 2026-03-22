@@ -273,6 +273,83 @@ def create_config_router() -> APIRouter:
         """Return local Ollama-backed model settings and runtime availability."""
         return _serialize_local_llm()
 
+    @router.get("/system/available-models")
+    async def get_available_models(request: Request):
+        """Return all available models (cloud + local) for UI dropdowns."""
+        config = load_config()
+        models: list[dict[str, str]] = []
+        seen: set[str] = set()
+
+        # Cloud providers
+        for provider, cred in config.credentials.items():
+            if not cred.api_key and cred.type != "claude_code_login":
+                continue
+            if provider == "anthropic":
+                for m in ("claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"):
+                    if m not in seen:
+                        models.append({"id": m, "label": m, "credential": "anthropic"})
+                        seen.add(m)
+            elif provider == "openai":
+                for m in ("gpt-4.1-mini", "gpt-4.1-nano"):
+                    if m not in seen:
+                        models.append({"id": m, "label": m, "credential": "openai"})
+                        seen.add(m)
+            elif provider in ("google", "gemini"):
+                for m in ("gemini-2.5-flash",):
+                    if m not in seen:
+                        models.append({"id": m, "label": m, "credential": "google"})
+                        seen.add(m)
+
+        # Local Ollama models
+        try:
+            local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
+            base_url = normalize_ollama_base_url(local_llm.base_url)
+            for m in _list_ollama_models(base_url):
+                mid = f"ollama/{m}" if not m.startswith("ollama/") else m
+                label = m.removeprefix("ollama/") if m.startswith("ollama/") else m
+                if mid not in seen:
+                    models.append({"id": mid, "label": label, "credential": "ollama"})
+                    seen.add(mid)
+        except Exception:
+            pass
+
+        return {"models": models}
+
+    @router.get("/system/org-info")
+    async def get_org_info(request: Request):
+        """Return existing departments, titles, and anima names for team builder."""
+        animas_dir = get_animas_dir()
+        departments: set[str] = set()
+        titles: set[str] = set()
+        animas: list[dict[str, str]] = []
+
+        if animas_dir.exists():
+            for d in sorted(animas_dir.iterdir()):
+                if not d.is_dir() or not (d / "identity.md").exists():
+                    continue
+                name = d.name
+                status_path = d / "status.json"
+                dept = ""
+                title = ""
+                if status_path.exists():
+                    try:
+                        sdata = json.loads(status_path.read_text(encoding="utf-8"))
+                        dept = sdata.get("department", "")
+                        title = sdata.get("title", "")
+                    except Exception:
+                        pass
+                if dept:
+                    departments.add(dept)
+                if title:
+                    titles.add(title)
+                animas.append({"name": name, "department": dept, "title": title})
+
+        return {
+            "departments": sorted(departments),
+            "titles": sorted(titles),
+            "animas": animas,
+        }
+
     @router.put("/settings/anthropic-auth")
     async def update_anthropic_auth(body: UpdateAnthropicAuthRequest, request: Request):
         """Persist Anthropic auth mode in config.json for the settings UI."""
