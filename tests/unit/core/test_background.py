@@ -443,7 +443,7 @@ class TestDefaultEligibleTools:
         # Image gen schema names (all threshold 30)
         for name in (
             "generate_character_assets", "generate_fullbody", "generate_bustup",
-            "generate_chibi", "generate_3d_model", "generate_rigged_model",
+            "generate_icon", "generate_chibi", "generate_3d_model", "generate_rigged_model",
             "generate_animations",
         ):
             assert name in _DEFAULT_ELIGIBLE_TOOLS, f"{name} missing"

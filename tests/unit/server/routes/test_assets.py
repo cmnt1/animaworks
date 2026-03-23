@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
+from core.tools.image_gen import PipelineResult
+
 
 def _make_test_app(animas_dir: Path | None = None):
     from fastapi import FastAPI
@@ -256,6 +258,7 @@ class TestGenerateAssets:
         mock_result = MagicMock()
         mock_result.fullbody_path = Path("/tmp/fb.png")
         mock_result.bustup_path = None
+        mock_result.icon_path = None
         mock_result.chibi_path = None
         mock_result.model_path = None
         mock_result.rigged_model_path = None
@@ -276,3 +279,206 @@ class TestGenerateAssets:
             )
         assert resp.status_code == 200
         assert resp.json()["status"] == "done"
+
+
+# ── GET /animas/{name}/assets/metadata (icon cross-mode fallback) ──
+
+
+class TestGetAssetMetadataIconFallback:
+    """icon.png / icon_realistic.png fallback for the opposite mode's gallery keys."""
+
+    async def test_only_icon_png_fills_realistic_slot(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        assets_dir = anima_dir / "assets"
+        assets_dir.mkdir(parents=True)
+        (assets_dir / "icon.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 8)
+
+        mock_cfg = MagicMock()
+        mock_cfg.image_gen.image_style = "anime"
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        with patch("core.config.models.load_config", return_value=mock_cfg):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/animas/alice/assets/metadata")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["assets"]["avatar_icon"]["filename"] == "icon.png"
+        assert data["assets_realistic"]["avatar_icon_realistic"]["filename"] == "icon.png"
+        assert data["assets_realistic"]["avatar_icon_realistic"]["url"].endswith("/icon.png")
+
+    async def test_only_icon_realistic_fills_anime_slot(self, tmp_path):
+        anima_dir = tmp_path / "bob"
+        assets_dir = anima_dir / "assets"
+        assets_dir.mkdir(parents=True)
+        (assets_dir / "icon_realistic.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"y" * 8)
+
+        mock_cfg = MagicMock()
+        mock_cfg.image_gen.image_style = "realistic"
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        with patch("core.config.models.load_config", return_value=mock_cfg):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/animas/bob/assets/metadata")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["assets_realistic"]["avatar_icon_realistic"]["filename"] == "icon_realistic.png"
+        assert data["assets"]["avatar_icon"]["filename"] == "icon_realistic.png"
+        assert data["assets"]["avatar_icon"]["url"].endswith("/icon_realistic.png")
+
+
+# ── POST /animas/{name}/assets/regenerate-step ───────────
+
+
+class TestRegenerateAssetStep:
+    async def test_anima_not_found(self, tmp_path):
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/nobody/assets/regenerate-step",
+                json={"step": "icon"},
+            )
+        assert resp.status_code == 404
+
+    async def test_fullbody_requires_prompt_or_prompt_txt(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        anima_dir.mkdir()
+        (anima_dir / "assets").mkdir()
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        with patch("core.asset_reconciler._resolve_prompt", return_value=""):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/animas/alice/assets/regenerate-step",
+                    json={"step": "fullbody", "prompt": ""},
+                )
+        assert resp.status_code == 400
+        assert "prompt is required" in resp.json()["detail"]
+
+    @patch("server.routes.assets.emit", new_callable=AsyncMock)
+    @patch("core.tools.image_gen.ImageGenPipeline")
+    async def test_icon_step_ok_and_emits(self, mock_pipeline_cls, mock_emit, tmp_path):
+        anima_dir = tmp_path / "alice"
+        (anima_dir / "assets").mkdir(parents=True)
+
+        icon_path = anima_dir / "assets" / "icon.png"
+        mock_pipeline = MagicMock()
+        mock_pipeline.generate_all.return_value = PipelineResult(
+            icon_path=icon_path,
+            errors=[],
+        )
+        mock_pipeline_cls.return_value = mock_pipeline
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/alice/assets/regenerate-step",
+                json={"step": "icon"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["icon"] == str(icon_path)
+        mock_emit.assert_awaited()
+        call_kw = mock_emit.call_args[0]
+        assert call_kw[1] == "anima.assets_updated"
+        assert call_kw[2]["assets"] == ["icon.png"]
+        assert call_kw[2]["errors"] == []
+
+        mock_pipeline.generate_all.assert_called_once()
+        ga_kw = mock_pipeline.generate_all.call_args[1]
+        assert ga_kw["steps"] == ["icon"]
+        assert ga_kw["skip_existing"] is False
+
+
+# ── POST /animas/{name}/assets/upload-fullbody ──────────
+
+
+class TestUploadFullbodyAsset:
+    _PNG_MIN = b"\x89PNG\r\n\x1a\n" + b"x" * 8
+
+    async def test_anima_not_found(self, tmp_path):
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/nobody/assets/upload-fullbody",
+                files={"file": ("f.png", self._PNG_MIN, "image/png")},
+                data={"image_style": "anime"},
+            )
+        assert resp.status_code == 404
+
+    async def test_rejects_too_short_file(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        anima_dir.mkdir()
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/alice/assets/upload-fullbody",
+                files={"file": ("f.png", b"short", "image/png")},
+                data={"image_style": "anime"},
+            )
+        assert resp.status_code == 400
+        assert "invalid" in resp.json()["detail"].lower()
+
+    async def test_rejects_non_image_bytes(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        anima_dir.mkdir()
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/alice/assets/upload-fullbody",
+                files={"file": ("f.bin", b"\x00" * 16, "application/octet-stream")},
+                data={"image_style": "anime"},
+            )
+        assert resp.status_code == 400
+        assert "PNG or JPEG" in resp.json()["detail"]
+
+    @patch("server.routes.assets.emit", new_callable=AsyncMock)
+    async def test_writes_anime_fullbody_png(self, mock_emit, tmp_path):
+        anima_dir = tmp_path / "alice"
+        anima_dir.mkdir()
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/alice/assets/upload-fullbody",
+                files={"file": ("fb.png", self._PNG_MIN, "image/png")},
+                data={"image_style": "anime"},
+            )
+        assert resp.status_code == 200
+        out = anima_dir / "assets" / "avatar_fullbody.png"
+        assert out.is_file()
+        assert out.read_bytes() == self._PNG_MIN
+        data = resp.json()
+        assert data["filename"] == "avatar_fullbody.png"
+        assert data["url"].endswith("/avatar_fullbody.png")
+        mock_emit.assert_awaited_once()
+
+    @patch("server.routes.assets.emit", new_callable=AsyncMock)
+    async def test_writes_realistic_fullbody_png(self, mock_emit, tmp_path):
+        anima_dir = tmp_path / "bob"
+        anima_dir.mkdir()
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        jpeg = b"\xff\xd8\xff" + b"z" * 16
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/bob/assets/upload-fullbody",
+                files={"file": ("fb.jpg", jpeg, "image/jpeg")},
+                data={"image_style": "realistic"},
+            )
+        assert resp.status_code == 200
+        out = anima_dir / "assets" / "avatar_fullbody_realistic.png"
+        assert out.read_bytes() == jpeg
+        assert resp.json()["filename"] == "avatar_fullbody_realistic.png"

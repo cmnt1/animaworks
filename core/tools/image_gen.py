@@ -10,13 +10,14 @@
 Facade module — re-exports all public symbols from sub-modules and
 provides the :func:`dispatch` entry point used by the tool handler.
 
-Pipeline:
+Pipeline (7 steps):
   1. NovelAI V4.5 → anime full-body image (fallback: fal.ai Flux Pro)
   2. Flux Kontext [pro] (fal.ai) → bust-up from reference
-  3. Flux Kontext [pro] (fal.ai) → chibi from reference
-  4. Meshy Image-to-3D → GLB model from chibi image
-  5. Meshy Rigging → rigged GLB + walking/running animations
-  6. Meshy Animations → idle/sitting/waving/talking GLBs
+  3. Flux Kontext [pro] (fal.ai) → icon from neutral bustup
+  4. Flux Kontext [pro] (fal.ai) → chibi from reference
+  5. Meshy Image-to-3D → GLB model from chibi image
+  6. Meshy Rigging → rigged GLB + walking/running animations
+  7. Meshy Animations → idle/sitting/waving/talking GLBs
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from core.tools._image_cli import cli_main
 # ── Re-exports: _image_clients ─────────────────────────────
 from core.tools._image_clients import (
     _BUSTUP_PROMPT,
+    _CHAT_ICON_PROMPT,
     _CHIBI_PROMPT,
     _DEFAULT_ANIMATIONS,
     _DOWNLOAD_TIMEOUT,
@@ -52,6 +54,7 @@ from core.tools._image_clients import (
     _EXPRESSION_PROMPTS,
     _HTTP_TIMEOUT,
     _REALISTIC_BUSTUP_PROMPT,
+    _REALISTIC_CHAT_ICON_PROMPT,
     _REALISTIC_EXPRESSION_GUIDANCE,
     _REALISTIC_EXPRESSION_PROMPTS,
     _RETRYABLE_CODES,
@@ -223,6 +226,42 @@ def dispatch(tool_name: str, args: dict[str, Any]) -> Any:
         )
         out = assets_dir / "avatar_bustup.png"
         out.write_bytes(img)
+        return {"path": str(out), "size": len(img)}
+
+    if tool_name == "generate_icon":
+        from core.config.models import load_config
+
+        anima_dir = Path(args.pop("anima_dir", ""))
+        assets_dir = anima_dir / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        config = load_config().image_gen
+        is_realistic = config.image_style == "realistic"
+        ref_name = "avatar_bustup_realistic.png" if is_realistic else "avatar_bustup.png"
+        ref_path = assets_dir / ref_name
+        if not ref_path.exists():
+            return {"error": f"No bustup reference image found ({ref_name})"}
+        prompt = args.get("prompt") or (_REALISTIC_CHAT_ICON_PROMPT if is_realistic else _CHAT_ICON_PROMPT)
+        if config.style_prefix:
+            prompt = config.style_prefix + prompt
+        if config.style_suffix:
+            prompt = prompt + config.style_suffix
+        client = FluxKontextClient()
+        img = client.generate_from_reference(
+            reference_image=ref_path.read_bytes(),
+            prompt=prompt,
+            aspect_ratio="1:1",
+            # guidance_scale=float(args.get("guidance_scale", 4.0)),
+            seed=args.get("seed"),
+        )
+        out_name = "icon_realistic.png" if is_realistic else "icon.png"
+        out = assets_dir / out_name
+        out.write_bytes(img)
+        try:
+            from core.tools._anima_icon_url import persist_anima_icon_path_template
+
+            persist_anima_icon_path_template()
+        except Exception:
+            logger.debug("persist_anima_icon_path_template failed after icon generation", exc_info=True)
         return {"path": str(out), "size": len(img)}
 
     if tool_name == "generate_chibi":

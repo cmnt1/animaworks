@@ -146,6 +146,34 @@ class MeshyClient:
 
         return _retry(_call, max_retries=1, delay=10.0)
 
+    def create_rigging_task_from_glb(
+        self,
+        glb_bytes: bytes,
+        *,
+        height_meters: float = 1.0,
+    ) -> str:
+        """Submit a rigging task using a GLB ``model_url`` (data URI).
+
+        Used when no image-to-3D ``input_task_id`` is available (e.g. animations-only regen).
+        """
+        data_uri = _image_to_data_uri(glb_bytes, mime="model/gltf-binary")
+        body: dict[str, Any] = {
+            "model_url": data_uri,
+            "height_meters": height_meters,
+        }
+
+        def _call() -> str:
+            resp = httpx.post(
+                MESHY_RIGGING_URL,
+                json=body,
+                headers=self._headers(),
+                timeout=_HTTP_TIMEOUT,
+            )
+            resp.raise_for_status()
+            return resp.json()["result"]
+
+        return _retry(_call, max_retries=1, delay=10.0)
+
     def poll_rigging_task(self, task_id: str) -> dict[str, Any]:
         """Poll until a rigging task completes."""
         url = MESHY_RIGGING_TASK_TPL.format(task_id=task_id)

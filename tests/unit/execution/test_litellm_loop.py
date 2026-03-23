@@ -487,7 +487,7 @@ class TestBgPoolTools:
         from core.execution.litellm_loop import LiteLLMExecutor
         expected_image_tools = {
             "generate_character_assets",
-            "generate_fullbody", "generate_bustup", "generate_chibi",
+            "generate_fullbody", "generate_bustup", "generate_icon", "generate_chibi",
             "generate_3d_model", "generate_rigged_model", "generate_animations",
         }
         for tool in expected_image_tools:

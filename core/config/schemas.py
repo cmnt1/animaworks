@@ -309,6 +309,7 @@ class BackgroundTaskConfig(BaseModel):
         "generate_character_assets": BackgroundToolConfig(threshold_s=30),
         "generate_fullbody": BackgroundToolConfig(threshold_s=30),
         "generate_bustup": BackgroundToolConfig(threshold_s=30),
+        "generate_icon": BackgroundToolConfig(threshold_s=30),
         "generate_chibi": BackgroundToolConfig(threshold_s=30),
         "generate_3d_model": BackgroundToolConfig(threshold_s=30),
         "generate_rigged_model": BackgroundToolConfig(threshold_s=30),

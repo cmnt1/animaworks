@@ -17,10 +17,12 @@ from typing import TYPE_CHECKING, Any
 
 from core.tools._base import logger
 from core.tools._image_clients import (
+    _CHAT_ICON_PROMPT,
     _CHIBI_PROMPT,
     _DEFAULT_ANIMATIONS,
     _EXPRESSION_GUIDANCE,
     _EXPRESSION_PROMPTS,
+    _REALISTIC_CHAT_ICON_PROMPT,
     _REALISTIC_EXPRESSION_GUIDANCE,
     _REALISTIC_EXPRESSION_PROMPTS,
 )
@@ -51,6 +53,7 @@ class PipelineResult:
     fullbody_path: Path | None = None
     bustup_path: Path | None = None
     bustup_paths: dict[str, Path] = field(default_factory=dict)
+    icon_path: Path | None = None
     chibi_path: Path | None = None
     model_path: Path | None = None
     rigged_model_path: Path | None = None
@@ -63,6 +66,7 @@ class PipelineResult:
             "fullbody": str(self.fullbody_path) if self.fullbody_path else None,
             "bustup": str(self.bustup_path) if self.bustup_path else None,
             "bustup_expressions": {k: str(v) for k, v in self.bustup_paths.items()},
+            "icon": str(self.icon_path) if self.icon_path else None,
             "chibi": str(self.chibi_path) if self.chibi_path else None,
             "model": str(self.model_path) if self.model_path else None,
             "rigged_model": str(self.rigged_model_path) if self.rigged_model_path else None,
@@ -81,15 +85,17 @@ class ImageGenPipeline:
     Steps:
       1. NovelAI V4.5 → full-body anime image
       2. Flux Kontext  → bust-up from reference  ─┐ independent
-      3. Flux Kontext  → chibi from reference     ─┘
-      4. Meshy Image-to-3D → GLB from chibi
-      5. Meshy Rigging → rigged GLB + walking/running animations
-      6. Meshy Animations → idle/sitting/waving/talking GLBs
+      3. Flux Kontext → icon from reference      ─┘
+      4. Flux Kontext  → chibi from reference    ─┘
+      5. Meshy Image-to-3D → GLB from chibi
+      6. Meshy Rigging → rigged GLB + walking/running animations
+      7. Meshy Animations → idle/sitting/waving/talking GLBs
     """
 
     ASSET_NAMES = {
         "fullbody": "avatar_fullbody.png",
         "bustup": "avatar_bustup.png",
+        "icon": "icon.png",
         "chibi": "avatar_chibi.png",
         "model": "avatar_chibi.glb",
         "rigged_model": "avatar_chibi_rigged.glb",
@@ -97,6 +103,7 @@ class ImageGenPipeline:
     REALISTIC_ASSET_NAMES = {
         "fullbody": "avatar_fullbody_realistic.png",
         "bustup": "avatar_bustup_realistic.png",
+        "icon": "icon_realistic.png",
     }
 
     def __init__(
@@ -198,7 +205,7 @@ class ImageGenPipeline:
         seed: int | None = None,
         progress_callback: Callable[[str, str, int], None] | None = None,
     ) -> PipelineResult:
-        """Run the 6-step pipeline synchronously.
+        """Run the 7-step pipeline synchronously.
 
         Args:
             prompt: Character appearance tags for NovelAI.
@@ -232,9 +239,9 @@ class ImageGenPipeline:
         if steps:
             enabled = set(steps)
         elif self._is_realistic:
-            enabled = {"fullbody", "bustup"}
+            enabled = {"fullbody", "bustup", "icon"}
         else:
-            enabled = {"fullbody", "bustup", "chibi", "3d", "rigging", "animations"}
+            enabled = {"fullbody", "bustup", "icon", "chibi", "3d", "rigging", "animations"}
         anim_map = animations if animations is not None else _DEFAULT_ANIMATIONS
         result = PipelineResult()
 
@@ -323,13 +330,19 @@ class ImageGenPipeline:
             fullbody_bytes = fullbody_path.read_bytes()
             result.fullbody_path = fullbody_path
 
+        neutral_bust_path = self._assets_dir / self._bustup_filename("neutral")
         if fullbody_bytes is None:
-            # Cannot proceed without a reference image
-            if not result.errors:
-                result.errors.append("fullbody: No full-body image available as reference")
-            return result
+            steps_needing_fullbody = {"fullbody", "bustup", "chibi", "3d", "rigging", "animations"}
+            if enabled & steps_needing_fullbody:
+                if not result.errors:
+                    result.errors.append("fullbody: No full-body image available as reference")
+                return result
+            if "icon" in enabled and not neutral_bust_path.exists():
+                if not result.errors:
+                    result.errors.append("icon: neutral bustup image required")
+                return result
 
-        # ── Step 2 & 3: Bust-up and Chibi (sequential, same client) ──
+        # ── Step 2: Bust-up (expressions) ──
         chibi_bytes: bytes | None = None
 
         if "bustup" in enabled:
@@ -362,7 +375,7 @@ class ImageGenPipeline:
                 # neutral not requested but exists on disk — use as reference
                 bustup_ref_bytes = neutral_path.read_bytes()
 
-            # Step 2b: Generate other expressions using bustup as reference.
+            # Step 2 (continued): Generate other expressions using bustup as reference.
             # Fall back to fullbody if bustup reference is unavailable.
             ref_for_expressions = bustup_ref_bytes or fullbody_bytes
             if bustup_ref_bytes:
@@ -390,6 +403,50 @@ class ImageGenPipeline:
             logger.info("Step 2 complete: %d expressions generated", len(result.bustup_paths))
             _notify("bustup", "completed", 100)
 
+        # ── Step 3: Icon, filename from ASSET_NAMES / REALISTIC_ASSET_NAMES) ──
+        if "icon" in enabled:
+            icon_file = self._assets_dir / self._asset_name("icon")
+            neutral_bust = self._assets_dir / self._bustup_filename("neutral")
+            if skip_existing and icon_file.exists():
+                result.skipped.append("icon")
+                result.icon_path = icon_file
+            elif not neutral_bust.exists():
+                result.errors.append("icon: neutral bustup image required (generate bustup first)")
+            else:
+                try:
+                    _notify("icon", "generating", 0)
+                    bust_bytes = neutral_bust.read_bytes()
+                    prompt = _REALISTIC_CHAT_ICON_PROMPT if self._is_realistic else _CHAT_ICON_PROMPT
+                    if self._config.style_prefix:
+                        prompt = self._config.style_prefix + prompt
+                    if self._config.style_suffix:
+                        prompt = prompt + self._config.style_suffix
+                    logger.info("Step 3: Generating icon from bustup …")
+                    kontext = FluxKontextClient()
+                    raw = kontext.generate_from_reference(
+                        reference_image=bust_bytes,
+                        prompt=prompt,
+                        aspect_ratio="1:1",
+                        guidance_scale=4.0,
+                    )
+                    icon_file.write_bytes(raw)
+                    result.icon_path = icon_file
+                    logger.info("Step 3 complete: %s", icon_file)
+                    try:
+                        from core.tools._anima_icon_url import persist_anima_icon_path_template
+
+                        persist_anima_icon_path_template()
+                    except Exception:
+                        logger.debug(
+                            "persist_anima_icon_path_template failed after pipeline icon step",
+                            exc_info=True,
+                        )
+                    _notify("icon", "completed", 100)
+                except Exception as exc:
+                    result.errors.append(f"icon: {exc}")
+                    logger.error("Icon generation failed: %s", exc)
+                    _notify("icon", "error", 0)
+
         if "chibi" in enabled:
             chibi_path = self._assets_dir / self._asset_name("chibi")
             if skip_existing and chibi_path.exists():
@@ -399,7 +456,7 @@ class ImageGenPipeline:
             else:
                 try:
                     _notify("chibi", "generating", 0)
-                    logger.info("Step 3: Generating chibi with Flux Kontext …")
+                    logger.info("Step 4: Generating chibi with Flux Kontext …")
                     kontext = FluxKontextClient()
                     chibi_bytes = kontext.generate_from_reference(
                         reference_image=fullbody_bytes,
@@ -408,14 +465,14 @@ class ImageGenPipeline:
                     )
                     chibi_path.write_bytes(chibi_bytes)
                     result.chibi_path = chibi_path
-                    logger.info("Step 3 complete: %s", chibi_path)
+                    logger.info("Step 4 complete: %s", chibi_path)
                     _notify("chibi", "completed", 100)
                 except Exception as exc:
                     result.errors.append(f"chibi: {exc}")
-                    logger.error("Step 3 failed: %s", exc)
+                    logger.error("Step 4 failed: %s", exc)
                     _notify("chibi", "error", 0)
 
-        # ── Step 4: 3-D model from chibi ──
+        # ── Step 5: 3-D model from chibi ──
         meshy_task_id: str | None = None  # tracked for rigging input
         meshy: MeshyClient | None = None
 
@@ -434,7 +491,7 @@ class ImageGenPipeline:
             else:
                 try:
                     _notify("3d", "generating", 0)
-                    logger.info("Step 4: Generating 3D model with Meshy …")
+                    logger.info("Step 5: Generating 3D model with Meshy …")
                     meshy = MeshyClient()
                     meshy_task_id = meshy.create_task(chibi_bytes)
                     logger.info("Meshy task created: %s", meshy_task_id)
@@ -442,14 +499,14 @@ class ImageGenPipeline:
                     glb_bytes = meshy.download_model(task, fmt="glb")
                     model_path.write_bytes(glb_bytes)
                     result.model_path = model_path
-                    logger.info("Step 4 complete: %s", model_path)
+                    logger.info("Step 5 complete: %s", model_path)
                     _notify("3d", "completed", 100)
                 except Exception as exc:
                     result.errors.append(f"3d: {exc}")
-                    logger.error("Step 4 failed: %s", exc)
+                    logger.error("Step 5 failed: %s", exc)
                     _notify("3d", "error", 0)
 
-        # ── Step 5: Rigging ──
+        # ── Step 6: Rigging ──
         rig_task_id: str | None = None
 
         if "rigging" in enabled:
@@ -462,7 +519,7 @@ class ImageGenPipeline:
             else:
                 try:
                     _notify("rigging", "generating", 0)
-                    logger.info("Step 5: Rigging 3D model with Meshy …")
+                    logger.info("Step 6: Rigging 3D model with Meshy …")
                     if meshy is None:
                         meshy = MeshyClient()
                     rig_task_id = meshy.create_rigging_task(meshy_task_id)
@@ -493,22 +550,39 @@ class ImageGenPipeline:
                             anim_path,
                             len(anim_bytes),
                         )
-                    logger.info("Step 5 complete: rigged + %d animations", len(basic_anims))
+                    logger.info("Step 6 complete: rigged + %d animations", len(basic_anims))
                     _notify("rigging", "completed", 100)
                 except Exception as exc:
                     result.errors.append(f"rigging: {exc}")
-                    logger.error("Step 5 failed: %s", exc)
+                    logger.error("Step 6 failed: %s", exc)
                     _notify("rigging", "error", 0)
 
-        # ── Step 6: Additional animations ──
+        # ── Step 7: Additional animations ──
         if "animations" in enabled and anim_map:
             if rig_task_id is None:
-                result.errors.append("animations: No rigging task_id available (run rigging step first)")
-            else:
+                glb_for_rig = self._assets_dir / self._asset_name("model")
+                if glb_for_rig.exists():
+                    try:
+                        if meshy is None:
+                            meshy = MeshyClient()
+                        logger.info(
+                            "Animations step: obtaining rig_task_id from existing GLB (%s)",
+                            glb_for_rig.name,
+                        )
+                        rig_task_id = meshy.create_rigging_task_from_glb(glb_for_rig.read_bytes())
+                        meshy.poll_rigging_task(rig_task_id)
+                    except Exception as exc:
+                        result.errors.append(f"animations: rigging from GLB failed: {exc}")
+                        rig_task_id = None
+                else:
+                    result.errors.append(
+                        "animations: No rigging task_id (run rigging or ensure avatar_chibi.glb exists)",
+                    )
+            if rig_task_id is not None:
                 _notify("animations", "generating", 0)
                 if meshy is None:
                     meshy = MeshyClient()
-                for anim_name, action_id in anim_map.items():
+                for anim_name, action_id in anim_map.items():  # noqa: SIM102
                     anim_path = self._assets_dir / f"anim_{anim_name}.glb"
                     if skip_existing and anim_path.exists():
                         result.skipped.append(f"anim_{anim_name}")
@@ -516,7 +590,7 @@ class ImageGenPipeline:
                         continue
                     try:
                         logger.info(
-                            "Step 6: Generating '%s' animation (action_id=%d) …",
+                            "Step 7: Generating '%s' animation (action_id=%d) …",
                             anim_name,
                             action_id,
                         )

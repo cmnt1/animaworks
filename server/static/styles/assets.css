@@ -80,9 +80,10 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   padding: 12px;
   position: relative;
+  min-height: 260px;
   transition: box-shadow var(--assets-transition),
               transform var(--assets-transition);
 }
@@ -93,22 +94,34 @@
   transform: translateY(-2px);
 }
 
-.assets-thumb-img {
-  width: 100%;
-  max-height: 200px;
-  object-fit: contain;
+/* Fixed frame: image scales inside; label/actions stay bottom-aligned across cards */
+.assets-thumb-media {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
   background: var(--aw-color-bg-secondary);
   border-radius: 6px;
+  overflow: hidden;
+}
+
+.assets-thumb-img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
 }
 
 .assets-thumb-placeholder {
   width: 100%;
-  height: 140px;
+  height: 100%;
+  min-height: 140px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--aw-color-bg-secondary);
-  border-radius: 6px;
   color: var(--assets-text-faint);
   font-size: 0.85rem;
 }
@@ -118,12 +131,53 @@
   font-size: 0.82rem;
 }
 
+.assets-thumb-footer {
+  flex: 0 0 auto;
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding-top: 10px;
+}
+
 .assets-thumb-label {
-  margin-top: 8px;
+  margin: 0;
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--assets-text);
   text-align: center;
+  width: 100%;
+}
+
+.assets-thumb-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.assets-thumb-actions .btn-sm {
+  min-width: 2rem;
+  padding: 4px 8px;
+}
+
+.assets-upload-input {
+  display: none !important;
+}
+
+.assets-upload-icon {
+  display: block;
+  vertical-align: middle;
+  width: 18px;
+  height: 18px;
+}
+
+.assets-upload-fullbody-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ── Badge ──────────────────────────────────── */
@@ -475,14 +529,21 @@
 
 .assets-thumb-card--small {
   max-width: 120px;
+  min-height: 0;
 }
 
-.assets-thumb-card--small .assets-thumb-img {
+.assets-thumb-card--small .assets-thumb-media {
+  min-height: 0;
+  flex: 0 0 100px;
   height: 100px;
 }
 
 .assets-thumb-card--small .assets-thumb-placeholder {
-  height: 100px;
+  min-height: 0;
+}
+
+.assets-thumb-card--small .assets-thumb-footer {
+  padding-top: 8px;
 }
 
 .assets-badge--exists {

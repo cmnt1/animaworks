@@ -8,6 +8,7 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 import asyncio
 import logging
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -34,6 +35,9 @@ from server.stream_registry import StreamRegistry
 from server.websocket import WebSocketManager
 
 logger = logging.getLogger("animaworks.server")
+
+# Public embeddable avatars (e.g. Slack) — no session cookie required
+_PUBLIC_ICON_ASSET_PATH = re.compile(r"^/api/animas/[^/]+/assets/icon(?:_realistic)?\.png$")
 
 # Paths to exclude from request logging (noisy health checks, etc.)
 _NOISY_PATHS = frozenset(
@@ -558,6 +562,10 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
 
         # Skip whitelisted paths
         if any(path.startswith(prefix) for prefix in _AUTH_WHITELIST_PREFIXES):
+            return await call_next(request)
+
+        # Public icon PNGs (GET/HEAD from asset route only)
+        if request.method in ("GET", "HEAD") and _PUBLIC_ICON_ASSET_PATH.match(path):
             return await call_next(request)
 
         # Only protect /api/ and /ws paths

@@ -233,22 +233,15 @@ def _build_channel_order(resolved: ResolvedRecipient) -> list[str]:
 
 
 def _resolve_outbound_icon(anima_name: str) -> str:
-    """Resolve icon_url for outbound Slack messages from config."""
+    """Resolve icon_url for outbound Slack messages (see :mod:`core.tools._anima_icon_url`)."""
     if not anima_name:
         return ""
     try:
-        from core.config import load_config
+        from core.tools._anima_icon_url import resolve_anima_icon_url
 
-        cfg = load_config()
-        if cfg.human_notification and cfg.human_notification.channels:
-            for ch in cfg.human_notification.channels:
-                if ch.type == "slack" and ch.enabled:
-                    template = ch.config.get("icon_url_template", "")
-                    if template:
-                        return template.format(name=anima_name)
-                    break
+        return resolve_anima_icon_url(anima_name, channel_config=None)
     except Exception:
-        logger.debug("Failed to load icon_url_template for outbound", exc_info=True)
+        logger.debug("resolve_anima_icon_url failed for outbound", exc_info=True)
     return ""
 
 

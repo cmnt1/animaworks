@@ -18,10 +18,19 @@ _BUSTUP_PROMPT = (
     "Same outfit, same colors, same features. "
     "Anime illustration style, soft lighting, looking at viewer."
 )
+
 _CHIBI_PROMPT = (
     "Transform this character into a chibi / super-deformed version. "
     "2.5-head proportion, cute big eyes, simplified body. "
     "Same outfit colors and features. White background, full body, anime style."
+)
+
+_CHAT_ICON_PROMPT = (
+    "Create a square chat avatar icon from this bust-up reference. "
+    "Center the face in the frame; crop to a tight head-and-shoulders portrait. "
+    "Same character identity, outfit colors, hairstyle, and features. "
+    "Clean plain background, neutral soft lighting. "
+    "Anime illustration style, high quality, looking at viewer."
 )
 
 # Expression-specific prompts for bustup image variants
@@ -105,6 +114,14 @@ _REALISTIC_BUSTUP_PROMPT = (
     "Same outfit, same colors, same features. "
     "Professional studio photograph, soft natural lighting, "
     "shallow depth of field, looking at viewer."
+)
+
+_REALISTIC_CHAT_ICON_PROMPT = (
+    "Create a square chat avatar icon from this bust-up reference. "
+    "Center the face in the frame; crop to a tight head-and-shoulders portrait. "
+    "Same person identity, outfit, hairstyle, and features. "
+    "Clean plain background, soft studio lighting. "
+    "Professional photograph, natural skin texture, shallow depth of field, looking at viewer."
 )
 
 _REALISTIC_EXPRESSION_PROMPTS: dict[str, str] = {

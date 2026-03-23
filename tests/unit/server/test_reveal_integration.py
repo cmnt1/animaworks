@@ -165,8 +165,10 @@ class TestAppJSRevealIntegration:
         assert "playReveal" in self.app_js
 
     def test_checks_for_avatar_assets(self):
-        """Should only trigger reveal when avatar assets are present."""
+        """Should trigger reveal when avatar_* or dedicated icon assets are present."""
         assert 'startsWith("avatar_")' in self.app_js
+        assert '"icon.png"' in self.app_js
+        assert '"icon_realistic.png"' in self.app_js
 
     def test_constructs_avatar_url(self):
         assert "bustupCandidates" in self.app_js

@@ -81,32 +81,14 @@ def _resolve_slack_token(args: dict[str, Any]) -> str | None:
 def _resolve_slack_identity(args: dict[str, Any]) -> tuple[str, str]:
     """Resolve Anima display name and icon URL for Slack messages.
 
-    Reads ``icon_url_template`` from the first enabled Slack channel in
-    ``config.json`` ``human_notification.channels``.
-    Returns (username, icon_url) tuple.  Either may be empty string.
+    See :func:`core.tools._anima_icon_url.resolve_anima_icon_identity`.
     """
+    from core.tools._anima_icon_url import resolve_anima_icon_identity
+
     anima_dir = args.get("anima_dir")
     if not anima_dir:
         return ("", "")
-
-    anima_name = Path(anima_dir).name
-    icon_url = ""
-
-    try:
-        from core.config import load_config
-
-        cfg = load_config()
-        if cfg.human_notification and cfg.human_notification.channels:
-            for ch in cfg.human_notification.channels:
-                if ch.type == "slack" and ch.enabled:
-                    template = ch.config.get("icon_url_template", "")
-                    if template:
-                        icon_url = template.format(name=anima_name)
-                    break
-    except Exception:
-        logger.debug("Failed to load icon_url_template from config", exc_info=True)
-
-    return (anima_name, icon_url)
+    return resolve_anima_icon_identity(Path(anima_dir).name, channel_config=None)
 
 
 # ── Tool Schemas ───────────────────────────────────────────

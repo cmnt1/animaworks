@@ -20,6 +20,7 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "animations": {"expected_seconds": 600, "background_eligible": True},
     "fullbody": {"expected_seconds": 120, "background_eligible": True},
     "bustup": {"expected_seconds": 120, "background_eligible": True},
+    "icon": {"expected_seconds": 120, "background_eligible": True},
     "chibi": {"expected_seconds": 120, "background_eligible": True},
 }
 

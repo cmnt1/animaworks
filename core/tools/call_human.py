@@ -74,16 +74,13 @@ def _resolve_cli_anima_identity(channel_cfg: dict) -> tuple[str, str]:
     """
     import os
 
+    from core.tools._anima_icon_url import resolve_anima_icon_identity
+
     anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
     if not anima_dir:
         return ("", "")
 
-    anima_name = Path(anima_dir).name
-    icon_url = ""
-    template = channel_cfg.get("icon_url_template", "")
-    if template:
-        icon_url = template.format(name=anima_name)
-    return (anima_name, icon_url)
+    return resolve_anima_icon_identity(Path(anima_dir).name, channel_cfg)
 
 
 async def _send_slack(

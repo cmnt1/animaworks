@@ -387,6 +387,40 @@ class TestCreateAnimationTaskPostProcess:
             assert body["action_id"] == 42
 
 
+# ── create_rigging_task_from_glb ─────────────────────────────────
+
+
+class TestCreateRiggingTaskFromGlb:
+    """Tests for MeshyClient.create_rigging_task_from_glb (GLB data URI → rigging)."""
+
+    def _make_client(self):
+        with patch("core.tools.image.meshy.get_credential", return_value="test-key"):
+            from core.tools.image_gen import MeshyClient
+
+            return MeshyClient()
+
+    def test_posts_model_url_and_height_meters(self):
+        from core.tools.image.constants import MESHY_RIGGING_URL
+
+        client = self._make_client()
+        glb = b"glTF" * 20
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"result": "rig-task-xyz"}
+
+        with patch("httpx.post", return_value=mock_resp) as mock_post:
+            task_id = client.create_rigging_task_from_glb(glb, height_meters=1.65)
+
+        assert task_id == "rig-task-xyz"
+        mock_post.assert_called_once()
+        assert mock_post.call_args[0][0] == MESHY_RIGGING_URL
+        body = mock_post.call_args[1]["json"]
+        assert body["height_meters"] == 1.65
+        assert body["model_url"].startswith("data:model/gltf-binary;base64,")
+
+
 # ── download_rigging_animations ──────────────────────────────────
 
 

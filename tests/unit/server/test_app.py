@@ -200,3 +200,23 @@ class TestLifespan:
                 mock_supervisor.start_all.assert_awaited_once_with(["alice"])
 
         mock_supervisor.shutdown_all.assert_awaited_once()
+
+
+# ── Public icon path (auth bypass regex) ────────────
+
+
+class TestPublicIconAssetPath:
+    """_PUBLIC_ICON_ASSET_PATH allows unauthenticated GET/HEAD for embed."""
+
+    def test_matches_anime_and_realistic_filenames(self):
+        from server.app import _PUBLIC_ICON_ASSET_PATH
+
+        assert _PUBLIC_ICON_ASSET_PATH.match("/api/animas/rabbit/assets/icon.png")
+        assert _PUBLIC_ICON_ASSET_PATH.match("/api/animas/foo-bar/assets/icon_realistic.png")
+
+    def test_rejects_other_assets_or_traversal(self):
+        from server.app import _PUBLIC_ICON_ASSET_PATH
+
+        assert _PUBLIC_ICON_ASSET_PATH.match("/api/animas/rabbit/assets/avatar_bustup.png") is None
+        assert _PUBLIC_ICON_ASSET_PATH.match("/api/animas/rabbit/assets/icon.jpg") is None
+        assert _PUBLIC_ICON_ASSET_PATH.match("/api/animas/../evil/assets/icon.png") is None

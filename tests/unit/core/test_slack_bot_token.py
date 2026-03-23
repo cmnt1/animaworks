@@ -185,11 +185,11 @@ class TestUsernameOverride:
 
     @pytest.mark.asyncio
     async def test_icon_url_from_template(self):
-        """When icon_url_template is configured, icon_url is set in payload."""
+        """When icon_path_template is configured, icon_url is set in payload."""
         ch = _make_channel({
             "bot_token": "xoxb-test",
             "channel": "C123",
-            "icon_url_template": "https://cdn.example.com/{name}/icon.png",
+            "icon_path_template": "https://cdn.example.com/{name}/icon.png",
         })
 
         mock_resp = MagicMock()
@@ -212,7 +212,7 @@ class TestUsernameOverride:
 
     @pytest.mark.asyncio
     async def test_no_icon_url_without_template(self):
-        """When no icon_url_template, no icon_url in payload."""
+        """When no icon_path_template / resolvable icon, no icon_url in payload."""
         ch = _make_channel({"bot_token": "xoxb-test", "channel": "C123"})
 
         mock_resp = MagicMock()
@@ -220,7 +220,8 @@ class TestUsernameOverride:
         mock_resp.json.return_value = {"ok": True}
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("httpx.AsyncClient") as mock_client_cls, \
+             patch("core.tools._anima_icon_url.resolve_anima_icon_url", return_value=""):
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_resp
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

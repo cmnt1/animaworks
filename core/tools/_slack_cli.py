@@ -83,26 +83,9 @@ def _resolve_slack_identity(args: dict) -> tuple[str, str]:
     if not anima_dir:
         return ("", "")
 
-    anima_name = Path(anima_dir).name
-    icon_url = ""
+    from core.tools._anima_icon_url import resolve_anima_icon_identity
 
-    try:
-        from core.config import load_config
-
-        cfg = load_config()
-        if cfg.human_notification and cfg.human_notification.channels:
-            for ch in cfg.human_notification.channels:
-                if ch.type == "slack" and ch.enabled:
-                    template = ch.config.get("icon_url_template", "")
-                    if template:
-                        icon_url = template.format(name=anima_name)
-                    break
-    except Exception:
-        from core.tools._base import logger
-
-        logger.debug("Failed to load icon_url_template from config", exc_info=True)
-
-    return (anima_name, icon_url)
+    return resolve_anima_icon_identity(Path(anima_dir).name, channel_config=None)
 
 
 def _run_cli_command(client: SlackClient, args) -> None:

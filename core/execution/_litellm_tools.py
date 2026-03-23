@@ -146,6 +146,7 @@ class ToolProcessingMixin:
             "generate_character_assets",
             "generate_fullbody",
             "generate_bustup",
+            "generate_icon",
             "generate_chibi",
             "generate_3d_model",
             "generate_rigged_model",

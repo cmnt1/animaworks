@@ -32,7 +32,7 @@ class TestResolveSlackIdentity:
                         enabled=True,
                         config={
                             "channel": "C123",
-                            "icon_url_template": "https://cdn.example.com/{name}/icon.png",
+                            "icon_path_template": "https://cdn.example.com/{name}/icon.png",
                         },
                     ),
                 ],
@@ -122,7 +122,7 @@ class TestResolveSlackIdentity:
                         enabled=False,
                         config={
                             "channel": "C123",
-                            "icon_url_template": "https://cdn.example.com/{name}.png",
+                            "icon_path_template": "https://cdn.example.com/{name}.png",
                         },
                     ),
                     NotificationChannelConfig(
@@ -130,7 +130,7 @@ class TestResolveSlackIdentity:
                         enabled=True,
                         config={
                             "channel": "C456",
-                            "icon_url_template": "https://other.example.com/{name}.png",
+                            "icon_path_template": "https://other.example.com/{name}.png",
                         },
                     ),
                 ],
@@ -233,7 +233,7 @@ class TestDispatchSlackSendIdentity:
                         enabled=True,
                         config={
                             "channel": "C999",
-                            "icon_url_template": "https://cdn/{name}.png",
+                            "icon_path_template": "https://cdn/{name}.png",
                         },
                     ),
                 ],

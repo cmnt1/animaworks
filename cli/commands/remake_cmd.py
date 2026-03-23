@@ -12,7 +12,7 @@ from core.time_utils import now_jst
 
 logger = logging.getLogger(__name__)
 
-ALL_STEPS = ["fullbody", "bustup", "chibi", "3d", "rigging", "animations"]
+ALL_STEPS = ["fullbody", "bustup", "icon", "chibi", "3d", "rigging", "animations"]
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -179,6 +179,7 @@ def _run(args: argparse.Namespace) -> None:
         step_names = {
             "fullbody": "Generate fullbody with NovelAI + Vibe Transfer",
             "bustup": "Generate bustup expressions (neutral, smile, laugh, troubled, surprised)",
+            "icon": "Generate icon from neutral bustup",
             "chibi": "Generate chibi with Flux Kontext",
             "3d": "Generate 3D model with Meshy Image-to-3D",
             "rigging": "Rig 3D model with Meshy Rigging",
@@ -244,6 +245,8 @@ def _run(args: argparse.Namespace) -> None:
         print(f"  bustup:   {len(result.bustup_paths)} expressions")
         for expr, path in result.bustup_paths.items():
             print(f"            {expr}: {path}")
+    if result.icon_path:
+        print(f"  icon:     {result.icon_path}")
     if result.chibi_path:
         print(f"  chibi:    {result.chibi_path}")
     if result.model_path:

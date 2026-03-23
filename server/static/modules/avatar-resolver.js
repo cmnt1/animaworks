@@ -20,9 +20,9 @@ export function isRealisticMode() {
  */
 export function bustupCandidates() {
   if (isRealisticMode()) {
-    return ["avatar_bustup_realistic.png"];
+    return ["icon_realistic.png", "avatar_bustup_realistic.png"];
   }
-  return ["avatar_bustup.png", "avatar_chibi.png"];
+  return ["icon.png", "avatar_bustup.png", "avatar_chibi.png"];
 }
 
 /**
@@ -87,6 +87,9 @@ export async function resolveAvatar(animaName, candidates) {
 export async function resolveCachedAvatar(animaName, candidates, size = "S") {
   const url = await resolveAvatar(animaName, candidates);
   if (!url) return null;
+  if (url.endsWith("/icon.png") || url.endsWith("/icon_realistic.png")) {
+    return url;
+  }
   try {
     return await getCachedImage(url, size);
   } catch {
@@ -102,7 +105,7 @@ export async function resolveCachedAvatar(animaName, candidates, size = "S") {
 export async function invalidateAvatarCache(animaName) {
   const oldUrl = _headProbeCache.get(animaName);
   _headProbeCache.delete(animaName);
-  if (oldUrl) {
-    await invalidateCache(oldUrl);
+    if (oldUrl) {
+      await invalidateCache(oldUrl);
   }
 }

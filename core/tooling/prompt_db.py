@@ -136,7 +136,7 @@ DEFAULT_DESCRIPTIONS: dict[str, dict[str, str]] = {
             "- 올바른 파라미터·설정값을 발견했을 때 → knowledge/에 기록\n"
             "- 작업 절차를 확립·개선했을 때 → procedures/에 절차서 작성\n"
             "- 새로운 스킬·기법을 습득했을 때 → skills/에 기록\n"
-            "- 사람이 선호·방침·금지사항을 전달했을 때 → knowledge/에 기록 (\"알겠습니다\"로만 끝내지 말 것)\n"
+            '- 사람이 선호·방침·금지사항을 전달했을 때 → knowledge/에 기록 ("알겠습니다"로만 끝내지 말 것)\n'
             "- heartbeat.md 또는 cron.md 업데이트\n"
             "mode='overwrite'로 전체 교체, mode='append'로 끝에 추가.\n"
             "자동 통합(일일 consolidation)을 기다리지 말고 중요한 발견은 즉시 기록할 것."

@@ -162,30 +162,16 @@ async function _loadGallery() {
   html += `<h3 style="margin-bottom:0.5rem;">${escapeHtml(primaryLabel)}</h3>`;
   html += '<div class="assets-gallery">';
   if (isRealistic) {
-    html += _renderThumbnail("Fullbody", realisticAssets.avatar_fullbody_realistic);
-    html += _renderThumbnail("Bustup", realisticAssets.avatar_bustup_realistic);
+    html += _renderThumbnailWithActions("Fullbody", realisticAssets.avatar_fullbody_realistic, "fullbody", { showUpload: true });
+    html += _renderThumbnailWithActions("Bustup", realisticAssets.avatar_bustup_realistic, "bustup");
+    html += _renderThumbnailWithActions("Icon", realisticAssets.avatar_icon_realistic, "icon");
   } else {
-    html += _renderThumbnail("Fullbody", animeAssets.avatar_fullbody);
-    html += _renderThumbnail("Bustup", animeAssets.avatar_bustup);
-    html += _renderThumbnail("Chibi", animeAssets.avatar_chibi);
-    html += `
-      <div class="assets-thumb-card">
-        <div class="assets-thumb-placeholder">
-          <span class="assets-badge-icon">3D</span>
-        </div>
-        <div class="assets-thumb-label">${t("assets.model_3d")}</div>
-        <span class="assets-badge">${modelCount}</span>
-      </div>
-    `;
-    html += `
-      <div class="assets-thumb-card">
-        <div class="assets-thumb-placeholder">
-          <span class="assets-badge-icon">Anim</span>
-        </div>
-        <div class="assets-thumb-label">${t("assets.animation")}</div>
-        <span class="assets-badge">${animCount}</span>
-      </div>
-    `;
+    html += _renderThumbnailWithActions("Fullbody", animeAssets.avatar_fullbody, "fullbody", { showUpload: true });
+    html += _renderThumbnailWithActions("Bustup", animeAssets.avatar_bustup, "bustup");
+    html += _renderThumbnailWithActions("Icon", animeAssets.avatar_icon, "icon");
+    html += _renderThumbnailWithActions("Chibi", animeAssets.avatar_chibi, "chibi");
+    html += _renderStepPlaceholderWithActions(t("assets.model_3d"), "3d", "3D", modelCount);
+    html += _renderStepPlaceholderWithActions(t("assets.animation"), "animations", "Anim", animCount);
   }
   html += "</div>";
   html += _renderExpressionGrid(isRealistic ? "realistic" : "anime");
@@ -198,10 +184,12 @@ async function _loadGallery() {
   if (isRealistic) {
     html += _renderThumbnailSmall("Fullbody", animeAssets.avatar_fullbody);
     html += _renderThumbnailSmall("Bustup", animeAssets.avatar_bustup);
+    html += _renderThumbnailSmall("Icon", animeAssets.avatar_icon);
     html += _renderThumbnailSmall("Chibi", animeAssets.avatar_chibi);
   } else {
     html += _renderThumbnailSmall("Fullbody", realisticAssets.avatar_fullbody_realistic);
     html += _renderThumbnailSmall("Bustup", realisticAssets.avatar_bustup_realistic);
+    html += _renderThumbnailSmall("Icon", realisticAssets.avatar_icon_realistic);
   }
   html += "</div>";
   html += _renderExpressionGrid(secondaryStyle);
@@ -216,28 +204,60 @@ async function _loadGallery() {
 
   content.innerHTML = html;
 
+  if (window.lucide) window.lucide.createIcons({ nodes: [content] });
+
   document.getElementById("assetsRemakeBtn")?.addEventListener("click", () => {
     _openRemakeModal();
   });
 
   _bindExpressionButtons();
+  _bindStepAssetButtons();
 }
 
-function _renderThumbnail(label, assetInfo) {
-  if (assetInfo && assetInfo.url) {
-    return `
-      <div class="assets-thumb-card">
-        <img class="assets-thumb-img" src="${escapeHtml(assetInfo.url)}" alt="${escapeHtml(label)}" loading="lazy">
-        <div class="assets-thumb-label">${escapeHtml(label)}</div>
-      </div>
-    `;
-  }
+function _renderThumbnailWithActions(label, assetInfo, step, opts = {}) {
+  const showUpload = !!opts.showUpload;
+  const imgBlock = assetInfo?.url
+    ? `<img class="assets-thumb-img" src="${escapeHtml(assetInfo.url)}" alt="${escapeHtml(label)}" loading="lazy">`
+    : `<div class="assets-thumb-placeholder"><span class="assets-thumb-empty">${t("assets.not_generated")}</span></div>`;
+  const uploadBtn = showUpload
+    ? `<button type="button" class="btn-secondary btn-sm assets-upload-fullbody-btn" title="${escapeHtml(t("assets.upload_fullbody"))}" aria-label="${escapeHtml(t("assets.upload_fullbody"))}"><i data-lucide="upload" class="assets-upload-icon" aria-hidden="true"></i></button>`
+    : "";
+  const fileInput = showUpload
+    ? `<input type="file" accept="image/png,image/jpeg" class="assets-upload-input" tabindex="-1"/>`
+    : "";
   return `
-    <div class="assets-thumb-card">
-      <div class="assets-thumb-placeholder">
-        <span class="assets-thumb-empty">No Image</span>
+    <div class="assets-thumb-card" data-asset-step="${escapeHtml(step)}">
+      <div class="assets-thumb-media">${imgBlock}</div>
+      <div class="assets-thumb-footer">
+        <div class="assets-thumb-label">${escapeHtml(label)}</div>
+        <div class="assets-thumb-actions">
+          <button type="button" class="btn-secondary btn-sm assets-regen-step-btn" data-step="${escapeHtml(step)}" title="${escapeHtml(t("assets.regenerate"))}" aria-label="${escapeHtml(t("assets.regenerate"))}">↻</button>
+          ${uploadBtn}
+        </div>
       </div>
-      <div class="assets-thumb-label">${escapeHtml(label)}</div>
+      ${fileInput}
+    </div>
+  `;
+}
+
+function _renderStepPlaceholderWithActions(label, step, badgeIcon, count) {
+  const badge = typeof count === "number"
+    ? `<span class="assets-badge">${count}</span>`
+    : "";
+  return `
+    <div class="assets-thumb-card" data-asset-step="${escapeHtml(step)}">
+      <div class="assets-thumb-media">
+        <div class="assets-thumb-placeholder">
+          <span class="assets-badge-icon">${escapeHtml(badgeIcon)}</span>
+        </div>
+      </div>
+      <div class="assets-thumb-footer">
+        <div class="assets-thumb-label">${escapeHtml(label)}</div>
+        <div class="assets-thumb-actions">
+          <button type="button" class="btn-secondary btn-sm assets-regen-step-btn" data-step="${escapeHtml(step)}" title="${escapeHtml(t("assets.regenerate"))}" aria-label="${escapeHtml(t("assets.regenerate"))}">↻</button>
+        </div>
+      </div>
+      ${badge}
     </div>
   `;
 }
@@ -248,17 +268,25 @@ function _renderThumbnailSmall(label, assetInfo) {
   if (assetInfo && assetInfo.url) {
     return `
       <div class="assets-thumb-card assets-thumb-card--small">
-        <img class="assets-thumb-img" src="${escapeHtml(assetInfo.url)}" alt="${escapeHtml(label)}" loading="lazy">
-        <div class="assets-thumb-label">${escapeHtml(label)} <span class="${badgeClass}">${escapeHtml(badge)}</span></div>
+        <div class="assets-thumb-media">
+          <img class="assets-thumb-img" src="${escapeHtml(assetInfo.url)}" alt="${escapeHtml(label)}" loading="lazy">
+        </div>
+        <div class="assets-thumb-footer">
+          <div class="assets-thumb-label">${escapeHtml(label)} <span class="${badgeClass}">${escapeHtml(badge)}</span></div>
+        </div>
       </div>
     `;
   }
   return `
     <div class="assets-thumb-card assets-thumb-card--small">
-      <div class="assets-thumb-placeholder">
-        <span class="assets-thumb-empty">—</span>
+      <div class="assets-thumb-media">
+        <div class="assets-thumb-placeholder">
+          <span class="assets-thumb-empty">—</span>
+        </div>
       </div>
-      <div class="assets-thumb-label">${escapeHtml(label)} <span class="${badgeClass}">${escapeHtml(badge)}</span></div>
+      <div class="assets-thumb-footer">
+        <div class="assets-thumb-label">${escapeHtml(label)} <span class="${badgeClass}">${escapeHtml(badge)}</span></div>
+      </div>
     </div>
   `;
 }
@@ -315,6 +343,67 @@ function _bindExpressionButtons() {
       _regenerateAllExpressions(btn.dataset.style);
     });
   });
+}
+
+function _bindStepAssetButtons() {
+  document.querySelectorAll(".assets-regen-step-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      _regenerateAssetStep(btn.dataset.step, btn);
+    });
+  });
+  document.querySelectorAll(".assets-upload-fullbody-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const card = btn.closest(".assets-thumb-card");
+      card?.querySelector(".assets-upload-input")?.click();
+    });
+  });
+  document.querySelectorAll(".assets-upload-input").forEach(inp => {
+    inp.addEventListener("change", e => {
+      const f = e.target.files?.[0];
+      if (f) _uploadFullbody(f, e.target);
+    });
+  });
+}
+
+async function _regenerateAssetStep(step, btn) {
+  if (!_selectedAnima || !step) return;
+  const enc = encodeURIComponent(_selectedAnima);
+  const style = _currentImageStyle();
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "…";
+  }
+  try {
+    await api(`/api/animas/${enc}/assets/regenerate-step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step, image_style: style }),
+    });
+    await _loadGallery();
+  } catch (err) {
+    console.error(err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "↻";
+    }
+  }
+}
+
+async function _uploadFullbody(file, inputEl) {
+  if (!_selectedAnima || !file) return;
+  const enc = encodeURIComponent(_selectedAnima);
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("image_style", _currentImageStyle());
+  try {
+    await api(`/api/animas/${enc}/assets/upload-fullbody`, { method: "POST", body: fd });
+    await _loadGallery();
+  } catch (err) {
+    console.error(err);
+  } finally {
+    if (inputEl) inputEl.value = "";
+  }
 }
 
 async function _regenerateExpression(emotion, style) {

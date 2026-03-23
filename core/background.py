@@ -88,6 +88,7 @@ _DEFAULT_ELIGIBLE_TOOLS: dict[str, int] = {
     "generate_character_assets": 30,
     "generate_fullbody": 30,
     "generate_bustup": 30,
+    "generate_icon": 30,
     "generate_chibi": 30,
     "generate_3d_model": 30,
     "generate_rigged_model": 30,

@@ -332,7 +332,9 @@ export function setupWebSocket(deps) {
 
     // ── Reveal animation (Anima birth) ──
     const assets = data.assets || [];
-    const hasAvatar = assets.some((a) => a.startsWith("avatar_"));
+    const hasAvatar = assets.some(
+      (a) => a.startsWith("avatar_") || a === "icon.png" || a === "icon_realistic.png",
+    );
     if (hasAvatar) {
       const avatarUrl = await resolveAvatar(animaName, bustupCandidates());
       if (avatarUrl) await playReveal({ name: animaName, avatarUrl });

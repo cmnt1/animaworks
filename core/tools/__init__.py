@@ -20,7 +20,7 @@ def discover_core_tools() -> dict[str, str]:
     """Scan core/tools/ for tool modules.
 
     Returns: Mapping of tool_name → module path (e.g., "core.tools.web_search").
-    Skips files starting with _ (private/internal modules).
+    Skips files starting with _ (private/internal modules, e.g. ``_anima_icon_url.py``).
     """
     tools_dir = Path(__file__).parent
     core: dict[str, str] = {}

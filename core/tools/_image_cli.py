@@ -44,7 +44,7 @@ def cli_main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # -- pipeline --
-    p_pipe = sub.add_parser("pipeline", help="Run full 6-step pipeline")
+    p_pipe = sub.add_parser("pipeline", help="Run full 7-step pipeline")
     p_pipe.add_argument("prompt", help="Character appearance tags")
     p_pipe.add_argument("-n", "--negative", default="", help="Negative prompt")
     p_pipe.add_argument(
@@ -56,7 +56,7 @@ def cli_main(argv: list[str] | None = None) -> None:
     p_pipe.add_argument(
         "--steps",
         nargs="*",
-        choices=["fullbody", "bustup", "chibi", "3d", "rigging", "animations"],
+        choices=["fullbody", "bustup", "icon", "chibi", "3d", "rigging", "animations"],
         help="Steps to run (default: all)",
     )
     p_pipe.add_argument(
@@ -82,6 +82,25 @@ def cli_main(argv: list[str] | None = None) -> None:
     p_bust.add_argument("-p", "--prompt", default=_BUSTUP_PROMPT)
     p_bust.add_argument("-o", "--output", default="avatar_bustup.png")
     p_bust.add_argument("-j", "--json", action="store_true")
+
+    # -- icon --
+    p_chat = sub.add_parser("icon", help="Generate icon from neutral bustup")
+    p_chat.add_argument(
+        "-d",
+        "--anima-dir",
+        required=True,
+        help="Anima data directory",
+    )
+    p_chat.add_argument(
+        "-p",
+        "--prompt",
+        default=None,
+        help="Override prompt (default: built-in icon prompt for current image_style)",
+    )
+    p_chat.add_argument("-W", "--width", type=int, default=512)
+    p_chat.add_argument("-H", "--height", type=int, default=512)
+    p_chat.add_argument("-s", "--seed", type=int, default=None)
+    p_chat.add_argument("-j", "--json", action="store_true")
 
     # -- chibi --
     p_chibi = sub.add_parser("chibi", help="Generate chibi from reference")
@@ -194,6 +213,28 @@ def cli_main(argv: list[str] | None = None) -> None:
             print(json.dumps(out))
         else:
             print(f"Saved: {args.output} ({len(img)} bytes)")
+
+    elif args.command == "icon":
+        from core.tools.image_gen import dispatch
+
+        result = dispatch(
+            "generate_icon",
+            {
+                "anima_dir": str(Path(args.anima_dir)),
+                "prompt": args.prompt,
+                "width": args.width,
+                "height": args.height,
+                "seed": args.seed,
+            },
+        )
+        if result.get("error"):
+            print(result["error"], file=sys.stderr)
+            sys.exit(1)
+        out = {"output": result["path"], "size": result["size"]}
+        if args.json:
+            print(json.dumps(out))
+        else:
+            print(f"Saved: {result['path']} ({result['size']} bytes)")
 
     elif args.command == "chibi":
         ref_bytes = Path(args.reference).read_bytes()
