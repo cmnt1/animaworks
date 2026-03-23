@@ -13,6 +13,7 @@ Provides token-level streaming (GPT-4o, Gemini, Claude via LiteLLM, etc.)
 and iteration-level streaming (Ollama) execution paths.
 """
 
+import asyncio
 import json as _json
 import logging
 from collections.abc import AsyncGenerator
@@ -789,7 +790,43 @@ class StreamingMixin:
                 if not is_final_iteration or _bedrock_needs_tools_ol:
                     call_kwargs["tools"] = tools
 
-                response = cast(Any, await litellm.acompletion(**call_kwargs))
+                # Apply a hard total-request timeout so that a frozen Ollama
+                # instance (e.g. OOM/GPU stall with no tokens generated) does
+                # not cause this coroutine to await indefinitely.
+                # LiteLLM's ``timeout`` kwarg maps to httpx's *read* timeout
+                # (per-read-operation), which does NOT fire when the model is
+                # very slow but still sending the occasional token; we need an
+                # explicit asyncio timeout on the whole acompletion call.
+                # Use ``ollama_total_timeout`` (default 7200s = 2h) — generous
+                # enough for large CPU-offloaded models while still catching
+                # truly stuck requests (e.g. OOM / GPU stall).
+                try:
+                    from core.config import load_config as _lc_ot
+
+                    _total_timeout_s = float(_lc_ot().server.ollama_total_timeout)
+                except Exception:
+                    _total_timeout_s = 7200.0
+                try:
+                    response = cast(
+                        Any,
+                        await asyncio.wait_for(
+                            litellm.acompletion(**call_kwargs),
+                            timeout=_total_timeout_s,
+                        ),
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Ollama LLM call hard-timeout after %.0fs (trigger=%s model=%s)",
+                        _total_timeout_s,
+                        trigger,
+                        self._model_config.model,
+                    )
+                    from core.exceptions import LLMAPIError
+
+                    raise LLMAPIError(
+                        f"Ollama request timed out after {_total_timeout_s:.0f}s "
+                        f"(model={self._model_config.model})"
+                    )
 
                 choice = response.choices[0]
                 message = choice.message

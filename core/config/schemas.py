@@ -340,6 +340,8 @@ class ServerConfig(BaseModel):
     stream_retry_max: int = 3  # max automatic retries on stream disconnect
     stream_retry_delay_s: float = 5.0  # delay between retries (seconds)
     llm_num_retries: int = 3  # retries for LLM API calls (429/5xx/network)
+    ollama_keep_alive: str = "5m"  # Ollama model keep-alive after a request (e.g. "5m", "0", "1h")
+    ollama_total_timeout: int = 7200  # Hard upper bound (seconds) on a single Ollama generation call (default: 2h)
     media_proxy: MediaProxyConfig = MediaProxyConfig()
 
     @model_validator(mode="after")
