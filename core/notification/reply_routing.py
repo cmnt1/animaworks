@@ -227,6 +227,7 @@ def route_thread_reply(
         external_user_id=event.get("user", ""),
         external_channel_id=event.get("channel", ""),
         external_thread_ts=event.get("thread_ts", ""),
+        intent="question",
     )
     logger.info(
         "Thread reply routed: thread_ts=%s -> anima=%s (ctx=%s)",
