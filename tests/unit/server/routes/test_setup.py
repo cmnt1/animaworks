@@ -157,7 +157,7 @@ class TestGetEnvironment:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("shutil.which", return_value="/usr/bin/claude"),
+            patch("core.platform.claude_code.is_claude_code_available", return_value=True),
             patch("server.routes.setup.is_codex_cli_available", return_value=True),
             patch("server.routes.setup.is_codex_login_available", return_value=True),
         ):
@@ -182,7 +182,7 @@ class TestGetEnvironment:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("shutil.which", return_value=None),
+            patch("core.platform.claude_code.is_claude_code_available", return_value=False),
             patch("server.routes.setup.is_codex_cli_available", return_value=False),
             patch("server.routes.setup.is_codex_login_available", return_value=False),
         ):
@@ -204,8 +204,8 @@ class TestGetEnvironment:
         transport = ASGITransport(app=app)
 
         with (
-            patch("shutil.which", return_value=None),
             patch("core.config.load_config", return_value=mock_config),
+            patch("core.platform.claude_code.is_claude_code_available", return_value=False),
             patch("server.routes.setup.is_codex_cli_available", return_value=False),
             patch("server.routes.setup.is_codex_login_available", return_value=False),
             patch("server.routes.setup.is_cursor_agent_available", return_value=True),
