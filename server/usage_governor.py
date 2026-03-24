@@ -537,9 +537,11 @@ class UsageGovernor:
             except Exception:
                 logger.warning("Governor: failed to resume %s", name, exc_info=True)
 
-        # Suspend new animas
-        to_stop = target_suspended - currently_suspended
-        for name in to_stop:
+        # Suspend animas that should be stopped.
+        # Check ALL targets (not just newly added ones) because after a
+        # server restart the supervisor may have re-launched animas that
+        # the governor had previously suspended.
+        for name in target_suspended:
             try:
                 if name in supervisor.processes:
                     await supervisor.stop_anima(name)

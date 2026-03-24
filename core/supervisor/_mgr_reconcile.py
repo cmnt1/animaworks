@@ -119,6 +119,21 @@ class ReconcileMixin:
         # Update running set after restart_requested handling
         running = set(self.processes.keys())
 
+        # Governor-suspended animas — must not be auto-restarted by reconciliation.
+        # Read directly from the persisted state file (no app coupling).
+        governor_suspended: set[str] = set()
+        try:
+            from core.paths import get_data_dir
+
+            _gov_state_path = get_data_dir() / "usage_governor_state.json"
+            if _gov_state_path.is_file():
+                import json as _json
+
+                _gov_data = _json.loads(_gov_state_path.read_text("utf-8"))
+                governor_suspended = set(_gov_data.get("suspended_animas", []))
+        except Exception:
+            pass
+
         # enabled + not running → start
         for name, enabled in on_disk.items():
             if enabled and name not in running:
@@ -130,6 +145,9 @@ class ReconcileMixin:
                     continue
                 if name in self._bootstrapping:
                     logger.debug("Reconciliation: skipping %s (bootstrap in progress)", name)
+                    continue
+                if name in governor_suspended:
+                    logger.debug("Reconciliation: skipping %s (governor suspended)", name)
                     continue
                 logger.info("Reconciliation: starting anima %s", name)
                 try:
