@@ -17,6 +17,8 @@ from server.routes.media_proxy import proxy_external_image
 
 logger = logging.getLogger("animaworks.routes.assets")
 
+_UNSET = object()
+
 _ASSET_CONTENT_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -111,7 +113,12 @@ def _next_preview_counter(assets_dir: Path, is_realistic: bool) -> int:
     return len(existing) + 1
 
 
-def _effective_image_config(*, image_style: str | None = None, enable_3d: bool | None = None):
+def _effective_image_config(
+    *,
+    image_style: str | None = None,
+    enable_3d: bool | None = None,
+    style_reference: object = _UNSET,
+):
     """Load image generation config and apply per-request overrides."""
     from core.config.models import ImageGenConfig, load_config
 
@@ -122,6 +129,8 @@ def _effective_image_config(*, image_style: str | None = None, enable_3d: bool |
             updates["image_style"] = image_style
         if enable_3d is not None:
             updates["enable_3d"] = enable_3d
+        if style_reference is not _UNSET:
+            updates["style_reference"] = style_reference
         return base_config.model_copy(update=updates)
     except Exception:
         kwargs: dict[str, object] = {}
@@ -129,6 +138,8 @@ def _effective_image_config(*, image_style: str | None = None, enable_3d: bool |
             kwargs["image_style"] = image_style
         if enable_3d is not None:
             kwargs["enable_3d"] = enable_3d
+        if style_reference is not _UNSET:
+            kwargs["style_reference"] = style_reference
         return ImageGenConfig(**kwargs)
 
 
@@ -731,7 +742,10 @@ def create_assets_router() -> APIRouter:
 
         pipeline = ImageGenPipeline(
             anima_dir,
-            config=_effective_image_config(image_style=style or "realistic"),
+            config=_effective_image_config(
+                image_style=style or "realistic",
+                style_reference=None,
+            ),
         )
 
         gen_kwargs: dict = {
