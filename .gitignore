@@ -125,3 +125,6 @@ swe/results/
 
 # Temp output
 .cmd_output/
+
+# Local Codex app metadata
+.codex/
