@@ -253,11 +253,15 @@ class ChromaVectorStore(VectorStore):
             where = {k: v for k, v in filter_metadata.items()}
 
         # Query ChromaDB
-        results = coll.query(
-            query_embeddings=[embedding],
-            n_results=top_k,
-            where=cast(Any, where),
-        )
+        try:
+            results = coll.query(
+                query_embeddings=[embedding],
+                n_results=top_k,
+                where=cast(Any, where),
+            )
+        except Exception as e:
+            logger.warning("ChromaDB query failed for collection '%s': %s", collection, e)
+            return []
 
         # Parse results
         search_results: list[SearchResult] = []
