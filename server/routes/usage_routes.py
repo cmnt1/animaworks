@@ -112,10 +112,13 @@ def _launch_claude_login_terminal(executable: str | None) -> bool:
             bare_target = cmd_target.with_suffix("")
             if bare_target.exists():
                 cmd_target = bare_target
+        env = os.environ.copy()
+        env.pop("ANTHROPIC_API_KEY", None)
         subprocess.Popen(
             ["cmd.exe", "/k", "call", str(cmd_target), "login"],
             creationflags=creationflags,
             cwd=str(Path.home()),
+            env=env,
         )
         return True
     except Exception:
