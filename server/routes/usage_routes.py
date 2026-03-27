@@ -107,9 +107,13 @@ def _launch_claude_login_terminal(executable: str | None) -> bool:
         return False
     try:
         creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-        command = f'"{executable}" login'
+        cmd_target = Path(executable)
+        if cmd_target.suffix.lower() == ".cmd":
+            bare_target = cmd_target.with_suffix("")
+            if bare_target.exists():
+                cmd_target = bare_target
         subprocess.Popen(
-            ["cmd.exe", "/k", command],
+            ["cmd.exe", "/k", "call", str(cmd_target), "login"],
             creationflags=creationflags,
             cwd=str(Path.home()),
         )
