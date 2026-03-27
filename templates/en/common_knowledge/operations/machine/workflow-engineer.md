@@ -9,7 +9,7 @@ and serves as the quality gate at 2 verification checkpoints**.
 - Code implementation -> delegate to machine, Engineer verifies
 - Verification happens twice: at impl.plan.md approval and at implementation output review
 
-> Prerequisite: Understand the meta-pattern and common principles in `operations/machine-tool-usage.md`.
+> Prerequisite: Understand the meta-pattern and common principles in `operations/machine/tool-usage.md`.
 
 ## Phase 1: Concretization (plan.md -> impl.plan.md)
 

@@ -8,7 +8,7 @@ PdM uses **machine as a tool for investigation, while making planning decisions 
 - Interpreting results, prioritization, deciding implementation approach -> PdM's own judgment
 - Creating the plan document (plan.md) -> PdM writes it themselves
 
-> Prerequisite: Understand the meta-pattern and common principles in `operations/machine-tool-usage.md`.
+> Prerequisite: Understand the meta-pattern and common principles in `operations/machine/tool-usage.md`.
 
 ## Phase 1: Investigation
 

@@ -119,10 +119,16 @@ Refer to the workflow guide corresponding to your role:
 
 | Role | Guide | Overview |
 |------|-------|----------|
-| PdM | `operations/machine-workflow-pdm.md` | Investigation -> Plan creation |
-| Engineer | `operations/machine-workflow-engineer.md` | Concretization -> Implementation |
-| Reviewer | `operations/machine-workflow-reviewer.md` | Code review -> Meta-review |
-| Tester | `operations/machine-workflow-tester.md` | Test design -> Execution -> Result verification |
+| PdM | `operations/machine/workflow-pdm.md` | Investigation -> Plan creation |
+| Engineer | `operations/machine/workflow-engineer.md` | Concretization -> Implementation |
+| Reviewer | `operations/machine/workflow-reviewer.md` | Code review -> Meta-review |
+| Tester | `operations/machine/workflow-tester.md` | Test design -> Execution -> Result verification |
 
 Role assignments can be found in `injection.md` or `specialty_prompt.md`.
 If you hold multiple roles, refer to all applicable guides.
+
+## When Using Team Design Templates
+
+If `injection.md` references `team-design/development/{role}/machine.md`, **that path takes precedence over this file**. Each role’s `machine.md` is self-contained, including base rules and how to write prompts.
+
+This file is the shared guide for standalone Anima that do not use the team-design templates.

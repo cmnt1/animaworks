@@ -13,7 +13,7 @@ Machine excels at fast static analysis, pattern detection, and requirements comp
 but determining design decision validity and context-aware severity assessment is the Reviewer's
 responsibility.
 
-> Prerequisite: Understand the meta-pattern and common principles in `operations/machine-tool-usage.md`.
+> Prerequisite: Understand the meta-pattern and common principles in `operations/machine/tool-usage.md`.
 
 ## Workflow
 

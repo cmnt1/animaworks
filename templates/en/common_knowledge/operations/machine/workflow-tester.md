@@ -10,7 +10,7 @@ and verifying/judging test results**.
 - Test execution -> delegate to machine
 - Test result interpretation and judgment -> Tester's own judgment
 
-> Prerequisite: Understand the meta-pattern and common principles in `operations/machine-tool-usage.md`.
+> Prerequisite: Understand the meta-pattern and common principles in `operations/machine/tool-usage.md`.
 
 ## Test Types
 

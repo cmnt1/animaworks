@@ -111,16 +111,9 @@ animaworks-tool machine run --background \
 - GitHub API 操作（diff 取得・コメント投稿等）は Anima 側で行い、結果を計画書に含める
 - 長時間かかる場合は `--background` を使用する
 
-## ロール別ワークフローガイド
+## チーム設計テンプレートを使用している場合
 
-自分のロールに対応するガイドを参照し、具体的なワークフローに従うこと:
+`injection.md` で `team-design/development/{role}/machine.md` が指定されている場合、
+**そちらが本ファイルに優先する**。各ロールの machine.md は基本ルール・プロンプトの書き方を含め自己完結している。
 
-| ロール | ガイド | 概要 |
-|--------|--------|------|
-| PdM | `operations/machine-workflow-pdm.md` | 調査 → 計画書作成 |
-| Engineer | `operations/machine-workflow-engineer.md` | 実装詳細化 → 実装 |
-| Reviewer | `operations/machine-workflow-reviewer.md` | コードレビュー → メタレビュー |
-| Tester | `operations/machine-workflow-tester.md` | テスト設計 → テスト実行 → 結果検証 |
-
-ロールの割り当ては `injection.md` または `specialty_prompt.md` で確認できる。
-複数ロールを兼務する場合は、該当する全てのガイドを参照すること。
+本ファイルは team-design テンプレートを使用しない単独 Anima 向けの共通ガイドである。
