@@ -8,7 +8,7 @@ Engineer は **plan.md を受け取り、具体化と実装を machine に投げ
 - コードの実装 → machine に委託し、Engineer が検証
 - 検証は2回: impl.plan.md の承認時と、実装出力の確認時
 
-> 前提: `operations/machine-tool-usage.md` のメタパターンと共通原則を理解していること。
+> 前提: `operations/machine/tool-usage.md` のメタパターンと共通原則を理解していること。
 
 ## Phase 1: 具体化（plan.md → impl.plan.md）
 

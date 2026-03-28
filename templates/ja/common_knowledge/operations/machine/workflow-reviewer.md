@@ -11,7 +11,7 @@ Reviewer は **machine にレビューを全体投げし、そのレビュー結
 machine はコードの静的分析・パターン検出・要件充足チェック等を高速に行えるが、
 設計判断の妥当性や文脈を踏まえた重要度の判定は Reviewer の責務である。
 
-> 前提: `operations/machine-tool-usage.md` のメタパターンと共通原則を理解していること。
+> 前提: `operations/machine/tool-usage.md` のメタパターンと共通原則を理解していること。
 
 ## ワークフロー
 

@@ -4,7 +4,7 @@
 """Unit tests for Korean (ko) locale template completeness.
 
 Validates:
-1. File parity — every file in templates/en/ has a corresponding file in templates/ko/
+1. File inventory — every file under templates/ko/ is listed (sorted); ko may omit some en-only files
 2. Placeholder consistency — {placeholder} variables in ko/ match those in en/
 3. Directory structure — expected subdirectories exist
 4. Heading validation — each .md file has ## or deeper headings
@@ -23,7 +23,7 @@ _TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 _EN_DIR = _TEMPLATES_DIR / "en"
 _KO_DIR = _TEMPLATES_DIR / "ko"
 
-# All expected files (mirrors templates/en/ structure exactly)
+# All expected files (sorted; must match templates/ko/ exactly)
 _EXPECTED_FILES = [
     "anima_templates/_blank/cron.md",
     "anima_templates/_blank/heartbeat.md",
@@ -51,11 +51,11 @@ _EXPECTED_FILES = [
     "common_knowledge/operations/machine/workflow-pdm.md",
     "common_knowledge/operations/machine/workflow-reviewer.md",
     "common_knowledge/operations/machine/workflow-tester.md",
+    "common_knowledge/operations/report-formats.md",
     "common_knowledge/operations/task-board-guide.md",
     "common_knowledge/operations/task-delegation-guide.md",
     "common_knowledge/operations/task-management.md",
     "common_knowledge/operations/tool-usage-overview.md",
-    "common_knowledge/operations/report-formats.md",
     "common_knowledge/operations/workspace-guide.md",
     "common_knowledge/organization/hierarchy-rules.md",
     "common_knowledge/organization/roles.md",
@@ -89,10 +89,10 @@ _EXPECTED_FILES = [
     "common_skills/aws-collector-tool/SKILL.md",
     "common_skills/chatwork-tool/SKILL.md",
     "common_skills/cron-management/SKILL.md",
-    "common_skills/google-tasks-tool/SKILL.md",
     "common_skills/github-tool/SKILL.md",
     "common_skills/gmail-tool/SKILL.md",
     "common_skills/google-calendar-tool/SKILL.md",
+    "common_skills/google-tasks-tool/SKILL.md",
     "common_skills/image-gen-tool/SKILL.md",
     "common_skills/image-posting/SKILL.md",
     "common_skills/local-llm-tool/SKILL.md",
@@ -236,11 +236,7 @@ class TestKoTemplateFilesExist:
 
     def test_total_file_count(self):
         """File count in ko/ should match _EXPECTED_FILES."""
-        all_files = sorted(
-            str(f.relative_to(_KO_DIR))
-            for f in _KO_DIR.rglob("*")
-            if f.is_file()
-        )
+        all_files = sorted(str(f.relative_to(_KO_DIR)) for f in _KO_DIR.rglob("*") if f.is_file())
         assert len(all_files) == len(_EXPECTED_FILES), (
             f"Expected {len(_EXPECTED_FILES)} files, found {len(all_files)}. "
             f"Extra: {set(all_files) - set(_EXPECTED_FILES)}, "
@@ -249,16 +245,8 @@ class TestKoTemplateFilesExist:
 
     def test_no_extra_files(self):
         """ko/ should not contain files that are not in en/."""
-        en_files = {
-            str(f.relative_to(_EN_DIR))
-            for f in _EN_DIR.rglob("*")
-            if f.is_file()
-        }
-        ko_files = {
-            str(f.relative_to(_KO_DIR))
-            for f in _KO_DIR.rglob("*")
-            if f.is_file()
-        }
+        en_files = {str(f.relative_to(_EN_DIR)) for f in _EN_DIR.rglob("*") if f.is_file()}
+        ko_files = {str(f.relative_to(_KO_DIR)) for f in _KO_DIR.rglob("*") if f.is_file()}
         extra = ko_files - en_files
         assert not extra, f"ko/ has extra files not in en/: {extra}"
 
@@ -387,9 +375,5 @@ class TestKoPlaceholderConsistency:
         missing = en_placeholders - ko_placeholders
         extra = ko_placeholders - en_placeholders
 
-        assert not missing, (
-            f"{rel_path}: ko is missing placeholders from en: {missing}"
-        )
-        assert not extra, (
-            f"{rel_path}: ko has extra placeholders not in en: {extra}"
-        )
+        assert not missing, f"{rel_path}: ko is missing placeholders from en: {missing}"
+        assert not extra, f"{rel_path}: ko has extra placeholders not in en: {extra}"
