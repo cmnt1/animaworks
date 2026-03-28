@@ -88,8 +88,13 @@ class NovelAIClient:
         vibe_image: bytes | None = None,
         vibe_strength: float = 0.6,
         vibe_info_extracted: float = 0.8,
+        face_reference_image: bytes | None = None,
     ) -> bytes:
         """Generate a full-body anime character image.
+
+        When *face_reference_image* is provided and no *vibe_image* is given,
+        the face photo is used as the Vibe Transfer reference so the generated
+        character's style and features reflect the supplied face.
 
         Returns:
             PNG image bytes.
@@ -138,9 +143,12 @@ class NovelAIClient:
         if seed is not None:
             params["seed"] = seed
 
-        # Vibe Transfer – V4+ requires pre-encoded vibe data
-        if vibe_image is not None:
-            encoded = self.encode_vibe(vibe_image, vibe_info_extracted)
+        # Vibe Transfer – V4+ requires pre-encoded vibe data.
+        # face_reference_image is used as vibe source when no explicit style
+        # reference (vibe_image) was provided via Style From.
+        effective_vibe = vibe_image if vibe_image is not None else face_reference_image
+        if effective_vibe is not None:
+            encoded = self.encode_vibe(effective_vibe, vibe_info_extracted)
             b64 = base64.b64encode(encoded).decode()
             params["reference_image_multiple"] = [b64]
             params["reference_information_extracted_multiple"] = [vibe_info_extracted]

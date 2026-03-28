@@ -281,6 +281,10 @@ class LocalDiffusersClient:
         _, auto_img2img = _import_diffusers()
         if self._img2img_source == self._text2img_source:
             base_pipe = self._load_text2img_pipeline()
+            # Retire IP-Adapter before deriving img2img so bustup/expression
+            # generation is not polluted by face-reference weights.
+            text2img_key = ("text2img", self._text2img_source, self._device, self._dtype_name)
+            self._retire_ip_adapter(text2img_key)
             pipe = auto_img2img.from_pipe(base_pipe)
         else:
             pipe = auto_img2img.from_pretrained(self._img2img_source, **self._pipeline_kwargs())
@@ -311,30 +315,76 @@ class LocalDiffusersClient:
         return torch.Generator().manual_seed(seed)
 
     def _ensure_ip_adapter(self, pipe: Any, cache_key: tuple) -> None:
-        """Load IP-Adapter face weights onto a pipeline (lazy, once per pipeline)."""
+        """Load IP-Adapter face weights onto a pipeline (lazy, once per pipeline).
+
+        Supports both SDXL and SD 1.5 class models with appropriate weights.
+        IP-Adapter stays loaded across retries to avoid load/unload cycling
+        which degrades UNet weights.  Call :meth:`_retire_ip_adapter` when
+        switching to a non-face-reference generation mode.
+        """
         if cache_key in _IP_ADAPTER_LOADED:
             return
 
-        if not self._is_sdxl(self._text2img_source):
-            logger.warning("IP-Adapter face reference is only supported for SDXL models")
-            return
-
         ip_model = getattr(self._config, "ip_adapter_model", "h94/IP-Adapter")
-        ip_weight = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
 
-        logger.info("Loading IP-Adapter: %s (subfolder=sdxl_models, weight=%s)", ip_model, ip_weight)
+        if self._is_sdxl(self._text2img_source):
+            ip_weight = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+            subfolder = "sdxl_models"
+        else:
+            ip_weight = "ip-adapter-plus-face_sd15.bin"
+            subfolder = "models"
+
+        logger.info(
+            "Loading IP-Adapter: %s (subfolder=%s, weight=%s, model=%s)",
+            ip_model, subfolder, ip_weight, self._text2img_source,
+        )
+
+        # Try local cache first, then auto-download if not found.
+        for attempt, local_only in enumerate((self._local_files_only, False)):
+            try:
+                pipe.load_ip_adapter(
+                    ip_model,
+                    subfolder=subfolder,
+                    weight_name=ip_weight,
+                    image_encoder_folder="models/image_encoder",
+                    local_files_only=local_only,
+                )
+                _IP_ADAPTER_LOADED.add(cache_key)
+                if attempt > 0:
+                    logger.info("IP-Adapter downloaded and loaded successfully")
+                else:
+                    logger.info("IP-Adapter loaded from local cache")
+                return
+            except Exception:
+                if attempt == 0 and self._local_files_only:
+                    logger.info("IP-Adapter not in local cache — attempting download …")
+                    continue
+                logger.exception(
+                    "Failed to load IP-Adapter (%s/%s) — face reference will use img2img fallback",
+                    subfolder, ip_weight,
+                )
+
+    def _retire_ip_adapter(self, text2img_key: tuple) -> None:
+        """Unload IP-Adapter from the cached text2img pipeline if present.
+
+        Called once when switching away from face-reference mode (e.g. to
+        plain text2img or img2img for bustup), NOT after every generation.
+        """
+        if text2img_key not in _IP_ADAPTER_LOADED:
+            return
+        pipe = _PIPELINE_CACHE.get(text2img_key)
+        if pipe is None:
+            _IP_ADAPTER_LOADED.discard(text2img_key)
+            return
         try:
-            pipe.load_ip_adapter(
-                ip_model,
-                subfolder="sdxl_models",
-                weight_name=ip_weight,
-                image_encoder_folder="models/image_encoder",
-                local_files_only=self._local_files_only,
-            )
-            _IP_ADAPTER_LOADED.add(cache_key)
-            logger.info("IP-Adapter loaded successfully")
+            pipe.unload_ip_adapter()
+            logger.info("IP-Adapter retired (switching away from face reference mode)")
         except Exception:
-            logger.exception("Failed to load IP-Adapter — generating without face reference")
+            logger.warning("Failed to unload IP-Adapter", exc_info=True)
+        _IP_ADAPTER_LOADED.discard(text2img_key)
+        # Invalidate derived img2img cache so it is rebuilt cleanly.
+        img2img_key = ("img2img", self._img2img_source, self._device, self._dtype_name)
+        _PIPELINE_CACHE.pop(img2img_key, None)
 
     def _image2image_strength(self, requested: float | None = None) -> float:
         strength = requested
@@ -408,34 +458,57 @@ class LocalDiffusersClient:
         text2img_key = ("text2img", self._text2img_source, self._device, self._dtype_name)
 
         if face_reference_image is not None:
-            # IP-Adapter face reference → text2img + adapter
+            # IP-Adapter face reference → text2img + adapter.
+            # IP-Adapter stays loaded across retries to avoid repeated
+            # load/unload cycles that degrade UNet weights.
             pipe = self._load_text2img_pipeline()
             self._ensure_ip_adapter(pipe, text2img_key)
 
             if text2img_key in _IP_ADAPTER_LOADED:
-                ip_scale = float(getattr(self._config, "ip_adapter_scale", 0.6))
+                # Use vibe_strength from the request so the UI slider
+                # controls face influence.  Fall back to config default.
+                ip_scale = vibe_strength if vibe_strength is not None else float(
+                    getattr(self._config, "ip_adapter_scale", 0.6),
+                )
                 pipe.set_ip_adapter_scale(ip_scale)
                 face_img = self._read_image(face_reference_image)
                 common_kwargs["ip_adapter_image"] = face_img
                 logger.info("Generating with IP-Adapter face reference (scale=%.2f)", ip_scale)
 
-            result = pipe(**common_kwargs, width=width, height=height)
+                result = pipe(**common_kwargs, width=width, height=height)
 
-            # Unload IP-Adapter after generation so the shared UNet doesn't
-            # break subsequent img2img calls (bustup/expressions) that derive
-            # from this pipeline via from_pipe().
-            if text2img_key in _IP_ADAPTER_LOADED:
-                try:
-                    pipe.unload_ip_adapter()
-                    _IP_ADAPTER_LOADED.discard(text2img_key)
-                    # Also invalidate the img2img cache since it shared the UNet
-                    img2img_key = ("img2img", self._img2img_source, self._device, self._dtype_name)
-                    _PIPELINE_CACHE.pop(img2img_key, None)
-                    logger.info("IP-Adapter unloaded; img2img cache cleared for clean bustup generation")
-                except Exception:
-                    logger.warning("Failed to unload IP-Adapter", exc_info=True)
+                # Keep IP-Adapter loaded — no unload here.  Invalidate
+                # img2img cache so bustup/expressions get a fresh pipeline
+                # (via _retire_ip_adapter in _load_img2img_pipeline).
+                img2img_key = ("img2img", self._img2img_source, self._device, self._dtype_name)
+                _PIPELINE_CACHE.pop(img2img_key, None)
+            else:
+                # IP-Adapter unavailable (weights missing or download failed).
+                # Fall back to img2img so the face reference still has an
+                # effect rather than being silently ignored.
+                #
+                # Strength mapping is INVERTED for face reference: the UI
+                # slider means "face influence" (higher = more face), but
+                # img2img strength means "how much to regenerate" (higher =
+                # less reference).  So we flip: slider 0.6 → strength 0.4.
+                face_strength = 1.0 - (vibe_strength if vibe_strength is not None else 0.6)
+                face_strength = max(0.15, min(0.85, face_strength))
+                logger.warning(
+                    "IP-Adapter not available — falling back to img2img with face reference "
+                    "(strength=%.2f, i.e. %.0f%% face preserved)",
+                    face_strength, (1 - face_strength) * 100,
+                )
+                pipe = self._load_img2img_pipeline()
+                reference = self._read_image(face_reference_image).resize((width, height))
+                result = pipe(
+                    **common_kwargs,
+                    image=reference,
+                    strength=face_strength,
+                )
 
         elif vibe_image is not None:
+            # Switching away from face reference — retire IP-Adapter if loaded
+            self._retire_ip_adapter(text2img_key)
             pipe = self._load_img2img_pipeline()
             reference = self._read_image(vibe_image).resize((width, height))
             result = pipe(
@@ -445,6 +518,8 @@ class LocalDiffusersClient:
             )
 
         else:
+            # Pure text2img — retire IP-Adapter if loaded
+            self._retire_ip_adapter(text2img_key)
             pipe = self._load_text2img_pipeline()
             result = pipe(**common_kwargs, width=width, height=height)
 

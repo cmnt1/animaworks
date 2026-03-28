@@ -756,10 +756,12 @@ def create_assets_router() -> APIRouter:
         }
         if vibe_image is not None:
             gen_kwargs["vibe_image"] = vibe_image
-            gen_kwargs["vibe_strength"] = body.vibe_strength
-            gen_kwargs["vibe_info_extracted"] = body.vibe_info_extracted
         if face_reference_bytes is not None:
             gen_kwargs["face_reference_image"] = face_reference_bytes
+        # Pass strength sliders whenever any reference (style or face) is active
+        if vibe_image is not None or face_reference_bytes is not None:
+            gen_kwargs["vibe_strength"] = body.vibe_strength
+            gen_kwargs["vibe_info_extracted"] = body.vibe_info_extracted
 
         ws_manager = getattr(request.app.state, "ws_manager", None)
 

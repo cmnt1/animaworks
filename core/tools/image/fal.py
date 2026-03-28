@@ -146,16 +146,32 @@ class FalTextToImageClient:
         vibe_image: bytes | None = None,
         vibe_strength: float = 0.6,
         vibe_info_extracted: float = 0.8,
+        face_reference_image: bytes | None = None,
     ) -> bytes:
         """Generate a full-body character image from text prompt.
 
-        Uses fal.ai Flux Pro v1.1 model.  Compatible with the same
+        When *face_reference_image* is provided, delegates to
+        :class:`FluxKontextClient` which uses the face photo as a reference
+        base and applies the character prompt on top, preserving facial
+        identity in the generated image.
+
+        Uses fal.ai Flux Pro v1.1 otherwise.  Compatible with the same
         call signature as :meth:`NovelAIClient.generate_fullbody` but
         ignores NovelAI-specific parameters (vibe transfer, sampler, etc.).
 
         Returns:
             PNG image bytes.
         """
+        if face_reference_image is not None:
+            kontext = FluxKontextClient()
+            return kontext.generate_from_reference(
+                reference_image=face_reference_image,
+                prompt=prompt,
+                aspect_ratio="3:4",
+                output_format=output_format,
+                seed=seed,
+            )
+
         payload: dict[str, Any] = {
             "prompt": prompt,
             "image_size": {"width": width, "height": height},

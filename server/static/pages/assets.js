@@ -628,7 +628,7 @@ function _openRemakeModal() {
     _updateVibeSliderState();
   }
 
-  // Face reference URL preview thumbnail
+  // Face reference URL preview thumbnail + slider state sync
   const faceRefInput = document.getElementById("assetsFaceRefUrl");
   const faceRefPreview = document.getElementById("assetsFaceRefPreview");
   if (faceRefInput && faceRefPreview) {
@@ -644,6 +644,8 @@ function _openRemakeModal() {
         } else {
           faceRefPreview.style.display = "none";
         }
+        // Face reference also uses vibe sliders for strength control
+        _updateVibeSliderState();
       }, 500);
     });
   }
@@ -688,14 +690,17 @@ function _openRemakeModal() {
 
 function _updateVibeSliderState() {
   const styleFrom = document.getElementById("assetsStyleFrom")?.value;
+  const faceRefUrl = document.getElementById("assetsFaceRefUrl")?.value?.trim();
   const vibeSlider = document.getElementById("assetsVibeStrength");
   const infoSlider = document.getElementById("assetsInfoExtract");
-  const hasStyle = !!styleFrom;
+  // Enable sliders when Style From OR Face Reference is set — both use
+  // vibe_strength to control influence intensity on the backend.
+  const hasReference = !!styleFrom || !!(faceRefUrl && faceRefUrl.startsWith("http"));
 
   [vibeSlider, infoSlider].forEach(slider => {
     if (slider) {
-      slider.disabled = !hasStyle;
-      slider.closest(".assets-modal-control-row")?.classList.toggle("assets-control-disabled", !hasStyle);
+      slider.disabled = !hasReference;
+      slider.closest(".assets-modal-control-row")?.classList.toggle("assets-control-disabled", !hasReference);
     }
   });
 }
