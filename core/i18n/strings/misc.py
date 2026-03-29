@@ -554,10 +554,12 @@ STRINGS: dict[str, dict[str, str]] = {
             "- [ ] An independent reviewer would accept this as complete"
         ),
     },
+    # Mode A/B: instructs the model to call the completion_gate tool
     "completion_gate.stop_hook_block_reason": {
         "ja": "最終回答を出す前に completion_gate ツールを呼んで完了前検証を行ってください。",
         "en": "Please call the completion_gate tool to perform pre-completion verification before providing your final answer.",
     },
+    # Mode S: checklist injected directly via Stop hook reason (no tool call)
     "completion_gate.stop_hook_checklist_injection": {
         "ja": (
             "## 完了前検証\n\n"

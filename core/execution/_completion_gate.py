@@ -10,10 +10,11 @@ from __future__ import annotations
 
 """Shared completion-gate helpers used by multiple execution modes.
 
-The completion gate forces the agent to call the ``completion_gate`` tool
-before producing a final answer.  Mode S uses an SDK Stop hook;  Mode A
-checks the marker inside its own tool-use loop.  Helpers here are
-mode-agnostic.
+Mode S injects the checklist directly via the Stop hook's ``reason``
+parameter — no tool call is needed.  Mode A requires the agent to call
+the ``completion_gate`` tool; the marker file is the IPC signal between
+the tool handler and the loop.  Helpers here (marker I/O, trigger
+filtering) are used by both paths.
 """
 
 import logging
@@ -43,7 +44,7 @@ def cleanup_gate_marker(anima_dir: Path) -> None:
 
 
 def completion_gate_applies_to_trigger(trigger: str | None) -> bool:
-    """Return True when the agent must call ``completion_gate`` before stopping.
+    """Return True when pre-completion verification applies.
 
     Gating is skipped for heartbeat and inbox triggers.
     """
