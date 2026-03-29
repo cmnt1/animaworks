@@ -869,9 +869,6 @@ from core.execution._completion_gate import (
 from core.execution._completion_gate import (
     completion_gate_applies_to_trigger as _completion_gate_applies_to_trigger,
 )
-from core.execution._completion_gate import (
-    gate_marker_exists as _gate_marker_exists,
-)
 
 
 def _build_stop_hook(
@@ -879,10 +876,14 @@ def _build_stop_hook(
     *,
     session_stats: dict[str, Any] | None = None,
 ) -> Callable:
-    """Build a Stop hook that blocks until ``completion_gate`` writes the marker file.
+    """Build a Stop hook that injects the pre-completion checklist directly.
 
-    Skips gating for heartbeat and inbox triggers. When allowing stop, removes
-    the marker file if present.
+    On the first stop attempt for a gated trigger (chat, task, cron), the hook
+    returns ``decision="block"`` with the checklist as ``reason``.  The SDK
+    injects the reason into the model's context and forces it to continue.
+    On the second attempt (``stop_hook_active=True``), the hook allows the stop.
+
+    No ``completion_gate`` tool call is required — the hook itself is the gate.
     """
     from claude_agent_sdk.types import HookContext, SyncHookJSONOutput
 
@@ -901,15 +902,11 @@ def _build_stop_hook(
         if not _completion_gate_applies_to_trigger(trigger):
             return {}
 
-        if _gate_marker_exists(anima_dir):
-            _cleanup_gate_marker(anima_dir)
-            return {}
-
         from core.i18n import t
 
         return SyncHookJSONOutput(
             decision="block",
-            reason=t("completion_gate.stop_hook_block_reason"),
+            reason=t("completion_gate.stop_hook_checklist_injection"),
         )
 
     return _stop_hook

@@ -67,8 +67,6 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
         "update_task",
         # AW-essential: skill/CLI manual
         "skill",
-        # Mode S: pre-completion verification
-        "completion_gate",
     }
 )
 

@@ -42,6 +42,12 @@ def _decision_from(result: object) -> str | None:
     return getattr(result, "decision", None)
 
 
+def _reason_from(result: object) -> str | None:
+    if isinstance(result, dict):
+        return result.get("reason")
+    return getattr(result, "reason", None)
+
+
 @pytest.fixture
 def anima_dir(tmp_path: Path) -> Path:
     d = tmp_path / "animas" / "gate-test"
@@ -110,13 +116,22 @@ class TestTriggerApplicability:
         assert completion_gate_applies_to_trigger("inbox:mention") is False
 
 
-# ── Stop hook (Mode S) ──────────────────────────────────────
+# ── Stop hook (Mode S) — direct checklist injection ──────────
 
 
 @pytest.mark.skipif(not _sdk_available(), reason="claude_agent_sdk not installed")
 class TestStopHookCompletionGate:
     @pytest.mark.asyncio
     async def test_stop_hook_allows_when_stop_hook_active(self, anima_dir: Path):
+        from core.execution._sdk_hooks import _build_stop_hook
+
+        hook = _build_stop_hook(anima_dir, session_stats={"trigger": "chat"})
+        result = await hook(_stop_input(stop_hook_active=True), None, {})
+        assert result == {} or _decision_from(result) is None
+
+    @pytest.mark.asyncio
+    async def test_stop_hook_active_cleans_up_stale_marker(self, anima_dir: Path):
+        """Stale marker from Mode A is cleaned up on stop_hook_active pass."""
         from core.execution._sdk_hooks import _build_stop_hook
 
         p = completion_gate_marker_path(anima_dir)
@@ -127,23 +142,57 @@ class TestStopHookCompletionGate:
         assert not p.exists()
 
     @pytest.mark.asyncio
-    async def test_stop_hook_blocks_when_no_gate_called(self, anima_dir: Path):
+    async def test_stop_hook_blocks_with_checklist_for_chat(self, anima_dir: Path):
         from core.execution._sdk_hooks import _build_stop_hook
 
         hook = _build_stop_hook(anima_dir, session_stats={"trigger": "chat"})
         result = await hook(_stop_input(stop_hook_active=False), None, {})
         assert _decision_from(result) == "block"
+        reason = _reason_from(result)
+        assert reason is not None
+        assert "完了前検証" in reason or "Pre-Completion" in reason
 
     @pytest.mark.asyncio
-    async def test_stop_hook_allows_when_gate_called(self, anima_dir: Path):
+    async def test_stop_hook_blocks_with_checklist_for_task(self, anima_dir: Path):
         from core.execution._sdk_hooks import _build_stop_hook
 
-        p = completion_gate_marker_path(anima_dir)
-        p.write_text("", encoding="utf-8")
+        hook = _build_stop_hook(anima_dir, session_stats={"trigger": "task:exec"})
+        result = await hook(_stop_input(stop_hook_active=False), None, {})
+        assert _decision_from(result) == "block"
+        reason = _reason_from(result)
+        assert reason is not None
+        assert "完了前検証" in reason or "Pre-Completion" in reason
+
+    @pytest.mark.asyncio
+    async def test_stop_hook_blocks_with_checklist_for_cron(self, anima_dir: Path):
+        from core.execution._sdk_hooks import _build_stop_hook
+
+        hook = _build_stop_hook(anima_dir, session_stats={"trigger": "cron:0"})
+        result = await hook(_stop_input(stop_hook_active=False), None, {})
+        assert _decision_from(result) == "block"
+        reason = _reason_from(result)
+        assert reason is not None
+        assert "完了前検証" in reason or "Pre-Completion" in reason
+
+    @pytest.mark.asyncio
+    async def test_stop_hook_reason_contains_checklist_items(self, anima_dir: Path):
+        """Verify the injected reason contains actionable checklist items."""
+        from core.execution._sdk_hooks import _build_stop_hook
+
         hook = _build_stop_hook(anima_dir, session_stats={"trigger": "chat"})
         result = await hook(_stop_input(stop_hook_active=False), None, {})
-        assert _decision_from(result) is None
-        assert not p.exists()
+        reason = _reason_from(result)
+        assert "- [ ]" in reason
+
+    @pytest.mark.asyncio
+    async def test_stop_hook_no_tool_call_instruction(self, anima_dir: Path):
+        """Verify the reason does NOT tell the model to call completion_gate tool."""
+        from core.execution._sdk_hooks import _build_stop_hook
+
+        hook = _build_stop_hook(anima_dir, session_stats={"trigger": "chat"})
+        result = await hook(_stop_input(stop_hook_active=False), None, {})
+        reason = _reason_from(result)
+        assert "completion_gate" not in reason.lower()
 
     @pytest.mark.asyncio
     async def test_stop_hook_skips_heartbeat(self, anima_dir: Path):
@@ -162,31 +211,38 @@ class TestStopHookCompletionGate:
         assert _decision_from(result) is None
 
     @pytest.mark.asyncio
-    async def test_stop_hook_blocks_for_chat(self, anima_dir: Path):
+    async def test_stop_hook_does_not_depend_on_marker(self, anima_dir: Path):
+        """Even if marker exists, stop hook still blocks (marker is for Mode A only)."""
         from core.execution._sdk_hooks import _build_stop_hook
 
+        p = completion_gate_marker_path(anima_dir)
+        p.write_text("", encoding="utf-8")
         hook = _build_stop_hook(anima_dir, session_stats={"trigger": "chat"})
         result = await hook(_stop_input(stop_hook_active=False), None, {})
         assert _decision_from(result) == "block"
 
-    @pytest.mark.asyncio
-    async def test_stop_hook_blocks_for_task(self, anima_dir: Path):
-        from core.execution._sdk_hooks import _build_stop_hook
 
-        hook = _build_stop_hook(anima_dir, session_stats={"trigger": "task:exec"})
-        result = await hook(_stop_input(stop_hook_active=False), None, {})
-        assert _decision_from(result) == "block"
-
-    @pytest.mark.asyncio
-    async def test_stop_hook_blocks_for_cron(self, anima_dir: Path):
-        from core.execution._sdk_hooks import _build_stop_hook
-
-        hook = _build_stop_hook(anima_dir, session_stats={"trigger": "cron:0"})
-        result = await hook(_stop_input(stop_hook_active=False), None, {})
-        assert _decision_from(result) == "block"
+# ── MCP tool list (Mode S) ──────────────────────────────────
 
 
-# ── completion_gate tool ────────────────────────────────────
+class TestMCPToolListExclusion:
+    def test_completion_gate_not_in_exposed_names(self):
+        from core.mcp.server import _EXPOSED_TOOL_NAMES
+
+        assert "completion_gate" not in _EXPOSED_TOOL_NAMES
+
+
+# ── TOOL_TRUST_LEVELS ─────────────────────────────────────────
+
+
+class TestToolTrustLevels:
+    def test_completion_gate_is_trusted(self):
+        from core.execution._sanitize import TOOL_TRUST_LEVELS
+
+        assert TOOL_TRUST_LEVELS.get("completion_gate") == "trusted"
+
+
+# ── completion_gate tool (Mode A/B) ────────────────────────────
 
 
 class TestCompletionGateTool:
