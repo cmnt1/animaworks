@@ -296,12 +296,14 @@ class LiteLLMExecutor(
                     from core.i18n import t
 
                     messages.append({"role": "assistant", "content": message.content or ""})
-                    messages.append({
-                        "role": "user",
-                        "content": SystemReminderQueue.format_reminder(
-                            t("completion_gate.tool_call_reminder"),
-                        ),
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": SystemReminderQueue.format_reminder(
+                                t("completion_gate.tool_call_reminder"),
+                            ),
+                        }
+                    )
                     logger.info("A completion_gate not called; injecting retry at iteration=%d", iteration)
                     continue
                 cleanup_gate_marker(self._anima_dir)

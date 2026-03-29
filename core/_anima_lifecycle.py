@@ -260,11 +260,13 @@ class LifecycleMixin:
 
                     if consolidation_type == "daily":
                         result = await self._run_daily_consolidation(
-                            engine, max_turns=max_turns,
+                            engine,
+                            max_turns=max_turns,
                         )
                     else:
                         result = await self._run_weekly_consolidation(
-                            engine, max_turns=max_turns,
+                            engine,
+                            max_turns=max_turns,
                         )
 
                     self._last_activity = now_local()
@@ -379,9 +381,7 @@ class LifecycleMixin:
         # ── Phase B: Knowledge extraction ───────────────────────
         episodes = engine._collect_recent_episodes(hours=24)
         if episodes:
-            episodes_summary = "\n\n".join(
-                f"## {e['date']} {e['time']}\n{e['content']}" for e in episodes
-            )
+            episodes_summary = "\n\n".join(f"## {e['date']} {e['time']}\n{e['content']}" for e in episodes)
         else:
             episodes_summary = t("anima.no_episodes_today")
 
@@ -398,11 +398,7 @@ class LifecycleMixin:
             )
 
         resolved = engine._collect_resolved_events(hours=24)
-        resolved_text = (
-            "\n".join(f"- {r['ts'][:16]}: {r['content']}" for r in resolved)
-            if resolved
-            else ""
-        )
+        resolved_text = "\n".join(f"- {r['ts'][:16]}: {r['content']}" for r in resolved) if resolved else ""
 
         error_patterns = engine._collect_error_entries(hours=24)
         knowledge_files = engine._list_knowledge_files_with_meta()

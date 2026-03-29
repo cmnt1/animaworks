@@ -563,12 +563,14 @@ class StreamingMixin:
 
                         _assist_text = "".join(iter_text_parts)
                         messages.append({"role": "assistant", "content": _assist_text})
-                        messages.append({
-                            "role": "user",
-                            "content": SystemReminderQueue.format_reminder(
-                                t("completion_gate.tool_call_reminder"),
-                            ),
-                        })
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": SystemReminderQueue.format_reminder(
+                                    t("completion_gate.tool_call_reminder"),
+                                ),
+                            }
+                        )
                         logger.info("A stream completion_gate not called; injecting retry at iteration=%d", iteration)
                         continue
 
@@ -906,22 +908,22 @@ class StreamingMixin:
                 tool_calls = message.tool_calls
                 if not tool_calls:
                     # ── completion_gate enforcement ──
-                    if (
-                        not _gate_attempted_ol
-                        and _cg_applies(trigger)
-                        and not _cg_exists(self._anima_dir)
-                    ):
+                    if not _gate_attempted_ol and _cg_applies(trigger) and not _cg_exists(self._anima_dir):
                         _gate_attempted_ol = True
                         from core.i18n import t
 
                         messages.append({"role": "assistant", "content": message.content or ""})
-                        messages.append({
-                            "role": "user",
-                            "content": SystemReminderQueue.format_reminder(
-                                t("completion_gate.tool_call_reminder"),
-                            ),
-                        })
-                        logger.info("A ollama stream completion_gate not called; injecting retry at iteration=%d", iteration)
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": SystemReminderQueue.format_reminder(
+                                    t("completion_gate.tool_call_reminder"),
+                                ),
+                            }
+                        )
+                        logger.info(
+                            "A ollama stream completion_gate not called; injecting retry at iteration=%d", iteration
+                        )
                         continue
                     _cg_cleanup(self._anima_dir)
 
