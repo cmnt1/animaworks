@@ -597,12 +597,12 @@ class ConsolidationEngine:
         if not included:
             return []
 
-        # Format all entries
-        formatted_entries: list[tuple[str, str]] = []  # (hour_key, formatted_text)
+        # Format all entries — use date+hour key for cross-day correctness
+        formatted_entries: list[tuple[str, str]] = []  # (date_hour_key, formatted_text)
         for e in included:
             text = self._format_entry_full(e)
-            hour_key = e.ts[11:13] if len(e.ts) >= 13 else "00"
-            formatted_entries.append((hour_key, text))
+            date_hour = e.ts[:13] if len(e.ts) >= 13 else "0000-00-00T00"
+            formatted_entries.append((date_hour, text))
 
         # Split into budget-sized chunks at hour boundaries
         return self._split_into_chunks(formatted_entries, budget)
@@ -700,6 +700,11 @@ class ConsolidationEngine:
 
         Returns paths to episode files from the past N days that exist
         and could benefit from defragmentation.
+
+        .. note::
+            This is a discovery helper only. The actual defrag rewriting
+            (converting old free-form episodes into structured timelines)
+            is not yet wired into the consolidation pipeline.
         """
         today = now_local().date()
         targets: list[Path] = []
