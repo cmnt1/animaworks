@@ -48,6 +48,7 @@ When an Anima calls `search_memory(query="...", scope="common_knowledge")`, it p
 - **Keyword search**: Text scan of .md files in `~/.animaworks/common_knowledge/`
 - **Vector search**: Searches `shared_common_knowledge` collection
 - **Scope**: `"common_knowledge"` for targeted search, `"all"` (default) also includes it
+- **`scope="all"`**: Merges vector results with **activity_log BM25** hits using **RRF** (reciprocal rank fusion), so broad searches also surface recent unified activity log entries alongside indexed memory chunks
 
 ### Examples
 ```

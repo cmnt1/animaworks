@@ -33,7 +33,7 @@ description: "도구 체계 개요 및 사용 가이드"
 
 | 도구 | 설명 |
 |------|------|
-| **search_memory** | 장기 메모리(knowledge, episodes, procedures)를 키워드 검색 |
+| **search_memory** | 장기 메모리(knowledge, episodes, procedures, activity_log)를 키워드 검색 |
 | **read_memory_file** | 메모리 디렉터리 내 파일을 상대 경로로 읽기 |
 | **write_memory_file** | 메모리 디렉터리 내 파일에 쓰기/추가 |
 

@@ -217,7 +217,8 @@ send_message(
 | `episodes` | Past action logs | Fact-checking “what happened when” |
 | `procedures` | Procedures | “How to” steps |
 | `common_knowledge` | Knowledge shared across all Anima | Org rules, system guides |
-| `all` | All of the above | Keyword existence, broad search |
+| `activity_log` | Unified activity timeline (tool results, messages, etc.) | “What did I just read?” recent actions |
+| `all` | All of the above (vector search + activity_log BM25 fused via RRF) | Keyword existence, broad search |
 
 ---
 

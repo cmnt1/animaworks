@@ -223,7 +223,8 @@ If memories accumulate without bound, search quality drops; forgetting is applie
 | `episodes` | Past action logs | “Have I done this before?” |
 | `procedures` | Procedure docs | “What are the steps for this task?” |
 | `common_knowledge` | Shared reference | “What does the framework spec say?” |
-| `all` | All of the above | “I want every related hit” |
+| `activity_log` | Recent action logs (tool results, messages, etc.) | “What was in the email I just read?” “The search results from earlier” |
+| `all` | All of the above (vector search + activity_log BM25 fused via RRF) | Broad search across all memory types |
 
 ---
 

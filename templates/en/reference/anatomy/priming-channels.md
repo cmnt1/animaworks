@@ -43,6 +43,8 @@ Injects the recent activity timeline.
 - **Source**: `activity_log/{date}.jsonl` + latest posts from shared channels
 - **Budget**: 1300 tokens
 
+**Priming vs. explicit search:** Channel B injects a **budget-limited**, automatic timeline from `activity_log/`. That is separate from on-demand recall: use `search_memory(query="...", scope="activity_log")` when you need to **query** recent actions (tool results, messages, etc.) beyond what Priming surfaced.
+
 ### Trigger-based Filtering
 
 | Trigger | Excluded event types |

@@ -42,6 +42,7 @@ PrimingEngine이 실행하는 전체 채널의 상세 사양입니다.
 
 - **소스**: `activity_log/{date}.jsonl` + 공유 채널의 최신 게시물
 - **버짓**: 1300 토큰
+- **Priming vs 명시 검색**: Channel B는 자동 주입이며 예산(1300 토큰)으로 요약된 타임라인만 제공합니다. 활동 로그 전체에서 키워드로 찾고 싶을 때는 `search_memory(query="...", scope="activity_log")`를 사용하세요 (`scope="all"`은 벡터+RAG와 activity_log BM25를 RRF로 통합).
 
 ### 트리거별 필터링
 

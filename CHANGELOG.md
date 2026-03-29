@@ -7,6 +7,9 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `search_memory` に `activity_log` スコープを追加 — 直近3日間の行動ログをBM25キーワード検索可能に。`scope="all"` 使用時はベクトル検索結果とRRF（Reciprocal Rank Fusion）で統合
+
 ## [0.6.1] - 2026-03-21
 
 ### Fixed

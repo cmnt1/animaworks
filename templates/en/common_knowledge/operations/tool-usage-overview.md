@@ -73,7 +73,7 @@ The following summarizes tools handled directly by `ToolHandler` (some are condi
 
 | Tool | Description |
 |------|-------------|
-| **search_memory** | Search long-term memory by **semantic similarity (RAG)**. `scope`: knowledge / episodes / procedures / common_knowledge / all |
+| **search_memory** | Search long-term memory by **semantic similarity (RAG)**. `scope`: knowledge / episodes / procedures / common_knowledge / activity_log / all |
 | **read_memory_file** | Read a file under memory directories by relative path |
 | **write_memory_file** | Overwrite or append under memory directories |
 | **archive_memory_file** | Move unneeded files to `archive/` (not deletion). `path` and `reason` are required |

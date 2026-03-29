@@ -48,6 +48,7 @@ Anima が `search_memory(query="...", scope="common_knowledge")` を呼ぶと、
 - **キーワード検索**: `~/.animaworks/common_knowledge/` 内の .md ファイルをテキスト走査
 - **ベクトル検索**: `shared_common_knowledge` コレクションを検索
 - **scope指定**: `"common_knowledge"` で限定検索、`"all"`（デフォルト）でも含まれる
+- **`scope="all"`**: ベクトル検索の各種コレクションに加え、**activity_log の BM25 結果を RRF（Reciprocal Rank Fusion）で統合**する。広範検索時に直近の行動ログも候補に乗る
 
 ### 使用例
 ```
