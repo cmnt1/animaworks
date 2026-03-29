@@ -27,6 +27,16 @@ from tests.helpers.mocks import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _bypass_completion_gate():
+    """Disable completion_gate enforcement so tests don't need extra mock responses."""
+    with patch(
+        "core.execution.litellm_loop.completion_gate_applies_to_trigger",
+        return_value=False,
+    ):
+        yield
+
+
 @pytest.fixture
 def anima_dir(tmp_path: Path) -> Path:
     d = tmp_path / "animas" / "test"
@@ -229,9 +239,9 @@ class TestBaseToolCount:
     """Verify the base tool set matches the unified design spec."""
 
     def test_base_tool_count(self, executor):
-        """Base tools should be 17 (CC 8 + AW-essential 9, no notification/supervisor)."""
+        """Base tools should be 18 (CC 8 + AW-essential 10, no notification/supervisor)."""
         tools = executor._build_base_tools()
-        assert len(tools) == 17
+        assert len(tools) == 18
         names = {t["function"]["name"] for t in tools}
         # CC built-in tools (8)
         assert "Read" in names
@@ -255,5 +265,7 @@ class TestBaseToolCount:
         assert "create_skill" in names
         # AW-essential: planning
         assert "todo_write" in names
+        # AW-essential: completion gate
+        assert "completion_gate" in names
         # Mode B only — must NOT be in Mode A
         assert "use_tool" not in names
