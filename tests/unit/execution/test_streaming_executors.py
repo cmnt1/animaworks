@@ -869,6 +869,10 @@ class TestA2IterationLevelWithToolCall:
              patch.object(
                  ollama_executor, "_execute_tool_call",
                  side_effect=mock_execute_tool_call,
+             ), \
+             patch(
+                 "core.execution._completion_gate.completion_gate_applies_to_trigger",
+                 return_value=False,
              ):
             events = await _collect_events(
                 ollama_executor.execute_streaming(

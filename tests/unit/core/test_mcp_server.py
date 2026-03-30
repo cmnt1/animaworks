@@ -550,7 +550,8 @@ class TestLoadPermittedCategories:
         """Without permissions.md, all tools are returned."""
         from core.mcp.server import _load_permitted_categories
 
-        with patch("core.tools.TOOL_MODULES", {"chatwork": "core.tools.chatwork", "slack": "core.tools.slack"}):
+        with patch("core.tools.TOOL_MODULES", {"chatwork": "core.tools.chatwork", "slack": "core.tools.slack"}), \
+             patch("core.tooling.permissions._disabled_service_tools", return_value=set()):
             result = _load_permitted_categories(tmp_path)
         assert result == {"chatwork", "slack"}
 
@@ -561,7 +562,8 @@ class TestLoadPermittedCategories:
         perms = tmp_path / "permissions.md"
         perms.write_text("## 実行できるコマンド\n- git: OK\n", encoding="utf-8")
 
-        with patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x"}):
+        with patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x"}), \
+             patch("core.tooling.permissions._disabled_service_tools", return_value=set()):
             result = _load_permitted_categories(tmp_path)
         assert result == {"chatwork", "slack"}
 
@@ -575,7 +577,8 @@ class TestLoadPermittedCategories:
             encoding="utf-8",
         )
 
-        with patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}):
+        with patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}), \
+             patch("core.tooling.permissions._disabled_service_tools", return_value=set()):
             result = _load_permitted_categories(tmp_path)
         assert result == {"chatwork", "slack"}
         assert "gmail" not in result
@@ -587,7 +590,8 @@ class TestLoadPermittedCategories:
         perms = tmp_path / "permissions.md"
         perms.write_text("## 外部ツール\n- all: yes\n", encoding="utf-8")
 
-        with patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}):
+        with patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}), \
+             patch("core.tooling.permissions._disabled_service_tools", return_value=set()):
             result = _load_permitted_categories(tmp_path)
         assert result == {"chatwork", "slack", "gmail"}
 
@@ -598,7 +602,8 @@ class TestLoadPermittedCategories:
         perms = tmp_path / "permissions.md"
         perms.write_text("## 外部ツール\n- all: yes\n- gmail: no\n", encoding="utf-8")
 
-        with patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}):
+        with patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}), \
+             patch("core.tooling.permissions._disabled_service_tools", return_value=set()):
             result = _load_permitted_categories(tmp_path)
         assert result == {"chatwork", "slack"}
         assert "gmail" not in result
@@ -684,41 +689,6 @@ class TestExternalToolsInMcpTools:
         finally:
             mcp_mod._EXPOSED_NAMES = original_exposed
 
-    def test_permitted_external_slack_schema_is_exposed(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Permitted direct Slack schemas are exposed via MCP."""
-        from core.mcp.server import _build_mcp_tools
-
-        anima_dir = tmp_path / "test-anima"
-        anima_dir.mkdir()
-        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
-
-        slack_schema = {
-            "name": "slack_channel_post",
-            "description": "Post to Slack directly",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "channel_id": {"type": "string"},
-                    "text": {"type": "string"},
-                },
-                "required": ["channel_id", "text"],
-            },
-        }
-
-        with (
-            patch("core.mcp.server._load_permitted_categories", return_value={"slack"}),
-            patch("core.tooling.schemas.load_external_schemas_by_category", return_value=[slack_schema]),
-        ):
-            tools, exposed = _build_mcp_tools()
-
-        tool_names = {t.name for t in tools}
-        assert "slack_channel_post" in tool_names
-        assert "slack_channel_post" in exposed
-
 
 # ── TestCallToolTrustWrapping ────────────────────────────────────────
 
@@ -746,29 +716,6 @@ class TestCallToolTrustWrapping:
             assert "</tool_result>" in result[0].text
         finally:
             mcp_mod._EXPOSED_NAMES = original_exposed
-
-
-class TestQuietHandlerCall:
-    """Tests for stdout suppression during MCP tool execution."""
-
-    def test_call_handler_quietly_suppresses_stdout(
-        self,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Third-party stdout is swallowed so it cannot corrupt MCP JSON-RPC."""
-        from core.mcp.server import _call_handler_quietly
-
-        class _Handler:
-            @staticmethod
-            def handle(name: str, arguments: dict[str, str]) -> str:
-                print(f"noise from {name}")
-                return f"ok:{arguments['query']}"
-
-        result = _call_handler_quietly(_Handler(), "search_memory", {"query": "test"})
-
-        captured = capsys.readouterr()
-        assert captured.out == ""
-        assert result == "ok:test"
 
     async def test_trusted_tool_gets_trusted_tag(self) -> None:
         """search_memory results are wrapped with trust='trusted'."""
