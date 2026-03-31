@@ -203,12 +203,16 @@ def _extract_arcface_embedding(image_pil: Any) -> Any | None:
     """
     import numpy as np
 
+    try:
+        import cv2
+    except ImportError:
+        logger.warning("OpenCV not available — ArcFace embedding extraction disabled")
+        return None
+
     scrfd = _get_scrfd_session()
     arcface = _get_arcface_session()
     if scrfd is None or arcface is None:
         return None
-
-    import cv2
 
     arr = np.array(image_pil)
     bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
