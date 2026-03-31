@@ -614,6 +614,14 @@ class LocalDiffusersClient:
         similarity than the standard IP-Adapter Plus Face approach.
 
         Call :meth:`_retire_ip_adapter` when switching away from face mode.
+
+        IMPORTANT: ``enable_model_cpu_offload`` must be (re-)applied **after**
+        IP-Adapter weights are loaded.  The offload hooks wrap the UNet forward
+        and can prevent ``added_cond_kwargs`` from being passed through when the
+        adapter is loaded onto an already-offloaded pipeline.  After a
+        successful load we therefore strip existing offload hooks and re-apply
+        ``enable_model_cpu_offload`` so the new ``encoder_hid_proj`` layer is
+        properly registered in the hook chain.
         """
         if cache_key in _IP_ADAPTER_LOADED:
             return
@@ -628,6 +636,13 @@ class LocalDiffusersClient:
         logger.info(
             "Loading IP-Adapter FaceID: %s (weight=%s, model=%s)",
             ip_model, ip_weight, self._text2img_source,
+        )
+
+        # Detect whether CPU-offload hooks are active on this pipeline so we
+        # can re-apply them after the IP-Adapter load.
+        had_cpu_offload = getattr(pipe, "_hf_hook", None) is not None or any(
+            getattr(m, "_hf_hook", None) is not None
+            for m in pipe.components.values() if m is not None
         )
 
         # Try local cache first, then auto-download if not found.
@@ -646,6 +661,24 @@ class LocalDiffusersClient:
                     image_encoder_folder=None,
                     local_files_only=local_only,
                 )
+
+                # Re-apply CPU-offload hooks so the newly added
+                # encoder_hid_proj (MultiIPAdapterImageProjection) is
+                # included in the offload chain and added_cond_kwargs are
+                # forwarded correctly through the UNet forward hooks.
+                if had_cpu_offload:
+                    try:
+                        pipe.remove_all_hooks()
+                        pipe.enable_model_cpu_offload()
+                        logger.info(
+                            "Re-applied model CPU offload after IP-Adapter load"
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to re-apply CPU offload after IP-Adapter load",
+                            exc_info=True,
+                        )
+
                 _IP_ADAPTER_LOADED.add(cache_key)
                 if attempt > 0:
                     logger.info("IP-Adapter FaceID downloaded and loaded successfully")
