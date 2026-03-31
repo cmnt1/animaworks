@@ -274,17 +274,6 @@ class SlackSocketModeManager:
                 len(self._handler_map),
             )
 
-        # Sync Anima avatars to Slack bot profile photos (best-effort)
-        if self._app_map:
-            try:
-                from server.slack_avatar_sync import sync_avatars
-
-                animas_dir = get_data_dir() / "animas"
-                updated = await sync_avatars(self._app_map, animas_dir)
-                if updated:
-                    logger.info("Slack avatar sync: %d bot(s) updated", updated)
-            except Exception:
-                logger.debug("Slack avatar sync failed", exc_info=True)
 
     async def reload(self) -> dict[str, Any]:
         """Diff-based handler reload: add new, remove deleted, keep existing."""

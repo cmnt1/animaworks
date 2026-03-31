@@ -28,6 +28,18 @@ _SLACK_TIMEOUT = 30.0
 _MAX_SLACK_TEXT = 40000
 
 
+def _resolve_avatar_url(anima_name: str) -> str:
+    """Resolve avatar URL from AVATAR_URL__{name} via vault/credentials/env."""
+    key = f"AVATAR_URL__{anima_name}"
+    url = _lookup_vault_credential(key)
+    if url:
+        return url
+    url = _lookup_shared_credentials(key)
+    if url:
+        return url
+    return os.environ.get(key) or ""
+
+
 def _resolve_bot_token(anima_name: str) -> str | None:
     """Resolve the per-Anima or shared Slack bot token."""
     per_anima_key = f"SLACK_BOT_TOKEN__{anima_name}"
@@ -93,14 +105,8 @@ class SlackAutoResponder:
 
         slack_text = md_to_slack_mrkdwn(response_text)[:_MAX_SLACK_TEXT]
 
-        # Resolve icon for this Anima's Slack messages
-        icon_url = ""
-        try:
-            from core.tools._anima_icon_url import resolve_anima_icon_url
-
-            icon_url = resolve_anima_icon_url(anima_name) or ""
-        except Exception:
-            logger.debug("resolve_anima_icon_url failed for '%s'", anima_name, exc_info=True)
+        # Resolve icon URL from AVATAR_URL__{name} env/credentials
+        icon_url = _resolve_avatar_url(anima_name)
 
         posted_ts: list[str] = []
         async with httpx.AsyncClient(timeout=_SLACK_TIMEOUT) as client:
