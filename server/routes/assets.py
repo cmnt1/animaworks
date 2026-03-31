@@ -682,6 +682,27 @@ def create_assets_router() -> APIRouter:
                     detail=f"Failed to download face reference image: {exc}",
                 ) from exc
 
+            # Crop to face region (upper-center square) so that background
+            # and clothing don't bleed into vibe transfer / IP-Adapter.
+            if face_reference_bytes and not body.import_as_is:
+                try:
+                    import io as _io
+
+                    from PIL import Image as _Img
+
+                    _face_img = _Img.open(_io.BytesIO(face_reference_bytes)).convert("RGB")
+                    _fw, _fh = _face_img.size
+                    # Crop upper-center square covering ~top 60% of image
+                    _crop_size = min(_fw, int(_fh * 0.6))
+                    _left = (_fw - _crop_size) // 2
+                    _face_img = _face_img.crop((_left, 0, _left + _crop_size, _crop_size))
+                    _buf = _io.BytesIO()
+                    _face_img.save(_buf, format="PNG")
+                    face_reference_bytes = _buf.getvalue()
+                    logger.info("Face reference cropped to %dx%d square", _crop_size, _crop_size)
+                except Exception as _crop_exc:
+                    logger.warning("Face crop failed (%s), using original image", _crop_exc)
+
         # Resolve prompt (style-aware) — try cached first, then LLM synthesis, then fallback
         prompt = body.prompt
         if not prompt:
