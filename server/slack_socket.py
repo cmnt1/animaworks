@@ -432,9 +432,11 @@ class SlackSocketModeManager:
         - **Self-posted messages** (from any registered bot): Ignored to
           prevent infinite response loops.
         - **DM** (channel starts with ``D``): Always deliver to inbox.
-        - **Channel message with @mention**: Deliver to inbox.
-        - **Channel message without @mention**: Board routing only — the
-          Anima does NOT respond unless explicitly mentioned.
+        - **Channel message with @mention of this bot**: Deliver to inbox.
+        - **Channel message without @mention**:
+          - If this Anima is the ``default_anima`` (e.g. sakura/COO):
+            deliver to inbox (she responds as the channel's primary contact).
+          - Otherwise: board routing only (no inbox delivery).
         """
 
         # Reference to all known bot UIDs (shared dict, updated at runtime)
@@ -484,8 +486,21 @@ class SlackSocketModeManager:
                 user_name = _get_cached_user_name(sender) or sender
                 _route_to_board(channel_id, text, user_name)
 
-            # ── Inbox delivery: only for DMs or @mentions ──
-            if is_dm or mention_intent:
+            # ── Decide whether to deliver to inbox ──
+            # DM: always.  @mention: always.
+            # Channel without mention: only if this anima is the default_anima
+            # (e.g. sakura as COO — the primary responder for all channels).
+            is_default = False
+            if not is_dm and not mention_intent:
+                try:
+                    cfg = load_config()
+                    is_default = (anima_name == cfg.external_messaging.slack.default_anima)
+                except Exception:
+                    pass
+
+            should_deliver = is_dm or bool(mention_intent) or is_default
+
+            if should_deliver:
                 has_mention = bool(mention_intent)
                 annotation = _build_slack_annotation(channel_id, has_mention)
                 annotated = annotation + text
@@ -504,11 +519,12 @@ class SlackSocketModeManager:
                 )
 
                 logger.info(
-                    "Per-Anima Socket Mode message routed: channel=%s -> anima=%s (intent=%s, dm=%s)",
+                    "Per-Anima Socket Mode message routed: channel=%s -> anima=%s (intent=%s, dm=%s, default=%s)",
                     channel_id,
                     anima_name,
                     intent,
                     is_dm,
+                    is_default,
                 )
             else:
                 logger.debug(
