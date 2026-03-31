@@ -666,8 +666,13 @@ class LocalDiffusersClient:
                 # encoder_hid_proj (MultiIPAdapterImageProjection) is
                 # included in the offload chain and added_cond_kwargs are
                 # forwarded correctly through the UNet forward hooks.
+                #
+                # IMPORTANT: move all components to CPU *before* removing
+                # hooks, otherwise remove_all_hooks() can cause the full
+                # model to materialise on GPU and OOM on low-VRAM cards.
                 if had_cpu_offload:
                     try:
+                        pipe.to("cpu")
                         pipe.remove_all_hooks()
                         pipe.enable_model_cpu_offload()
                         logger.info(
