@@ -606,25 +606,24 @@ class LocalDiffusersClient:
         torch = _import_torch()
         return torch.Generator().manual_seed(seed)
 
-    def _ensure_ip_adapter(self, pipe: Any, cache_key: tuple) -> None:
-        """Load IP-Adapter FaceID weights onto a pipeline (lazy, once per pipeline).
+    def _ensure_ip_adapter(self, pipe: Any, cache_key: tuple) -> Any:
+        """Load IP-Adapter FaceID weights and return the ready pipeline.
 
         Uses IP-Adapter FaceID which accepts ArcFace embeddings (512-dim)
         instead of CLIP image embeddings.  This produces much better face
         similarity than the standard IP-Adapter Plus Face approach.
 
-        Call :meth:`_retire_ip_adapter` when switching away from face mode.
+        When the pipeline uses CPU offload, the entire pipeline is rebuilt
+        from scratch with IP-Adapter loaded BEFORE offload is applied.
+        This avoids the ``added_cond_kwargs`` routing bug where offload
+        hooks established before ``load_ip_adapter`` don't cover the new
+        ``encoder_hid_proj`` layer.
 
-        IMPORTANT: ``enable_model_cpu_offload`` must be (re-)applied **after**
-        IP-Adapter weights are loaded.  The offload hooks wrap the UNet forward
-        and can prevent ``added_cond_kwargs`` from being passed through when the
-        adapter is loaded onto an already-offloaded pipeline.  After a
-        successful load we therefore strip existing offload hooks and re-apply
-        ``enable_model_cpu_offload`` so the new ``encoder_hid_proj`` layer is
-        properly registered in the hook chain.
+        Returns the (possibly rebuilt) pipeline.  Callers MUST use the
+        returned reference instead of the original ``pipe``.
         """
         if cache_key in _IP_ADAPTER_LOADED:
-            return
+            return pipe
 
         ip_model = "h94/IP-Adapter-FaceID"
 
@@ -633,23 +632,73 @@ class LocalDiffusersClient:
         else:
             ip_weight = "ip-adapter-faceid_sd15.bin"
 
+        cpu_offload = self._should_use_cpu_offload()
+
+        if cpu_offload:
+            # Rebuild the pipeline from scratch so that IP-Adapter is
+            # loaded BEFORE offload hooks are applied.  This ensures
+            # encoder_hid_proj is properly included in the hook chain.
+            logger.info(
+                "Rebuilding text2img pipeline for FaceID + CPU offload "
+                "(model=%s, weight=%s)",
+                self._text2img_source, ip_weight,
+            )
+            try:
+                # Discard the old (offloaded) pipeline
+                old_pipe = _PIPELINE_CACHE.pop(cache_key, None)
+                if old_pipe is not None:
+                    try:
+                        old_pipe.remove_all_hooks()
+                    except Exception:
+                        pass
+                    del old_pipe
+
+                # Free GPU memory before rebuilding
+                torch = _import_torch()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+                # Load fresh pipeline to CPU (no offload yet)
+                auto_text2img, _ = _import_diffusers()
+                new_pipe = auto_text2img.from_pretrained(
+                    self._text2img_source, **self._pipeline_kwargs(),
+                )
+                self._apply_scheduler(new_pipe, self._text2img_source)
+
+                # Load IP-Adapter FaceID on CPU (before offload)
+                try:
+                    new_pipe.unet.set_default_attn_processor()
+                except Exception:
+                    pass
+                new_pipe.load_ip_adapter(
+                    ip_model,
+                    subfolder=None,
+                    weight_name=ip_weight,
+                    image_encoder_folder=None,
+                    local_files_only=self._local_files_only,
+                )
+
+                # NOW apply offload — hooks cover all layers including
+                # the newly added encoder_hid_proj.
+                new_pipe = self._apply_memory_optimizations(new_pipe, cpu_offload=True)
+
+                _PIPELINE_CACHE[cache_key] = new_pipe
+                _IP_ADAPTER_LOADED.add(cache_key)
+                logger.info("IP-Adapter FaceID loaded on rebuilt pipeline with CPU offload")
+                return new_pipe
+            except Exception:
+                logger.exception(
+                    "Failed to rebuild pipeline with FaceID — face reference will use img2img fallback",
+                )
+                return pipe
+
+        # Non-offload path: load IP-Adapter directly onto existing pipeline.
         logger.info(
             "Loading IP-Adapter FaceID: %s (weight=%s, model=%s)",
             ip_model, ip_weight, self._text2img_source,
         )
-
-        # Detect whether CPU-offload hooks are active on this pipeline so we
-        # can re-apply them after the IP-Adapter load.
-        had_cpu_offload = getattr(pipe, "_hf_hook", None) is not None or any(
-            getattr(m, "_hf_hook", None) is not None
-            for m in pipe.components.values() if m is not None
-        )
-
-        # Try local cache first, then auto-download if not found.
         for attempt, local_only in enumerate((self._local_files_only, False)):
             try:
-                # Reset attention processors to default before loading IP-Adapter
-                # to avoid SlicedAttnProcessor compatibility issues with diffusers.
                 try:
                     pipe.unet.set_default_attn_processor()
                 except Exception:
@@ -661,35 +710,12 @@ class LocalDiffusersClient:
                     image_encoder_folder=None,
                     local_files_only=local_only,
                 )
-
-                # Re-apply CPU-offload hooks so the newly added
-                # encoder_hid_proj (MultiIPAdapterImageProjection) is
-                # included in the offload chain and added_cond_kwargs are
-                # forwarded correctly through the UNet forward hooks.
-                #
-                # IMPORTANT: move all components to CPU *before* removing
-                # hooks, otherwise remove_all_hooks() can cause the full
-                # model to materialise on GPU and OOM on low-VRAM cards.
-                if had_cpu_offload:
-                    try:
-                        pipe.to("cpu")
-                        pipe.remove_all_hooks()
-                        pipe.enable_model_cpu_offload()
-                        logger.info(
-                            "Re-applied model CPU offload after IP-Adapter load"
-                        )
-                    except Exception:
-                        logger.warning(
-                            "Failed to re-apply CPU offload after IP-Adapter load",
-                            exc_info=True,
-                        )
-
                 _IP_ADAPTER_LOADED.add(cache_key)
                 if attempt > 0:
                     logger.info("IP-Adapter FaceID downloaded and loaded successfully")
                 else:
                     logger.info("IP-Adapter FaceID loaded from local cache")
-                return
+                return pipe
             except Exception:
                 if attempt == 0 and self._local_files_only:
                     logger.info("IP-Adapter FaceID not in local cache — attempting download …")
@@ -698,6 +724,7 @@ class LocalDiffusersClient:
                     "Failed to load IP-Adapter FaceID (%s) — face reference will use img2img fallback",
                     ip_weight,
                 )
+        return pipe
 
     def _retire_ip_adapter(self, text2img_key: tuple) -> None:
         """Unload IP-Adapter from the cached text2img pipeline if present.
@@ -800,7 +827,7 @@ class LocalDiffusersClient:
             face_embedding = _extract_arcface_embedding(face_img)
 
             pipe = self._load_text2img_pipeline()
-            self._ensure_ip_adapter(pipe, text2img_key)
+            pipe = self._ensure_ip_adapter(pipe, text2img_key)
 
             if text2img_key in _IP_ADAPTER_LOADED and face_embedding is not None:
                 torch = _import_torch()
