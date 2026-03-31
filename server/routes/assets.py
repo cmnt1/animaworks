@@ -1138,11 +1138,14 @@ def create_assets_router() -> APIRouter:
                     _sh2.rmtree(backup_dir, ignore_errors=True)
                     logger.info("Removed backup after successful rebuild: %s", backup_dir.name)
 
-                # Regenerate Slack avatar (cropped square icon)
+                # Regenerate Slack avatar (cropped square icon) and upload to XSERVER
                 try:
-                    _update_slack_avatar(name, assets_dir)
+                    if _update_slack_avatar(name, assets_dir):
+                        from server.slack_avatar_upload import upload_avatar
+
+                        upload_avatar(name)
                 except Exception:
-                    logger.debug("Slack avatar update failed for %s", name, exc_info=True)
+                    logger.debug("Slack avatar update/upload failed for %s", name, exc_info=True)
 
                 await _emit_ws(
                     "anima.remake_complete",

@@ -62,7 +62,6 @@ def ensure_slack_env_slots(anima_name: str) -> bool:
         f"# ── Slack bot for {anima_name} ──",
         f"# {bot_key}=xoxb-...",
         f"# SLACK_APP_TOKEN__{anima_name}=xapp-...",
-        f"# AVATAR_URL__{anima_name}=https://...",
     ]
     with env_path.open("a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
