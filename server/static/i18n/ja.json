@@ -137,6 +137,7 @@
   "assets.preview": "Preview",
   "assets.preview_failed": "プレビュー生成失敗",
   "assets.preview_generating": "プレビュー生成中...",
+  "assets.import_as_avatar": "アバターとしてインポート（生成スキップ）",
   "assets.preview_load_failed": "プレビュー画像の読み込みに失敗しました",
   "assets.preview_pending": "プレビュー生成待ち",
   "assets.realistic_section": "リアリスティック",

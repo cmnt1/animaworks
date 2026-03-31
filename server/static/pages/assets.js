@@ -579,6 +579,12 @@ function _openRemakeModal() {
               <img id="assetsFaceRefPreview" style="display:none;width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--aw-color-border,#ccc);">
             </div>
           </div>
+          <div class="assets-modal-control-row" id="assetsImportAsIsRow" style="display:none;">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+              <input type="checkbox" id="assetsImportAsIs">
+              ${t("assets.import_as_avatar")}
+            </label>
+          </div>
         </div>
 
         <!-- Action buttons: 3-zone layout -->
@@ -650,6 +656,12 @@ function _openRemakeModal() {
     });
   }
 
+  // Import-as-is checkbox toggles slider state
+  const importAsIsCheck = document.getElementById("assetsImportAsIs");
+  if (importAsIsCheck) {
+    importAsIsCheck.addEventListener("change", () => _updateVibeSliderState());
+  }
+
   const imageStyleSelect = document.getElementById("assetsImageStyle");
   const currentCol = overlay.querySelector(".assets-modal-col:first-child");
   const animeUrl = animeAssets.avatar_fullbody?.url || "";
@@ -693,14 +705,25 @@ function _updateVibeSliderState() {
   const faceRefUrl = document.getElementById("assetsFaceRefUrl")?.value?.trim();
   const vibeSlider = document.getElementById("assetsVibeStrength");
   const infoSlider = document.getElementById("assetsInfoExtract");
+  const importRow = document.getElementById("assetsImportAsIsRow");
+  const importCheck = document.getElementById("assetsImportAsIs");
+  const hasFaceRef = !!(faceRefUrl && faceRefUrl.startsWith("http"));
+
+  // Show import-as-is checkbox only when face reference URL is set
+  if (importRow) importRow.style.display = hasFaceRef ? "" : "none";
+  if (!hasFaceRef && importCheck) importCheck.checked = false;
+
   // Enable sliders when Style From OR Face Reference is set — both use
   // vibe_strength to control influence intensity on the backend.
-  const hasReference = !!styleFrom || !!(faceRefUrl && faceRefUrl.startsWith("http"));
+  // Disable when import-as-is is checked (no generation = no sliders needed).
+  const importAsIs = importCheck?.checked || false;
+  const hasReference = !!styleFrom || hasFaceRef;
+  const slidersEnabled = hasReference && !importAsIs;
 
   [vibeSlider, infoSlider].forEach(slider => {
     if (slider) {
-      slider.disabled = !hasReference;
-      slider.closest(".assets-modal-control-row")?.classList.toggle("assets-control-disabled", !hasReference);
+      slider.disabled = !slidersEnabled;
+      slider.closest(".assets-modal-control-row")?.classList.toggle("assets-control-disabled", !slidersEnabled);
     }
   });
 }
@@ -719,7 +742,8 @@ async function _generatePreview() {
   const acceptBtn = document.getElementById("assetsAcceptBtn");
   const previewContainer = document.getElementById("assetsPreviewContainer");
 
-  if (generateBtn) { generateBtn.disabled = true; generateBtn.textContent = "Generating..."; }
+  const importAsIs = document.getElementById("assetsImportAsIs")?.checked || false;
+  if (generateBtn) { generateBtn.disabled = true; generateBtn.textContent = importAsIs ? "Importing..." : "Generating..."; }
   if (retryBtn) { retryBtn.disabled = true; }
   if (acceptBtn) { acceptBtn.disabled = true; }
 
@@ -741,6 +765,7 @@ async function _generatePreview() {
   if (styleFrom) requestBody.style_from = styleFrom;
   if (_previewBackupId) requestBody.backup_id = _previewBackupId;
   if (faceRefUrl) requestBody.face_reference_url = faceRefUrl;
+  if (importAsIs) requestBody.import_as_is = true;
 
   try {
     const result = await api(`/api/animas/${enc}/assets/remake-preview`, {

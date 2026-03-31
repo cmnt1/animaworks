@@ -137,6 +137,7 @@
   "assets.preview": "Preview",
   "assets.preview_failed": "Preview generation failed",
   "assets.preview_generating": "Generating preview...",
+  "assets.import_as_avatar": "Import as avatar (skip generation)",
   "assets.preview_load_failed": "Failed to load preview image",
   "assets.preview_pending": "Waiting for preview",
   "assets.realistic_section": "Realistic",

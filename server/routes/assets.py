@@ -68,6 +68,7 @@ class RemakePreviewRequest(BaseModel):
     image_style: str | None = None
     backup_id: str | None = None
     face_reference_url: str | None = None  # URL of a face photo for IP-Adapter
+    import_as_is: bool = False  # Import face reference directly as avatar
 
     @field_validator("vibe_strength", "vibe_info_extracted")
     @classmethod
@@ -851,6 +852,24 @@ def create_assets_router() -> APIRouter:
                     "seed_used": _seed_used,
                     "backup_id": backup_id,
                 })
+
+            # ── Import as-is: use face reference directly as avatar ──
+            if body.import_as_is and face_reference_bytes is not None:
+                try:
+                    import io as _io
+
+                    from PIL import Image as _Img
+
+                    img = _Img.open(_io.BytesIO(face_reference_bytes)).convert("RGB")
+                    target_w, target_h = (512, 768) if is_realistic else (512, 512)
+                    img = img.resize((target_w, target_h), _Img.LANCZOS)
+                    buf = _io.BytesIO()
+                    img.save(buf, format="PNG", optimize=True)
+                    logger.info("Import-as-is used for '%s'", name)
+                    await _emit_ready(buf.getvalue())
+                    return
+                except Exception as _import_exc:
+                    logger.warning("Import-as-is failed (%s), falling back to generation", _import_exc)
 
             # ── Fast path: PIL resize when a reference image is available ──
             # When vibe_image (style_from fullbody) is provided and VRAM is low,
