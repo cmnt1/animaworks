@@ -861,8 +861,9 @@ def create_assets_router() -> APIRouter:
                     from PIL import Image as _Img
 
                     img = _Img.open(_io.BytesIO(face_reference_bytes)).convert("RGB")
-                    target_w, target_h = (512, 768) if is_realistic else (512, 512)
-                    img = img.resize((target_w, target_h), _Img.LANCZOS)
+                    # Fit within max dimensions while preserving aspect ratio
+                    max_w, max_h = (512, 768) if is_realistic else (512, 512)
+                    img.thumbnail((max_w, max_h), _Img.LANCZOS)
                     buf = _io.BytesIO()
                     img.save(buf, format="PNG", optimize=True)
                     logger.info("Import-as-is used for '%s'", name)
