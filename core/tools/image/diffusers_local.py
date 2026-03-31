@@ -308,6 +308,23 @@ class LocalDiffusersClient:
         return image.convert("RGB")
 
     @staticmethod
+    def _pad_to_size(image: Any, width: int, height: int) -> Any:
+        """Resize image to fit within width x height, then pad to exact size.
+
+        Preserves aspect ratio by fitting image within the target dimensions
+        and centering it on a neutral background.
+        """
+        image_cls, _ = _import_pil()
+        img = image.copy()
+        img.thumbnail((width, height), image_cls.LANCZOS)
+        # Center on neutral background
+        bg = image_cls.new("RGB", (width, height), (128, 128, 128))
+        offset_x = (width - img.width) // 2
+        offset_y = (height - img.height) // 2
+        bg.paste(img, (offset_x, offset_y))
+        return bg
+
+    @staticmethod
     def _crop_to_face(image: Any) -> Any:
         """Detect face via OpenCV Haar cascade and crop tightly around it.
 
@@ -399,6 +416,12 @@ class LocalDiffusersClient:
         # Try local cache first, then auto-download if not found.
         for attempt, local_only in enumerate((self._local_files_only, False)):
             try:
+                # Reset attention processors to default before loading IP-Adapter
+                # to avoid SlicedAttnProcessor compatibility issues with diffusers.
+                try:
+                    pipe.unet.set_default_attn_processor()
+                except Exception:
+                    pass
                 pipe.load_ip_adapter(
                     ip_model,
                     subfolder=subfolder,
@@ -556,7 +579,9 @@ class LocalDiffusersClient:
                     face_strength, (1 - face_strength) * 100,
                 )
                 pipe = self._load_img2img_pipeline()
-                reference = self._crop_to_face(self._read_image(face_reference_image)).resize((width, height))
+                face_crop = self._crop_to_face(self._read_image(face_reference_image))
+                # Pad to target aspect ratio instead of stretching to avoid distortion
+                reference = self._pad_to_size(face_crop, width, height)
                 result = pipe(
                     **common_kwargs,
                     image=reference,
