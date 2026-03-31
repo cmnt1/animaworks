@@ -48,18 +48,18 @@ _CONVERSATIONS_CREATE_URL = "https://slack.com/api/conversations.create"
 # ---------------------------------------------------------------------------
 
 async def _list_public_channels(token: str) -> list[dict[str, Any]]:
-    """Call ``conversations.list`` to get all visible public channels.
+    """Call ``conversations.list`` to get all visible channels.
 
-    Returns all public channels the bot can see (not just ones it has
-    joined).  Each dict includes ``is_member`` so callers can decide
-    whether to join.
+    Returns all public channels the bot can see plus private channels
+    the bot has been invited to.  Each dict includes ``is_member`` so
+    callers can decide whether to join.
     """
     channels: list[dict[str, Any]] = []
     cursor = ""
     async with httpx.AsyncClient(timeout=_SLACK_TIMEOUT) as client:
         for _ in range(20):  # pagination safety limit
             params: dict[str, Any] = {
-                "types": "public_channel",
+                "types": "public_channel,private_channel",
                 "exclude_archived": "true",
                 "limit": 200,
             }
@@ -273,11 +273,14 @@ class SlackChannelSync:
             )
             return self.board_mapping
 
+        n_public = sum(1 for c in channels if not c.get("is_private"))
+        n_private = len(channels) - n_public
         logger.info(
-            "SlackChannelSync: %s found %d public channels", default_anima, len(channels)
+            "SlackChannelSync: %s found %d channels (%d public, %d private)",
+            default_anima, len(channels), n_public, n_private,
         )
 
-        channel_ids_to_join: list[tuple[str, str]] = []  # (ch_id, ch_name)
+        channel_ids_to_join: list[tuple[str, str]] = []  # (ch_id, ch_name) — public only
         slack_channel_names: set[str] = set()
 
         for ch in channels:
@@ -288,6 +291,7 @@ class SlackChannelSync:
             if ch_id.startswith(("D", "G")):
                 continue
 
+            is_private = ch.get("is_private", False)
             slack_channel_names.add(ch_name)
 
             board_name = ch_name
@@ -295,7 +299,9 @@ class SlackChannelSync:
                 new_boards += 1
 
             self.board_mapping[ch_id] = board_name
-            channel_ids_to_join.append((ch_id, ch_name))
+            # Only auto-join public channels; private channels require manual invite
+            if not is_private:
+                channel_ids_to_join.append((ch_id, ch_name))
 
         # ── Phase 2: Reverse sync (AnimaWorks boards -> Slack channels) ──
         local_boards = _list_local_boards(shared_dir)
