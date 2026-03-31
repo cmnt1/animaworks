@@ -25,223 +25,107 @@ _ASPECT_SIZES: dict[str, tuple[int, int]] = {
 _PIPELINE_CACHE: dict[tuple[str, str, str, str], Any] = {}
 _IP_ADAPTER_LOADED: set[tuple[str, str, str, str]] = set()
 
-# ── ArcFace embedding extraction via onnxruntime ──────────
+# ── SCRFD face detection via onnxruntime (cv2-free) ──────────
 
-_ARCFACE_SESSION: Any | None = None
 _SCRFD_SESSION: Any | None = None
-
-
-def _resolve_onnx_path(repo_id: str, filename: str) -> str | None:
-    """Resolve path to an ONNX model in the HuggingFace cache."""
-    cache_dir = _HF_CACHE_ROOT / ("models--" + repo_id.replace("/", "--"))
-    snapshots_dir = cache_dir / "snapshots"
-    if not snapshots_dir.is_dir():
-        return None
-    for snap in sorted(snapshots_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        candidate = snap / filename
-        if candidate.is_file():
-            return str(candidate)
-    return None
+_SCRFD_INIT_ATTEMPTED: bool = False
 
 
 def _get_scrfd_session() -> Any | None:
     """Lazy-load SCRFD face detection ONNX session."""
-    global _SCRFD_SESSION  # noqa: PLW0603
-    if _SCRFD_SESSION is not None:
+    global _SCRFD_SESSION, _SCRFD_INIT_ATTEMPTED  # noqa: PLW0603
+    if _SCRFD_INIT_ATTEMPTED:
         return _SCRFD_SESSION
+    _SCRFD_INIT_ATTEMPTED = True
     try:
         import onnxruntime as ort
     except ImportError:
-        logger.debug("onnxruntime not available — face detection disabled")
+        logger.debug("onnxruntime not available — SCRFD face detection disabled")
         return None
-    path = _resolve_onnx_path("DIAMONIK7777/antelopev2", "scrfd_10g_bnkps.onnx")
+    repo_id = "DIAMONIK7777/antelopev2"
+    cache_dir = _HF_CACHE_ROOT / ("models--" + repo_id.replace("/", "--"))
+    snapshots_dir = cache_dir / "snapshots"
+    if not snapshots_dir.is_dir():
+        logger.info("SCRFD model not in HF cache — SCRFD disabled")
+        return None
+    path: str | None = None
+    for snap in sorted(snapshots_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        candidate = snap / "scrfd_10g_bnkps.onnx"
+        if candidate.is_file():
+            path = str(candidate)
+            break
     if path is None:
-        logger.warning("SCRFD model not found in HF cache — face detection disabled")
+        logger.info("scrfd_10g_bnkps.onnx not found — SCRFD disabled")
         return None
     _SCRFD_SESSION = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
     logger.info("SCRFD face detection model loaded: %s", path)
     return _SCRFD_SESSION
 
 
-def _get_arcface_session() -> Any | None:
-    """Lazy-load ArcFace recognition ONNX session."""
-    global _ARCFACE_SESSION  # noqa: PLW0603
-    if _ARCFACE_SESSION is not None:
-        return _ARCFACE_SESSION
-    try:
-        import onnxruntime as ort
-    except ImportError:
-        logger.debug("onnxruntime not available — ArcFace disabled")
-        return None
-    path = _resolve_onnx_path("DIAMONIK7777/antelopev2", "glintr100.onnx")
-    if path is None:
-        logger.warning("ArcFace model not found in HF cache — face ID disabled")
-        return None
-    _ARCFACE_SESSION = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
-    logger.info("ArcFace recognition model loaded: %s", path)
-    return _ARCFACE_SESSION
+def _scrfd_detect_largest(image_rgb: Any) -> tuple[int, int, int, int] | None:
+    """Detect the largest face in an RGB numpy array via SCRFD.
 
-
-def _scrfd_detect(image_bgr: Any, session: Any) -> list[tuple[int, int, int, int, list[tuple[float, float]]]]:
-    """Run SCRFD face detection. Returns list of (x1, y1, x2, y2, landmarks).
-
-    The SCRFD model expects 640x640 input.  We letterbox the image and
-    rescale detections back to original coordinates.
+    Returns ``(x1, y1, x2, y2)`` or ``None`` if no face found.
     """
-    import numpy as np
+    session = _get_scrfd_session()
+    if session is None:
+        return None
+    try:
+        import numpy as np
 
-    h0, w0 = image_bgr.shape[:2]
-    target = 640
-    scale = min(target / h0, target / w0)
-    nw, nh = int(w0 * scale), int(h0 * scale)
+        h0, w0 = image_rgb.shape[:2]
+        target = 640
+        scale = min(target / h0, target / w0)
+        nw, nh = int(w0 * scale), int(h0 * scale)
 
-    import cv2
+        # Resize using PIL to avoid cv2 dependency
+        image_cls, _ = _import_pil()
+        pil_img = image_cls.fromarray(image_rgb)
+        resized = np.array(pil_img.resize((nw, nh), image_cls.BILINEAR))
 
-    resized = cv2.resize(image_bgr, (nw, nh))
-    padded = np.zeros((target, target, 3), dtype=np.uint8)
-    padded[:nh, :nw] = resized
+        padded = np.zeros((target, target, 3), dtype=np.uint8)
+        padded[:nh, :nw] = resized
 
-    blob = (padded.astype(np.float32) - 127.5) / 128.0
-    blob = blob.transpose(2, 0, 1)[np.newaxis]
+        blob = (padded.astype(np.float32) - 127.5) / 128.0
+        blob = blob.transpose(2, 0, 1)[np.newaxis]
 
-    outputs = session.run(None, {session.get_inputs()[0].name: blob})
+        outputs = session.run(None, {session.get_inputs()[0].name: blob})
 
-    # SCRFD outputs: [scores_8, bboxes_8, kps_8, scores_16, bboxes_16, kps_16, scores_32, bboxes_32, kps_32]
-    results: list[tuple[int, int, int, int, list[tuple[float, float]]]] = []
-    strides = [8, 16, 32]
-    threshold = 0.5
+        # SCRFD outputs: [scores, bboxes, kps] × 3 strides (8, 16, 32)
+        best_box: tuple[int, int, int, int] | None = None
+        best_area = 0
+        threshold = 0.5
+        strides = [8, 16, 32]
 
-    for idx, stride in enumerate(strides):
-        scores = outputs[idx * 3]
-        bboxes = outputs[idx * 3 + 1]
-        kps_raw = outputs[idx * 3 + 2]
+        for idx, stride in enumerate(strides):
+            scores = outputs[idx * 3]
+            bboxes = outputs[idx * 3 + 1]
+            feat_w = target // stride
 
-        feat_h = target // stride
-        feat_w = target // stride
-
-        for i in range(scores.shape[1]):
-            if scores[0, i, 0] < threshold:
-                continue
-            # bboxes are in distance format (left, top, right, bottom from anchor)
-            anchor_y = (i // feat_w) * stride
-            anchor_x = (i % feat_w) * stride
-
-            x1 = (anchor_x - bboxes[0, i, 0] * stride) / scale
-            y1 = (anchor_y - bboxes[0, i, 1] * stride) / scale
-            x2 = (anchor_x + bboxes[0, i, 2] * stride) / scale
-            y2 = (anchor_y + bboxes[0, i, 3] * stride) / scale
-
-            # 5-point landmarks
-            landmarks: list[tuple[float, float]] = []
-            for j in range(5):
-                lx = (anchor_x + kps_raw[0, i, j * 2] * stride) / scale
-                ly = (anchor_y + kps_raw[0, i, j * 2 + 1] * stride) / scale
-                landmarks.append((lx, ly))
-
-            results.append((int(x1), int(y1), int(x2), int(y2), landmarks))
-
-    # NMS
-    if len(results) > 1:
-        boxes = np.array([[r[0], r[1], r[2], r[3]] for r in results], dtype=np.float32)
-        areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
-        order = areas.argsort()[::-1]
-        keep: list[int] = []
-        suppressed = set()
-        for oi in order:
-            if oi in suppressed:
-                continue
-            keep.append(oi)
-            for oj in order:
-                if oj in suppressed or oj == oi:
+            for i in range(scores.shape[1]):
+                if scores[0, i, 0] < threshold:
                     continue
-                xx1 = max(boxes[oi, 0], boxes[oj, 0])
-                yy1 = max(boxes[oi, 1], boxes[oj, 1])
-                xx2 = min(boxes[oi, 2], boxes[oj, 2])
-                yy2 = min(boxes[oi, 3], boxes[oj, 3])
-                inter = max(0, xx2 - xx1) * max(0, yy2 - yy1)
-                iou = inter / (areas[oi] + areas[oj] - inter + 1e-6)
-                if iou > 0.4:
-                    suppressed.add(oj)
-        results = [results[i] for i in keep]
+                anchor_y = (i // feat_w) * stride
+                anchor_x = (i % feat_w) * stride
 
-    return results
+                x1 = int((anchor_x - bboxes[0, i, 0] * stride) / scale)
+                y1 = int((anchor_y - bboxes[0, i, 1] * stride) / scale)
+                x2 = int((anchor_x + bboxes[0, i, 2] * stride) / scale)
+                y2 = int((anchor_y + bboxes[0, i, 3] * stride) / scale)
 
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(w0, x2), min(h0, y2)
+                area = (x2 - x1) * (y2 - y1)
+                if area > best_area:
+                    best_area = area
+                    best_box = (x1, y1, x2, y2)
 
-def _align_face_arcface(image_bgr: Any, landmarks: list[tuple[float, float]]) -> Any:
-    """Align face to ArcFace standard 112x112 using 5-point landmarks.
-
-    Uses the standard ArcFace alignment template (same as insightface).
-    """
-    import cv2
-    import numpy as np
-
-    # Standard ArcFace 112x112 destination landmarks
-    dst = np.array([
-        [38.2946, 51.6963],
-        [73.5318, 51.5014],
-        [56.0252, 71.7366],
-        [41.5493, 92.3655],
-        [70.7299, 92.2041],
-    ], dtype=np.float32)
-
-    src = np.array(landmarks, dtype=np.float32)
-    M = cv2.estimateAffinePartial2D(src, dst)[0]
-    if M is None:
-        # Fallback: simple resize
-        return cv2.resize(image_bgr, (112, 112))
-    aligned = cv2.warpAffine(image_bgr, M, (112, 112), borderValue=0)
-    return aligned
-
-
-def _extract_arcface_embedding(image_pil: Any) -> Any | None:
-    """Extract 512-dim ArcFace face embedding from a PIL image.
-
-    Uses SCRFD for detection and glintr100 for recognition, both via
-    onnxruntime — no insightface package required.
-
-    Returns a numpy array of shape (512,) or None if no face detected.
-    """
-    import numpy as np
-
-    try:
-        import cv2
-    except ImportError:
-        logger.warning("OpenCV not available — ArcFace embedding extraction disabled")
+        if best_box is not None:
+            logger.info("SCRFD detected face at (%d,%d)-(%d,%d)", *best_box)
+        return best_box
+    except Exception:
+        logger.warning("SCRFD detection failed", exc_info=True)
         return None
-
-    scrfd = _get_scrfd_session()
-    arcface = _get_arcface_session()
-    if scrfd is None or arcface is None:
-        return None
-
-    arr = np.array(image_pil)
-    bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-
-    faces = _scrfd_detect(bgr, scrfd)
-    if not faces:
-        logger.info("No face detected by SCRFD — cannot extract embedding")
-        return None
-
-    # Pick largest face
-    best = max(faces, key=lambda f: (f[2] - f[0]) * (f[3] - f[1]))
-    x1, y1, x2, y2, landmarks = best
-    logger.info("SCRFD detected face at (%d,%d)-(%d,%d)", x1, y1, x2, y2)
-
-    # Align face for ArcFace
-    aligned = _align_face_arcface(bgr, landmarks)
-
-    # Preprocess for ArcFace: BGR float32, normalize
-    blob = cv2.dnn.blobFromImage(
-        aligned, 1.0 / 127.5, (112, 112), (127.5, 127.5, 127.5), swapRB=False,
-    )
-
-    embedding = arcface.run(None, {arcface.get_inputs()[0].name: blob})[0][0]
-    # Normalize
-    norm = np.linalg.norm(embedding)
-    if norm > 0:
-        embedding = embedding / norm
-    logger.info("ArcFace embedding extracted: dim=%d, norm=%.4f", len(embedding), np.linalg.norm(embedding))
-    return embedding
 
 
 def _import_torch() -> Any:
@@ -544,60 +428,69 @@ class LocalDiffusersClient:
 
     @staticmethod
     def _crop_to_face(image: Any) -> Any:
-        """Detect face via OpenCV Haar cascade and crop tightly around it.
+        """Detect face via SCRFD (onnxruntime) and crop tightly around it.
 
-        Returns the cropped face region (with margin) or the original image
-        if detection fails.  This prevents background/clothing from leaking
-        into IP-Adapter embeddings.
+        Falls back to OpenCV Haar cascade if SCRFD model is unavailable,
+        and returns the original image if no detector works.
+        This prevents background/clothing from leaking into IP-Adapter
+        embeddings.
         """
-        try:
-            import cv2
-            import numpy as np
+        import numpy as np
 
-            arr = np.array(image)
-            gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-            cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + "haarcascade_frontalface_default.xml",
-            )
-            faces = cascade.detectMultiScale(
-                gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30),
-            )
-            if len(faces) == 0:
-                logger.info("No face detected in reference — using full image")
-                return image
+        arr = np.array(image)
+        ih, iw = arr.shape[:2]
 
-            # Pick the largest face
-            x, y, w, h = max(faces, key=lambda r: r[2] * r[3])
-            # Expand by 50% for forehead/chin/cheek margin
-            margin = int(max(w, h) * 0.5)
-            ih, iw = arr.shape[:2]
-            x1, y1 = max(0, x - margin), max(0, y - margin)
-            x2, y2 = min(iw, x + w + margin), min(ih, y + h + margin)
-            # Make square (IP-Adapter expects square input)
-            side = max(x2 - x1, y2 - y1)
-            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-            x1 = max(0, cx - side // 2)
-            y1 = max(0, cy - side // 2)
-            x2 = min(iw, x1 + side)
-            y2 = min(ih, y1 + side)
-            # Adjust if clamped
-            if x2 - x1 < side:
-                x1 = max(0, x2 - side)
-            if y2 - y1 < side:
-                y1 = max(0, y2 - side)
+        # ── Try SCRFD (onnxruntime) first — no cv2 dependency ────
+        face_box = _scrfd_detect_largest(arr)
 
-            cropped = image.crop((x1, y1, x2, y2))
-            logger.info(
-                "Face detected: crop (%d,%d)-(%d,%d) from %dx%d",
-                x1, y1, x2, y2, iw, ih,
-            )
-            return cropped
-        except ImportError:
-            logger.debug("OpenCV not available — skipping face crop")
+        # ── Fallback: OpenCV Haar cascade ────
+        if face_box is None:
+            try:
+                import cv2
+
+                gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+                cascade = cv2.CascadeClassifier(
+                    cv2.data.haarcascades + "haarcascade_frontalface_default.xml",
+                )
+                faces = cascade.detectMultiScale(
+                    gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30),
+                )
+                if len(faces) > 0:
+                    bx, by, bw, bh = max(faces, key=lambda r: r[2] * r[3])
+                    face_box = (bx, by, bx + bw, by + bh)
+            except ImportError:
+                logger.debug("OpenCV not available — skipping Haar fallback")
+            except Exception:
+                logger.debug("Haar cascade failed", exc_info=True)
+
+        if face_box is None:
+            logger.info("No face detected in reference — using full image")
             return image
-        except Exception:
-            logger.warning("Face detection failed — using full image", exc_info=True)
-            return image
+
+        x1, y1, x2, y2 = face_box
+        # Expand by 50% for forehead/chin/cheek margin
+        w, h = x2 - x1, y2 - y1
+        margin = int(max(w, h) * 0.5)
+        x1, y1 = max(0, x1 - margin), max(0, y1 - margin)
+        x2, y2 = min(iw, x2 + margin), min(ih, y2 + margin)
+        # Make square (IP-Adapter expects square input)
+        side = max(x2 - x1, y2 - y1)
+        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+        x1 = max(0, cx - side // 2)
+        y1 = max(0, cy - side // 2)
+        x2 = min(iw, x1 + side)
+        y2 = min(ih, y1 + side)
+        if x2 - x1 < side:
+            x1 = max(0, x2 - side)
+        if y2 - y1 < side:
+            y1 = max(0, y2 - side)
+
+        cropped = image.crop((x1, y1, x2, y2))
+        logger.info(
+            "Face detected: crop (%d,%d)-(%d,%d) from %dx%d",
+            x1, y1, x2, y2, iw, ih,
+        )
+        return cropped
 
     @staticmethod
     def _make_generator(seed: int | None) -> Any:
@@ -606,125 +499,61 @@ class LocalDiffusersClient:
         torch = _import_torch()
         return torch.Generator().manual_seed(seed)
 
-    def _ensure_ip_adapter(self, pipe: Any, cache_key: tuple) -> Any:
-        """Load IP-Adapter FaceID weights and return the ready pipeline.
+    def _ensure_ip_adapter(self, pipe: Any, cache_key: tuple) -> None:
+        """Load IP-Adapter face weights onto a pipeline (lazy, once per pipeline).
 
-        Uses IP-Adapter FaceID which accepts ArcFace embeddings (512-dim)
-        instead of CLIP image embeddings.  This produces much better face
-        similarity than the standard IP-Adapter Plus Face approach.
-
-        When the pipeline uses CPU offload, the entire pipeline is rebuilt
-        from scratch with IP-Adapter loaded BEFORE offload is applied.
-        This avoids the ``added_cond_kwargs`` routing bug where offload
-        hooks established before ``load_ip_adapter`` don't cover the new
-        ``encoder_hid_proj`` layer.
-
-        Returns the (possibly rebuilt) pipeline.  Callers MUST use the
-        returned reference instead of the original ``pipe``.
+        Supports both SDXL and SD 1.5 class models with appropriate weights.
+        IP-Adapter stays loaded across retries to avoid load/unload cycling
+        which degrades UNet weights.  Call :meth:`_retire_ip_adapter` when
+        switching to a non-face-reference generation mode.
         """
         if cache_key in _IP_ADAPTER_LOADED:
-            return pipe
+            return
 
-        ip_model = "h94/IP-Adapter-FaceID"
+        ip_model = getattr(self._config, "ip_adapter_model", "h94/IP-Adapter")
 
         if self._is_sdxl(self._text2img_source):
-            ip_weight = "ip-adapter-faceid_sdxl.bin"
+            ip_weight = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+            subfolder = "sdxl_models"
         else:
-            ip_weight = "ip-adapter-faceid_sd15.bin"
+            ip_weight = "ip-adapter-plus-face_sd15.bin"
+            subfolder = "models"
 
-        cpu_offload = self._should_use_cpu_offload()
-
-        if cpu_offload:
-            # Rebuild the pipeline from scratch so that IP-Adapter is
-            # loaded BEFORE offload hooks are applied.  This ensures
-            # encoder_hid_proj is properly included in the hook chain.
-            logger.info(
-                "Rebuilding text2img pipeline for FaceID + CPU offload "
-                "(model=%s, weight=%s)",
-                self._text2img_source, ip_weight,
-            )
-            try:
-                # Discard the old (offloaded) pipeline
-                old_pipe = _PIPELINE_CACHE.pop(cache_key, None)
-                if old_pipe is not None:
-                    try:
-                        old_pipe.remove_all_hooks()
-                    except Exception:
-                        pass
-                    del old_pipe
-
-                # Free GPU memory before rebuilding
-                torch = _import_torch()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
-                # Load fresh pipeline to CPU (no offload yet)
-                auto_text2img, _ = _import_diffusers()
-                new_pipe = auto_text2img.from_pretrained(
-                    self._text2img_source, **self._pipeline_kwargs(),
-                )
-                self._apply_scheduler(new_pipe, self._text2img_source)
-
-                # Load IP-Adapter FaceID on CPU (before offload)
-                try:
-                    new_pipe.unet.set_default_attn_processor()
-                except Exception:
-                    pass
-                new_pipe.load_ip_adapter(
-                    ip_model,
-                    subfolder=None,
-                    weight_name=ip_weight,
-                    image_encoder_folder=None,
-                    local_files_only=self._local_files_only,
-                )
-
-                # NOW apply offload — hooks cover all layers including
-                # the newly added encoder_hid_proj.
-                new_pipe = self._apply_memory_optimizations(new_pipe, cpu_offload=True)
-
-                _PIPELINE_CACHE[cache_key] = new_pipe
-                _IP_ADAPTER_LOADED.add(cache_key)
-                logger.info("IP-Adapter FaceID loaded on rebuilt pipeline with CPU offload")
-                return new_pipe
-            except Exception:
-                logger.exception(
-                    "Failed to rebuild pipeline with FaceID — face reference will use img2img fallback",
-                )
-                return pipe
-
-        # Non-offload path: load IP-Adapter directly onto existing pipeline.
         logger.info(
-            "Loading IP-Adapter FaceID: %s (weight=%s, model=%s)",
-            ip_model, ip_weight, self._text2img_source,
+            "Loading IP-Adapter: %s (subfolder=%s, weight=%s, model=%s)",
+            ip_model, subfolder, ip_weight, self._text2img_source,
         )
+
+        # Try local cache first, then auto-download if not found.
         for attempt, local_only in enumerate((self._local_files_only, False)):
             try:
+                # Reset attention processors to default before loading IP-Adapter
+                # to avoid SlicedAttnProcessor compatibility issues with diffusers.
                 try:
                     pipe.unet.set_default_attn_processor()
                 except Exception:
                     pass
                 pipe.load_ip_adapter(
                     ip_model,
-                    subfolder=None,
+                    subfolder=subfolder,
                     weight_name=ip_weight,
-                    image_encoder_folder=None,
+                    image_encoder_folder="models/image_encoder",
                     local_files_only=local_only,
                 )
                 _IP_ADAPTER_LOADED.add(cache_key)
                 if attempt > 0:
-                    logger.info("IP-Adapter FaceID downloaded and loaded successfully")
+                    logger.info("IP-Adapter downloaded and loaded successfully")
                 else:
-                    logger.info("IP-Adapter FaceID loaded from local cache")
-                return pipe
+                    logger.info("IP-Adapter loaded from local cache")
+                return
             except Exception:
                 if attempt == 0 and self._local_files_only:
-                    logger.info("IP-Adapter FaceID not in local cache — attempting download …")
+                    logger.info("IP-Adapter not in local cache — attempting download …")
                     continue
                 logger.exception(
-                    "Failed to load IP-Adapter FaceID (%s) — face reference will use img2img fallback",
-                    ip_weight,
+                    "Failed to load IP-Adapter (%s/%s) — face reference will use img2img fallback",
+                    subfolder, ip_weight,
                 )
-        return pipe
 
     def _retire_ip_adapter(self, text2img_key: tuple) -> None:
         """Unload IP-Adapter from the cached text2img pipeline if present.
@@ -772,8 +601,8 @@ class LocalDiffusersClient:
     ) -> bytes:
         """Generate a full-body character image locally.
 
-        If *face_reference_image* is provided, IP-Adapter FaceID is used
-        to inject facial identity from the reference via ArcFace embeddings.
+        If *face_reference_image* is provided, IP-Adapter (Plus Face) is used
+        to inject the facial features from the reference into the generation.
         This takes priority over *vibe_image* when both are supplied.
 
         *step_callback(current_step, total_steps)* is called after each
@@ -820,58 +649,49 @@ class LocalDiffusersClient:
         text2img_key = ("text2img", self._text2img_source, self._device, self._dtype_name)
 
         if face_reference_image is not None:
-            # IP-Adapter FaceID: extract ArcFace embedding and use it for
-            # identity-preserving generation.  Falls back to img2img if
-            # embedding extraction or FaceID weights are unavailable.
-            face_img = self._read_image(face_reference_image)
-            face_embedding = _extract_arcface_embedding(face_img)
-
+            # IP-Adapter face reference → text2img + adapter.
+            # IP-Adapter stays loaded across retries to avoid repeated
+            # load/unload cycles that degrade UNet weights.
             pipe = self._load_text2img_pipeline()
-            pipe = self._ensure_ip_adapter(pipe, text2img_key)
+            self._ensure_ip_adapter(pipe, text2img_key)
 
-            if text2img_key in _IP_ADAPTER_LOADED and face_embedding is not None:
-                torch = _import_torch()
-
+            if text2img_key in _IP_ADAPTER_LOADED:
+                # Use vibe_strength from the request so the UI slider
+                # controls face influence.  Fall back to config default.
                 ip_scale = vibe_strength if vibe_strength is not None else float(
                     getattr(self._config, "ip_adapter_scale", 0.6),
                 )
                 pipe.set_ip_adapter_scale(ip_scale)
-
-                # Build FaceID embedding tensors for classifier-free guidance:
-                # [negative_embed, positive_embed] concatenated along batch dim.
-                embed_t = torch.from_numpy(face_embedding).unsqueeze(0).unsqueeze(0)  # (1, 1, 512)
-                neg_embed_t = torch.zeros_like(embed_t)
-                id_embeds = torch.cat([neg_embed_t, embed_t]).to(
-                    dtype=self._resolve_torch_dtype(),
-                    device=self._device if not cpu_offload else "cpu",
-                )
-
-                common_kwargs["ip_adapter_image_embeds"] = [id_embeds]
-                logger.info(
-                    "Generating with IP-Adapter FaceID (scale=%.2f, embed shape=%s)",
-                    ip_scale, list(id_embeds.shape),
-                )
+                face_img = self._crop_to_face(self._read_image(face_reference_image))
+                common_kwargs["ip_adapter_image"] = face_img
+                logger.info("Generating with IP-Adapter face reference (scale=%.2f)", ip_scale)
 
                 result = pipe(**common_kwargs, width=width, height=height)
 
-                # Invalidate img2img cache so bustup/expressions get fresh pipeline
+                # Keep IP-Adapter loaded — no unload here.  Invalidate
+                # img2img cache so bustup/expressions get a fresh pipeline
+                # (via _retire_ip_adapter in _load_img2img_pipeline).
                 img2img_key = ("img2img", self._img2img_source, self._device, self._dtype_name)
                 _PIPELINE_CACHE.pop(img2img_key, None)
             else:
-                # FaceID unavailable — fall back to img2img with face crop.
-                if face_embedding is None:
-                    logger.warning("ArcFace embedding extraction failed — falling back to img2img")
-                else:
-                    logger.warning("IP-Adapter FaceID not loaded — falling back to img2img")
-
+                # IP-Adapter unavailable (weights missing or download failed).
+                # Fall back to img2img so the face reference still has an
+                # effect rather than being silently ignored.
+                #
+                # Strength mapping is INVERTED for face reference: the UI
+                # slider means "face influence" (higher = more face), but
+                # img2img strength means "how much to regenerate" (higher =
+                # less reference).  So we flip: slider 0.6 → strength 0.4.
                 face_strength = 1.0 - (vibe_strength if vibe_strength is not None else 0.6)
                 face_strength = max(0.15, min(0.85, face_strength))
-                logger.info(
-                    "img2img fallback (strength=%.2f, %.0f%% face preserved)",
+                logger.warning(
+                    "IP-Adapter not available — falling back to img2img with face reference "
+                    "(strength=%.2f, i.e. %.0f%% face preserved)",
                     face_strength, (1 - face_strength) * 100,
                 )
                 pipe = self._load_img2img_pipeline()
-                face_crop = self._crop_to_face(face_img)
+                face_crop = self._crop_to_face(self._read_image(face_reference_image))
+                # Pad to target aspect ratio instead of stretching to avoid distortion
                 reference = self._pad_to_size(face_crop, width, height)
                 result = pipe(
                     **common_kwargs,
