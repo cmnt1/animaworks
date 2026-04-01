@@ -93,6 +93,14 @@ class TestModeRouting:
         )
         assert agent._resolve_execution_mode() == "c"
 
+    def test_openai_codex_routes_to_c(self, make_agent_core):
+        """openai-codex/* alias → Mode C."""
+        agent = make_agent_core(
+            name="openai-codex-gpt",
+            model="openai-codex/gpt-5.3-codex",
+        )
+        assert agent._resolve_execution_mode() == "c"
+
     def test_codex_explicit_a_override(self, make_agent_core):
         """Codex model + explicit execution_mode='A' → Mode A (override wins)."""
         agent = make_agent_core(

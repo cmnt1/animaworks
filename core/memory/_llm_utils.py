@@ -145,7 +145,7 @@ def _is_anthropic_model(model: str) -> bool:
 
 def _is_codex_model(model: str) -> bool:
     """Return True if *model* is a Codex model routed via the Codex CLI."""
-    return model.startswith("codex/")
+    return model.startswith("codex/") or model.startswith("openai-codex/")
 
 
 def _strip_provider_prefix(model: str) -> str:

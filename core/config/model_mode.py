@@ -36,6 +36,7 @@ DEFAULT_MODEL_MODE_PATTERNS: dict[str, str] = {
     "claude-*": "S",
     # ── C: Codex SDK (Codex CLI wrapper) ─────────────────
     "codex/*": "C",
+    "openai-codex/*": "C",
     # ── D: Cursor Agent CLI ──────────────────────────────
     "cursor/*": "D",
     # ── G: Gemini CLI ────────────────────────────────────

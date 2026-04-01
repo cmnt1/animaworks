@@ -87,6 +87,7 @@ class TestHelpers:
     def test_resolve_codex_model_strips_prefix(self):
         assert _resolve_codex_model("codex/o4-mini") == "o4-mini"
         assert _resolve_codex_model("codex/gpt-4.1") == "gpt-4.1"
+        assert _resolve_codex_model("openai-codex/gpt-5.3-codex") == "gpt-5.3-codex"
 
     def test_resolve_codex_model_no_prefix(self):
         assert _resolve_codex_model("o4-mini") == "o4-mini"

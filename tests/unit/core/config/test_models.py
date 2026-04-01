@@ -641,6 +641,10 @@ class TestResolveExecutionModeWildcard:
         assert resolve_execution_mode(config, "minimax/some-model") == "A"
         assert resolve_execution_mode(config, "moonshot/kimi") == "A"
 
+    def test_openai_codex_provider_routes_to_c(self):
+        config = AnimaWorksConfig()
+        assert resolve_execution_mode(config, "openai-codex/gpt-5.3-codex") == "C"
+
     def test_ollama_a_models(self):
         config = AnimaWorksConfig()
         assert resolve_execution_mode(config, "ollama/qwen3:14b") == "A"

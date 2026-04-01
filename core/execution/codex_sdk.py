@@ -72,9 +72,11 @@ _SUBPROCESS_STREAM_LIMIT = 16 * 1024 * 1024  # 16 MB
 
 
 def _resolve_codex_model(model: str) -> str:
-    """Strip the ``codex/`` prefix to get the bare model name for the CLI."""
+    """Strip supported Codex provider prefixes to get the bare CLI model name."""
     if model.startswith("codex/"):
         return model[len("codex/") :]
+    if model.startswith("openai-codex/"):
+        return model[len("openai-codex/") :]
     return model
 
 
