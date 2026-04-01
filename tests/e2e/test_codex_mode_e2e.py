@@ -203,4 +203,7 @@ class TestNoRegression:
         codex_models = [m for m in KNOWN_MODELS if m["mode"] == "C"]
         assert len(codex_models) >= 1
         names = [m["name"] for m in codex_models]
+        assert "codex/gpt-5.4" in names
+        assert "codex/gpt-5.4-mini" in names
+        assert "codex/gpt-5.3-codex" in names
         assert "codex/o4-mini" in names

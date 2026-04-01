@@ -219,6 +219,31 @@ class TestOpenAIAuthSettings:
         assert resp.status_code == 400
         assert resp.status_code == 400
 
+    async def test_available_models_include_codex_subscription_models(self):
+        config = AnimaWorksConfig(
+            credentials={
+                "openai": CredentialConfig(type="codex_login"),
+            }
+        )
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=True),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/system/available-models")
+
+        assert resp.status_code == 200
+        models = resp.json()["models"]
+        ids = {item["id"] for item in models}
+
+        assert "codex/gpt-5.4" in ids
+        assert "codex/gpt-5.4-mini" in ids
+        assert "codex/gpt-5.3-codex" in ids
+        assert "openai-codex/gpt-5.3-codex" not in ids
+
 
 class TestLocalLLMSettings:
     async def test_get_local_llm_returns_runtime_state(self):

@@ -124,6 +124,9 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "ollama/qwen3:14b", "mode": "A", "note": "ローカル中型"},
     {"name": "ollama/qwen3:32b", "mode": "A", "note": "ローカル大型"},
     # ── Codex (Mode C) ──────────────────────────────────────────────────────
+    {"name": "codex/gpt-5.4", "mode": "C", "note": "Codex CLI経由・最新"},
+    {"name": "codex/gpt-5.4-mini", "mode": "C", "note": "Codex CLI経由・高速"},
+    {"name": "codex/gpt-5.3-codex", "mode": "C", "note": "Codex CLI経由・コーディング"},
     {"name": "codex/o4-mini", "mode": "C", "note": "Codex CLI経由・高速"},
     {"name": "codex/o3", "mode": "C", "note": "Codex CLI経由・推論"},
     {"name": "codex/gpt-4.1", "mode": "C", "note": "Codex CLI経由・コーディング"},

@@ -22,6 +22,7 @@ from core.config.models import (
     DEFAULT_LOCAL_LLM_BASE_URL,
     DEFAULT_LOCAL_LLM_PRESETS,
     DEFAULT_LOCAL_LLM_ROLE_PRESETS,
+    KNOWN_MODELS,
     LocalLLMConfig,
     load_config,
     save_config,
@@ -32,6 +33,15 @@ from core.platform.claude_code import is_claude_code_available
 from core.platform.codex import is_codex_cli_available, is_codex_login_available
 
 logger = logging.getLogger("animaworks.routes.config")
+
+
+def _known_codex_models() -> list[str]:
+    """Return UI-visible Codex model ids from the shared known-model catalog."""
+    return [
+        str(item["name"])
+        for item in KNOWN_MODELS
+        if item.get("mode") == "C" and str(item.get("name", "")).startswith("codex/")
+    ]
 
 
 class UpdateAnthropicAuthRequest(BaseModel):
@@ -300,10 +310,7 @@ def create_config_router() -> APIRouter:
                         seen.add(m)
                 # Codex CLI models (codex_login or api_key)
                 if cred.type == "codex_login" or cred.api_key:
-                    for m in (
-                        "codex/o4-mini", "codex/o3", "codex/gpt-4.1",
-                        "openai-codex/gpt-5.3-codex", "openai-codex/gpt-4-turbo",
-                    ):
+                    for m in _known_codex_models():
                         if m not in seen:
                             models.append({"id": m, "label": m, "credential": "openai"})
                             seen.add(m)
@@ -315,7 +322,7 @@ def create_config_router() -> APIRouter:
 
         # Codex CLI models (standalone — no openai credential entry needed)
         if is_codex_login_available():
-            for m in ("codex/o4-mini", "codex/o3", "codex/gpt-4.1"):
+            for m in _known_codex_models():
                 if m not in seen:
                     models.append({"id": m, "label": m, "credential": "codex"})
                     seen.add(m)
