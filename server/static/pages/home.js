@@ -152,10 +152,15 @@ function _formatUsageFetchTime(value) {
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function _updateUsageLastUpdated(value) {
+function _updateUsageLastUpdated(value, serverValue = null) {
   const el = document.getElementById("usageLastUpdated");
   if (!el) return;
   el.textContent = `${t("home.ext_last_updated")}: ${_formatUsageFetchTime(value)}`;
+  if (serverValue !== null && serverValue !== undefined && serverValue !== "") {
+    el.title = `server: ${_formatUsageFetchTime(serverValue)}`;
+  } else {
+    el.removeAttribute("title");
+  }
 }
 
 function _resetToJst(value) {
@@ -498,7 +503,8 @@ async function _loadUsage(forceRefresh = false) {
     if (data.claude) _renderClaudeUsage(data.claude);
     if (data.openai) _renderOpenaiUsage(data.openai);
     _renderGovernor(data.governor);
-    _updateUsageLastUpdated(data.snapshot_cached_at ?? data.cached_at ?? Date.now());
+    const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;
+    _updateUsageLastUpdated(Date.now(), serverFetchedAt);
   } catch (err) {
     const claudeEl = document.getElementById("usageClaudeBody");
     const openaiEl = document.getElementById("usageOpenaiBody");
