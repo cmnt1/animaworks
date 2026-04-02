@@ -18,10 +18,9 @@ export function render(container) {
     </div>
 
     <div class="usage-panel-header">
-      <span></span>
       <div class="usage-panel-actions">
-        <span class="usage-last-updated" id="usageLastUpdated">${t("home.ext_last_updated")}: --:--:--</span>
         <button class="btn-secondary usage-refresh-btn" id="usageRefreshBtn">&#x21BB; Refresh</button>
+        <span class="usage-last-updated" id="usageLastUpdated">${t("home.ext_last_updated")}: --:--:--</span>
       </div>
     </div>
     <div class="usage-panel" id="homeUsagePanel">
