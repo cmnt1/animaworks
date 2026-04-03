@@ -498,7 +498,7 @@
 
 .usage-panel {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 16px;
   margin-bottom: 1.5rem;
 }
@@ -645,6 +645,12 @@
   color: var(--aw-color-text-faint);
   text-align: center;
   padding: 8px 0;
+}
+
+@media (max-width: 960px) {
+  .usage-panel {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 640px) {

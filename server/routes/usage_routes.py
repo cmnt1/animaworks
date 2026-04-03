@@ -90,7 +90,7 @@ def _merge_usage_snapshot(live_payload: dict[str, Any]) -> dict[str, Any]:
 
     used: list[str] = []
     merged = dict(live_payload)
-    for provider_key in ("claude", "openai"):
+    for provider_key in ("claude", "openai", "nanogpt"):
         if not _provider_has_error(merged, provider_key):
             continue
         snapshot_provider = snapshot.get(provider_key)
@@ -688,6 +688,100 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
         return {"error": "fetch_failed", "message": str(e)[:200]}
 
 
+# ── nanoGPT (subscription usage) ────────────────────────────────────────────
+
+_NANOGPT_USAGE_URL = "https://nano-gpt.com/api/subscription/v1/usage"
+
+
+def _read_nanogpt_api_key() -> str | None:
+    """Read nanoGPT API key from AnimaWorks config credentials."""
+    try:
+        from core.config.models import load_config
+
+        config = load_config()
+        cred = config.credentials.get("nanogpt")
+        if cred and cred.api_key:
+            return cred.api_key
+    except Exception:
+        logger.debug("Failed to read nanoGPT credentials", exc_info=True)
+    return None
+
+
+def _fetch_nanogpt_usage(skip_cache: bool = False) -> dict[str, Any]:
+    if not skip_cache:
+        cached = _cached("nanogpt")
+        if cached is not None:
+            return cached
+
+    api_key = _read_nanogpt_api_key()
+    if not api_key:
+        result: dict[str, Any] = {"error": "no_credentials", "message": "nanoGPT credentials not found"}
+        _set_cache("nanogpt", result)
+        return result
+
+    try:
+        req = urllib.request.Request(
+            _NANOGPT_USAGE_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/json",
+                "User-Agent": "animaworks/1.0",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+
+        result: dict[str, Any] = {"provider": "nanogpt"}
+
+        # Daily images window
+        daily_img = raw.get("dailyImages")
+        if daily_img and isinstance(daily_img, dict):
+            used_pct = daily_img.get("percentUsed", 0) * 100
+            reset_at = daily_img.get("resetAt")
+            result["Images"] = {
+                "utilization": used_pct,
+                "remaining": 100 - used_pct,
+                "resets_at": reset_at / 1000 if reset_at and reset_at > 1e12 else reset_at,
+                "window_seconds": 86400,
+                "used_count": daily_img.get("used", 0),
+                "limit_count": daily_img.get("used", 0) + daily_img.get("remaining", 0),
+            }
+
+        # Weekly input tokens window
+        weekly = raw.get("weeklyInputTokens")
+        if weekly and isinstance(weekly, dict):
+            used_pct = weekly.get("percentUsed", 0) * 100  # API returns 0-1 fraction
+            reset_at = weekly.get("resetAt")  # epoch ms
+            # Window is 7 days
+            result["Week"] = {
+                "utilization": used_pct,
+                "remaining": 100 - used_pct,
+                "resets_at": reset_at / 1000 if reset_at and reset_at > 1e12 else reset_at,
+                "window_seconds": 604800,
+                "used_tokens": weekly.get("used", 0),
+                "limit_tokens": weekly.get("used", 0) + weekly.get("remaining", 0),
+            }
+
+        # Subscription state
+        result["state"] = raw.get("state", "unknown")
+
+        _set_cache("nanogpt", result)
+        return result
+
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            result = {"error": "unauthorized", "message": "nanoGPT API key invalid"}
+        elif e.code == 429:
+            return {"error": "rate_limited", "message": "Rate limited — retry shortly"}
+        else:
+            result = {"error": "http_error", "message": f"HTTP {e.code}"}
+        _set_cache("nanogpt", result)
+        return result
+    except Exception as e:
+        logger.warning("nanoGPT usage fetch failed: %s", e)
+        return {"error": "fetch_failed", "message": str(e)[:200]}
+
+
 # ── Route ────────────────────────────────────────────────────────────────────
 
 
@@ -696,7 +790,7 @@ def create_usage_router() -> APIRouter:
 
     @router.get("/usage")
     async def get_usage(request: Request, skip_cache: bool = False) -> dict[str, Any]:
-        """Return combined Claude + OpenAI usage data + governor status."""
+        """Return combined Claude + OpenAI + nanoGPT usage data + governor status."""
         governor = getattr(request.app.state, "usage_governor", None)
         governor_info: dict[str, Any] = {"active": False}
         if governor:
@@ -711,6 +805,7 @@ def create_usage_router() -> APIRouter:
         payload = {
             "claude": _fetch_claude_usage(skip_cache=skip_cache),
             "openai": _fetch_openai_usage(skip_cache=skip_cache),
+            "nanogpt": _fetch_nanogpt_usage(skip_cache=skip_cache),
             "cached_at": time.time(),
             "governor": governor_info,
         }

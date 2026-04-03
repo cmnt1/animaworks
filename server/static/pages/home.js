@@ -42,6 +42,15 @@ export function render(container) {
           <div class="usage-loading">${t("common.loading")}</div>
         </div>
       </div>
+      <div class="usage-card" id="usageCardNanogpt">
+        <div class="usage-card-header">
+          <span class="usage-provider-name">nanoGPT</span>
+          <span class="usage-sub-type" id="usageNanogptSub"></span>
+        </div>
+        <div class="usage-card-body" id="usageNanogptBody">
+          <div class="usage-loading">${t("common.loading")}</div>
+        </div>
+      </div>
     </div>
     <div id="usageGovernorBar" style="display:none;"></div>
 
@@ -432,6 +441,28 @@ function _renderOpenaiUsage(data) {
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
+function _renderNanogptUsage(data) {
+  const el = document.getElementById("usageNanogptBody");
+  if (!el) return;
+
+  if (data.error) {
+    const msg = data.error === "no_credentials"
+      ? t("home.usage_no_credentials")
+      : data.message || data.error;
+    el.innerHTML = _renderUsageError("nanogpt", data, msg);
+    return;
+  }
+
+  // Render usage windows (keys like "Week", "Images", etc.)
+  const skip = new Set(["provider", "state"]);
+  let html = "";
+  for (const [key, win] of Object.entries(data)) {
+    if (skip.has(key) || !win || typeof win !== "object" || win.utilization === undefined) continue;
+    html += _renderUsageBar(key, win.utilization, win.resets_at, win.window_seconds);
+  }
+  el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
+}
+
 function _renderGovernor(gov) {
   const el = document.getElementById("usageGovernorBar");
   if (!el) return;
@@ -502,15 +533,18 @@ async function _loadUsage(forceRefresh = false) {
 
     if (data.claude) _renderClaudeUsage(data.claude);
     if (data.openai) _renderOpenaiUsage(data.openai);
+    if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
     _renderGovernor(data.governor);
     const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;
     _updateUsageLastUpdated(Date.now(), serverFetchedAt);
   } catch (err) {
     const claudeEl = document.getElementById("usageClaudeBody");
     const openaiEl = document.getElementById("usageOpenaiBody");
+    const nanogptEl = document.getElementById("usageNanogptBody");
     const msg = `<div class="usage-error">${escapeHtml(err.message)}</div>`;
     if (claudeEl) claudeEl.innerHTML = msg;
     if (openaiEl) openaiEl.innerHTML = msg;
+    if (nanogptEl) nanogptEl.innerHTML = msg;
   }
 }
 

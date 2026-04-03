@@ -40,6 +40,7 @@ logger = logging.getLogger("animaworks.usage_governor")
 _CREDENTIAL_TO_PROVIDER: dict[str, str] = {
     "anthropic": "claude",
     "openai": "openai",
+    "nanogpt": "nanogpt",
 }
 
 # ── Policy schema ────────────────────────────────────────────────────────────
@@ -78,6 +79,16 @@ DEFAULT_POLICY: dict[str, Any] = {
                     {"deficit_above": 20, "activity_level": 10},
                 ],
             },
+            "Week": {
+                "mode": "time_proportional",
+                "deficit_rules": [
+                    {"deficit_above": 0, "activity_level": 60},
+                    {"deficit_above": 10, "activity_level": 30},
+                    {"deficit_above": 20, "activity_level": 10},
+                ],
+            },
+        },
+        "nanogpt": {
             "Week": {
                 "mode": "time_proportional",
                 "deficit_rules": [
@@ -482,6 +493,7 @@ class UsageGovernor:
         """Single governor check cycle."""
         from server.routes.usage_routes import (
             _fetch_claude_usage,
+            _fetch_nanogpt_usage,
             _fetch_openai_usage,
             _relogin_claude,
         )
@@ -489,6 +501,7 @@ class UsageGovernor:
         usage_data = {
             "claude": _fetch_claude_usage(),
             "openai": _fetch_openai_usage(),
+            "nanogpt": _fetch_nanogpt_usage(),
         }
 
         # Auto-recovery: if Claude fetch failed with recoverable error,
@@ -517,7 +530,7 @@ class UsageGovernor:
         all_suspend: list[str] = []
         reasons: list[str] = []
 
-        for provider_key in ("claude", "openai"):
+        for provider_key in ("claude", "openai", "nanogpt"):
             provider_animas = groups.get(provider_key, [])
             if not provider_animas:
                 continue  # No animas using this provider — skip
