@@ -12,6 +12,7 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any
 
@@ -698,6 +699,40 @@ class LifecycleMixin:
                 proc = None
                 try:
                     if command:
+                        normalized_command = command.strip()
+                        if os.name == "nt":
+                            if set(normalized_command) == {"="}:
+                                stderr = f"Blocked suspicious cron command on Windows: {command}"
+                                exit_code = 1
+                                logger.warning(
+                                    "[%s] Skipping suspicious cron command on Windows: %s",
+                                    self.name,
+                                    command,
+                                )
+                                self._last_activity = now_local()
+                                return {
+                                    "task": task_name,
+                                    "exit_code": exit_code,
+                                    "stdout": "",
+                                    "stderr": stderr,
+                                    "duration_ms": (time.time_ns() // 1_000_000) - start_ms,
+                                }
+                            if normalized_command.startswith("/") and not normalized_command.startswith("//"):
+                                stderr = f"Blocked POSIX-only cron command on Windows: {command}"
+                                exit_code = 1
+                                logger.warning(
+                                    "[%s] Skipping POSIX-only cron command on Windows: %s",
+                                    self.name,
+                                    command,
+                                )
+                                self._last_activity = now_local()
+                                return {
+                                    "task": task_name,
+                                    "exit_code": exit_code,
+                                    "stdout": "",
+                                    "stderr": stderr,
+                                    "duration_ms": (time.time_ns() // 1_000_000) - start_ms,
+                                }
                         # Execute bash command
                         logger.debug("[%s] Executing bash: %s", self.name, command)
                         proc = await asyncio.create_subprocess_shell(
