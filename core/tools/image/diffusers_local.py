@@ -96,43 +96,29 @@ def _scrfd_detect_largest(image_rgb: Any) -> tuple[int, int, int, int] | None:
 
         outputs = session.run(None, {session.get_inputs()[0].name: blob})
 
-        # Temporary: log actual output shapes so we can verify grouping logic
-        logger.info(
-            "SCRFD raw outputs: %s",
-            [(o.name, outputs[i].shape) for i, o in enumerate(session.get_outputs())],
-        )
-
-        # Group SCRFD outputs by type using shape rather than assuming a fixed
-        # index order (which varies across InsightFace ONNX exports).
-        #   score:  ndim==2  OR  last dim == 1   → confidence per anchor
-        #   bbox:   last dim == 4                → (l,t,r,b) distances
-        # Sort each group largest-first so index 0 == stride-8 (most anchors).
-        score_outs = sorted(
-            [o for o in outputs if o.ndim == 2 or (o.ndim == 3 and o.shape[-1] == 1)],
-            key=lambda o: -o.size,
-        )
-        bbox_outs = sorted(
-            [o for o in outputs if o.ndim == 3 and o.shape[-1] == 4],
-            key=lambda o: -o.size,
-        )
+        # Group SCRFD outputs by last dimension (no batch dim in this export):
+        #   (N, 1)  → score,   (N, 4) → bbox,   (N, 10) → kps
+        # Sort largest-first so index 0 == stride-8 (most anchors).
+        score_outs = sorted([o for o in outputs if o.shape[-1] == 1],  key=lambda o: -o.size)
+        bbox_outs  = sorted([o for o in outputs if o.shape[-1] == 4],  key=lambda o: -o.size)
 
         if len(score_outs) < 3 or len(bbox_outs) < 3:
-            logger.debug(
+            logger.warning(
                 "SCRFD: unexpected output count — scores=%d bboxes=%d",
                 len(score_outs), len(bbox_outs),
             )
             return None
 
-        # SCRFD uses num_anchors=2 per cell.  The flat anchor index i maps to:
-        #   cell = i // num_anchors,  anchor_x = (cell % feat_w) * stride
+        # SCRFD uses num_anchors=2 per cell.  Flat index i maps to:
+        #   cell = i // 2,  anchor_x = (cell % feat_w) * stride
         num_anchors = 2
         best_box: tuple[int, int, int, int] | None = None
         best_area = 0
         threshold = 0.5
 
         for stride, s_out, b_out in zip([8, 16, 32], score_outs[:3], bbox_outs[:3]):
-            scores_flat = s_out.reshape(-1)          # (H*W*num_anchors,)
-            bboxes_2d   = b_out.reshape(-1, 4)       # (H*W*num_anchors, 4)
+            scores_flat = s_out.reshape(-1)   # (H*W*num_anchors,)
+            bboxes_2d   = b_out               # already (H*W*num_anchors, 4)
             feat_w = target // stride
 
             for i, score_val in enumerate(scores_flat):
