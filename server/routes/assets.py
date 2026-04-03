@@ -718,7 +718,12 @@ def create_assets_router() -> APIRouter:
             try:
                 face_resp = await proxy_external_image(body.face_reference_url, request)
                 face_reference_bytes = face_resp.body
-                logger.info("Face reference downloaded: %d bytes", len(face_reference_bytes))
+                import hashlib as _hashlib
+                _ref_hash = _hashlib.md5(face_reference_bytes).hexdigest()[:8]
+                logger.info(
+                    "Face reference downloaded: %d bytes (md5prefix=%s)",
+                    len(face_reference_bytes), _ref_hash,
+                )
             except HTTPException:
                 raise
             except Exception as exc:
