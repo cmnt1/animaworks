@@ -826,6 +826,14 @@ class LocalDiffusersClient:
         """Generate a derivative image from a reference image locally."""
         del output_format
 
+        # Retire IP-Adapter unconditionally before any img2img call.
+        # The img2img pipeline shares the UNet with text2img via from_pipe(),
+        # so loading IP-Adapter for fullbody silently corrupts the cached
+        # img2img pipeline's UNet config (encoder_hid_dim_type).  Calling
+        # retire here ensures a clean state regardless of cache hit or miss.
+        text2img_key = ("text2img", self._text2img_source, self._device, self._dtype_name)
+        self._retire_ip_adapter(text2img_key)
+
         width, height = _ASPECT_SIZES.get(aspect_ratio, _ASPECT_SIZES["3:4"])
         generator = self._make_generator(seed)
         reference = self._read_image(reference_image).resize((width, height))
