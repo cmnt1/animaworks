@@ -758,7 +758,15 @@ def create_assets_router() -> APIRouter:
             if not prompt:
                 # Slow path: extract from identity.md / character_sheet.md via LLM
                 logger.info("No cached prompt for '%s', attempting LLM synthesis…", name)
-                prompt = await _extract_prompt(anima_dir, style="realistic" if is_realistic else "anime")
+                try:
+                    import asyncio as _asyncio
+                    prompt = await _asyncio.wait_for(
+                        _extract_prompt(anima_dir, style="realistic" if is_realistic else "anime"),
+                        timeout=45.0,
+                    )
+                except _asyncio.TimeoutError:
+                    logger.warning("LLM prompt synthesis timed out for '%s', using default prompt", name)
+                    prompt = None
             if not prompt:
                 # Fallback: generate a default prompt from the anima name
                 logger.info("No appearance data for '%s', using default prompt", name)
