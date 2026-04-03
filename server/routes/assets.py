@@ -979,7 +979,18 @@ def create_assets_router() -> APIRouter:
                 output_filename = "avatar_fullbody_realistic.png" if is_realistic else "avatar_fullbody.png"
                 source_path = assets_dir / output_filename
                 if source_path.exists():
-                    await _emit_ready(source_path.read_bytes())
+                    generated_bytes = source_path.read_bytes()
+                    await _emit_ready(generated_bytes)
+
+                    # Restore the canonical avatar to its pre-generation state so
+                    # that retry requests re-downloading face_reference_url (which
+                    # may point to the avatar file) always get the original image,
+                    # not the freshly generated one.  Without this, each retry
+                    # feeds the previous output as input → progressive degradation.
+                    original_avatar = backup_dir / output_filename
+                    if original_avatar.exists():
+                        source_path.write_bytes(original_avatar.read_bytes())
+                        logger.debug("Restored canonical avatar from backup after preview")
 
             except Exception as exc:
                 logger.exception("Background fullbody generation failed for %s", name)
