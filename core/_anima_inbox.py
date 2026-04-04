@@ -439,7 +439,7 @@ class InboxMixin:
 
                     _fanout_token = suppress_board_fanout.set(True) if has_board_mention else None
                     _session_token = self.agent._tool_handler.set_active_session_type("inbox")
-                    self.agent._tool_handler._trigger = f"inbox:{inbox_result.senders[0] if inbox_result.senders else 'unknown'}"
+                    self.agent._tool_handler._trigger = f"inbox:{next(iter(inbox_result.senders)) if inbox_result.senders else 'unknown'}"
 
                     # Set session origin from the most untrusted message
                     _batch_origins: list[str] = []
