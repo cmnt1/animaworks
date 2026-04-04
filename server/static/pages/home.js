@@ -457,27 +457,21 @@ function _renderCostBudget(data) {
 }
 
 function _renderCostBudgetBar(label, win) {
+  // remainingPct = 現在の残高 / 予算上限 * 100
   const remainingPct = win.remaining_pct;
   const barFillPct = Math.max(0, Math.min(100, remainingPct));
   const color = _remainingColor(remainingPct);
 
-  const overBudget = remainingPct < 0;
-  const usdText = `$${Math.abs(win.remaining_usd).toFixed(2)}`;
-  const pctText = `${remainingPct.toFixed(0)}%`;
-  const displayText = overBudget
-    ? `超過 ${usdText} (${pctText})`
-    : `残 ${usdText} (${pctText})`;
+  // pt = (現在の残高 - 予算上限) / 予算上限 * 100 = remainingPct - 100
+  const ptVal = remainingPct - 100;
+  const ptSign = ptVal >= 0 ? "+" : "";
+  const ptColor = ptVal >= 0 ? "inherit" : "var(--aw-color-error,#dc2626)";
+  const ptHtml = `<span style="color:${ptColor};font-size:0.7rem;margin-left:0.5rem;">${ptSign}${ptVal.toFixed(0)}pt</span>`;
 
   const timePct = _calcTimePct(win.resets_at, win.window_seconds);
   let markerHtml = "";
   if (timePct !== null && win.window_seconds) {
     markerHtml = `<div class="usage-bar-time-marker" style="left:${timePct}%" data-label="${timePct.toFixed(0)}%"></div>`;
-  }
-
-  let deficitHtml = "";
-  if (timePct !== null && win.window_seconds && timePct > barFillPct) {
-    const gap = (timePct - barFillPct).toFixed(0);
-    deficitHtml = `<span class="usage-deficit" style="color:var(--aw-color-error,#dc2626);font-size:0.7rem;margin-left:0.5rem;">-${gap}pt</span>`;
   }
 
   let forecastHtml = "";
@@ -493,15 +487,13 @@ function _renderCostBudgetBar(label, win) {
   }
 
   const resetStr = win.resets_at ? _resetToJst(win.resets_at) : "";
-  const budgetInfo = `$${win.spent_usd.toFixed(2)} / $${win.budget_usd.toFixed(2)}`;
 
   return `
     <div class="usage-row">
       <div class="usage-row-header">
         <span class="usage-label">${escapeHtml(label)}</span>
-        <span class="usage-pct" style="color:${color}">${escapeHtml(displayText)}${deficitHtml}</span>
+        <span class="usage-pct" style="color:${color}">${remainingPct.toFixed(0)}%${ptHtml}</span>
       </div>
-      <div style="font-size:0.72rem;color:var(--aw-color-text-faint,#888);margin-bottom:0.1rem;">${escapeHtml(budgetInfo)}</div>
       <div class="usage-bar-track">
         <div class="usage-bar-fill" style="width:${barFillPct}%;background:${color}"></div>
         ${markerHtml}
