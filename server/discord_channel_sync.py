@@ -131,10 +131,10 @@ class DiscordChannelSync:
 
             # Update metadata
             meta = load_channel_meta(shared_dir, board_name)
+            if meta is None:
+                meta = ChannelMeta(members=[])
             if not meta.description and ch.get("topic"):
                 meta.description = ch["topic"]
-            if "discord" not in (meta.source or ""):
-                meta.source = "discord"
             save_channel_meta(shared_dir, board_name, meta)
 
         # ── Phase 2: Reverse sync (AnimaWorks boards -> Discord) ──
