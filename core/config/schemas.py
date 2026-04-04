@@ -312,7 +312,7 @@ class ExternalMessagingChannelConfig(BaseModel):
 class ExternalMessagingConfig(BaseModel):
     """Configuration for external messaging integration (inbound + outbound)."""
 
-    preferred_channel: str = "slack"  # "slack" | "chatwork" | "discord"
+    preferred_channel: str = "discord"  # "slack" | "chatwork" | "discord"
     user_aliases: dict[str, UserAliasConfig] = {}  # alias → contact info
     slack: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
     chatwork: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()

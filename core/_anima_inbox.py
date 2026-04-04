@@ -521,28 +521,26 @@ class InboxMixin:
                             meta={"trigger": "inbox"},
                         )
 
-                    # ── Slack auto-response: post LLM reply back to Slack ──
-                    if accumulated_text.strip() and _is_auto_response_enabled():
-                        try:
-                            from core.outbound_auto import SlackAutoResponder
-
-                            _auto = SlackAutoResponder()
-                            # Build set of channels the LLM already posted to
-                            _already = set()
-                            for ch in self.agent._tool_handler.posted_channels_for("inbox"):
-                                _already.add(ch)
-                            await _auto.on_inbox_response(
-                                anima_name=self.name,
-                                response_text=accumulated_text,
-                                inbox_items=inbox_result.inbox_items,
-                                already_posted=_already,
-                            )
-                        except Exception:
-                            logger.warning(
-                                "[%s] Slack auto-response failed",
-                                self.name,
-                                exc_info=True,
-                            )
+                    # ── Slack auto-response (disabled – Discord migration) ──
+                    # if accumulated_text.strip() and _is_auto_response_enabled():
+                    #     try:
+                    #         from core.outbound_auto import SlackAutoResponder
+                    #         _auto = SlackAutoResponder()
+                    #         _already = set()
+                    #         for ch in self.agent._tool_handler.posted_channels_for("inbox"):
+                    #             _already.add(ch)
+                    #         await _auto.on_inbox_response(
+                    #             anima_name=self.name,
+                    #             response_text=accumulated_text,
+                    #             inbox_items=inbox_result.inbox_items,
+                    #             already_posted=_already,
+                    #         )
+                    #     except Exception:
+                    #         logger.warning(
+                    #             "[%s] Slack auto-response failed",
+                    #             self.name,
+                    #             exc_info=True,
+                    #         )
 
                     # ── Discord auto-response: post LLM reply back to Discord ──
                     if accumulated_text.strip() and _is_auto_response_enabled_discord():

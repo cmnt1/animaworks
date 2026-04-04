@@ -226,7 +226,9 @@ def send_external(
     for channel in channels_to_try:
         try:
             if channel == "slack":
-                return _send_via_slack(resolved.slack_user_id, content, sender_name, anima_name)
+                # Slack disabled – Discord migration
+                last_error = "slack: disabled (Discord migration)"
+                continue
             elif channel == "chatwork":
                 return _send_via_chatwork(resolved.chatwork_room_id, content, sender_name)
             elif channel == "discord":

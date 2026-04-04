@@ -348,33 +348,25 @@ class CommsToolsMixin:
         HTTP call.  The ~1 s blocking is acceptable because we are
         already off the main event loop.
         """
-        try:
-            import asyncio
-
-            from core.outbound_auto import BoardSlackSync
-
-            sync = BoardSlackSync()
-            coro = sync.sync_board_post(
-                board_name=channel,
-                text=text,
-                from_person=self._anima_name,
-                source="anima",
-            )
-
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-
-            if loop is not None and loop.is_running():
-                # Inside an async context — schedule as task
-                loop.create_task(coro)
-            else:
-                # Sync context (MCP tool handler thread pool) —
-                # create a short-lived event loop to run the coroutine.
-                asyncio.run(coro)
-        except Exception:
-            logger.warning("Board→Slack sync failed for #%s", channel, exc_info=True)
+        # Board→Slack sync disabled – Discord migration
+        # try:
+        #     import asyncio
+        #     from core.outbound_auto import BoardSlackSync
+        #     sync = BoardSlackSync()
+        #     coro = sync.sync_board_post(
+        #         board_name=channel, text=text,
+        #         from_person=self._anima_name, source="anima",
+        #     )
+        #     try:
+        #         loop = asyncio.get_running_loop()
+        #     except RuntimeError:
+        #         loop = None
+        #     if loop is not None and loop.is_running():
+        #         loop.create_task(coro)
+        #     else:
+        #         asyncio.run(coro)
+        # except Exception:
+        #     logger.warning("Board→Slack sync failed for #%s", channel, exc_info=True)
 
     def _handle_read_channel(self, args: dict[str, Any]) -> str:
         if not self._messenger:

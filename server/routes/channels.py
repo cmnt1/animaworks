@@ -23,7 +23,9 @@ from server.events import emit
 
 logger = logging.getLogger("animaworks.routes.channels")
 
-_SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
+# Allow Unicode channel names (e.g. Discord Japanese channels) while
+# blocking path-traversal characters (/, \, ..) and control chars.
+_SAFE_NAME_RE = re.compile(r"^[^\x00-\x1f/\\]{1,60}$")
 
 # ── Caches ────────────────────────────────────────
 # Channel metadata cache: keyed by file path, invalidated on mtime/size change
@@ -72,7 +74,7 @@ def _get_channel_meta(f: Path) -> dict:
 
 def _validate_name(name: str) -> JSONResponse | None:
     """Return a 400 response if name contains unsafe characters, else None."""
-    if not _SAFE_NAME_RE.match(name):
+    if not _SAFE_NAME_RE.match(name) or ".." in name:
         return JSONResponse(
             status_code=400,
             content={"detail": f"Invalid name: {name!r}"},
@@ -247,19 +249,16 @@ def create_channels_router() -> APIRouter:
         }
         await emit(request, "board.post", event_data)
 
-        # Sync to mapped Slack channel
-        try:
-            from core.outbound_auto import BoardSlackSync
-
-            sync = BoardSlackSync()
-            await sync.sync_board_post(
-                board_name=name,
-                text=body.text,
-                from_person=body.from_name,
-                source="human",
-            )
-        except Exception:
-            logger.debug("Board→Slack sync failed for #%s", name, exc_info=True)
+        # Board→Slack sync disabled – Discord migration
+        # try:
+        #     from core.outbound_auto import BoardSlackSync
+        #     sync = BoardSlackSync()
+        #     await sync.sync_board_post(
+        #         board_name=name, text=body.text,
+        #         from_person=body.from_name, source="human",
+        #     )
+        # except Exception:
+        #     logger.debug("Board→Slack sync failed for #%s", name, exc_info=True)
 
         logger.info("Human posted to #%s: %s", name, body.text[:80])
         return {"status": "ok", "channel": name}
