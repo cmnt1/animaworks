@@ -429,13 +429,19 @@ class DiscordGatewayManager:
         if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, channel_id):
             logger.info(
                 "Discord routing: '%s' not a member of channel %s (#%s) — dropping",
-                target_anima, channel_id, ch_name,
+                target_anima,
+                channel_id,
+                ch_name,
             )
             target_anima = None
 
         logger.info(
             "Discord routing: channel=#%s (%s) is_dm=%s bot_mentioned=%s -> target=%s",
-            ch_name, channel_id, is_dm, bot_mentioned, target_anima,
+            ch_name,
+            channel_id,
+            is_dm,
+            bot_mentioned,
+            target_anima,
         )
 
         # Board routing (always, regardless of target)

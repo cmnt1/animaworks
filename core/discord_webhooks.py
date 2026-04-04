@@ -214,8 +214,7 @@ class DiscordWebhookManager:
                     now = time.time()
                     cutoff = now - (_THREAD_MAP_TTL_DAYS * 86400)
                     self._thread_map = {
-                        k: v for k, v in data.items()
-                        if isinstance(v, dict) and v.get("ts", 0) > cutoff
+                        k: v for k, v in data.items() if isinstance(v, dict) and v.get("ts", 0) > cutoff
                     }
         except Exception:
             logger.debug("Failed to load thread map", exc_info=True)

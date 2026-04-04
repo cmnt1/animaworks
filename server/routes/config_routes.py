@@ -597,13 +597,15 @@ def create_config_router() -> APIRouter:
             if ch.get("type") != 0:  # text channels only
                 continue
             ch_id = str(ch["id"])
-            channels.append({
-                "id": ch_id,
-                "name": ch.get("name", ""),
-                "parent_id": str(ch.get("parent_id", "") or ""),
-                "members": channel_members.get(ch_id, []),
-                "board": board_mapping.get(ch_id, ""),
-            })
+            channels.append(
+                {
+                    "id": ch_id,
+                    "name": ch.get("name", ""),
+                    "parent_id": str(ch.get("parent_id", "") or ""),
+                    "members": channel_members.get(ch_id, []),
+                    "board": board_mapping.get(ch_id, ""),
+                }
+            )
         return {"channels": channels}
 
     return router

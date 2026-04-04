@@ -301,11 +301,13 @@ class DiscordAutoResponder:
             if ext_uid:
                 mention = f"<@{ext_uid}> "
 
-            targets.append({
-                "channel_id": channel_id,
-                "reference_id": reference_id,
-                "mention_prefix": mention,
-            })
+            targets.append(
+                {
+                    "channel_id": channel_id,
+                    "reference_id": reference_id,
+                    "mention_prefix": mention,
+                }
+            )
         return targets
 
 
