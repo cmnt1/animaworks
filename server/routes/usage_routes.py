@@ -856,20 +856,22 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
 
     snapshot = _load_balance_snapshot()
 
+    # effective_balance: 現在の実残高
+    # budget_limit: 月間予算上限（計算の分母）
     if snapshot:
         snapshot_at = datetime.fromisoformat(snapshot["snapshot_at"])
         snapshot_date = snapshot_at.date()
         base_balance = snapshot["balance_usd"]
         today_utc = datetime.now(tz=_UTC).date()
         spending_since_snapshot = _sum_cost_from_anima_dirs(snapshot_date, today_utc)
-        effective_remaining = base_balance - spending_since_snapshot
-        display_limit = base_balance
-        monthly_spent_display = spending_since_snapshot
+        effective_balance = base_balance - spending_since_snapshot
+        # monthly_limit が設定済みならそれを予算基準、なければスナップショット残高を代用
+        budget_limit = monthly_limit if monthly_limit > 0 else base_balance
     elif monthly_limit > 0:
         billing_start, today_utc, _ = _monthly_budget_window_utc(billing_day)
-        monthly_spent_display = _sum_cost_from_anima_dirs(billing_start, today_utc)
-        effective_remaining = monthly_limit - monthly_spent_display
-        display_limit = monthly_limit
+        monthly_spent = _sum_cost_from_anima_dirs(billing_start, today_utc)
+        effective_balance = monthly_limit - monthly_spent
+        budget_limit = monthly_limit
     else:
         result = {"configured": False}
         _set_cache(_CACHE_KEY_COST_BUDGET, result)
@@ -877,21 +879,26 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
 
     try:
         days_in_month = _days_in_current_month_jst()
-        weekly_budget = display_limit / days_in_month * 7
 
-        week_start, today_jst, next_monday = _weekly_budget_window_jst()
-        week_spent = _sum_cost_from_anima_dirs(week_start, today_jst)
-        week_remaining = weekly_budget - week_spent
-        week_util_pct = (week_spent / weekly_budget * 100) if weekly_budget > 0 else 0.0
-        week_remaining_pct = 100.0 - week_util_pct
-
+        # ── 月次 ──
+        # remaining_pct = 現在の残高 / 月間予算上限 * 100
+        month_remaining_pct = (effective_balance / budget_limit * 100) if budget_limit > 0 else 0.0
+        month_util_pct = 100.0 - month_remaining_pct
         billing_start_utc, today_utc, next_billing = _monthly_budget_window_utc(billing_day)
-        month_util_pct = (monthly_spent_display / display_limit * 100) if display_limit > 0 else 0.0
-        month_remaining_pct = 100.0 - month_util_pct
         billing_start_dt = datetime(
             billing_start_utc.year, billing_start_utc.month, billing_start_utc.day, tzinfo=_UTC
         )
         month_window_seconds = int((next_billing - billing_start_dt).total_seconds())
+
+        # ── 週次 ──
+        # weekly_budget = monthly_limit / days_in_month * 7
+        # remaining_pct = (weekly_budget - week_spent) / weekly_budget * 100
+        weekly_budget = budget_limit / days_in_month * 7
+        week_start, today_jst, next_monday = _weekly_budget_window_jst()
+        week_spent = _sum_cost_from_anima_dirs(week_start, today_jst)
+        week_remaining = weekly_budget - week_spent
+        week_remaining_pct = (week_remaining / weekly_budget * 100) if weekly_budget > 0 else 0.0
+        week_util_pct = 100.0 - week_remaining_pct
 
         result = {
             "configured": True,
@@ -908,9 +915,8 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
                 "period_start": week_start.isoformat(),
             },
             "monthly": {
-                "budget_usd": round(display_limit, 4),
-                "spent_usd": round(monthly_spent_display, 4),
-                "remaining_usd": round(effective_remaining, 4),
+                "budget_usd": round(budget_limit, 4),
+                "remaining_usd": round(effective_balance, 4),
                 "remaining_pct": round(month_remaining_pct, 2),
                 "utilization_pct": round(month_util_pct, 2),
                 "resets_at": next_billing.timestamp(),
