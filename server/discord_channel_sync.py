@@ -26,7 +26,6 @@ are persisted in config.json.
 import json
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
 from core.config.models import load_config, save_config
@@ -100,7 +99,6 @@ class DiscordChannelSync:
             return {"status": "error"}
 
         text_channels = [ch for ch in all_channels if ch.get("type") == _CHANNEL_TYPE_TEXT]
-        categories = {str(ch["id"]): ch for ch in all_channels if ch.get("type") == _CHANNEL_TYPE_CATEGORY}
 
         # Current board_mapping
         board_mapping = dict(discord_cfg.board_mapping)
@@ -122,7 +120,6 @@ class DiscordChannelSync:
 
             board_name = board_mapping[ch_id]
             board_file = channels_dir / f"{board_name}.jsonl"
-            meta_file = channels_dir / f".{board_name}.meta.json"
 
             if not board_file.exists():
                 board_file.touch()
@@ -171,7 +168,7 @@ class DiscordChannelSync:
         dm_category_id = self._ensure_dm_category(client, guild_id, all_channels)
 
         enabled_animas = []
-        for name, anima_cfg in cfg.animas.items():
+        for name, _anima_cfg in cfg.animas.items():
             try:
                 from core.paths import get_animas_dir
 

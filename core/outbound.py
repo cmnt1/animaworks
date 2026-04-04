@@ -319,7 +319,6 @@ def _send_via_slack(user_id: str, content: str, sender_name: str, anima_name: st
 
 def _send_via_discord(user_id: str, content: str, sender_name: str, anima_name: str = "") -> str:
     """Send a DM via Discord API using the bot token."""
-    from core.tools._anima_icon_url import resolve_anima_icon_url
     from core.tools._base import get_credential
     from core.tools._discord_client import DiscordClient
     from core.tools._discord_markdown import md_to_discord

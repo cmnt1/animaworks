@@ -261,7 +261,7 @@ async def _startup_animas_background(app: FastAPI) -> None:
             discord_manager = DiscordGatewayManager()
             await asyncio.wait_for(discord_manager.start(), timeout=35)
             app.state.discord_gateway_manager = discord_manager
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("Discord Gateway startup timed out (35s)")
             app.state.discord_gateway_manager = None
         except Exception as exc:
