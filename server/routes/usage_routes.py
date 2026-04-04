@@ -4,13 +4,14 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""API usage dashboard — Claude (Anthropic OAuth) & OpenAI (Codex ChatGPT).
+"""API usage dashboard — OpenAI (Codex ChatGPT), nanoGPT, and cost-budget tracking.
 
-Fetches subscription rate-limit data from each provider and exposes it
-via ``GET /api/usage``.  Results are cached for 60 seconds.
+Cost-budget tracking uses local token usage logs + optional Anthropic Console balance sync.
+Results are cached for 60 seconds.
 """
 
 import base64
+import calendar
 import json
 import logging
 import os
@@ -18,9 +19,10 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -35,6 +37,14 @@ logger = logging.getLogger("animaworks.routes.usage")
 _CACHE: dict[str, tuple[dict[str, Any], float]] = {}
 _CACHE_TTL = 60  # seconds
 _USAGE_SNAPSHOT_NAME = "usage_snapshot.json"
+
+# ── Cost-budget constants ────────────────────────────────────────────────────
+
+_JST = ZoneInfo("Asia/Tokyo")
+_UTC = timezone.utc
+_CACHE_KEY_COST_BUDGET = "cost_budget"
+_BALANCE_SNAPSHOT_NAME = "usage_budget_state.json"
+_CONSOLE_CREDITS_URL = "https://console.anthropic.com/api/organizations/{org_id}/prepaid/credits"
 
 
 def _cached(key: str) -> dict[str, Any] | None:
@@ -387,83 +397,8 @@ def _relogin_openai() -> tuple[dict[str, Any], int]:
 
 
 def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
-    if not skip_cache:
-        cached = _cached("claude")
-        if cached is not None:
-            return cached
-
-    token = _read_claude_token()
-    if not token:
-        result: dict[str, Any] = {"error": "no_credentials", "message": "Claude credentials not found"}
-        _set_cache("claude", result)
-        return result
-
-    try:
-        req = urllib.request.Request(
-            _ANTHROPIC_USAGE_URL,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "anthropic-beta": "oauth-2025-04-20",
-                "User-Agent": "claude-code/1.0",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            raw = json.loads(resp.read().decode("utf-8"))
-
-        result = {"provider": "claude"}
-
-        if "five_hour" in raw:
-            fh = raw["five_hour"]
-            result["five_hour"] = {
-                "utilization": fh.get("utilization", 0),
-                "remaining": 100 - fh.get("utilization", 0),
-                "resets_at": fh.get("resets_at"),
-                "window_seconds": 18000,  # 5 hours
-            }
-
-        if "seven_day" in raw:
-            sd = raw["seven_day"]
-            result["seven_day"] = {
-                "utilization": sd.get("utilization", 0),
-                "remaining": 100 - sd.get("utilization", 0),
-                "resets_at": sd.get("resets_at"),
-                "window_seconds": 604800,  # 7 days
-            }
-
-        if "additional_capacity" in raw:
-            ac = raw["additional_capacity"]
-            if ac.get("limit", 0) > 0:
-                result["additional_capacity"] = {
-                    "utilization": ac.get("utilization", 0),
-                    "remaining": 100 - ac.get("utilization", 0),
-                    "used_tokens": ac.get("used", 0),
-                    "limit_tokens": ac.get("limit", 0),
-                }
-
-        _set_cache("claude", result)
-        return result
-
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            result = {"error": "unauthorized", "message": "Token expired — re-login to Claude Code"}
-        elif e.code == 429:
-            # Token might be stale — try refresh once before giving up
-            if not skip_cache:
-                best_path, _bt, best_refresh, _be = _select_best_claude_credential()
-                if best_path and best_refresh:
-                    refreshed = _refresh_claude_token(best_path, best_refresh)
-                    if refreshed:
-                        logger.info("Token refreshed after 429, retrying usage fetch")
-                        return _fetch_claude_usage(skip_cache=True)
-            # Don't cache rate-limit errors — retry sooner
-            return {"error": "rate_limited", "message": "Rate limited — retry shortly"}
-        else:
-            result = {"error": "http_error", "message": f"HTTP {e.code}"}
-        _set_cache("claude", result)
-        return result
-    except Exception as e:
-        logger.warning("Claude usage fetch failed: %s", e)
-        return {"error": "fetch_failed", "message": str(e)[:200]}
+    """Anthropic OAuth subscription usage endpoint is deprecated for third-party harnesses."""
+    return {"provider": "claude", "deprecated": True}
 
 
 # ── OpenAI (ChatGPT subscription via Codex auth) ─────────────────────────────
@@ -782,6 +717,247 @@ def _fetch_nanogpt_usage(skip_cache: bool = False) -> dict[str, Any]:
         return {"error": "fetch_failed", "message": str(e)[:200]}
 
 
+# ── Cost-budget tracking ─────────────────────────────────────────────────────
+
+
+def _balance_snapshot_path() -> Path:
+    from core.paths import get_data_dir
+
+    return get_data_dir() / _BALANCE_SNAPSHOT_NAME
+
+
+def _load_balance_snapshot() -> dict[str, Any] | None:
+    path = _balance_snapshot_path()
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text("utf-8"))
+    except Exception:
+        return None
+
+
+def _save_balance_snapshot(balance_usd: float) -> dict[str, Any]:
+    snapshot = {
+        "balance_usd": balance_usd,
+        "snapshot_at": datetime.now(tz=_UTC).isoformat(),
+    }
+    path = _balance_snapshot_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        logger.warning("Failed to save balance snapshot", exc_info=True)
+    return snapshot
+
+
+def _fetch_console_balance(org_id: str, session_cookie: str) -> float | None:
+    """Fetch prepaid credit balance from Anthropic Console (undocumented endpoint).
+
+    Returns balance in USD, or None on failure.
+    Response format: {"amount": 10195} where amount is in cents.
+    """
+    url = _CONSOLE_CREDITS_URL.format(org_id=org_id)
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Cookie": session_cookie,
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://console.anthropic.com/",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        amount_cents = data.get("amount")
+        if isinstance(amount_cents, (int, float)) and amount_cents >= 0:
+            return round(amount_cents / 100, 2)
+        return None
+    except Exception as e:
+        logger.warning("Console balance fetch failed: %s", e)
+        return None
+
+
+def _days_in_current_month_jst() -> int:
+    now_jst = datetime.now(tz=_JST)
+    return calendar.monthrange(now_jst.year, now_jst.month)[1]
+
+
+def _weekly_budget_window_jst() -> tuple[date, date, datetime]:
+    """Return (week_start, today_jst, next_monday_midnight_jst).
+
+    Week window: last Monday 00:00 JST → next Monday 00:00 JST.
+    """
+    now_jst = datetime.now(tz=_JST)
+    today = now_jst.date()
+    week_start = today - timedelta(days=now_jst.weekday())  # weekday(): Mon=0
+    next_monday = datetime(*(week_start + timedelta(days=7)).timetuple()[:3], tzinfo=_JST)
+    return week_start, today, next_monday
+
+
+def _monthly_budget_window_utc(billing_day: int) -> tuple[date, date, datetime]:
+    """Return (billing_start, today_utc, next_billing_datetime_utc).
+
+    Anthropic billing resets at billing_day 00:00 UTC.
+    """
+    now_utc = datetime.now(tz=_UTC)
+    today = now_utc.date()
+    if today.day >= billing_day:
+        billing_start = date(today.year, today.month, billing_day)
+        if today.month == 12:
+            next_year, next_month = today.year + 1, 1
+        else:
+            next_year, next_month = today.year, today.month + 1
+    else:
+        if today.month == 1:
+            prev_year, prev_month = today.year - 1, 12
+        else:
+            prev_year, prev_month = today.year, today.month - 1
+        billing_start = date(prev_year, prev_month, billing_day)
+        next_year, next_month = today.year, today.month
+    next_cutoff = datetime(next_year, next_month, billing_day, tzinfo=_UTC)
+    return billing_start, today, next_cutoff
+
+
+def _sum_cost_from_anima_dirs(start_date: date, end_date: date) -> float:
+    """Sum estimated_cost_usd from all Anima token_usage logs in [start_date, end_date]."""
+    from core.paths import get_animas_dir
+
+    total = 0.0
+    animas_dir = get_animas_dir()
+    if not animas_dir.is_dir():
+        return total
+    days_count = (end_date - start_date).days + 1
+    date_set = {start_date + timedelta(days=i) for i in range(days_count)}
+    for anima_dir in animas_dir.iterdir():
+        if not anima_dir.is_dir():
+            continue
+        usage_dir = anima_dir / "token_usage"
+        if not usage_dir.is_dir():
+            continue
+        for d in date_set:
+            jsonl = usage_dir / f"{d.isoformat()}.jsonl"
+            if not jsonl.is_file():
+                continue
+            try:
+                raw = jsonl.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                logger.warning("Failed to read %s", jsonl, exc_info=True)
+                continue
+            for line in raw.splitlines():
+                line = line.strip().strip("\x00")
+                if not line:
+                    continue
+                try:
+                    total += json.loads(line).get("estimated_cost_usd", 0.0)
+                except json.JSONDecodeError:
+                    pass
+    return total
+
+
+def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
+    """Compute weekly and monthly cost-budget utilization.
+
+    Priority for budget reference:
+    1. snapshot_balance_usd (from "残高同期" button) — most accurate
+    2. monthly_limit_usd (user-configured fallback)
+    3. neither → {"configured": False}
+    """
+    if not skip_cache:
+        cached = _cached(_CACHE_KEY_COST_BUDGET)
+        if cached is not None:
+            return cached
+
+    try:
+        from core.config.io import load_config
+
+        cfg = load_config()
+        budget_cfg = cfg.usage_budget
+    except Exception as e:
+        logger.warning("Failed to load config for cost_budget: %s", e)
+        result: dict[str, Any] = {"error": "config_error", "message": str(e)[:200]}
+        _set_cache(_CACHE_KEY_COST_BUDGET, result)
+        return result
+
+    monthly_limit = budget_cfg.monthly_limit_usd
+    billing_day = budget_cfg.billing_day
+    has_console_config = bool(budget_cfg.org_id and budget_cfg.console_session_cookie)
+
+    snapshot = _load_balance_snapshot()
+
+    if snapshot:
+        snapshot_at = datetime.fromisoformat(snapshot["snapshot_at"])
+        snapshot_date = snapshot_at.date()
+        base_balance = snapshot["balance_usd"]
+        today_utc = datetime.now(tz=_UTC).date()
+        spending_since_snapshot = _sum_cost_from_anima_dirs(snapshot_date, today_utc)
+        effective_remaining = base_balance - spending_since_snapshot
+        display_limit = base_balance
+        monthly_spent_display = spending_since_snapshot
+    elif monthly_limit > 0:
+        billing_start, today_utc, _ = _monthly_budget_window_utc(billing_day)
+        monthly_spent_display = _sum_cost_from_anima_dirs(billing_start, today_utc)
+        effective_remaining = monthly_limit - monthly_spent_display
+        display_limit = monthly_limit
+    else:
+        result = {
+            "configured": False,
+            "has_console_config": has_console_config,
+        }
+        _set_cache(_CACHE_KEY_COST_BUDGET, result)
+        return result
+
+    try:
+        days_in_month = _days_in_current_month_jst()
+        weekly_budget = display_limit / days_in_month * 7
+
+        week_start, today_jst, next_monday = _weekly_budget_window_jst()
+        week_spent = _sum_cost_from_anima_dirs(week_start, today_jst)
+        week_remaining = weekly_budget - week_spent
+        week_util_pct = (week_spent / weekly_budget * 100) if weekly_budget > 0 else 0.0
+        week_remaining_pct = 100.0 - week_util_pct
+
+        billing_start_utc, today_utc, next_billing = _monthly_budget_window_utc(billing_day)
+        month_util_pct = (monthly_spent_display / display_limit * 100) if display_limit > 0 else 0.0
+        month_remaining_pct = 100.0 - month_util_pct
+        billing_start_dt = datetime(
+            billing_start_utc.year, billing_start_utc.month, billing_start_utc.day, tzinfo=_UTC
+        )
+        month_window_seconds = int((next_billing - billing_start_dt).total_seconds())
+
+        result = {
+            "configured": True,
+            "has_console_config": has_console_config,
+            "snapshot": snapshot,
+            "weekly": {
+                "budget_usd": round(weekly_budget, 4),
+                "spent_usd": round(week_spent, 4),
+                "remaining_usd": round(week_remaining, 4),
+                "remaining_pct": round(week_remaining_pct, 2),
+                "utilization_pct": round(week_util_pct, 2),
+                "resets_at": next_monday.timestamp(),
+                "window_seconds": 604800,
+                "period_start": week_start.isoformat(),
+            },
+            "monthly": {
+                "budget_usd": round(display_limit, 4),
+                "spent_usd": round(monthly_spent_display, 4),
+                "remaining_usd": round(effective_remaining, 4),
+                "remaining_pct": round(month_remaining_pct, 2),
+                "utilization_pct": round(month_util_pct, 2),
+                "resets_at": next_billing.timestamp(),
+                "window_seconds": month_window_seconds,
+                "period_start": billing_start_utc.isoformat(),
+            },
+        }
+    except Exception as e:
+        logger.warning("cost_budget computation failed: %s", e, exc_info=True)
+        result = {"error": "compute_error", "message": str(e)[:200]}
+
+    _set_cache(_CACHE_KEY_COST_BUDGET, result)
+    return result
+
+
 # ── Route ────────────────────────────────────────────────────────────────────
 
 
@@ -806,6 +982,7 @@ def create_usage_router() -> APIRouter:
             "claude": _fetch_claude_usage(skip_cache=skip_cache),
             "openai": _fetch_openai_usage(skip_cache=skip_cache),
             "nanogpt": _fetch_nanogpt_usage(skip_cache=skip_cache),
+            "cost_budget": _fetch_cost_budget(skip_cache=skip_cache),
             "cached_at": time.time(),
             "governor": governor_info,
         }
@@ -814,6 +991,46 @@ def create_usage_router() -> APIRouter:
         if not skip_cache:
             _save_usage_snapshot(payload)
         return payload
+
+    @router.post("/usage/balance-sync")
+    async def sync_balance(request: Request) -> JSONResponse:
+        """Fetch current prepaid credit balance from Anthropic Console and save as snapshot."""
+        from core.config.io import load_config
+
+        try:
+            cfg = load_config()
+            budget_cfg = cfg.usage_budget
+        except Exception as e:
+            return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
+        if not budget_cfg.org_id or not budget_cfg.console_session_cookie:
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": "org_id または console_session_cookie が未設定です。config.json の usage_budget を設定してください。",
+                },
+                status_code=400,
+            )
+
+        balance = _fetch_console_balance(budget_cfg.org_id, budget_cfg.console_session_cookie)
+        if balance is None:
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": "残高取得に失敗しました。Cookie が期限切れかもしれません。",
+                },
+                status_code=502,
+            )
+
+        snapshot = _save_balance_snapshot(balance)
+        _CACHE.pop(_CACHE_KEY_COST_BUDGET, None)
+        return JSONResponse(
+            {
+                "success": True,
+                "balance_usd": balance,
+                "snapshot_at": snapshot["snapshot_at"],
+            }
+        )
 
     @router.post("/usage/claude/relogin")
     async def relogin_claude() -> JSONResponse:

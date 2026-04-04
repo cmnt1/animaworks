@@ -691,6 +691,24 @@ def _format_permissions_for_prompt(config: PermissionsConfig, anima_name: str) -
     return "\n".join(lines)
 
 
+# ── Usage Budget ─────────────────────────────────────────────────────────────
+
+
+class UsageBudgetConfig(BaseModel):
+    monthly_limit_usd: float = Field(default=0.0, ge=0.0)
+    """Monthly budget in USD (used when no balance snapshot is available). 0 = not configured."""
+
+    billing_day: int = Field(default=1, ge=1, le=28)
+    """Day of month when Anthropic billing cycle resets (UTC). 1-28."""
+
+    org_id: str = ""
+    """Anthropic organization ID from console.anthropic.com/settings/organization."""
+
+    console_session_cookie: str = ""
+    """Browser session cookie for console.anthropic.com (for balance sync).
+    Value of the Cookie header, e.g. 'session=abc123; ...'"""
+
+
 # ── Main Config ─────────────────────────────────────────────────────────────
 
 
@@ -732,6 +750,7 @@ class AnimaWorksConfig(BaseModel):
         description="Time-based activity level schedule. Empty = use fixed activity_level.",
     )
     ui: UIConfig = UIConfig()
+    usage_budget: UsageBudgetConfig = UsageBudgetConfig()
 
 
 __all__ = [
@@ -770,6 +789,7 @@ __all__ = [
     "StyleBertVits2Config",
     "SystemConfig",
     "UIConfig",
+    "UsageBudgetConfig",
     "UserAliasConfig",
     "VoiceConfig",
     "VoicevoxConfig",
