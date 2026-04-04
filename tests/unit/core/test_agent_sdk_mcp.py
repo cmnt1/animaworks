@@ -81,13 +81,11 @@ class TestBuildSdkEnv:
     def test_path_includes_launcher_python_dir(self, tmp_path: Path) -> None:
         """PATH prepends the launcher Python directory for repo-local console scripts."""
         executor = _make_executor(tmp_path / "animas" / "test-anima")
-        with (
-            patch("core.execution._sdk_options.sys.executable", r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts\python.exe"),
-            patch.dict(os.environ, {"PATH": r"C:\Windows\System32"}, clear=True),
-        ):
-            env = executor._build_env()
+        # Use the actual sys.executable so the test is platform-independent
+        expected_launcher_dir = str(Path(sys.executable).resolve().parent)
+        env = executor._build_env()
         parts = env["PATH"].split(os.pathsep)
-        assert r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts" in parts
+        assert expected_launcher_dir in parts
 
     def test_path_preserves_existing_entries(self, tmp_path: Path) -> None:
         """Existing PATH entries remain available after prepending repo-local dirs."""
