@@ -41,6 +41,7 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "search": {"expected_seconds": 30, "background_eligible": False},
     # gated: requires explicit "discord_channel_post: yes" in permissions.md.
     "channel_post": {"expected_seconds": 10, "background_eligible": False, "gated": True},
+    "unreplied": {"expected_seconds": 10, "background_eligible": False},
 }
 
 
@@ -101,7 +102,8 @@ def get_tool_schemas() -> list[dict]:
         {
             "name": "discord_channel_post",
             "description": (
-                "Post a message to a Discord text channel via Bot Token API. "
+                "Post a message to a Discord text channel. "
+                "The message appears with your Anima identity (name + avatar). "
                 "Returns the message ID for future reference."
             ),
             "input_schema": {
@@ -117,6 +119,27 @@ def get_tool_schemas() -> list[dict]:
                     },
                 },
                 "required": ["channel_id", "text"],
+            },
+        },
+        {
+            "name": "discord_unreplied",
+            "description": (
+                "Find Discord messages that mention your name but have not been replied to. "
+                "Useful during heartbeat to check for pending requests."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "channel_id": {
+                        "type": "string",
+                        "description": "Discord channel ID to search (optional — searches all cached channels if omitted)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default: 10)",
+                    },
+                },
+                "required": [],
             },
         },
     ]
@@ -194,9 +217,26 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         finally:
             client.close()
     if name == "discord_channel_post":
+        discord_text = md_to_discord(args["text"])
+        anima_name = ""
+        anima_dir = args.get("anima_dir")
+        if anima_dir:
+            anima_name = Path(anima_dir).name
+
+        # Use webhook manager for Anima identity if available
+        if anima_name:
+            try:
+                from core.discord_webhooks import get_webhook_manager
+
+                wm = get_webhook_manager()
+                msg_id = wm.send_as_anima(args["channel_id"], anima_name, discord_text)
+                return {"status": "ok", "channel_id": args["channel_id"], "message_id": msg_id}
+            except Exception:
+                logger.debug("Webhook send failed, falling back to bot token", exc_info=True)
+
+        # Fallback to direct bot token send
         client = DiscordClient(token=_resolve_discord_token(args))
         try:
-            discord_text = md_to_discord(args["text"])
             resp = client.send_message(
                 args["channel_id"],
                 discord_text,
@@ -205,6 +245,37 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
             return {"status": "ok", "channel_id": args["channel_id"], "message_id": mid}
         finally:
             client.close()
+
+    if name == "discord_unreplied":
+        cache = MessageCache()
+        try:
+            anima_name = ""
+            anima_dir = args.get("anima_dir")
+            if anima_dir:
+                anima_name = Path(anima_dir).name
+            if not anima_name:
+                return {"status": "error", "message": "Cannot determine Anima name"}
+
+            channel_id = args.get("channel_id")
+            limit = int(args.get("limit", 10))
+            results = cache.search(
+                anima_name,
+                channel_id=channel_id,
+                limit=limit * 3,  # oversample to filter
+            )
+            # Filter to messages that mention this anima but weren't sent by them
+            unreplied = []
+            for msg in results:
+                user_name = msg.get("user_name", "").lower()
+                content = msg.get("content", "").lower()
+                if anima_name.lower() in content and user_name != anima_name.lower():
+                    unreplied.append(msg)
+                if len(unreplied) >= limit:
+                    break
+            return unreplied
+        finally:
+            cache.close()
+
     raise ValueError(f"Unknown tool: {name}")
 
 
