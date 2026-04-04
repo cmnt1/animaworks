@@ -326,15 +326,7 @@ class DiscordGatewayManager:
         except Exception:
             pass
 
-        # 3. Default anima
-        try:
-            cfg = load_config()
-            default = cfg.external_messaging.discord.default_anima
-            if default:
-                return default
-        except Exception:
-            pass
-
+        # Let the caller decide (channel lead / default_anima fallback)
         return None
 
     def _is_anima_in_channel(self, anima_name: str, channel_id: str) -> bool:
