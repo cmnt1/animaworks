@@ -443,7 +443,7 @@ class DiscordGatewayManager:
                 self._anima_name_re is not None and self._anima_name_re.search(cleaned_text) is not None
             )
             annotation = _build_discord_annotation(is_dm, has_mention)
-            intent = "question" if (is_dm or has_mention) else ""
+            intent = "question"
 
             full_content = annotation + thread_ctx + cleaned_text
 
