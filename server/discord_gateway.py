@@ -413,6 +413,17 @@ class DiscordGatewayManager:
                 except Exception:
                     pass
 
+            # No mention, no name detected: route to default_anima
+            # (same as Slack — default_anima responds to all channel messages)
+            if target_anima is None and not bot_mentioned:
+                try:
+                    cfg = load_config()
+                    default = cfg.external_messaging.discord.default_anima
+                    if default and self._is_anima_in_channel(default, channel_id):
+                        target_anima = default
+                except Exception:
+                    pass
+
         # Enforce channel membership
         if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, channel_id):
             logger.debug(
