@@ -936,6 +936,8 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
                 "utilization_pct": round(week_util_pct, 2),
                 "resets_at": next_monday.timestamp(),
                 "window_seconds": 604800,
+                "billing_spent_usd": round(billing_spent, 4),
+                "billing_elapsed_seconds": billing_elapsed_seconds,
             },
             "monthly": {
                 "budget_usd": round(budget_limit, 4),
