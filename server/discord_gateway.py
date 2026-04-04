@@ -443,7 +443,7 @@ class DiscordGatewayManager:
                     return
 
                 shared_dir = data_dir / "shared"
-                messenger = Messenger(shared_dir, target_anima, inbox_dir=anima_dir / "inbox")
+                messenger = Messenger(shared_dir, target_anima)
                 messenger.receive_external(
                     content=full_content,
                     source="discord",
