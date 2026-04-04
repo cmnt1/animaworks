@@ -381,8 +381,9 @@ class DiscordGatewayManager:
             name_snapshot = dict(_user_name_cache)
         cleaned_text = clean_discord_markup(message.content or "", cache=name_snapshot)
 
-        is_dm = message.guild is None
         channel_id = str(message.channel.id)
+        ch_name = getattr(message.channel, "name", "") or ""
+        is_dm = message.guild is None or ch_name.startswith("dm-")
 
         # Bot mentioned?
         bot_mentioned = any(u.id == self._bot_user_id for u in message.mentions)
