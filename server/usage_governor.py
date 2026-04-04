@@ -15,15 +15,20 @@ Governor runtime state (suspended animas) is kept in
 ``usage_governor_state.json`` so recovery works across restarts.
 
 Credential-to-provider mapping:
-  - ``anthropic`` → ``claude`` rules
+  - ``anthropic`` → ``claude`` rules (evaluated via cost_budget weekly/monthly)
   - ``openai``    → ``openai`` rules
   - ``ollama``    → exempt (local)
 
 Rule mode:
   - **time_proportional** — ``usage_remaining_%`` must stay above
     ``time_remaining_%``; deficit (in percentage points) determines
-    throttle severity.  Applied uniformly to all windows (5 h and 7 d).
+    throttle severity.  Applied to weekly and monthly windows for claude.
   - **threshold** (list format, legacy) — fixed remaining-% cut-offs.
+
+Note: Claude is evaluated via ``_fetch_cost_budget()`` (local token log +
+optional balance snapshot) since the Anthropic OAuth usage endpoint is no
+longer available to third-party harnesses.  The ``weekly`` and ``monthly``
+window keys replace the legacy ``five_hour`` / ``seven_day`` keys.
 """
 
 import asyncio
@@ -51,9 +56,9 @@ DEFAULT_POLICY: dict[str, Any] = {
     "hard_floor_pct": 15,  # absolute minimum remaining % for any window
     "providers": {
         "claude": {
-            # All windows use time-proportional mode:
-            # usage_remaining_% must stay above time_remaining_% of the window.
-            "five_hour": {
+            # cost-budget windows (replaces deprecated five_hour/seven_day OAuth windows)
+            # remaining_pct from _fetch_cost_budget() is mapped to "remaining" by _tick()
+            "weekly": {
                 "mode": "time_proportional",
                 "deficit_rules": [
                     {"deficit_above": 0, "activity_level": 60},
@@ -61,7 +66,7 @@ DEFAULT_POLICY: dict[str, Any] = {
                     {"deficit_above": 20, "activity_level": 10},
                 ],
             },
-            "seven_day": {
+            "monthly": {
                 "mode": "time_proportional",
                 "deficit_rules": [
                     {"deficit_above": 0, "activity_level": 60},
@@ -181,11 +186,38 @@ def save_policy(data_dir: Path, policy: dict[str, Any]) -> None:
 
 
 def ensure_policy_file(data_dir: Path) -> None:
-    """Create default policy file if it doesn't exist."""
+    """Create default policy file if it doesn't exist.
+
+    Also migrates legacy ``five_hour``/``seven_day`` claude window keys to
+    ``weekly``/``monthly`` when found in an existing policy file.
+    """
     path = _policy_path(data_dir)
     if not path.is_file():
         save_policy(data_dir, DEFAULT_POLICY)
         logger.info("Created default usage policy at %s", path)
+        return
+
+    # Migrate legacy claude window keys
+    try:
+        policy = json.loads(path.read_text("utf-8"))
+        claude_rules = policy.get("providers", {}).get("claude", {})
+        legacy_keys = {"five_hour", "seven_day"}
+        if legacy_keys.intersection(claude_rules):
+            new_claude: dict[str, Any] = {}
+            # Carry over any non-legacy keys
+            for k, v in claude_rules.items():
+                if k not in legacy_keys:
+                    new_claude[k] = v
+            # Apply defaults for weekly/monthly if not already present
+            default_claude = DEFAULT_POLICY["providers"]["claude"]
+            for k in ("weekly", "monthly"):
+                if k not in new_claude:
+                    new_claude[k] = default_claude[k]
+            policy.setdefault("providers", {})["claude"] = new_claude
+            save_policy(data_dir, policy)
+            logger.info("Migrated usage_policy.json: five_hour/seven_day → weekly/monthly")
+    except Exception:
+        logger.debug("Policy migration check failed", exc_info=True)
 
 
 # ── Credential resolution ───────────────────────────────────────────────────
@@ -492,32 +524,29 @@ class UsageGovernor:
     async def _tick(self, policy: dict[str, Any]) -> None:
         """Single governor check cycle."""
         from server.routes.usage_routes import (
-            _fetch_claude_usage,
+            _fetch_cost_budget,
             _fetch_nanogpt_usage,
             _fetch_openai_usage,
-            _relogin_claude,
         )
 
+        # Build claude window data from cost_budget (replaces deprecated OAuth usage)
+        cost_budget = _fetch_cost_budget()
+        claude_data: dict[str, Any] = {}
+        if cost_budget.get("configured") and not cost_budget.get("error"):
+            for window_key in ("weekly", "monthly"):
+                win = cost_budget.get(window_key)
+                if win and isinstance(win, dict):
+                    claude_data[window_key] = {
+                        "remaining": win.get("remaining_pct", 100.0),
+                        "resets_at": win.get("resets_at"),
+                        "window_seconds": win.get("window_seconds"),
+                    }
+
         usage_data = {
-            "claude": _fetch_claude_usage(),
+            "claude": claude_data,
             "openai": _fetch_openai_usage(),
             "nanogpt": _fetch_nanogpt_usage(),
         }
-
-        # Auto-recovery: if Claude fetch failed with recoverable error,
-        # try token refresh / relogin then retry
-        claude_error = usage_data.get("claude", {}).get("error", "")
-        if claude_error in ("rate_limited", "unauthorized", "no_credentials"):
-            logger.info("Governor: Claude usage fetch failed (%s), attempting relogin", claude_error)
-            relogin_result, _status = _relogin_claude()
-            if relogin_result.get("success"):
-                logger.info("Governor: relogin succeeded, retrying usage fetch")
-                usage_data["claude"] = _fetch_claude_usage(skip_cache=True)
-            else:
-                logger.warning(
-                    "Governor: relogin failed — %s",
-                    relogin_result.get("message", "unknown"),
-                )
 
         self._state.last_check = time.time()
         self._state.last_usage = usage_data
