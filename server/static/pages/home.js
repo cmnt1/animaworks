@@ -462,17 +462,18 @@ function _renderCostBudgetBar(label, win) {
   const barFillPct = Math.max(0, Math.min(100, remainingPct));
   const color = _remainingColor(remainingPct);
 
-  // pt = (現在の残高 - 予算上限) / 予算上限 * 100 = remainingPct - 100
-  const ptVal = remainingPct - 100;
-  const ptSign = ptVal >= 0 ? "+" : "";
-  const ptColor = ptVal >= 0 ? "inherit" : "var(--aw-color-error,#dc2626)";
-  const ptHtml = `<span style="color:${ptColor};font-size:0.7rem;margin-left:0.5rem;">${ptSign}${ptVal.toFixed(0)}pt</span>`;
-
   const timePct = _calcTimePct(win.resets_at, win.window_seconds);
   let markerHtml = "";
   if (timePct !== null && win.window_seconds) {
     markerHtml = `<div class="usage-bar-time-marker" style="left:${timePct}%" data-label="${timePct.toFixed(0)}%"></div>`;
   }
+
+  // pt = 残高% - 残り時間% = remainingPct - (100 - timePct)
+  const timeRemainingPct = timePct !== null ? 100 - timePct : null;
+  const ptVal = timeRemainingPct !== null ? remainingPct - timeRemainingPct : remainingPct - 100;
+  const ptSign = ptVal >= 0 ? "+" : "";
+  const ptColor = ptVal >= 0 ? "inherit" : "var(--aw-color-error,#dc2626)";
+  const ptHtml = `<span style="color:${ptColor};font-size:0.7rem;margin-left:0.5rem;">${ptSign}${ptVal.toFixed(0)}pt</span>`;
 
   // 月初消費ペースによる着地予測（billing_spent_usd / billing_elapsed_seconds → 月末残り秒で外挿）
   let forecastHtml = "";
