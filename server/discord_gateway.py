@@ -379,6 +379,11 @@ class DiscordGatewayManager:
 
         channel_id = str(message.channel.id)
         ch_name = getattr(message.channel, "name", "") or ""
+
+        # For threads, use parent channel ID for membership/routing lookups
+        parent_id = getattr(message.channel, "parent_id", None)
+        routing_channel_id = str(parent_id) if parent_id else channel_id
+
         is_dm = message.guild is None or ch_name.startswith("dm-")
 
         # Bot mentioned?
@@ -396,10 +401,10 @@ class DiscordGatewayManager:
 
         if is_dm:
             # DM: detect name in text or use default
-            target_anima = self._detect_target_anima(cleaned_text, channel_id)
+            target_anima = self._detect_target_anima(cleaned_text, routing_channel_id)
         else:
-            # Guild channel
-            target_anima = self._detect_target_anima(cleaned_text, channel_id)
+            # Guild channel (use routing_channel_id for thread→parent fallback)
+            target_anima = self._detect_target_anima(cleaned_text, routing_channel_id)
 
             # If bot mentioned but no specific anima found, use default
             if target_anima is None and bot_mentioned:
@@ -414,33 +419,34 @@ class DiscordGatewayManager:
             if target_anima is None:
                 try:
                     cfg = load_config()
-                    members = cfg.external_messaging.discord.channel_members.get(channel_id, [])
+                    members = cfg.external_messaging.discord.channel_members.get(routing_channel_id, [])
                     if members:
                         target_anima = members[0]
                     else:
                         # Fallback to default_anima
                         default = cfg.external_messaging.discord.default_anima
-                        if default and self._is_anima_in_channel(default, channel_id):
+                        if default and self._is_anima_in_channel(default, routing_channel_id):
                             target_anima = default
                 except Exception:
                     pass
 
         # Enforce channel membership
-        if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, channel_id):
+        if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, routing_channel_id):
             logger.info(
                 "Discord routing: '%s' not a member of channel %s (#%s) — dropping",
-                target_anima, channel_id, ch_name,
+                target_anima, routing_channel_id, ch_name,
             )
             target_anima = None
 
         logger.info(
-            "Discord routing: channel=#%s (%s) is_dm=%s bot_mentioned=%s -> target=%s",
-            ch_name, channel_id, is_dm, bot_mentioned, target_anima,
+            "Discord routing: channel=#%s (%s, routing=%s) is_dm=%s bot_mentioned=%s -> target=%s",
+            ch_name, channel_id, routing_channel_id, is_dm, bot_mentioned, target_anima,
         )
 
         # Board routing (always, regardless of target)
+        # Use routing_channel_id so thread messages map to parent channel's board
         if not is_dm:
-            _route_to_board(channel_id, cleaned_text, author_display, message_id=msg_id)
+            _route_to_board(routing_channel_id, cleaned_text, author_display, message_id=msg_id)
 
         # Deliver to Anima inbox if we have a target
         if target_anima:
