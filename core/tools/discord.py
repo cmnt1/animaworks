@@ -217,6 +217,15 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         finally:
             client.close()
     if name == "discord_channel_post":
+        # Block during inbox processing — auto-responder handles posting
+        _trigger = args.get("_trigger", "")
+        if _trigger.startswith("inbox"):
+            return {
+                "status": "blocked",
+                "message": "discord_channel_post is blocked during inbox processing. "
+                "Your response is auto-posted by the framework.",
+            }
+
         discord_text = md_to_discord(args["text"])
         anima_name = ""
         anima_dir = args.get("anima_dir")
