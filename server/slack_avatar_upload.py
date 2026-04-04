@@ -16,7 +16,7 @@ This module is called:
 
 import ftplib
 import logging
-import sys
+import os
 from pathlib import Path
 
 logger = logging.getLogger("animaworks.slack_avatar_upload")
@@ -27,18 +27,32 @@ _PUBLIC_BASE_URL = "https://xs642990.xsrv.jp/animaworks-avatars"
 
 
 def _get_xserver_config() -> dict | None:
-    """Load XSERVER FTP credentials from abconfig."""
-    try:
-        if r"E:\OneDriveBiz\Tools" not in sys.path:
-            sys.path.insert(0, r"E:\OneDriveBiz\Tools")
-        from abconfig.Cnct_Env import XSERVER
+    """Load XSERVER FTP credentials from credentials cascade.
 
-        if not XSERVER or not XSERVER.get("ftp_host"):
-            return None
-        return XSERVER
-    except Exception:
-        logger.debug("Could not load XSERVER config from abconfig", exc_info=True)
+    Resolution order:
+      1. Environment variables (XSERVER_FTP_HOST, _USER, _PASS)
+      2. config.json ``credentials.xserver_ftp``
+      3. Legacy abconfig bridge (if available)
+    """
+    host = os.environ.get("XSERVER_FTP_HOST")
+    user = os.environ.get("XSERVER_FTP_USER")
+    password = os.environ.get("XSERVER_FTP_PASS")
+
+    if not all((host, user, password)):
+        try:
+            from core.tools._base import get_credential
+
+            host = host or get_credential("xserver_ftp", "xserver", "ftp_host", "XSERVER_FTP_HOST")
+            user = user or get_credential("xserver_ftp", "xserver", "ftp_user", "XSERVER_FTP_USER")
+            password = password or get_credential("xserver_ftp", "xserver", "ftp_pass", "XSERVER_FTP_PASS")
+        except Exception:
+            pass
+
+    if not all((host, user, password)):
+        logger.debug("XSERVER FTP credentials not found in env/config")
         return None
+
+    return {"ftp_host": host, "ftp_user": user, "ftp_pass": password}
 
 
 def _ensure_remote_dir(ftp: ftplib.FTP, path: str) -> None:

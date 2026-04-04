@@ -116,6 +116,23 @@ class RemakePreviewRequest(BaseModel):
     import_as_is: bool = False  # Import face reference directly as avatar
     num_inference_steps: int = 25  # Diffusers inference step count (quality vs speed)
 
+    @field_validator("face_reference_url")
+    @classmethod
+    def validate_face_ref_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from urllib.parse import urlparse
+
+        parsed = urlparse(v)
+        if parsed.scheme.lower() != "https":
+            raise ValueError("Only HTTPS URLs are allowed for face_reference_url")
+        host = (parsed.hostname or "").lower()
+        if not host:
+            raise ValueError("Invalid URL: missing hostname")
+        if host in ("localhost", "127.0.0.1", "::1") or host.startswith(("10.", "192.168.", "172.")):
+            raise ValueError("Private network URLs are not allowed")
+        return v
+
     @field_validator("num_inference_steps")
     @classmethod
     def validate_steps(cls, v: int) -> int:
@@ -367,12 +384,16 @@ def create_assets_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        # Validate filename (prevent path traversal)
+        if ".." in filename or "/" in filename or "\\" in filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
         safe_name = Path(filename).name
-        if safe_name != filename or ".." in filename:
+        if safe_name != filename:
             raise HTTPException(status_code=400, detail="Invalid filename")
 
-        file_path = anima_dir / "assets" / safe_name
+        assets_dir = anima_dir / "assets"
+        file_path = (assets_dir / safe_name).resolve()
+        if not file_path.is_relative_to(assets_dir.resolve()):
+            raise HTTPException(status_code=400, detail="Invalid path")
         if not file_path.exists() or not file_path.is_file():
             raise HTTPException(status_code=404, detail="Asset not found")
 

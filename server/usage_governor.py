@@ -111,6 +111,10 @@ DEFAULT_POLICY: dict[str, Any] = {
 # ── Governor state ───────────────────────────────────────────────────────────
 
 
+_RELOGIN_MAX_PER_HOUR = 3
+_RELOGIN_COOLDOWN_SECONDS = 600  # 10 min after consecutive failures
+
+
 class GovernorState:
     """Mutable runtime state persisted to ``usage_governor_state.json``."""
 
@@ -121,7 +125,29 @@ class GovernorState:
         self.since: str = ""
         self.last_check: float = 0.0
         self.last_usage: dict[str, Any] = {}
+        self._relogin_timestamps: dict[str, list[float]] = {}
+        self._relogin_cooldown_until: dict[str, float] = {}
         self._load()
+
+    def can_relogin(self, provider: str) -> bool:
+        """Return True if a relogin attempt is allowed for *provider*."""
+        now = time.time()
+        if self._relogin_cooldown_until.get(provider, 0) > now:
+            return False
+        recent = [
+            t
+            for t in self._relogin_timestamps.get(provider, [])
+            if now - t < 3600
+        ]
+        self._relogin_timestamps[provider] = recent
+        return len(recent) < _RELOGIN_MAX_PER_HOUR
+
+    def record_relogin(self, provider: str, *, success: bool) -> None:
+        """Record a relogin attempt.  On failure, activate cooldown."""
+        now = time.time()
+        self._relogin_timestamps.setdefault(provider, []).append(now)
+        if not success:
+            self._relogin_cooldown_until[provider] = now + _RELOGIN_COOLDOWN_SECONDS
 
     def _load(self) -> None:
         if not self._path.is_file():
@@ -505,19 +531,25 @@ class UsageGovernor:
         }
 
         # Auto-recovery: if Claude fetch failed with recoverable error,
-        # try token refresh / relogin then retry
+        # try token refresh / relogin then retry (rate-limited to avoid
+        # excessive OAuth requests).
         claude_error = usage_data.get("claude", {}).get("error", "")
         if claude_error in ("rate_limited", "unauthorized", "no_credentials"):
-            logger.info("Governor: Claude usage fetch failed (%s), attempting relogin", claude_error)
-            relogin_result, _status = _relogin_claude()
-            if relogin_result.get("success"):
-                logger.info("Governor: relogin succeeded, retrying usage fetch")
-                usage_data["claude"] = _fetch_claude_usage(skip_cache=True)
+            if self._state.can_relogin("claude"):
+                logger.info("Governor: Claude usage fetch failed (%s), attempting relogin", claude_error)
+                relogin_result, _status = _relogin_claude()
+                success = bool(relogin_result.get("success"))
+                self._state.record_relogin("claude", success=success)
+                if success:
+                    logger.info("Governor: relogin succeeded, retrying usage fetch")
+                    usage_data["claude"] = _fetch_claude_usage(skip_cache=True)
+                else:
+                    logger.warning(
+                        "Governor: relogin failed — %s",
+                        relogin_result.get("message", "unknown"),
+                    )
             else:
-                logger.warning(
-                    "Governor: relogin failed — %s",
-                    relogin_result.get("message", "unknown"),
-                )
+                logger.info("Governor: skipping relogin for claude (rate-limited / cooldown)")
 
         self._state.last_check = time.time()
         self._state.last_usage = usage_data
@@ -555,6 +587,11 @@ class UsageGovernor:
             all_suspend.extend(to_suspend)
             if reason:
                 reasons.append(reason)
+
+        # Bail out before mutating process state if the governor is shutting down.
+        task = asyncio.current_task()
+        if task is not None and task.cancelled():
+            return
 
         # Apply suspensions (only cloud-provider animas; local ones untouched)
         await self._apply_suspensions(set(all_suspend))

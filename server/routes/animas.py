@@ -16,6 +16,12 @@ from core.config.models import load_config, resolve_anima_config, resolve_execut
 logger = logging.getLogger("animaworks.routes.animas")
 
 
+def _validate_anima_name(name: str) -> None:
+    """Reject names that could escape the animas directory."""
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Invalid anima name")
+
+
 def _read_appearance(anima_dir: Path) -> dict | None:
     """Read appearance.json from an anima directory."""
     path = anima_dir / "appearance.json"
@@ -269,6 +275,7 @@ def create_animas_router() -> APIRouter:
     @router.put("/animas/{name}/permissions")
     async def update_anima_permissions(name: str, request: Request):
         """Update permissions.json for an anima."""
+        _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
         if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
@@ -291,6 +298,7 @@ def create_animas_router() -> APIRouter:
     @router.put("/animas/{name}/identity")
     async def update_anima_identity(name: str, request: Request):
         """Update the identity.md content for an anima."""
+        _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
         if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
@@ -307,6 +315,7 @@ def create_animas_router() -> APIRouter:
     @router.put("/animas/{name}/injection")
     async def update_anima_injection(name: str, request: Request):
         """Update the injection.md content for an anima."""
+        _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
         if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
@@ -323,6 +332,7 @@ def create_animas_router() -> APIRouter:
     @router.put("/animas/{name}/model")
     async def update_anima_model(name: str, request: Request):
         """Update the model setting in status.json for an anima."""
+        _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
         if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
@@ -404,6 +414,7 @@ def create_animas_router() -> APIRouter:
     @router.put("/animas/{name}/aliases")
     async def update_anima_aliases(name: str, request: Request):
         """Update aliases for an anima in config.json."""
+        _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
         if not anima_dir.exists() or not (anima_dir / "identity.md").exists():

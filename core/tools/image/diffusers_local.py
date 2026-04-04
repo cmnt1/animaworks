@@ -98,25 +98,42 @@ def _scrfd_detect_largest(image_rgb: Any) -> tuple[int, int, int, int] | None:
 
         # Group SCRFD outputs by last dimension (no batch dim in this export):
         #   (N, 1)  → score,   (N, 4) → bbox,   (N, 10) → kps
-        # Sort largest-first so index 0 == stride-8 (most anchors).
-        score_outs = sorted([o for o in outputs if o.shape[-1] == 1],  key=lambda o: -o.size)
-        bbox_outs  = sorted([o for o in outputs if o.shape[-1] == 4],  key=lambda o: -o.size)
+        # Derive stride from tensor shape rather than relying on size-ordering,
+        # since ONNX export order may vary across SCRFD versions.
+        num_anchors = 2
+        stride_to_score: dict[int, Any] = {}
+        stride_to_bbox: dict[int, Any] = {}
 
-        if len(score_outs) < 3 or len(bbox_outs) < 3:
+        for o in outputs:
+            last_dim = o.shape[-1]
+            if last_dim not in (1, 4):
+                continue
+            total_anchors = o.size // last_dim
+            cells = total_anchors // num_anchors
+            feat_w = int(round(cells**0.5))
+            if feat_w <= 0:
+                continue
+            stride = target // feat_w
+            if last_dim == 1:
+                stride_to_score[stride] = o
+            else:
+                stride_to_bbox[stride] = o
+
+        expected_strides = [8, 16, 32]
+        if not all(s in stride_to_score and s in stride_to_bbox for s in expected_strides):
             logger.warning(
-                "SCRFD: unexpected output count — scores=%d bboxes=%d",
-                len(score_outs), len(bbox_outs),
+                "SCRFD: missing stride outputs — scores=%s bboxes=%s",
+                sorted(stride_to_score), sorted(stride_to_bbox),
             )
             return None
 
-        # SCRFD uses num_anchors=2 per cell.  Flat index i maps to:
-        #   cell = i // 2,  anchor_x = (cell % feat_w) * stride
-        num_anchors = 2
         best_box: tuple[int, int, int, int] | None = None
         best_area = 0
         threshold = 0.5
 
-        for stride, s_out, b_out in zip([8, 16, 32], score_outs[:3], bbox_outs[:3]):
+        for stride in expected_strides:
+            s_out = stride_to_score[stride]
+            b_out = stride_to_bbox[stride]
             scores_flat = s_out.reshape(-1)   # (H*W*num_anchors,)
             bboxes_2d   = b_out               # already (H*W*num_anchors, 4)
             feat_w = target // stride
@@ -604,13 +621,16 @@ class LocalDiffusersClient:
         if pipe is None:
             _IP_ADAPTER_LOADED.discard(text2img_key)
             return
+
+        # Pop saved config BEFORE unload so it is available for restore
+        # regardless of whether unload_ip_adapter() raises.
+        original_hid_dim = _IP_ADAPTER_ORIGINAL_HID_DIM.pop(text2img_key, None)
         try:
             pipe.unload_ip_adapter()
             # unload_ip_adapter() does not reliably restore encoder_hid_dim_type in
             # the UNet config.  Restore the saved original value so that any pipeline
             # derived from this one (e.g. via from_pipe) does not inherit the stale
             # 'ip_image_proj' setting and crash when image_embeds is absent.
-            original_hid_dim = _IP_ADAPTER_ORIGINAL_HID_DIM.pop(text2img_key, None)
             try:
                 pipe.unet.config.encoder_hid_dim_type = original_hid_dim
             except Exception:
@@ -618,11 +638,11 @@ class LocalDiffusersClient:
             logger.info("IP-Adapter retired (switching away from face reference mode)")
         except Exception:
             logger.warning("Failed to unload IP-Adapter", exc_info=True)
-            _IP_ADAPTER_ORIGINAL_HID_DIM.pop(text2img_key, None)
-        _IP_ADAPTER_LOADED.discard(text2img_key)
-        # Invalidate derived img2img cache so it is rebuilt cleanly.
-        img2img_key = ("img2img", self._img2img_source, self._device, self._dtype_name)
-        _PIPELINE_CACHE.pop(img2img_key, None)
+        finally:
+            _IP_ADAPTER_LOADED.discard(text2img_key)
+            # Invalidate derived img2img cache so it is rebuilt cleanly.
+            img2img_key = ("img2img", self._img2img_source, self._device, self._dtype_name)
+            _PIPELINE_CACHE.pop(img2img_key, None)
 
     def _image2image_strength(self, requested: float | None = None) -> float:
         strength = requested
