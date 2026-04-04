@@ -895,6 +895,7 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
 
         result = {
             "configured": True,
+            "monthly_limit_usd": monthly_limit,
             "snapshot": snapshot,
             "weekly": {
                 "budget_usd": round(weekly_budget, 4),
@@ -961,7 +962,7 @@ def create_usage_router() -> APIRouter:
 
     @router.post("/usage/balance-sync")
     async def sync_balance(request: Request) -> JSONResponse:
-        """Save a manually entered balance as a snapshot."""
+        """Save a manually entered balance as a snapshot, optionally update monthly_limit_usd."""
         try:
             body = await request.json()
         except Exception:
@@ -973,6 +974,17 @@ def create_usage_router() -> APIRouter:
                 {"success": False, "message": "balance_usd は0以上の数値で指定してください。"},
                 status_code=400,
             )
+
+        # Optionally update monthly_limit_usd in config
+        monthly_limit_usd = body.get("monthly_limit_usd")
+        if isinstance(monthly_limit_usd, (int, float)) and monthly_limit_usd >= 0:
+            try:
+                from core.config.io import load_config, save_config
+                cfg = load_config()
+                cfg.usage_budget.monthly_limit_usd = float(monthly_limit_usd)
+                save_config(cfg)
+            except Exception as e:
+                logger.warning("Failed to save monthly_limit_usd: %s", e)
 
         snapshot = _save_balance_snapshot(float(balance_usd))
         _CACHE.pop(_CACHE_KEY_COST_BUDGET, None)

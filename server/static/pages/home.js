@@ -8,6 +8,7 @@ import { bustupCandidates, resolveAvatar } from "../modules/avatar-resolver.js";
 
 let _refreshInterval = null;
 let _usageInterval = null;
+let _lastMonthlyLimitUsd = 0;
 
 // ── Render ─────────────────────────────────
 
@@ -136,14 +137,29 @@ export function render(container) {
         alert("有効な金額を入力してください");
         return;
       }
+      const limitDefault = _lastMonthlyLimitUsd > 0 ? _lastMonthlyLimitUsd.toFixed(2) : "";
+      const limitInput = prompt(
+        `月間予算上限を入力してください (USD)\n` +
+        `スナップショット同期後は残高が基準になるため省略可。\n` +
+        `例: 200.00`,
+        limitDefault
+      );
+      if (limitInput === null) return;
+      const monthlyLimit = limitInput.trim() === "" ? null : parseFloat(limitInput.replace(/[^0-9.]/g, ""));
+      if (monthlyLimit !== null && (isNaN(monthlyLimit) || monthlyLimit < 0)) {
+        alert("有効な金額を入力してください");
+        return;
+      }
       syncBtn.disabled = true;
       syncBtn.textContent = "...";
       try {
+        const body = { balance_usd: balance };
+        if (monthlyLimit !== null) body.monthly_limit_usd = monthlyLimit;
         const res = await fetch("/api/usage/balance-sync", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ balance_usd: balance }),
+          body: JSON.stringify(body),
         });
         const data = await res.json().catch(() => ({}));
         if (data.success) {
@@ -582,6 +598,9 @@ async function _loadUsage(forceRefresh = false) {
     const url = forceRefresh ? "/api/usage?skip_cache=true" : "/api/usage";
     const data = await api(url);
 
+    if (data.cost_budget?.monthly_limit_usd !== undefined) {
+      _lastMonthlyLimitUsd = data.cost_budget.monthly_limit_usd;
+    }
     _renderCostBudget(data.cost_budget);
     if (data.openai) _renderOpenaiUsage(data.openai);
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
