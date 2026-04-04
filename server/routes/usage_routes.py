@@ -808,7 +808,6 @@ def _sum_cost_from_anima_dirs(
         return total
     days_count = (end_date - start_date).days + 1
     date_set = {start_date + timedelta(days=i) for i in range(days_count)}
-    since_str = since_ts.isoformat() if since_ts else None
     for anima_dir in animas_dir.iterdir():
         if not anima_dir.is_dir():
             continue
@@ -830,8 +829,17 @@ def _sum_cost_from_anima_dirs(
                     continue
                 try:
                     entry = json.loads(line)
-                    if since_str and entry.get("ts", "") < since_str:
-                        continue
+                    if since_ts:
+                        ts_str = entry.get("ts", "")
+                        if ts_str:
+                            try:
+                                entry_ts = datetime.fromisoformat(ts_str)
+                                if entry_ts < since_ts:
+                                    continue
+                            except ValueError:
+                                continue
+                        else:
+                            continue
                     total += entry.get("estimated_cost_usd", 0.0)
                 except json.JSONDecodeError:
                     pass
