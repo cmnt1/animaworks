@@ -791,8 +791,15 @@ def _monthly_budget_window_utc(billing_day: int) -> tuple[date, date, datetime]:
     return billing_start, today, next_cutoff
 
 
-def _sum_cost_from_anima_dirs(start_date: date, end_date: date) -> float:
-    """Sum estimated_cost_usd from all Anima token_usage logs in [start_date, end_date]."""
+def _sum_cost_from_anima_dirs(
+    start_date: date,
+    end_date: date,
+    since_ts: datetime | None = None,
+) -> float:
+    """Sum estimated_cost_usd from all Anima token_usage logs in [start_date, end_date].
+
+    If since_ts is given, entries with ts < since_ts are skipped (for the snapshot date).
+    """
     from core.paths import get_animas_dir
 
     total = 0.0
@@ -801,6 +808,7 @@ def _sum_cost_from_anima_dirs(start_date: date, end_date: date) -> float:
         return total
     days_count = (end_date - start_date).days + 1
     date_set = {start_date + timedelta(days=i) for i in range(days_count)}
+    since_str = since_ts.isoformat() if since_ts else None
     for anima_dir in animas_dir.iterdir():
         if not anima_dir.is_dir():
             continue
@@ -821,7 +829,10 @@ def _sum_cost_from_anima_dirs(start_date: date, end_date: date) -> float:
                 if not line:
                     continue
                 try:
-                    total += json.loads(line).get("estimated_cost_usd", 0.0)
+                    entry = json.loads(line)
+                    if since_str and entry.get("ts", "") < since_str:
+                        continue
+                    total += entry.get("estimated_cost_usd", 0.0)
                 except json.JSONDecodeError:
                     pass
     return total
@@ -863,7 +874,7 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
         snapshot_date = snapshot_at.date()
         base_balance = snapshot["balance_usd"]
         today_utc = datetime.now(tz=_UTC).date()
-        spending_since_snapshot = _sum_cost_from_anima_dirs(snapshot_date, today_utc)
+        spending_since_snapshot = _sum_cost_from_anima_dirs(snapshot_date, today_utc, since_ts=snapshot_at)
         effective_balance = base_balance - spending_since_snapshot
         # monthly_limit が設定済みならそれを予算基準、なければスナップショット残高を代用
         budget_limit = monthly_limit if monthly_limit > 0 else base_balance
