@@ -913,13 +913,16 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
         billing_elapsed_seconds = int((datetime.now(tz=_UTC) - billing_start_dt).total_seconds())
 
         # ── 週次 ──
-        # weekly_budget = monthly_limit / days_in_month * 7
-        # remaining_pct = effective_balance / weekly_budget * 100
-        # (同期時点からの支出を基準にするため、week_spentは別集計しない)
+        # weekly_budget = monthly_budget / days_in_month * 7
+        # 週次保有残高 = effective_balance - (次月曜00:00 JST → 月末リセット) の予算配分
+        #   = effective_balance - (next_monday → next_billing の秒数) / (days_in_month * 86400) * monthly_budget
         weekly_budget = budget_limit / days_in_month * 7
         _, _, next_monday = _weekly_budget_window_jst()
-        week_remaining = effective_balance
-        week_remaining_pct = (effective_balance / weekly_budget * 100) if weekly_budget > 0 else 0.0
+        # 次月曜から月末リセットまでの秒数
+        after_week_seconds = max(0.0, (next_billing - next_monday).total_seconds())
+        after_week_budget = after_week_seconds / (days_in_month * 86400) * budget_limit
+        week_balance = effective_balance - after_week_budget
+        week_remaining_pct = (week_balance / weekly_budget * 100) if weekly_budget > 0 else 0.0
         week_util_pct = 100.0 - week_remaining_pct
 
         result = {
@@ -928,7 +931,7 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
             "snapshot": snapshot,
             "weekly": {
                 "budget_usd": round(weekly_budget, 4),
-                "remaining_usd": round(week_remaining, 4),
+                "remaining_usd": round(week_balance, 4),
                 "remaining_pct": round(week_remaining_pct, 2),
                 "utilization_pct": round(week_util_pct, 2),
                 "resets_at": next_monday.timestamp(),
