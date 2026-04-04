@@ -234,17 +234,10 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
             except Exception:
                 logger.debug("Webhook send failed, falling back to bot token", exc_info=True)
 
-        # Fallback to direct bot token send
-        client = DiscordClient(token=_resolve_discord_token(args))
-        try:
-            resp = client.send_message(
-                args["channel_id"],
-                discord_text,
-            )
-            mid = resp.get("id", "") if isinstance(resp, dict) else ""
-            return {"status": "ok", "channel_id": args["channel_id"], "message_id": mid}
-        finally:
-            client.close()
+        # Bot-token fallback removed: sending as the bot account (AnimaWorks)
+        # instead of the Anima's identity is confusing to users.
+        # If webhook failed, report the error rather than falling back.
+        return {"status": "error", "message": "Webhook send failed; cannot post as Anima identity"}
 
     if name == "discord_unreplied":
         cache = MessageCache()
