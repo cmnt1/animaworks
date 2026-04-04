@@ -273,8 +273,10 @@ class DiscordGatewayManager:
             self._known_anima_names = anima_names
             if anima_names:
                 escaped = [re.escape(n) for n in sorted(anima_names, key=len, reverse=True)]
+                # Match Anima names followed by word boundary OR any non-ASCII-alnum
+                # character (covers Japanese particles like は、に、を etc.)
                 self._anima_name_re = re.compile(
-                    r"(?:^|\b)(" + "|".join(escaped) + r")(?:\b|[,、。.!?！？\s])",
+                    r"(?:^|\b)(" + "|".join(escaped) + r")(?:\b|(?=[^a-zA-Z0-9])|$)",
                     re.IGNORECASE,
                 )
             else:
