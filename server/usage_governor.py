@@ -20,9 +20,11 @@ Credential-to-provider mapping:
   - ``ollama``    → exempt (local)
 
 Rule mode:
-  - **time_proportional** — ``usage_remaining_%`` must stay above
-    ``time_remaining_%``; deficit (in percentage points) determines
-    throttle severity.  Applied to weekly and monthly windows for claude.
+  - **time_proportional** — compares ``usage_remaining_%`` against
+    ``time_remaining_%``; room (= remaining - time, in percentage points)
+    determines throttle severity.  Positive room = headroom, negative =
+    over-consuming.  ``throttle_rules`` with ``room_under`` thresholds
+    fire when room drops below the specified value.
   - **threshold** (list format, legacy) — fixed remaining-% cut-offs.
 
 Note: Claude is evaluated via ``_fetch_cost_budget()`` (local token log +
@@ -60,46 +62,56 @@ DEFAULT_POLICY: dict[str, Any] = {
             # remaining_pct from _fetch_cost_budget() is mapped to "remaining" by _tick()
             "weekly": {
                 "mode": "time_proportional",
-                "deficit_rules": [
-                    {"deficit_above": 0, "activity_level": 60},
-                    {"deficit_above": 10, "activity_level": 30},
-                    {"deficit_above": 20, "activity_level": 10},
+                "throttle_rules": [
+                    {"room_under": 20, "activity_level": 50},
+                    {"room_under": 10, "activity_level": 40},
+                    {"room_under": 0, "activity_level": 30},
+                    {"room_under": -10, "activity_level": 20},
+                    {"room_under": -20, "activity_level": 10},
                 ],
             },
             "monthly": {
                 "mode": "time_proportional",
-                "deficit_rules": [
-                    {"deficit_above": 0, "activity_level": 60},
-                    {"deficit_above": 10, "activity_level": 30},
-                    {"deficit_above": 20, "activity_level": 10},
+                "throttle_rules": [
+                    {"room_under": 20, "activity_level": 50},
+                    {"room_under": 10, "activity_level": 40},
+                    {"room_under": 0, "activity_level": 30},
+                    {"room_under": -10, "activity_level": 20},
+                    {"room_under": -20, "activity_level": 10},
                 ],
             },
         },
         "openai": {
             "5h": {
                 "mode": "time_proportional",
-                "deficit_rules": [
-                    {"deficit_above": 0, "activity_level": 60},
-                    {"deficit_above": 10, "activity_level": 30},
-                    {"deficit_above": 20, "activity_level": 10},
+                "throttle_rules": [
+                    {"room_under": 20, "activity_level": 50},
+                    {"room_under": 10, "activity_level": 40},
+                    {"room_under": 0, "activity_level": 30},
+                    {"room_under": -10, "activity_level": 20},
+                    {"room_under": -20, "activity_level": 10},
                 ],
             },
             "Week": {
                 "mode": "time_proportional",
-                "deficit_rules": [
-                    {"deficit_above": 0, "activity_level": 60},
-                    {"deficit_above": 10, "activity_level": 30},
-                    {"deficit_above": 20, "activity_level": 10},
+                "throttle_rules": [
+                    {"room_under": 20, "activity_level": 50},
+                    {"room_under": 10, "activity_level": 40},
+                    {"room_under": 0, "activity_level": 30},
+                    {"room_under": -10, "activity_level": 20},
+                    {"room_under": -20, "activity_level": 10},
                 ],
             },
         },
         "nanogpt": {
             "Week": {
                 "mode": "time_proportional",
-                "deficit_rules": [
-                    {"deficit_above": 0, "activity_level": 60},
-                    {"deficit_above": 10, "activity_level": 30},
-                    {"deficit_above": 20, "activity_level": 10},
+                "throttle_rules": [
+                    {"room_under": 20, "activity_level": 50},
+                    {"room_under": 10, "activity_level": 40},
+                    {"room_under": 0, "activity_level": 30},
+                    {"room_under": -10, "activity_level": 20},
+                    {"room_under": -20, "activity_level": 10},
                 ],
             },
         },
@@ -211,11 +223,31 @@ def save_policy(data_dir: Path, policy: dict[str, Any]) -> None:
     )
 
 
+def _migrate_deficit_to_room(window_config: dict[str, Any]) -> bool:
+    """Migrate ``deficit_rules``/``deficit_above`` → ``throttle_rules``/``room_under``.
+
+    Returns True if any migration was performed.
+    """
+    if "deficit_rules" not in window_config:
+        return False
+    old_rules = window_config.pop("deficit_rules")
+    new_rules = []
+    for rule in old_rules:
+        new_rule = dict(rule)
+        if "deficit_above" in new_rule:
+            # deficit_above: N → room_under: -N (sign inversion)
+            new_rule["room_under"] = -new_rule.pop("deficit_above")
+        new_rules.append(new_rule)
+    window_config["throttle_rules"] = new_rules
+    return True
+
+
 def ensure_policy_file(data_dir: Path) -> None:
     """Create default policy file if it doesn't exist.
 
-    Also migrates legacy ``five_hour``/``seven_day`` claude window keys to
-    ``weekly``/``monthly`` when found in an existing policy file.
+    Also migrates:
+    - Legacy ``five_hour``/``seven_day`` claude window keys → ``weekly``/``monthly``
+    - Legacy ``deficit_rules``/``deficit_above`` → ``throttle_rules``/``room_under``
     """
     path = _policy_path(data_dir)
     if not path.is_file():
@@ -223,25 +255,38 @@ def ensure_policy_file(data_dir: Path) -> None:
         logger.info("Created default usage policy at %s", path)
         return
 
-    # Migrate legacy claude window keys
     try:
         policy = json.loads(path.read_text("utf-8"))
+        changed = False
+
+        # Migrate legacy claude window keys (five_hour/seven_day → weekly/monthly)
         claude_rules = policy.get("providers", {}).get("claude", {})
         legacy_keys = {"five_hour", "seven_day"}
         if legacy_keys.intersection(claude_rules):
             new_claude: dict[str, Any] = {}
-            # Carry over any non-legacy keys
             for k, v in claude_rules.items():
                 if k not in legacy_keys:
                     new_claude[k] = v
-            # Apply defaults for weekly/monthly if not already present
             default_claude = DEFAULT_POLICY["providers"]["claude"]
             for k in ("weekly", "monthly"):
                 if k not in new_claude:
                     new_claude[k] = default_claude[k]
             policy.setdefault("providers", {})["claude"] = new_claude
-            save_policy(data_dir, policy)
+            changed = True
             logger.info("Migrated usage_policy.json: five_hour/seven_day → weekly/monthly")
+
+        # Migrate deficit_rules/deficit_above → throttle_rules/room_under
+        for _prov_key, prov_windows in policy.get("providers", {}).items():
+            if not isinstance(prov_windows, dict):
+                continue
+            for _win_key, win_config in prov_windows.items():
+                if isinstance(win_config, dict) and _migrate_deficit_to_room(win_config):
+                    changed = True
+
+        if changed:
+            save_policy(data_dir, policy)
+            if changed:
+                logger.info("Migrated usage_policy.json: deficit_rules → throttle_rules")
     except Exception:
         logger.debug("Policy migration check failed", exc_info=True)
 
@@ -339,8 +384,13 @@ def _evaluate_time_proportional(
     """Evaluate time-proportional rules.  Returns (activity_level, reason).
 
     Compares ``usage_remaining_%`` vs ``time_remaining_%`` of the window.
-    When usage remaining is below time remaining, the deficit (in percentage
-    points) is compared against ``deficit_rules`` to determine the throttle.
+    ``room = remaining - time_pct`` (positive = headroom, negative = over-consuming).
+    ``throttle_rules`` with ``room_under`` thresholds fire when room drops
+    below the specified value.  Sorted ascending; first match wins (most
+    restrictive applicable rule).
+
+    Legacy ``deficit_rules`` / ``deficit_above`` keys are also accepted for
+    backward compatibility.
     """
     resets_at = window_data.get("resets_at")
     window_seconds = window_data.get("window_seconds")
@@ -351,21 +401,26 @@ def _evaluate_time_proportional(
         return None, ""
 
     time_pct = _time_remaining_pct(resets_ts, window_seconds)
-    deficit = time_pct - remaining  # positive means over-consuming
+    room = remaining - time_pct  # positive = headroom
 
-    if deficit <= 0:
-        # Usage pace is sustainable — no throttle needed
-        return None, ""
+    # Support both new (throttle_rules/room_under) and legacy (deficit_rules/deficit_above)
+    rules = config.get("throttle_rules") or config.get("deficit_rules", [])
 
-    # Match deficit against rules (sorted descending so highest matches first)
-    deficit_rules = config.get("deficit_rules", [])
-    sorted_rules = sorted(deficit_rules, key=lambda r: r["deficit_above"], reverse=True)
+    def _threshold(r: dict[str, Any]) -> float:
+        if "room_under" in r:
+            return r["room_under"]
+        # Legacy: deficit_above N → equivalent to room_under -N
+        return -r.get("deficit_above", 0)
+
+    sorted_rules = sorted(rules, key=_threshold)
     for rule in sorted_rules:
-        if deficit >= rule["deficit_above"]:
+        threshold = _threshold(rule)
+        if room < threshold:
             level = rule["activity_level"]
             reason = (
                 f"{provider_key}.{window_key} remaining {remaining:.0f}% "
-                f"< time {time_pct:.0f}% (deficit {deficit:.0f}pt) → activity {level}%"
+                f"vs time {time_pct:.0f}% (room {room:+.0f}pt < {threshold}) "
+                f"→ activity {level}%"
             )
             return level, reason
 
