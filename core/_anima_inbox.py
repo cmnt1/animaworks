@@ -159,7 +159,7 @@ def _build_reply_instruction(m: Any) -> str:
 
     if m.source == "discord":
         if _is_auto_response_enabled_discord():
-            return "  [auto_reply: Discord返信は自動送信されます。discord_channel_postを呼ぶ必要はありません]"
+            return "  [auto_reply: あなたの最終回答はDiscordに自動投稿されます。discord_channel_postを絶対に呼ばないでください。呼ぶと二重投稿になります]"
 
         mention = f"<@{m.external_user_id}> " if m.external_user_id else ""
         parts = [
