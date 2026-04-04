@@ -892,12 +892,12 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
 
         # ── 週次 ──
         # weekly_budget = monthly_limit / days_in_month * 7
-        # remaining_pct = (weekly_budget - week_spent) / weekly_budget * 100
+        # remaining_pct = effective_balance / weekly_budget * 100
+        # (同期時点からの支出を基準にするため、week_spentは別集計しない)
         weekly_budget = budget_limit / days_in_month * 7
-        week_start, today_jst, next_monday = _weekly_budget_window_jst()
-        week_spent = _sum_cost_from_anima_dirs(week_start, today_jst)
-        week_remaining = weekly_budget - week_spent
-        week_remaining_pct = (week_remaining / weekly_budget * 100) if weekly_budget > 0 else 0.0
+        _, _, next_monday = _weekly_budget_window_jst()
+        week_remaining = effective_balance
+        week_remaining_pct = (effective_balance / weekly_budget * 100) if weekly_budget > 0 else 0.0
         week_util_pct = 100.0 - week_remaining_pct
 
         result = {
@@ -906,13 +906,11 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
             "snapshot": snapshot,
             "weekly": {
                 "budget_usd": round(weekly_budget, 4),
-                "spent_usd": round(week_spent, 4),
                 "remaining_usd": round(week_remaining, 4),
                 "remaining_pct": round(week_remaining_pct, 2),
                 "utilization_pct": round(week_util_pct, 2),
                 "resets_at": next_monday.timestamp(),
                 "window_seconds": 604800,
-                "period_start": week_start.isoformat(),
             },
             "monthly": {
                 "budget_usd": round(budget_limit, 4),
