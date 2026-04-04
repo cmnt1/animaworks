@@ -468,9 +468,8 @@ function _renderCostBudgetBar(label, win) {
     markerHtml = `<div class="usage-bar-time-marker" style="left:${timePct}%" data-label="${timePct.toFixed(0)}%"></div>`;
   }
 
-  // pt = 残高% - 残り時間% = remainingPct - (100 - timePct)
-  const timeRemainingPct = timePct !== null ? 100 - timePct : null;
-  const ptVal = timeRemainingPct !== null ? remainingPct - timeRemainingPct : remainingPct - 100;
+  // pt = 残高% - 残り時間% (_calcTimePct は残り時間%を返す)
+  const ptVal = timePct !== null ? remainingPct - timePct : remainingPct - 100;
   const ptSign = ptVal >= 0 ? "+" : "";
   const ptColor = ptVal >= 0 ? "inherit" : "var(--aw-color-error,#dc2626)";
   const ptHtml = `<span style="color:${ptColor};font-size:0.7rem;margin-left:0.5rem;">${ptSign}${ptVal.toFixed(0)}pt</span>`;
