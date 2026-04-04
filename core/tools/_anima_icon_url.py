@@ -8,39 +8,25 @@
 
 Private helper module (``_`` prefix): not registered in :data:`~core.tools.TOOL_MODULES`.
 
-Each Slack (human notification) channel may set ``icon_path_template`` on its ``config`` object.
+Resolution order (first non-empty wins):
 
-**Template kind (by prefix):**
+  1. **Per-Anima** ``icon_url`` in ``status.json`` — absolute URL for one specific Anima.
+  2. **Env var** ``ICON_URL_TEMPLATE`` — template with ``{name}`` placeholder.
+  3. **Top-level config** ``icon_url_template`` in ``config.json`` — same template syntax.
+  4. **Per-channel** ``icon_path_template`` on the Slack notification channel ``config`` dict
+     (legacy; kept for backward compatibility).
+  5. **Internal asset** ``ANIMAWORKS_SERVER_URL`` + ``/api/animas/{name}/assets/<file>`` when
+     the asset file exists on disk.
+  6. ``""`` (no icon).
 
-- If the template **starts with** ``http://`` or ``https://``, it is treated as an **externally
-  reachable URL** after ``str.format(name=...)``. Use for icons that **Slack, Chatwork, and other
-  external services** must fetch over the internet (e.g. CDN).
-- **Otherwise** the value is a **path template for internal use** (AnimaWorks **frontend** can
-  load it when the app and API share origin or VPN). Resolve by prepending ``ANIMAWORKS_SERVER_URL``;
-  the on-disk file under ``get_animas_dir() / anima_name / assets/icon.png`` (anime) or
-  ``.../icon_realistic.png`` (realistic) must exist when this URL is required for outbound/notifications
-  that attach ``icon_url``.
-
-Resolution order:
-
-  1. If ``channel_config`` is passed (e.g. the ``config`` dict for the Slack channel currently
-     sending), ``icon_path_template`` / legacy ``icon_url_template`` on **that** dict are used first.
-  2. Otherwise ``icon_path_template`` from the **first enabled** Slack channel under
-     ``human_notification.channels`` (via :func:`load_config`).
-  3. If no template: same-origin style URL from ``ANIMAWORKS_SERVER_URL`` + ``/api/animas/.../icon.png``,
-     ``.../icon_realistic.png``, or as a fallback ``avatar_bustup*.png`` when the file exists.
-  4. If no internal URL can be built, fall back to the uploaded public Slack avatar URL
-     (``server.slack_avatar_upload.get_avatar_public_url``) when available locally.
-  5. External templates: ``{name}`` is the Anima directory name (unquoted in the URL string for
-     typical CDN patterns).
-  6. Internal path templates: ``{name}`` is passed through :func:`urllib.parse.quote` for path segments.
-
-When icons are generated, :func:`persist_anima_icon_path_template` stores the default internal
-path (``icon.png`` or ``icon_realistic.png`` under ``assets/``, matching image style) as ``icon_path_template``.
+Templates use ``{name}`` which is replaced by the Anima directory name.  Templates starting
+with ``http://`` or ``https://`` are treated as external URLs; otherwise they are internal
+path segments prepended by ``ANIMAWORKS_SERVER_URL``.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -78,53 +64,80 @@ DEFAULT_INTERNAL_ICON_PATH_TEMPLATE_REALISTIC = "/api/animas/{name}/assets/icon_
 
 _EXTERNAL_ICON_URL_PREFIX_RE = re.compile(r"^https?://", re.IGNORECASE)
 
+_ICON_URL_TEMPLATE_ENV_KEY = "ICON_URL_TEMPLATE"
+
 
 def template_is_external_icon_url(template: str) -> bool:
     """True if *template* is intended for Slack/Chatwork/etc. (absolute ``http(s)`` URL after format)."""
     return bool(template and _EXTERNAL_ICON_URL_PREFIX_RE.match(template.strip()))
 
 
-def _icon_path_template_from_mapping(channel_config: dict[str, Any]) -> str:
-    raw = channel_config.get(ICON_PATH_TEMPLATE_CONFIG_KEY) or channel_config.get(ICON_URL_TEMPLATE_CONFIG_KEY) or ""
-    return str(raw).strip()
+# ── Layer 1: Per-Anima icon_url from status.json ────────────────────────────
 
 
-def _icon_asset_for_url(anima_name: str) -> tuple[Path, str] | None:
-    """Return ``(path, filename)`` for an existing icon-ish asset.
+def _get_per_anima_icon_url(anima_name: str) -> str:
+    """Read ``icon_url`` from the Anima's ``status.json`` (lightweight, no config load).
 
-    Prefer dedicated icon assets, but fall back to bust-up avatars so
-    Slack posts still carry a custom face image when icon generation has
-    not been run yet.
+    Only ``http`` / ``https`` URLs are accepted; other schemes are ignored.
     """
-    from core.paths import get_animas_dir
+    try:
+        from core.paths import get_animas_dir
 
-    assets = get_animas_dir() / anima_name / "assets"
+        status_path = get_animas_dir() / anima_name / "status.json"
+        if not status_path.is_file():
+            return ""
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+        url = str(data.get("icon_url") or "").strip()
+        if url and not _EXTERNAL_ICON_URL_PREFIX_RE.match(url):
+            logger.warning("Ignoring non-http icon_url in status.json for '%s': %s", anima_name, url)
+            return ""
+        return url
+    except Exception:
+        return ""
+
+
+# ── Layer 2 & 3: Global templates (env var / config.json) ───────────────────
+
+
+def _get_global_icon_url_template() -> str:
+    """Return the top-level ``icon_url_template`` from ``config.json``, or ``""``."""
     try:
         from core.config import load_config
 
-        style = load_config().image_gen.image_style or "anime"
+        return str(load_config().icon_url_template or "").strip()
     except Exception:
-        style = "anime"
+        return ""
 
-    if style == "realistic":
-        for path, filename in (
-            (assets / ANIMA_ICON_ASSET_FILENAME_REALISTIC, ANIMA_ICON_ASSET_FILENAME_REALISTIC),
-            (assets / ANIMA_ICON_ASSET_FILENAME, ANIMA_ICON_ASSET_FILENAME),
-            (assets / ANIMA_BUSTUP_ASSET_FILENAME_REALISTIC, ANIMA_BUSTUP_ASSET_FILENAME_REALISTIC),
-            (assets / ANIMA_BUSTUP_ASSET_FILENAME, ANIMA_BUSTUP_ASSET_FILENAME),
-        ):
-            if path.is_file():
-                return (path, filename)
-    else:
-        for path, filename in (
-            (assets / ANIMA_ICON_ASSET_FILENAME, ANIMA_ICON_ASSET_FILENAME),
-            (assets / ANIMA_ICON_ASSET_FILENAME_REALISTIC, ANIMA_ICON_ASSET_FILENAME_REALISTIC),
-            (assets / ANIMA_BUSTUP_ASSET_FILENAME, ANIMA_BUSTUP_ASSET_FILENAME),
-            (assets / ANIMA_BUSTUP_ASSET_FILENAME_REALISTIC, ANIMA_BUSTUP_ASSET_FILENAME_REALISTIC),
-        ):
-            if path.is_file():
-                return (path, filename)
-    return None
+
+def _format_template(template: str, anima_name: str) -> str:
+    """Expand ``{name}`` in a template, handling both external and internal URLs.
+
+    Uses :meth:`str.format_map` with a fallback dict so that stray
+    placeholders (e.g. ``{foo}``) do not raise :class:`KeyError`.
+    """
+    safe_map: dict[str, str] = {"name": anima_name}
+    try:
+        if template_is_external_icon_url(template):
+            return template.format_map(safe_map)
+        base = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip().rstrip("/")
+        if not base:
+            return ""
+        safe_map["name"] = quote(anima_name, safe="")
+        path_resolved = template.format_map(safe_map)
+        if not path_resolved.startswith("/"):
+            path_resolved = "/" + path_resolved
+        return base + path_resolved
+    except (KeyError, ValueError, IndexError):
+        logger.warning("Invalid icon URL template: %r", template)
+        return ""
+
+
+# ── Layer 4: Per-channel icon_path_template (legacy backward compat) ────────
+
+
+def _icon_path_template_from_mapping(channel_config: dict[str, Any]) -> str:
+    raw = channel_config.get(ICON_PATH_TEMPLATE_CONFIG_KEY) or channel_config.get(ICON_URL_TEMPLATE_CONFIG_KEY) or ""
+    return str(raw).strip()
 
 
 def _first_slack_icon_path_template_from_config() -> str:
@@ -153,35 +166,88 @@ def _get_icon_path_template(channel_config: dict[str, Any] | None) -> str:
     return _first_slack_icon_path_template_from_config()
 
 
+# ── Layer 5: Internal asset fallback ────────────────────────────────────────
+
+
+def _icon_asset_for_url(anima_name: str) -> tuple[Path, str] | None:
+    """Return ``(path, filename)`` for an existing icon-ish asset."""
+    from core.paths import get_animas_dir
+
+    assets = get_animas_dir() / anima_name / "assets"
+    try:
+        from core.config import load_config
+
+        style = load_config().image_gen.image_style or "anime"
+    except Exception:
+        style = "anime"
+
+    candidates = (
+        (
+            (ANIMA_ICON_ASSET_FILENAME_REALISTIC, ANIMA_ICON_ASSET_FILENAME),
+            (ANIMA_BUSTUP_ASSET_FILENAME_REALISTIC, ANIMA_BUSTUP_ASSET_FILENAME),
+        )
+        if style == "realistic"
+        else (
+            (ANIMA_ICON_ASSET_FILENAME, ANIMA_ICON_ASSET_FILENAME_REALISTIC),
+            (ANIMA_BUSTUP_ASSET_FILENAME, ANIMA_BUSTUP_ASSET_FILENAME_REALISTIC),
+        )
+    )
+    for pair in candidates:
+        for filename in pair:
+            p = assets / filename
+            if p.is_file():
+                return (p, filename)
+    return None
+
+
+# ── Public API ──────────────────────────────────────────────────────────────
+
+
 def resolve_anima_icon_url(
     anima_name: str,
     channel_config: dict[str, Any] | None = None,
 ) -> str:
-    """Return a full ``https`` URL for an Anima icon, or ``\"\"`` if unavailable.
+    """Return a full URL for an Anima icon, or ``""`` if unavailable.
 
-    *anima_name* is the Anima directory name; on-disk path is ``get_animas_dir() / anima_name``.
+    Resolution priority (first non-empty wins):
+
+      1. Per-Anima ``icon_url`` in ``status.json``
+      2. ``ICON_URL_TEMPLATE`` env var (template with ``{name}``)
+      3. ``config.json`` top-level ``icon_url_template``
+      4. Per-channel ``icon_path_template`` (legacy)
+      5. Internal asset path via ``ANIMAWORKS_SERVER_URL``
     """
     if not anima_name:
         return ""
+
+    # 1. Per-Anima override
+    per_anima = _get_per_anima_icon_url(anima_name)
+    if per_anima:
+        return per_anima
+
+    # 2. Env var template
+    env_template = os.environ.get(_ICON_URL_TEMPLATE_ENV_KEY, "").strip()
+    if env_template:
+        return _format_template(env_template, anima_name)
+
+    # 3. Top-level config template
+    global_template = _get_global_icon_url_template()
+    if global_template:
+        return _format_template(global_template, anima_name)
+
+    # 4. Per-channel template (legacy backward compat)
+    ch_template = _get_icon_path_template(channel_config)
+    if ch_template:
+        return _format_template(ch_template, anima_name)
+
+    # 5. Internal asset fallback
     base = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip().rstrip("/")
-
-    template = _get_icon_path_template(channel_config)
-
-    if template:
-        if template_is_external_icon_url(template):
-            return template.format(name=anima_name)
-        if not base:
-            return _resolve_uploaded_avatar_url(anima_name)
-        path_resolved = template.format(name=quote(anima_name, safe=""))
-        if not path_resolved.startswith("/"):
-            path_resolved = "/" + path_resolved
-        return base.rstrip("/") + path_resolved
-
     asset = _icon_asset_for_url(anima_name)
     if asset is not None and base:
         _, filename = asset
-        return f"{base.rstrip('/')}/api/animas/{quote(anima_name, safe='')}/assets/{filename}"
-    return _resolve_uploaded_avatar_url(anima_name)
+        return f"{base}/api/animas/{quote(anima_name, safe='')}/assets/{filename}"
+
+    return ""
 
 
 def resolve_anima_icon_identity(
@@ -194,28 +260,27 @@ def resolve_anima_icon_identity(
     return (anima_name, resolve_anima_icon_url(anima_name, channel_config))
 
 
-def _resolve_uploaded_avatar_url(anima_name: str) -> str:
-    """Return the uploaded public Slack avatar URL when a local source exists."""
-    try:
-        from server.slack_avatar_upload import get_avatar_public_url
-
-        avatar_png = Path(__file__).resolve().parents[2] / "assets" / "slack-avatars" / f"{anima_name}.png"
-        if avatar_png.is_file():
-            return get_avatar_public_url(anima_name)
-    except Exception:
-        logger.debug("Failed to resolve uploaded avatar URL", exc_info=True)
-    return ""
+# ── Persist helper (called after icon generation) ───────────────────────────
 
 
 def persist_anima_icon_path_template() -> None:
     """Persist default internal ``icon_path_template`` on each enabled Slack channel.
 
-    Called after icon generation. Path follows :attr:`~core.config.schemas.ImageGenConfig.image_style`
-    (``icon.png`` vs ``icon_realistic.png``). Removes legacy ``icon_url_template`` when updating.
+    **Skips entirely** when a higher-priority source is configured:
+    - ``ICON_URL_TEMPLATE`` env var is set, OR
+    - ``config.json`` top-level ``icon_url_template`` is set.
+
+    Also skips individual channels whose template is already an external URL
+    (e.g. GitHub raw) to avoid overwriting user-configured CDN/public-repo URLs.
     """
+    if os.environ.get(_ICON_URL_TEMPLATE_ENV_KEY, "").strip():
+        return
+
     from core.config import load_config, save_config
 
     cfg = load_config()
+    if cfg.icon_url_template:
+        return
     if not cfg.human_notification or not cfg.human_notification.channels:
         return
     style = cfg.image_gen.image_style or "anime"
@@ -227,6 +292,8 @@ def persist_anima_icon_path_template() -> None:
         if ch.type != "slack" or not ch.enabled:
             continue
         cur = _icon_path_template_from_mapping(ch.config)
+        if template_is_external_icon_url(cur):
+            continue
         if cur != want:
             ch.config[ICON_PATH_TEMPLATE_CONFIG_KEY] = want
             ch.config.pop(ICON_URL_TEMPLATE_CONFIG_KEY, None)

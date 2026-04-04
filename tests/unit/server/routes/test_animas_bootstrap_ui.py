@@ -6,13 +6,13 @@
 Tests the bootstrapping flag in list_animas and the POST /animas/{name}/start
 endpoint added for anima lifecycle visual states.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from httpx import ASGITransport, AsyncClient
-
 
 # ── Helper to build a minimal FastAPI app with animas router ──
 
@@ -50,6 +50,7 @@ class TestListAnimasBootstrapFlag:
         """When supervisor reports bootstrapping=True, API response should reflect it."""
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)
+        (animas_dir / "alice" / "identity.md").write_text("# Alice\n")
 
         app = _make_test_app(
             animas_dir=animas_dir,
@@ -76,6 +77,7 @@ class TestListAnimasBootstrapFlag:
         """When supervisor omits bootstrapping key, API defaults to False."""
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)
+        (animas_dir / "alice" / "identity.md").write_text("# Alice\n")
 
         app = _make_test_app(
             animas_dir=animas_dir,

@@ -341,7 +341,8 @@ class SlackSocketModeManager:
             if dead:
                 logger.warning(
                     "Socket Mode: %d handler(s) NOT alive after connect: %s",
-                    len(dead), dead,
+                    len(dead),
+                    dead,
                 )
 
     async def reload(self) -> dict[str, Any]:
@@ -582,7 +583,7 @@ class SlackSocketModeManager:
             if not is_dm and not mention_intent and not mentioned_other_registered_bot:
                 try:
                     cfg = load_config()
-                    is_default = (anima_name == cfg.external_messaging.slack.default_anima)
+                    is_default = anima_name == cfg.external_messaging.slack.default_anima
                 except Exception:
                     pass
 

@@ -301,6 +301,7 @@ def _append_assistant_blocks_to_state(
     events: list[dict[str, Any]] = []
     for block in content_blocks:
         from claude_agent_sdk import TextBlock, ToolUseBlock
+
         from core.execution._tool_summary import make_tool_detail_chunk
 
         if isinstance(block, TextBlock):
@@ -355,7 +356,6 @@ async def process_stream_messages(
     """
     from core.execution._sdk_interrupt import _graceful_interrupt_stream
     from core.execution._sdk_session import _RESUMABLE_SESSION_TYPES, _build_sdk_query_input, _save_session_id
-    from core.execution._tool_summary import make_tool_detail_chunk
 
     got_stream_event = False
     _in_thinking_block = False
@@ -373,15 +373,13 @@ async def process_stream_messages(
             )
         except StopAsyncIteration:
             break
-        except (asyncio.TimeoutError, TimeoutError):
+        except TimeoutError:
             logger.error(
                 "SDK message stream timed out — no message received for %.0fs; "
                 "CLI subprocess may have died or become unresponsive",
                 _SDK_MESSAGE_TIMEOUT_SEC,
             )
-            raise TimeoutError(
-                f"SDK stream timed out (no message for {_SDK_MESSAGE_TIMEOUT_SEC:.0f}s)"
-            )
+            raise TimeoutError(f"SDK stream timed out (no message for {_SDK_MESSAGE_TIMEOUT_SEC:.0f}s)") from None
 
         if ctx.check_interrupted():
             logger.info("Agent SDK streaming interrupted — sending graceful interrupt")
@@ -400,9 +398,6 @@ async def process_stream_messages(
             AssistantMessage,
             ResultMessage,
             SystemMessage,
-            TextBlock,
-            ToolResultBlock,
-            ToolUseBlock,
             UserMessage,
         )
         from claude_agent_sdk.types import StreamEvent

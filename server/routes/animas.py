@@ -973,6 +973,7 @@ def create_animas_router() -> APIRouter:
                 else:
                     try:
                         from core.config.local_llm import apply_local_llm_role_to_status
+
                         cfg = load_config()
                         apply_local_llm_role_to_status(status, cfg, "general")
                     except Exception:

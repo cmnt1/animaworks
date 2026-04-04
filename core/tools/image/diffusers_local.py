@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -123,7 +124,8 @@ def _scrfd_detect_largest(image_rgb: Any) -> tuple[int, int, int, int] | None:
         if not all(s in stride_to_score and s in stride_to_bbox for s in expected_strides):
             logger.warning(
                 "SCRFD: missing stride outputs — scores=%s bboxes=%s",
-                sorted(stride_to_score), sorted(stride_to_bbox),
+                sorted(stride_to_score),
+                sorted(stride_to_bbox),
             )
             return None
 
@@ -134,8 +136,8 @@ def _scrfd_detect_largest(image_rgb: Any) -> tuple[int, int, int, int] | None:
         for stride in expected_strides:
             s_out = stride_to_score[stride]
             b_out = stride_to_bbox[stride]
-            scores_flat = s_out.reshape(-1)   # (H*W*num_anchors,)
-            bboxes_2d   = b_out               # already (H*W*num_anchors, 4)
+            scores_flat = s_out.reshape(-1)  # (H*W*num_anchors,)
+            bboxes_2d = b_out  # already (H*W*num_anchors, 4)
             feat_w = target // stride
 
             for i, score_val in enumerate(scores_flat):
@@ -145,11 +147,11 @@ def _scrfd_detect_largest(image_rgb: Any) -> tuple[int, int, int, int] | None:
                 anchor_x = (cell % feat_w) * stride
                 anchor_y = (cell // feat_w) * stride
 
-                l, t, r, b = bboxes_2d[i]
-                x1 = int((anchor_x - l * stride) / scale)
-                y1 = int((anchor_y - t * stride) / scale)
-                x2 = int((anchor_x + r * stride) / scale)
-                y2 = int((anchor_y + b * stride) / scale)
+                bl, bt, br, bb = bboxes_2d[i]
+                x1 = int((anchor_x - bl * stride) / scale)
+                y1 = int((anchor_y - bt * stride) / scale)
+                x2 = int((anchor_x + br * stride) / scale)
+                y2 = int((anchor_y + bb * stride) / scale)
 
                 x1, y1 = max(0, x1), max(0, y1)
                 x2, y2 = min(w0, x2), min(h0, y2)
@@ -178,7 +180,9 @@ def _import_diffusers() -> tuple[Any, Any]:
     try:
         from diffusers import AutoPipelineForImage2Image, AutoPipelineForText2Image
     except ImportError as exc:
-        raise RuntimeError("diffusers is required for local image generation. Install animaworks with Diffusers support.") from exc
+        raise RuntimeError(
+            "diffusers is required for local image generation. Install animaworks with Diffusers support."
+        ) from exc
     return AutoPipelineForText2Image, AutoPipelineForImage2Image
 
 
@@ -207,7 +211,9 @@ def _resolve_snapshot_path(repo_id: str) -> str | None:
         if snapshot_dir.is_dir():
             return str(snapshot_dir)
 
-    snapshots = sorted((p for p in snapshots_dir.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime, reverse=True)
+    snapshots = sorted(
+        (p for p in snapshots_dir.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime, reverse=True
+    )
     if snapshots:
         return str(snapshots[0])
     return None
@@ -303,6 +309,7 @@ class LocalDiffusersClient:
         """Replace the default scheduler with DPM++ 2M Karras for better quality."""
         try:
             from diffusers import DPMSolverMultistepScheduler
+
             pipe.scheduler = DPMSolverMultistepScheduler.from_config(
                 pipe.scheduler.config,
                 algorithm_type="dpmsolver++",
@@ -318,13 +325,14 @@ class LocalDiffusersClient:
     #   Inference activations: ~0.7 GB with xFormers, ~3 GB without
     #   → need ≥7 GB free to run full-GPU with xFormers safely
     #   → need ≥10 GB free to run full-GPU without xFormers
-    _VRAM_THRESHOLD_WITH_XFORMERS: int = 7 * 1024 ** 3
-    _VRAM_THRESHOLD_NO_XFORMERS: int = 10 * 1024 ** 3
+    _VRAM_THRESHOLD_WITH_XFORMERS: int = 7 * 1024**3
+    _VRAM_THRESHOLD_NO_XFORMERS: int = 10 * 1024**3
 
     @staticmethod
     def _xformers_available() -> bool:
         try:
             import xformers  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -346,8 +354,8 @@ class LocalDiffusersClient:
             if needs_offload:
                 logger.info(
                     "Free VRAM %.1fGB < %.0fGB threshold — enabling CPU offload for Diffusers",
-                    free / 1024 ** 3,
-                    threshold / 1024 ** 3,
+                    free / 1024**3,
+                    threshold / 1024**3,
                 )
             return needs_offload
         except Exception:
@@ -491,7 +499,10 @@ class LocalDiffusersClient:
                     cv2.data.haarcascades + "haarcascade_frontalface_default.xml",
                 )
                 faces = cascade.detectMultiScale(
-                    gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30),
+                    gray,
+                    scaleFactor=1.1,
+                    minNeighbors=5,
+                    minSize=(30, 30),
                 )
                 if len(faces) > 0:
                     bx, by, bw, bh = max(faces, key=lambda r: r[2] * r[3])
@@ -509,7 +520,10 @@ class LocalDiffusersClient:
             left = (iw - crop_size) // 2
             logger.info(
                 "No face detected — using upper-centre crop %dx%d from %dx%d",
-                crop_size, crop_size, iw, ih,
+                crop_size,
+                crop_size,
+                iw,
+                ih,
             )
             return image.crop((left, 0, left + crop_size, crop_size))
 
@@ -534,7 +548,12 @@ class LocalDiffusersClient:
         cropped = image.crop((x1, y1, x2, y2))
         logger.info(
             "Face detected: crop (%d,%d)-(%d,%d) from %dx%d",
-            x1, y1, x2, y2, iw, ih,
+            x1,
+            y1,
+            x2,
+            y2,
+            iw,
+            ih,
         )
         return cropped
 
@@ -567,7 +586,10 @@ class LocalDiffusersClient:
 
         logger.info(
             "Loading IP-Adapter: %s (subfolder=%s, weight=%s, model=%s)",
-            ip_model, subfolder, ip_weight, self._text2img_source,
+            ip_model,
+            subfolder,
+            ip_weight,
+            self._text2img_source,
         )
 
         # Try local cache first, then auto-download if not found.
@@ -582,9 +604,7 @@ class LocalDiffusersClient:
                 # Save original encoder_hid_dim_type so we can restore it after
                 # unload_ip_adapter() (which does not reliably reset this config value).
                 try:
-                    _IP_ADAPTER_ORIGINAL_HID_DIM[cache_key] = getattr(
-                        pipe.unet.config, "encoder_hid_dim_type", None
-                    )
+                    _IP_ADAPTER_ORIGINAL_HID_DIM[cache_key] = getattr(pipe.unet.config, "encoder_hid_dim_type", None)
                 except Exception:
                     _IP_ADAPTER_ORIGINAL_HID_DIM[cache_key] = None
                 pipe.load_ip_adapter(
@@ -606,7 +626,8 @@ class LocalDiffusersClient:
                     continue
                 logger.exception(
                     "Failed to load IP-Adapter (%s/%s) — face reference will use img2img fallback",
-                    subfolder, ip_weight,
+                    subfolder,
+                    ip_weight,
                 )
 
     def _retire_ip_adapter(self, text2img_key: tuple) -> None:
@@ -664,7 +685,7 @@ class LocalDiffusersClient:
         vibe_strength: float = 0.6,
         vibe_info_extracted: float = 0.8,
         face_reference_image: bytes | None = None,
-        step_callback: "Callable[[int, int], None] | None" = None,
+        step_callback: Callable[[int, int], None] | None = None,
     ) -> bytes:
         """Generate a full-body character image locally.
 
@@ -686,7 +707,9 @@ class LocalDiffusersClient:
             height = min(height, 512)
             logger.info(
                 "Low-VRAM CPU-offload mode: %d steps at %dx%d",
-                steps, width, height,
+                steps,
+                width,
+                height,
             )
 
         width, height = self._snap_size(width, height)
@@ -729,8 +752,12 @@ class LocalDiffusersClient:
             if text2img_key in _IP_ADAPTER_LOADED:
                 # Use vibe_strength from the request so the UI slider
                 # controls face influence.  Fall back to config default.
-                ip_scale = vibe_strength if vibe_strength is not None else float(
-                    getattr(self._config, "ip_adapter_scale", 0.6),
+                ip_scale = (
+                    vibe_strength
+                    if vibe_strength is not None
+                    else float(
+                        getattr(self._config, "ip_adapter_scale", 0.6),
+                    )
                 )
                 pipe.set_ip_adapter_scale(ip_scale)
                 face_img = self._crop_to_face(self._read_image(face_reference_image))
@@ -757,7 +784,8 @@ class LocalDiffusersClient:
                 logger.warning(
                     "IP-Adapter not available — falling back to img2img with face reference "
                     "(strength=%.2f, i.e. %.0f%% face preserved)",
-                    face_strength, (1 - face_strength) * 100,
+                    face_strength,
+                    (1 - face_strength) * 100,
                 )
                 pipe = self._load_img2img_pipeline()
                 face_crop = self._crop_to_face(self._read_image(face_reference_image))
@@ -791,6 +819,7 @@ class LocalDiffusersClient:
         del result
         try:
             import torch as _torch
+
             if _torch.cuda.is_available():
                 _torch.cuda.empty_cache()
         except Exception:
@@ -830,7 +859,6 @@ class LocalDiffusersClient:
                 if attempt == max_attempts - 1 or attempt_steps <= 5:
                     raise
                 attempt_steps = max(5, attempt_steps - 2)
-
 
     def generate_from_reference(
         self,

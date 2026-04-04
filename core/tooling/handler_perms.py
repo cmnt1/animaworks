@@ -266,9 +266,7 @@ class PermissionsMixin:
         for readonly in readonly_dirs:
             if resolved.is_relative_to(readonly):
                 if write:
-                    logger.warning(
-                        "permission_denied anima=%s path=%s reason=readonly_dir", self._anima_name, path
-                    )
+                    logger.warning("permission_denied anima=%s path=%s reason=readonly_dir", self._anima_name, path)
                     return _error_result(
                         "PermissionDenied",
                         f"'{path}' is in a read-only directory (write not allowed)",

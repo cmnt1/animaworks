@@ -136,8 +136,7 @@ def register_anima_in_config(
 
         if ensure_slack_env_slots(anima_name):
             logger.warning(
-                "[%s] Slack tokens not configured — edit .env to add "
-                "SLACK_BOT_TOKEN__%s and SLACK_APP_TOKEN__%s",
+                "[%s] Slack tokens not configured — edit .env to add SLACK_BOT_TOKEN__%s and SLACK_APP_TOKEN__%s",
                 anima_name,
                 anima_name,
                 anima_name,

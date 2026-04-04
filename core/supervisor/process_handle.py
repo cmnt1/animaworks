@@ -541,7 +541,8 @@ class ProcessHandle:
                     try:
                         logger.info(
                             "Killing orphaned grandchild of %s: PID %d (%s)",
-                            self.anima_name, grandchild.pid,
+                            self.anima_name,
+                            grandchild.pid,
                             grandchild.name(),
                         )
                         grandchild.kill()
@@ -549,7 +550,9 @@ class ProcessHandle:
                         pass
                 logger.info(
                     "Killing orphaned child of %s: PID %d (%s)",
-                    self.anima_name, pid, proc.name(),
+                    self.anima_name,
+                    pid,
+                    proc.name(),
                 )
                 proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):

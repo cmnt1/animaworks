@@ -12,7 +12,6 @@ from unittest.mock import patch
 from core.execution.agent_sdk import AgentSDKExecutor
 from core.schemas import ModelConfig
 
-
 # ── _build_env() ─────────────────────────────────────────
 
 
@@ -47,7 +46,13 @@ class TestBuildEnvPathAndProjectDir:
             executor = self._make_executor(anima_dir)
             env = executor._build_env()
 
-        assert env["PATH"] == f"{anima_dir}:{original_path}"
+        path_entries = env["PATH"].split(":")
+        # anima_dir must be first
+        assert path_entries[0] == str(anima_dir)
+        # all original system PATH entries must be present (order may vary due to
+        # _build_sdk_path_env prepending launcher_dir and venv_bin)
+        for entry in original_path.split(":"):
+            assert entry in path_entries, f"{entry!r} missing from PATH"
 
     def test_project_dir_set(self, tmp_path: Path) -> None:
         """ANIMAWORKS_PROJECT_DIR should be set to the project root."""
@@ -82,7 +87,11 @@ class TestBuildEnvPathAndProjectDir:
             executor = self._make_executor(anima_dir)
             env = executor._build_env()
 
-        assert env["PATH"] == f"{anima_dir}:/usr/bin:/bin"
+        path_entries = env["PATH"].split(":")
+        # anima_dir must be first; fallback entries /usr/bin and /bin must be present
+        assert path_entries[0] == str(anima_dir)
+        for entry in ("/usr/bin", "/bin"):
+            assert entry in path_entries, f"{entry!r} missing from fallback PATH"
 
 
 # ── _build_mcp_env() ─────────────────────────────────────

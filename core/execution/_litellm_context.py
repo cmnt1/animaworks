@@ -74,7 +74,7 @@ class ContextMixin:
         # nanoGPT: rewrite nanogpt/ prefix to openai/ for LiteLLM routing
         # (nanoGPT is an OpenAI-compatible API aggregator)
         if _model_name.startswith("nanogpt/"):
-            _model_name = "openai/" + _model_name[len("nanogpt/"):]
+            _model_name = "openai/" + _model_name[len("nanogpt/") :]
         kwargs: dict[str, Any] = {
             "model": _model_name,
             "max_tokens": _eff_max,
@@ -147,9 +147,10 @@ class ContextMixin:
 
                 _keep = _lc().server.ollama_keep_alive
             except Exception:
-                _keep = "5m"
-            kwargs.setdefault("extra_body", {})
-            kwargs["extra_body"]["keep_alive"] = _keep
+                _keep = ""
+            if _keep:
+                kwargs.setdefault("extra_body", {})
+                kwargs["extra_body"]["keep_alive"] = _keep
         # ── Repetition penalty parameters ──
         from core.config.models import resolve_penalties
 

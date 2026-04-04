@@ -139,16 +139,14 @@ def _patch_query_stdin_lifecycle() -> None:
         # Skip stdin closure.  transport.close() will handle it during
         # normal client teardown (disconnect / __aexit__).
         logger.debug(
-            "Windows stdin lifecycle patch: skipping early end_input() "
-            "(hooks=%s, sdk_mcp=%d)",
+            "Windows stdin lifecycle patch: skipping early end_input() (hooks=%s, sdk_mcp=%d)",
             bool(self.hooks),
             len(self.sdk_mcp_servers),
         )
 
     Query.wait_for_result_and_end_input = _patched_wait  # type: ignore[assignment]
     logger.info(
-        "Applied Query.wait_for_result_and_end_input() patch "
-        "(stdin kept open on Windows until session teardown)"
+        "Applied Query.wait_for_result_and_end_input() patch (stdin kept open on Windows until session teardown)"
     )
 
 

@@ -12,7 +12,6 @@ import asyncio
 import json
 import logging
 import os
-import signal as _signal
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass

@@ -142,9 +142,7 @@ def upload_all_avatars() -> dict[str, str]:
         logger.warning("FTP connection failed for avatar upload", exc_info=True)
 
     if results:
-        logger.info(
-            "Uploaded %d/%d avatar(s) to XSERVER", len(results), len(png_files)
-        )
+        logger.info("Uploaded %d/%d avatar(s) to XSERVER", len(results), len(png_files))
 
     return results
 

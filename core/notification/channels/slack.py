@@ -98,39 +98,16 @@ class SlackChannel(NotificationChannel):
         payload: dict[str, Any] = {"channel": channel, "text": text}
         if anima_name:
             payload["username"] = anima_name
-            # Resolve avatar URL: env/credentials override -> XSERVER -> internal
             icon_url = ""
             try:
-                import os as _os
+                from core.tools._anima_icon_url import resolve_anima_icon_url
 
-                from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential
-
-                _avatar_key = f"AVATAR_URL__{anima_name}"
-                icon_url = (
-                    _lookup_vault_credential(_avatar_key)
-                    or _lookup_shared_credentials(_avatar_key)
-                    or _os.environ.get(_avatar_key)
-                    or ""
+                icon_url = resolve_anima_icon_url(
+                    anima_name,
+                    channel_config=self._config,
                 )
             except Exception:
-                pass
-            if not icon_url:
-                try:
-                    from server.slack_avatar_upload import get_avatar_public_url
-
-                    icon_url = get_avatar_public_url(anima_name)
-                except Exception:
-                    pass
-            if not icon_url:
-                try:
-                    from core.tools._anima_icon_url import resolve_anima_icon_url
-
-                    icon_url = resolve_anima_icon_url(
-                        anima_name,
-                        channel_config=self._config,
-                    )
-                except Exception:
-                    logger.debug("resolve_anima_icon_url failed for notification", exc_info=True)
+                logger.debug("resolve_anima_icon_url failed for notification", exc_info=True)
             if icon_url:
                 payload["icon_url"] = icon_url
 

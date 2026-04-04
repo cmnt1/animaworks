@@ -18,11 +18,11 @@ from core.config.local_llm import (
     normalize_ollama_model_name,
 )
 from core.config.models import (
-    CredentialConfig,
     DEFAULT_LOCAL_LLM_BASE_URL,
     DEFAULT_LOCAL_LLM_PRESETS,
     DEFAULT_LOCAL_LLM_ROLE_PRESETS,
     KNOWN_MODELS,
+    CredentialConfig,
     LocalLLMConfig,
     load_config,
     save_config,
@@ -144,13 +144,7 @@ def _list_nanogpt_models(base_url: str, api_key: str) -> list[str]:
     )
     response.raise_for_status()
     data = response.json()
-    return sorted(
-        {
-            str(item.get("id", "")).strip()
-            for item in data.get("data", [])
-            if item.get("id")
-        }
-    )
+    return sorted({str(item.get("id", "")).strip() for item in data.get("data", []) if item.get("id")})
 
 
 def _list_ollama_models(base_url: str) -> list[str]:
@@ -175,10 +169,7 @@ def _serialize_local_llm() -> dict[str, object]:
     local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
     base_url = normalize_ollama_base_url(local_llm.base_url)
     default_model = normalize_ollama_model_name(local_llm.default_model)
-    presets = {
-        name: normalize_ollama_model_name(model)
-        for name, model in local_llm.presets.items()
-    }
+    presets = {name: normalize_ollama_model_name(model) for name, model in local_llm.presets.items()}
 
     available_models: list[str] = []
     reachable = False
@@ -248,9 +239,7 @@ def create_config_router() -> APIRouter:
         # Check API keys / subscription auth
         has_anthropic_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
         anthropic_cred = load_config().credentials.get("anthropic", CredentialConfig())
-        has_anthropic_subscription = (
-            anthropic_cred.type == "claude_code_login" and is_claude_code_available()
-        )
+        has_anthropic_subscription = anthropic_cred.type == "claude_code_login" and is_claude_code_available()
         has_anthropic = has_anthropic_key or has_anthropic_subscription
         has_openai = bool(os.environ.get("OPENAI_API_KEY"))
         has_codex_login = is_codex_login_available()
@@ -319,9 +308,13 @@ def create_config_router() -> APIRouter:
                         seen.add(m)
             elif provider == "openai":
                 for m in (
-                    "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
-                    "gpt-4o", "gpt-4o-mini",
-                    "o3", "o4-mini",
+                    "gpt-4.1",
+                    "gpt-4.1-mini",
+                    "gpt-4.1-nano",
+                    "gpt-4o",
+                    "gpt-4o-mini",
+                    "o3",
+                    "o4-mini",
                 ):
                     if m not in seen:
                         models.append({"id": m, "label": m, "credential": "openai"})
@@ -377,8 +370,8 @@ def create_config_router() -> APIRouter:
     async def get_available_tools(request: Request):
         """Return available external tool module names (minus disabled services)."""
         try:
-            from core.tools import TOOL_MODULES
             from core.tooling.permissions import _disabled_service_tools
+            from core.tools import TOOL_MODULES
 
             tools = sorted(set(TOOL_MODULES.keys()) - _disabled_service_tools())
         except Exception:

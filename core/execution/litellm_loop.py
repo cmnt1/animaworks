@@ -37,7 +37,6 @@ from core.execution._completion_gate import (
 )
 from core.execution._litellm_context import ContextMixin, _extract_tool_uses_from_messages
 from core.execution._litellm_streaming import StreamingMixin
-from core.execution._streaming import try_parse_text_tool_call
 
 # ── Mixin imports ──────────────────────────────────────────
 # ── Backward-compatible re-exports ────────────────────────
@@ -51,6 +50,7 @@ from core.execution._litellm_tools import (  # noqa: F401
     _ToolCallShim,
 )
 from core.execution._session import build_continuation_prompt, handle_session_chaining
+from core.execution._streaming import try_parse_text_tool_call
 from core.execution.base import (
     BaseExecutor,
     ExecutionResult,

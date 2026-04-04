@@ -22,10 +22,10 @@ from core.tools._image_clients import (
     _DEFAULT_ANIMATIONS,
     _EXPRESSION_GUIDANCE,
     _EXPRESSION_PROMPTS,
-    LocalDiffusersClient,
     _REALISTIC_CHAT_ICON_PROMPT,
     _REALISTIC_EXPRESSION_GUIDANCE,
     _REALISTIC_EXPRESSION_PROMPTS,
+    LocalDiffusersClient,
 )
 from core.tools._image_glb import (
     _download_armature_animation,
@@ -148,6 +148,7 @@ class ImageGenPipeline:
         """
         style = "realistic" if self._is_realistic else "anime"
         from core.asset_reconciler import _resolve_prompt
+
         try:
             return _resolve_prompt(self._anima_dir, style) or ""
         except Exception:
@@ -182,9 +183,7 @@ class ImageGenPipeline:
                 "cel shading, flat colors, stylized, 2d, sketch, painting"
             )
         else:
-            quality_prefix = (
-                "masterpiece, best quality, very aesthetic, absurdres, highres"
-            )
+            quality_prefix = "masterpiece, best quality, very aesthetic, absurdres, highres"
             quality_negative = (
                 "lowres, bad anatomy, bad hands, missing fingers, extra fingers, "
                 "mutated hands, poorly drawn face, mutation, extra limbs, "

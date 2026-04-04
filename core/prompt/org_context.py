@@ -301,7 +301,9 @@ def _build_org_context(anima_name: str, other_animas: list[str], execution_mode:
         pcfg = all_animas[name]
         if pcfg.supervisor == anima_name:
             st = _get_live_status(name, animas_dir)
-            subordinates.append(_format_anima_entry(name, pcfg.speciality, pcfg.model, pcfg.aliases or None, st, animas_dir))
+            subordinates.append(
+                _format_anima_entry(name, pcfg.speciality, pcfg.model, pcfg.aliases or None, st, animas_dir)
+            )
 
     # Peers: animas with the same supervisor (excluding self)
     peers: list[str] = []
@@ -312,7 +314,9 @@ def _build_org_context(anima_name: str, other_animas: list[str], execution_mode:
             pcfg = all_animas[name]
             if pcfg.supervisor == my_supervisor:
                 st = _get_live_status(name, animas_dir)
-                peers.append(_format_anima_entry(name, pcfg.speciality, pcfg.model, pcfg.aliases or None, st, animas_dir))
+                peers.append(
+                    _format_anima_entry(name, pcfg.speciality, pcfg.model, pcfg.aliases or None, st, animas_dir)
+                )
 
     subordinates_line = ", ".join(subordinates) if subordinates else _fs.get("none", "(none)")
     peers_line = ", ".join(peers) if peers else _fs.get("none", "(none)")

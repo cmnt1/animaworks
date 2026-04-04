@@ -43,7 +43,7 @@ class TestCallLlmConsolidationModel:
 
         consolidation_kwargs = {"model": "anthropic/claude-sonnet-4-6", "api_key": "test-key"}
         with (
-            patch("core.memory._llm_utils.get_consolidation_llm_kwargs", return_value=consolidation_kwargs),
+            patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value=consolidation_kwargs),
             patch("litellm.acompletion", mock_ac),
         ):
             await conv._call_llm("sys", "user msg")
@@ -71,7 +71,7 @@ class TestCallLlmConsolidationModel:
 
         consolidation_kwargs = {"model": "anthropic/claude-sonnet-4-6"}
         with (
-            patch("core.memory._llm_utils.get_consolidation_llm_kwargs", return_value=consolidation_kwargs),
+            patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value=consolidation_kwargs),
             patch("litellm.acompletion", mock_ac),
         ):
             await conv._call_llm("sys", "user msg")
@@ -93,7 +93,7 @@ class TestCallLlmConsolidationModel:
 
         consolidation_kwargs = {"model": "anthropic/claude-sonnet-4-6"}
         with (
-            patch("core.memory._llm_utils.get_consolidation_llm_kwargs", return_value=consolidation_kwargs),
+            patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value=consolidation_kwargs),
             patch("litellm.acompletion", mock_ac),
         ):
             await conv._call_llm("sys", "user msg")

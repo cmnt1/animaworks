@@ -23,7 +23,6 @@ The ``board_mapping`` (channel_id -> board_name) is persisted in
 config.json for message routing.
 """
 
-import json
 import logging
 import re
 from datetime import UTC, datetime
@@ -46,6 +45,7 @@ _CONVERSATIONS_CREATE_URL = "https://slack.com/api/conversations.create"
 # ---------------------------------------------------------------------------
 # Slack API helpers
 # ---------------------------------------------------------------------------
+
 
 async def _list_public_channels(token: str) -> list[dict[str, Any]]:
     """Call ``conversations.list`` to get all visible channels.
@@ -73,9 +73,7 @@ async def _list_public_channels(token: str) -> list[dict[str, Any]]:
             resp.raise_for_status()
             data = resp.json()
             if not data.get("ok"):
-                logger.warning(
-                    "conversations.list failed: %s", data.get("error", "unknown")
-                )
+                logger.warning("conversations.list failed: %s", data.get("error", "unknown"))
                 break
             for ch in data.get("channels", []):
                 channels.append(ch)
@@ -86,7 +84,11 @@ async def _list_public_channels(token: str) -> list[dict[str, Any]]:
 
 
 async def _join_channel_if_needed(
-    token: str, channel_id: str, channel_name: str, *, bot_label: str = "",
+    token: str,
+    channel_id: str,
+    channel_name: str,
+    *,
+    bot_label: str = "",
 ) -> bool:
     """Join a Slack channel if the bot is not already a member.
 
@@ -102,17 +104,21 @@ async def _join_channel_if_needed(
         if data.get("ok"):
             logger.info(
                 "Bot %s joined Slack channel #%s (%s)",
-                bot_label, channel_name, channel_id,
+                bot_label,
+                channel_name,
+                channel_id,
             )
             return True
         error = data.get("error", "unknown")
         if error == "already_in_channel":
             return False
         logger.warning(
-            "Bot %s failed to join #%s: %s", bot_label, channel_name, error,
+            "Bot %s failed to join #%s: %s",
+            bot_label,
+            channel_name,
+            error,
         )
         return False
-
 
 
 async def _create_channel(token: str, name: str) -> dict[str, Any] | None:
@@ -130,17 +136,13 @@ async def _create_channel(token: str, name: str) -> dict[str, Any] | None:
         data = resp.json()
         if data.get("ok"):
             ch = data.get("channel", {})
-            logger.info(
-                "Created Slack channel #%s (%s)", name, ch.get("id")
-            )
+            logger.info("Created Slack channel #%s (%s)", name, ch.get("id"))
             return ch
         error = data.get("error", "unknown")
         if error == "name_taken":
             # Channel exists but wasn't visible in conversations.list
             # (e.g. private channel, or bot lacks visibility).
-            logger.debug(
-                "Slack channel #%s already exists (name_taken)", name
-            )
+            logger.debug("Slack channel #%s already exists (name_taken)", name)
             return None
         logger.warning("Failed to create Slack channel #%s: %s", name, error)
         return None
@@ -149,6 +151,7 @@ async def _create_channel(token: str, name: str) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 # Name conversion
 # ---------------------------------------------------------------------------
+
 
 def _sanitize_channel_name(board_name: str) -> str:
     """Convert an AnimaWorks board name to a valid Slack channel name.
@@ -172,6 +175,7 @@ def _sanitize_channel_name(board_name: str) -> str:
 # ---------------------------------------------------------------------------
 # Board helpers
 # ---------------------------------------------------------------------------
+
 
 def _ensure_board(shared_dir: Path, board_name: str, slack_channel_name: str) -> bool:
     """Create an AnimaWorks board if it doesn't exist.
@@ -243,6 +247,7 @@ def _list_local_boards(shared_dir: Path) -> list[str]:
 # Main sync class
 # ---------------------------------------------------------------------------
 
+
 class SlackChannelSync:
     """Bidirectional Slack channel <-> AnimaWorks board sync."""
 
@@ -291,29 +296,26 @@ class SlackChannelSync:
 
         discovery_token = discovery_app.client.token
         if not discovery_token:
-            logger.warning(
-                "SlackChannelSync: no token for default anima '%s'", default_anima
-            )
+            logger.warning("SlackChannelSync: no token for default anima '%s'", default_anima)
             return self.board_mapping
 
-        logger.info(
-            "SlackChannelSync: starting sync via %s bot", default_anima
-        )
+        logger.info("SlackChannelSync: starting sync via %s bot", default_anima)
 
         # ── Phase 1: Forward sync (Slack -> AnimaWorks boards) ──
         try:
             channels = await _list_public_channels(discovery_token)
         except Exception:
-            logger.warning(
-                "Failed to list channels for %s", default_anima, exc_info=True
-            )
+            logger.warning("Failed to list channels for %s", default_anima, exc_info=True)
             return self.board_mapping
 
         n_public = sum(1 for c in channels if not c.get("is_private"))
         n_private = len(channels) - n_public
         logger.info(
             "SlackChannelSync: %s found %d channels (%d public, %d private)",
-            default_anima, len(channels), n_public, n_private,
+            default_anima,
+            len(channels),
+            n_public,
+            n_private,
         )
 
         channel_ids_to_join: list[tuple[str, str]] = []  # (ch_id, ch_name) — public only
@@ -404,7 +406,10 @@ class SlackChannelSync:
             for ch_id, ch_name in channel_ids_to_join:
                 try:
                     joined = await _join_channel_if_needed(
-                        token, ch_id, ch_name, bot_label=anima_name,
+                        token,
+                        ch_id,
+                        ch_name,
+                        bot_label=anima_name,
                     )
                     if joined:
                         total_joins += 1

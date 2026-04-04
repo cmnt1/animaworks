@@ -64,6 +64,9 @@ def _build_agent(tmp_path: Path, config_dict: dict | None = None) -> "AgentCore"
         patch("core.agent.AgentCore._create_executor"),
         patch("core.tools.TOOL_MODULES", _FAKE_TOOL_MODULES),
         patch("core.tools.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
+        # chatwork/slack default to enabled=False in config; suppress so tests
+        # exercise the permissions logic in isolation from live config values
+        patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
     ):
         from core.agent import AgentCore
 
@@ -137,6 +140,7 @@ class TestToolPermissionsDefaultAll:
             patch("core.agent.AgentCore._create_executor"),
             patch("core.tools.TOOL_MODULES", _FAKE_TOOL_MODULES),
             patch("core.tools.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
+            patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             from core.agent import AgentCore
 

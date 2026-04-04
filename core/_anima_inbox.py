@@ -616,7 +616,7 @@ class InboxMixin:
                     self._status_slots["inbox"] = "idle"
                     self._task_slots["inbox"] = ""
         finally:
-                    self._notify_lock_released()
+            self._notify_lock_released()
 
     def _maybe_fast_reply_external_probe(
         self,
@@ -765,9 +765,7 @@ class InboxMixin:
         # When a human/external DM is waiting, self-generated task completion
         # notices add latency without helping the reply. Defer them here.
         external_items = [item for item in inbox_items if getattr(item.msg, "source", "") in {"slack", "chatwork"}]
-        deferred_internal = [
-            item for item in inbox_items if _is_self_task_completion_notice(item.msg, self.name)
-        ]
+        deferred_internal = [item for item in inbox_items if _is_self_task_completion_notice(item.msg, self.name)]
         if external_items and deferred_internal and len(deferred_internal) < len(inbox_items):
             try:
                 archived = self.messenger.archive_paths(deferred_internal)

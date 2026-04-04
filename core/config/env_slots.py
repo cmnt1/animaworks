@@ -93,11 +93,7 @@ def check_missing_slack_tokens() -> list[str]:
     missing: list[str] = []
     for anima_name in sorted(config.animas):
         key = f"SLACK_BOT_TOKEN__{anima_name}"
-        token = (
-            _lookup_vault_credential(key)
-            or _lookup_shared_credentials(key)
-            or os.environ.get(key)
-        )
+        token = _lookup_vault_credential(key) or _lookup_shared_credentials(key) or os.environ.get(key)
         if not token:
             missing.append(anima_name)
     return missing

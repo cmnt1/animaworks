@@ -49,6 +49,7 @@ class CommsToolsMixin:
             return "Error: messenger not configured"
 
         from core.tooling.org_helpers import resolve_anima_name
+
         to = resolve_anima_name(args["to"]) if args.get("to") else args.get("to", "")
         content = args["content"]
         intent = args.get("intent", "")

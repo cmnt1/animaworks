@@ -31,25 +31,13 @@ _MAX_SLACK_TEXT = 40000
 def _resolve_avatar_url(anima_name: str) -> str:
     """Resolve avatar URL for Slack icon_url.
 
-    Priority:
-      1. AVATAR_URL__{name} from vault / shared credentials / env (manual override)
-      2. XSERVER public URL (auto-uploaded avatars)
+    Delegates to :func:`core.tools._anima_icon_url.resolve_anima_icon_url`
+    which applies the 3-tier resolution (per-Anima / env / config / channel / asset).
     """
-    key = f"AVATAR_URL__{anima_name}"
-    url = _lookup_vault_credential(key)
-    if url:
-        return url
-    url = _lookup_shared_credentials(key)
-    if url:
-        return url
-    url = os.environ.get(key) or ""
-    if url:
-        return url
-    # Fall back to XSERVER hosted avatar
     try:
-        from server.slack_avatar_upload import get_avatar_public_url
+        from core.tools._anima_icon_url import resolve_anima_icon_url
 
-        return get_avatar_public_url(anima_name)
+        return resolve_anima_icon_url(anima_name, channel_config=None)
     except Exception:
         return ""
 
@@ -172,11 +160,13 @@ class SlackAutoResponder:
             if ext_uid:
                 mention = f"<@{ext_uid}> "
 
-            targets.append({
-                "channel_id": channel_id,
-                "thread_ts": thread_ts,
-                "mention_prefix": mention,
-            })
+            targets.append(
+                {
+                    "channel_id": channel_id,
+                    "thread_ts": thread_ts,
+                    "mention_prefix": mention,
+                }
+            )
         return targets
 
     @staticmethod

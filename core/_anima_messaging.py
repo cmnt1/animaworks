@@ -27,9 +27,9 @@ from core.execution._sanitize import ORIGIN_HUMAN, ORIGIN_SYSTEM
 from core.i18n import t
 from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 from core.memory.conversation import ConversationMemory, ToolRecord
-from core.response_normalize import normalize_user_facing_response_text
 from core.memory.streaming_journal import StreamingJournal
 from core.paths import load_prompt
+from core.response_normalize import normalize_user_facing_response_text
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, VALID_EMOTIONS, CycleResult, ImageData
 from core.time_utils import now_local, today_local
 
@@ -721,10 +721,7 @@ class MessagingMixin:
                                 _sched_thread,
                                 _fire_compaction,
                             )
-                        if (
-                            external_chat_recipient is not None
-                            and chunk.get("type") == "text_delta"
-                        ):
+                        if external_chat_recipient is not None and chunk.get("type") == "text_delta":
                             continue
                         yield chunk
                 except Exception as exc:

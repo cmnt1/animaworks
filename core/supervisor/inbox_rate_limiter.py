@@ -79,10 +79,7 @@ class InboxRateLimiter:
             from core.schemas import EXTERNAL_PLATFORM_SOURCES
 
             messages = self._anima.messenger.receive()
-            return any(
-                m.source in EXTERNAL_PLATFORM_SOURCES and m.intent
-                for m in messages
-            )
+            return any(m.source in EXTERNAL_PLATFORM_SOURCES and m.intent for m in messages)
         except Exception:
             return False
 
@@ -204,7 +201,6 @@ class InboxRateLimiter:
 
         # Peek at inbox senders for cascade detection and intent filtering
         inbox_messages = self._anima.messenger.receive()
-        senders = {m.from_person for m in inbox_messages}
 
         # ── Intent-based trigger filtering ──
         # Only trigger immediate heartbeat for actionable messages or human messages.
@@ -230,10 +226,7 @@ class InboxRateLimiter:
 
         # Cascade detection applies only to Anima-to-Anima communication,
         # NOT to messages from external platforms (Slack DMs from humans).
-        cascade_senders = {
-            m.from_person for m in inbox_messages
-            if m.source not in EXTERNAL_PLATFORM_SOURCES
-        }
+        cascade_senders = {m.from_person for m in inbox_messages if m.source not in EXTERNAL_PLATFORM_SOURCES}
         if cascade_senders and self.check_cascade(cascade_senders):
             self._pending_trigger = False
             return

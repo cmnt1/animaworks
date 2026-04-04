@@ -19,7 +19,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -144,6 +144,7 @@ def _discover_claude_cred_paths() -> list[str]:
         paths.append(str(p))
     return paths
 
+
 _CODEX_CRED_PATHS: list[str] = [
     "env:CODEX_CREDENTIALS_PATH",
     "~/.codex/auth.json",
@@ -207,11 +208,13 @@ _ANTHROPIC_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code pub
 def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
     """Use the refresh token to obtain a new access token and persist it."""
     try:
-        body = json.dumps({
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": _ANTHROPIC_CLIENT_ID,
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": _ANTHROPIC_CLIENT_ID,
+            }
+        ).encode("utf-8")
         req = urllib.request.Request(
             _ANTHROPIC_TOKEN_URL,
             data=body,
@@ -309,90 +312,120 @@ def _relogin_claude() -> tuple[dict[str, Any], int]:
     executable = get_claude_executable()
     login_cmd = f"{executable} /login" if executable else "claude login"
     if not executable:
-        return ({
-            "success": False,
-            "message": f"Claude Code CLI not found. Install it, then run '{login_cmd}' in CMD.",
-            "manual_command": login_cmd,
-        }, 400)
+        return (
+            {
+                "success": False,
+                "message": f"Claude Code CLI not found. Install it, then run '{login_cmd}' in CMD.",
+                "manual_command": login_cmd,
+            },
+            400,
+        )
 
     best_path, best_token, best_refresh, best_expires = _select_best_claude_credential()
     if not best_path or not best_token:
         launched = _launch_claude_login_terminal(executable)
-        return ({
-            "success": launched,
-            "message": f"Opened a CMD window for '{login_cmd}'." if launched else f"No Claude credentials found. Run '{login_cmd}' in CMD.",
-            "manual_command": login_cmd,
-            "executable": executable,
-            "terminal_launched": launched,
-        }, 200 if launched else 400)
+        return (
+            {
+                "success": launched,
+                "message": f"Opened a CMD window for '{login_cmd}'."
+                if launched
+                else f"No Claude credentials found. Run '{login_cmd}' in CMD.",
+                "manual_command": login_cmd,
+                "executable": executable,
+                "terminal_launched": launched,
+            },
+            200 if launched else 400,
+        )
 
     now_ms = int(time.time() * 1000)
     if best_expires > now_ms:
         mins = max(0, round((best_expires - now_ms) / 1000 / 60))
         launched = _launch_claude_login_terminal(executable)
-        return ({
-            "success": True,
-            "message": (
-                f"Claude token is already fresh (expires in ~{mins} min). "
-                f"Opened a CMD window for '{login_cmd}' anyway so you can force re-auth manually."
-                if launched else
-                f"Claude token is already fresh (expires in ~{mins} min). If usage still fails, it is likely a provider-side rate limit rather than expired auth."
-            ),
-            "file": str(best_path),
-            "executable": executable,
-            "terminal_launched": launched,
-            "manual_command": login_cmd,
-        }, 200)
+        return (
+            {
+                "success": True,
+                "message": (
+                    f"Claude token is already fresh (expires in ~{mins} min). "
+                    f"Opened a CMD window for '{login_cmd}' anyway so you can force re-auth manually."
+                    if launched
+                    else f"Claude token is already fresh (expires in ~{mins} min). If usage still fails, it is likely a provider-side rate limit rather than expired auth."
+                ),
+                "file": str(best_path),
+                "executable": executable,
+                "terminal_launched": launched,
+                "manual_command": login_cmd,
+            },
+            200,
+        )
 
     if not best_refresh:
         launched = _launch_claude_login_terminal(executable)
-        return ({
-            "success": launched,
-            "message": f"Opened a CMD window for '{login_cmd}'." if launched else f"Claude token is expired and no refresh token is available. Run '{login_cmd}' in CMD.",
-            "manual_command": login_cmd,
-            "file": str(best_path),
-            "executable": executable,
-            "terminal_launched": launched,
-        }, 200 if launched else 400)
+        return (
+            {
+                "success": launched,
+                "message": f"Opened a CMD window for '{login_cmd}'."
+                if launched
+                else f"Claude token is expired and no refresh token is available. Run '{login_cmd}' in CMD.",
+                "manual_command": login_cmd,
+                "file": str(best_path),
+                "executable": executable,
+                "terminal_launched": launched,
+            },
+            200 if launched else 400,
+        )
 
     refreshed = _refresh_claude_token(best_path, best_refresh)
     _clear_usage_cache("claude")
     if refreshed:
-        return ({
-            "success": True,
-            "message": "Claude token refresh succeeded.",
-            "file": str(best_path),
-            "executable": executable,
-        }, 200)
+        return (
+            {
+                "success": True,
+                "message": "Claude token refresh succeeded.",
+                "file": str(best_path),
+                "executable": executable,
+            },
+            200,
+        )
 
     launched = _launch_claude_login_terminal(executable)
-    return ({
-        "success": launched,
-        "message": f"Claude token refresh failed, so a CMD window for '{login_cmd}' was opened." if launched else f"Claude token refresh failed. Run '{login_cmd}' in CMD.",
-        "manual_command": login_cmd,
-        "executable": executable,
-        "terminal_launched": launched,
-    }, 200 if launched else 400)
+    return (
+        {
+            "success": launched,
+            "message": f"Claude token refresh failed, so a CMD window for '{login_cmd}' was opened."
+            if launched
+            else f"Claude token refresh failed. Run '{login_cmd}' in CMD.",
+            "manual_command": login_cmd,
+            "executable": executable,
+            "terminal_launched": launched,
+        },
+        200 if launched else 400,
+    )
 
 
 def _relogin_openai() -> tuple[dict[str, Any], int]:
     """Start Codex browser login when needed, or report active login."""
     _clear_usage_cache("openai")
     if is_codex_login_available():
-        return ({
-            "success": True,
-            "already_logged_in": True,
-            "message": "Codex login is already available",
-        }, 200)
+        return (
+            {
+                "success": True,
+                "already_logged_in": True,
+                "message": "Codex login is already available",
+            },
+            200,
+        )
 
     payload = get_codex_device_login()
     _clear_usage_cache("openai")
     status_code = 200 if payload.get("ok") else 400
-    return ({
-        "success": bool(payload.get("ok")),
-        **payload,
-        "manual_command": "codex login",
-    }, status_code)
+    return (
+        {
+            "success": bool(payload.get("ok")),
+            **payload,
+            "manual_command": "codex login",
+        },
+        status_code,
+    )
 
 
 def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
@@ -521,9 +554,7 @@ def _refresh_codex_token(auth_path: Path, auth_data: dict[str, Any]) -> tuple[st
     account_id = _extract_codex_account_id(tokens)
     if account_id:
         tokens["account_id"] = account_id
-    auth_data["last_refresh"] = (
-        datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    )
+    auth_data["last_refresh"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     try:
         _persist_codex_auth_data(auth_path, auth_data)

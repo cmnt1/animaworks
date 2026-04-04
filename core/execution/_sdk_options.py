@@ -92,10 +92,7 @@ def _resolve_sdk_cli_path() -> str | None:
     if _cached_cli_path:
         logger.info("Resolved Claude Code CLI: %s", _cached_cli_path)
     else:
-        logger.warning(
-            "Could not resolve a verified Claude Code CLI; "
-            "SDK will fall back to its own discovery"
-        )
+        logger.warning("Could not resolve a verified Claude Code CLI; SDK will fall back to its own discovery")
     return _cached_cli_path
 
 
@@ -421,48 +418,52 @@ class SDKOptionsMixin:
             # entire session.  The hooks provide tool logging, trust tracking,
             # and context budget observation — all non-essential for core chat.
             # TODO: Re-enable once the SDK ships a fix for Windows pipe handling.
-            **({
-                "hooks": {
-                    "PreToolUse": [
-                        HookMatcher(
-                            matcher=".*",
-                            hooks=[
-                                _build_pre_tool_hook(
-                                    self._anima_dir,
-                                    max_tokens=_effective_max_tokens,
-                                    context_window=_cw,
-                                    session_stats=session_stats,
-                                    superuser=_is_debug_superuser(self._anima_dir),
-                                    on_task_intercepted=self._make_pending_executor_wake_callback(),
-                                    has_subordinates=_has_subs,
-                                )
-                            ],
-                        )
-                    ],
-                    "PreCompact": [
-                        HookMatcher(
-                            matcher=".*",
-                            hooks=[_build_pre_compact_hook(self._anima_dir)],
-                        )
-                    ],
-                    "PostToolUse": [
-                        HookMatcher(
-                            matcher="Write|Edit",
-                            hooks=[_build_post_tool_hook(self._anima_dir)],
-                        )
-                    ],
-                    "Stop": [
-                        HookMatcher(
-                            hooks=[
-                                _build_stop_hook(
-                                    self._anima_dir,
-                                    session_stats=session_stats,
-                                )
-                            ],
-                        )
-                    ],
-                },
-            } if sys.platform != "win32" else {}),
+            **(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            HookMatcher(
+                                matcher=".*",
+                                hooks=[
+                                    _build_pre_tool_hook(
+                                        self._anima_dir,
+                                        max_tokens=_effective_max_tokens,
+                                        context_window=_cw,
+                                        session_stats=session_stats,
+                                        superuser=_is_debug_superuser(self._anima_dir),
+                                        on_task_intercepted=self._make_pending_executor_wake_callback(),
+                                        has_subordinates=_has_subs,
+                                    )
+                                ],
+                            )
+                        ],
+                        "PreCompact": [
+                            HookMatcher(
+                                matcher=".*",
+                                hooks=[_build_pre_compact_hook(self._anima_dir)],
+                            )
+                        ],
+                        "PostToolUse": [
+                            HookMatcher(
+                                matcher="Write|Edit",
+                                hooks=[_build_post_tool_hook(self._anima_dir)],
+                            )
+                        ],
+                        "Stop": [
+                            HookMatcher(
+                                hooks=[
+                                    _build_stop_hook(
+                                        self._anima_dir,
+                                        session_stats=session_stats,
+                                    )
+                                ],
+                            )
+                        ],
+                    },
+                }
+                if sys.platform != "win32"
+                else {}
+            ),
         )
         if self._model_config.thinking:
             from core.execution.base import is_adaptive_model, resolve_thinking_effort

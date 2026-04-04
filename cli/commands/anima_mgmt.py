@@ -496,9 +496,9 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
     """Change an anima's role."""
     import requests
 
+    from core.anima_factory import SHARED_ROLES_DIR, VALID_ROLES, _apply_role_defaults
     from core.config.local_llm import apply_local_llm_role_to_status
     from core.config.models import load_config
-    from core.anima_factory import SHARED_ROLES_DIR, VALID_ROLES, _apply_role_defaults
     from core.paths import get_animas_dir, get_data_dir
 
     name = args.anima

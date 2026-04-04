@@ -57,9 +57,7 @@ _FOREGROUND_EVENT_IDLE_TIMEOUT_SEC = 120.0
 # context (including system prompt) in a single JSONL line during thread
 # resume, triggering LimitOverrunError.  Skip resume when close to this limit.
 _RESUME_PROMPT_SIZE_LIMIT = 50_000
-_FATAL_STDERR_PATTERNS = (
-    "error: stream closed",
-)
+_FATAL_STDERR_PATTERNS = ("error: stream closed",)
 
 # Increase the asyncio.StreamReader buffer limit for Codex subprocess pipes.
 # The default 64 KB (2**16) is too small for large prompts that produce JSONL
@@ -200,10 +198,7 @@ def _is_desktop_extension_codex(executable: str | None) -> bool:
     if not executable:
         return False
     norm = executable.replace("/", "\\").lower()
-    return (
-        "\\.antigravity\\extensions\\openai.chatgpt-" in norm
-        or "\\windowsapps\\openai.codex_" in norm
-    )
+    return "\\.antigravity\\extensions\\openai.chatgpt-" in norm or "\\windowsapps\\openai.codex_" in norm
 
 
 def _should_prefer_cli_exec(trigger: str) -> bool:
@@ -535,8 +530,7 @@ def _patch_codex_exec_stream_limit(exec_: Any) -> None:
                     stderr_bytes = await stderr_task
                     stderr_text = stderr_bytes.decode("utf-8", errors="replace")
                     raise CodexExecError(
-                        "Codex Exec aborted after fatal stderr signal: "
-                        f"{stderr_text or fatal_stderr.result()}"
+                        f"Codex Exec aborted after fatal stderr signal: {stderr_text or fatal_stderr.result()}"
                     )
 
                 line = line_task.result()
@@ -982,10 +976,7 @@ class CodexSDKExecutor(BaseExecutor):
             text=str(final_event.get("full_text", "")),
             result_message=final_event.get("result_message"),
             replied_to_from_transcript=final_event.get("replied_to_from_transcript", set()),
-            tool_call_records=[
-                ToolCallRecord(**record)
-                for record in (final_event.get("tool_call_records") or [])
-            ],
+            tool_call_records=[ToolCallRecord(**record) for record in (final_event.get("tool_call_records") or [])],
             usage=usage_acc,
         )
 
@@ -1454,7 +1445,9 @@ class CodexSDKExecutor(BaseExecutor):
             except Exception as e:
                 if _should_cli_exec_fallback(e):
                     logger.warning("Codex SDK streaming failed; falling back to `codex exec`")
-                    async for ev in self._execute_streaming_via_cli_exec(system_prompt, prompt, tracker, trigger=trigger):
+                    async for ev in self._execute_streaming_via_cli_exec(
+                        system_prompt, prompt, tracker, trigger=trigger
+                    ):
                         yield ev
                     return
                 logger.exception("Codex SDK streaming error")

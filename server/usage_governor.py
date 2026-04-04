@@ -37,9 +37,11 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from core.i18n import t
 
 logger = logging.getLogger("animaworks.usage_governor")
 
@@ -151,11 +153,7 @@ class GovernorState:
         now = time.time()
         if self._relogin_cooldown_until.get(provider, 0) > now:
             return False
-        recent = [
-            t
-            for t in self._relogin_timestamps.get(provider, [])
-            if now - t < 3600
-        ]
+        recent = [t for t in self._relogin_timestamps.get(provider, []) if now - t < 3600]
         self._relogin_timestamps[provider] = recent
         return len(recent) < _RELOGIN_MAX_PER_HOUR
 
@@ -435,10 +433,7 @@ def _evaluate_hard_floor(
 ) -> tuple[int | None, str]:
     """Absolute safety net: if remaining drops below hard floor, emergency throttle."""
     if remaining < hard_floor:
-        reason = (
-            f"{provider_key}.{window_key} remaining {remaining:.0f}% "
-            f"< hard floor {hard_floor:.0f}% → activity 10%"
-        )
+        reason = f"{provider_key}.{window_key} remaining {remaining:.0f}% < hard floor {hard_floor:.0f}% → activity 10%"
         return 10, reason
     return None, ""
 
@@ -487,27 +482,40 @@ def _evaluate_provider_remaining(
         if isinstance(window_config, list):
             # Threshold mode (backward-compatible list format)
             level, reason = _evaluate_threshold(
-                remaining, window_config, provider_key, window_key,
+                remaining,
+                window_config,
+                provider_key,
+                window_key,
             )
             _update_worst(level, reason)
         elif isinstance(window_config, dict):
             mode = window_config.get("mode", "threshold")
             if mode == "time_proportional":
                 level, reason = _evaluate_time_proportional(
-                    remaining, window, window_config, provider_key, window_key,
+                    remaining,
+                    window,
+                    window_config,
+                    provider_key,
+                    window_key,
                 )
                 _update_worst(level, reason)
             else:
                 # Dict with "rules" key treated as threshold
                 rules = window_config.get("rules", [])
                 level, reason = _evaluate_threshold(
-                    remaining, rules, provider_key, window_key,
+                    remaining,
+                    rules,
+                    provider_key,
+                    window_key,
                 )
                 _update_worst(level, reason)
 
         # Hard floor — always checked regardless of mode
         level, reason = _evaluate_hard_floor(
-            remaining, hard_floor, provider_key, window_key,
+            remaining,
+            hard_floor,
+            provider_key,
+            window_key,
         )
         _update_worst(level, reason)
 
@@ -658,7 +666,9 @@ class UsageGovernor:
                 continue
 
             remaining, _level, reason = _evaluate_provider_remaining(
-                usage_data, policy, provider_key,
+                usage_data,
+                policy,
+                provider_key,
             )
 
             to_suspend = _animas_to_suspend(remaining, policy, provider_animas)
@@ -710,15 +720,66 @@ class UsageGovernor:
                 logger.warning("Governor: failed to resume %s", name, exc_info=True)
 
         # Suspend animas that should be stopped.
-        # Check ALL targets (not just newly added ones) because after a
-        # server restart the supervisor may have re-launched animas that
-        # the governor had previously suspended.
+        newly_suspended = target_suspended - currently_suspended
         for name in target_suspended:
             try:
                 if name in supervisor.processes:
                     await supervisor.stop_anima(name)
                     logger.info("Governor: suspended anima %s", name)
+                    if name in newly_suspended:
+                        await self._notify_supervisor(name, self._state.reason)
             except Exception:
                 logger.warning("Governor: failed to suspend %s", name, exc_info=True)
 
         self._state.suspended_animas = sorted(target_suspended)
+
+    async def _notify_supervisor(self, anima_name: str, reason: str) -> None:
+        """Notify the suspended anima's supervisor (or human if top-level)."""
+        try:
+            import json as _json
+
+            status_path = self._animas_dir / anima_name / "status.json"
+            if not status_path.is_file():
+                return
+            status = _json.loads(status_path.read_text("utf-8"))
+            supervisor_name = status.get("supervisor")
+
+            if supervisor_name:
+                sup_status_path = self._animas_dir / supervisor_name / "status.json"
+                sup_enabled = False
+                if sup_status_path.is_file():
+                    sup_data = _json.loads(sup_status_path.read_text("utf-8"))
+                    sup_enabled = sup_data.get("enabled", False)
+
+                if sup_enabled:
+                    from core.messenger import Messenger
+                    from core.paths import get_shared_dir
+
+                    messenger = Messenger(get_shared_dir(), "system")
+                    messenger.send(
+                        to=supervisor_name,
+                        content=t(
+                            "governor.supervisor_notify",
+                            anima=anima_name,
+                            reason=reason,
+                        ),
+                        intent="report",
+                    )
+                    logger.info("Governor: notified supervisor %s about %s suspension", supervisor_name, anima_name)
+                    return
+
+            from core.config.models import load_config as _lc_hn
+            from core.notification.notifier import HumanNotifier
+
+            cfg = _lc_hn()
+            notifier = HumanNotifier.from_config(cfg.human_notification)
+            if notifier.channel_count > 0:
+                msg = t("governor.human_notify", anima=anima_name, reason=reason)
+                await notifier.notify(
+                    subject=t("governor.human_notify_subject"),
+                    body=msg,
+                    anima_name=anima_name,
+                )
+            logger.info("Governor: notified human about %s suspension (no active supervisor)", anima_name)
+        except Exception:
+            logger.warning("Failed to notify supervisor for %s", anima_name, exc_info=True)

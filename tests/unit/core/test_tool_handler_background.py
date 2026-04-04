@@ -99,14 +99,15 @@ class TestHandleBackgroundExecution:
         handler._external = MagicMock()
         handler._external.dispatch.return_value = "normal result"
 
-        # "web_search" is NOT in the default eligible tools
-        result = handler.handle("web_search", {"query": "hello"})
+        # "chatwork_send" is an external tool not in the background-eligible set
+        # and not in the built-in _dispatch table, so it routes to _external.dispatch
+        result = handler.handle("chatwork_send", {"room_id": "123", "body": "hi"})
         assert result == "normal result"
 
         # External dispatch should have been called
         handler._external.dispatch.assert_called_once()
         call_args = handler._external.dispatch.call_args
-        assert call_args[0][0] == "web_search"
+        assert call_args[0][0] == "chatwork_send"
 
     def test_handle_no_background_manager(
         self,

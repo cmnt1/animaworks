@@ -10,7 +10,6 @@ from __future__ import annotations
 """Setup wizard API routes for first-launch configuration."""
 
 import logging
-import shutil
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -146,6 +145,7 @@ def create_setup_router() -> APIRouter:
 
         config = load_config()
         from core.platform.claude_code import is_claude_code_available
+
         claude_available = is_claude_code_available()
         codex_available = is_codex_cli_available()
         codex_logged_in = is_codex_login_available()

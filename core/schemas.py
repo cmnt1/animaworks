@@ -9,13 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-import sys
-from typing import Any, Literal
-
-if sys.version_info >= (3, 12):
-    from typing import TypedDict
-else:
-    from typing_extensions import TypedDict
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field, model_validator
 
