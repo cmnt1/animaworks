@@ -394,21 +394,30 @@ class HeartbeatMixin:
             logger.debug("[%s] Failed to build usage context", self.name, exc_info=True)
             return None
 
-    _CURRENT_STATE_CLEANUP_THRESHOLD = 3000
+    def _get_current_state_max_chars(self) -> int:
+        try:
+            from core.config.models import load_config
+
+            return load_config().heartbeat.current_state_max_chars
+        except Exception:
+            return 0
 
     def _enforce_state_size_limit(self) -> None:
-        """Hard-trim current_state.md if it exceeds the cleanup threshold.
+        """Hard-trim current_state.md if it exceeds the configured threshold.
 
         Called after heartbeat completion.  Overflow content is archived
         into today's episode file for traceability.
+        Disabled when ``heartbeat.current_state_max_chars`` is 0 (default).
         """
-        state = self.memory.read_current_state()
-        if len(state) <= self._CURRENT_STATE_CLEANUP_THRESHOLD:
+        max_chars = self._get_current_state_max_chars()
+        if max_chars <= 0:
             return
-        threshold = self._CURRENT_STATE_CLEANUP_THRESHOLD
-        trimmed = state[-threshold:]
+        state = self.memory.read_current_state()
+        if len(state) <= max_chars:
+            return
+        trimmed = state[-max_chars:]
         first_nl = trimmed.find("\n")
-        if first_nl != -1 and first_nl < threshold * 0.2:
+        if first_nl != -1 and first_nl < max_chars * 0.2:
             trimmed = trimmed[first_nl + 1 :]
         overflow = state[: len(state) - len(trimmed)]
         self.memory.append_episode(f"## current_state.md overflow archived\n\n{overflow}")
@@ -431,22 +440,24 @@ class HeartbeatMixin:
         checklist = hb_config or load_prompt("heartbeat_default_checklist")
         parts = [load_prompt("heartbeat", checklist=checklist)]
 
-        state = self.memory.read_current_state()
-        state_len = len(state)
-        if state_len > self._CURRENT_STATE_CLEANUP_THRESHOLD:
-            parts.append(
-                t(
-                    "heartbeat.current_state_cleanup_required",
-                    current_chars=state_len,
-                    max_chars=self._CURRENT_STATE_CLEANUP_THRESHOLD,
+        _max_chars = self._get_current_state_max_chars()
+        if _max_chars > 0:
+            state = self.memory.read_current_state()
+            state_len = len(state)
+            if state_len > _max_chars:
+                parts.append(
+                    t(
+                        "heartbeat.current_state_cleanup_required",
+                        current_chars=state_len,
+                        max_chars=_max_chars,
+                    )
                 )
-            )
-            logger.info(
-                "[%s] current_state.md exceeds threshold (%d > %d), injecting cleanup instruction",
-                self.name,
-                state_len,
-                self._CURRENT_STATE_CLEANUP_THRESHOLD,
-            )
+                logger.info(
+                    "[%s] current_state.md exceeds threshold (%d > %d), injecting cleanup instruction",
+                    self.name,
+                    state_len,
+                    _max_chars,
+                )
 
         parts.extend(self._build_background_context_parts())
 
