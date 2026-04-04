@@ -44,7 +44,6 @@ _JST = ZoneInfo("Asia/Tokyo")
 _UTC = timezone.utc
 _CACHE_KEY_COST_BUDGET = "cost_budget"
 _BALANCE_SNAPSHOT_NAME = "usage_budget_state.json"
-_CONSOLE_CREDITS_URL = "https://console.anthropic.com/api/organizations/{org_id}/prepaid/credits"
 
 
 def _cached(key: str) -> dict[str, Any] | None:
@@ -750,33 +749,6 @@ def _save_balance_snapshot(balance_usd: float) -> dict[str, Any]:
     return snapshot
 
 
-def _fetch_console_balance(org_id: str, session_cookie: str) -> float | None:
-    """Fetch prepaid credit balance from Anthropic Console (undocumented endpoint).
-
-    Returns balance in USD, or None on failure.
-    Response format: {"amount": 10195} where amount is in cents.
-    """
-    url = _CONSOLE_CREDITS_URL.format(org_id=org_id)
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "Cookie": session_cookie,
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0",
-                "Referer": "https://console.anthropic.com/",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        amount_cents = data.get("amount")
-        if isinstance(amount_cents, (int, float)) and amount_cents >= 0:
-            return round(amount_cents / 100, 2)
-        return None
-    except Exception as e:
-        logger.warning("Console balance fetch failed: %s", e)
-        return None
-
 
 def _days_in_current_month_jst() -> int:
     now_jst = datetime.now(tz=_JST)
@@ -881,7 +853,6 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
 
     monthly_limit = budget_cfg.monthly_limit_usd
     billing_day = budget_cfg.billing_day
-    has_console_config = bool(budget_cfg.org_id and budget_cfg.console_session_cookie)
 
     snapshot = _load_balance_snapshot()
 
@@ -900,10 +871,7 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
         effective_remaining = monthly_limit - monthly_spent_display
         display_limit = monthly_limit
     else:
-        result = {
-            "configured": False,
-            "has_console_config": has_console_config,
-        }
+        result = {"configured": False}
         _set_cache(_CACHE_KEY_COST_BUDGET, result)
         return result
 
@@ -927,7 +895,6 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
 
         result = {
             "configured": True,
-            "has_console_config": has_console_config,
             "snapshot": snapshot,
             "weekly": {
                 "budget_usd": round(weekly_budget, 4),
@@ -994,40 +961,25 @@ def create_usage_router() -> APIRouter:
 
     @router.post("/usage/balance-sync")
     async def sync_balance(request: Request) -> JSONResponse:
-        """Fetch current prepaid credit balance from Anthropic Console and save as snapshot."""
-        from core.config.io import load_config
-
+        """Save a manually entered balance as a snapshot."""
         try:
-            cfg = load_config()
-            budget_cfg = cfg.usage_budget
-        except Exception as e:
-            return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"success": False, "message": "Invalid JSON"}, status_code=400)
 
-        if not budget_cfg.org_id or not budget_cfg.console_session_cookie:
+        balance_usd = body.get("balance_usd")
+        if not isinstance(balance_usd, (int, float)) or balance_usd < 0:
             return JSONResponse(
-                {
-                    "success": False,
-                    "message": "org_id または console_session_cookie が未設定です。config.json の usage_budget を設定してください。",
-                },
+                {"success": False, "message": "balance_usd は0以上の数値で指定してください。"},
                 status_code=400,
             )
 
-        balance = _fetch_console_balance(budget_cfg.org_id, budget_cfg.console_session_cookie)
-        if balance is None:
-            return JSONResponse(
-                {
-                    "success": False,
-                    "message": "残高取得に失敗しました。Cookie が期限切れかもしれません。",
-                },
-                status_code=502,
-            )
-
-        snapshot = _save_balance_snapshot(balance)
+        snapshot = _save_balance_snapshot(float(balance_usd))
         _CACHE.pop(_CACHE_KEY_COST_BUDGET, None)
         return JSONResponse(
             {
                 "success": True,
-                "balance_usd": balance,
+                "balance_usd": float(balance_usd),
                 "snapshot_at": snapshot["snapshot_at"],
             }
         )

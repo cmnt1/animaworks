@@ -129,6 +129,13 @@ export function render(container) {
   const syncBtn = document.getElementById("balanceSyncBtn");
   if (syncBtn) {
     syncBtn.addEventListener("click", async () => {
+      const input = prompt("claude.ai で確認した現在の残高を入力してください (USD)\n例: 101.95");
+      if (input === null) return;
+      const balance = parseFloat(input.replace(/[^0-9.]/g, ""));
+      if (isNaN(balance) || balance < 0) {
+        alert("有効な金額を入力してください");
+        return;
+      }
       syncBtn.disabled = true;
       syncBtn.textContent = "...";
       try {
@@ -136,10 +143,10 @@ export function render(container) {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ balance_usd: balance }),
         });
         const data = await res.json().catch(() => ({}));
         if (data.success) {
-          alert(`残高取得成功: $${data.balance_usd.toFixed(2)}`);
           await _loadUsage(true);
         } else {
           alert(data.message || "同期失敗");
@@ -416,9 +423,7 @@ function _renderCostBudget(data) {
     return;
   }
   if (!data.configured) {
-    const hint = data.has_console_config
-      ? "残高同期ボタンで残高を取得してください"
-      : "config.json の usage_budget に monthly_limit_usd を設定してください";
+    const hint = "「残高同期」で残高を入力するか、config.json の usage_budget に monthly_limit_usd を設定してください";
     el.innerHTML = `<div class="usage-ok" style="color:var(--aw-color-text-faint,#888);">未設定 — ${escapeHtml(hint)}</div>`;
     return;
   }

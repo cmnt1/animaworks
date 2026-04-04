@@ -701,13 +701,6 @@ class UsageBudgetConfig(BaseModel):
     billing_day: int = Field(default=1, ge=1, le=28)
     """Day of month when Anthropic billing cycle resets (UTC). 1-28."""
 
-    org_id: str = ""
-    """Anthropic organization ID from console.anthropic.com/settings/organization."""
-
-    console_session_cookie: str = ""
-    """Browser session cookie for console.anthropic.com (for balance sync).
-    Value of the Cookie header, e.g. 'session=abc123; ...'"""
-
 
 # ── Main Config ─────────────────────────────────────────────────────────────
 
