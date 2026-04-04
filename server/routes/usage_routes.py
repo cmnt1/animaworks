@@ -908,6 +908,9 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
             billing_start_utc.year, billing_start_utc.month, billing_start_utc.day, tzinfo=_UTC
         )
         month_window_seconds = int((next_billing - billing_start_dt).total_seconds())
+        # 月初からの累積支出（消費ペース計算用）
+        billing_spent = _sum_cost_from_anima_dirs(billing_start_utc, today_utc)
+        billing_elapsed_seconds = int((datetime.now(tz=_UTC) - billing_start_dt).total_seconds())
 
         # ── 週次 ──
         # weekly_budget = monthly_limit / days_in_month * 7
@@ -939,6 +942,8 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
                 "resets_at": next_billing.timestamp(),
                 "window_seconds": month_window_seconds,
                 "period_start": billing_start_utc.isoformat(),
+                "billing_spent_usd": round(billing_spent, 4),
+                "billing_elapsed_seconds": billing_elapsed_seconds,
             },
         }
     except Exception as e:

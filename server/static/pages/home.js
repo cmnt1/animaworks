@@ -474,15 +474,22 @@ function _renderCostBudgetBar(label, win) {
     markerHtml = `<div class="usage-bar-time-marker" style="left:${timePct}%" data-label="${timePct.toFixed(0)}%"></div>`;
   }
 
+  // 月初消費ペースによる着地予測（billing_spent_usd / billing_elapsed_seconds → 月末残り秒で外挿）
   let forecastHtml = "";
-  const fc = _usageForecast(Math.max(0, win.utilization_pct), win.resets_at, win.window_seconds);
-  if (fc) {
+  if (win.billing_spent_usd !== undefined && win.billing_elapsed_seconds > 0 && win.window_seconds > 0) {
+    const ratePerSec = win.billing_spent_usd / win.billing_elapsed_seconds;
+    const remainingSec = win.window_seconds - win.billing_elapsed_seconds;
+    const forecastAdditional = ratePerSec * Math.max(0, remainingSec);
+    const forecastTotal = win.billing_spent_usd + forecastAdditional;
+    const landingPct = win.budget_usd > 0 ? forecastTotal / win.budget_usd * 100 : 0;
+    const landingColor = landingPct > 100 ? "var(--aw-color-error,#dc2626)" : landingPct > 80 ? "var(--aw-color-warning,#d97706)" : "inherit";
+    const runwayUsd = win.remaining_usd / ratePerSec;
+    const runwayDays = runwayUsd / 86400;
+    const runwayStr = runwayDays > 999 ? "∞" : `${runwayDays.toFixed(1)}d`;
+    const resetDays = remainingSec / 86400;
     forecastHtml = `<div class="usage-forecast">`;
-    forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">Runway</span> ${fc.runway}`;
-    if (fc.daysToReset) forecastHtml += ` / ${fc.daysToReset}`;
-    if (fc.deltaLabel) forecastHtml += ` ${fc.deltaLabel}`;
-    forecastHtml += `</span>`;
-    forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">着地</span> <span style="color:${fc.landingColor || "inherit"}">${fc.landing}</span></span>`;
+    forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">Runway</span> ${runwayStr} / ${resetDays.toFixed(1)}d</span>`;
+    forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">着地</span> <span style="color:${landingColor}">$${forecastTotal.toFixed(2)} (${landingPct.toFixed(0)}%)</span></span>`;
     forecastHtml += `</div>`;
   }
 
