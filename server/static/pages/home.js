@@ -487,6 +487,9 @@ function _renderCostBudgetBar(label, win) {
   }
 
   const resetStr = win.resets_at ? _resetToJst(win.resets_at) : "";
+  const amountStr = win.remaining_usd !== undefined && win.budget_usd !== undefined
+    ? `$${win.remaining_usd.toFixed(2)} / $${win.budget_usd.toFixed(2)}`
+    : "";
 
   return `
     <div class="usage-row">
@@ -494,6 +497,7 @@ function _renderCostBudgetBar(label, win) {
         <span class="usage-label">${escapeHtml(label)}</span>
         <span class="usage-pct" style="color:${color}">${remainingPct.toFixed(0)}%${ptHtml}</span>
       </div>
+      ${amountStr ? `<div style="font-size:0.72rem;color:var(--aw-color-text-faint,#888);margin-bottom:0.1rem;">${escapeHtml(amountStr)}</div>` : ""}
       <div class="usage-bar-track">
         <div class="usage-bar-fill" style="width:${barFillPct}%;background:${color}"></div>
         ${markerHtml}
