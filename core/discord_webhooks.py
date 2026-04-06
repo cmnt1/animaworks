@@ -26,7 +26,6 @@ from core.paths import get_data_dir
 from core.tools._anima_icon_url import resolve_anima_icon_url
 from core.tools._base import get_credential
 from core.tools._discord_client import DiscordAPIError, DiscordClient
-
 from core.tools._discord_markdown import DISCORD_MESSAGE_LIMIT
 
 logger = logging.getLogger("animaworks.discord_webhooks")

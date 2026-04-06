@@ -20,7 +20,7 @@ import logging
 import re
 import threading
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from core.config.models import load_config
 from core.i18n import t
@@ -28,9 +28,6 @@ from core.messenger import Messenger
 from core.paths import get_data_dir, get_shared_dir
 from core.tools._base import get_credential
 from core.tools._discord_markdown import clean_discord_markup
-
-if TYPE_CHECKING:
-    import discord
 
 logger = logging.getLogger("animaworks.discord_gateway")
 
@@ -454,8 +451,11 @@ class DiscordGatewayManager:
         # Board routing (always, regardless of target)
         if not is_dm:
             _route_to_board(
-                channel_id, cleaned_text, author_display,
-                message_id=msg_id, board_mapping=discord_cfg.board_mapping,
+                channel_id,
+                cleaned_text,
+                author_display,
+                message_id=msg_id,
+                board_mapping=discord_cfg.board_mapping,
             )
 
         # Deliver to Anima inbox if we have a target
