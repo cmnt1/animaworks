@@ -549,8 +549,16 @@ def create_config_router() -> APIRouter:
         members = body.get("members")
         if not isinstance(members, list):
             raise HTTPException(status_code=400, detail="members must be a list of anima names")
+        if not all(isinstance(m, str) and m.strip() for m in members):
+            raise HTTPException(status_code=400, detail="each member must be a non-empty string")
 
         config = load_config()
+        known_animas = set(config.animas.keys())
+        unknown = [m for m in members if m not in known_animas]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"unknown anima(s): {', '.join(unknown)}")
+
+        members = [m.strip() for m in members]
         if members:
             config.external_messaging.discord.channel_members[channel_id] = members
         else:

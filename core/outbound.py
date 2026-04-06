@@ -165,14 +165,6 @@ def _resolve_from_alias(
         )
 
     # Preferred channel not available — fallback to any available channel
-    if alias_cfg.discord_user_id:
-        return ResolvedRecipient(
-            is_internal=False,
-            name=alias,
-            channel="discord",
-            discord_user_id=alias_cfg.discord_user_id,
-            alias_used=alias,
-        )
     if alias_cfg.slack_user_id:
         return ResolvedRecipient(
             is_internal=False,
@@ -187,6 +179,14 @@ def _resolve_from_alias(
             name=alias,
             channel="chatwork",
             chatwork_room_id=alias_cfg.chatwork_room_id,
+            alias_used=alias,
+        )
+    if alias_cfg.discord_user_id:
+        return ResolvedRecipient(
+            is_internal=False,
+            name=alias,
+            channel="discord",
+            discord_user_id=alias_cfg.discord_user_id,
             alias_used=alias,
         )
 
@@ -254,13 +254,13 @@ def send_external(
 def _build_channel_order(resolved: ResolvedRecipient) -> list[str]:
     """Build ordered list of channels to try."""
     channels = [resolved.channel]
-    # Add fallback channels
-    if resolved.discord_user_id and "discord" not in channels:
-        channels.append("discord")
+    # Add fallback channels (Slack > Chatwork > Discord to preserve existing behavior)
     if resolved.slack_user_id and "slack" not in channels:
         channels.append("slack")
     if resolved.chatwork_room_id and "chatwork" not in channels:
         channels.append("chatwork")
+    if resolved.discord_user_id and "discord" not in channels:
+        channels.append("discord")
     return channels
 
 

@@ -26,7 +26,7 @@ import discord
 
 from core.config.models import load_config
 from core.messenger import Messenger
-from core.paths import get_data_dir
+from core.paths import get_data_dir, get_shared_dir
 from core.tools._base import get_credential
 from core.tools._discord_markdown import clean_discord_markup
 
@@ -80,7 +80,14 @@ _board_dedup_ids: collections.OrderedDict[str, float] = collections.OrderedDict(
 _BOARD_DEDUP_TTL_SEC = 10
 
 
-def _route_to_board(channel_id: str, text: str, user_name: str, *, message_id: str = "") -> None:
+def _route_to_board(
+    channel_id: str,
+    text: str,
+    user_name: str,
+    *,
+    message_id: str = "",
+    board_mapping: dict[str, str] | None = None,
+) -> None:
     """Post a Discord message to the mapped AnimaWorks board (if any)."""
     if message_id:
         now = time.monotonic()
@@ -92,12 +99,12 @@ def _route_to_board(channel_id: str, text: str, user_name: str, *, message_id: s
             _board_dedup_ids[message_id] = now
 
     try:
-        cfg = load_config()
-        board_name = cfg.external_messaging.discord.board_mapping.get(channel_id)
+        if board_mapping is None:
+            board_mapping = load_config().external_messaging.discord.board_mapping
+        board_name = board_mapping.get(channel_id)
         if not board_name:
             return
-        shared_dir = get_data_dir() / "shared"
-        messenger = Messenger(shared_dir, user_name or "discord")
+        messenger = Messenger(get_shared_dir(), user_name or "discord")
         messenger.post_channel(board_name, text, source="discord", from_name=user_name or "discord")
     except Exception:
         logger.debug("Board routing failed for channel %s", channel_id, exc_info=True)
@@ -308,10 +315,13 @@ class DiscordGatewayManager:
         self,
         text: str,
         channel_id: str,
+        discord_cfg: Any = None,
     ) -> str | None:
         """Detect which Anima a message is targeting.
 
         Returns canonical anima name or None.
+        *discord_cfg* is the pre-loaded ``ExternalMessagingChannelConfig``
+        to avoid repeated ``load_config()`` calls per message.
         """
         # 1. Anima name in message text
         if self._anima_name_re and text:
@@ -322,28 +332,29 @@ class DiscordGatewayManager:
                     return canonical
 
         # 2. Channel-member config (if only one member, route to them)
-        try:
-            cfg = load_config()
-            members = cfg.external_messaging.discord.channel_members.get(channel_id, [])
-            if len(members) == 1:
-                return members[0]
-        except Exception:
-            pass
+        if discord_cfg is None:
+            try:
+                discord_cfg = load_config().external_messaging.discord
+            except Exception:
+                return None
+        members = discord_cfg.channel_members.get(channel_id, [])
+        if len(members) == 1:
+            return members[0]
 
-        # Let the caller decide (channel lead / default_anima fallback)
         return None
 
-    def _is_anima_in_channel(self, anima_name: str, channel_id: str) -> bool:
+    @staticmethod
+    def _is_anima_in_channel(anima_name: str, channel_id: str, discord_cfg: Any = None) -> bool:
         """Check if an Anima is configured as a member of a channel."""
-        try:
-            cfg = load_config()
-            members = cfg.external_messaging.discord.channel_members.get(channel_id, [])
-            if not members:
-                # No membership config → allow all (backward-compatible)
+        if discord_cfg is None:
+            try:
+                discord_cfg = load_config().external_messaging.discord
+            except Exception:
                 return True
-            return anima_name in members
-        except Exception:
+        members = discord_cfg.channel_members.get(channel_id, [])
+        if not members:
             return True
+        return anima_name in members
 
     async def _handle_message(self, message: discord.Message) -> None:
         """Core message handler for all Discord events."""
@@ -391,42 +402,37 @@ class DiscordGatewayManager:
             reference_id = str(message.reference.message_id)
             thread_ctx = await _fetch_thread_context(message.channel, message.reference)
 
+        # Load config once per message for routing decisions
+        try:
+            cfg = load_config()
+            discord_cfg = cfg.external_messaging.discord
+        except Exception:
+            logger.debug("Failed to load config for Discord routing", exc_info=True)
+            return
+
         # Determine target Anima
         target_anima: str | None = None
 
         if is_dm:
-            # DM: detect name in text or use default
-            target_anima = self._detect_target_anima(cleaned_text, channel_id)
+            target_anima = self._detect_target_anima(cleaned_text, channel_id, discord_cfg)
         else:
-            # Guild channel
-            target_anima = self._detect_target_anima(cleaned_text, channel_id)
+            target_anima = self._detect_target_anima(cleaned_text, channel_id, discord_cfg)
 
-            # If bot mentioned but no specific anima found, use default
             if target_anima is None and bot_mentioned:
-                try:
-                    cfg = load_config()
-                    target_anima = cfg.external_messaging.discord.default_anima or None
-                except Exception:
-                    pass
+                target_anima = discord_cfg.default_anima or None
 
             # No mention, no name detected: route to channel lead
-            # (first member in channel_members is the responsible Anima)
             if target_anima is None:
-                try:
-                    cfg = load_config()
-                    members = cfg.external_messaging.discord.channel_members.get(channel_id, [])
-                    if members:
-                        target_anima = members[0]
-                    else:
-                        # Fallback to default_anima
-                        default = cfg.external_messaging.discord.default_anima
-                        if default and self._is_anima_in_channel(default, channel_id):
-                            target_anima = default
-                except Exception:
-                    pass
+                members = discord_cfg.channel_members.get(channel_id, [])
+                if members:
+                    target_anima = members[0]
+                elif discord_cfg.default_anima and self._is_anima_in_channel(
+                    discord_cfg.default_anima, channel_id, discord_cfg
+                ):
+                    target_anima = discord_cfg.default_anima
 
         # Enforce channel membership
-        if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, channel_id):
+        if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, channel_id, discord_cfg):
             logger.info(
                 "Discord routing: '%s' not a member of channel %s (#%s) — dropping",
                 target_anima,
@@ -446,7 +452,10 @@ class DiscordGatewayManager:
 
         # Board routing (always, regardless of target)
         if not is_dm:
-            _route_to_board(channel_id, cleaned_text, author_display, message_id=msg_id)
+            _route_to_board(
+                channel_id, cleaned_text, author_display,
+                message_id=msg_id, board_mapping=discord_cfg.board_mapping,
+            )
 
         # Deliver to Anima inbox if we have a target
         if target_anima:
@@ -465,8 +474,7 @@ class DiscordGatewayManager:
                     logger.warning("Anima directory not found: %s", target_anima)
                     return
 
-                shared_dir = data_dir / "shared"
-                messenger = Messenger(shared_dir, target_anima)
+                messenger = Messenger(get_shared_dir(), target_anima)
                 messenger.receive_external(
                     content=full_content,
                     source="discord",
