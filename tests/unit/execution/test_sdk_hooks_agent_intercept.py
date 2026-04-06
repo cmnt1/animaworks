@@ -257,6 +257,84 @@ class TestPreToolHookAgentIntercept:
 
         assert len(callback_called) == 1
 
+    def _build_hook_with_trigger(self, anima_dir: Path, trigger: str):
+        """Build hook with a session_stats dict containing a trigger."""
+        from core.execution._sdk_hooks import _build_pre_tool_hook
+
+        return _build_pre_tool_hook(
+            anima_dir,
+            has_subordinates=False,
+            session_stats={
+                "tool_call_count": 0,
+                "total_result_bytes": 0,
+                "system_prompt_tokens": 100,
+                "user_prompt_tokens": 50,
+                "force_chain": False,
+                "trigger": trigger,
+                "start_time": 0.0,
+                "hb_soft_warned": False,
+                "hb_soft_timeout": 300,
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_agent_blocked_in_taskexec(self, anima_dir: Path):
+        """Agent tool should be blocked (not intercepted) from TaskExec sessions."""
+        hook = self._build_hook_with_trigger(anima_dir, "task:abc123")
+
+        mock_context = MagicMock()
+        input_data = {
+            "tool_name": "Agent",
+            "tool_input": {"description": "sub-research", "prompt": "find X"},
+        }
+        result = await hook(input_data, "tu_taskexec_01", mock_context)
+
+        output = result.get("hookSpecificOutput")
+        assert output is not None
+        assert output["permissionDecision"] == "deny"
+        assert "BLOCKED" in output["permissionDecisionReason"]
+        assert "INTERCEPT_OK" not in output["permissionDecisionReason"]
+
+        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
+        assert len(pending_files) == 0, "No pending task should be written"
+
+    @pytest.mark.asyncio
+    async def test_task_blocked_in_taskexec(self, anima_dir: Path):
+        """Task tool should be blocked from TaskExec sessions."""
+        hook = self._build_hook_with_trigger(anima_dir, "task:def456")
+
+        mock_context = MagicMock()
+        input_data = {
+            "tool_name": "Task",
+            "tool_input": {"description": "sub-task", "prompt": "do Y"},
+        }
+        result = await hook(input_data, "tu_taskexec_02", mock_context)
+
+        output = result.get("hookSpecificOutput")
+        assert output is not None
+        assert output["permissionDecision"] == "deny"
+        assert "BLOCKED" in output["permissionDecisionReason"]
+
+    @pytest.mark.asyncio
+    async def test_agent_allowed_in_chat(self, anima_dir: Path):
+        """Agent tool should be intercepted (not blocked) from chat sessions."""
+        hook = self._build_hook_with_trigger(anima_dir, "chat")
+
+        mock_context = MagicMock()
+        input_data = {
+            "tool_name": "Agent",
+            "tool_input": {"description": "research", "prompt": "find Z"},
+        }
+        result = await hook(input_data, "tu_chat_01", mock_context)
+
+        output = result.get("hookSpecificOutput")
+        assert output is not None
+        assert output["permissionDecision"] == "deny"
+        assert "INTERCEPT_OK" in output["permissionDecisionReason"]
+
+        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
+        assert len(pending_files) == 1
+
     @pytest.mark.asyncio
     async def test_read_tool_not_intercepted(self, anima_dir: Path):
         """Non-Agent/Task tools should pass through normally."""
@@ -280,12 +358,13 @@ class TestPreToolHookAgentIntercept:
 class TestSubmitTasksInterceptDenyReason:
     """Test submit_tasks intercept returns improved deny reason to prevent duplicate delegation."""
 
-    def _build_hook(self, anima_dir: Path, *, has_subordinates: bool = False):
+    def _build_hook(self, anima_dir: Path, *, has_subordinates: bool = False, session_stats: dict | None = None):
         from core.execution._sdk_hooks import _build_pre_tool_hook
 
         return _build_pre_tool_hook(
             anima_dir,
             has_subordinates=has_subordinates,
+            session_stats=session_stats,
         )
 
     @pytest.mark.asyncio
@@ -358,3 +437,36 @@ class TestSubmitTasksInterceptDenyReason:
         reason = output["permissionDecisionReason"]
         assert not reason.startswith("SUCCESS")
         assert "error" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_submit_tasks_blocked_in_taskexec(self, anima_dir: Path):
+        """submit_tasks should be blocked from TaskExec sessions."""
+        hook = self._build_hook(
+            anima_dir,
+            session_stats={
+                "tool_call_count": 0,
+                "total_result_bytes": 0,
+                "system_prompt_tokens": 100,
+                "user_prompt_tokens": 50,
+                "force_chain": False,
+                "trigger": "task:xyz789",
+                "start_time": 0.0,
+                "hb_soft_warned": False,
+                "hb_soft_timeout": 300,
+            },
+        )
+
+        mock_context = MagicMock()
+        input_data = {
+            "tool_name": "submit_tasks",
+            "tool_input": {
+                "batch_id": "test",
+                "tasks": [{"task_id": "t1", "title": "T1", "description": "D1"}],
+            },
+        }
+        result = await hook(input_data, "tu_st_taskexec", mock_context)
+
+        output = result.get("hookSpecificOutput")
+        assert output is not None
+        assert output["permissionDecision"] == "deny"
+        assert "BLOCKED" in output["permissionDecisionReason"]

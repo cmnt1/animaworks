@@ -138,6 +138,23 @@ class TestNoSilentPasses:
         # tracker.py: _resolve_version() tries importlib.metadata then pyproject.toml;
         # each fallback uses 'pass' to chain to the next resolution strategy.
         "tracker.py",
+        # handler_memory.py: best-effort anima name matching in search hint;
+        # failure is non-fatal and returns None.
+        "handler_memory.py",
+        # permissions.py: config unavailable at import time — skip filtering.
+        "permissions.py",
+        # _mgr_reconcile.py: governor state file read is best-effort;
+        # failure defaults to empty suspended set.
+        "_mgr_reconcile.py",
+        # claude_code.py: best-effort bundled CLI path discovery;
+        # returns None on any failure.
+        "claude_code.py",
+        # diffusers_local.py: best-effort GPU optimization calls
+        # (VAE slicing, attention slicing, SCRFD detection); non-fatal.
+        "diffusers_local.py",
+        # messaging.py: best-effort locale detection from config;
+        # falls back to "ja" default.
+        "messaging.py",
     })
 
     def test_no_except_exception_pass_in_core(self):

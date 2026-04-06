@@ -589,6 +589,24 @@ def _build_pre_tool_hook(
 
         # Task / Agent tool intercept (SDK uses "Agent" as the subagent tool name)
         if tool_name in ("Agent", "Task"):
+            # Block recursive subtask spawning from TaskExec sessions
+            _trigger = session_stats.get("trigger", "") if session_stats else ""
+            if _trigger.startswith("task:"):
+                from core.i18n import t as _t
+
+                logger.info(
+                    "Blocked Agent/Task call from TaskExec session (%s) for %s",
+                    _trigger,
+                    anima_dir.name,
+                )
+                return SyncHookJSONOutput(
+                    hookSpecificOutput=PreToolUseHookSpecificOutput(
+                        hookEventName="PreToolUse",
+                        permissionDecision="deny",
+                        permissionDecisionReason=_t("sdk_hooks.task_no_subtask"),
+                    )
+                )
+
             if has_subordinates:
                 # Supervisor path: delegate to subordinate, fallback to pending
                 try:
@@ -626,6 +644,24 @@ def _build_pre_tool_hook(
 
         # submit_tasks intercept → DAG batch to pending
         if tool_name in ("submit_tasks", "mcp__aw__submit_tasks"):
+            # Block from TaskExec (same recursion guard as Agent/Task)
+            _trigger_st = session_stats.get("trigger", "") if session_stats else ""
+            if _trigger_st.startswith("task:"):
+                from core.i18n import t as _t
+
+                logger.info(
+                    "Blocked submit_tasks from TaskExec session (%s) for %s",
+                    _trigger_st,
+                    anima_dir.name,
+                )
+                return SyncHookJSONOutput(
+                    hookSpecificOutput=PreToolUseHookSpecificOutput(
+                        hookEventName="PreToolUse",
+                        permissionDecision="deny",
+                        permissionDecisionReason=_t("sdk_hooks.task_no_subtask"),
+                    )
+                )
+
             from core.tooling.handler_base import _error_result
             from core.tooling.handler_skills import SkillsToolsMixin
 
