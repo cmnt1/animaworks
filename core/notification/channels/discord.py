@@ -141,7 +141,7 @@ class DiscordChannel(NotificationChannel):
                     if avatar:
                         payload["avatar_url"] = avatar
                 except Exception:
-                    pass
+                    logger.debug("Failed to resolve avatar for %s", anima_name, exc_info=True)
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(webhook_url, json=payload)
