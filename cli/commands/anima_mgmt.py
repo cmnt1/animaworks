@@ -827,7 +827,9 @@ def _parse_date(raw: str | None) -> tuple[datetime, datetime] | None:
     """
     if not raw:
         return None
-    from datetime import date as _date, time as _time, timedelta
+    from datetime import date as _date
+    from datetime import time as _time
+    from datetime import timedelta
 
     from core.memory.activity import now_local
 
