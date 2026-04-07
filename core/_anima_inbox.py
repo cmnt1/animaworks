@@ -143,19 +143,8 @@ def _build_reply_instruction(m: Any) -> str:
     automatically and it should NOT call ``slack_channel_post``.
     """
     if m.source == "slack":
-        if _is_auto_response_enabled():
-            return "  [auto_reply: Slack返信は自動送信されます。slack_channel_postを呼ぶ必要はありません]"
-
-        mention = f"<@{m.external_user_id}> " if m.external_user_id else ""
-        thread_id = m.external_thread_ts or m.source_message_id
-        parts = [
-            "use tool slack_channel_post with",
-            f'channel_id="{m.external_channel_id}"',
-            f'text="{mention}{{返信内容}}"',
-        ]
-        if thread_id:
-            parts.append(f'thread_ts="{thread_id}"')
-        return f"  [reply_instruction: {', '.join(parts)}]"
+        # Slack disabled – Discord migration.  Do not reply via Slack.
+        return "  [auto_reply: Slackは廃止されました。返信はDiscordで行ってください。slack_channel_postは使用できません]"
 
     if m.source == "discord":
         if _is_auto_response_enabled_discord():
@@ -659,6 +648,8 @@ class InboxMixin:
         started_at: datetime,
     ) -> CycleResult | None:
         """Reply to simple Slack connectivity probes without invoking the LLM."""
+        # Slack probes disabled – Discord migration
+        return None
         if inbox_result.unread_count != 1 or len(inbox_result.inbox_items) != 1:
             return None
 

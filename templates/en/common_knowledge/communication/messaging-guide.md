@@ -1,5 +1,10 @@
 # Complete Messaging Guide
 
+> **⚠️ Important: Slack has been deprecated (2026-04-08). All external communication must use Discord.**
+> - `slack_channel_post` / `slack_send` and other Slack tools are disabled
+> - Use Discord channels (`discord_channel_post`) or `send_message` (auto-routed to Discord) for reports and communication
+> - `slack:USERID` recipient format no longer works. Use `discord:USERID` or human aliases instead
+
 Comprehensive guide for communicating with other Anima (team members).
 Covers all procedures for sending, receiving, and managing message threads.
 

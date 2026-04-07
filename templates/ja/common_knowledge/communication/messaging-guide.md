@@ -1,5 +1,10 @@
 # メッセージ送信の完全ガイド
 
+> **⚠️ 重要: Slack は廃止されました（2026-04-08）。すべての外部コミュニケーションは Discord で行ってください。**
+> - `slack_channel_post` / `slack_send` 等の Slack ツールは使用できません
+> - 報告・連絡は Discord チャネル（`discord_channel_post`）または `send_message`（自動的に Discord 経由）を使用してください
+> - `slack:USERID` 形式の宛先指定は機能しません。`discord:USERID` または人間エイリアスを使用してください
+
 他の Anima（社員）とコミュニケーションを取るための包括的ガイド。
 メッセージの送信・受信・スレッド管理の全手順を網羅する。
 

@@ -153,6 +153,17 @@ def get_tool_schemas() -> list[dict]:
 
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
+    # ── Slack disabled – Discord migration ──
+    # All Slack tools are blocked.  Use Discord equivalents instead.
+    return {
+        "status": "disabled",
+        "message": (
+            "Slack integration is disabled (Discord migration). "
+            "Use Discord tools instead: discord_channel_post, discord_unreplied. "
+            "For DMs, use send_message (outbound auto-routes to Discord)."
+        ),
+    }
+    # ── Legacy dispatch (unreachable) ──
     if name == "slack_send":
         client = SlackClient(token=_resolve_slack_token(args))
         channel_id = client.resolve_channel(args["channel"])
