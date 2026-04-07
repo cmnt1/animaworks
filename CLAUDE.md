@@ -779,7 +779,7 @@ animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name
 | writer | claude-sonnet-4-6 | — | 80 | 5 |
 | researcher | claude-sonnet-4-6 | — | 30 | 2 |
 | ops | openai/glm-4.7-flash | — | 30 | 2 |
-| general | claude-sonnet-4-6 | — | 20 | 2 |
+| administration | claude-sonnet-4-6 | — | 20 | 2 |
 
 ## CLI管理コマンド
 

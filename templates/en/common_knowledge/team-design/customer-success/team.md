@@ -5,7 +5,7 @@
 | Role | Responsibility | Suggested `--role` | Example `speciality` | Details |
 |------|----------------|---------------------|----------------------|---------|
 | **CS Lead** | Customer strategy, onboarding planning [machine], health analysis [machine], retention actions [machine], VoC aggregation [machine], escalation | `manager` | `cs-lead` | `customer-success/cs-lead/` |
-| **Support** | Ticket handling, FAQ management, onboarding execution, first response, VoC material collection | `general` | `cs-support` | `customer-success/support/` |
+| **Support** | Ticket handling, FAQ management, onboarding execution, first response, VoC material collection | `administration` | `cs-support` | `customer-success/support/` |
 
 Putting every step in one Anima invites context competition between customer analysis and first response, self-verification blind spots in health scoring, and priority conflicts between VoC aggregation and ticket handling.
 

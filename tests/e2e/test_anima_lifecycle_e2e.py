@@ -48,7 +48,7 @@ def anima_env(tmp_path: Path):
     )
 
     # Helper to create animas
-    def create_anima(name: str, *, enabled: bool = True, role: str = "general",
+    def create_anima(name: str, *, enabled: bool = True, role: str = "administration",
                      supervisor: str | None = None):
         anima_dir = animas_dir / name
         anima_dir.mkdir()
@@ -219,7 +219,7 @@ class TestAnimaDisableEnableE2E:
 
     def test_disable_enable_roundtrip(self, anima_env):
         env = anima_env
-        env["create_anima"]("alice", enabled=True, role="general")
+        env["create_anima"]("alice", enabled=True, role="administration")
 
         with (
             patch("core.paths.get_data_dir", return_value=env["data_dir"]),
@@ -244,7 +244,7 @@ class TestAnimaListE2E:
     def test_list_local_shows_all_animas(self, anima_env, capsys):
         env = anima_env
         env["create_anima"]("alice", enabled=True, role="engineer")
-        env["create_anima"]("bob", enabled=False, role="general")
+        env["create_anima"]("bob", enabled=False, role="administration")
         env["create_anima"]("carol", enabled=True, role="writer")
 
         with (
@@ -317,7 +317,7 @@ class TestFullLifecycleE2E:
             )
 
             # Setup: create anima manually
-            env["create_anima"]("test_anima", enabled=True, role="general")
+            env["create_anima"]("test_anima", enabled=True, role="administration")
 
             # List — should show the anima
             capsys.readouterr()  # clear

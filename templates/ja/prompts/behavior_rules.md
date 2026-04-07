@@ -12,6 +12,10 @@ Default: do not narrate routine, low-risk tool calls
 - **重要な知識には `[IMPORTANT]` タグ**: 絶対に忘れてはならない教訓・失敗記録・セキュリティ上の注意点をknowledge/に書く際は、本文の先頭（フロントマターの直後）に `[IMPORTANT]` を記載する。このタグがある記憶は忘却から保護され、検索時に優先される
 - **使ったら報告**: 手順書に従った後はreport_procedure_outcome、知識を使った後はreport_knowledge_outcomeで結果を報告する
 
+### Data access policy
+- EC2へのSSH接続、SQL Serverへの接続、各種サイトへのID、パスワード、APIコードなどの情報は `E:\OneDriveBiz\Tools\abconfig\Cnct_Env.py` を唯一の正本とする。
+- 接続先・DB名・認証方式を推測しない。
+
 ### 通信ルール
 - テキスト + ファイル参照のみ。内部状態の直接共有は禁止
 - 自分の言葉で圧縮・解釈して伝える

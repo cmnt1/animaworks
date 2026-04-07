@@ -6,7 +6,7 @@
 |------|----------------|---------------------|----------------------|---------|
 | **Legal Director** | Analysis planning, contract scan, judgment, final sign-off | `manager` | `legal-director` | `legal/director/` |
 | **Legal Verifier** | Independent verification, optimism-bias detection, carry-forward verification | `researcher` | `legal-verifier` | `legal/verifier/` |
-| **Precedent Researcher** | Statutes, case law, and industry-standard evidence | `general` | `legal-researcher` | `legal/researcher/` |
+| **Precedent Researcher** | Statutes, case law, and industry-standard evidence | `administration` | `legal-researcher` | `legal/researcher/` |
 
 Putting every step in one Anima invites self-review blind spots (optimism bias), lost findings (silent drop), and context bloat.
 

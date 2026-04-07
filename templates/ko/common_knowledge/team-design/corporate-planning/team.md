@@ -6,7 +6,7 @@
 |--------|------|--------------|-----------------|------|
 | **Corporate Strategist** | 전략 판단·사업 환경 분석(machine)·OKR 관리·최종 승인 | `manager` | `corporate-strategist` | `corporate-planning/strategist/` |
 | **Business Analyst** | 시장/경쟁 데이터 수집·구조화 분석(machine) | `researcher` | `business-analyst` | `corporate-planning/analyst/` |
-| **Strategy Coordinator** | 독립 검증(machine)·부서 간 조정·KPI 추적 | `general` | `strategy-coordinator` | `corporate-planning/coordinator/` |
+| **Strategy Coordinator** | 독립 검증(machine)·부서 간 조정·KPI 추적 | `administration` | `strategy-coordinator` | `corporate-planning/coordinator/` |
 
 한 Anima에 전 과정을 몰아넣으면 전략 판단의 편향(낙관 편향)·조치의 소실(silent drop)·컨텍스트 비대화가 발생한다.
 

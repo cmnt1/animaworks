@@ -81,7 +81,7 @@ Document document flow between roles and where parallel execution is possible.
 
 ### Step 5: Pick role templates
 
-Choose the closest framework `--role` (engineer, manager, writer, researcher, ops, general) and override with team design in `injection.md`.
+Choose the closest framework `--role` (engineer, manager, writer, researcher, ops, administration) and override with team design in `injection.md`.
 
 ---
 

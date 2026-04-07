@@ -114,7 +114,7 @@ DEFAULT_LOCAL_LLM_ROLE_PRESETS: dict[str, str] = {
     "manager": "reasoning",
     "writer": "general",
     "ops": "general",
-    "general": "general",
+    "administration": "general",
 }
 
 
@@ -153,7 +153,7 @@ ROLE_OUTBOUND_DEFAULTS: dict[str, dict[str, int]] = {
     "writer": {"max_outbound_per_hour": 30, "max_outbound_per_day": 150, "max_recipients_per_run": 3},
     "researcher": {"max_outbound_per_hour": 30, "max_outbound_per_day": 150, "max_recipients_per_run": 3},
     "ops": {"max_outbound_per_hour": 20, "max_outbound_per_day": 80, "max_recipients_per_run": 2},
-    "general": {"max_outbound_per_hour": 15, "max_outbound_per_day": 50, "max_recipients_per_run": 2},
+    "administration": {"max_outbound_per_hour": 15, "max_outbound_per_day": 50, "max_recipients_per_run": 2},
 }
 
 
@@ -166,10 +166,10 @@ def resolve_outbound_limits(
     Resolution order:
       1. status.json (per-Anima override)
       2. Role defaults from ROLE_OUTBOUND_DEFAULTS (based on status.json "role")
-      3. "general" role as final fallback
+      3. "administration" role as final fallback
     """
     _FIELDS = ("max_outbound_per_hour", "max_outbound_per_day", "max_recipients_per_run")
-    fallback = ROLE_OUTBOUND_DEFAULTS["general"]
+    fallback = ROLE_OUTBOUND_DEFAULTS["administration"]
 
     if anima_dir is None:
         return dict(fallback)
@@ -183,7 +183,7 @@ def resolve_outbound_limits(
     except (json.JSONDecodeError, OSError):
         return dict(fallback)
 
-    role = data.get("role", "general")
+    role = data.get("role", "administration")
     role_defaults = ROLE_OUTBOUND_DEFAULTS.get(role, fallback)
 
     result: dict[str, int] = {}

@@ -4,7 +4,7 @@
 
 | Role | Responsibility | Recommended `--role` | `speciality` example | Details |
 |------|---------------|---------------------|---------------------|---------|
-| **Secretary** | Information triage, proxy sending, document creation (machine), schedule management | `general` | `executive-assistant` | `secretary/secretary/` |
+| **Secretary** | Information triage, proxy sending, document creation (machine), schedule management | `administration` | `executive-assistant` | `secretary/secretary/` |
 
 **Fundamental characteristic of this template: the supervisor is a human.**
 

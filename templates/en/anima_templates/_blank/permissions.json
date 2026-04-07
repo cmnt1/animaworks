@@ -1,7 +1,11 @@
 {
   "version": 1,
   "file_roots": [
-    "/"
+    "C:\\Users\\cmnt\\.animaworks",
+    "E:\\OneDriveBiz\\Downloads"
+  ],
+  "file_roots_readonly": [
+    "E:\\OneDriveBiz\\Tools\\abconfig\\Cnct_Env.py"
   ],
   "commands": {
     "allow_all": true,

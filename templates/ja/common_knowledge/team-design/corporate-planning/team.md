@@ -6,7 +6,7 @@
 |--------|------|--------------|-----------------|------|
 | **Corporate Strategist** | 戦略判断・事業環境分析（machine）・OKR管理・最終承認 | `manager` | `corporate-strategist` | `corporate-planning/strategist/` |
 | **Business Analyst** | 市場/競合データ収集・構造化分析（machine） | `researcher` | `business-analyst` | `corporate-planning/analyst/` |
-| **Strategy Coordinator** | 独立検証（machine）・部門横断調整・KPI追跡 | `general` | `strategy-coordinator` | `corporate-planning/coordinator/` |
+| **Strategy Coordinator** | 独立検証（machine）・部門横断調整・KPI追跡 | `administration` | `strategy-coordinator` | `corporate-planning/coordinator/` |
 
 1つの Anima に全工程を集約すると、戦略判断のバイアス（楽観偏向）・施策の消失（silent drop）・コンテキスト肥大化が発生する。
 

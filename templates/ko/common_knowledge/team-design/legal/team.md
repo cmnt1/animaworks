@@ -6,7 +6,7 @@
 |--------|------|--------------|-----------------|------|
 | **Legal Director** | 분석 계획·계약서 스캔·판단·최종 승인 | `manager` | `legal-director` | `legal/director/` |
 | **Legal Verifier** | 독립 검증·낙관적 편향 검출·carry-forward 검증 | `researcher` | `legal-verifier` | `legal/verifier/` |
-| **Precedent Researcher** | 법령·판례·업계 표준 수집·근거 뒷받침 | `general` | `legal-researcher` | `legal/researcher/` |
+| **Precedent Researcher** | 법령·판례·업계 표준 수집·근거 뒷받침 | `administration` | `legal-researcher` | `legal/researcher/` |
 
 한 Anima에 전 과정을 몰아넣으면 자기 검토의 사각지대(낙관적 편향)·지적 사항의 소실(silent drop)·컨텍스트 비대화가 발생한다.
 

@@ -5,7 +5,7 @@
 | ロール | 責務 | 推奨 `--role` | `speciality` 例 | 詳細 |
 |--------|------|--------------|-----------------|------|
 | **CS Lead** | 顧客戦略・オンボーディング計画[machine]・ヘルス分析[machine]・リテンション施策[machine]・VoC集約[machine]・エスカレーション | `manager` | `cs-lead` | `customer-success/cs-lead/` |
-| **Support** | チケット対応・FAQ管理・オンボーディング実行・一次対応・VoC素材収集 | `general` | `cs-support` | `customer-success/support/` |
+| **Support** | チケット対応・FAQ管理・オンボーディング実行・一次対応・VoC素材収集 | `administration` | `cs-support` | `customer-success/support/` |
 
 1つの Anima に全工程を集約すると、顧客分析と一次対応のコンテキスト競合・ヘルス判定の自己検証盲点・VoC集約とチケット対応の優先度衝突が発生する。
 

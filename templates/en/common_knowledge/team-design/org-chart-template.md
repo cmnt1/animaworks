@@ -84,14 +84,14 @@ graph TD
 
 | # | Department | Type | Recommended supervisor | Role composition | Recommended `--role` | Template path |
 |---|-----------|------|----------------------|-----------------|---------------------|---------------|
-| 1 | Secretary | Staff | `null` | Secretary | general | `team-design/secretary/team.md` |
+| 1 | Secretary | Staff | `null` | Secretary | administration | `team-design/secretary/team.md` |
 | 2 | Legal | Staff | `null` | Director + Verifier + Researcher | manager / researcher | `team-design/legal/team.md` |
 | 3 | Finance | Staff | `null` | Director + Auditor + Analyst + Collector | manager / ops | `team-design/finance/team.md` |
 | 4 | Corporate Planning | Staff | `null` | Strategist + Analyst + Coordinator | manager / researcher | `team-design/corporate-planning/team.md` |
 | 5 | COO | Line (oversight) | `null` | COO | manager | `team-design/coo/team.md` |
 | 6 | Development | Line | COO | PdM + Engineer + Reviewer + Tester | engineer / manager | `team-design/development/team.md` |
 | 7 | Sales & Marketing | Line | COO | Director + Creator + SDR + Researcher | manager / writer | `team-design/sales-marketing/team.md` |
-| 8 | Customer Success | Line | COO | CS Lead + Support | manager / general | `team-design/customer-success/team.md` |
+| 8 | Customer Success | Line | COO | CS Lead + Support | manager / administration | `team-design/customer-success/team.md` |
 | 9 | Infrastructure/SRE | Line | COO | Infra Director + Monitor | ops | `team-design/infrastructure/team.md` |
 | 10 | Trading | Line (optional) | COO | Director + Analyst + Engineer + Auditor | manager / engineer | `team-design/trading/team.md` |
 

@@ -86,7 +86,7 @@ plan.md (status: approved) → delegate_task で Engineer に渡す
 
 ### Step 5: ロールテンプレートを選定する
 
-フレームワークの `--role` オプション（engineer, manager, writer, researcher, ops, general）から
+フレームワークの `--role` オプション（engineer, manager, writer, researcher, ops, administration）から
 最も近いものを選び、`injection.md` でチーム設計のロール定義を上書きする。
 
 ---

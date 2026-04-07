@@ -62,7 +62,7 @@ def _get_roles_dir(locale: str | None = None) -> Path:
 
 
 SHARED_ROLES_DIR = TEMPLATES_DIR / "_shared" / "roles"
-VALID_ROLES = frozenset({"engineer", "researcher", "manager", "writer", "ops", "general"})
+VALID_ROLES = frozenset({"engineer", "researcher", "manager", "writer", "ops", "administration"})
 
 SECTION_HEADINGS: dict[str, dict[str, str]] = {
     "ja": {
@@ -312,7 +312,7 @@ def create_from_md(
         (anima_dir / "character_sheet.md").write_text(md_content, encoding="utf-8")
         _apply_defaults_from_sheet(anima_dir, md_content)
         # Apply role template defaults
-        resolved_role = role or "general"
+        resolved_role = role or "administration"
         _apply_role_defaults(anima_dir, resolved_role)
         _create_status_json(
             anima_dir,
@@ -489,7 +489,7 @@ def _create_status_json(
     info: dict[str, str],
     *,
     supervisor_override: str | None = None,
-    role: str = "general",
+    role: str = "administration",
 ) -> None:
     """Create status.json in *anima_dir* from parsed character-sheet info.
 
@@ -664,8 +664,8 @@ def _apply_role_defaults(anima_dir: Path, role: str) -> None:
         role: Role name (must be in VALID_ROLES).
     """
     if role not in VALID_ROLES:
-        logger.warning("Unknown role '%s', falling back to 'general'", role)
-        role = "general"
+        logger.warning("Unknown role '%s', falling back to 'administration'", role)
+        role = "administration"
 
     role_dir = _get_roles_dir() / role
     if not role_dir.exists():

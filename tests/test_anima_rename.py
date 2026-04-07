@@ -47,7 +47,7 @@ def _create_anima(data_dir: Path, name: str, *, supervisor: str | None = None) -
     (anima_dir / "activity_log").mkdir(exist_ok=True)
     (anima_dir / "state").mkdir(exist_ok=True)
 
-    status = {"enabled": True, "model": "claude-sonnet-4-6", "role": "general"}
+    status = {"enabled": True, "model": "claude-sonnet-4-6", "role": "administration"}
     if supervisor:
         status["supervisor"] = supervisor
     (anima_dir / "status.json").write_text(

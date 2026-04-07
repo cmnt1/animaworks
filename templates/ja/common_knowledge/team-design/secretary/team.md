@@ -4,7 +4,7 @@
 
 | ロール | 責務 | 推奨 `--role` | `speciality` 例 | 詳細 |
 |--------|------|--------------|-----------------|------|
-| **Secretary** | 情報トリアージ・代行送信・書類作成（machine）・スケジュール管理 | `general` | `executive-assistant` | `secretary/secretary/` |
+| **Secretary** | 情報トリアージ・代行送信・書類作成（machine）・スケジュール管理 | `administration` | `executive-assistant` | `secretary/secretary/` |
 
 **本テンプレートの根本的な特徴: 上位者は人間である。**
 

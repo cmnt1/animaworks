@@ -12,6 +12,10 @@ Default: do not narrate routine, low-risk tool calls
 - **중요한 지식에는 `[IMPORTANT]` 태그**: 절대 잊어서는 안 되는 교훈, 실패 기록, 보안 관련 주의사항을 knowledge/에 기록할 때는 본문 시작 부분(frontmatter 바로 뒤)에 `[IMPORTANT]`를 넣으세요. 이 태그가 있는 메모리는 망각에서 보호되며 검색 시 우선순위가 높아집니다
 - **사용 후 보고**: 절차서를 따른 후에는 report_procedure_outcome을, 지식을 활용한 후에는 report_knowledge_outcome으로 결과를 보고하세요
 
+### Data access policy
+- EC2 SSH 접속, SQL Server 접속, 각종 사이트의 ID·비밀번호·API 코드 등의 정보는 `E:\OneDriveBiz\Tools\abconfig\Cnct_Env.py`를 유일한 원본으로 한다.
+- 접속 대상·DB 이름·인증 방식을 추측하지 않는다.
+
 ### 커뮤니케이션 규칙
 - 텍스트 및 파일 참조만 사용합니다. 내부 상태를 직접 공유하지 마세요
 - 자신의 말로 압축하고 해석하여 전달하세요

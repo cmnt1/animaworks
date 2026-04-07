@@ -902,7 +902,7 @@ def create_animas_router() -> APIRouter:
 
         for member in members_raw:
             display_name: str = member.get("displayName", "").strip()
-            role_id: str = member.get("roleId", "general")
+            role_id: str = member.get("roleId", "administration")
             tools: list[str] = member.get("tools", [])
             member_model: str = member.get("model", "").strip()
             member_credential: str = member.get("credential", "").strip()
@@ -975,7 +975,7 @@ def create_animas_router() -> APIRouter:
                         from core.config.local_llm import apply_local_llm_role_to_status
 
                         cfg = load_config()
-                        apply_local_llm_role_to_status(status, cfg, "general")
+                        apply_local_llm_role_to_status(status, cfg, "administration")
                     except Exception:
                         pass
 

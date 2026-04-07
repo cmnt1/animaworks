@@ -6,7 +6,7 @@
 |------|----------------|---------------------|----------------------|---------|
 | **Sales & Marketing Director** | Strategy, sales execution [machine], pipeline management, content QC, final sign-off | `manager` | `sales-marketing-director` | `sales-marketing/director/` |
 | **Marketing Creator** | Marketing content production [machine], Brand Voice compliance | `writer` | `marketing-creator` | `sales-marketing/creator/` |
-| **SDR (Sales Development)** | Lead development, nurturing, engagement, inbound handling | `general` | `sales-development` | `sales-marketing/sdr/` |
+| **SDR (Sales Development)** | Lead development, nurturing, engagement, inbound handling | `administration` | `sales-development` | `sales-marketing/sdr/` |
 | **Market Researcher** | Market research, competitor analysis, prospect profiling | `researcher` | `market-researcher` | `sales-marketing/researcher/` |
 
 Putting every step in one Anima invites content self-review bias, lax lead qualification, and context pollution from competing marketing vs. sales priorities.

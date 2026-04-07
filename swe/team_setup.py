@@ -98,7 +98,7 @@ def setup_team(
         # status.json
         status = {
             "supervisor": agent_cfg.get("supervisor"),
-            "role": agent_cfg.get("role", "general"),
+            "role": agent_cfg.get("role", "administration"),
             "enabled": True,
             "model": agent_cfg["model"],
             "max_turns": 100,
@@ -143,7 +143,7 @@ def setup_team(
         if name not in animas_cfg:
             animas_cfg[name] = {
                 "supervisor": agent_cfg.get("supervisor"),
-                "speciality": agent_cfg.get("role", "general"),
+                "speciality": agent_cfg.get("role", "administration"),
             }
             rt_config_path.write_text(
                 json.dumps(config, indent=2, ensure_ascii=False)

@@ -6,8 +6,8 @@
 |------|----------------|----------------------|----------------------|---------|
 | **Finance Director** | Analysis planning, financial judgment, numerical verification, final approval | `manager` | `cfo`, `finance-director` | `finance/director/` |
 | **Financial Auditor** | Independent verification, assumption checks, Data Lineage verification | `researcher` | `financial-auditor` | `finance/auditor/` |
-| **Data Analyst** | Source extraction, structuring, multi-stage verification | `general` | `data-analyst` | `finance/analyst/` |
-| **Market Data Collector** | External market data, benchmarks, reference prices | `general` | `market-data` | `finance/collector/` |
+| **Data Analyst** | Source extraction, structuring, multi-stage verification | `administration` | `data-analyst` | `finance/analyst/` |
+| **Market Data Collector** | External market data, benchmarks, reference prices | `administration` | `market-data` | `finance/collector/` |
 
 Putting the entire flow in one Anima invites self-review blind spots (interpretation optimism bias), lost variances (silent drop), and context bloat.
 

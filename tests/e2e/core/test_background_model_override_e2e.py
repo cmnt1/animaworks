@@ -169,7 +169,7 @@ class TestRoleDefaultsMerge:
     def test_general_defaults_no_background_model(self):
         defaults_path = (
             Path(__file__).resolve().parents[3]
-            / "templates" / "_shared" / "roles" / "general" / "defaults.json"
+            / "templates" / "_shared" / "roles" / "administration" / "defaults.json"
         )
         if not defaults_path.exists():
             pytest.skip("Template not found in test environment")

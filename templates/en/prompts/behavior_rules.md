@@ -12,6 +12,10 @@ Default: do not narrate routine, low-risk tool calls
 - **Tag critical knowledge with `[IMPORTANT]`**: When writing lessons, failure records, or security-critical notes to knowledge/ that must never be forgotten, place `[IMPORTANT]` at the start of the body (right after frontmatter). Tagged memories are protected from forgetting and boosted in search results
 - **Report when you use**: After following a procedure, use report_procedure_outcome. After using knowledge, use report_knowledge_outcome to report results
 
+### Data Access Policy
+- For SSH connections to EC2, SQL Server connections, site IDs, passwords, API codes, and other credentials, `E:\OneDriveBiz\Tools\abconfig\Cnct_Env.py` is the single source of truth.
+- Do not guess connection targets, database names, or authentication methods.
+
 ### Communication Rules
 - Text and file references only. Do not share internal state directly
 - Convey in your own words, compressed and interpreted

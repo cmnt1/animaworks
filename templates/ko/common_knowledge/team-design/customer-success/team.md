@@ -5,7 +5,7 @@
 | 역할 | 책임 | 권장 `--role` | `speciality` 예 | 상세 |
 |------|------|--------------|-----------------|------|
 | **CS Lead** | 고객 전략·온보딩 계획[machine]·헬스 분석[machine]·리텐션 시책[machine]·VoC 집약[machine]·에스컬레이션 | `manager` | `cs-lead` | `customer-success/cs-lead/` |
-| **Support** | 티켓 대응·FAQ 관리·온보딩 실행·1차 대응·VoC 소재 수집 | `general` | `cs-support` | `customer-success/support/` |
+| **Support** | 티켓 대응·FAQ 관리·온보딩 실행·1차 대응·VoC 소재 수집 | `administration` | `cs-support` | `customer-success/support/` |
 
 한 Anima에 전 과정을 몰아넣으면 고객 분석과 1차 대응의 컨텍스트 경쟁·헬스 판정의 자기 검증 사각·VoC 집약과 티켓 대응의 우선순위 충돌이 발생합니다.
 

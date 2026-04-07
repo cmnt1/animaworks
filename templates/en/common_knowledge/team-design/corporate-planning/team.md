@@ -6,7 +6,7 @@
 |------|----------------|---------------------|----------------------|---------|
 | **Corporate Strategist** | Strategic judgment, business environment analysis (machine), OKR management, final approval | `manager` | `corporate-strategist` | `corporate-planning/strategist/` |
 | **Business Analyst** | Market / competitor data collection, structured analysis (machine) | `researcher` | `business-analyst` | `corporate-planning/analyst/` |
-| **Strategy Coordinator** | Independent verification (machine), cross-functional coordination, KPI tracking | `general` | `strategy-coordinator` | `corporate-planning/coordinator/` |
+| **Strategy Coordinator** | Independent verification (machine), cross-functional coordination, KPI tracking | `administration` | `strategy-coordinator` | `corporate-planning/coordinator/` |
 
 Putting every step in one Anima invites strategic judgment bias (optimism bias), lost initiatives (silent drop), and context bloat.
 

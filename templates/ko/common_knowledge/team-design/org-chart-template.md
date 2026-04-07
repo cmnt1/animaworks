@@ -84,14 +84,14 @@ graph TD
 
 | # | 부문 | 구분 | supervisor 권장 | 역할 구성 | 권장 `--role` | 템플릿 경로 |
 |---|------|------|----------------|-----------|-------------|-------------|
-| 1 | Secretary | 스태프 | `null` | Secretary | general | `team-design/secretary/team.md` |
+| 1 | Secretary | 스태프 | `null` | Secretary | administration | `team-design/secretary/team.md` |
 | 2 | Legal | 스태프 | `null` | Director + Verifier + Researcher | manager / researcher | `team-design/legal/team.md` |
 | 3 | Finance | 스태프 | `null` | Director + Auditor + Analyst + Collector | manager / ops | `team-design/finance/team.md` |
 | 4 | Corporate Planning | 스태프 | `null` | Strategist + Analyst + Coordinator | manager / researcher | `team-design/corporate-planning/team.md` |
 | 5 | COO | 라인 통괄 | `null` | COO | manager | `team-design/coo/team.md` |
 | 6 | Development | 라인 | COO | PdM + Engineer + Reviewer + Tester | engineer / manager | `team-design/development/team.md` |
 | 7 | Sales & Marketing | 라인 | COO | Director + Creator + SDR + Researcher | manager / writer | `team-design/sales-marketing/team.md` |
-| 8 | Customer Success | 라인 | COO | CS Lead + Support | manager / general | `team-design/customer-success/team.md` |
+| 8 | Customer Success | 라인 | COO | CS Lead + Support | manager / administration | `team-design/customer-success/team.md` |
 | 9 | Infrastructure/SRE | 라인 | COO | Infra Director + Monitor | ops | `team-design/infrastructure/team.md` |
 | 10 | Trading | 라인(생략 가능) | COO | Director + Analyst + Engineer + Auditor | manager / engineer | `team-design/trading/team.md` |
 

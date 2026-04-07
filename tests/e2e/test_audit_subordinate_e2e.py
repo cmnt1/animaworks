@@ -33,7 +33,7 @@ def _setup_sub(tmp_path: Path, name: str, supervisor: str, **kw) -> Path:
     anima_dir.mkdir(parents=True, exist_ok=True)
     (anima_dir / "activity_log").mkdir(parents=True, exist_ok=True)
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
-    status = {"enabled": kw.get("enabled", True), "supervisor": supervisor, "model": kw.get("model", "claude-sonnet-4-6"), "role": "general"}
+    status = {"enabled": kw.get("enabled", True), "supervisor": supervisor, "model": kw.get("model", "claude-sonnet-4-6"), "role": "administration"}
     (anima_dir / "status.json").write_text(json.dumps(status, indent=2), encoding="utf-8")
     return anima_dir
 

@@ -72,18 +72,18 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
 
 
 def _load_status_role(anima_dir: Path | None) -> str:
-    """Read the role from status.json, defaulting to ``general``."""
+    """Read the role from status.json, defaulting to ``administration``."""
     if anima_dir is None:
-        return "general"
+        return "administration"
     status_path = anima_dir / "status.json"
     if not status_path.is_file():
-        return "general"
+        return "administration"
     try:
         data = json.loads(status_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return "general"
+        return "administration"
     role = data.get("role")
-    return role if isinstance(role, str) and role.strip() else "general"
+    return role if isinstance(role, str) and role.strip() else "administration"
 
 
 def resolve_anima_config(

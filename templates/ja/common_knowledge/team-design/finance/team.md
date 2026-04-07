@@ -6,8 +6,8 @@
 |--------|------|--------------|-----------------|------|
 | **Finance Director** | 分析計画・財務判断・数値検証・最終承認 | `manager` | `cfo`, `finance-director` | `finance/director/` |
 | **Financial Auditor** | 独立検証・仮定検証・Data Lineage 検証 | `researcher` | `financial-auditor` | `finance/auditor/` |
-| **Data Analyst** | ソースデータ抽出・構造化・多段階検証 | `general` | `data-analyst` | `finance/analyst/` |
-| **Market Data Collector** | 外部市場データ・ベンチマーク・参照価格の収集 | `general` | `market-data` | `finance/collector/` |
+| **Data Analyst** | ソースデータ抽出・構造化・多段階検証 | `administration` | `data-analyst` | `finance/analyst/` |
+| **Market Data Collector** | 外部市場データ・ベンチマーク・参照価格の収集 | `administration` | `market-data` | `finance/collector/` |
 
 1つの Anima に全工程を集約すると、セルフレビューの盲点（解釈の楽観バイアス）・差異の消失（silent drop）・コンテキスト肥大化が発生する。
 

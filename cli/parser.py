@@ -103,8 +103,8 @@ def cli_main() -> None:
     p_create.add_argument(
         "--role",
         default=None,
-        choices=["engineer", "researcher", "manager", "writer", "ops", "general"],
-        help="Role template to apply (default: general)",
+        choices=["engineer", "researcher", "manager", "writer", "ops", "administration"],
+        help="Role template to apply (default: administration)",
     )
     p_create.set_defaults(func=_lazy_create_anima)
 
@@ -347,8 +347,8 @@ def cli_main() -> None:
     p_anima_create.add_argument(
         "--role",
         default=None,
-        choices=["engineer", "researcher", "manager", "writer", "ops", "general"],
-        help="Role template to apply (default: general)",
+        choices=["engineer", "researcher", "manager", "writer", "ops", "administration"],
+        help="Role template to apply (default: administration)",
     )
     p_anima_create.set_defaults(func=_lazy_anima_create)
 

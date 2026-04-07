@@ -6,7 +6,7 @@
 |--------|------|--------------|-----------------|------|
 | **Sales & Marketing Director** | 전략 수립·영업 실행[machine]·파이프라인 관리·콘텐츠 QC·최종 승인 | `manager` | `sales-marketing-director` | `sales-marketing/director/` |
 | **Marketing Creator** | 마케팅 콘텐츠 제작[machine]·Brand Voice 준수 | `writer` | `marketing-creator` | `sales-marketing/creator/` |
-| **SDR (Sales Development)** | 리드 개발·너처링·인게이지먼트·인바운드 대응 | `general` | `sales-development` | `sales-marketing/sdr/` |
+| **SDR (Sales Development)** | 리드 개발·너처링·인게이지먼트·인바운드 대응 | `administration` | `sales-development` | `sales-marketing/sdr/` |
 | **Market Researcher** | 시장 조사·경쟁 분석·잠재 고객 프로파일링 | `researcher` | `market-researcher` | `sales-marketing/researcher/` |
 
 한 Anima에 전 과정을 몰아넣으면 콘텐츠 품질의 자기 평가 편향·리드 선별의 느슨함·영업과 마케팅의 우선순위 경쟁에 따른 컨텍스트 오염이 발생합니다.

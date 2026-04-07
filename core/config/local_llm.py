@@ -38,8 +38,8 @@ def normalize_ollama_model_name(model: str) -> str:
 
 
 def resolve_local_llm_role_preset(local_llm: LocalLLMConfig, role: str | None) -> str:
-    role_name = (role or "general").strip() or "general"
-    return local_llm.role_presets.get(role_name, local_llm.role_presets.get("general", "general"))
+    role_name = (role or "administration").strip() or "administration"
+    return local_llm.role_presets.get(role_name, local_llm.role_presets.get("administration", "general"))
 
 
 def resolve_local_llm_role_model(local_llm: LocalLLMConfig, role: str | None) -> str:
@@ -80,7 +80,7 @@ def apply_local_llm_presets_to_animas(animas_dir: Path, config: Any) -> list[str
             status_data = json.loads(status_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        role = status_data.get("role", "general")
+        role = status_data.get("role", "administration")
         if apply_local_llm_role_to_status(status_data, config, role):
             tmp = status_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(status_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

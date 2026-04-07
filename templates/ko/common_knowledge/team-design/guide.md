@@ -81,7 +81,7 @@ plan.md (status: approved) → delegate_task로 Engineer에게
 
 ### 5단계: 역할 템플릿 선택
 
-프레임워크 `--role`(engineer, manager, writer, researcher, ops, general) 중 가장 가까운 것을 고르고,
+프레임워크 `--role`(engineer, manager, writer, researcher, ops, administration) 중 가장 가까운 것을 고르고,
 `injection.md`에서 팀 설계로 덮어쓴다.
 
 ---

@@ -6,8 +6,8 @@
 |------|------|--------------|-----------------|------|
 | **Finance Director** | 분석 계획·재무 판단·수치 검증·최종 승인 | `manager` | `cfo`, `finance-director` | `finance/director/` |
 | **Financial Auditor** | 독립 검증·가정 검증·Data Lineage 검증 | `researcher` | `financial-auditor` | `finance/auditor/` |
-| **Data Analyst** | 소스 데이터 추출·구조화·다단계 검증 | `general` | `data-analyst` | `finance/analyst/` |
-| **Market Data Collector** | 외부 시장 데이터·벤치마크·참조 가격 수집 | `general` | `market-data` | `finance/collector/` |
+| **Data Analyst** | 소스 데이터 추출·구조화·다단계 검증 | `administration` | `data-analyst` | `finance/analyst/` |
+| **Market Data Collector** | 외부 시장 데이터·벤치마크·참조 가격 수집 | `administration` | `market-data` | `finance/collector/` |
 
 한 Anima에 전 과정을 몰아두면 셀프 리뷰의 사각(해석의 낙관적 편향)·차이의 소실(silent drop)·컨텍스트 비대화가 발생한다.
 

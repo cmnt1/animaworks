@@ -6,7 +6,7 @@
 |--------|------|--------------|-----------------|------|
 | **Sales & Marketing Director** | 戦略策定・営業執行[machine]・パイプライン管理・コンテンツQC・最終承認 | `manager` | `sales-marketing-director` | `sales-marketing/director/` |
 | **Marketing Creator** | マーケティングコンテンツ制作[machine]・Brand Voice 準拠 | `writer` | `marketing-creator` | `sales-marketing/creator/` |
-| **SDR (Sales Development)** | リード開発・ナーチャリング・エンゲージメント・インバウンド対応 | `general` | `sales-development` | `sales-marketing/sdr/` |
+| **SDR (Sales Development)** | リード開発・ナーチャリング・エンゲージメント・インバウンド対応 | `administration` | `sales-development` | `sales-marketing/sdr/` |
 | **Market Researcher** | 市場調査・競合分析・見込み客プロファイリング | `researcher` | `market-researcher` | `sales-marketing/researcher/` |
 
 1つの Anima に全工程を集約すると、コンテンツ品質の自己評価バイアス・リード選別の甘さ・営業とマーケの優先度競合によるコンテキスト汚染が発生する。

@@ -6,7 +6,7 @@
 |--------|------|--------------|-----------------|------|
 | **Legal Director** | 分析計画・契約書スキャン・判断・最終承認 | `manager` | `legal-director` | `legal/director/` |
 | **Legal Verifier** | 独立検証・楽観バイアス検出・carry-forward 検証 | `researcher` | `legal-verifier` | `legal/verifier/` |
-| **Precedent Researcher** | 法令・判例・業界標準の収集・根拠裏付け | `general` | `legal-researcher` | `legal/researcher/` |
+| **Precedent Researcher** | 法令・判例・業界標準の収集・根拠裏付け | `administration` | `legal-researcher` | `legal/researcher/` |
 
 1つの Anima に全工程を集約すると、セルフレビューの盲点（楽観バイアス）・指摘事項の消失（silent drop）・コンテキスト肥大化が発生する。
 

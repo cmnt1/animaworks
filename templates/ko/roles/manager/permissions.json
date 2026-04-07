@@ -1,6 +1,9 @@
 {
   "version": 1,
-  "file_roots": ["/"],
+  "file_roots": [
+    "C:\\Users\\cmnt\\.animaworks",
+    "E:\\OneDriveBiz\\Downloads"
+  ],
   "commands": {
     "allow_all": true,
     "allow": [],
@@ -14,5 +17,8 @@
   "tool_creation": {
     "personal": true,
     "shared": true
-  }
+  },
+  "file_roots_readonly": [
+    "E:\\OneDriveBiz\\Tools\\abconfig\\Cnct_Env.py"
+  ]
 }

@@ -4,7 +4,7 @@
 
 | 역할 | 책무 | 추천 `--role` | `speciality` 예 | 상세 |
 |------|------|--------------|-----------------|------|
-| **Secretary** | 정보 트리아지·대행 전송·문서 작성(machine)·일정 관리 | `general` | `executive-assistant` | `secretary/secretary/` |
+| **Secretary** | 정보 트리아지·대행 전송·문서 작성(machine)·일정 관리 | `administration` | `executive-assistant` | `secretary/secretary/` |
 
 **이 템플릿의 근본적 특징: 상위자는 사람이다.**
 
