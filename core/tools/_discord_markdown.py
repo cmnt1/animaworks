@@ -29,6 +29,17 @@ _DISCORD_EPOCH_MS = 1420070400000
 _RE_USER_MENTION = re.compile(r"<@!?(\d+)>")
 _RE_CHANNEL_MENTION = re.compile(r"<#(\d+)>")
 _RE_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_RE_EMOTION_COMMENT = re.compile(r"<!--\s*emotion:\s*(\{.*?\})\s*-->", re.DOTALL)
+
+_EMOTION_TO_EMOJI: dict[str, str] = {
+    "neutral": "",
+    "smile": "😊",
+    "laugh": "😄",
+    "troubled": "😟",
+    "surprised": "😲",
+    "thinking": "🤔",
+    "embarrassed": "😳",
+}
 _RE_EMOJI = re.compile(r"<a?:(\w+):\d+>")
 _RE_TIMESTAMP = re.compile(r"<t:(\d+)(?::\w)?>")
 
@@ -89,8 +100,20 @@ def md_to_discord(text: str) -> str:
     """
     if not text:
         return ""
-    # Strip HTML comments (e.g. <!-- emotion: {...} -->)
+    # Convert emotion metadata to emoji, then strip remaining HTML comments
+    import json as _json
+
+    emoji_suffix = ""
+    _em_match = _RE_EMOTION_COMMENT.search(text)
+    if _em_match:
+        try:
+            _meta = _json.loads(_em_match.group(1))
+            emoji_suffix = _EMOTION_TO_EMOJI.get(_meta.get("emotion", ""), "")
+        except (ValueError, AttributeError):
+            pass
     text = _RE_HTML_COMMENT.sub("", text).strip()
+    if emoji_suffix:
+        text = f"{text} {emoji_suffix}"
     if len(text) <= DISCORD_MESSAGE_LIMIT:
         return text
     return text[: DISCORD_MESSAGE_LIMIT - 3] + "..."
