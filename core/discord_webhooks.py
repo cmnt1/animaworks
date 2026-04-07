@@ -56,11 +56,16 @@ def get_webhook_manager() -> DiscordWebhookManager:
 class DiscordWebhookManager:
     """Manages per-channel webhooks and thread-to-Anima mappings."""
 
+    # Dedup: block identical content to same channel within this window
+    _DEDUP_TTL_SEC = 60.0
+
     def __init__(self) -> None:
         self._webhooks: dict[str, dict[str, str]] = {}  # channel_id → {id, token}
         self._thread_map: dict[str, dict[str, Any]] = {}  # message_id → {anima, ts}
         self._lock = threading.Lock()
         self._client: DiscordClient | None = None
+        # Dedup: (channel_id, anima_name, content_hash) → timestamp
+        self._recent_sends: dict[tuple[str, str, str], float] = {}
         self._load_persisted()
 
     def _ensure_client(self) -> DiscordClient:
@@ -118,8 +123,29 @@ class DiscordWebhookManager:
     ) -> str:
         """Send a message to a Discord channel appearing as a specific Anima.
 
-        Returns the sent message ID (snowflake string).
+        Returns the sent message ID (snowflake string), or empty string if
+        blocked by dedup.
         """
+        import hashlib
+
+        now = time.monotonic()
+        content_hash = hashlib.md5(content.encode("utf-8", errors="replace")).hexdigest()[:16]
+        dedup_key = (channel_id, anima_name, content_hash)
+
+        with self._lock:
+            # Evict stale entries
+            stale = [k for k, ts in self._recent_sends.items() if now - ts > self._DEDUP_TTL_SEC]
+            for k in stale:
+                del self._recent_sends[k]
+            # Check duplicate
+            if dedup_key in self._recent_sends:
+                logger.info(
+                    "Dedup: blocking duplicate send to %s by %s (within %ds)",
+                    channel_id, anima_name, int(self._DEDUP_TTL_SEC),
+                )
+                return ""
+            self._recent_sends[dedup_key] = now
+
         wh_id, wh_token = self._get_or_create_webhook(channel_id)
         client = self._ensure_client()
 
