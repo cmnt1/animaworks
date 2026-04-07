@@ -133,11 +133,20 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
 
     # ── send ─────────────────────────────────────────────────
     if args.command == "send":
+        # Block during inbox auto-reply (framework posts automatically)
+        anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+        if anima_dir_env:
+            marker = Path(anima_dir_env) / "run" / "discord_auto_reply_active"
+            if marker.exists():
+                print("Blocked: discord send is disabled during inbox processing "
+                      "(auto-responder handles posting).", file=sys.stderr)
+                return
+
         body = " ".join(args.message)
         reply_to = getattr(args, "reply_to", None)
 
         # Prefer webhook (Anima identity) over bot token (AnimaWorks identity)
-        anima_name = Path(os.environ.get("ANIMAWORKS_ANIMA_DIR", "")).name or ""
+        anima_name = Path(anima_dir_env).name if anima_dir_env else ""
         sent_via_webhook = False
         if anima_name:
             try:

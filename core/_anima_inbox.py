@@ -441,6 +441,16 @@ class InboxMixin:
                     _session_token = self.agent._tool_handler.set_active_session_type("inbox")
                     self.agent._tool_handler._trigger = f"inbox:{next(iter(inbox_result.senders)) if inbox_result.senders else 'unknown'}"
 
+                    # Set marker to block CLI discord send during inbox auto-reply
+                    _has_discord = any(
+                        getattr(item.msg, "source", "") == "discord"
+                        for item in inbox_result.inbox_items
+                    )
+                    _marker_path = self.agent._anima_dir / "run" / "discord_auto_reply_active"
+                    if _has_discord:
+                        _marker_path.parent.mkdir(parents=True, exist_ok=True)
+                        _marker_path.touch()
+
                     # Set session origin from the most untrusted message
                     _batch_origins: list[str] = []
                     _batch_chains: list[str] = []
@@ -615,6 +625,9 @@ class InboxMixin:
                 finally:
                     self._status_slots["inbox"] = "idle"
                     self._task_slots["inbox"] = ""
+                    # Clean up discord auto-reply marker
+                    _marker = self.agent._anima_dir / "run" / "discord_auto_reply_active"
+                    _marker.unlink(missing_ok=True)
         finally:
                     self._notify_lock_released()
 
