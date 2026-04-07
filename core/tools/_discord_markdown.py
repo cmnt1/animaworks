@@ -28,6 +28,7 @@ _DISCORD_EPOCH_MS = 1420070400000
 
 _RE_USER_MENTION = re.compile(r"<@!?(\d+)>")
 _RE_CHANNEL_MENTION = re.compile(r"<#(\d+)>")
+_RE_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _RE_EMOJI = re.compile(r"<a?:(\w+):\d+>")
 _RE_TIMESTAMP = re.compile(r"<t:(\d+)(?::\w)?>")
 
@@ -88,6 +89,8 @@ def md_to_discord(text: str) -> str:
     """
     if not text:
         return ""
+    # Strip HTML comments (e.g. <!-- emotion: {...} -->)
+    text = _RE_HTML_COMMENT.sub("", text).strip()
     if len(text) <= DISCORD_MESSAGE_LIMIT:
         return text
     return text[: DISCORD_MESSAGE_LIMIT - 3] + "..."
