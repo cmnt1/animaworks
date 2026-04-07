@@ -19,7 +19,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -41,7 +41,7 @@ _USAGE_SNAPSHOT_NAME = "usage_snapshot.json"
 # ── Cost-budget constants ────────────────────────────────────────────────────
 
 _JST = ZoneInfo("Asia/Tokyo")
-_UTC = timezone.utc
+_UTC = UTC
 _CACHE_KEY_COST_BUDGET = "cost_budget"
 _BALANCE_SNAPSHOT_NAME = "usage_budget_state.json"
 
@@ -780,7 +780,6 @@ def _save_balance_snapshot(balance_usd: float) -> dict[str, Any]:
     return snapshot
 
 
-
 def _days_in_current_month_jst() -> int:
     now_jst = datetime.now(tz=_JST)
     return calendar.monthrange(now_jst.year, now_jst.month)[1]
@@ -935,9 +934,7 @@ def _fetch_cost_budget(skip_cache: bool = False) -> dict[str, Any]:
         month_remaining_pct = (effective_balance / budget_limit * 100) if budget_limit > 0 else 0.0
         month_util_pct = 100.0 - month_remaining_pct
         billing_start_utc, today_utc, next_billing = _monthly_budget_window_utc(billing_day)
-        billing_start_dt = datetime(
-            billing_start_utc.year, billing_start_utc.month, billing_start_utc.day, tzinfo=_UTC
-        )
+        billing_start_dt = datetime(billing_start_utc.year, billing_start_utc.month, billing_start_utc.day, tzinfo=_UTC)
         month_window_seconds = int((next_billing - billing_start_dt).total_seconds())
         # 月初からの累積支出（消費ペース計算用）
         billing_spent = _sum_cost_from_anima_dirs(billing_start_utc, today_utc)
@@ -1044,6 +1041,7 @@ def create_usage_router() -> APIRouter:
         if isinstance(monthly_limit_usd, (int, float)) and monthly_limit_usd >= 0:
             try:
                 from core.config.io import load_config, save_config
+
                 cfg = load_config()
                 cfg.usage_budget.monthly_limit_usd = float(monthly_limit_usd)
                 save_config(cfg)
