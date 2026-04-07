@@ -796,6 +796,29 @@ animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name
 | `anima enable/disable {名前}` | 有効/無効化 | — |
 | `anima create` | 新規作成 | — |
 
+### Audit（活動監査）
+
+```bash
+# 昨日1日分
+animaworks anima audit sakura --date yesterday
+
+# おととい1日分
+animaworks anima audit sakura --date 2026-04-05
+
+# 今日分（--since 00:00 相当）
+animaworks anima audit sakura --date today
+
+# 全Anima × 昨日
+animaworks anima audit --all --date yesterday
+```
+
+| オプション | 説明 |
+|-----------|------|
+| `--date YYYY-MM-DD\|today\|yesterday` | 特定日1日分のみ表示 |
+| `--days N` | 直近N日間（デフォルト1、最大30） |
+| `--since HH:MM` | 今日のHH:MM以降 |
+| `--all` | 全Anima一括（マージタイムライン） |
+
 ### モデル管理
 
 | コマンド | 説明 |

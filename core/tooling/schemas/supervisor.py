@@ -203,11 +203,6 @@ def _supervisor_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": _t("schema.audit_subordinate.name"),
                     },
-                    "mode": {
-                        "type": "string",
-                        "enum": ["summary", "report"],
-                        "description": _t("schema.audit_subordinate.mode"),
-                    },
                     "hours": {
                         "type": "integer",
                         "description": _t("schema.audit_subordinate.hours"),

@@ -26,10 +26,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "監査期間（時間単位、デフォルト: 24、最大: 168）",
         "en": "Audit period in hours (default: 24, max: 168)",
     },
-    "schema.audit_subordinate.mode": {
-        "ja": "出力モード。report=タイムライン日報（デフォルト）、summary=統計サマリー",
-        "en": "Output mode. report=timeline daily report (default), summary=statistics",
-    },
     "schema.audit_subordinate.name": {
         "ja": "監査対象のAnima名（省略時は全配下）",
         "en": "Target Anima name (omit for all descendants)",

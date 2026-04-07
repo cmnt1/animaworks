@@ -148,7 +148,6 @@ class DashboardMixin(OrgHelpersMixin):
         from core.paths import get_animas_dir
 
         target_name = args.get("name")
-        mode = args.get("mode", "report")
         # Backward compat: accept legacy "days" param, convert to hours
         raw_hours = args.get("hours")
         if raw_hours is None and "days" in args:
@@ -176,21 +175,15 @@ class DashboardMixin(OrgHelpersMixin):
         animas_dir = get_animas_dir()
         is_batch = len(targets) > 1
 
-        if mode == "report" and is_batch:
+        if is_batch:
             result = AuditAggregator.generate_merged_timeline(
                 [animas_dir / n for n in targets],
                 hours=hours,
                 since=since,
             )
         else:
-            results: list[str] = []
-            for name in targets:
-                agg = AuditAggregator(animas_dir / name)
-                if mode == "report":
-                    results.append(agg.generate_report(hours=hours, since=since))
-                else:
-                    results.append(agg.generate_summary(hours=hours, compact=is_batch, since=since))
-            result = "\n\n".join(results)
+            agg = AuditAggregator(animas_dir / targets[0])
+            result = agg.generate_report(hours=hours, since=since)
 
         self._activity.log(
             "tool_use",
@@ -200,7 +193,7 @@ class DashboardMixin(OrgHelpersMixin):
                 target_name=target_name or f"batch({len(targets)})",
                 hours=hours,
             ),
-            meta={"targets": targets, "mode": mode, "hours": hours, "since": args.get("since")},
+            meta={"targets": targets, "hours": hours, "since": args.get("since")},
         )
 
         return result

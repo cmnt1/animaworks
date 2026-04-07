@@ -34,14 +34,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "Anima '{target_name}' は存在しません",
         "en": "Anima '{target_name}' does not exist",
     },
-    "handler.audit_activity_counts": {
-        "ja": (
-            "  受信: {msg_recv} | 応答: {resp_sent} | DM送信: {dm_sent} | ツール: {tool_use} | HB: {hb} | Cron: {cron} | エラー: {errors}"
-        ),
-        "en": (
-            "  Received: {msg_recv} | Responses: {resp_sent} | DM sent: {dm_sent} | Tools: {tool_use} | HB: {hb} | Cron: {cron} | Errors: {errors}"
-        ),
-    },
     "handler.audit_label_cron": {
         "ja": "Cron: {task_name}",
         "en": "Cron: {task_name}",
@@ -128,14 +120,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "■ コミュニケーション・タスク",
         "en": "■ Communication & Tasks",
     },
-    "handler.audit_section_activity": {
-        "ja": "■ アクティビティ",
-        "en": "■ Activity",
-    },
-    "handler.audit_section_comms": {
-        "ja": "■ 通信先",
-        "en": "■ Communications",
-    },
     "handler.audit_section_errors": {
         "ja": "■ エラー詳細",
         "en": "■ Error Details",
@@ -148,10 +132,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "■ 対話・応答",
         "en": "■ Dialogue & Responses",
     },
-    "handler.audit_section_tasks": {
-        "ja": "■ タスク",
-        "en": "■ Tasks",
-    },
     "handler.audit_section_thinking": {
         "ja": "■ 思考・判断（ハートビート / 振り返り）",
         "en": "■ Thinking & Decisions (Heartbeat / Reflection)",
@@ -163,18 +143,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.audit_status_line": {
         "ja": "状態: {status} | モデル: {model}",
         "en": "Status: {status} | Model: {model}",
-    },
-    "handler.audit_summary_title": {
-        "ja": "═══ {name} — 監査サマリー (直近{hours}h) ═══",
-        "en": "═══ {name} — Audit Summary (last {hours}h) ═══",
-    },
-    "handler.audit_summary_title_since": {
-        "ja": "═══ {name} — 監査サマリー ({since}〜) ═══",
-        "en": "═══ {name} — Audit Summary (since {since}) ═══",
-    },
-    "handler.audit_task_counts": {
-        "ja": "  保留中: {pending} | 進行中: {in_progress} | 完了: {done} | 滞留(>30min): {stale}",
-        "en": ("  Pending: {pending} | In progress: {in_progress} | Done: {done} | Stale(>30min): {stale}"),
     },
     "handler.audit_tool_line": {
         "ja": "{name} (全{total}回): ",
