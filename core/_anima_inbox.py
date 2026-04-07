@@ -447,7 +447,7 @@ class InboxMixin:
                         getattr(item.msg, "source", "") == "discord"
                         for item in inbox_result.inbox_items
                     )
-                    _marker_path = self.agent._anima_dir / "run" / "discord_auto_reply_active"
+                    _marker_path = self.agent.anima_dir / "run" / "discord_auto_reply_active"
                     if _has_discord:
                         _marker_path.parent.mkdir(parents=True, exist_ok=True)
                         _marker_path.touch()
@@ -647,7 +647,7 @@ class InboxMixin:
                     self._status_slots["inbox"] = "idle"
                     self._task_slots["inbox"] = ""
                     # Clean up discord auto-reply marker
-                    _marker = self.agent._anima_dir / "run" / "discord_auto_reply_active"
+                    _marker = self.agent.anima_dir / "run" / "discord_auto_reply_active"
                     _marker.unlink(missing_ok=True)
         finally:
             self._notify_lock_released()
