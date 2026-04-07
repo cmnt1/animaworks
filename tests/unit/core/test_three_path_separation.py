@@ -216,11 +216,14 @@ class TestTriggerBasedPromptFiltering:
         cron_prompt = self._build("cron:test", anima_dir)
         assert "表情メタデータ" not in cron_prompt
 
-    def test_inbox_trigger_excludes_emotion_metadata(self, data_dir, make_anima):
-        """Inbox trigger should not include emotion metadata instruction."""
+    def test_inbox_trigger_includes_emotion_metadata(self, data_dir, make_anima):
+        """Inbox is chat-equivalent; emotion metadata should be included."""
         anima_dir = make_anima("filter_inbox_emo")
         inbox_prompt = self._build("inbox:peer", anima_dir)
-        assert "表情メタデータ" not in inbox_prompt
+        chat_prompt = self._build("", anima_dir)
+        has_emotion_chat = "表情メタデータ" in chat_prompt
+        has_emotion_inbox = "表情メタデータ" in inbox_prompt
+        assert has_emotion_chat == has_emotion_inbox
 
     def test_cron_trigger_longer_than_task(self, data_dir, make_anima):
         """Cron should have more context than task (minimal) trigger."""

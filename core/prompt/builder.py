@@ -220,7 +220,6 @@ def _build_group1(
 def _build_group2(
     memory: MemoryManager,
     permissions: str,
-    is_inbox: bool,
     is_background_auto: bool,
     is_task: bool,
     _ss: dict[str, str],
@@ -241,7 +240,7 @@ def _build_group2(
         v = memory.read_company_vision()
         if v:
             _add(v, "vision", 3)
-    if not is_inbox and not is_background_auto and not is_task:
+    if not is_background_auto and not is_task:
         sp = memory.read_specialty_prompt()
         if sp:
             _add(sp, "specialty", 3)
@@ -257,7 +256,6 @@ def _build_group3(
     priming_section: str,
     pending_human_notifications: str,
     execution_mode: str,
-    is_inbox: bool,
     is_heartbeat: bool,
     is_chat: bool,
     is_task: bool,
@@ -275,8 +273,6 @@ def _build_group3(
 
     if not is_task:
         _state_max = max(int(_CURRENT_STATE_MAX_CHARS * scale), 500)
-        if is_inbox:
-            _state_max = min(_state_max, 500)
         state = memory.read_current_state()
         state_content = ""
         if state and state.strip() != "status: idle":
@@ -518,7 +514,6 @@ def _build_group5(
     other_animas: list[str],
     execution_mode: str,
     prompt_store: Any,
-    is_inbox: bool,
     is_background_auto: bool,
     is_task: bool,
     _ss: dict[str, str],
@@ -542,23 +537,21 @@ def _build_group5(
         if is_background_auto and len(msg) > 500:
             msg = msg[:500] + "\n" + _fs.get("summary", "(summary)")
         _add(msg, "messaging", 2)
-        if not is_inbox:
-            try:
-                from core.config import load_config as _lc
+        try:
+            from core.config import load_config as _lc
 
-                cfg = _lc()
-                pcfg = cfg.animas.get(pd.name)
-                if (pcfg is None or pcfg.supervisor is None) and cfg.human_notification.enabled:
-                    _add(_build_human_notification_guidance(execution_mode), "human_notification", 4)
-            except Exception:
-                logger.debug("Skipped human notification guidance injection", exc_info=True)
+            cfg = _lc()
+            pcfg = cfg.animas.get(pd.name)
+            if (pcfg is None or pcfg.supervisor is None) and cfg.human_notification.enabled:
+                _add(_build_human_notification_guidance(execution_mode), "human_notification", 4)
+        except Exception:
+            logger.debug("Skipped human notification guidance injection", exc_info=True)
     return out
 
 
 def _build_group6(
     execution_mode: str,
     prompt_store: Any,
-    is_inbox: bool,
     is_chat: bool,
     is_background_auto: bool,
     is_task: bool,
@@ -577,7 +570,7 @@ def _build_group6(
         ei = (prompt_store.get_section("emotion_instruction") if prompt_store else None) or EMOTION_INSTRUCTION
         if ei:
             _add(ei, "emotion_instruction", 4)
-    if not is_inbox and not is_background_auto and execution_mode == "a":
+    if not is_background_auto and execution_mode == "a":
         ar = (prompt_store.get_section("a_reflection") if prompt_store else None) or _load_a_reflection()
         if ar:
             _add(ar, "a_reflection", 4)
@@ -615,14 +608,13 @@ def build_system_prompt(
     _ss = _load_section_strings()
     _fs = _load_fallback_strings()
 
-    # Trigger flags
-    is_inbox = trigger.startswith("inbox:")
+    # Trigger flags — inbox is chat-equivalent (same sections as human chat)
     is_heartbeat = trigger == "heartbeat"
     is_cron = trigger.startswith("cron:")
     is_task = trigger.startswith("task:")
     is_consolidation = trigger.startswith("consolidation:")
     is_background_auto = is_heartbeat or is_cron or is_consolidation
-    is_chat = not (is_inbox or is_background_auto or is_task)
+    is_chat = not (is_background_auto or is_task)
 
     from core.tooling.prompt_db import get_prompt_store
 
@@ -634,7 +626,7 @@ def build_system_prompt(
 
     # Assemble sections from all 6 groups
     sections = _build_group1(pd, data_dir, memory, is_task, prompt_store, _ss)
-    sections += _build_group2(memory, permissions, is_inbox, is_background_auto, is_task, _ss)
+    sections += _build_group2(memory, permissions, is_background_auto, is_task, _ss)
     sections += _build_group3(
         pd,
         memory,
@@ -642,7 +634,6 @@ def build_system_prompt(
         priming_section,
         pending_human_notifications,
         execution_mode,
-        is_inbox,
         is_heartbeat,
         is_chat,
         is_task,
@@ -672,7 +663,6 @@ def build_system_prompt(
         other_animas,
         execution_mode,
         prompt_store,
-        is_inbox,
         is_background_auto,
         is_task,
         _ss,
@@ -681,7 +671,6 @@ def build_system_prompt(
     sections += _build_group6(
         execution_mode,
         prompt_store,
-        is_inbox,
         is_chat,
         is_background_auto,
         is_task,

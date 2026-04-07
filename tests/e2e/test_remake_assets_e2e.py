@@ -14,6 +14,7 @@ All external API calls (NovelAI, fal.ai, Meshy) are mocked via
 """
 from __future__ import annotations
 
+import asyncio
 import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -142,15 +143,14 @@ class TestRemakePreview:
                 },
             )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
-        assert "preview_url" in data
-        assert "/api/animas/target/assets/" in data["preview_url"]
-        assert "_preview_" in data["preview_url"]
-        assert data["preview_url"].endswith(".png")
-        assert data["seed_used"] == 42
+        assert data["status"] == "generating"
         assert "backup_id" in data
         assert data["backup_id"].startswith("assets_backup_")
+
+        # Wait for background task to complete before verifying pipeline call
+        await asyncio.sleep(0.1)
 
         # Verify pipeline was called with correct args
         mock_pipeline.generate_all.assert_called_once()
@@ -162,7 +162,7 @@ class TestRemakePreview:
         assert call_kwargs["vibe_image"] is not None  # style-ref bytes loaded
 
     @patch("core.tools.image_gen.ImageGenPipeline")
-    @patch("core.config.load_config")
+    @patch("core.config.models.load_config")
     async def test_remake_preview_uses_global_image_backend(
         self, mock_load_config, mock_pipeline_cls, tmp_path,
     ):
@@ -189,7 +189,11 @@ class TestRemakePreview:
                 json={"image_style": "realistic", "prompt": "portrait"},
             )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 202
+
+        # Wait for background task to complete before verifying pipeline args
+        await asyncio.sleep(0.1)
+
         config = mock_pipeline_cls.call_args.kwargs["config"]
         assert config.backend == "diffusers"
         assert config.image_style == "realistic"
@@ -223,7 +227,7 @@ class TestRemakePreview:
                 json={"style_from": "style-ref", "image_style": "anime"},
             )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         backup_id = resp.json()["backup_id"]
 
         # Verify backup directory was created
@@ -316,7 +320,10 @@ class TestRemakePreview:
                 json={"style_from": "style-ref", "image_style": "anime"},
             )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 202
+
+        # Wait for background task to complete before verifying WS events
+        await asyncio.sleep(0.1)
 
         ws = app.state.ws_manager
         preview_events = []
@@ -363,8 +370,10 @@ class TestRemakePreview:
                 json={"style_from": "style-ref", "image_style": "anime"},
             )
 
-        assert resp.status_code == 500
-        assert "Preview generation failed" in resp.json()["detail"]
+        assert resp.status_code == 202
+
+        # Wait for background task to complete — it should restore the backup on failure
+        await asyncio.sleep(0.1)
 
         # Verify assets were restored (original content preserved)
         restored = (target_dir / "assets" / "avatar_fullbody.png").read_bytes()
@@ -393,16 +402,20 @@ class TestRemakePreview:
         app = _make_test_app(animas_dir)
         transport = ASGITransport(app=app)
 
-        # Two failed attempts
+        # Two failed attempts — wait for BG task between attempts to avoid backup dir collision
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             await client.post(
                 "/api/animas/target/assets/remake-preview",
                 json={"style_from": "style-ref", "image_style": "anime"},
             )
+            # Wait for first BG task (error path restores backup → removes backup dir)
+            await asyncio.sleep(0.1)
             await client.post(
                 "/api/animas/target/assets/remake-preview",
                 json={"style_from": "style-ref", "image_style": "anime"},
             )
+            # Wait for second BG task to complete
+            await asyncio.sleep(0.1)
 
         # No orphaned backups should remain
         backup_dirs = list(target_dir.glob("assets_backup_*"))

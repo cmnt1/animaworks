@@ -85,7 +85,7 @@ def _get_prompt_locale() -> str:
         if locale in {"ja", "en", "ko"}:
             return locale
     except Exception:
-        pass
+        logger.debug("Failed to detect locale, defaulting to ja", exc_info=True)
     return "ja"
 
 

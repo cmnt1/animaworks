@@ -11,6 +11,7 @@ Validates the full lifecycle of background task execution:
   - IPC timeout configuration resolution
   - Old task cleanup
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -92,7 +93,8 @@ class TestBackgroundTaskManagerLifecycle:
             callback_called.set()
 
         mgr = BackgroundTaskManager(
-            anima_dir, anima_name="bg-test",
+            anima_dir,
+            anima_name="bg-test",
             eligible_tools={"slow_tool": 5},
         )
         mgr.on_complete = on_complete
@@ -136,7 +138,8 @@ class TestBackgroundTaskManagerFailurePath:
     """Test submit -> RUNNING -> FAILED when handler raises."""
 
     async def test_failing_handler_transitions_to_failed(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Submit a task with a failing handler; verify FAILED status."""
         anima_dir = tmp_path / "animas" / "bg-fail"
@@ -151,7 +154,8 @@ class TestBackgroundTaskManagerFailurePath:
             callback_called.set()
 
         mgr = BackgroundTaskManager(
-            anima_dir, anima_name="bg-fail",
+            anima_dir,
+            anima_name="bg-fail",
             eligible_tools={"bad_tool": 5},
         )
         mgr.on_complete = on_complete
@@ -188,7 +192,8 @@ class TestToolHandlerBackgroundDispatch:
     """Test ToolHandler.handle() routes eligible tools to background."""
 
     async def test_eligible_tool_returns_background_json(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """handle() for an eligible tool should return JSON with status=background."""
         anima_dir = tmp_path / "animas" / "handler-test"
@@ -200,7 +205,8 @@ class TestToolHandlerBackgroundDispatch:
         memory.read_permissions.return_value = ""
 
         bg_mgr = BackgroundTaskManager(
-            anima_dir, anima_name="handler-test",
+            anima_dir,
+            anima_name="handler-test",
             eligible_tools={"image_generation": 30},
         )
 
@@ -224,7 +230,8 @@ class TestToolHandlerBackgroundDispatch:
         assert task.tool_name == "image_generation"
 
     async def test_non_eligible_tool_not_dispatched_to_background(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """handle() for a non-eligible tool should NOT go to background."""
         anima_dir = tmp_path / "animas" / "handler-test2"
@@ -235,7 +242,8 @@ class TestToolHandlerBackgroundDispatch:
         memory.read_permissions.return_value = ""
 
         bg_mgr = BackgroundTaskManager(
-            anima_dir, anima_name="handler-test2",
+            anima_dir,
+            anima_name="handler-test2",
             eligible_tools={"image_generation": 30},
         )
 
@@ -250,7 +258,7 @@ class TestToolHandlerBackgroundDispatch:
         )
         handler._external = mock_external
 
-        result = handler.handle("web_search", {"query": "hello"})
+        result = handler.handle("chatwork_send_message", {"message": "hello"})
 
         # Should go through external dispatch, not background
         assert result == "direct-result"
@@ -264,7 +272,8 @@ class TestBackgroundTaskAPIEndpoint:
     """Test /animas/{name}/background-tasks REST endpoints."""
 
     async def test_list_background_tasks_endpoint(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """GET /animas/{name}/background-tasks returns task list from disk."""
         animas_dir = tmp_path / "animas"
@@ -294,7 +303,8 @@ class TestBackgroundTaskAPIEndpoint:
         assert task_ids == {"task001", "task002", "task003"}
 
     async def test_get_single_background_task(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """GET /animas/{name}/background-tasks/{task_id} returns single task."""
         animas_dir = tmp_path / "animas"
@@ -321,7 +331,8 @@ class TestBackgroundTaskAPIEndpoint:
         assert data["status"] == "completed"
 
     async def test_get_nonexistent_task_returns_404(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """GET for a missing task_id returns 404."""
         animas_dir = tmp_path / "animas"
@@ -342,7 +353,8 @@ class TestBackgroundTaskAPIEndpoint:
         assert resp.status_code == 404
 
     async def test_empty_background_tasks_dir(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """GET returns empty list when no background_tasks dir exists."""
         animas_dir = tmp_path / "animas"
@@ -407,6 +419,7 @@ def _create_test_app(
 
     # Persist auth mock beyond the with-block for request-time middleware
     import server.app as _sa
+
     _auth = MagicMock()
     _auth.auth_mode = "local_trust"
     _sa.load_auth = lambda: _auth
@@ -424,7 +437,8 @@ class TestBackgroundTaskWSNotification:
     """Test that task completion triggers WebSocket broadcast."""
 
     async def test_ws_broadcast_called_on_completion(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """When a background task completes, _ws_broadcast is invoked."""
         anima_dir = tmp_path / "animas" / "ws-test"
@@ -447,7 +461,8 @@ class TestBackgroundTaskWSNotification:
             patch(
                 "core.agent.AgentCore._build_background_manager",
                 return_value=BackgroundTaskManager(
-                    anima_dir, anima_name="ws-test",
+                    anima_dir,
+                    anima_name="ws-test",
                     eligible_tools={"slow_tool": 5},
                 ),
             ),
@@ -486,7 +501,8 @@ class TestBackgroundTaskWSNotification:
         assert "result_summary" in payload["data"]
 
     async def test_ws_broadcast_called_on_failure(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """WebSocket broadcast fires even when the task fails."""
         anima_dir = tmp_path / "animas" / "ws-fail"
@@ -508,7 +524,8 @@ class TestBackgroundTaskWSNotification:
             patch(
                 "core.agent.AgentCore._build_background_manager",
                 return_value=BackgroundTaskManager(
-                    anima_dir, anima_name="ws-fail",
+                    anima_dir,
+                    anima_name="ws-fail",
                     eligible_tools={"bad_tool": 5},
                 ),
             ),
@@ -559,9 +576,11 @@ class TestIPCTimeoutConfigurable:
         )
 
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.supervisor.ipc import IPCClient
+
         timeout = IPCClient._resolve_ipc_timeout()
         assert timeout == 600.0
 
@@ -581,9 +600,11 @@ class TestIPCTimeoutConfigurable:
     def test_returns_default_server_value(self, data_dir: Path) -> None:
         """Without explicit server config, the default ipc_stream_timeout is 60."""
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.supervisor.ipc import IPCClient
+
         timeout = IPCClient._resolve_ipc_timeout()
         assert timeout == 60.0
 
@@ -601,7 +622,8 @@ class TestBackgroundTaskCleanup:
         (anima_dir / "state").mkdir()
 
         mgr = BackgroundTaskManager(
-            anima_dir, anima_name="cleanup-test",
+            anima_dir,
+            anima_name="cleanup-test",
             eligible_tools={"some_tool": 5},
         )
 
@@ -609,21 +631,24 @@ class TestBackgroundTaskCleanup:
 
         # Write an old completed task (48 hours ago)
         _write_task_json(
-            bg_dir, "old-task",
+            bg_dir,
+            "old-task",
             status="completed",
             completed_at=time.time() - 48 * 3600,
         )
 
         # Write a recent completed task (1 hour ago)
         _write_task_json(
-            bg_dir, "recent-task",
+            bg_dir,
+            "recent-task",
             status="completed",
             completed_at=time.time() - 3600,
         )
 
         # Write an old running task (should NOT be removed)
         _write_task_json(
-            bg_dir, "running-task",
+            bg_dir,
+            "running-task",
             status="running",
             completed_at=None,
         )
@@ -646,14 +671,16 @@ class TestBackgroundTaskCleanup:
         (anima_dir / "state").mkdir()
 
         mgr = BackgroundTaskManager(
-            anima_dir, anima_name="cleanup-fail",
+            anima_dir,
+            anima_name="cleanup-fail",
             eligible_tools={"some_tool": 5},
         )
 
         bg_dir = anima_dir / "state" / "background_tasks"
 
         _write_task_json(
-            bg_dir, "old-fail",
+            bg_dir,
+            "old-fail",
             status="failed",
             completed_at=time.time() - 48 * 3600,
         )
@@ -663,7 +690,8 @@ class TestBackgroundTaskCleanup:
         assert not (bg_dir / "old-fail.json").exists()
 
     def test_cleanup_returns_zero_when_nothing_expired(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """cleanup_old_tasks returns 0 when no tasks are expired."""
         anima_dir = tmp_path / "animas" / "cleanup-none"
@@ -671,13 +699,15 @@ class TestBackgroundTaskCleanup:
         (anima_dir / "state").mkdir()
 
         mgr = BackgroundTaskManager(
-            anima_dir, anima_name="cleanup-none",
+            anima_dir,
+            anima_name="cleanup-none",
             eligible_tools={"some_tool": 5},
         )
 
         bg_dir = anima_dir / "state" / "background_tasks"
         _write_task_json(
-            bg_dir, "fresh-task",
+            bg_dir,
+            "fresh-task",
             status="completed",
             completed_at=time.time() - 60,  # 1 minute ago
         )
@@ -687,7 +717,8 @@ class TestBackgroundTaskCleanup:
         assert (bg_dir / "fresh-task.json").exists()
 
     def test_cleanup_evicts_from_in_memory_cache(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """cleanup_old_tasks also removes the task from the in-memory dict."""
         anima_dir = tmp_path / "animas" / "cleanup-mem"
@@ -695,14 +726,16 @@ class TestBackgroundTaskCleanup:
         (anima_dir / "state").mkdir()
 
         mgr = BackgroundTaskManager(
-            anima_dir, anima_name="cleanup-mem",
+            anima_dir,
+            anima_name="cleanup-mem",
             eligible_tools={"some_tool": 5},
         )
 
         bg_dir = anima_dir / "state" / "background_tasks"
         task_id = "mem-task"
         _write_task_json(
-            bg_dir, task_id,
+            bg_dir,
+            task_id,
             status="completed",
             completed_at=time.time() - 48 * 3600,
         )

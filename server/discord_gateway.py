@@ -22,11 +22,10 @@ import threading
 import time
 from typing import Any
 
-import discord
-
 from core.config.models import load_config
+from core.i18n import t
 from core.messenger import Messenger
-from core.paths import get_data_dir
+from core.paths import get_data_dir, get_shared_dir
 from core.tools._base import get_credential
 from core.tools._discord_markdown import clean_discord_markup
 
@@ -80,7 +79,14 @@ _board_dedup_ids: collections.OrderedDict[str, float] = collections.OrderedDict(
 _BOARD_DEDUP_TTL_SEC = 10
 
 
-def _route_to_board(channel_id: str, text: str, user_name: str, *, message_id: str = "") -> None:
+def _route_to_board(
+    channel_id: str,
+    text: str,
+    user_name: str,
+    *,
+    message_id: str = "",
+    board_mapping: dict[str, str] | None = None,
+) -> None:
     """Post a Discord message to the mapped AnimaWorks board (if any)."""
     if message_id:
         now = time.monotonic()
@@ -92,12 +98,12 @@ def _route_to_board(channel_id: str, text: str, user_name: str, *, message_id: s
             _board_dedup_ids[message_id] = now
 
     try:
-        cfg = load_config()
-        board_name = cfg.external_messaging.discord.board_mapping.get(channel_id)
+        if board_mapping is None:
+            board_mapping = load_config().external_messaging.discord.board_mapping
+        board_name = board_mapping.get(channel_id)
         if not board_name:
             return
-        shared_dir = get_data_dir() / "shared"
-        messenger = Messenger(shared_dir, user_name or "discord")
+        messenger = Messenger(get_shared_dir(), user_name or "discord")
         messenger.post_channel(board_name, text, source="discord", from_name=user_name or "discord")
     except Exception:
         logger.debug("Board routing failed for channel %s", channel_id, exc_info=True)
@@ -110,8 +116,8 @@ def _build_discord_annotation(is_dm: bool, has_mention: bool) -> str:
     if is_dm:
         return "[discord:DM]\n"
     if has_mention:
-        return "[discord:channel — あなたがメンションされています]\n"
-    return "[discord:channel — あなたへの直接メンションはありません]\n"
+        return f"[discord:channel — {t('discord.annotation_mentioned')}]\n"
+    return f"[discord:channel — {t('discord.annotation_no_mention')}]\n"
 
 
 # ── Thread context ───────────────────────────────────────────
@@ -120,8 +126,8 @@ _THREAD_CTX_SUMMARY_LIMIT = 150
 
 
 async def _fetch_thread_context(
-    channel: discord.TextChannel | discord.DMChannel,
-    reference: discord.MessageReference,
+    channel: Any,
+    reference: Any,
 ) -> str:
     """Fetch Discord thread context for a reply message."""
     if reference.message_id is None:
@@ -157,15 +163,16 @@ class DiscordGatewayManager:
     """
 
     def __init__(self) -> None:
-        self._client: discord.Client | None = None
+        self._client: Any = None  # discord.Client (lazy import)
         self._bot_user_id: int = 0
         self._anima_name_re: re.Pattern[str] | None = None
         self._known_anima_names: set[str] = set()
+        self._alias_to_canonical: dict[str, str] = {}  # lowercase alias/name → canonical
         self._webhook_names: set[str] = set()
         self._started = False
 
     @property
-    def client(self) -> discord.Client | None:
+    def client(self) -> Any:
         return self._client
 
     async def start(self) -> None:
@@ -182,9 +189,15 @@ class DiscordGatewayManager:
             logger.error("DISCORD_BOT_TOKEN not configured — Discord Gateway cannot start")
             return
 
+        try:
+            import discord as _discord
+        except ImportError:
+            logger.error("discord.py is not installed — run: pip install 'animaworks[discord]'")
+            return
+
         self._build_anima_patterns()
 
-        intents = discord.Intents(
+        intents = _discord.Intents(
             guilds=True,
             guild_messages=True,
             dm_messages=True,
@@ -192,7 +205,7 @@ class DiscordGatewayManager:
             members=False,
         )
 
-        client = discord.Client(intents=intents)
+        client = _discord.Client(intents=intents)
         self._client = client
 
         @client.event
@@ -206,7 +219,7 @@ class DiscordGatewayManager:
                 )
 
         @client.event
-        async def on_message(message: discord.Message) -> None:
+        async def on_message(message: Any) -> None:
             await self._handle_message(message)
 
         # Start in background task (client.start is blocking)
@@ -225,14 +238,15 @@ class DiscordGatewayManager:
         self._started = True
         logger.info("Discord Gateway started")
 
-    async def _run_client(self, client: discord.Client, token: str) -> None:
+    async def _run_client(self, client: Any, token: str) -> None:
         """Run client.start in a way that doesn't block the event loop."""
         try:
             await client.start(token)
-        except discord.LoginFailure:
-            logger.error("Discord login failed — check DISCORD_BOT_TOKEN")
-        except Exception:
-            logger.exception("Discord Gateway connection error")
+        except Exception as exc:
+            if type(exc).__name__ == "LoginFailure":
+                logger.error("Discord login failed — check DISCORD_BOT_TOKEN")
+            else:
+                logger.exception("Discord Gateway connection error")
 
     async def stop(self) -> None:
         """Gracefully close the Discord Gateway connection."""
@@ -261,22 +275,22 @@ class DiscordGatewayManager:
     # ── Internal ─────────────────────────────────────────────
 
     def _build_anima_patterns(self) -> None:
-        """Build regex pattern for Anima name detection from config."""
+        """Build regex pattern and alias→canonical mapping from config."""
         try:
             cfg = load_config()
             anima_names: set[str] = set()
+            alias_map: dict[str, str] = {}
             for name in cfg.animas:
                 anima_names.add(name)
+                alias_map[name.lower()] = name
                 anima_cfg = cfg.animas[name]
                 for alias in anima_cfg.aliases:
                     anima_names.add(alias)
+                    alias_map[alias.lower()] = name
             self._known_anima_names = anima_names
+            self._alias_to_canonical = alias_map
             if anima_names:
                 escaped = [re.escape(n) for n in sorted(anima_names, key=len, reverse=True)]
-                # Match Anima names with flexible boundaries for both ASCII and
-                # Japanese text.  \b only works at ASCII boundaries, so we use
-                # lookaround for non-alphanumeric chars to support Japanese aliases
-                # like "さくら" in "今日はさくらに連絡".
                 self._anima_name_re = re.compile(
                     r"(?:^|\b|(?<=[^a-zA-Z0-9]))(" + "|".join(escaped) + r")(?:\b|(?=[^a-zA-Z0-9])|$)",
                     re.IGNORECASE,
@@ -287,31 +301,24 @@ class DiscordGatewayManager:
             logger.debug("Failed to build Anima name patterns", exc_info=True)
 
     def _resolve_canonical_name(self, matched: str) -> str | None:
-        """Resolve a matched name (possibly alias) to canonical Anima name."""
-        try:
-            cfg = load_config()
-            low = matched.lower()
-            # Direct match
-            for name in cfg.animas:
-                if name.lower() == low:
-                    return name
-            # Alias match
-            for name, acfg in cfg.animas.items():
-                for alias in acfg.aliases:
-                    if alias.lower() == low:
-                        return name
-        except Exception:
-            pass
-        return None
+        """Resolve a matched name (possibly alias) to canonical Anima name.
+
+        Uses the cached ``_alias_to_canonical`` mapping built by
+        ``_build_anima_patterns()`` — no config reload needed.
+        """
+        return self._alias_to_canonical.get(matched.lower())
 
     def _detect_target_anima(
         self,
         text: str,
         channel_id: str,
+        discord_cfg: Any,
     ) -> str | None:
         """Detect which Anima a message is targeting.
 
         Returns canonical anima name or None.
+        *discord_cfg* is the pre-loaded ``ExternalMessagingChannelConfig``
+        (required — caller must supply it to avoid repeated config loads).
         """
         # 1. Anima name in message text
         if self._anima_name_re and text:
@@ -322,30 +329,21 @@ class DiscordGatewayManager:
                     return canonical
 
         # 2. Channel-member config (if only one member, route to them)
-        try:
-            cfg = load_config()
-            members = cfg.external_messaging.discord.channel_members.get(channel_id, [])
-            if len(members) == 1:
-                return members[0]
-        except Exception:
-            pass
+        members = discord_cfg.channel_members.get(channel_id, [])
+        if len(members) == 1:
+            return members[0]
 
-        # Let the caller decide (channel lead / default_anima fallback)
         return None
 
-    def _is_anima_in_channel(self, anima_name: str, channel_id: str) -> bool:
+    @staticmethod
+    def _is_anima_in_channel(anima_name: str, channel_id: str, discord_cfg: Any) -> bool:
         """Check if an Anima is configured as a member of a channel."""
-        try:
-            cfg = load_config()
-            members = cfg.external_messaging.discord.channel_members.get(channel_id, [])
-            if not members:
-                # No membership config → allow all (backward-compatible)
-                return True
-            return anima_name in members
-        except Exception:
+        members = discord_cfg.channel_members.get(channel_id, [])
+        if not members:
             return True
+        return anima_name in members
 
-    async def _handle_message(self, message: discord.Message) -> None:
+    async def _handle_message(self, message: Any) -> None:
         """Core message handler for all Discord events."""
         # Ignore own messages
         if message.author.id == self._bot_user_id:
@@ -379,11 +377,6 @@ class DiscordGatewayManager:
 
         channel_id = str(message.channel.id)
         ch_name = getattr(message.channel, "name", "") or ""
-
-        # For threads, use parent channel ID for membership/routing lookups
-        parent_id = getattr(message.channel, "parent_id", None)
-        routing_channel_id = str(parent_id) if parent_id else channel_id
-
         is_dm = message.guild is None or ch_name.startswith("dm-")
 
         # Bot mentioned?
@@ -396,57 +389,74 @@ class DiscordGatewayManager:
             reference_id = str(message.reference.message_id)
             thread_ctx = await _fetch_thread_context(message.channel, message.reference)
 
+        # Load config once per message for routing decisions
+        try:
+            cfg = load_config()
+            discord_cfg = cfg.external_messaging.discord
+        except Exception:
+            logger.debug("Failed to load config for Discord routing", exc_info=True)
+            return
+
         # Determine target Anima
         target_anima: str | None = None
 
-        if is_dm:
-            # DM: detect name in text or use default
-            target_anima = self._detect_target_anima(cleaned_text, routing_channel_id)
-        else:
-            # Guild channel (use routing_channel_id for thread→parent fallback)
-            target_anima = self._detect_target_anima(cleaned_text, routing_channel_id)
+        # 1. Thread reply mapping — route replies to the Anima that sent the parent
+        if reference_id:
+            try:
+                from core.discord_webhooks import get_webhook_manager
 
-            # If bot mentioned but no specific anima found, use default
-            if target_anima is None and bot_mentioned:
-                try:
-                    cfg = load_config()
-                    target_anima = cfg.external_messaging.discord.default_anima or None
-                except Exception:
-                    pass
+                thread_anima = get_webhook_manager().lookup_thread_anima(reference_id)
+                if thread_anima:
+                    target_anima = thread_anima
+            except Exception:
+                logger.debug("Thread map lookup failed", exc_info=True)
+
+        # 2. Text/name detection and channel member routing
+        if target_anima is None:
+            target_anima = self._detect_target_anima(cleaned_text, channel_id, discord_cfg)
+
+        if target_anima is None and not is_dm:
+            if bot_mentioned:
+                target_anima = discord_cfg.default_anima or None
 
             # No mention, no name detected: route to channel lead
-            # (first member in channel_members is the responsible Anima)
             if target_anima is None:
-                try:
-                    cfg = load_config()
-                    members = cfg.external_messaging.discord.channel_members.get(routing_channel_id, [])
-                    if members:
-                        target_anima = members[0]
-                    else:
-                        # Fallback to default_anima
-                        default = cfg.external_messaging.discord.default_anima
-                        if default and self._is_anima_in_channel(default, routing_channel_id):
-                            target_anima = default
-                except Exception:
-                    pass
+                members = discord_cfg.channel_members.get(channel_id, [])
+                if members:
+                    target_anima = members[0]
+                elif discord_cfg.default_anima and self._is_anima_in_channel(
+                    discord_cfg.default_anima, channel_id, discord_cfg
+                ):
+                    target_anima = discord_cfg.default_anima
 
         # Enforce channel membership
-        if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, routing_channel_id):
+        if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, channel_id, discord_cfg):
             logger.info(
                 "Discord routing: '%s' not a member of channel %s (#%s) — dropping",
-                target_anima, routing_channel_id, ch_name,
+                target_anima,
+                channel_id,
+                ch_name,
             )
             target_anima = None
 
         logger.info(
-            "Discord routing: channel=#%s (%s, routing=%s) is_dm=%s bot_mentioned=%s -> target=%s",
-            ch_name, channel_id, routing_channel_id, is_dm, bot_mentioned, target_anima,
+            "Discord routing: channel=#%s (%s) is_dm=%s bot_mentioned=%s -> target=%s",
+            ch_name,
+            channel_id,
+            is_dm,
+            bot_mentioned,
+            target_anima,
         )
 
         # Board routing (always, regardless of target)
-        # Use routing_channel_id so thread messages map to parent channel's board
         if not is_dm:
-            _route_to_board(routing_channel_id, cleaned_text, author_display, message_id=msg_id)
+            _route_to_board(
+                channel_id,
+                cleaned_text,
+                author_display,
+                message_id=msg_id,
+                board_mapping=discord_cfg.board_mapping,
+            )
 
         # Deliver to Anima inbox if we have a target
         if target_anima:
@@ -465,8 +475,7 @@ class DiscordGatewayManager:
                     logger.warning("Anima directory not found: %s", target_anima)
                     return
 
-                shared_dir = data_dir / "shared"
-                messenger = Messenger(shared_dir, target_anima)
+                messenger = Messenger(get_shared_dir(), target_anima)
                 messenger.receive_external(
                     content=full_content,
                     source="discord",

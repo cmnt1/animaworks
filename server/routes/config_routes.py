@@ -549,8 +549,16 @@ def create_config_router() -> APIRouter:
         members = body.get("members")
         if not isinstance(members, list):
             raise HTTPException(status_code=400, detail="members must be a list of anima names")
+        if not all(isinstance(m, str) and m.strip() for m in members):
+            raise HTTPException(status_code=400, detail="each member must be a non-empty string")
 
         config = load_config()
+        known_animas = set(config.animas.keys())
+        unknown = [m for m in members if m not in known_animas]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"unknown anima(s): {', '.join(unknown)}")
+
+        members = [m.strip() for m in members]
         if members:
             config.external_messaging.discord.channel_members[channel_id] = members
         else:
@@ -597,13 +605,15 @@ def create_config_router() -> APIRouter:
             if ch.get("type") != 0:  # text channels only
                 continue
             ch_id = str(ch["id"])
-            channels.append({
-                "id": ch_id,
-                "name": ch.get("name", ""),
-                "parent_id": str(ch.get("parent_id", "") or ""),
-                "members": channel_members.get(ch_id, []),
-                "board": board_mapping.get(ch_id, ""),
-            })
+            channels.append(
+                {
+                    "id": ch_id,
+                    "name": ch.get("name", ""),
+                    "parent_id": str(ch.get("parent_id", "") or ""),
+                    "members": channel_members.get(ch_id, []),
+                    "board": board_mapping.get(ch_id, ""),
+                }
+            )
         return {"channels": channels}
 
     return router

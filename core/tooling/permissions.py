@@ -64,7 +64,7 @@ def _disabled_service_tools() -> set[str]:
         if not em.chatwork.enabled:
             disabled.add("chatwork")
     except Exception:
-        pass  # config unavailable at import time — skip filtering
+        logger.debug("Config unavailable at import time — skip filtering", exc_info=True)
     return disabled
 
 

@@ -9,6 +9,17 @@ description = "AnimaWorks - Digital Anima Framework with library-type memory"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
+readme = "README.md"
+keywords = ["ai", "agent", "autonomous", "organization", "memory", "rag"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Framework :: FastAPI",
+]
+
 dependencies = [
     "claude-agent-sdk>=0.1.40; platform_system != 'Windows'",
     "anthropic>=0.42.0",
@@ -37,9 +48,17 @@ dependencies = [
     "rank-bm25>=0.2",
 ]
 
+[project.urls]
+Homepage = "https://github.com/xuiltul/animaworks"
+Documentation = "https://github.com/xuiltul/animaworks#readme"
+Repository = "https://github.com/xuiltul/animaworks"
+Issues = "https://github.com/xuiltul/animaworks/issues"
+Changelog = "https://github.com/xuiltul/animaworks/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 claude = ["claude-agent-sdk>=0.1.40; platform_system != 'Windows'"]
-communication = ["requests>=2.31", "slack-sdk>=3.27", "slack-bolt>=1.21", "aiohttp>=3.9", "discord.py>=2.3"]
+communication = ["requests>=2.31", "slack-sdk>=3.27", "slack-bolt>=1.21", "aiohttp>=3.9"]
+discord = ["discord.py>=2.3"]
 notification = ["line-bot-sdk>=3.0"]
 gmail = ["google-api-python-client>=2.0", "google-auth-oauthlib>=1.0", "google-auth-httplib2>=0.2"]
 transcribe = ["faster-whisper>=1.0"]

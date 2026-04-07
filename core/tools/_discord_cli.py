@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -149,7 +150,7 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
                     print(f"Sent via webhook (channel: {args.channel_id}, id: {msg_id})")
                     sent_via_webhook = True
             except Exception:
-                pass  # fall through to bot token
+                logging.debug("Webhook send failed, falling back to bot token", exc_info=True)
 
         if not sent_via_webhook:
             response = client.send_message(

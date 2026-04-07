@@ -34,8 +34,23 @@ def _create_app_with_config(
     """
     animas_dir = tmp_path / "animas"
     animas_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create identity.md for each anima so /api/animas route recognizes them
+    for anima_name in anima_names:
+        anima_dir = animas_dir / anima_name
+        anima_dir.mkdir(parents=True, exist_ok=True)
+        (anima_dir / "identity.md").write_text(
+            f"# {anima_name}\n\nTest identity for {anima_name}.\n",
+            encoding="utf-8",
+        )
+
     shared_dir = tmp_path / "shared"
     shared_dir.mkdir(parents=True, exist_ok=True)
+
+    for n in anima_names:
+        d = animas_dir / n
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "identity.md").write_text(f"# {n}\ntest identity\n")
 
     # Write config.json to disk so load_config() can read it
     config_path = tmp_path / "config.json"

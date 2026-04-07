@@ -189,6 +189,14 @@ def _resolve_from_alias(
             chatwork_room_id=alias_cfg.chatwork_room_id,
             alias_used=alias,
         )
+    if alias_cfg.discord_user_id:
+        return ResolvedRecipient(
+            is_internal=False,
+            name=alias,
+            channel="discord",
+            discord_user_id=alias_cfg.discord_user_id,
+            alias_used=alias,
+        )
 
     raise RecipientNotFoundError(
         f"User alias '{alias}' has no contact info for any channel. "
@@ -217,7 +225,7 @@ def send_external(
                 "status": "error",
                 "error_type": "NoChannelConfigured",
                 "message": f"No external messaging channel configured for '{resolved.name}'. "
-                f"Set up slack or chatwork in config.json external_messaging.",
+                f"Set up slack, chatwork, or discord in config.json external_messaging.",
             },
             ensure_ascii=False,
         )
@@ -256,13 +264,13 @@ def send_external(
 def _build_channel_order(resolved: ResolvedRecipient) -> list[str]:
     """Build ordered list of channels to try."""
     channels = [resolved.channel]
-    # Add fallback channels
-    if resolved.discord_user_id and "discord" not in channels:
-        channels.append("discord")
+    # Add fallback channels (Slack > Chatwork > Discord to preserve existing behavior)
     if resolved.slack_user_id and "slack" not in channels:
         channels.append("slack")
     if resolved.chatwork_room_id and "chatwork" not in channels:
         channels.append("chatwork")
+    if resolved.discord_user_id and "discord" not in channels:
+        channels.append("discord")
     return channels
 
 
@@ -321,7 +329,6 @@ def _send_via_slack(user_id: str, content: str, sender_name: str, anima_name: st
 
 def _send_via_discord(user_id: str, content: str, sender_name: str, anima_name: str = "") -> str:
     """Send a DM via Discord API using the bot token."""
-    from core.tools._anima_icon_url import resolve_anima_icon_url
     from core.tools._base import get_credential
     from core.tools._discord_client import DiscordClient
     from core.tools._discord_markdown import md_to_discord

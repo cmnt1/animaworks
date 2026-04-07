@@ -483,13 +483,21 @@ class ProcessHandle:
         self.stopping_since = now_local()
 
         # Step 3: Wait for graceful exit
+        # NOTE: self.process may become None if the process was cleared by a
+        # concurrent coroutine (e.g. during the await in send_request above).
+        if self.process is None:
+            self.state = ProcessState.STOPPED
+            self.stats.stopped_at = now_local()
+            await self._cleanup()
+            return
+
         try:
             grace_period = min(timeout / 2, 5.0)
             async with asyncio.timeout(grace_period):
-                while self.process.poll() is None:
+                while self.process and self.process.poll() is None:
                     await asyncio.sleep(0.1)
 
-            self.stats.exit_code = self.process.returncode
+            self.stats.exit_code = self.process.returncode if self.process else None
             logger.info("Process exited gracefully: %s (code=%s)", self.anima_name, self.stats.exit_code)
 
             # Step 3b: Runner exited but children may still be alive.
@@ -500,9 +508,11 @@ class ProcessHandle:
             # Step 4: Send SIGTERM to process session group
             logger.warning("Process did not exit gracefully, sending SIGTERM: %s", self.anima_name)
             try:
+                if self.process is None:
+                    raise TimeoutError  # skip to STOPPED
                 terminate_subprocess(self.process, force=False)
                 async with asyncio.timeout(timeout / 2):
-                    while self.process.poll() is None:
+                    while self.process and self.process.poll() is None:
                         await asyncio.sleep(0.1)
 
                 self.stats.exit_code = self.process.returncode

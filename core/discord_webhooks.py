@@ -15,6 +15,8 @@ parameters make each Anima appear as a distinct identity.
 
 import json
 import logging
+import os
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -24,10 +26,9 @@ from core.paths import get_data_dir
 from core.tools._anima_icon_url import resolve_anima_icon_url
 from core.tools._base import get_credential
 from core.tools._discord_client import DiscordAPIError, DiscordClient
+from core.tools._discord_markdown import DISCORD_MESSAGE_LIMIT
 
 logger = logging.getLogger("animaworks.discord_webhooks")
-
-DISCORD_MESSAGE_LIMIT = 2000
 _WEBHOOK_NAME = "AnimaWorks"
 
 # Thread-to-Anima mapping TTL
@@ -113,12 +114,13 @@ class DiscordWebhookManager:
         channel_id: str,
         anima_name: str,
         content: str,
-        *,
-        reply_to: str | None = None,
     ) -> str:
         """Send a message to a Discord channel appearing as a specific Anima.
 
         Returns the sent message ID (snowflake string).
+
+        Note: Discord webhooks do not support ``message_reference`` (reply
+        threading). Use the standard bot ``send_message`` API for replies.
         """
         wh_id, wh_token = self._get_or_create_webhook(channel_id)
         client = self._ensure_client()
@@ -214,36 +216,51 @@ class DiscordWebhookManager:
                     now = time.time()
                     cutoff = now - (_THREAD_MAP_TTL_DAYS * 86400)
                     self._thread_map = {
-                        k: v for k, v in data.items()
-                        if isinstance(v, dict) and v.get("ts", 0) > cutoff
+                        k: v for k, v in data.items() if isinstance(v, dict) and v.get("ts", 0) > cutoff
                     }
         except Exception:
             logger.debug("Failed to load thread map", exc_info=True)
 
     def _persist(self) -> None:
-        """Save webhook cache to disk."""
+        """Save webhook cache to disk (mode 0o600 — contains tokens)."""
         try:
             p = self._webhooks_path()
             p.parent.mkdir(parents=True, exist_ok=True)
             with self._lock:
                 snapshot = dict(self._webhooks)
-            p.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+            _atomic_write_json(p, snapshot)
         except Exception:
             logger.debug("Failed to persist webhook cache", exc_info=True)
 
     def _persist_thread_map(self) -> None:
-        """Save thread map to disk."""
+        """Save thread map to disk (mode 0o600 — contains routing data)."""
         try:
             p = self._thread_map_path()
             p.parent.mkdir(parents=True, exist_ok=True)
             with self._lock:
                 snapshot = dict(self._thread_map)
-            p.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+            _atomic_write_json(p, snapshot)
         except Exception:
             logger.debug("Failed to persist thread map", exc_info=True)
 
 
 # ── Helpers ──────────────────────────────────────────────────
+
+
+def _atomic_write_json(path: Path, data: Any) -> None:
+    """Write JSON to *path* atomically via temp file + rename (mode 0o600)."""
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _split_message(content: str) -> list[str]:

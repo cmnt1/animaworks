@@ -293,6 +293,12 @@ def _create_app_with_config(tmp_path: Path, anima_names: list[str]):
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps(config_data), encoding="utf-8")
 
+    # Create identity.md for each anima so the route doesn't skip them
+    for name in anima_names:
+        anima_dir = animas_dir / name
+        anima_dir.mkdir(parents=True, exist_ok=True)
+        (anima_dir / "identity.md").write_text(f"# {name}\n", encoding="utf-8")
+
     with (
         patch("server.app.ProcessSupervisor") as mock_sup_cls,
         patch("server.app.load_config") as mock_app_cfg,
@@ -460,10 +466,10 @@ class TestLayoutCompatibility:
         assert gap_y >= 80, "GAP_Y should be large enough for taller cards with stream area"
 
     def test_card_h_unchanged(self):
-        """CARD_H should remain at 80 for tree layout baseline."""
+        """CARD_H should remain at 100 for tree layout baseline (increased for usage info)."""
         match = re.search(r"const CARD_H\s*=\s*(\d+)", self.js)
         assert match
-        assert int(match.group(1)) == 80
+        assert int(match.group(1)) == 100
 
     def test_resize_svg_uses_actual_dimensions(self):
         resize_fn_start = self.js.index("function _resizeSvg")

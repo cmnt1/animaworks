@@ -136,7 +136,7 @@ class ReconcileMixin:
                     _gov_data = _json.loads(_gov_state_path.read_text("utf-8"))
                     governor_suspended = set(_gov_data.get("suspended_animas", []))
         except Exception:
-            pass
+            logger.debug("Reconciliation: cleanup step failed, skipping", exc_info=True)
 
         # Evict stale entries from _recently_stopped (older than 30s)
         _now = time.monotonic()

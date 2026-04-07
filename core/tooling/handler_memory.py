@@ -209,7 +209,7 @@ class MemoryToolsMixin:
                         if matched_name:
                             break
                 except Exception:
-                    pass
+                    logger.debug("handler_memory operation failed", exc_info=True)
 
             if matched_name:
                 return (
@@ -219,7 +219,7 @@ class MemoryToolsMixin:
                     f"稼働状態を確認するには ping_subordinate(name='{matched_name}') を呼び出してください。"
                 )
         except Exception:
-            pass
+            logger.debug("handler_memory read failed", exc_info=True)
         return None
 
     def _handle_search_memory(self, args: dict[str, Any]) -> str:

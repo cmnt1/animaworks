@@ -178,9 +178,9 @@ class PrimingMixin:
         """Get last 5 human messages from conversation memory for priming context.
 
         Returns newest-first list of human message contents.
-        Only active for chat triggers (message:*).
+        Active for chat triggers (message:*) and inbox triggers (inbox:*).
         """
-        if not trigger.startswith("message:"):
+        if not trigger.startswith("message:") and not trigger.startswith("inbox:"):
             return []
         try:
             from core.memory.conversation import ConversationMemory

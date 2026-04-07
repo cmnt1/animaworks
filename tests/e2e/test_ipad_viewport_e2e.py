@@ -31,9 +31,21 @@ try:
 except ImportError:
     HAS_PLAYWRIGHT = False
 
+def _playwright_browsers_installed() -> bool:
+    """Check if Playwright browser binaries are actually installed."""
+    if not HAS_PLAYWRIGHT:
+        return False
+    try:
+        cache_dir = Path.home() / ".cache" / "ms-playwright"
+        if not cache_dir.is_dir():
+            return False
+        return any(d.is_dir() and "chromium" in d.name for d in cache_dir.iterdir())
+    except Exception:
+        return False
+
 pytestmark = pytest.mark.skipif(
-    not HAS_PLAYWRIGHT,
-    reason="playwright not installed",
+    not _playwright_browsers_installed(),
+    reason="playwright not installed or browser binaries missing",
 )
 
 # ── Constants ────────────────────────────────────────────────

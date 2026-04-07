@@ -373,7 +373,7 @@ class LocalDiffusersClient:
             try:
                 pipe.vae.enable_slicing()
             except Exception:
-                pass
+                logger.debug("cleanup step failed, continuing", exc_info=True)
             try:
                 pipe.enable_model_cpu_offload()
                 logger.info("Model CPU offload enabled (low-VRAM mode)")
@@ -396,13 +396,13 @@ class LocalDiffusersClient:
             pipe.vae.enable_slicing()
             logger.debug("VAE slicing enabled")
         except Exception:
-            pass
+            logger.debug("cleanup step failed, continuing", exc_info=True)
 
         try:
             pipe.enable_attention_slicing()
             logger.debug("Attention slicing enabled")
         except Exception:
-            pass
+            logger.debug("cleanup step failed, continuing", exc_info=True)
 
         return pipe
 
@@ -600,7 +600,7 @@ class LocalDiffusersClient:
                 try:
                     pipe.unet.set_default_attn_processor()
                 except Exception:
-                    pass
+                    logger.debug("cleanup step failed, continuing", exc_info=True)
                 # Save original encoder_hid_dim_type so we can restore it after
                 # unload_ip_adapter() (which does not reliably reset this config value).
                 try:
@@ -655,7 +655,7 @@ class LocalDiffusersClient:
             try:
                 pipe.unet.config.encoder_hid_dim_type = original_hid_dim
             except Exception:
-                pass
+                logger.debug("cleanup step failed, continuing", exc_info=True)
             logger.info("IP-Adapter retired (switching away from face reference mode)")
         except Exception:
             logger.warning("Failed to unload IP-Adapter", exc_info=True)
@@ -725,7 +725,7 @@ class LocalDiffusersClient:
                 try:
                     step_callback(_done_steps[0], total_steps)
                 except Exception:
-                    pass
+                    logger.debug("cleanup step failed, continuing", exc_info=True)
             return callback_kwargs
 
         common_kwargs: dict[str, Any] = {
@@ -823,7 +823,7 @@ class LocalDiffusersClient:
             if _torch.cuda.is_available():
                 _torch.cuda.empty_cache()
         except Exception:
-            pass
+            logger.debug("cleanup step failed, continuing", exc_info=True)
         return png_bytes
 
     def _run_img2img_pipeline(

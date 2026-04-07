@@ -34,8 +34,17 @@ def _create_app_with_config(
     """Build a real FastAPI app with a concrete config.json on disk."""
     animas_dir = tmp_path / "animas"
     animas_dir.mkdir(parents=True, exist_ok=True)
+    for name in anima_names:
+        anima_dir = animas_dir / name
+        anima_dir.mkdir(parents=True, exist_ok=True)
+        (anima_dir / "identity.md").write_text(f"# {name}", encoding="utf-8")
     shared_dir = tmp_path / "shared"
     shared_dir.mkdir(parents=True, exist_ok=True)
+
+    for n in anima_names:
+        d = animas_dir / n
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "identity.md").write_text(f"# {n}\ntest identity\n")
 
     config_path = tmp_path / "config.json"
     config_path.write_text(

@@ -6,12 +6,15 @@ from __future__ import annotations
 
 """Cross-platform helpers for Claude Code CLI discovery."""
 
+import logging
 import os
 import platform
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def _iter_claude_candidates() -> list[str]:
@@ -74,7 +77,7 @@ def _find_sdk_bundled_cli() -> str | None:
         if bundled_path.is_file() and bundled_path.stat().st_size > 0:
             return str(bundled_path)
     except Exception:
-        pass
+        logger.debug("claude_code check failed", exc_info=True)
     return None
 
 

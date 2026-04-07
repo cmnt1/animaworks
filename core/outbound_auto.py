@@ -257,7 +257,6 @@ class DiscordAutoResponder:
                     target["channel_id"],
                     anima_name,
                     text,
-                    reply_to=target.get("reference_id"),
                 )
                 if msg_id:
                     posted_ids.append(msg_id)
@@ -301,11 +300,13 @@ class DiscordAutoResponder:
             if ext_uid:
                 mention = f"<@{ext_uid}> "
 
-            targets.append({
-                "channel_id": channel_id,
-                "reference_id": reference_id,
-                "mention_prefix": mention,
-            })
+            targets.append(
+                {
+                    "channel_id": channel_id,
+                    "reference_id": reference_id,
+                    "mention_prefix": mention,
+                }
+            )
         return targets
 
 

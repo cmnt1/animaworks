@@ -1,4 +1,9 @@
-"""Unit tests for pending_human_notifications injection in builder.py."""
+"""Unit tests for inbox-as-chat-equivalent behavior in builder.py.
+
+Verifies that inbox trigger receives the same system prompt sections as chat,
+including specialty, full current_state, emotion, a_reflection, and
+human_notification_guidance.
+"""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,7 +13,6 @@ from __future__ import annotations
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
 
 from core.prompt.builder import build_system_prompt
 
@@ -45,10 +49,12 @@ def _mock_load_prompt(name: str, **kwargs) -> str:
         return _MOCK_SECTIONS
     if name == "builder/fallbacks":
         return _MOCK_FALLBACKS
+    if name == "builder/task_in_progress":
+        return f"## ⚠️ 進行中タスク\n\n{kwargs.get('state', '')}"
     return "section"
 
 
-def _mock_memory(tmp_path: Path) -> MagicMock:
+def _mock_memory(tmp_path: Path, *, specialty: str = "", current_state: str = "") -> MagicMock:
     anima_dir = tmp_path / "animas" / "test"
     anima_dir.mkdir(parents=True, exist_ok=True)
     (anima_dir / "knowledge").mkdir(exist_ok=True)
@@ -60,11 +66,11 @@ def _mock_memory(tmp_path: Path) -> MagicMock:
     memory.anima_dir = anima_dir
     memory.read_identity.return_value = "# Identity\nI am test."
     memory.read_injection.return_value = ""
-    memory.read_current_state.return_value = ""
+    memory.read_current_state.return_value = current_state
     memory.read_pending.return_value = ""
     memory.read_bootstrap.return_value = ""
     memory.read_company_vision.return_value = ""
-    memory.read_specialty_prompt.return_value = ""
+    memory.read_specialty_prompt.return_value = specialty
     memory.read_permissions.return_value = ""
     memory.list_knowledge_files.return_value = []
     memory.list_episode_files.return_value = []
@@ -86,29 +92,25 @@ def _apply_patches(stack: ExitStack, tmp_path: Path) -> None:
     stack.enter_context(patch("core.prompt.builder._discover_other_animas", return_value=[]))
 
 
-class TestPendingHumanNotificationsInjection:
-    def test_chat_includes_notifications(self, tmp_path):
-        memory = _mock_memory(tmp_path)
-        notifications = (
-            "## Pending Human Notifications (last 24h)\n\n"
-            "[2026-03-06T16:05] call_human (via slack):\nVM IP=192.168.1.100"
-        )
+class TestInboxChatEquivalent:
+    """Inbox trigger must receive the same prompt sections as chat."""
+
+    def test_inbox_includes_specialty(self, tmp_path):
+        memory = _mock_memory(tmp_path, specialty="## Specialty\nI specialize in DevOps.")
 
         with ExitStack() as stack:
             _apply_patches(stack, tmp_path)
             result = build_system_prompt(
                 memory,
                 execution_mode="a",
-                trigger="",
+                trigger="inbox:alice",
                 context_window=200_000,
-                pending_human_notifications=notifications,
             )
-        assert "Pending Human Notifications" in result.system_prompt
-        assert "192.168.1.100" in result.system_prompt
+        assert "I specialize in DevOps" in result.system_prompt
 
-    def test_heartbeat_includes_notifications(self, tmp_path):
-        memory = _mock_memory(tmp_path)
-        notifications = "## Pending Human Notifications (last 24h)\n\nNotification content"
+    def test_heartbeat_excludes_specialty(self, tmp_path):
+        """Heartbeat should still NOT include specialty (unchanged behavior)."""
+        memory = _mock_memory(tmp_path, specialty="## Specialty\nI specialize in DevOps.")
 
         with ExitStack() as stack:
             _apply_patches(stack, tmp_path)
@@ -117,58 +119,60 @@ class TestPendingHumanNotificationsInjection:
                 execution_mode="a",
                 trigger="heartbeat",
                 context_window=200_000,
-                pending_human_notifications=notifications,
             )
-        assert "Pending Human Notifications" in result.system_prompt
+        assert "I specialize in DevOps" not in result.system_prompt
 
-    def test_cron_excludes_notifications(self, tmp_path):
-        memory = _mock_memory(tmp_path)
-        notifications = "## Pending Human Notifications (last 24h)\n\nShould not appear"
+    def test_inbox_no_current_state_500_cap(self, tmp_path):
+        """Inbox should use scale-based limit, not the old 500-char hard cap."""
+        long_state = "A" * 800
+        memory = _mock_memory(tmp_path, current_state=long_state)
 
         with ExitStack() as stack:
             _apply_patches(stack, tmp_path)
             result = build_system_prompt(
                 memory,
                 execution_mode="a",
-                trigger="cron:daily",
+                trigger="inbox:alice",
                 context_window=200_000,
-                pending_human_notifications=notifications,
             )
-        assert "Pending Human Notifications" not in result.system_prompt
+        assert "AAAA" in result.system_prompt
+        acount = result.system_prompt.count("A")
+        assert acount > 500
 
-    def test_inbox_includes_notifications(self, tmp_path):
-        """Inbox is chat-equivalent; notifications should be included."""
+    def test_inbox_includes_emotion(self, tmp_path):
         memory = _mock_memory(tmp_path)
-        notifications = "## Pending Human Notifications (last 24h)\n\nShould appear for inbox"
 
         with ExitStack() as stack:
             _apply_patches(stack, tmp_path)
             result = build_system_prompt(
                 memory,
                 execution_mode="a",
-                trigger="inbox:someone",
+                trigger="inbox:alice",
                 context_window=200_000,
-                pending_human_notifications=notifications,
             )
-        assert "Pending Human Notifications" in result.system_prompt
+        assert "6. メタ設定" in result.system_prompt
 
-    def test_task_excludes_notifications(self, tmp_path):
+    def test_inbox_includes_a_reflection(self, tmp_path):
         memory = _mock_memory(tmp_path)
-        notifications = "## Pending Human Notifications (last 24h)\n\nShould not appear"
+
+        reflection_text = "## A-mode reflection\nReflect on past actions."
 
         with ExitStack() as stack:
             _apply_patches(stack, tmp_path)
+            stack.enter_context(
+                patch("core.prompt.builder._load_a_reflection", return_value=reflection_text)
+            )
             result = build_system_prompt(
                 memory,
                 execution_mode="a",
-                trigger="task:abc",
+                trigger="inbox:alice",
                 context_window=200_000,
-                pending_human_notifications=notifications,
             )
-        assert "Pending Human Notifications" not in result.system_prompt
+        assert "Reflect on past actions" in result.system_prompt
 
-    def test_empty_notifications_no_section(self, tmp_path):
-        memory = _mock_memory(tmp_path)
+    def test_chat_still_works_identically(self, tmp_path):
+        """Regression: chat trigger should still include all sections."""
+        memory = _mock_memory(tmp_path, specialty="## Specialty\nI specialize in DevOps.")
 
         with ExitStack() as stack:
             _apply_patches(stack, tmp_path)
@@ -177,6 +181,19 @@ class TestPendingHumanNotificationsInjection:
                 execution_mode="a",
                 trigger="",
                 context_window=200_000,
-                pending_human_notifications="",
             )
-        assert "Pending Human Notifications" not in result.system_prompt
+        assert "I specialize in DevOps" in result.system_prompt
+
+    def test_task_still_excludes_specialty(self, tmp_path):
+        """Regression: task trigger should still exclude specialty."""
+        memory = _mock_memory(tmp_path, specialty="## Specialty\nI specialize in DevOps.")
+
+        with ExitStack() as stack:
+            _apply_patches(stack, tmp_path)
+            result = build_system_prompt(
+                memory,
+                execution_mode="a",
+                trigger="task:abc123",
+                context_window=200_000,
+            )
+        assert "I specialize in DevOps" not in result.system_prompt

@@ -437,7 +437,7 @@ class TestInitStatusChecksArray:
         assert shared_check["ok"] is True
 
         # API key checks
-        anthropic_check = checks_by_label.get("Anthropic APIキー")
+        anthropic_check = checks_by_label.get("Anthropic APIキー / サブスクリプション認証")
         assert anthropic_check is not None
         assert anthropic_check["ok"] is True
 
