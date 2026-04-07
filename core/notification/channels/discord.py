@@ -73,7 +73,7 @@ class DiscordChannel(NotificationChannel):
 
         user_id = self._config.get("user_id", "")
         if user_id and bot_token:
-            return await self._send_via_dm(bot_token, user_id, text)
+            return await self._send_via_dm(bot_token, user_id, text, anima_name)
 
         if webhook_url:
             return await self._send_via_webhook(webhook_url, text, anima_name)
@@ -93,8 +93,28 @@ class DiscordChannel(NotificationChannel):
         return f"{prefix}**{subject}**{sender}\n{body}"
 
     @staticmethod
-    async def _send_via_dm(token: str, user_id: str, text: str) -> str:
-        """Send a DM to a Discord user."""
+    async def _send_via_dm(token: str, user_id: str, text: str, anima_name: str = "") -> str:
+        """Send a DM to a Discord user, preferring #dm-{anima} webhook."""
+        # Try #dm-{anima} channel via webhook first (Anima identity)
+        if anima_name:
+            try:
+                from core.config.models import load_config
+                from core.discord_webhooks import get_webhook_manager
+
+                cfg = load_config()
+                bm = cfg.external_messaging.discord.board_mapping
+                dm_board = f"dm-{anima_name}"
+                dm_ch_id = next((cid for cid, bn in bm.items() if bn == dm_board), "")
+                if dm_ch_id:
+                    wm = get_webhook_manager()
+                    msg_id = wm.send_as_anima(dm_ch_id, anima_name, f"<@{user_id}> {text[:2000]}")
+                    if msg_id:
+                        logger.info("Discord notification via webhook #%s: user=%s", dm_board, user_id)
+                        return f"discord: sent via #{dm_board} (msg_id={msg_id})"
+            except Exception:
+                logger.debug("Discord webhook DM notification fallback", exc_info=True)
+
+        # Fallback: Bot DM
         try:
             from core.tools._discord_client import DiscordClient
 

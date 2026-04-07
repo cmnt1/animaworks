@@ -328,25 +328,56 @@ def _send_via_slack(user_id: str, content: str, sender_name: str, anima_name: st
 
 
 def _send_via_discord(user_id: str, content: str, sender_name: str, anima_name: str = "") -> str:
-    """Send a DM via Discord API using the bot token."""
+    """Send a DM via Discord, preferring webhook in #dm-{anima} channel."""
+    from core.tools._discord_markdown import md_to_discord
+
+    text = md_to_discord(content)
+
+    # Prefer #dm-{anima} guild channel via webhook (shows Anima identity)
+    if anima_name:
+        try:
+            from core.config.models import load_config
+            from core.discord_webhooks import get_webhook_manager
+
+            cfg = load_config()
+            discord_cfg = cfg.external_messaging.discord
+            board_mapping = discord_cfg.board_mapping
+            dm_board = f"dm-{anima_name}"
+            dm_ch_id = ""
+            for ch_id, board_name in board_mapping.items():
+                if board_name == dm_board:
+                    dm_ch_id = ch_id
+                    break
+            if dm_ch_id:
+                wm = get_webhook_manager()
+                msg_id = wm.send_as_anima(dm_ch_id, anima_name, f"<@{user_id}> {text}")
+                if msg_id:
+                    logger.info(
+                        "External message sent via discord webhook (#%s): user=%s msg_id=%s",
+                        dm_board, user_id, msg_id,
+                    )
+                    return json.dumps(
+                        {"status": "sent", "channel": "discord", "recipient": user_id,
+                         "message": f"Message sent via Discord #{dm_board}"},
+                        ensure_ascii=False,
+                    )
+        except Exception:
+            logger.debug("Discord webhook DM fallback failed", exc_info=True)
+
+    # Fallback: Bot DM (shows as AnimaWorks)
     from core.tools._base import get_credential
     from core.tools._discord_client import DiscordClient
-    from core.tools._discord_markdown import md_to_discord
 
     token = get_credential("discord", "discord", env_var="DISCORD_BOT_TOKEN")
     client = DiscordClient(token=token)
 
-    # Open DM channel
     dm = client.create_dm(user_id)
     dm_channel_id = str(dm.get("id", ""))
     if not dm_channel_id:
         raise DeliveryError(f"Failed to open DM channel with Discord user {user_id}")
 
-    prefix = f"[{sender_name}] " if sender_name and not anima_name else ""
-    text = md_to_discord(f"{prefix}{content}")
-
-    # Send via bot (DMs don't support webhooks with custom identity)
-    result = client.send_message(dm_channel_id, text)
+    prefix = f"[{anima_name or sender_name}] "
+    result = client.send_message(dm_channel_id, f"{prefix}{text}")
     msg_id = result.get("id", "")
 
     logger.info(
