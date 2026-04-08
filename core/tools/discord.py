@@ -222,8 +222,10 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         if _trigger.startswith("inbox"):
             return {
                 "status": "blocked",
-                "message": "discord_channel_post is blocked during inbox processing. "
-                "Your response is auto-posted by the framework.",
+                "message": "discord_channel_post is unnecessary during inbox processing. "
+                "Your final text response is AUTOMATICALLY posted to Discord by the framework. "
+                "Do NOT attempt to send via TaskExec or any other workaround. "
+                "Just write your response as plain text — it will be delivered.",
             }
 
         discord_text = md_to_discord(args["text"])
