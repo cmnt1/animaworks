@@ -482,13 +482,17 @@ class DiscordGatewayManager:
                     return
 
                 messenger = Messenger(get_shared_dir(), target_anima)
+                # For threads: external_channel_id = parent channel (webhook target),
+                # external_thread_ts = thread channel ID (for webhook thread_id param).
+                # For normal channels: external_channel_id = channel, thread_ts = "".
+                is_thread = parent_id is not None
                 messenger.receive_external(
                     content=full_content,
                     source="discord",
                     source_message_id=msg_id,
                     external_user_id=str(message.author.id),
-                    external_channel_id=channel_id,
-                    external_thread_ts=reference_id or "",
+                    external_channel_id=routing_channel_id,
+                    external_thread_ts=channel_id if is_thread else "",
                     intent=intent,
                 )
 

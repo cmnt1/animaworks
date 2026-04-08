@@ -253,10 +253,12 @@ class DiscordAutoResponder:
             try:
                 mention = target.get("mention_prefix", "")
                 text = f"{mention}{discord_text}" if mention else discord_text
+                thread_id = target.get("thread_id") or None
                 msg_id = wm.send_as_anima(
                     target["channel_id"],
                     anima_name,
                     text,
+                    thread_id=thread_id,
                 )
                 if msg_id:
                     posted_ids.append(msg_id)
@@ -279,7 +281,11 @@ class DiscordAutoResponder:
         inbox_items: list[InboxItem],
         already_posted: set[str],
     ) -> list[dict[str, str]]:
-        """Extract unique Discord targets from inbox items."""
+        """Extract unique Discord targets from inbox items.
+
+        ``external_channel_id`` = parent channel (webhook target).
+        ``external_thread_ts``  = thread channel ID if threaded, else "".
+        """
         seen: set[str] = set()
         targets: list[dict[str, str]] = []
         for item in inbox_items:
@@ -289,8 +295,8 @@ class DiscordAutoResponder:
             channel_id = getattr(msg, "external_channel_id", "")
             if not channel_id:
                 continue
-            reference_id = getattr(msg, "external_thread_ts", "") or getattr(msg, "source_message_id", "")
-            dedup_key = f"{channel_id}:{reference_id}"
+            thread_id = getattr(msg, "external_thread_ts", "")
+            dedup_key = f"{channel_id}:{thread_id}" if thread_id else channel_id
             if dedup_key in seen or dedup_key in already_posted:
                 continue
             seen.add(dedup_key)
@@ -303,7 +309,7 @@ class DiscordAutoResponder:
             targets.append(
                 {
                     "channel_id": channel_id,
-                    "reference_id": reference_id,
+                    "thread_id": thread_id,
                     "mention_prefix": mention,
                 }
             )
