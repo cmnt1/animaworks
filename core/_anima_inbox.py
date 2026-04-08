@@ -563,26 +563,6 @@ class InboxMixin:
                                 exc_info=True,
                             )
 
-                    # ── Discord auto-response: post LLM reply back to Discord ──
-                    if accumulated_text.strip() and _is_auto_response_enabled_discord():
-                        try:
-                            from core.outbound_auto import DiscordAutoResponder
-
-                            _discord_auto = DiscordAutoResponder()
-                            _already_discord: set[str] = set()
-                            await _discord_auto.on_inbox_response(
-                                anima_name=self.name,
-                                response_text=accumulated_text,
-                                inbox_items=inbox_result.inbox_items,
-                                already_posted=_already_discord,
-                            )
-                        except Exception:
-                            logger.warning(
-                                "[%s] Discord auto-response failed",
-                                self.name,
-                                exc_info=True,
-                            )
-
                     # Archive processed messages — but NOT when the LLM
                     # returned nothing (e.g. SDK empty response due to API
                     # outage / rate limit).  Keeping them lets the next
