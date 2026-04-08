@@ -667,8 +667,8 @@
 
 .governor-bar {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   padding: 8px 16px;
   border-radius: 8px;
   font-size: 0.82rem;
@@ -681,13 +681,36 @@
   color: var(--aw-color-warning-text, #92400e);
 }
 
+.governor-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
 .governor-icon {
   font-size: 1rem;
   flex-shrink: 0;
 }
 
-.governor-text {
+.governor-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-left: 1.4rem;
+}
+
+.governor-provider {
+  font-weight: 600;
+  flex-shrink: 0;
+  min-width: 4.5rem;
+}
+
+.governor-row-reason {
   flex: 1;
+  font-size: 0.78rem;
+  opacity: 0.85;
 }
 
 .governor-suspended {

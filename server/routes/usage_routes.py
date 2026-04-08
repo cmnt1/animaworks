@@ -826,9 +826,24 @@ def create_usage_router() -> APIRouter:
         governor_info: dict[str, Any] = {"active": False}
         if governor:
             st = governor.state
+            # Build per-provider suspended anima breakdown
+            per_provider_suspended: dict[str, list[str]] = {}
+            try:
+                from server.usage_governor import _classify_animas
+
+                all_names = governor._get_all_anima_names()
+                groups = _classify_animas(governor._animas_dir, all_names)
+                suspended_set = set(st.suspended_animas)
+                per_provider_suspended = {
+                    prov: [n for n in names if n in suspended_set]
+                    for prov, names in groups.items()
+                }
+            except Exception:
+                logger.debug("per_provider_suspended classification failed", exc_info=True)
             governor_info = {
                 "active": st.is_governing,
                 "suspended_animas": st.suspended_animas,
+                "per_provider_suspended": per_provider_suspended,
                 "reason": st.reason,
                 "since": st.since,
                 "last_check": st.last_check,

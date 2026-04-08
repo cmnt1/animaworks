@@ -470,20 +470,58 @@ function _renderGovernor(gov) {
     el.style.display = "none";
     return;
   }
-  const suspended = (gov.suspended_animas || []).join(", ") || "none";
-  const reason = gov.reason || "throttling";
-  const needsRelogin = /rate_limited|unauthorized|no_credentials/.test(reason);
+
+  // Parse combined reason string into per-provider buckets
+  const providerReasons = { claude: [], openai: [], nanogpt: [] };
+  for (const seg of (gov.reason || "").split(" | ")) {
+    for (const p of Object.keys(providerReasons)) {
+      if (seg.startsWith(p + ".") || seg.startsWith(p + " ")) {
+        providerReasons[p].push(seg);
+        break;
+      }
+    }
+  }
+
+  const perSuspended = gov.per_provider_suspended || {};
+  const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT" };
+  const needsRelogin = /rate_limited|unauthorized|no_credentials/.test(gov.reason || "");
+
+  let rowsHtml = "";
+  for (const [prov, label] of Object.entries(LABELS)) {
+    const suspended = perSuspended[prov] || [];
+    const reasons  = providerReasons[prov];
+    if (suspended.length === 0 && reasons.length === 0) continue;
+
+    const reasonText   = reasons.join("; ");
+    const suspendedText = suspended.length > 0
+      ? `<span class="governor-suspended">停止中: ${escapeHtml(suspended.join(", "))}</span>`
+      : "";
+    const reloginBtn = (prov === "claude" && needsRelogin)
+      ? `<button class="btn-secondary governor-relogin-btn" id="govReloginBtn" style="font-size:0.78rem;padding:2px 8px;">再認証</button>`
+      : "";
+
+    rowsHtml += `
+      <div class="governor-row">
+        <span class="governor-provider">${escapeHtml(label)}:</span>
+        <span class="governor-row-reason">${escapeHtml(reasonText)}</span>
+        ${suspendedText}
+        ${reloginBtn}
+      </div>`;
+  }
+
+  // Fallback: if per_provider_suspended not available, show all suspended together
+  if (!rowsHtml && gov.suspended_animas?.length) {
+    rowsHtml = `<div class="governor-row"><span class="governor-suspended">停止中: ${escapeHtml(gov.suspended_animas.join(", "))}</span></div>`;
+  }
+
   el.style.display = "block";
   el.innerHTML = `
     <div class="governor-bar governor-bar--active">
-      <span class="governor-icon">&#x26A0;</span>
-      <span class="governor-text">
-        <strong>Usage Governor</strong>: ${escapeHtml(reason)}
-      </span>
-      <span class="governor-suspended">${escapeHtml(suspended)}</span>
-      ${needsRelogin ? `<button class="btn-secondary governor-relogin-btn" id="govReloginBtn" style="margin-left:0.75rem;font-size:0.78rem;padding:3px 10px;">Claude 再認証</button>` : ""}
+      <div class="governor-header"><span class="governor-icon">&#x26A0;</span><strong>Usage Governor</strong></div>
+      ${rowsHtml}
     </div>
   `;
+
   if (needsRelogin) {
     const btn = document.getElementById("govReloginBtn");
     btn?.addEventListener("click", async () => {
@@ -491,7 +529,7 @@ function _renderGovernor(gov) {
       btn.textContent = "...";
       await _runUsageRelogin("claude");
       btn.disabled = false;
-      btn.textContent = "Claude 再認証";
+      btn.textContent = "再認証";
     });
   }
 }
