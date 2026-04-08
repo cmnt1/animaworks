@@ -8,7 +8,6 @@ import { bustupCandidates, resolveAvatar } from "../modules/avatar-resolver.js";
 
 let _refreshInterval = null;
 let _usageInterval = null;
-let _lastMonthlyLimitUsd = 0;
 
 // ── Render ─────────────────────────────────
 
@@ -29,7 +28,6 @@ export function render(container) {
         <div class="usage-card-header">
           <span class="usage-provider-name">Claude</span>
           <span class="usage-sub-type" id="usageClaudeSub"></span>
-          <button class="btn-secondary" id="balanceSyncBtn" style="font-size:0.72rem;padding:2px 8px;" title="Anthropic Consoleから残高を取得">残高同期</button>
         </div>
         <div class="usage-card-body" id="usageClaudeBody">
           <div class="usage-loading">${t("common.loading")}</div>
@@ -125,55 +123,6 @@ export function render(container) {
   const refreshBtn = document.getElementById("usageRefreshBtn");
   if (refreshBtn) {
     refreshBtn.addEventListener("click", () => _loadUsage(true));
-  }
-
-  const syncBtn = document.getElementById("balanceSyncBtn");
-  if (syncBtn) {
-    syncBtn.addEventListener("click", async () => {
-      const input = prompt("claude.ai で確認した現在の残高を入力してください (USD)\n例: 101.95");
-      if (input === null) return;
-      const balance = parseFloat(input.replace(/[^0-9.]/g, ""));
-      if (isNaN(balance) || balance < 0) {
-        alert("有効な金額を入力してください");
-        return;
-      }
-      const limitDefault = _lastMonthlyLimitUsd > 0 ? _lastMonthlyLimitUsd.toFixed(2) : "";
-      const limitInput = prompt(
-        `月間予算上限を入力してください (USD)\n` +
-        `スナップショット同期後は残高が基準になるため省略可。\n` +
-        `例: 200.00`,
-        limitDefault
-      );
-      if (limitInput === null) return;
-      const monthlyLimit = limitInput.trim() === "" ? null : parseFloat(limitInput.replace(/[^0-9.]/g, ""));
-      if (monthlyLimit !== null && (isNaN(monthlyLimit) || monthlyLimit < 0)) {
-        alert("有効な金額を入力してください");
-        return;
-      }
-      syncBtn.disabled = true;
-      syncBtn.textContent = "...";
-      try {
-        const body = { balance_usd: balance };
-        if (monthlyLimit !== null) body.monthly_limit_usd = monthlyLimit;
-        const res = await fetch("/api/usage/balance-sync", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (data.success) {
-          await _loadUsage(true);
-        } else {
-          alert(data.message || "同期失敗");
-        }
-      } catch (err) {
-        alert(err.message || "同期失敗");
-      } finally {
-        syncBtn.disabled = false;
-        syncBtn.textContent = "残高同期";
-      }
-    });
   }
 }
 
@@ -428,91 +377,42 @@ async function _runUsageRelogin(provider) {
   await _loadUsage();
 }
 
-function _renderCostBudget(data) {
+function _renderClaudeUsage(data) {
   const el = document.getElementById("usageClaudeBody");
   if (!el) return;
-  const subEl = document.getElementById("usageClaudeSub");
-  if (subEl) subEl.textContent = "コスト予算";
 
-  if (!data || data.error) {
-    el.innerHTML = `<div class="usage-error">${escapeHtml(data?.message || data?.error || "エラー")}</div>`;
-    return;
-  }
-  if (!data.configured) {
-    const hint = "「残高同期」で残高を入力するか、config.json の usage_budget に monthly_limit_usd を設定してください";
-    el.innerHTML = `<div class="usage-ok" style="color:var(--aw-color-text-faint,#888);">未設定 — ${escapeHtml(hint)}</div>`;
+  if (data.error) {
+    if (data.error === "rate_limited" && data._show_relogin) {
+      // Auto token refresh succeeded but still rate-limited → show relogin button
+      const msg = data._relogin_message || "Token refreshed but still rate-limited — try re-login";
+      el.innerHTML = _renderUsageError("claude", data, msg);
+      const btn = el.querySelector("[data-provider='claude']");
+      btn?.addEventListener("click", () => _runUsageRelogin("claude"));
+      return;
+    }
+    const msg = data.error === "no_credentials"
+      ? t("home.usage_no_credentials")
+      : data.message || data.error;
+    el.innerHTML = _renderUsageError("claude", data, msg);
+    const btn = el.querySelector("[data-provider='claude']");
+    btn?.addEventListener("click", () => _runUsageRelogin("claude"));
     return;
   }
 
   let html = "";
-  if (data.weekly)  html += _renderCostBudgetBar("週次", data.weekly);
-  if (data.monthly) html += _renderCostBudgetBar("月次", data.monthly);
-
-  if (data.snapshot) {
-    const syncedAt = _resetToJst(data.snapshot.snapshot_at);
-    html += `<div class="usage-reset" style="font-size:0.7rem;color:var(--aw-color-text-faint,#888);">同期: ${escapeHtml(syncedAt)} — $${data.snapshot.balance_usd.toFixed(2)}</div>`;
+  if (data.five_hour) {
+    html += _renderUsageBar("5h", data.five_hour.utilization, data.five_hour.resets_at, data.five_hour.window_seconds);
   }
-
-  el.innerHTML = html || `<div class="usage-ok">データなし</div>`;
-}
-
-function _renderCostBudgetBar(label, win) {
-  // remainingPct = 現在の残高 / 予算上限 * 100
-  const remainingPct = win.remaining_pct;
-  const barFillPct = Math.max(0, Math.min(100, remainingPct));
-  const color = _remainingColor(remainingPct);
-
-  const timePct = _calcTimePct(win.resets_at, win.window_seconds);
-  let markerHtml = "";
-  if (timePct !== null && win.window_seconds) {
-    markerHtml = `<div class="usage-bar-time-marker" style="left:${timePct}%" data-label="${timePct.toFixed(0)}%"></div>`;
+  if (data.seven_day) {
+    html += _renderUsageBar("7d", data.seven_day.utilization, data.seven_day.resets_at, data.seven_day.window_seconds);
   }
-
-  // pt = 残高% - 残り時間% (_calcTimePct は残り時間%を返す)
-  const ptVal = timePct !== null ? remainingPct - timePct : remainingPct - 100;
-  const ptSign = ptVal >= 0 ? "+" : "";
-  const ptColor = ptVal >= 0 ? "inherit" : "var(--aw-color-error,#dc2626)";
-  const ptHtml = `<span style="color:${ptColor};font-size:0.7rem;margin-left:0.5rem;">${ptSign}${ptVal.toFixed(0)}pt</span>`;
-
-  // 月初消費ペースによる着地予測（billing_spent_usd / billing_elapsed_seconds → 月末残り秒で外挿）
-  let forecastHtml = "";
-  if (win.billing_spent_usd !== undefined && win.billing_elapsed_seconds > 0 && win.window_seconds > 0) {
-    const ratePerSec = win.billing_spent_usd / win.billing_elapsed_seconds;
-    const remainingSec = win.window_seconds - win.billing_elapsed_seconds;
-    const forecastAdditional = ratePerSec * Math.max(0, remainingSec);
-    const forecastTotal = win.billing_spent_usd + forecastAdditional;
-    const landingPct = win.budget_usd > 0 ? forecastTotal / win.budget_usd * 100 : 0;
-    const landingColor = landingPct > 100 ? "var(--aw-color-error,#dc2626)" : landingPct > 80 ? "var(--aw-color-warning,#d97706)" : "inherit";
-    const runwayUsd = win.remaining_usd / ratePerSec;
-    const runwayDays = runwayUsd / 86400;
-    const runwayStr = runwayDays > 999 ? "∞" : `${runwayDays.toFixed(1)}d`;
-    const resetDays = remainingSec / 86400;
-    forecastHtml = `<div class="usage-forecast">`;
-    forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">Runway</span> ${runwayStr} / ${resetDays.toFixed(1)}d</span>`;
-    forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">着地</span> <span style="color:${landingColor}">$${forecastTotal.toFixed(2)} (${landingPct.toFixed(0)}%)</span></span>`;
-    forecastHtml += `</div>`;
+  if (data.additional_capacity) {
+    const ac = data.additional_capacity;
+    const usedM = (ac.used_tokens / 1_000_000).toFixed(2);
+    const limitM = (ac.limit_tokens / 1_000_000).toFixed(2);
+    html += _renderUsageBar(`Add (${usedM}M/${limitM}M)`, ac.utilization, null, null);
   }
-
-  const resetStr = win.resets_at ? _resetToJst(win.resets_at) : "";
-  const amountStr = win.remaining_usd !== undefined && win.budget_usd !== undefined
-    ? `$${win.remaining_usd.toFixed(2)} / $${win.budget_usd.toFixed(2)}`
-    : "";
-
-  return `
-    <div class="usage-row">
-      <div class="usage-row-header">
-        <span class="usage-label">${escapeHtml(label)}</span>
-        <span class="usage-pct" style="color:${color}">${remainingPct.toFixed(0)}%${ptHtml}</span>
-      </div>
-      ${amountStr ? `<div style="font-size:0.72rem;color:var(--aw-color-text-faint,#888);margin-bottom:0.1rem;">${escapeHtml(amountStr)}</div>` : ""}
-      <div class="usage-bar-track">
-        <div class="usage-bar-fill" style="width:${barFillPct}%;background:${color}"></div>
-        ${markerHtml}
-      </div>
-      ${forecastHtml || `<div class="usage-forecast">&nbsp;</div>`}
-      ${resetStr ? `<div class="usage-reset">${t("home.usage_reset")}: ${escapeHtml(resetStr)}</div>` : `<div class="usage-reset">&nbsp;</div>`}
-    </div>
-  `;
+  el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
 function _renderOpenaiUsage(data) {
@@ -601,10 +501,37 @@ async function _loadUsage(forceRefresh = false) {
     const url = forceRefresh ? "/api/usage?skip_cache=true" : "/api/usage";
     const data = await api(url);
 
-    if (data.cost_budget?.monthly_limit_usd !== undefined) {
-      _lastMonthlyLimitUsd = data.cost_budget.monthly_limit_usd;
+    // Auto-refresh: if Claude returns rate_limited, try relogin (token refresh)
+    // then retry once before showing the error
+    if (data.claude?.error === "rate_limited") {
+      try {
+        const reloginRes = await fetch("/api/usage/claude/relogin", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+        });
+        const reloginData = await reloginRes.json().catch(() => ({}));
+        if (reloginData.success) {
+          // Token refreshed — retry usage fetch (skip_cache)
+          const retry = await api("/api/usage?skip_cache=true");
+          if (retry.claude && !retry.claude.error) {
+            data.claude = retry.claude;
+          } else if (retry.claude?.error === "rate_limited") {
+            // Still rate-limited after refresh — show relogin button
+            data.claude = {
+              ...retry.claude,
+              _show_relogin: true,
+              _relogin_message: reloginData.message,
+            };
+          }
+        } else {
+          // Refresh failed — show relogin button
+          data.claude._show_relogin = true;
+        }
+      } catch { /* ignore — will render original error */ }
     }
-    _renderCostBudget(data.cost_budget);
+
+    if (data.claude) _renderClaudeUsage(data.claude);
     if (data.openai) _renderOpenaiUsage(data.openai);
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
     _renderGovernor(data.governor);
