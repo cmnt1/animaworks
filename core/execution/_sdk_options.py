@@ -18,6 +18,7 @@ The methods here access ``BaseExecutor`` attributes (``_model_config``,
 import json
 import logging
 import os
+import shutil
 import sys
 import tempfile
 from collections.abc import Callable
@@ -307,6 +308,29 @@ class SDKOptionsMixin:
         _cw = context_window
         temp_files: list[Path] = []
 
+        # ── RTK CLI Native Hook ──────────────────────────────────
+        # Inject RTK rewrite hook via --settings JSON (CLI-native hooks).
+        # Unlike SDK Python hooks, CLI-native hooks do NOT use the
+        # stdin/stdout control protocol — the CLI spawns the hook command
+        # itself — so they work on Windows without pipe instability.
+        _rtk_settings: dict[str, Any] | None = None
+        if shutil.which("rtk"):
+            _bridge = Path(__file__).with_name("_rtk_hook_bridge.py")
+            if _bridge.exists():
+                # Use the venv Python so dependencies resolve correctly
+                _py = sys.executable
+                _rtk_settings = {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "Bash",
+                                "hooks": [f"{_py} {_bridge}"],
+                            }
+                        ]
+                    }
+                }
+                logger.info("RTK CLI native hook enabled: %s", _bridge)
+
         extra_args: dict[str, str | None] = {}
         # On Windows, enable CLI debug output to stderr for diagnostics.
         # The CLI normally writes nothing to stderr; this flag makes it
@@ -408,6 +432,7 @@ class SDKOptionsMixin:
             max_buffer_size=_SDK_MAX_BUFFER_SIZE,
             resume=resume,
             setting_sources=[],
+            **({"settings": json.dumps(_rtk_settings)} if _rtk_settings else {}),
             extra_args=extra_args,
             **({"cli_path": verified_cli} if verified_cli else {}),
             mcp_servers=mcp_servers_val,

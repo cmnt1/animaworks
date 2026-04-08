@@ -98,6 +98,7 @@ class AnimaDefaults(BaseModel):
     max_outbound_per_day: int | None = None
     max_recipients_per_run: int | None = None
     default_workspace: str = ""
+    tool_compression: bool = True  # Enable RTK-inspired tool result compression
 
 
 # ── Local LLM defaults ───────────────────────────────────────────────────────

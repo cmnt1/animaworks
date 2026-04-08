@@ -67,6 +67,7 @@ from core.tooling.handler_memory import MemoryToolsMixin
 from core.tooling.handler_org import OrgToolsMixin
 from core.tooling.handler_perms import PermissionsMixin
 from core.tooling.handler_skills import SkillsToolsMixin
+from core.tooling.result_compressor import compress_tool_result
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -140,6 +141,10 @@ class ToolHandler(
             tool_registry or [],
             personal_tools=personal_tools,
         )
+
+        # ── RTK-inspired tool result compression stats ──
+        self._compression_bytes_saved: int = 0
+        self._compression_count: int = 0
 
         # ── Session origin tracking (provenance Phase 3) ──
         self._session_origin: str = ""
@@ -530,6 +535,7 @@ class ToolHandler(
 
             self._log_tool_activity(name, args, tool_use_id=tool_use_id)
             self._log_tool_result_activity(name, result, tool_use_id=tool_use_id)
+            result = self._compress_if_enabled(result, name)
             return self._truncate_output(result)
 
         except ToolExecutionError:
@@ -539,6 +545,19 @@ class ToolHandler(
         except Exception as e:
             logger.exception("Unhandled tool error in %s", name)
             raise ToolExecutionError(f"Tool execution failed: {name}: {e}") from e
+
+    def _compress_if_enabled(self, result: str, tool_name: str) -> str:
+        """Apply tool result compression if enabled."""
+        compressed, saved = compress_tool_result(tool_name, result)
+        if saved > 0:
+            self._compression_bytes_saved += saved
+            self._compression_count += 1
+        return compressed
+
+    @property
+    def compression_stats(self) -> tuple[int, int]:
+        """Return (total_bytes_saved, compression_count)."""
+        return self._compression_bytes_saved, self._compression_count
 
     def _truncate_output(self, output: str) -> str:
         """Truncate tool output if it exceeds the size limit."""
