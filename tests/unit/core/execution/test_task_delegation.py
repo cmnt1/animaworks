@@ -302,8 +302,8 @@ class TestPreToolHookTaskBranching:
         with patch("core.execution._sdk_hooks._cache_subordinate_paths", return_value=([], [], [], [], [])):
             return _build_pre_tool_hook(anima_dir, has_subordinates=True)
 
-    async def test_no_subs_intercepts_to_pending(self, hook_no_subs) -> None:
-        """Non-supervisor: Task tool is intercepted to state/pending/."""
+    async def test_no_subs_hard_blocks_task(self, hook_no_subs) -> None:
+        """Non-supervisor: Task tool is hard-blocked."""
         input_data = {
             "tool_name": "Task",
             "tool_input": {"description": "test", "prompt": "do it"},
@@ -313,36 +313,30 @@ class TestPreToolHookTaskBranching:
 
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") == "deny"
-        assert "INTERCEPT_OK" in output.get("permissionDecisionReason", "")
+        assert "BLOCKED" in output.get("permissionDecisionReason", "")
 
-    async def test_with_subs_delegation_attempted(self, hook_with_subs) -> None:
-        """Supervisor: delegation is attempted, falls back to pending on failure."""
+    async def test_with_subs_hard_blocks_task(self, hook_with_subs) -> None:
+        """Supervisor: Task tool is also hard-blocked (use submit_tasks/delegate_task)."""
         input_data = {
             "tool_name": "Task",
             "tool_input": {"description": "test", "prompt": "do it"},
         }
-        with patch("core.execution._sdk_hooks._intercept_task_to_delegation", return_value=None), \
-             patch("core.execution._sdk_hooks._log_tool_use"):
+        with patch("core.execution._sdk_hooks._log_tool_use"):
             result = await hook_with_subs(input_data, "tool-1", {})
 
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") == "deny"
-        assert "INTERCEPT_OK" in output.get("permissionDecisionReason", "")
+        assert "BLOCKED" in output.get("permissionDecisionReason", "")
 
-    async def test_with_subs_delegation_success(self, hook_with_subs) -> None:
-        """Supervisor: successful delegation returns DELEGATION_OK."""
+    async def test_agent_tool_hard_blocked(self, hook_no_subs) -> None:
+        """Agent tool is also hard-blocked alongside Task."""
         input_data = {
-            "tool_name": "Task",
+            "tool_name": "Agent",
             "tool_input": {"description": "test", "prompt": "do it"},
         }
-        delegation_result = {
-            "task_id": "abc123",
-            "reason": "DELEGATION_OK: delegated to alice (sub_task_id: x, own_tracking_id: abc123). DM sent.",
-        }
-        with patch("core.execution._sdk_hooks._intercept_task_to_delegation", return_value=delegation_result), \
-             patch("core.execution._sdk_hooks._log_tool_use"):
-            result = await hook_with_subs(input_data, "tool-1", {})
+        with patch("core.execution._sdk_hooks._log_tool_use"):
+            result = await hook_no_subs(input_data, "tool-1", {})
 
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") == "deny"
-        assert "DELEGATION_OK" in output.get("permissionDecisionReason", "")
+        assert "BLOCKED" in output.get("permissionDecisionReason", "")

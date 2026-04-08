@@ -20,7 +20,7 @@ class TestInterceptTaskToPending:
 
     def test_creates_pending_json(self, tmp_path: Path) -> None:
         """A JSON file is written to state/pending/ with correct structure."""
-        from core.execution.agent_sdk import _intercept_task_to_pending
+        from core.execution._sdk_hooks import _intercept_task_to_pending
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
@@ -47,7 +47,7 @@ class TestInterceptTaskToPending:
 
     def test_prompt_fallback_to_description(self, tmp_path: Path) -> None:
         """When prompt is absent, description is used as the task body."""
-        from core.execution.agent_sdk import _intercept_task_to_pending
+        from core.execution._sdk_hooks import _intercept_task_to_pending
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
@@ -65,7 +65,7 @@ class TestInterceptTaskToPending:
 
     def test_logs_activity(self, tmp_path: Path) -> None:
         """Tool use is logged as intercept info (not blocked)."""
-        from core.execution.agent_sdk import _intercept_task_to_pending
+        from core.execution._sdk_hooks import _intercept_task_to_pending
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
@@ -81,7 +81,7 @@ class TestInterceptTaskToPending:
 
     def test_json_compatible_with_execute_llm_task(self, tmp_path: Path) -> None:
         """Generated JSON has all fields expected by PendingTaskExecutor._execute_llm_task."""
-        from core.execution.agent_sdk import _intercept_task_to_pending
+        from core.execution._sdk_hooks import _intercept_task_to_pending
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
@@ -152,8 +152,8 @@ class TestPreToolHookTaskBranch:
 
         return hook_fn, callback, anima_dir
 
-    async def test_task_tool_denied(self, hook) -> None:
-        """Task tool should be denied by the hook."""
+    async def test_task_tool_hard_blocked(self, hook) -> None:
+        """Task tool should be hard-blocked by the hook."""
         input_data = {
             "tool_name": "Task",
             "tool_input": {
@@ -168,11 +168,10 @@ class TestPreToolHookTaskBranch:
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") == "deny"
         reason = output.get("permissionDecisionReason", "")
-        assert "Task accepted" in reason
-        assert "INTERCEPT_OK" in reason
+        assert "BLOCKED" in reason
 
-    async def test_task_tool_creates_pending_file(self, hook, tmp_path: Path) -> None:
-        """Task intercept should write a JSON file to state/pending/."""
+    async def test_task_tool_no_pending_file(self, hook, tmp_path: Path) -> None:
+        """Hard-blocked Task tool should NOT create pending files."""
         input_data = {
             "tool_name": "Task",
             "tool_input": {
@@ -186,10 +185,10 @@ class TestPreToolHookTaskBranch:
 
         pending_dir = tmp_path / "animas" / "hook_test" / "state" / "pending"
         task_files = list(pending_dir.glob("*.json"))
-        assert len(task_files) == 1
+        assert len(task_files) == 0
 
-    async def test_callback_invoked(self, hook_with_callback) -> None:
-        """on_task_intercepted callback should be called after interception."""
+    async def test_callback_not_invoked_on_hard_block(self, hook_with_callback) -> None:
+        """on_task_intercepted callback should NOT be called for hard-blocked tools."""
         hook_fn, callback, _ = hook_with_callback
 
         input_data = {
@@ -200,7 +199,7 @@ class TestPreToolHookTaskBranch:
         with patch("core.execution._sdk_hooks._log_tool_use"):
             await hook_fn(input_data, "tool-id-3", {})
 
-        callback.assert_called_once()
+        callback.assert_not_called()
 
     async def test_read_tool_unaffected(self, hook) -> None:
         """Non-Task tools should pass through normally."""
@@ -232,28 +231,15 @@ class TestPreToolHookTaskBranch:
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") != "deny"
 
-    async def test_task_output_for_intercepted_task(self, hook) -> None:
-        """TaskOutput for intercepted task IDs returns expected intercept message."""
-        task_input = {
-            "tool_name": "Task",
-            "tool_input": {"description": "bg", "prompt": "run in background"},
-        }
-        with patch("core.execution._sdk_hooks._log_tool_use"):
-            task_result = await hook(task_input, "tool-id-task", {})
-
-        reason = task_result.get("hookSpecificOutput", {}).get(
-            "permissionDecisionReason", "",
-        )
-        assert "task_id:" in reason
-        task_id = reason.split("task_id:", 1)[1].split(")")[0].strip()
-
+    async def test_task_output_also_blocked(self, hook) -> None:
+        """TaskOutput is also hard-blocked since Agent/Task are disabled."""
         out_input = {
             "tool_name": "TaskOutput",
-            "tool_input": {"task_id": task_id, "block": False, "timeout": 5000},
+            "tool_input": {"task_id": "fake-id", "block": False, "timeout": 5000},
         }
         with patch("core.execution._sdk_hooks._log_tool_use"):
             out_result = await hook(out_input, "tool-id-out", {})
 
         out = out_result.get("hookSpecificOutput", {})
         assert out.get("permissionDecision") == "deny"
-        assert "INTERCEPT_OK" in out.get("permissionDecisionReason", "")
+        assert "BLOCKED" in out.get("permissionDecisionReason", "")
