@@ -17,13 +17,15 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "discord.auto_reply_instruction": {
         "ja": (
-            "あなたの最終回答テキストはDiscordに自動投稿されます。"
-            "discord_channel_post / discord send / TaskExec等での送信は一切不要です。"
+            "あなたの最終回答テキストはDiscordの送信元（スレッド含む）に自動投稿されます。"
+            "discord_channel_post / discord send / send_message / TaskExec等での返信は一切不要です。"
+            "send_messageで送信者に返信するとDMチャネルに届いてしまい、スレッドには届きません。"
             "テキストで回答を書くだけで自動的に届きます"
         ),
         "en": (
-            "Your final text response will be auto-posted to Discord. "
-            "Do NOT use discord_channel_post, discord send, TaskExec, or any other method to send it. "
+            "Your final text response will be auto-posted to the originating Discord channel/thread. "
+            "Do NOT use discord_channel_post, discord send, send_message, TaskExec, or any other method. "
+            "Using send_message will deliver to a DM channel, NOT the thread. "
             "Just write your response as text — it will be delivered automatically"
         ),
     },
