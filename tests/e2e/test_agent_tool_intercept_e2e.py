@@ -1,11 +1,11 @@
-"""E2E tests for Agent/Task tool interception flow.
+"""E2E tests for Agent/Task tool hard-block flow.
 
 Verifies the full pipeline:
-  1. PreToolUse hook intercepts "Agent" tool
-  2. Pending JSON written to state/pending/ with reply_to
+  1. PreToolUse hook hard-blocks "Agent" / "Task" tool (no pending creation)
+  2. _intercept_task_to_pending still works for delegation code
   3. _tool_summary handles "Agent" tool
   4. Channel E reads task_results for Heartbeat visibility
-  5. _allowed_tools includes both "Task" and "Agent"
+  5. AgentOutput / TaskOutput are also blocked
 """
 from __future__ import annotations
 
@@ -29,13 +29,12 @@ def anima_dir():
         yield d
 
 
-class TestAgentToolInterceptE2E:
-    """Full pipeline: Agent tool → pending JSON → Channel E visibility."""
+class TestAgentToolHardBlockE2E:
+    """Full pipeline: Agent tool → hard block → no pending file."""
 
     @pytest.mark.asyncio
-    async def test_full_intercept_and_channel_e_visibility(self, anima_dir: Path):
-        """Agent tool call → pending file → task result → Channel E shows it."""
-        # Step 1: Intercept an Agent tool call
+    async def test_intercept_to_pending_still_works_for_delegation(self, anima_dir: Path):
+        """_intercept_task_to_pending still creates pending files (used by delegation)."""
         from core.execution._sdk_hooks import _intercept_task_to_pending
 
         tool_input = {
@@ -44,7 +43,6 @@ class TestAgentToolInterceptE2E:
         }
         task_id = _intercept_task_to_pending(anima_dir, tool_input, "tu_e2e_001")
 
-        # Verify pending file
         pending_file = anima_dir / "state" / "pending" / f"{task_id}.json"
         assert pending_file.exists()
 
@@ -53,7 +51,17 @@ class TestAgentToolInterceptE2E:
         assert data["task_type"] == "llm"
         assert data["submitted_by"] == "self_task_intercept"
 
-        # Step 2: Simulate TaskExec completion by writing a result
+    @pytest.mark.asyncio
+    async def test_channel_e_shows_task_results(self, anima_dir: Path):
+        """Channel E reads task_results for Heartbeat visibility."""
+        from core.execution._sdk_hooks import _intercept_task_to_pending
+
+        tool_input = {
+            "description": "Research task",
+            "prompt": "Find info",
+        }
+        task_id = _intercept_task_to_pending(anima_dir, tool_input, "tu_e2e_ch")
+
         result_content = (
             f"# Task Result: {task_id}\n\n"
             "Found 3 major AI safety frameworks:\n"
@@ -65,7 +73,6 @@ class TestAgentToolInterceptE2E:
             result_content, encoding="utf-8",
         )
 
-        # Step 3: Verify Channel E shows the result
         from core.memory.priming import PrimingEngine
 
         engine = PrimingEngine(anima_dir)
@@ -93,8 +100,8 @@ class TestAgentToolInterceptE2E:
         assert task_chunk["detail"] == "Build task"
 
     @pytest.mark.asyncio
-    async def test_hook_intercepts_agent_and_writes_reply_to(self, anima_dir: Path):
-        """Full hook flow: Agent tool → intercepted → pending has reply_to."""
+    async def test_hook_hard_blocks_agent_no_pending(self, anima_dir: Path):
+        """Full hook flow: Agent tool → hard-blocked → NO pending file."""
         from core.execution._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
@@ -115,23 +122,15 @@ class TestAgentToolInterceptE2E:
 
         output = result.get("hookSpecificOutput")
         assert output["permissionDecision"] == "deny"
-        assert "INTERCEPT_OK" in output["permissionDecisionReason"]
+        assert "BLOCKED" in output["permissionDecisionReason"]
+        assert "submit_tasks" in output["permissionDecisionReason"]
 
-        reason = output["permissionDecisionReason"]
-        task_id_start = reason.index("task_id: ") + len("task_id: ")
-        task_id_end = reason.index(")", task_id_start)
-        task_id = reason[task_id_start:task_id_end]
-
-        # Verify the pending file has reply_to
-        pending_file = anima_dir / "state" / "pending" / f"{task_id}.json"
-        assert pending_file.exists()
-
-        data = json.loads(pending_file.read_text(encoding="utf-8"))
-        assert data["reply_to"] == "ayame"
+        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
+        assert len(pending_files) == 0
 
     @pytest.mark.asyncio
-    async def test_agent_output_after_agent_intercept(self, anima_dir: Path):
-        """AgentOutput following an intercepted Agent call is handled."""
+    async def test_agent_output_blocked(self, anima_dir: Path):
+        """AgentOutput is blocked (Agent/Task disabled)."""
         from core.execution._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
@@ -141,31 +140,28 @@ class TestAgentToolInterceptE2E:
 
         mock_context = MagicMock()
 
-        # Intercept Agent call
-        agent_input = {
-            "tool_name": "Agent",
-            "tool_input": {"description": "test", "prompt": "test"},
-        }
-        await hook(agent_input, "tu_e2e_003", mock_context)
-
-        # Get task_id from pending
-        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
-        assert len(pending_files) == 1
-        task_id = pending_files[0].stem
-
-        # AgentOutput should be intercepted
         agent_output_input = {
             "tool_name": "AgentOutput",
-            "tool_input": {"task_id": task_id},
+            "tool_input": {"task_id": "any_task_id"},
         }
         result = await hook(agent_output_input, "tu_e2e_004", mock_context)
         assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
-        assert "INTERCEPT_OK" in result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "BLOCKED" in result["hookSpecificOutput"]["permissionDecisionReason"]
 
-        # TaskOutput should also be intercepted for the same task_id
+    @pytest.mark.asyncio
+    async def test_task_output_blocked(self, anima_dir: Path):
+        """TaskOutput is blocked."""
+        from core.execution._sdk_hooks import _build_pre_tool_hook
+
+        hook = _build_pre_tool_hook(
+            anima_dir,
+            has_subordinates=False,
+        )
+
+        mock_context = MagicMock()
         task_output_input = {
             "tool_name": "TaskOutput",
-            "tool_input": {"task_id": task_id},
+            "tool_input": {"task_id": "any_task_id"},
         }
         result = await hook(task_output_input, "tu_e2e_005", mock_context)
         assert result["hookSpecificOutput"]["permissionDecision"] == "deny"

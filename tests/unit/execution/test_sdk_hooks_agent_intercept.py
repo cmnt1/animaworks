@@ -1,11 +1,12 @@
-"""Tests for Agent/Task tool interception in _sdk_hooks.py.
+"""Tests for Agent/Task tool hard-block in _sdk_hooks.py.
 
 Verifies:
-  - Both "Agent" and "Task" tool names are intercepted
-  - Non-supervisor path writes to state/pending/ (not SDK native)
-  - Supervisor path delegates to subordinate or falls back to pending
-  - reply_to is set to anima_dir.name in intercepted tasks
-  - "TaskOutput" and "AgentOutput" are handled for intercepted tasks
+  - Both "Agent" and "Task" tool names are hard-blocked (no pending creation)
+  - "TaskOutput" and "AgentOutput" are also blocked
+  - Deny reason redirects to submit_tasks / delegate_task
+  - No state/pending/ files are created
+  - on_task_intercepted callback is NOT fired for Agent/Task
+  - submit_tasks intercept still works correctly
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ def anima_dir(tmp_path: Path) -> Path:
     return d
 
 
-# ── _intercept_task_to_pending ────────────────────────────────
+# ── _intercept_task_to_pending (still used by delegation code) ──
 
 
 class TestInterceptTaskToPending:
@@ -82,14 +83,13 @@ class TestInterceptTaskToPending:
         assert "API refactor" in data["context"]
 
 
-# ── PreToolUse hook: Agent/Task interception ──────────────────
+# ── PreToolUse hook: Agent/Task hard-block ────────────────────
 
 
-class TestPreToolHookAgentIntercept:
-    """Test the PreToolUse hook catches both 'Agent' and 'Task' tool names."""
+class TestPreToolHookAgentHardBlock:
+    """Test the PreToolUse hook hard-blocks Agent/Task without creating pending tasks."""
 
     def _build_hook(self, anima_dir: Path, *, has_subordinates: bool = False):
-        """Build the pre-tool hook with mock SDK types."""
         from core.execution._sdk_hooks import _build_pre_tool_hook
 
         return _build_pre_tool_hook(
@@ -98,8 +98,8 @@ class TestPreToolHookAgentIntercept:
         )
 
     @pytest.mark.asyncio
-    async def test_agent_tool_intercepted_non_supervisor(self, anima_dir: Path):
-        """'Agent' tool should be intercepted for non-supervisor animas."""
+    async def test_agent_tool_hard_blocked(self, anima_dir: Path):
+        """'Agent' tool should be hard-blocked with redirect message."""
         hook = self._build_hook(anima_dir, has_subordinates=False)
 
         mock_context = MagicMock()
@@ -115,14 +115,15 @@ class TestPreToolHookAgentIntercept:
         output = result.get("hookSpecificOutput")
         assert output is not None
         assert output["permissionDecision"] == "deny"
-        assert "INTERCEPT_OK" in output["permissionDecisionReason"]
+        assert "BLOCKED" in output["permissionDecisionReason"]
+        assert "submit_tasks" in output["permissionDecisionReason"]
 
         pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
-        assert len(pending_files) == 1
+        assert len(pending_files) == 0, "No pending task should be written"
 
     @pytest.mark.asyncio
-    async def test_task_tool_intercepted_non_supervisor(self, anima_dir: Path):
-        """'Task' tool should also be intercepted for non-supervisor animas."""
+    async def test_task_tool_hard_blocked(self, anima_dir: Path):
+        """'Task' tool should also be hard-blocked."""
         hook = self._build_hook(anima_dir, has_subordinates=False)
 
         mock_context = MagicMock()
@@ -138,11 +139,14 @@ class TestPreToolHookAgentIntercept:
         output = result.get("hookSpecificOutput")
         assert output is not None
         assert output["permissionDecision"] == "deny"
-        assert "INTERCEPT_OK" in output["permissionDecisionReason"]
+        assert "BLOCKED" in output["permissionDecisionReason"]
+
+        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
+        assert len(pending_files) == 0
 
     @pytest.mark.asyncio
-    async def test_agent_tool_intercepted_supervisor_fallback(self, anima_dir: Path):
-        """'Agent' tool for supervisor falls back to pending when no subordinates available."""
+    async def test_agent_blocked_for_supervisor_too(self, anima_dir: Path):
+        """Agent is hard-blocked even for supervisors (no delegation attempt)."""
         hook = self._build_hook(anima_dir, has_subordinates=True)
 
         mock_context = MagicMock()
@@ -158,60 +162,38 @@ class TestPreToolHookAgentIntercept:
         output = result.get("hookSpecificOutput")
         assert output is not None
         assert output["permissionDecision"] == "deny"
-        assert "INTERCEPT_OK" in output["permissionDecisionReason"]
+        assert "BLOCKED" in output["permissionDecisionReason"]
+        assert "delegate_task" in output["permissionDecisionReason"]
+
+        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
+        assert len(pending_files) == 0
 
     @pytest.mark.asyncio
-    async def test_agent_output_intercepted(self, anima_dir: Path):
-        """'AgentOutput' for intercepted tasks should return INTERCEPT_OK."""
+    async def test_agent_output_blocked(self, anima_dir: Path):
+        """'AgentOutput' should be blocked (Agent/Task are disabled)."""
         hook = self._build_hook(anima_dir, has_subordinates=False)
 
         mock_context = MagicMock()
-
-        input_data = {
-            "tool_name": "Agent",
-            "tool_input": {
-                "description": "test task",
-                "prompt": "do stuff",
-            },
-        }
-        await hook(input_data, "tu_agent_03", mock_context)
-
-        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
-        task_id = pending_files[0].stem
-
         output_input = {
             "tool_name": "AgentOutput",
-            "tool_input": {"task_id": task_id},
+            "tool_input": {"task_id": "some_task_id"},
         }
         result = await hook(output_input, "tu_output_01", mock_context)
 
         output = result.get("hookSpecificOutput")
         assert output is not None
         assert output["permissionDecision"] == "deny"
-        assert "INTERCEPT_OK" in output["permissionDecisionReason"]
+        assert "BLOCKED" in output["permissionDecisionReason"]
 
     @pytest.mark.asyncio
-    async def test_task_output_intercepted(self, anima_dir: Path):
-        """'TaskOutput' for intercepted tasks should also return INTERCEPT_OK."""
+    async def test_task_output_blocked(self, anima_dir: Path):
+        """'TaskOutput' should be blocked."""
         hook = self._build_hook(anima_dir, has_subordinates=False)
 
         mock_context = MagicMock()
-
-        input_data = {
-            "tool_name": "Task",
-            "tool_input": {
-                "description": "test",
-                "prompt": "test",
-            },
-        }
-        await hook(input_data, "tu_task_02", mock_context)
-
-        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
-        task_id = pending_files[0].stem
-
         output_input = {
             "tool_name": "TaskOutput",
-            "tool_input": {"task_id": task_id},
+            "tool_input": {"task_id": "some_task_id"},
         }
         result = await hook(output_input, "tu_output_02", mock_context)
 
@@ -220,24 +202,8 @@ class TestPreToolHookAgentIntercept:
         assert output["permissionDecision"] == "deny"
 
     @pytest.mark.asyncio
-    async def test_non_intercepted_task_output_passes_through(self, anima_dir: Path):
-        """TaskOutput for a non-intercepted task_id should pass through."""
-        hook = self._build_hook(anima_dir, has_subordinates=False)
-
-        mock_context = MagicMock()
-        output_input = {
-            "tool_name": "TaskOutput",
-            "tool_input": {"task_id": "unknown_task_id"},
-        }
-        result = await hook(output_input, "tu_output_03", mock_context)
-
-        output = result.get("hookSpecificOutput")
-        if output is not None:
-            assert output.get("permissionDecision") != "deny"
-
-    @pytest.mark.asyncio
-    async def test_on_task_intercepted_callback(self, anima_dir: Path):
-        """The on_task_intercepted callback should fire when Agent is intercepted."""
+    async def test_on_task_intercepted_not_called_for_agent(self, anima_dir: Path):
+        """on_task_intercepted callback should NOT fire for hard-blocked Agent."""
         callback_called = []
 
         from core.execution._sdk_hooks import _build_pre_tool_hook
@@ -255,10 +221,9 @@ class TestPreToolHookAgentIntercept:
         }
         await hook(input_data, "tu_cb_01", mock_context)
 
-        assert len(callback_called) == 1
+        assert len(callback_called) == 0, "Callback should NOT fire for hard-blocked Agent"
 
     def _build_hook_with_trigger(self, anima_dir: Path, trigger: str):
-        """Build hook with a session_stats dict containing a trigger."""
         from core.execution._sdk_hooks import _build_pre_tool_hook
 
         return _build_pre_tool_hook(
@@ -278,62 +243,54 @@ class TestPreToolHookAgentIntercept:
         )
 
     @pytest.mark.asyncio
-    async def test_agent_blocked_in_taskexec(self, anima_dir: Path):
-        """Agent tool should be blocked (not intercepted) from TaskExec sessions."""
-        hook = self._build_hook_with_trigger(anima_dir, "task:abc123")
+    async def test_agent_blocked_in_chat_and_task_triggers(self, anima_dir: Path):
+        """Agent tool should be blocked for chat and task triggers."""
+        for trigger in ["chat", "task:abc123", "cron:daily"]:
+            hook = self._build_hook_with_trigger(anima_dir, trigger)
 
-        mock_context = MagicMock()
-        input_data = {
-            "tool_name": "Agent",
-            "tool_input": {"description": "sub-research", "prompt": "find X"},
-        }
-        result = await hook(input_data, "tu_taskexec_01", mock_context)
+            mock_context = MagicMock()
+            input_data = {
+                "tool_name": "Agent",
+                "tool_input": {"description": "research", "prompt": "find Z"},
+            }
+            result = await hook(input_data, f"tu_{trigger}", mock_context)
 
-        output = result.get("hookSpecificOutput")
-        assert output is not None
-        assert output["permissionDecision"] == "deny"
-        assert "BLOCKED" in output["permissionDecisionReason"]
-        assert "INTERCEPT_OK" not in output["permissionDecisionReason"]
-
-        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
-        assert len(pending_files) == 0, "No pending task should be written"
+            output = result.get("hookSpecificOutput")
+            assert output is not None
+            assert output["permissionDecision"] == "deny"
+            assert "BLOCKED" in output["permissionDecisionReason"], f"Failed for trigger={trigger}"
 
     @pytest.mark.asyncio
-    async def test_task_blocked_in_taskexec(self, anima_dir: Path):
-        """Task tool should be blocked from TaskExec sessions."""
-        hook = self._build_hook_with_trigger(anima_dir, "task:def456")
+    async def test_agent_blocked_in_heartbeat_after_warmup(self, anima_dir: Path):
+        """Agent tool blocked in heartbeat (soft timeout fires once, then block)."""
+        import time
 
-        mock_context = MagicMock()
-        input_data = {
-            "tool_name": "Task",
-            "tool_input": {"description": "sub-task", "prompt": "do Y"},
+        from core.execution._sdk_hooks import _build_pre_tool_hook
+
+        stats = {
+            "tool_call_count": 0,
+            "total_result_bytes": 0,
+            "system_prompt_tokens": 100,
+            "user_prompt_tokens": 50,
+            "force_chain": False,
+            "trigger": "heartbeat",
+            "start_time": time.monotonic(),
+            "hb_soft_warned": True,
+            "hb_soft_timeout": 300,
         }
-        result = await hook(input_data, "tu_taskexec_02", mock_context)
-
-        output = result.get("hookSpecificOutput")
-        assert output is not None
-        assert output["permissionDecision"] == "deny"
-        assert "BLOCKED" in output["permissionDecisionReason"]
-
-    @pytest.mark.asyncio
-    async def test_agent_allowed_in_chat(self, anima_dir: Path):
-        """Agent tool should be intercepted (not blocked) from chat sessions."""
-        hook = self._build_hook_with_trigger(anima_dir, "chat")
+        hook = _build_pre_tool_hook(anima_dir, has_subordinates=False, session_stats=stats)
 
         mock_context = MagicMock()
         input_data = {
             "tool_name": "Agent",
             "tool_input": {"description": "research", "prompt": "find Z"},
         }
-        result = await hook(input_data, "tu_chat_01", mock_context)
+        result = await hook(input_data, "tu_hb", mock_context)
 
         output = result.get("hookSpecificOutput")
         assert output is not None
         assert output["permissionDecision"] == "deny"
-        assert "INTERCEPT_OK" in output["permissionDecisionReason"]
-
-        pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
-        assert len(pending_files) == 1
+        assert "BLOCKED" in output["permissionDecisionReason"]
 
     @pytest.mark.asyncio
     async def test_read_tool_not_intercepted(self, anima_dir: Path):

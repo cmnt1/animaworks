@@ -110,4 +110,22 @@ STRINGS: dict[str, dict[str, str]] = {
             '`animaworks-tool machine run "instruction" -d workspace_path`.'
         ),
     },
+    "sdk_hooks.agent_task_blocked": {
+        "ja": (
+            "BLOCKED: Agent/Taskツールは無効です（サブエージェント起動は禁止）。"
+            "以下の方法で作業してください:\n"
+            "• **直接実行**: Read, Bash, Grep, Edit 等のツールで自分で作業する（推奨）\n"
+            "• **バックグラウンド実行**: `submit_tasks` で自分のTaskExecutorにタスク投入する（自分が実行する）\n"
+            "• **部下に委譲**: `delegate_task` で部下にタスクを委任する（部下が実行する）\n"
+            "Agent/Taskの代わりに上記を使ってください。"
+        ),
+        "en": (
+            "BLOCKED: Agent/Task tools are disabled (sub-agent spawning is not allowed). "
+            "Use one of these methods instead:\n"
+            "• **Direct execution**: Use Read, Bash, Grep, Edit, etc. to do the work yourself (recommended)\n"
+            "• **Background execution**: Use `submit_tasks` to queue tasks in your TaskExecutor (you execute them)\n"
+            "• **Delegation**: Use `delegate_task` to delegate to a subordinate (they execute it)\n"
+            "Use these instead of Agent/Task."
+        ),
+    },
 }

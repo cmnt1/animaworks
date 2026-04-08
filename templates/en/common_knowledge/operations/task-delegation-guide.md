@@ -1,17 +1,14 @@
 ## How Task Execution Works
 
-### Task Tool Auto-Routing (S-mode)
+### How to Delegate Tasks
 
-When you use the Task tool, the framework automatically routes based on your org structure.
+> **Note**: Agent/Task tools (sub-agent spawning) are **disabled**. For task delegation use `delegate_task`; for background self-execution use `submit_tasks`.
 
-**With subordinates** → Immediately delegated to a subordinate
-- Include a subordinate's name in the description to assign them directly
-  Example: "Have alice run the API tests"
-  Example: "bob handles the code review"
+**With subordinates** → Use `delegate_task` to delegate to a subordinate
+- Include a subordinate's name to assign them directly
 - If no name is given, the least-loaded subordinate with the best role match is auto-selected
-- Falls back to state/pending/ if all subordinates are disabled
 
-**Without subordinates** → Submitted as a background task
+**Without subordinates** → Use `submit_tasks` for background execution
 - Written to state/pending/ and automatically executed by TaskExec in a separate session
 - The executor shares your identity, injection, behavior rules, memory guide, and org context
 - A task_id is returned. You will receive a DM notification when it completes
@@ -23,11 +20,8 @@ When you use the Task tool, the framework automatically routes based on your org
 |------|---------|--------------------------|--------------------|----|
 | `submit_tasks` | Submit tasks for execution and registration | Creates in `state/pending/` | Registers in `task_queue.jsonl` | Tasks needing execution, recording human instructions, tasks for manual pickup |
 | `delegate_task` | Delegate to subordinates | Creates in subordinate's `state/pending/` | Registers in both `task_queue.jsonl` | When assigning to subordinates |
-| Task tool (S-mode) | Auto-routed delegation | Creates at auto-selected target | Registered | Quick delegation from Chat path |
 
 **Important**: Recording human instructions via `submit_tasks` is MUST. Use `submit_tasks` even for a single task (tasks array with one item).
-
-From paths without the Task tool (Heartbeat, Inbox, etc.), use `submit_tasks` / `delegate_task`.
 
 **[MUST] Do NOT manually create JSON files in `state/pending/`.** Always submit via the `submit_tasks` tool. `submit_tasks` registers in both the execution queue and task registry simultaneously, preventing tracking gaps.
 

@@ -10,7 +10,7 @@ Task state is managed by files under `state/` and the task queue.
 | Resource | Role |
 |----------|------|
 | `state/current_state.md` | Working memory (current state, observations, plans, blockers) |
-| `state/pending/` directory | **LLM tasks** (JSON). Written by Heartbeat, `submit_tasks`, the Task tool, and the Agent tool. Executed by TaskExec |
+| `state/pending/` directory | **LLM tasks** (JSON). Written by `submit_tasks` and `delegate_task`. Executed by TaskExec |
 | `state/task_queue.jsonl` | Persistent task queue (append-only JSONL). Tracks requests from humans and Anima |
 | `state/task_results/` directory | LLM TaskExec completion summaries (`{task_id}.md`, max 2,000 characters). Auto-injected into dependent tasks. 7-day TTL |
 | `state/background_tasks/pending/` | **Long-running CLI tool** wait queue. `animaworks-tool submit …` writes descriptor JSON. Picked up by `PendingTaskExecutor` (see below) |
@@ -36,9 +36,7 @@ In AnimaWorks, tasks are processed on three independent paths:
 
 Heartbeat does **not** execute. When it finds work that must run, either delegate with `delegate_task` if you have subordinates, or enqueue with `submit_tasks` and hand off to the TaskExec path.
 
-In MCP-integrated modes (S/C/D/G: Claude Agent SDK, Codex CLI, Cursor Agent, Gemini CLI) on the Chat path, the **Task tool** (and Agent tool) applies automatic routing:
-- With subordinates → immediately delegated to the subordinate with minimum workload and best role match (same flow as `delegate_task`)
-- Without subordinates, or when delegation fails → written to `state/pending/`, and the TaskExec path runs it
+**Note**: Agent/Task tools (sub-agent spawning) are **disabled**. For background execution use `submit_tasks`; for delegation use `delegate_task`.
 
 ### Task Queue (submit_tasks / update_task / List via CLI)
 
@@ -370,12 +368,11 @@ Tool-guide entries marked with ⚠ (image/3D generation, `local_llm`, `run_comma
 
 The path from enqueue to completion (wait queue → notification → Heartbeat) is summarized in **`operations/background-tasks.md`**. In the same module, **`rotate_dm_logs`** archives entries in `shared/dm_logs/*.jsonl` older than `max_age_days` (default 7) by appending to `{stem}.{YYYYMMDD}.archive.jsonl` and rewriting the active file to recent entries only. That is unrelated to the operational task queue (`task_queue.jsonl`).
 
-## Task Delegation (delegate_task / Task tool) — Executed by Subordinate
+## Task Delegation (delegate_task) — Executed by Subordinate
 
 > **IMPORTANT**: `delegate_task` runs on the **subordinate’s TaskExec** (not yours). For **LLM tasks** in the background, use **`submit_tasks`**. For long-running **CLI tools**, use **`animaworks-tool submit`** (previous section and `operations/background-tasks.md`).
 
 Anima with subordinates (supervisors) can delegate with the `delegate_task` tool.
-In MCP modes (S/C/D/G) on Chat, the Task tool (and Agent tool) can delegate too. The Task tool has no parameter to name a subordinate; it picks minimum workload and role match automatically.
 
 ### How delegate_task Works
 

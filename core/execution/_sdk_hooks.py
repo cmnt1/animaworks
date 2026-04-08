@@ -490,7 +490,6 @@ def _build_pre_tool_hook(
     _sub_activity_dirs, _sub_mgmt_files, _peer_activity_dirs, _desc_read_files, _desc_read_dirs = (
         _cache_subordinate_paths(anima_dir)
     )
-    intercepted_task_ids: set[str] = set()
     _trust_order = {"trusted": 2, "medium": 1, "untrusted": 0}
 
     # SDK tools → TOOL_TRUST_LEVELS mapping (SDK uses PascalCase names)
@@ -587,59 +586,36 @@ def _build_pre_tool_hook(
             except Exception:
                 logger.debug("Failed to persist min_trust_seen", exc_info=True)
 
-        # Task / Agent tool intercept (SDK uses "Agent" as the subagent tool name)
+        # Task / Agent tool — hard block (no pending task creation)
+        #
+        # The SDK Agent/Task tool creates background LLM sessions that
+        # the chat model doesn't trust: it says "TaskExecに回されましたが、
+        # 自分で直接確認します" and does the work itself, causing double
+        # execution and massive token waste.  Block entirely and redirect
+        # to submit_tasks (which the model explicitly chooses to delegate)
+        # or direct tool use.
         if tool_name in ("Agent", "Task"):
-            # Block recursive subtask spawning from TaskExec sessions
-            _trigger = session_stats.get("trigger", "") if session_stats else ""
-            if _trigger.startswith("task:"):
-                from core.i18n import t as _t
+            from core.i18n import t as _t
 
-                logger.info(
-                    "Blocked Agent/Task call from TaskExec session (%s) for %s",
-                    _trigger,
-                    anima_dir.name,
-                )
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PreToolUseHookSpecificOutput(
-                        hookEventName="PreToolUse",
-                        permissionDecision="deny",
-                        permissionDecisionReason=_t("sdk_hooks.task_no_subtask"),
-                    )
-                )
-
-            if has_subordinates:
-                # Supervisor path: delegate to subordinate, fallback to pending
-                try:
-                    delegation_result = _intercept_task_to_delegation(
-                        anima_dir,
-                        tool_input,
-                        tool_use_id,
-                    )
-                    if delegation_result is not None:
-                        intercepted_task_ids.add(delegation_result["task_id"])
-                        if on_task_intercepted is not None:
-                            try:
-                                on_task_intercepted()
-                            except Exception:
-                                logger.debug("on_task_intercepted callback failed", exc_info=True)
-                        return SyncHookJSONOutput(
-                            hookSpecificOutput=PreToolUseHookSpecificOutput(
-                                hookEventName="PreToolUse",
-                                permissionDecision="deny",
-                                permissionDecisionReason=delegation_result["reason"],
-                            )
-                        )
-                except Exception:
-                    logger.warning("Delegation failed, falling back to pending", exc_info=True)
-
-            # Non-supervisor or supervisor fallback → state/pending/
-            return _do_pending_intercept(
+            _log_tool_use(
                 anima_dir,
-                tool_input,
-                tool_use_id,
                 tool_name,
-                intercepted_task_ids,
-                on_task_intercepted,
+                tool_input,
+                tool_use_id=tool_use_id,
+                blocked=True,
+                block_reason="Agent/Task hard-blocked → redirect to submit_tasks/delegate_task",
+            )
+            logger.info(
+                "Hard-blocked %s tool for %s (use submit_tasks or delegate_task instead)",
+                tool_name,
+                anima_dir.name,
+            )
+            return SyncHookJSONOutput(
+                hookSpecificOutput=PreToolUseHookSpecificOutput(
+                    hookEventName="PreToolUse",
+                    permissionDecision="deny",
+                    permissionDecisionReason=_t("sdk_hooks.agent_task_blocked"),
+                )
             )
 
         # submit_tasks intercept → DAG batch to pending
@@ -720,29 +696,25 @@ def _build_pre_tool_hook(
                 )
             )
 
-        # TaskOutput/AgentOutput for intercepted tasks — not backed by SDK task IDs.
+        # TaskOutput/AgentOutput — block (Agent/Task are disabled)
         if tool_name in ("TaskOutput", "AgentOutput"):
-            task_id = str(tool_input.get("task_id", "")).strip()
-            if task_id and task_id in intercepted_task_ids:
-                _log_tool_use(
-                    anima_dir,
-                    tool_name,
-                    tool_input,
-                    tool_use_id=tool_use_id,
-                    blocked=False,
+            from core.i18n import t as _t
+
+            _log_tool_use(
+                anima_dir,
+                tool_name,
+                tool_input,
+                tool_use_id=tool_use_id,
+                blocked=True,
+                block_reason="Agent/Task disabled",
+            )
+            return SyncHookJSONOutput(
+                hookSpecificOutput=PreToolUseHookSpecificOutput(
+                    hookEventName="PreToolUse",
+                    permissionDecision="deny",
+                    permissionDecisionReason=_t("sdk_hooks.agent_task_blocked"),
                 )
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PreToolUseHookSpecificOutput(
-                        hookEventName="PreToolUse",
-                        permissionDecision="deny",
-                        permissionDecisionReason=(
-                            f"INTERCEPT_OK: task_id {task_id} is already running in "
-                            f"PendingTaskExecutor with full context (identity, injection, "
-                            f"memory guide, org info). Do NOT retry. "
-                            f"Proceed with your current conversation."
-                        ),
-                    )
-                )
+            )
 
         # Write / Edit: check file path
         if tool_name in ("Write", "Edit"):

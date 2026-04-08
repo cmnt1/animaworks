@@ -18,11 +18,11 @@ from core.execution.agent_sdk import (
     _WRITE_COMMANDS,
     _check_a1_bash_command,
     _check_a1_file_access,
-    _collect_all_subordinates,
     _log_tool_use,
     _sanitise_tool_args,
     _summarise_tool_input,
 )
+from core.execution._sdk_hooks import _collect_all_subordinates
 
 
 @pytest.fixture(autouse=True)

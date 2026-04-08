@@ -10,7 +10,7 @@ Digital Anima がタスクを受け取り、追跡し、完了させるための
 | リソース | 役割 |
 |---------|------|
 | `state/current_state.md` | ワーキングメモリ（今の状態・観察・計画・ブロッカー） |
-| `state/pending/` ディレクトリ | **LLM タスク**（JSON）。Heartbeat・`submit_tasks`・Task tool・Agent tool が書き出す。TaskExec が実行する |
+| `state/pending/` ディレクトリ | **LLM タスク**（JSON）。`submit_tasks`・`delegate_task` が書き出す。TaskExec が実行する |
 | `state/task_queue.jsonl` | 永続タスクキュー（append-only JSONL）。人間やAnimaからの依頼を追跡する |
 | `state/task_results/` ディレクトリ | LLM TaskExec の完了要約（`{task_id}.md`、最大2000文字）。依存タスクに自動注入。7日TTL |
 | `state/background_tasks/pending/` | **長時間 CLI ツール**の待ちキュー。`animaworks-tool submit …` が記述子 JSON を書く。`PendingTaskExecutor` が拾う（下記） |
@@ -36,9 +36,7 @@ AnimaWorks ではタスクが3つの独立パスで処理される:
 
 Heartbeat は **実行しない**。実行が必要なタスクを発見したら、部下がいれば `delegate_task` で委任するか、`submit_tasks` でタスク投入して TaskExec パスに委譲する。
 
-なお、MCP 統合モード（S/C/D/G: Claude Agent SDK・Codex CLI・Cursor Agent・Gemini CLI）の Chat パスでは **Task tool**（および Agent tool）を使うと自動ルーティングが行われる:
-- 部下がいる場合 → workload 最小かつ role マッチする部下に即時委譲される（delegate_task と同様のフロー）
-- 部下がいない場合、または委譲失敗時 → `state/pending/` に書き出され、TaskExec パスが実行する
+**注意**: Agent/Task ツール（サブエージェント起動）は**無効化**されている。バックグラウンド実行には `submit_tasks` を、部下への委譲には `delegate_task` を使用すること。
 
 ### タスクキュー（submit_tasks / update_task / 一覧はCLI）
 
@@ -373,12 +371,11 @@ submit_tasks(batch_id="build-20260301", tasks=[
 
 投入から完了通知までの経路（待ちキュー → 通知 → Heartbeat）は **`operations/background-tasks.md`** に集約してある。同一モジュールの **`rotate_dm_logs`** は `shared/dm_logs/` 配下の `*.jsonl` について、`max_age_days`（既定 7 日）より古いエントリを `{stem}.{YYYYMMDD}.archive.jsonl` へ追記アーカイブし、アクティブファイルを最近分だけに書き直す。業務タスクキュー（`task_queue.jsonl`）とは無関係である。
 
-## タスク委譲（delegate_task / Task tool） — 部下が実行する
+## タスク委譲（delegate_task） — 部下が実行する
 
 > **重要**: `delegate_task` は**部下の TaskExec** がタスクを実行します（あなた自身は実行しません）。自分で **LLM タスク**をバックグラウンド実行したい場合は `submit_tasks` を使う。長時間 **CLI ツール**は `animaworks-tool submit`（前節・`operations/background-tasks.md`）。
 
 部下を持つ Anima（スーパーバイザー）は `delegate_task` ツールでタスクを部下に委譲できる。
-MCP 統合モード（S/C/D/G）の Chat パスでは Task tool（および Agent tool）でも委譲可能。Task tool は部下を指名するパラメータを持たず、workload 最小かつ role マッチで自動選択される。
 
 ### delegate_task の動作
 

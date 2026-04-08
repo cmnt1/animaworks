@@ -536,6 +536,8 @@ DEFAULT_GUIDES: dict[str, dict[str, str]] = {
 - **submit_tasks**: 複数タスクをDAGとして投入し並列/直列実行（**自分自身が実行する**。部下には送られない）
 - **update_task**: タスクキューのステータスを更新
 
+> **注意**: Agent/Taskツール（サブエージェント）は**無効**です。並列・バックグラウンド実行には `submit_tasks` を、部下への委譲には `delegate_task` を使ってください。簡単な作業はRead/Bash/Grep等で直接実行してください。
+
 ### Skills
 - **create_skill**: 新しいスキルディレクトリを作成する
 - 既存のスキル文書・CLIマニュアルは **read_memory_file** でカタログに示されたパスを指定して読む（例: `read_memory_file(path="common_skills/machine-tool/SKILL.md")`）
@@ -573,6 +575,8 @@ These tools are your core AnimaWorks capabilities, available alongside Claude Co
 - **submit_tasks**: Submit multiple tasks as DAG for parallel/serial execution (**you execute them yourself**; NOT sent to subordinates)
 - **update_task**: Update task status in the task queue
 
+> **Note**: Agent/Task tools (sub-agent spawning) are **disabled**. For parallel/background execution use `submit_tasks`; for delegation use `delegate_task`. For simple tasks, use Read/Bash/Grep etc. directly.
+
 ### Skills
 - **create_skill**: Create a new skill directory structure
 - For existing skill docs and CLI manuals, use **read_memory_file** with the path from the catalog (e.g. `read_memory_file(path="common_skills/machine-tool/SKILL.md")`)
@@ -609,6 +613,8 @@ Use `Read(path="state/cmd_output/{id}.txt")` to check intermediate output.
 - **delegate_task**: 부하에게 태스크 위임 (**부하가 실행**. 부하가 있는 경우)
 - **submit_tasks**: 여러 태스크를 DAG로 제출하여 병렬/직렬 실행 (**자신이 직접 실행**. 부하에게 전달되지 않음)
 - **update_task**: 태스크 큐의 상태 업데이트
+
+> **참고**: Agent/Task 도구(서브에이전트 스폰)는 **비활성화**되어 있습니다. 병렬/백그라운드 실행은 `submit_tasks`를, 위임은 `delegate_task`를 사용하세요. 간단한 작업은 Read/Bash/Grep 등으로 직접 실행하세요.
 
 ### 스킬
 - **create_skill**: 새 스킬 디렉터리 생성

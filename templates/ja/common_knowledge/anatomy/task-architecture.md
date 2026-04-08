@@ -27,7 +27,7 @@ AnimaWorks のタスク管理は3つの層で構成される。
 | フォーマット | JSON（スキーマ固定） |
 | ライフサイクル | 投入 → 消費 → 削除（一時的） |
 | 管理主体 | システム（PendingTaskExecutor が自動消費） |
-| 書き込み元 | `submit_tasks`, `delegate_task`, SDK Task/Agent tool |
+| 書き込み元 | `submit_tasks`, `delegate_task` |
 | 読み取り元 | PendingTaskExecutor（3秒ポーリング） |
 
 タスクの完全な記述（description, acceptance_criteria, constraints, depends_on, workspace 等）を含む。

@@ -55,11 +55,7 @@ from core.execution._sdk_hooks import (  # noqa: F401
     _build_pre_tool_hook,
     _build_stop_hook,
     _cache_subordinate_paths,
-    _collect_all_subordinates,
-    _intercept_task_to_delegation,
-    _intercept_task_to_pending,
     _read_status_json,
-    _select_subordinate,
 )
 from core.execution._sdk_interrupt import (  # noqa: F401
     _graceful_interrupt_blocking,

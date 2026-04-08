@@ -27,7 +27,7 @@ Analogous to a message queue (SQS / RabbitMQ).
 | Format | JSON (fixed schema) |
 | Lifecycle | Enqueue → consume → delete (transient) |
 | Managed by | System (PendingTaskExecutor auto-consumes) |
-| Writers | `submit_tasks`, `delegate_task`, SDK Task/Agent tool |
+| Writers | `submit_tasks`, `delegate_task` |
 | Readers | PendingTaskExecutor (3-second polling) |
 
 Contains the full task description (description, acceptance_criteria, constraints, depends_on, workspace, etc.).
