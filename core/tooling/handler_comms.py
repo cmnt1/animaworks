@@ -54,6 +54,18 @@ class CommsToolsMixin:
         content = args["content"]
         intent = args.get("intent", "")
 
+        # ── Block send_message to Discord sender during inbox auto-reply ──
+        # AutoResponder handles posting to the originating channel/thread.
+        # send_message would route to #dm-{anima}, not the thread.
+        if self._trigger.startswith("inbox"):
+            _to_lower = to.lower() if to else ""
+            if _to_lower.startswith("discord:") or _to_lower.startswith("slack:"):
+                return (
+                    "send_message to external users is unnecessary during inbox processing. "
+                    "Your text response is automatically posted to the originating Discord "
+                    "channel/thread. Just write your response as plain text."
+                )
+
         # ── Per-run DM limits ──
         if intent == "delegation":
             return t("handler.delegation_intent_deprecated")
@@ -116,6 +128,13 @@ class CommsToolsMixin:
 
         # ── External routing ──
         if resolved is not None and not resolved.is_internal:
+            # Block external send during inbox — AutoResponder handles it
+            if self._trigger.startswith("inbox") and resolved.channel in ("discord", "slack"):
+                return (
+                    "send_message to external users is unnecessary during inbox processing. "
+                    "Your text response is automatically posted to the originating Discord "
+                    "channel/thread. Just write your response as plain text."
+                )
             logger.info(
                 "send_message routed externally: to=%s channel=%s",
                 to,
