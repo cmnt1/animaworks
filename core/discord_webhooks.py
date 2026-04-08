@@ -119,14 +119,19 @@ class DiscordWebhookManager:
         channel_id: str,
         anima_name: str,
         content: str,
+        *,
+        thread_id: str | None = None,
     ) -> str:
         """Send a message to a Discord channel appearing as a specific Anima.
 
+        Args:
+            channel_id: The channel to post in (must be a real channel, not a thread).
+            anima_name: Display name for the webhook message.
+            content: Message text.
+            thread_id: If set, post inside this thread (the thread's snowflake ID).
+
         Returns the sent message ID (snowflake string), or empty string if
         blocked by dedup.
-
-        Note: Discord webhooks do not support ``message_reference`` (reply
-        threading). Use the standard bot ``send_message`` API for replies.
         """
         import hashlib
 
@@ -165,6 +170,7 @@ class DiscordWebhookManager:
                     chunk,
                     username=anima_name,
                     avatar_url=avatar_url or None,
+                    thread_id=thread_id,
                 )
                 last_msg_id = str(result.get("id", ""))
             except DiscordAPIError as exc:
@@ -179,6 +185,7 @@ class DiscordWebhookManager:
                         chunk,
                         username=anima_name,
                         avatar_url=avatar_url or None,
+                        thread_id=thread_id,
                     )
                     last_msg_id = str(result.get("id", ""))
                 else:
