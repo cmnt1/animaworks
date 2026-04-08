@@ -376,6 +376,9 @@ class DiscordGatewayManager:
         cleaned_text = clean_discord_markup(message.content or "", cache=name_snapshot)
 
         channel_id = str(message.channel.id)
+        # For threads, use parent channel ID for membership/lead routing
+        parent_id = getattr(message.channel, "parent_id", None)
+        routing_channel_id = str(parent_id) if parent_id else channel_id
         ch_name = getattr(message.channel, "name", "") or ""
         is_dm = message.guild is None or ch_name.startswith("dm-")
 
@@ -412,8 +415,9 @@ class DiscordGatewayManager:
                 logger.debug("Thread map lookup failed", exc_info=True)
 
         # 2. Text/name detection and channel member routing
+        #    Use routing_channel_id (parent channel for threads) for membership lookups.
         if target_anima is None:
-            target_anima = self._detect_target_anima(cleaned_text, channel_id, discord_cfg)
+            target_anima = self._detect_target_anima(cleaned_text, routing_channel_id, discord_cfg)
 
         if target_anima is None and not is_dm:
             if bot_mentioned:
@@ -421,16 +425,16 @@ class DiscordGatewayManager:
 
             # No mention, no name detected: route to channel lead
             if target_anima is None:
-                members = discord_cfg.channel_members.get(channel_id, [])
+                members = discord_cfg.channel_members.get(routing_channel_id, [])
                 if members:
                     target_anima = members[0]
                 elif discord_cfg.default_anima and self._is_anima_in_channel(
-                    discord_cfg.default_anima, channel_id, discord_cfg
+                    discord_cfg.default_anima, routing_channel_id, discord_cfg
                 ):
                     target_anima = discord_cfg.default_anima
 
         # Enforce channel membership
-        if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, channel_id, discord_cfg):
+        if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, routing_channel_id, discord_cfg):
             logger.info(
                 "Discord routing: '%s' not a member of channel %s (#%s) — dropping",
                 target_anima,
@@ -440,18 +444,20 @@ class DiscordGatewayManager:
             target_anima = None
 
         logger.info(
-            "Discord routing: channel=#%s (%s) is_dm=%s bot_mentioned=%s -> target=%s",
+            "Discord routing: channel=#%s (%s) routing=%s is_dm=%s bot_mentioned=%s -> target=%s",
             ch_name,
             channel_id,
+            routing_channel_id,
             is_dm,
             bot_mentioned,
             target_anima,
         )
 
         # Board routing (always, regardless of target)
+        # Use routing_channel_id so thread messages map to the parent channel's board.
         if not is_dm:
             _route_to_board(
-                channel_id,
+                routing_channel_id,
                 cleaned_text,
                 author_display,
                 message_id=msg_id,
