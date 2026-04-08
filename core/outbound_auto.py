@@ -254,6 +254,12 @@ class DiscordAutoResponder:
                 mention = target.get("mention_prefix", "")
                 text = f"{mention}{discord_text}" if mention else discord_text
                 thread_id = target.get("thread_id") or None
+                logger.info(
+                    "DiscordAutoResponder: posting for '%s' channel=%s thread=%s",
+                    anima_name,
+                    target["channel_id"],
+                    thread_id or "(none)",
+                )
                 msg_id = wm.send_as_anima(
                     target["channel_id"],
                     anima_name,
