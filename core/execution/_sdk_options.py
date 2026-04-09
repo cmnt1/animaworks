@@ -338,7 +338,13 @@ class SDKOptionsMixin:
                         "PreToolUse": [
                             {
                                 "matcher": "Bash",
-                                "hooks": [f"{_py} {_bridge} {_rtk_bin}"],
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": f"{_py} {_bridge} {_rtk_bin}",
+                                        "timeout": 10,
+                                    }
+                                ],
                             }
                         ]
                     }
