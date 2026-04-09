@@ -317,7 +317,7 @@ class SDKOptionsMixin:
         # The CLI only loads hooks from file-based settings (not inline
         # --settings JSON), so we write a temp settings file and pass it
         # via setting_sources.
-        _rtk_settings_file: Path | None = None
+        _rtk_hook_active = False
         _rtk_bin = shutil.which("rtk")
         if not _rtk_bin:
             # Fallback: check common install locations
@@ -343,14 +343,18 @@ class SDKOptionsMixin:
                         ]
                     }
                 }
-                # Write to a persistent file in the anima's state dir so
-                # the CLI can watch it for changes if needed.
-                _rtk_settings_file = self._anima_dir / "state" / "rtk_hooks.json"
-                _rtk_settings_file.parent.mkdir(parents=True, exist_ok=True)
-                _rtk_settings_file.write_text(
+                # CLI only loads hooks from file-based settings sources
+                # (user/project/local), not from inline --settings JSON.
+                # Write to {anima_dir}/.claude/settings.local.json so it
+                # is picked up via setting_sources=["local"].
+                _local_settings_dir = self._anima_dir / ".claude"
+                _local_settings_dir.mkdir(parents=True, exist_ok=True)
+                _local_settings_path = _local_settings_dir / "settings.local.json"
+                _local_settings_path.write_text(
                     json.dumps(_rtk_settings, indent=2), encoding="utf-8",
                 )
-                logger.info("RTK CLI native hook enabled (file): %s", _rtk_settings_file)
+                _rtk_hook_active = True
+                logger.info("RTK CLI native hook enabled: %s", _local_settings_path)
 
         extra_args: dict[str, str | None] = {}
         # On Windows, enable CLI debug output to stderr for diagnostics.
@@ -452,7 +456,7 @@ class SDKOptionsMixin:
             env=self._build_env(),
             max_buffer_size=_SDK_MAX_BUFFER_SIZE,
             resume=resume,
-            setting_sources=[str(_rtk_settings_file)] if _rtk_settings_file else [],
+            setting_sources=["local"] if _rtk_hook_active else [],
             extra_args=extra_args,
             **({"cli_path": verified_cli} if verified_cli else {}),
             mcp_servers=mcp_servers_val,
