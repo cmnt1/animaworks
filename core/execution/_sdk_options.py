@@ -331,8 +331,12 @@ class SDKOptionsMixin:
         if _rtk_bin:
             _bridge = Path(__file__).with_name("_rtk_hook_bridge.py")
             if _bridge.exists():
-                # Use the venv Python so dependencies resolve correctly
-                _py = sys.executable
+                # Use the venv Python so dependencies resolve correctly.
+                # CLI runs hook commands through bash, so paths must use
+                # forward slashes (backslashes are interpreted as escapes).
+                _py = sys.executable.replace("\\", "/")
+                _bridge_posix = str(_bridge).replace("\\", "/")
+                _rtk_posix = _rtk_bin.replace("\\", "/")
                 _rtk_settings = {
                     "hooks": {
                         "PreToolUse": [
@@ -341,7 +345,7 @@ class SDKOptionsMixin:
                                 "hooks": [
                                     {
                                         "type": "command",
-                                        "command": f"{_py} {_bridge} {_rtk_bin}",
+                                        "command": f'"{_py}" "{_bridge_posix}" "{_rtk_posix}"',
                                         "timeout": 10,
                                     }
                                 ],
