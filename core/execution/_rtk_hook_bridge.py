@@ -23,8 +23,22 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 import json
+import os
 import subprocess
 import sys
+
+
+def _resolve_rtk_bin() -> str:
+    """Return the rtk binary path from argv[1], env, or PATH."""
+    # 1. CLI argument (passed by _sdk_options.py)
+    if len(sys.argv) > 1 and sys.argv[1]:
+        return sys.argv[1]
+    # 2. Environment variable
+    env_bin = os.environ.get("RTK_BIN")
+    if env_bin:
+        return env_bin
+    # 3. Fall back to bare name (requires PATH)
+    return "rtk"
 
 
 def main() -> None:
@@ -37,11 +51,14 @@ def main() -> None:
     if not cmd:
         sys.exit(0)
 
+    rtk_bin = _resolve_rtk_bin()
     try:
         result = subprocess.run(
-            ["rtk", "rewrite", cmd],
+            [rtk_bin, "rewrite", cmd],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):

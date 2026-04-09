@@ -314,7 +314,17 @@ class SDKOptionsMixin:
         # stdin/stdout control protocol — the CLI spawns the hook command
         # itself — so they work on Windows without pipe instability.
         _rtk_settings: dict[str, Any] | None = None
-        if shutil.which("rtk"):
+        _rtk_bin = shutil.which("rtk")
+        if not _rtk_bin:
+            # Fallback: check common install locations
+            for _candidate in (
+                Path.home() / ".cargo" / "bin" / "rtk.exe",
+                Path.home() / ".cargo" / "bin" / "rtk",
+            ):
+                if _candidate.is_file():
+                    _rtk_bin = str(_candidate)
+                    break
+        if _rtk_bin:
             _bridge = Path(__file__).with_name("_rtk_hook_bridge.py")
             if _bridge.exists():
                 # Use the venv Python so dependencies resolve correctly
@@ -324,7 +334,7 @@ class SDKOptionsMixin:
                         "PreToolUse": [
                             {
                                 "matcher": "Bash",
-                                "hooks": [f"{_py} {_bridge}"],
+                                "hooks": [f"{_py} {_bridge} {_rtk_bin}"],
                             }
                         ]
                     }
