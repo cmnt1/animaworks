@@ -4,7 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Upload Slack avatar PNGs to XSERVER for public hosting.
+"""Upload Anima avatar PNGs to XSERVER for public hosting.
 
 Avatars are uploaded via FTP to ``xs642990.xsrv.jp/public_html/animaworks-avatars/``
 making them publicly accessible at ``https://xs642990.xsrv.jp/animaworks-avatars/{name}.png``.
@@ -19,9 +19,9 @@ import logging
 import os
 from pathlib import Path
 
-logger = logging.getLogger("animaworks.slack_avatar_upload")
+logger = logging.getLogger("animaworks.avatar_upload")
 
-_SLACK_AVATAR_DIR = Path(__file__).resolve().parents[1] / "assets" / "slack-avatars"
+_AVATAR_DIR = Path(__file__).resolve().parents[1] / "assets" / "slack-avatars"
 _FTP_REMOTE_DIR = "/xs642990.xsrv.jp/public_html/animaworks-avatars"
 _PUBLIC_BASE_URL = "https://xs642990.xsrv.jp/animaworks-avatars"
 
@@ -69,7 +69,7 @@ def upload_avatar(anima_name: str) -> str:
 
     Returns the public URL on success, or empty string on failure.
     """
-    png_path = _SLACK_AVATAR_DIR / f"{anima_name}.png"
+    png_path = _AVATAR_DIR / f"{anima_name}.png"
     if not png_path.is_file():
         logger.debug("No avatar PNG for '%s' at %s", anima_name, png_path)
         return ""
@@ -104,13 +104,13 @@ def upload_all_avatars() -> dict[str, str]:
 
     Returns dict of {anima_name: public_url} for successful uploads.
     """
-    if not _SLACK_AVATAR_DIR.is_dir():
-        logger.info("No slack-avatars directory at %s", _SLACK_AVATAR_DIR)
+    if not _AVATAR_DIR.is_dir():
+        logger.info("No avatars directory at %s", _AVATAR_DIR)
         return {}
 
-    png_files = list(_SLACK_AVATAR_DIR.glob("*.png"))
+    png_files = list(_AVATAR_DIR.glob("*.png"))
     if not png_files:
-        logger.info("No avatar PNGs found in %s", _SLACK_AVATAR_DIR)
+        logger.info("No avatar PNGs found in %s", _AVATAR_DIR)
         return {}
 
     xconf = _get_xserver_config()

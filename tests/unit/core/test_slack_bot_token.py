@@ -202,7 +202,7 @@ class TestUsernameOverride:
             # Suppress higher-priority avatar sources so template resolution is tested
             patch("core.tools._base._lookup_vault_credential", return_value=""),
             patch("core.tools._base._lookup_shared_credentials", return_value=""),
-            patch("server.slack_avatar_upload.get_avatar_public_url", return_value=""),
+            patch("server.avatar_upload.get_avatar_public_url", return_value=""),
         ):
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_resp
@@ -230,7 +230,7 @@ class TestUsernameOverride:
             patch("httpx.AsyncClient") as mock_client_cls,
             patch("core.tools._base._lookup_vault_credential", return_value=""),
             patch("core.tools._base._lookup_shared_credentials", return_value=""),
-            patch("server.slack_avatar_upload.get_avatar_public_url", return_value=""),
+            patch("server.avatar_upload.get_avatar_public_url", return_value=""),
             patch("core.tools._anima_icon_url.resolve_anima_icon_url", return_value=""),
         ):
             mock_client = AsyncMock()

@@ -277,12 +277,13 @@ async def _startup_animas_background(app: FastAPI) -> None:
         else:
             app.state.discord_channel_sync = None
 
-        # ── Slack avatar upload to XSERVER (disabled – Discord migration) ──
-        # try:
-        #     from server.slack_avatar_upload import upload_all_avatars
-        #     upload_all_avatars()
-        # except Exception:
-        #     logger.debug("Slack avatar upload failed", exc_info=True)
+        # ── Avatar upload to XSERVER ──────────────────────────────────────
+        try:
+            from server.avatar_upload import upload_all_avatars
+
+            upload_all_avatars()
+        except Exception:
+            logger.debug("Avatar upload to XSERVER failed", exc_info=True)
 
         # ── Slack channel → board sync (initial) (disabled – Discord migration) ──
         # if app.state.slack_socket_manager is not None:
