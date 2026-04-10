@@ -354,11 +354,17 @@ def _send_via_discord(user_id: str, content: str, sender_name: str, anima_name: 
                 if msg_id:
                     logger.info(
                         "External message sent via discord webhook (#%s): user=%s msg_id=%s",
-                        dm_board, user_id, msg_id,
+                        dm_board,
+                        user_id,
+                        msg_id,
                     )
                     return json.dumps(
-                        {"status": "sent", "channel": "discord", "recipient": user_id,
-                         "message": f"Message sent via Discord #{dm_board}"},
+                        {
+                            "status": "sent",
+                            "channel": "discord",
+                            "recipient": user_id,
+                            "message": f"Message sent via Discord #{dm_board}",
+                        },
                         ensure_ascii=False,
                     )
         except Exception:

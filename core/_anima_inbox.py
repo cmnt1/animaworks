@@ -144,7 +144,9 @@ def _build_reply_instruction(m: Any) -> str:
     """
     if m.source == "slack":
         # Slack disabled – Discord migration.  Do not reply via Slack.
-        return "  [auto_reply: Slackは廃止されました。返信はDiscordで行ってください。slack_channel_postは使用できません]"
+        return (
+            "  [auto_reply: Slackは廃止されました。返信はDiscordで行ってください。slack_channel_postは使用できません]"
+        )
 
     if m.source == "discord":
         if _is_auto_response_enabled_discord():
@@ -433,8 +435,7 @@ class InboxMixin:
 
                     # Set marker to block CLI discord send during inbox auto-reply
                     _has_discord = any(
-                        getattr(item.msg, "source", "") == "discord"
-                        for item in inbox_result.inbox_items
+                        getattr(item.msg, "source", "") == "discord" for item in inbox_result.inbox_items
                     )
                     _marker_path = self.agent.anima_dir / "run" / "discord_auto_reply_active"
                     if _has_discord:

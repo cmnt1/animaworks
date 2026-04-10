@@ -148,7 +148,9 @@ class DiscordWebhookManager:
             if dedup_key in self._recent_sends:
                 logger.info(
                     "Dedup: blocking duplicate send to %s by %s (within %ds)",
-                    channel_id, anima_name, int(self._DEDUP_TTL_SEC),
+                    channel_id,
+                    anima_name,
+                    int(self._DEDUP_TTL_SEC),
                 )
                 return ""
             self._recent_sends[dedup_key] = now

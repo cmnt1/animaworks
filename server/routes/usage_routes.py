@@ -835,8 +835,7 @@ def create_usage_router() -> APIRouter:
                 groups = _classify_animas(governor._animas_dir, all_names)
                 suspended_set = set(st.suspended_animas)
                 per_provider_suspended = {
-                    prov: [n for n in names if n in suspended_set]
-                    for prov, names in groups.items()
+                    prov: [n for n in names if n in suspended_set] for prov, names in groups.items()
                 }
             except Exception:
                 logger.debug("per_provider_suspended classification failed", exc_info=True)

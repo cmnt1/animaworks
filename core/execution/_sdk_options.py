@@ -361,7 +361,8 @@ class SDKOptionsMixin:
                 _local_settings_dir.mkdir(parents=True, exist_ok=True)
                 _local_settings_path = _local_settings_dir / "settings.local.json"
                 _local_settings_path.write_text(
-                    json.dumps(_rtk_settings, indent=2), encoding="utf-8",
+                    json.dumps(_rtk_settings, indent=2),
+                    encoding="utf-8",
                 )
                 _rtk_hook_active = True
                 logger.info("RTK CLI native hook enabled: %s", _local_settings_path)

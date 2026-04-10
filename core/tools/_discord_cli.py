@@ -139,9 +139,12 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
         if anima_dir_env:
             marker = Path(anima_dir_env) / "run" / "discord_auto_reply_active"
             if marker.exists():
-                print("Blocked: discord send is unnecessary during inbox processing. "
-                      "Your text response is automatically posted to Discord. "
-                      "Do NOT use TaskExec or other workarounds.", file=sys.stderr)
+                print(
+                    "Blocked: discord send is unnecessary during inbox processing. "
+                    "Your text response is automatically posted to Discord. "
+                    "Do NOT use TaskExec or other workarounds.",
+                    file=sys.stderr,
+                )
                 return
 
         body = " ".join(args.message)
