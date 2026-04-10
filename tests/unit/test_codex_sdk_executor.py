@@ -412,8 +412,9 @@ class TestConfigWriting:
         assert 'approval_policy = "never"' in config_toml
         assert "[mcp_servers.aw]" in config_toml
 
+    @patch("sys.platform", "linux")
     def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir):
-        """Restricted file_roots produces workspace-write with writable_roots."""
+        """Restricted file_roots produces workspace-write with writable_roots (non-Windows)."""
         import json
         perms = {"version": 1, "file_roots": [str(anima_dir)], "commands": {"allow_all": True, "allow": [], "deny": []}, "external_tools": {"allow_all": True, "allow": [], "deny": []}, "tool_creation": {"personal": True, "shared": False}}
         (anima_dir / "permissions.json").write_text(json.dumps(perms), encoding="utf-8")

@@ -719,7 +719,7 @@ class CodexSDKExecutor(BaseExecutor):
 
         permissions_config = load_permissions(self._anima_dir)
 
-        if "/" in permissions_config.file_roots:
+        if "/" in permissions_config.file_roots or sys.platform == "win32":
             sandbox_mode = "danger-full-access"
             sandbox_section = ""
         else:
