@@ -61,6 +61,20 @@ from core.tooling.schemas import (
 logger = logging.getLogger("animaworks.execution.anthropic_fallback")
 
 
+def _wrap_system_for_cache(system_prompt: str) -> str | list[dict[str, Any]]:
+    """Wrap system prompt in cache_control block for Anthropic prompt caching.
+
+    Returns a list with an ephemeral cache_control block when *system_prompt* is
+    non-empty, enabling server-side caching of the system prompt between turns.
+    An empty string is returned unchanged so the API call stays valid.
+
+    See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+    """
+    if not system_prompt:
+        return system_prompt
+    return [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}]
+
+
 async def _close_client_quietly(client: Any) -> None:
     """Close async API client and suppress close-time errors."""
     try:
@@ -300,7 +314,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
             create_kwargs: dict[str, Any] = {
                 "model": self._model_config.model,
                 "max_tokens": _eff_max,
-                "system": system_prompt,
+                "system": _wrap_system_for_cache(system_prompt),
                 "messages": messages,
                 "timeout": httpx.Timeout(self._resolve_llm_timeout()),
             }
@@ -578,7 +592,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 stream_kwargs: dict[str, Any] = {
                     "model": self._model_config.model,
                     "max_tokens": _eff_max_s,
-                    "system": system_prompt,
+                    "system": _wrap_system_for_cache(system_prompt),
                     "messages": messages,
                     "timeout": httpx.Timeout(self._resolve_llm_timeout()),
                 }

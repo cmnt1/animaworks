@@ -15,7 +15,7 @@ import logging
 import re
 import zlib
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +30,9 @@ from core.time_utils import get_app_timezone, now_local
 
 _INDENTED_SCHEDULE_RE = re.compile(r"^\s+schedule:", re.MULTILINE)
 _HEALTH_CHECK_HOURS = 3
+_SECONDS_PER_HOUR = 3600
+_DAILY_STALE_THRESHOLD_SEC = 36 * _SECONDS_PER_HOUR
+_WEEKLY_STALE_THRESHOLD_SEC = 8 * 24 * _SECONDS_PER_HOUR
 
 if TYPE_CHECKING:
     from core.anima import DigitalAnima
@@ -403,7 +406,13 @@ class SchedulerManager:
         )
 
     async def _cron_health_tick(self) -> None:
-        """Compare registered cron jobs against actual execution count."""
+        """Compare expected cron executions against actual execution count.
+
+        Warning is emitted only when:
+        1) A cron job was scheduled to run inside the health window, and
+        2) No matching ``cron_executed`` event exists in that window, and
+        3) Last successful run age is beyond a frequency-aware threshold.
+        """
         if not self._anima or not self.scheduler:
             return
 
@@ -417,16 +426,50 @@ class SchedulerManager:
             if not cron_jobs:
                 return
 
+            now = now_local()
+            window_start = now - timedelta(hours=_HEALTH_CHECK_HOURS)
+
+            expected_jobs = [
+                job for job in cron_jobs if self._job_has_schedule_in_window(job, window_start, now)
+            ]
+            # If no runs were expected in this window, this is healthy by design.
+            if not expected_jobs:
+                return
+
             entries = self._anima._activity._load_entries(
                 hours=_HEALTH_CHECK_HOURS,
                 types=["cron_executed"],
             )
 
-            if len(entries) == 0:
+            executed_names = self._extract_executed_task_names(entries)
+            last_success_by_task = self._load_last_success_by_task(days=30)
+
+            missed_and_stale = []
+            for job in expected_jobs:
+                task_name = self._job_task_name(job)
+                if not task_name:
+                    # Conservative fallback for unexpected job object shapes.
+                    task_name = getattr(job, "name", "")
+                if not task_name:
+                    continue
+                if task_name in executed_names:
+                    continue
+
+                threshold_sec = self._last_success_stale_threshold_sec(job, now)
+                last_success_ts = last_success_by_task.get(task_name)
+                if last_success_ts is None:
+                    missed_and_stale.append(task_name)
+                    continue
+
+                age_sec = (now - last_success_ts).total_seconds()
+                if age_sec >= threshold_sec:
+                    missed_and_stale.append(task_name)
+
+            if missed_and_stale:
                 self._write_cron_health_notification(
                     t(
                         "scheduler.cron_health_no_execution",
-                        job_count=len(cron_jobs),
+                        job_count=len(missed_and_stale),
                         hours=_HEALTH_CHECK_HOURS,
                     )
                 )
@@ -436,6 +479,124 @@ class SchedulerManager:
                 self._anima_name,
                 exc_info=True,
             )
+
+    @staticmethod
+    def _job_task_name(job: Any) -> str | None:
+        """Extract cron task name from APScheduler job args."""
+        try:
+            args = getattr(job, "args", None)
+            if not args:
+                return None
+            task = args[0]
+            name = getattr(task, "name", None)
+            return name if isinstance(name, str) and name else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _parse_iso_ts(ts: str) -> datetime | None:
+        """Parse ISO timestamp from activity log."""
+        if not ts:
+            return None
+        try:
+            return datetime.fromisoformat(ts)
+        except ValueError:
+            # Backward-compat for timestamps with trailing Z
+            if ts.endswith("Z"):
+                try:
+                    return datetime.fromisoformat(ts[:-1] + "+00:00")
+                except ValueError:
+                    return None
+            return None
+
+    @staticmethod
+    def _extract_executed_task_names(entries: list[Any]) -> set[str]:
+        """Return task names seen in cron_executed entries."""
+        names: set[str] = set()
+        for entry in entries:
+            meta = getattr(entry, "meta", None)
+            if isinstance(meta, dict):
+                task_name = meta.get("task_name")
+                if isinstance(task_name, str) and task_name:
+                    names.add(task_name)
+        return names
+
+    def _load_last_success_by_task(self, days: int = 30) -> dict[str, datetime]:
+        """Build latest success timestamp map by task_name."""
+        result: dict[str, datetime] = {}
+        try:
+            entries = self._anima._activity.recent(days=days, types=["cron_executed"], limit=5000)
+        except Exception:
+            return result
+
+        for entry in entries:
+            meta = getattr(entry, "meta", None)
+            if not isinstance(meta, dict):
+                continue
+            task_name = meta.get("task_name")
+            if not isinstance(task_name, str) or not task_name:
+                continue
+            ts = self._parse_iso_ts(getattr(entry, "ts", ""))
+            if ts is None:
+                continue
+            prev = result.get(task_name)
+            if prev is None or ts > prev:
+                result[task_name] = ts
+        return result
+
+    @staticmethod
+    def _next_fire_after(trigger: Any, base: datetime) -> datetime | None:
+        """Return next fire time after ``base`` for an APScheduler trigger."""
+        if trigger is None:
+            return None
+        try:
+            return trigger.get_next_fire_time(None, base)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _next_fire_from(trigger: Any, prev: datetime) -> datetime | None:
+        """Return fire time after ``prev`` for an APScheduler trigger."""
+        if trigger is None:
+            return None
+        try:
+            # Small increment avoids returning the same fire time repeatedly.
+            return trigger.get_next_fire_time(prev, prev + timedelta(seconds=1))
+        except Exception:
+            return None
+
+    def _job_has_schedule_in_window(self, job: Any, window_start: datetime, window_end: datetime) -> bool:
+        """Return True when the job has at least one scheduled fire in window."""
+        trigger = getattr(job, "trigger", None)
+        if trigger is None:
+            # Conservative fallback: if trigger is unavailable, keep old behavior.
+            return True
+
+        fire = self._next_fire_after(trigger, window_start)
+        return fire is not None and fire <= window_end
+
+    def _last_success_stale_threshold_sec(self, job: Any, now: datetime) -> float:
+        """Frequency-aware staleness threshold for a cron job.
+
+        - Daily-ish jobs: 36h
+        - Weekly-ish jobs: 8d
+        - Otherwise: 1.25x inferred interval (min 36h)
+        """
+        trigger = getattr(job, "trigger", None)
+        first = self._next_fire_after(trigger, now)
+        if first is None:
+            return float(_DAILY_STALE_THRESHOLD_SEC)
+
+        second = self._next_fire_from(trigger, first)
+        if second is None:
+            return float(_DAILY_STALE_THRESHOLD_SEC)
+
+        interval_sec = max((second - first).total_seconds(), 0.0)
+        if interval_sec <= 36 * _SECONDS_PER_HOUR:
+            return float(_DAILY_STALE_THRESHOLD_SEC)
+        if interval_sec <= 8 * 24 * _SECONDS_PER_HOUR:
+            return float(_WEEKLY_STALE_THRESHOLD_SEC)
+        return max(float(_DAILY_STALE_THRESHOLD_SEC), interval_sec * 1.25)
 
     def _write_cron_health_notification(self, message: str) -> None:
         """Write a cron health warning to ``background_notifications/``."""
