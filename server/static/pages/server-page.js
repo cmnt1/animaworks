@@ -4,6 +4,27 @@ import { escapeHtml, timeStr } from "../modules/state.js";
 import { onEvent } from "../modules/websocket.js";
 import { t } from "/shared/i18n.js";
 
+const _WEEKDAYS_JA = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** Format timestamp: today → "HH:MM", otherwise → "MM/DD(曜) HH:MM" */
+function _consolidationTimeStr(isoOrTs) {
+  if (!isoOrTs) return "--";
+  const d = new Date(isoOrTs);
+  if (isNaN(d.getTime())) return "--";
+  const time = d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) return time;
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const dow = _WEEKDAYS_JA[d.getDay()];
+  if (d.getFullYear() === now.getFullYear()) return `${mm}/${dd}(${dow}) ${time}`;
+  return `${d.getFullYear()}/${mm}/${dd}(${dow}) ${time}`;
+}
+
 let _refreshInterval = null;
 let _unsubConsolidation = null;
 
@@ -11,6 +32,13 @@ export function render(container) {
   container.innerHTML = `
     <div class="page-header">
       <h2>${t("nav.server")}</h2>
+    </div>
+
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header">${t("server.memory_maintenance")}</div>
+      <div class="card-body" id="serverConsolidationContent">
+        <div class="loading-placeholder">${t("common.loading")}</div>
+      </div>
     </div>
 
     <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem;">
@@ -42,13 +70,6 @@ export function render(container) {
       </div>
     </div>
 
-    <div class="card" style="margin-bottom: 1.5rem;">
-      <div class="card-header">${t("server.memory_maintenance")}</div>
-      <div class="card-body" id="serverConsolidationContent">
-        <div class="loading-placeholder">${t("common.loading")}</div>
-      </div>
-    </div>
-
     <div class="card">
       <div class="card-header">${t("server.system_status")}</div>
       <div class="card-body" id="serverStatusContent">
@@ -64,6 +85,10 @@ export function render(container) {
   _unsubConsolidation = onEvent("system.consolidation_status", (data) => {
     _renderConsolidationData(data);
   });
+
+  // ── Direct action via URL hash parameter ──────────────
+  // e.g. /#/server?run=daily  /#/server?run=weekly  /#/server?run=monthly  /#/server?run=catchup
+  _handleHashAction();
 }
 
 export function destroy() {
@@ -235,7 +260,7 @@ function _renderConsolidationData(data) {
     const job = data[key] || {};
     const status = job.running ? "running" : (job.missed ? "missed" : (job.last_status || "never"));
     const badge = _statusBadge(status);
-    const lastSuccess = job.last_success_at ? timeStr(job.last_success_at) : "--";
+    const lastSuccess = _consolidationTimeStr(job.last_success_at);
     const errorText = job.last_error ? escapeHtml(job.last_error) : "";
     const disabled = job.running ? "disabled" : "";
 
@@ -337,5 +362,29 @@ async function _runCatchup() {
   } catch (err) {
     if (btn) btn.disabled = false;
     console.error("Catchup failed:", err);
+  }
+}
+
+// ── Direct Action from URL ─────────────────────
+// URLs: /#/server?run=daily | weekly | monthly | catchup
+
+async function _handleHashAction() {
+  const hash = location.hash; // e.g. "#/server?run=daily"
+  const qIdx = hash.indexOf("?");
+  if (qIdx < 0) return;
+  const params = new URLSearchParams(hash.slice(qIdx));
+  const action = params.get("run");
+  if (!action) return;
+
+  // Clean the URL to prevent re-triggering on next navigation
+  history.replaceState(null, "", "#/server");
+
+  // Wait for initial data load to finish rendering buttons
+  await new Promise((r) => setTimeout(r, 300));
+
+  if (action === "catchup") {
+    _runCatchup();
+  } else if (["daily", "weekly", "monthly"].includes(action)) {
+    _runConsolidation(action);
   }
 }
