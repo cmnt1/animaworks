@@ -4,7 +4,7 @@
     {
       "name": "animaworks",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "echo Server already running on port 18500"],
+      "runtimeArgs": ["/c", "echo Server running && ping -n 9999 127.0.0.1 > NUL"],
       "port": 18500
     }
   ]

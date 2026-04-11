@@ -850,15 +850,15 @@ async function _showDetail(name) {
     // Model config (with combobox)
     const currentModel = animaConfig?.model || "";
     const currentCredential = animaConfig?.config?.credential || "";
+    const currentBgModel = animaConfig?.config?.background_model || "";
     html += `
       <div class="card" style="margin-bottom: 1.5rem;">
-        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="card-header">
           <span>${t("animas.model_config")}</span>
-          <span id="modelChangeStatus" style="font-size:0.75rem; color:var(--text-secondary,#888);"></span>
         </div>
         <div class="card-body">
-          <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem; flex-wrap:wrap;">
-            <label style="font-weight:600; font-size:0.9rem;">${t("animas.model_select")}:</label>
+          <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
+            <label style="font-weight:600; font-size:0.9rem; min-width:160px; flex-shrink:0;">${t("animas.model_select")}:</label>
             <select id="modelSelect" style="flex:1; min-width:200px; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
               ${models.map(m => {
                 const selected = m.id === currentModel ? " selected" : "";
@@ -867,6 +867,20 @@ async function _showDetail(name) {
               ${currentModel && !models.find(m => m.id === currentModel) ? `<option value="${escapeHtml(currentModel)}" selected>${escapeHtml(currentModel)} (current)</option>` : ""}
             </select>
             <button class="btn-primary" id="modelChangeBtn" style="font-size:0.85rem; padding:0.4rem 0.75rem;">${t("animas.model_change")}</button>
+            <span id="modelChangeStatus" style="font-size:0.75rem; color:var(--text-secondary,#888);"></span>
+          </div>
+          <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
+            <label style="font-weight:600; font-size:0.9rem; min-width:160px; flex-shrink:0;">${t("animas.background_model_select")}:</label>
+            <select id="bgModelSelect" style="flex:1; min-width:200px; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+              <option value="">${t("animas.background_model_none")}</option>
+              ${models.map(m => {
+                const selected = m.id === currentBgModel ? " selected" : "";
+                return `<option value="${escapeHtml(m.id)}" data-credential="${escapeHtml(m.credential)}"${selected}>${escapeHtml(m.label)}</option>`;
+              }).join("")}
+              ${currentBgModel && !models.find(m => m.id === currentBgModel) ? `<option value="${escapeHtml(currentBgModel)}" selected>${escapeHtml(currentBgModel)} (current)</option>` : ""}
+            </select>
+            <button class="btn-primary" id="bgModelChangeBtn" style="font-size:0.85rem; padding:0.4rem 0.75rem;">${t("animas.model_change")}</button>
+            <span id="bgModelChangeStatus" style="font-size:0.75rem; color:var(--text-secondary,#888);"></span>
           </div>
           <div style="font-size:0.75rem; color:var(--text-secondary,#888); margin-bottom:0.75rem;">${t("animas.restart_notice")}</div>
           ${animaConfig ? `<details style="margin-top:0.5rem;"><summary style="cursor:pointer; font-size:0.85rem; color:var(--text-secondary,#666);">JSON</summary><pre style="white-space:pre-wrap; margin:0.5rem 0 0; font-size:0.8rem;">${escapeHtml(JSON.stringify(animaConfig, null, 2))}</pre></details>` : ""}
@@ -935,6 +949,38 @@ async function _showDetail(name) {
         setTimeout(() => { status.textContent = ""; }, 5000);
       } catch {
         status.textContent = t("animas.model_change_failed");
+        status.style.color = "var(--color-danger, #dc3545)";
+      }
+      btn.disabled = false;
+      btn.textContent = t("animas.model_change");
+    });
+
+    // Bind background model change button
+    document.getElementById("bgModelChangeBtn")?.addEventListener("click", async () => {
+      const select = document.getElementById("bgModelSelect");
+      const btn = document.getElementById("bgModelChangeBtn");
+      const status = document.getElementById("bgModelChangeStatus");
+      if (!select || !btn) return;
+
+      const selectedOption = select.options[select.selectedIndex];
+      const model = select.value;
+      const credential = model ? (selectedOption?.dataset?.credential || "") : "";
+
+      btn.disabled = true;
+      btn.textContent = t("animas.saving");
+      status.textContent = "";
+
+      try {
+        await fetch(`/api/animas/${encodeURIComponent(name)}/background-model`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model, credential }),
+        });
+        status.textContent = model ? t("animas.background_model_changed") : t("animas.background_model_cleared");
+        status.style.color = "var(--color-success, #28a745)";
+        setTimeout(() => { status.textContent = ""; }, 5000);
+      } catch {
+        status.textContent = t("animas.background_model_change_failed");
         status.style.color = "var(--color-danger, #dc3545)";
       }
       btn.disabled = false;

@@ -396,6 +396,53 @@ def create_animas_router() -> APIRouter:
             "mode_s_auth": existing.get("mode_s_auth"),
         }
 
+    @router.put("/animas/{name}/background-model")
+    async def update_anima_background_model(name: str, request: Request):
+        """Update the background_model setting in status.json for an anima."""
+        _validate_anima_name(name)
+        animas_dir = request.app.state.animas_dir
+        anima_dir = animas_dir / name
+        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        data = await request.json()
+        model: str = data.get("model", "").strip()
+        credential: str = data.get("credential", "").strip()
+
+        status_path = anima_dir / "status.json"
+        existing: dict[str, Any] = {}
+        if status_path.exists():
+            try:
+                existing = json.loads(status_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        if model:
+            existing["background_model"] = model
+            if credential:
+                existing["background_credential"] = credential
+        else:
+            existing.pop("background_model", None)
+            existing.pop("background_credential", None)
+
+        await asyncio.to_thread(
+            status_path.write_text,
+            json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
+            "utf-8",
+        )
+        logger.info(
+            "Updated background_model for anima '%s': model=%s credential=%s",
+            name,
+            model or "(cleared)",
+            credential or "(none)",
+        )
+        return {
+            "status": "ok",
+            "name": name,
+            "background_model": model or None,
+            "background_credential": credential or None,
+        }
+
     # ── Aliases ──────────────────────────────────────────────
 
     @router.get("/animas/{name}/aliases")
