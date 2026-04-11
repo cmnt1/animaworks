@@ -322,6 +322,57 @@ class DiscordAutoResponder:
         return targets
 
 
+class BoardDiscordSync:
+    """Sync AnimaWorks board posts back to mapped Discord channels."""
+
+    def sync_board_post(
+        self,
+        board_name: str,
+        text: str,
+        from_person: str,
+        *,
+        source: str = "",
+    ) -> str | None:
+        """Post a board message to the mapped Discord channel.
+
+        Returns the Discord message ID on success, or None.
+        Skips messages that originated from Discord (echo prevention).
+        """
+        if source == "discord":
+            return None
+
+        from core.config.models import load_config
+
+        cfg = load_config()
+        discord_cfg = cfg.external_messaging.discord
+        if not discord_cfg.enabled:
+            return None
+
+        # Reverse lookup: board_name -> discord_channel_id
+        channel_id = None
+        for ch_id, bname in discord_cfg.board_mapping.items():
+            if bname == board_name:
+                channel_id = ch_id
+                break
+        if not channel_id:
+            return None
+
+        try:
+            from core.discord_webhooks import get_webhook_manager
+            from core.tools._discord_markdown import md_to_discord
+
+            wm = get_webhook_manager()
+            discord_text = md_to_discord(text)
+            msg_id = wm.send_as_anima(channel_id, from_person, discord_text)
+            if msg_id:
+                logger.info("BoardDiscordSync: synced '%s' -> %s", board_name, channel_id)
+                return msg_id
+            return None
+        except Exception:
+            logger.exception("BoardDiscordSync: failed to sync '%s'", board_name)
+            return None
+
+
 class BoardSlackSync:
     """Sync AnimaWorks board posts back to mapped Slack channels."""
 

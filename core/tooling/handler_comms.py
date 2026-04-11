@@ -292,6 +292,9 @@ class CommsToolsMixin:
         # Sync board post to mapped Slack channel (fire-and-forget)
         self._fire_board_slack_sync(channel, text)
 
+        # Sync board post to mapped Discord channel (fire-and-forget)
+        self._fire_board_discord_sync(channel, text)
+
         return f"Posted to #{channel}"
 
     def _fanout_board_mentions(self, channel: str, text: str) -> None:
@@ -387,6 +390,26 @@ class CommsToolsMixin:
         #         asyncio.run(coro)
         # except Exception:
         #     logger.warning("Board→Slack sync failed for #%s", channel, exc_info=True)
+
+    def _fire_board_discord_sync(self, channel: str, text: str) -> None:
+        """Sync a board post to the mapped Discord channel.
+
+        Uses ``BoardDiscordSync`` which calls the synchronous
+        ``DiscordWebhookManager.send_as_anima()``, so no async
+        boilerplate is needed.
+        """
+        try:
+            from core.outbound_auto import BoardDiscordSync
+
+            sync = BoardDiscordSync()
+            sync.sync_board_post(
+                board_name=channel,
+                text=text,
+                from_person=self._anima_name,
+                source="anima",
+            )
+        except Exception:
+            logger.warning("Board→Discord sync failed for #%s", channel, exc_info=True)
 
     def _handle_read_channel(self, args: dict[str, Any]) -> str:
         if not self._messenger:
