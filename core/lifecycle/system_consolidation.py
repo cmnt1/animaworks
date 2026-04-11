@@ -23,6 +23,41 @@ class SystemConsolidationMixin:
         New flow: Anima-driven consolidation via run_consolidation(),
         followed by metadata-based synaptic downscaling and RAG rebuild.
         """
+        from core.lifecycle.system_status import (
+            build_status_payload,
+            mark_failed,
+            mark_started,
+            mark_succeeded,
+        )
+
+        lock = self._system_job_locks["daily"]
+        if lock.locked():
+            logger.info("Daily consolidation skipped: already running")
+            return
+        async with lock:
+            mark_started("daily")
+            if self._ws_broadcast:
+                try:
+                    await self._ws_broadcast({"type": "system.consolidation_status", "data": build_status_payload()})
+                except Exception:
+                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+            try:
+                await self._handle_daily_consolidation_inner()
+                mark_succeeded("daily")
+            except Exception as exc:
+                mark_failed("daily", str(exc))
+                raise
+            finally:
+                if self._ws_broadcast:
+                    try:
+                        await self._ws_broadcast(
+                            {"type": "system.consolidation_status", "data": build_status_payload()}
+                        )
+                    except Exception:
+                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+
+    async def _handle_daily_consolidation_inner(self) -> None:
+        """Inner implementation of daily consolidation."""
         logger.info("Starting system-wide daily consolidation")
 
         config = load_config()
@@ -126,11 +161,42 @@ class SystemConsolidationMixin:
                 self._schedule_consolidation_retry(anima_name, max_turns)
 
     async def _handle_weekly_integration(self) -> None:
-        """Run weekly integration for all animas.
+        """Run weekly integration for all animas."""
+        from core.lifecycle.system_status import (
+            build_status_payload,
+            mark_failed,
+            mark_started,
+            mark_succeeded,
+        )
 
-        New flow: Anima-driven consolidation via run_consolidation(),
-        followed by neurogenesis reorganization and RAG rebuild.
-        """
+        lock = self._system_job_locks["weekly"]
+        if lock.locked():
+            logger.info("Weekly integration skipped: already running")
+            return
+        async with lock:
+            mark_started("weekly")
+            if self._ws_broadcast:
+                try:
+                    await self._ws_broadcast({"type": "system.consolidation_status", "data": build_status_payload()})
+                except Exception:
+                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+            try:
+                await self._handle_weekly_integration_inner()
+                mark_succeeded("weekly")
+            except Exception as exc:
+                mark_failed("weekly", str(exc))
+                raise
+            finally:
+                if self._ws_broadcast:
+                    try:
+                        await self._ws_broadcast(
+                            {"type": "system.consolidation_status", "data": build_status_payload()}
+                        )
+                    except Exception:
+                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+
+    async def _handle_weekly_integration_inner(self) -> None:
+        """Inner implementation of weekly integration."""
         logger.info("Starting system-wide weekly integration")
 
         config = load_config()
@@ -213,6 +279,41 @@ class SystemConsolidationMixin:
 
     async def _handle_monthly_forgetting(self) -> None:
         """Run monthly forgetting for all animas."""
+        from core.lifecycle.system_status import (
+            build_status_payload,
+            mark_failed,
+            mark_started,
+            mark_succeeded,
+        )
+
+        lock = self._system_job_locks["monthly"]
+        if lock.locked():
+            logger.info("Monthly forgetting skipped: already running")
+            return
+        async with lock:
+            mark_started("monthly")
+            if self._ws_broadcast:
+                try:
+                    await self._ws_broadcast({"type": "system.consolidation_status", "data": build_status_payload()})
+                except Exception:
+                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+            try:
+                await self._handle_monthly_forgetting_inner()
+                mark_succeeded("monthly")
+            except Exception as exc:
+                mark_failed("monthly", str(exc))
+                raise
+            finally:
+                if self._ws_broadcast:
+                    try:
+                        await self._ws_broadcast(
+                            {"type": "system.consolidation_status", "data": build_status_payload()}
+                        )
+                    except Exception:
+                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+
+    async def _handle_monthly_forgetting_inner(self) -> None:
+        """Inner implementation of monthly forgetting."""
         logger.info("Starting system-wide monthly forgetting")
 
         config = load_config()

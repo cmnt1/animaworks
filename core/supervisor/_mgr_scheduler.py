@@ -266,6 +266,37 @@ class SchedulerMixin:
         then performs metadata-based post-processing (synaptic downscaling,
         RAG index rebuild) from the supervisor process.
         """
+        from core.lifecycle.system_status import (
+            build_status_payload,
+            mark_failed,
+            mark_started,
+            mark_succeeded,
+        )
+
+        lock = self._system_job_locks["daily"]
+        if lock.locked():
+            logger.info("Daily consolidation skipped: already running")
+            return
+        async with lock:
+            mark_started("daily")
+            try:
+                await self._broadcast_event("system.consolidation_status", build_status_payload())
+            except Exception:
+                logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+            try:
+                await self._run_daily_consolidation_inner()
+                mark_succeeded("daily")
+            except Exception as exc:
+                mark_failed("daily", str(exc))
+                raise
+            finally:
+                try:
+                    await self._broadcast_event("system.consolidation_status", build_status_payload())
+                except Exception:
+                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+
+    async def _run_daily_consolidation_inner(self) -> None:
+        """Inner implementation of daily consolidation."""
         logger.info("Starting system-wide daily consolidation")
 
         try:
@@ -373,12 +404,38 @@ class SchedulerMixin:
         _write_marker(_marker_dir(self._get_data_dir()) / "last_daily_consolidation")
 
     async def _run_weekly_integration(self) -> None:
-        """Run weekly integration for all animas via IPC.
+        """Run weekly integration for all animas via IPC."""
+        from core.lifecycle.system_status import (
+            build_status_payload,
+            mark_failed,
+            mark_started,
+            mark_succeeded,
+        )
 
-        Sends ``run_consolidation`` IPC requests to running Anima processes,
-        then performs metadata-based post-processing (neurogenesis reorganization,
-        RAG index rebuild) from the supervisor process.
-        """
+        lock = self._system_job_locks["weekly"]
+        if lock.locked():
+            logger.info("Weekly integration skipped: already running")
+            return
+        async with lock:
+            mark_started("weekly")
+            try:
+                await self._broadcast_event("system.consolidation_status", build_status_payload())
+            except Exception:
+                logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+            try:
+                await self._run_weekly_integration_inner()
+                mark_succeeded("weekly")
+            except Exception as exc:
+                mark_failed("weekly", str(exc))
+                raise
+            finally:
+                try:
+                    await self._broadcast_event("system.consolidation_status", build_status_payload())
+                except Exception:
+                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+
+    async def _run_weekly_integration_inner(self) -> None:
+        """Inner implementation of weekly integration."""
         logger.info("Starting system-wide weekly integration")
 
         try:
@@ -472,6 +529,37 @@ class SchedulerMixin:
 
     async def _run_monthly_forgetting(self) -> None:
         """Run monthly forgetting for all animas."""
+        from core.lifecycle.system_status import (
+            build_status_payload,
+            mark_failed,
+            mark_started,
+            mark_succeeded,
+        )
+
+        lock = self._system_job_locks["monthly"]
+        if lock.locked():
+            logger.info("Monthly forgetting skipped: already running")
+            return
+        async with lock:
+            mark_started("monthly")
+            try:
+                await self._broadcast_event("system.consolidation_status", build_status_payload())
+            except Exception:
+                logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+            try:
+                await self._run_monthly_forgetting_inner()
+                mark_succeeded("monthly")
+            except Exception as exc:
+                mark_failed("monthly", str(exc))
+                raise
+            finally:
+                try:
+                    await self._broadcast_event("system.consolidation_status", build_status_payload())
+                except Exception:
+                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+
+    async def _run_monthly_forgetting_inner(self) -> None:
+        """Inner implementation of monthly forgetting."""
         logger.info("Starting system-wide monthly forgetting")
 
         for anima_name, anima_dir in self._iter_consolidation_targets():
@@ -756,6 +844,14 @@ class SchedulerMixin:
         has elapsed since the last marker, the job is scheduled for immediate
         (delayed by ``_CATCHUP_DELAY_SEC`` to let all Anima processes boot).
         """
+        # Clear stale running states from previous crash
+        try:
+            from core.lifecycle.system_status import clear_stale_running
+
+            clear_stale_running()
+        except Exception:
+            logger.debug("Failed to clear stale consolidation status", exc_info=True)
+
         await asyncio.sleep(self._CATCHUP_DELAY_SEC)
 
         try:
@@ -817,3 +913,62 @@ class SchedulerMixin:
                 last,
             )
             await self._run_housekeeping()
+
+    # ── Manual Consolidation ──────────────────────────────────────────
+
+    _CONSOLIDATION_HANDLERS: dict[str, str] = {
+        "daily": "_run_daily_consolidation",
+        "weekly": "_run_weekly_integration",
+        "monthly": "_run_monthly_forgetting",
+    }
+
+    async def run_system_consolidation_now(self, job_type: str) -> dict:
+        """Manually trigger a consolidation job.
+
+        Returns a status payload dict.  If the job is already running,
+        returns ``{"error": "already_running", "job_type": ...}``.
+        """
+        from core.lifecycle.system_status import build_status_payload, is_running
+
+        if job_type not in self._CONSOLIDATION_HANDLERS:
+            return {"error": f"unknown job type: {job_type}"}
+        if is_running(job_type):
+            return {"error": "already_running", "job_type": job_type}
+
+        handler = getattr(self, self._CONSOLIDATION_HANDLERS[job_type])
+        await handler()
+        return build_status_payload()
+
+    async def run_missed_system_consolidations(self) -> dict:
+        """Run all missed consolidation jobs sequentially."""
+        from core.lifecycle.system_status import (
+            build_status_payload,
+            is_daily_missed,
+            is_monthly_missed,
+            is_weekly_missed,
+        )
+
+        now = now_local()
+        ran: list[str] = []
+        checks = [
+            ("daily", is_daily_missed),
+            ("weekly", is_weekly_missed),
+            ("monthly", is_monthly_missed),
+        ]
+        for job_type, check_fn in checks:
+            if check_fn(now):
+                logger.info("Catch-up (manual): running missed %s", job_type)
+                handler = getattr(self, self._CONSOLIDATION_HANDLERS[job_type])
+                try:
+                    await handler()
+                    ran.append(job_type)
+                except Exception:
+                    logger.exception("Catch-up (manual): %s failed", job_type)
+                    ran.append(f"{job_type}:failed")
+        return {"ran": ran, "status": build_status_payload()}
+
+    def get_system_consolidation_status(self) -> dict:
+        """Return current consolidation status with missed flags."""
+        from core.lifecycle.system_status import build_status_payload
+
+        return build_status_payload()

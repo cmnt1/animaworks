@@ -50,6 +50,12 @@ class LifecycleManager(
         self._last_msg_heartbeat_end: dict[str, float] = {}
         self._pair_heartbeat_times: dict[tuple[str, str], list[float]] = {}
         self._schedule_mtimes: dict[str, tuple[float, float]] = {}
+        # Locks for system consolidation jobs (prevent double execution)
+        self._system_job_locks: dict[str, asyncio.Lock] = {
+            "daily": asyncio.Lock(),
+            "weekly": asyncio.Lock(),
+            "monthly": asyncio.Lock(),
+        }
         # Cache heartbeat config at init time (refreshed on reload_anima_schedule)
         hb = load_config().heartbeat
         self._cooldown_s = hb.msg_heartbeat_cooldown_s
@@ -154,6 +160,62 @@ class LifecycleManager(
             anima._session_compactor.shutdown()
         self.scheduler.shutdown(wait=False)
         logger.info("Lifecycle manager stopped")
+
+    # ── Manual Consolidation ──────────────────────────────────────
+
+    _CONSOLIDATION_HANDLERS: dict[str, str] = {
+        "daily": "_handle_daily_consolidation",
+        "weekly": "_handle_weekly_integration",
+        "monthly": "_handle_monthly_forgetting",
+    }
+
+    async def run_system_consolidation_now(self, job_type: str) -> dict:
+        """Manually trigger a consolidation job."""
+        from core.lifecycle.system_status import build_status_payload, is_running
+
+        if job_type not in self._CONSOLIDATION_HANDLERS:
+            return {"error": f"unknown job type: {job_type}"}
+        if is_running(job_type):
+            return {"error": "already_running", "job_type": job_type}
+
+        handler = getattr(self, self._CONSOLIDATION_HANDLERS[job_type])
+        await handler()
+        return build_status_payload()
+
+    async def run_missed_system_consolidations(self) -> dict:
+        """Run all missed consolidation jobs sequentially."""
+        from core.lifecycle.system_status import (
+            build_status_payload,
+            is_daily_missed,
+            is_monthly_missed,
+            is_weekly_missed,
+        )
+        from core.time_utils import now_local
+
+        now = now_local()
+        ran: list[str] = []
+        checks = [
+            ("daily", is_daily_missed),
+            ("weekly", is_weekly_missed),
+            ("monthly", is_monthly_missed),
+        ]
+        for job_type, check_fn in checks:
+            if check_fn(now):
+                logger.info("Catch-up (manual): running missed %s", job_type)
+                handler = getattr(self, self._CONSOLIDATION_HANDLERS[job_type])
+                try:
+                    await handler()
+                    ran.append(job_type)
+                except Exception:
+                    logger.exception("Catch-up (manual): %s failed", job_type)
+                    ran.append(f"{job_type}:failed")
+        return {"ran": ran, "status": build_status_payload()}
+
+    def get_system_consolidation_status(self) -> dict:
+        """Return current consolidation status with missed flags."""
+        from core.lifecycle.system_status import build_status_payload
+
+        return build_status_payload()
 
 
 # Re-exports for backward compatibility (tests patch "core.lifecycle.load_config")

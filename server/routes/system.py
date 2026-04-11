@@ -921,6 +921,54 @@ def create_system_router() -> APIRouter:
             )
         return await manager.reload_animas()
 
+    # ── System Consolidation ──────────────────────────────────
+
+    @router.get("/system/consolidation/status")
+    async def consolidation_status(request: Request):
+        """Return consolidation status for all job types."""
+        supervisor = request.app.state.supervisor
+        return supervisor.get_system_consolidation_status()
+
+    @router.post("/system/consolidation/{job_type}/run")
+    async def run_consolidation(request: Request, job_type: str):
+        """Manually trigger a consolidation job (fire-and-forget)."""
+        import asyncio
+
+        if job_type not in ("daily", "weekly", "monthly"):
+            return JSONResponse(
+                {"error": f"Invalid job type: {job_type}"},
+                status_code=400,
+            )
+        supervisor = request.app.state.supervisor
+
+        from core.lifecycle.system_status import is_running
+
+        if is_running(job_type):
+            return JSONResponse(
+                {"error": "already_running", "job_type": job_type},
+                status_code=409,
+            )
+        asyncio.create_task(supervisor.run_system_consolidation_now(job_type))
+        return {"started": True, "job_type": job_type}
+
+    @router.post("/system/consolidation/catchup")
+    async def run_consolidation_catchup(request: Request):
+        """Run all missed consolidation jobs."""
+        import asyncio
+
+        supervisor = request.app.state.supervisor
+
+        from core.lifecycle.system_status import is_running
+
+        for jt in ("daily", "weekly", "monthly"):
+            if is_running(jt):
+                return JSONResponse(
+                    {"error": f"{jt} is already running"},
+                    status_code=409,
+                )
+        asyncio.create_task(supervisor.run_missed_system_consolidations())
+        return {"started": True}
+
     # ── Health Check ────────────────────────────────────────
 
     @router.get("/system/health")

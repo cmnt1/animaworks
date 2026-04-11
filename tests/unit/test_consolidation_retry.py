@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,6 +21,11 @@ def _make_lifecycle(tmp_path: Path):
     mgr.scheduler = MagicMock()
     mgr.animas = {}
     mgr._ws_broadcast = None
+    mgr._system_job_locks = {
+        "daily": asyncio.Lock(),
+        "weekly": asyncio.Lock(),
+        "monthly": asyncio.Lock(),
+    }
     return mgr
 
 

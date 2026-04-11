@@ -1,9 +1,11 @@
 // ── Server Communication ────────────────────
 import { api } from "../modules/api.js";
 import { escapeHtml, timeStr } from "../modules/state.js";
+import { onEvent } from "../modules/websocket.js";
 import { t } from "/shared/i18n.js";
 
 let _refreshInterval = null;
+let _unsubConsolidation = null;
 
 export function render(container) {
   container.innerHTML = `
@@ -40,6 +42,13 @@ export function render(container) {
       </div>
     </div>
 
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header">${t("server.memory_maintenance")}</div>
+      <div class="card-body" id="serverConsolidationContent">
+        <div class="loading-placeholder">${t("common.loading")}</div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-header">${t("server.system_status")}</div>
       <div class="card-body" id="serverStatusContent">
@@ -50,12 +59,21 @@ export function render(container) {
 
   _loadAll();
   _refreshInterval = setInterval(_loadAll, 15000);
+
+  // Subscribe to consolidation status updates via WebSocket
+  _unsubConsolidation = onEvent("system.consolidation_status", (data) => {
+    _renderConsolidationData(data);
+  });
 }
 
 export function destroy() {
   if (_refreshInterval) {
     clearInterval(_refreshInterval);
     _refreshInterval = null;
+  }
+  if (_unsubConsolidation) {
+    _unsubConsolidation();
+    _unsubConsolidation = null;
   }
 }
 
@@ -65,6 +83,7 @@ async function _loadAll() {
   _loadStatus();
   _loadConnections();
   _loadScheduler();
+  _loadConsolidation();
 }
 
 async function _loadStatus() {
@@ -185,5 +204,138 @@ async function _loadScheduler() {
   } catch {
     content.innerHTML = `<div class="loading-placeholder">${t("server.api_unimplemented")}</div>`;
     if (jobsEl) jobsEl.textContent = "--";
+  }
+}
+
+// ── Consolidation / Memory Maintenance ───────
+
+const _JOB_DEFS = [
+  { key: "daily", labelKey: "server.consolidation_daily" },
+  { key: "weekly", labelKey: "server.consolidation_weekly" },
+  { key: "monthly", labelKey: "server.consolidation_monthly" },
+];
+
+async function _loadConsolidation() {
+  const content = document.getElementById("serverConsolidationContent");
+  if (!content) return;
+
+  try {
+    const data = await api("/api/system/consolidation/status");
+    _renderConsolidationData(data);
+  } catch {
+    content.innerHTML = `<div class="loading-placeholder">${t("server.api_unimplemented")}</div>`;
+  }
+}
+
+function _renderConsolidationData(data) {
+  const content = document.getElementById("serverConsolidationContent");
+  if (!content) return;
+
+  const rows = _JOB_DEFS.map(({ key, labelKey }) => {
+    const job = data[key] || {};
+    const status = job.running ? "running" : (job.missed ? "missed" : (job.last_status || "never"));
+    const badge = _statusBadge(status);
+    const lastSuccess = job.last_success_at ? timeStr(job.last_success_at) : "--";
+    const errorText = job.last_error ? escapeHtml(job.last_error) : "";
+    const disabled = job.running ? "disabled" : "";
+
+    return `
+      <tr>
+        <td style="font-weight:500;">${t(labelKey)}</td>
+        <td>${badge}</td>
+        <td>${escapeHtml(lastSuccess)}</td>
+        <td style="color:var(--aw-color-danger,#e53e3e);font-size:0.85em;">${errorText}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" data-consolidation-run="${key}" ${disabled}>
+            ${t("server.consolidation_run")}
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  const hasMissed = _JOB_DEFS.some(({ key }) => data[key]?.missed);
+  const anyRunning = _JOB_DEFS.some(({ key }) => data[key]?.running);
+
+  content.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>${t("server.job_name")}</th>
+          <th>${t("server.consolidation_status")}</th>
+          <th>${t("server.consolidation_last_success")}</th>
+          <th>${t("server.consolidation_error")}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top: 0.75rem; text-align: right;">
+      <button class="btn btn-sm btn-outline" id="consolidationCatchupBtn" ${anyRunning ? "disabled" : ""}>
+        ${t("server.consolidation_catchup")}
+      </button>
+    </div>
+  `;
+
+  // Bind run buttons
+  content.querySelectorAll("[data-consolidation-run]").forEach(btn => {
+    btn.addEventListener("click", () => _runConsolidation(btn.dataset.consolidationRun));
+  });
+
+  // Bind catchup button
+  const catchupBtn = document.getElementById("consolidationCatchupBtn");
+  if (catchupBtn) {
+    catchupBtn.addEventListener("click", _runCatchup);
+  }
+}
+
+function _statusBadge(status) {
+  const labels = {
+    success: t("server.consolidation_status_success"),
+    failed: t("server.consolidation_status_failed"),
+    running: t("server.consolidation_status_running"),
+    missed: t("server.consolidation_status_missed"),
+    never: t("server.consolidation_status_never"),
+  };
+  const colors = {
+    success: "var(--aw-color-success, #38a169)",
+    failed: "var(--aw-color-danger, #e53e3e)",
+    running: "var(--aw-color-warning, #d69e2e)",
+    missed: "var(--aw-color-warning, #d69e2e)",
+    never: "var(--aw-color-text-secondary, #888)",
+  };
+  const label = labels[status] || status;
+  const color = colors[status] || colors.never;
+  return `<span style="color:${color};font-weight:500;">${escapeHtml(label)}</span>`;
+}
+
+async function _runConsolidation(jobType) {
+  // Disable button immediately
+  const btn = document.querySelector(`[data-consolidation-run="${jobType}"]`);
+  if (btn) btn.disabled = true;
+
+  try {
+    await api(`/api/system/consolidation/${jobType}/run`, { method: "POST" });
+    // Reload to show running state
+    _loadConsolidation();
+  } catch (err) {
+    if (btn) btn.disabled = false;
+    console.error("Consolidation run failed:", err);
+  }
+}
+
+async function _runCatchup() {
+  const btn = document.getElementById("consolidationCatchupBtn");
+  if (btn) btn.disabled = true;
+
+  try {
+    const result = await api("/api/system/consolidation/catchup", { method: "POST" });
+    if (result.error) {
+      console.warn("Catchup rejected:", result.error);
+    }
+    _loadConsolidation();
+  } catch (err) {
+    if (btn) btn.disabled = false;
+    console.error("Catchup failed:", err);
   }
 }

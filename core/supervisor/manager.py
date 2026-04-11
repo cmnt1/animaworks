@@ -141,6 +141,13 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
         except (ConfigError, ConfigNotFoundError):
             logger.debug("Config load failed for max_streaming_duration", exc_info=True)
 
+        # Locks for system consolidation jobs (prevent double execution)
+        self._system_job_locks: dict[str, asyncio.Lock] = {
+            "daily": asyncio.Lock(),
+            "weekly": asyncio.Lock(),
+            "monthly": asyncio.Lock(),
+        }
+
         # Callbacks for anima lifecycle events (set by server/app.py)
         self.on_anima_added: Callable[[str], None] | None = None
         self.on_anima_removed: Callable[[str], None] | None = None
