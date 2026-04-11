@@ -300,9 +300,20 @@ class DiscordAutoResponder:
                 continue
             channel_id = getattr(msg, "external_channel_id", "")
             if not channel_id:
+                logger.warning(
+                    "DiscordAutoResponder: inbox item from discord has no external_channel_id, from=%s",
+                    getattr(msg, "from_name", "?"),
+                )
                 continue
             thread_id = getattr(msg, "external_thread_ts", "")
             dedup_key = f"{channel_id}:{thread_id}" if thread_id else channel_id
+            logger.info(
+                "DiscordAutoResponder: target channel_id=%s thread_id=%s from=%s dedup=%s",
+                channel_id,
+                thread_id or "(none)",
+                getattr(msg, "from_name", "?"),
+                dedup_key,
+            )
             if dedup_key in seen or dedup_key in already_posted:
                 continue
             seen.add(dedup_key)

@@ -875,13 +875,18 @@ class InboxMixin:
         for _m in _recordable[:50]:
             _msg_origin = _SOURCE_TO_ORIGIN.get(_m.source, ORIGIN_UNKNOWN)
             _msg_origin_chain = _m.origin_chain if _m.origin_chain else [_msg_origin]
+            _recv_meta: dict[str, Any] = {"from_type": _m.source}
+            if getattr(_m, "external_channel_id", ""):
+                _recv_meta["external_channel_id"] = _m.external_channel_id
+            if getattr(_m, "external_thread_ts", ""):
+                _recv_meta["external_thread_ts"] = _m.external_thread_ts
             self._activity.log(
                 "message_received",
                 content=_m.content,
                 summary=_m.content[:200],
                 from_person=_m.from_person,
                 to_person=self.name,
-                meta={"from_type": _m.source},
+                meta=_recv_meta,
                 origin=_msg_origin,
                 origin_chain=_msg_origin_chain,
             )
