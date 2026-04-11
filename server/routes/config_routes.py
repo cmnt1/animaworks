@@ -244,7 +244,8 @@ def create_config_router() -> APIRouter:
         has_openai = bool(os.environ.get("OPENAI_API_KEY"))
         has_codex_login = is_codex_login_available()
         has_openai_auth = has_openai or has_codex_login
-        has_google = bool(os.environ.get("GOOGLE_API_KEY"))
+        google_cred = load_config().credentials.get("google", CredentialConfig())
+        has_google = bool(os.environ.get("GOOGLE_API_KEY")) or bool(google_cred.api_key)
 
         config_exists = config_path.exists()
         initialized = config_exists and animas_count > 0
@@ -326,10 +327,16 @@ def create_config_router() -> APIRouter:
                             models.append({"id": m, "label": m, "credential": "openai"})
                             seen.add(m)
             elif provider in ("google", "gemini"):
-                for m in ("gemini-2.5-flash",):
-                    if m not in seen:
-                        models.append({"id": m, "label": m, "credential": "google"})
-                        seen.add(m)
+                for m in (
+                    "gemini-2.5-pro",
+                    "gemini-2.5-flash",
+                    "gemini-2.0-flash",
+                    "gemini-2.0-flash-lite",
+                ):
+                    mid = f"google/{m}"
+                    if mid not in seen:
+                        models.append({"id": mid, "label": f"Google: {m}", "credential": "google"})
+                        seen.add(mid)
 
         # Codex CLI models (standalone — no openai credential entry needed)
         if is_codex_login_available():
