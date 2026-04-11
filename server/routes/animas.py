@@ -82,6 +82,7 @@ def create_animas_router() -> APIRouter:
 
             # Resolve all config including supervisor from status.json
             model = None
+            background_model = None
             role = None
             department = ""
             title = ""
@@ -90,6 +91,7 @@ def create_animas_router() -> APIRouter:
             try:
                 resolved, _ = resolve_anima_config(config, name, anima_dir=anima_dir)
                 model = resolved.model
+                background_model = resolved.background_model
                 anima_supervisor = resolved.supervisor
                 anima_speciality = resolved.speciality
                 status_path = anima_dir / "status.json"
@@ -114,6 +116,7 @@ def create_animas_router() -> APIRouter:
                 "speciality": anima_speciality,
                 "role": role,
                 "model": model,
+                "background_model": background_model,
                 "department": department,
                 "title": title,
             }

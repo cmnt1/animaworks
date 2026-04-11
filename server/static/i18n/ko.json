@@ -75,6 +75,8 @@
   "animas.tab_close": "탭 닫기",
   "animas.tab_viewing": " · 보는 중",
   "animas.table_actions": "작업",
+  "animas.table_bg_model": "BG 모델",
+  "animas.table_model": "모델",
   "animas.table_name": "이름",
   "animas.table_pid": "PID",
   "animas.table_status": "상태",

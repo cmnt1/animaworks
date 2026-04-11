@@ -70,6 +70,8 @@
   "animas.tab_close": "Close Tab",
   "animas.tab_viewing": " · Viewing",
   "animas.table_actions": "Actions",
+  "animas.table_bg_model": "BG Model",
+  "animas.table_model": "Model",
   "animas.table_name": "Name",
   "animas.table_pid": "PID",
   "animas.table_status": "Status",

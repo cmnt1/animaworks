@@ -9,6 +9,11 @@ let _container = null;
 let _modelsCache = null;
 let _toolsCache = null;
 
+function _shortModel(name) {
+  if (!name) return "--";
+  return name.replace(/^claude-/, "");
+}
+
 function _extractStatsCount(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (value && typeof value === "object") {
@@ -68,6 +73,8 @@ async function _renderList() {
           <tr>
             <th>${t("animas.table_name")}</th>
             <th>${t("animas.table_status")}</th>
+            <th>${t("animas.table_model")}</th>
+            <th>${t("animas.table_bg_model")}</th>
             <th>${t("animas.table_pid")}</th>
             <th>${t("animas.table_uptime")}</th>
             <th>${t("animas.table_actions")}</th>
@@ -104,6 +111,8 @@ async function _renderList() {
           <span class="status-dot ${dotClass}" style="display:inline-block;"></span>
           ${escapeHtml(statusLabel)}
         </td>
+        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.model))}</td>
+        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.background_model))}</td>
         <td>${escapeHtml(String(pid))}</td>
         <td>${escapeHtml(uptime)}</td>
         <td>

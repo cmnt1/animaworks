@@ -70,6 +70,8 @@
   "animas.tab_close": "タブを閉じる",
   "animas.tab_viewing": " · 表示中",
   "animas.table_actions": "操作",
+  "animas.table_bg_model": "BGモデル",
+  "animas.table_model": "モデル",
   "animas.table_name": "名前",
   "animas.table_pid": "PID",
   "animas.table_status": "ステータス",
