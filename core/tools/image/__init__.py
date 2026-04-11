@@ -30,6 +30,7 @@ from .constants import (
 from .diffusers_local import LocalDiffusersClient
 from .fal import FalTextToImageClient, FluxKontextClient
 from .meshy import MeshyClient
+from .nanogpt import NanoGPTImageClient
 from .novelai import NovelAIClient
 from .prompts import (
     _BUSTUP_PROMPT,
@@ -78,4 +79,5 @@ __all__ = [
     "FluxKontextClient",
     "FalTextToImageClient",
     "MeshyClient",
+    "NanoGPTImageClient",
 ]

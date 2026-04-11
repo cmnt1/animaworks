@@ -146,6 +146,7 @@
   "assets.preview": "Preview",
   "assets.preview_failed": "Preview generation failed",
   "assets.preview_generating": "Generating preview...",
+  "assets.generation_model": "Generation Model",
   "assets.import_as_avatar": "Import as avatar (skip generation)",
   "assets.preview_load_failed": "Failed to load preview image",
   "assets.preview_pending": "Waiting for preview",

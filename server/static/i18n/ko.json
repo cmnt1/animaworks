@@ -758,5 +758,6 @@
   "setup.cli_tools_cursor_auth": "Cursor Agent Auth",
   "setup.cli_tools_gemini_cli": "Gemini CLI",
   "setup.cli_tools_gemini_auth": "Gemini CLI Auth",
+  "assets.generation_model": "생성 모델",
   "assets.import_as_avatar": "아바타로 가져오기 (생성 건너뛰기)"
 }

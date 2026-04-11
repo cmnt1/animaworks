@@ -74,6 +74,7 @@ from core.tools._image_clients import (
     FluxKontextClient,
     LocalDiffusersClient,
     MeshyClient,
+    NanoGPTImageClient,
     NovelAIClient,
     _image_to_data_uri,
     _retry,

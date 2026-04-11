@@ -314,6 +314,7 @@ class ImageGenPipeline:
         face_reference_image: bytes | None = None,
         fullbody_step_callback: Callable[[int, int], None] | None = None,
         num_inference_steps: int | None = None,
+        generation_model: str | None = None,
     ) -> PipelineResult:
         """Run the 7-step pipeline synchronously.
 
@@ -372,9 +373,17 @@ class ImageGenPipeline:
             else:
                 try:
                     _notify("fullbody", "generating", 0)
-                    if self._use_diffusers:
+                    if generation_model and generation_model.startswith("nanogpt:"):
+                        nanogpt_model = generation_model.split(":", 1)[1]
+                        from core.tools.image.nanogpt import NanoGPTImageClient
+
+                        logger.info("Step 1: Generating full-body with NanoGPT (%s) …", nanogpt_model)
+                        client: NanoGPTImageClient | NovelAIClient | FalTextToImageClient | LocalDiffusersClient = (
+                            NanoGPTImageClient(model=nanogpt_model)
+                        )
+                    elif self._use_diffusers:
                         logger.info("Step 1: Generating full-body with local Diffusers …")
-                        client: NovelAIClient | FalTextToImageClient | LocalDiffusersClient = LocalDiffusersClient(
+                        client = LocalDiffusersClient(
                             self._config,
                         )
                     elif self._is_realistic:

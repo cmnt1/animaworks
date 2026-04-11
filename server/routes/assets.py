@@ -111,7 +111,11 @@ class AssetRegenerateRequest(BaseModel):
     negative_prompt: str = ""
 
 
+_VALID_NANOGPT_MODELS = {"chroma", "hidream", "qwen-image", "z-image-turbo"}
+
+
 class RemakePreviewRequest(BaseModel):
+    generation_model: str | None = None  # "nanogpt:chroma", "nanogpt:hidream", etc. or None
     style_from: str | None = None
     vibe_strength: float = 0.6
     vibe_info_extracted: float = 0.8
@@ -122,6 +126,18 @@ class RemakePreviewRequest(BaseModel):
     face_reference_url: str | None = None  # URL of a face photo for IP-Adapter
     import_as_is: bool = False  # Import face reference directly as avatar
     num_inference_steps: int = 25  # Diffusers inference step count (quality vs speed)
+
+    @field_validator("generation_model")
+    @classmethod
+    def validate_generation_model(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v.startswith("nanogpt:"):
+            model_name = v.split(":", 1)[1]
+            if model_name not in _VALID_NANOGPT_MODELS:
+                raise ValueError(f"Unknown NanoGPT model: {model_name}")
+            return v
+        raise ValueError(f"Invalid generation_model: {v}")
 
     @field_validator("face_reference_url")
     @classmethod
@@ -875,6 +891,8 @@ def create_assets_router() -> APIRouter:
             gen_kwargs["vibe_strength"] = body.vibe_strength
             gen_kwargs["vibe_info_extracted"] = body.vibe_info_extracted
         gen_kwargs["num_inference_steps"] = body.num_inference_steps
+        if body.generation_model:
+            gen_kwargs["generation_model"] = body.generation_model
 
         # Detect low-VRAM mode so the UI can warn before starting
         _low_vram_mode = False

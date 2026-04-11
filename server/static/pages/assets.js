@@ -548,6 +548,16 @@ function _openRemakeModal() {
             </select>
           </div>
           <div class="assets-modal-control-row">
+            <label class="assets-modal-label" for="assetsGenModel">${t("assets.generation_model")}:</label>
+            <select id="assetsGenModel" class="assets-modal-select">
+              <option value="">Diffusers (Local)</option>
+              <option value="nanogpt:chroma">nanoGPT: chroma</option>
+              <option value="nanogpt:hidream">nanoGPT: hidream (image-to-image 対応)</option>
+              <option value="nanogpt:qwen-image">nanoGPT: qwen-image</option>
+              <option value="nanogpt:z-image-turbo">nanoGPT: z-image-turbo</option>
+            </select>
+          </div>
+          <div class="assets-modal-control-row">
             <label class="assets-modal-label" for="assetsStyleFrom">Style From:</label>
             <select id="assetsStyleFrom" class="assets-modal-select">
               ${styleOptions}
@@ -647,6 +657,11 @@ function _openRemakeModal() {
     _updateVibeSliderState();
   }
 
+  const genModelSelect = document.getElementById("assetsGenModel");
+  if (genModelSelect) {
+    genModelSelect.addEventListener("change", () => _updateVibeSliderState());
+  }
+
   // Face reference URL preview thumbnail + slider state sync
   const faceRefInput = document.getElementById("assetsFaceRefUrl");
   const faceRefPreview = document.getElementById("assetsFaceRefPreview");
@@ -714,13 +729,44 @@ function _openRemakeModal() {
 }
 
 function _updateVibeSliderState() {
+  const genModel = document.getElementById("assetsGenModel")?.value || "";
+  const isNanoGPT = genModel.startsWith("nanogpt:");
+
   const styleFrom = document.getElementById("assetsStyleFrom")?.value;
   const faceRefUrl = document.getElementById("assetsFaceRefUrl")?.value?.trim();
   const vibeSlider = document.getElementById("assetsVibeStrength");
   const infoSlider = document.getElementById("assetsInfoExtract");
+  const stepsSlider = document.getElementById("assetsSteps");
   const importRow = document.getElementById("assetsImportAsIsRow");
   const importCheck = document.getElementById("assetsImportAsIs");
   const hasFaceRef = !!(faceRefUrl && faceRefUrl.startsWith("http"));
+
+  // NanoGPT models: disable controls not supported by text-to-image.
+  // Models with image-to-image support (e.g. hidream) keep Face Reference enabled.
+  const nanogptImg2Img = genModel === "nanogpt:hidream";
+  const nanogptDisabledIds = ["assetsStyleFrom", "assetsVibeStrength", "assetsInfoExtract",
+                              "assetsSteps"];
+  nanogptDisabledIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.disabled = isNanoGPT;
+      el.closest(".assets-modal-control-row")?.classList.toggle("assets-control-disabled", isNanoGPT);
+    }
+  });
+  // Face Reference: disabled for text-to-image-only NanoGPT models, enabled for img2img models
+  const faceRefEl = document.getElementById("assetsFaceRefUrl");
+  if (faceRefEl) {
+    const faceDisabled = isNanoGPT && !nanogptImg2Img;
+    faceRefEl.disabled = faceDisabled;
+    faceRefEl.closest(".assets-modal-control-row")?.classList.toggle("assets-control-disabled", faceDisabled);
+  }
+  if (isNanoGPT) {
+    if (importRow) importRow.style.display = (nanogptImg2Img && hasFaceRef) ? "" : "none";
+    if (!nanogptImg2Img) return;
+    // For img2img NanoGPT models, fall through to handle import-as-is checkbox state
+    if (!hasFaceRef && importCheck) importCheck.checked = false;
+    return;
+  }
 
   // Show import-as-is checkbox only when face reference URL is set
   if (importRow) importRow.style.display = hasFaceRef ? "" : "none";
@@ -739,6 +785,12 @@ function _updateVibeSliderState() {
       slider.closest(".assets-modal-control-row")?.classList.toggle("assets-control-disabled", !slidersEnabled);
     }
   });
+
+  // Steps slider always enabled for Diffusers
+  if (stepsSlider) {
+    stepsSlider.disabled = false;
+    stepsSlider.closest(".assets-modal-control-row")?.classList.remove("assets-control-disabled");
+  }
 }
 
 // ── Preview Generation ──────────────────────
@@ -771,12 +823,15 @@ async function _generatePreview() {
   const imageStyle = document.getElementById("assetsImageStyle")?.value || _currentImageStyle();
   const faceRefUrl = document.getElementById("assetsFaceRefUrl")?.value?.trim() || null;
 
+  const genModel = document.getElementById("assetsGenModel")?.value || null;
+
   const requestBody = {
     vibe_strength: vibeStrength,
     vibe_info_extracted: infoExtracted,
     image_style: imageStyle,
     num_inference_steps: numSteps,
   };
+  if (genModel) requestBody.generation_model = genModel;
   if (styleFrom) requestBody.style_from = styleFrom;
   if (_previewBackupId) requestBody.backup_id = _previewBackupId;
   if (faceRefUrl) requestBody.face_reference_url = faceRefUrl;
