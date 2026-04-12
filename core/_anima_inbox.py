@@ -823,7 +823,7 @@ class InboxMixin:
             else:
                 prefix = f"- {m.from_person}: "
             line = f"{prefix}{_truncate_with_thread_ctx(m.content)}"
-            if m.source in ("slack", "chatwork") and m.external_channel_id:
+            if m.source in ("slack", "chatwork", "discord") and m.external_channel_id:
                 reply_instr = _build_reply_instruction(m)
                 if reply_instr:
                     line += f"\n{reply_instr}"
@@ -832,7 +832,7 @@ class InboxMixin:
         for m in messages:
             if not any(item.msg is m for item in inbox_items):
                 line = f"- {m.from_person}: {_truncate_with_thread_ctx(m.content)}"
-                if m.source in ("slack", "chatwork") and m.external_channel_id:
+                if m.source in ("slack", "chatwork", "discord") and m.external_channel_id:
                     reply_instr = _build_reply_instruction(m)
                     if reply_instr:
                         line += f"\n{reply_instr}"

@@ -112,12 +112,13 @@ def _route_to_board(
 # ── Annotation builder ───────────────────────────────────────
 
 
-def _build_discord_annotation(is_dm: bool, has_mention: bool) -> str:
+def _build_discord_annotation(is_dm: bool, has_mention: bool, ch_name: str = "") -> str:
     if is_dm:
         return "[discord:DM]\n"
+    ch_label = f"#{ch_name}" if ch_name else "channel"
     if has_mention:
-        return f"[discord:channel — {t('discord.annotation_mentioned')}]\n"
-    return f"[discord:channel — {t('discord.annotation_no_mention')}]\n"
+        return f"[discord:{ch_label} — {t('discord.annotation_mentioned')}]\n"
+    return f"[discord:{ch_label} — {t('discord.annotation_no_mention')}]\n"
 
 
 # ── Thread context ───────────────────────────────────────────
@@ -469,7 +470,7 @@ class DiscordGatewayManager:
             has_mention = bot_mentioned or (
                 self._anima_name_re is not None and self._anima_name_re.search(cleaned_text) is not None
             )
-            annotation = _build_discord_annotation(is_dm, has_mention)
+            annotation = _build_discord_annotation(is_dm, has_mention, ch_name)
             intent = "question"
 
             full_content = annotation + thread_ctx + cleaned_text
