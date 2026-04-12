@@ -283,12 +283,25 @@ function _usageForecast(utilization, resetAt, windowSeconds) {
 function _fmtRemainLine(fc) {
   if (!fc) return "";
   const isHours = fc.windowSeconds <= 86400;
-  const budgetStr = fc.runwayDays === Infinity ? "∞"
-    : isHours ? `${(fc.runwayDays * 24).toFixed(1)}h` : `${fc.runwayDays.toFixed(1)}d`;
-  const timeStr = isHours ? `${(fc.daysToResetRaw * 24).toFixed(1)}h` : `${fc.daysToResetRaw.toFixed(1)}d`;
-  const delta = fc.deltaLabel ? ` ${fc.deltaLabel}` : "";
+  const windowUnits = isHours ? fc.windowSeconds / 3600 : fc.windowSeconds / 86400;
+  const unit = isHours ? "h" : "d";
+  // 残り予算をウィンドウの時間比に直接変換（線形比例）
+  const remainTime = fc.remainPct * windowUnits / 100;
+  const timeToReset = fc.daysToResetRaw * (isHours ? 24 : 1);
+  const remainTimeStr = `${remainTime.toFixed(1)}${unit}`;
+  const timeToResetStr = `${timeToReset.toFixed(1)}${unit}`;
+  const remainTimePct = `${(fc.remainPct).toFixed(0)}%`;
+  const timeToResetPct = `${(fc.timePct).toFixed(0)}%`;
+  // delta = 残り予算時間 - リセットまでの時間
+  const timeDelta = remainTime - timeToReset;
+  const deltaPct = Math.round(fc.remainPct) - Math.round(fc.timePct);
+  const deltaPctStr = deltaPct >= 0 ? `+${deltaPct}pt` : `▲${Math.abs(deltaPct)}pt`;
+  const deltaColor = timeDelta >= 0 ? "var(--aw-color-success,#16a34a)" : "var(--aw-color-error,#dc2626)";
+  const deltaSign = timeDelta >= 0 ? "+" : "▲";
+  const deltaVal = timeDelta >= 0 ? timeDelta : Math.abs(timeDelta);
+  const deltaStr = `<span style="color:${deltaColor}">${deltaSign}${deltaVal.toFixed(1)}${unit}</span> <span style="color:${deltaColor}">(${deltaPctStr})</span>`;
   return `<span class="usage-forecast-item"><span class="usage-forecast-label">残り</span> `
-    + `${budgetStr} (${fc.remainPct.toFixed(0)}%) / ${timeStr} (${fc.timePct.toFixed(0)}%)${delta}</span>`;
+    + `<b>${remainTimeStr}</b> (${remainTimePct}) / <b>${timeToResetStr}</b> (${timeToResetPct}) ${deltaStr}</span>`;
 }
 
 function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
