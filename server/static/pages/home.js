@@ -238,8 +238,11 @@ function _usageForecast(utilization, resetAt, windowSeconds) {
   const daysToReset = msToReset / 86400000;
   const burnPerDay = used / elapsedDays;
 
+  const timePct = (msToReset / windowMs) * 100;
+
   if (burnPerDay <= 0.01) {
-    return { runway: "\u221E", daysToReset, landing: `${remain.toFixed(1)}%`, label: "" };
+    return { runway: "\u221E", daysToReset, landing: `${remain.toFixed(1)}%`, label: "",
+             remainPct: remain, timePct, runwayDays: Infinity, daysToResetRaw: daysToReset, windowSeconds };
   }
 
   const runwayDays = remain / burnPerDay;
@@ -273,7 +276,19 @@ function _usageForecast(utilization, resetAt, windowSeconds) {
       ? "var(--aw-color-warning,#d97706)"
       : "var(--aw-color-text-secondary,#666)";
 
-  return { runway: runwayStr, daysToReset: daysToResetStr, deltaLabel, landing: landingStr, landingColor };
+  return { runway: runwayStr, daysToReset: daysToResetStr, deltaLabel, landing: landingStr, landingColor,
+           remainPct: remain, timePct, runwayDays, daysToResetRaw: daysToReset, windowSeconds };
+}
+
+function _fmtRemainLine(fc) {
+  if (!fc) return "";
+  const isHours = fc.windowSeconds <= 86400;
+  const budgetStr = fc.runwayDays === Infinity ? "∞"
+    : isHours ? `${(fc.runwayDays * 24).toFixed(1)}h` : `${fc.runwayDays.toFixed(1)}d`;
+  const timeStr = isHours ? `${(fc.daysToResetRaw * 24).toFixed(1)}h` : `${fc.daysToResetRaw.toFixed(1)}d`;
+  const delta = fc.deltaLabel ? ` ${fc.deltaLabel}` : "";
+  return `<span class="usage-forecast-item"><span class="usage-forecast-label">残り</span> `
+    + `${budgetStr} (${fc.remainPct.toFixed(0)}%) / ${timeStr} (${fc.timePct.toFixed(0)}%)${delta}</span>`;
 }
 
 function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
@@ -307,11 +322,12 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
   const fc = resetInPast ? null : _usageForecast(utilization, resetAt, windowSeconds);
   if (fc) {
     forecastHtml = `<div class="usage-forecast">`;
+    // Line 1: 残り Xd (YY%) / Zd (AA%) ▲delta
+    forecastHtml += _fmtRemainLine(fc);
+    // Line 2: Runway Xd     着地 ZZ%
     forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">Runway</span> ${fc.runway}`;
-    if (fc.daysToReset) forecastHtml += ` / ${fc.daysToReset}`;
-    if (fc.deltaLabel) forecastHtml += ` ${fc.deltaLabel}`;
+    forecastHtml += `<span style="margin-left:1.5em;"><span class="usage-forecast-label">着地</span> <span style="color:${fc.landingColor || "inherit"}">${fc.landing}</span></span>`;
     forecastHtml += `</span>`;
-    forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">着地</span> <span style="color:${fc.landingColor || "inherit"}">${fc.landing}</span></span>`;
     forecastHtml += `</div>`;
   }
 

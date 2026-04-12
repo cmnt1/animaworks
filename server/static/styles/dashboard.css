@@ -599,17 +599,18 @@
 }
 
 .usage-forecast {
-  display: flex;
-  gap: 12px;
   font-size: 0.82rem;
   color: var(--aw-color-text-secondary);
   margin-top: 1px;
 }
 
 .usage-forecast-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
+  display: block;
+  line-height: 1.4;
+}
+
+.usage-forecast-item .usage-forecast-label {
+  margin-right: 3px;
 }
 
 .usage-forecast-label {
