@@ -442,6 +442,11 @@ class InboxMixin:
                         _marker_path.parent.mkdir(parents=True, exist_ok=True)
                         _marker_path.touch()
 
+                    # Flag thread source for post_channel guardrail
+                    self.agent._tool_handler._has_thread_source = any(
+                        getattr(item.msg, "external_thread_ts", "") for item in inbox_result.inbox_items
+                    )
+
                     # Set session origin from the most untrusted message
                     _batch_origins: list[str] = []
                     _batch_chains: list[str] = []

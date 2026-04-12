@@ -295,7 +295,13 @@ class CommsToolsMixin:
         # Sync board post to mapped Discord channel (fire-and-forget)
         self._fire_board_discord_sync(channel, text)
 
-        return f"Posted to #{channel}"
+        result = f"Posted to #{channel}"
+
+        # Guardrail: warn when posting to board during thread-sourced inbox processing
+        if self._trigger.startswith("inbox") and self._has_thread_source:
+            result += f"\n{t('discord.thread_post_channel_warning')}"
+
+        return result
 
     def _fanout_board_mentions(self, channel: str, text: str) -> None:
         """Send DM notifications to mentioned Animas when posting to a board channel."""

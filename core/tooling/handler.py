@@ -156,6 +156,9 @@ class ToolHandler(
         # ── Current trigger (set by caller before execution) ──
         self._trigger: str = ""
 
+        # ── Discord thread source flag (set by inbox processor) ──
+        self._has_thread_source: bool = False
+
         # ── Session trust tracking (security: min trust across all tools used) ──
         # 2 = trusted, 1 = medium, 0 = untrusted; default trusted (no tools used yet)
         self._min_trust_seen: int = 2
