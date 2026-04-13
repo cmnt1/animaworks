@@ -8,7 +8,13 @@
   },
   "external_tools": {
     "allow_all": true,
-    "allow": [],
+    "allow": [
+      "discord_channel_post",
+      "discord_channel_history",
+      "discord_unreplied",
+      "notion",
+      "notebooklm"
+    ],
     "deny": []
   },
   "tool_creation": {

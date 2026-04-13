@@ -18,7 +18,8 @@
       "discord_channel_post",
       "discord_channel_history",
       "discord_unreplied",
-      "notion"
+      "notion",
+      "notebooklm"
     ],
     "deny": []
   },
