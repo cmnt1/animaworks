@@ -11,7 +11,14 @@ let _toolsCache = null;
 
 function _shortModel(name) {
   if (!name) return "--";
-  return name.replace(/^claude-/, "");
+  if (name.startsWith("claude-")) return "Anthropic: " + name.replace(/^claude-/, "");
+  if (name.startsWith("codex/")) return "OpenAI: " + name;
+  if (name.startsWith("openai/")) return "OpenAI: " + name;
+  if (name.startsWith("openai-codex/")) return "OpenAI: " + name;
+  if (/^(gpt-|o3|o4-)/.test(name)) return "OpenAI: " + name;
+  if (name.startsWith("google/")) return "Google: " + name.replace(/^google\//, "");
+  if (name.startsWith("nanogpt/")) return "nanoGPT: " + name.replace(/^nanogpt\//, "");
+  return name;
 }
 
 function _extractStatsCount(value) {

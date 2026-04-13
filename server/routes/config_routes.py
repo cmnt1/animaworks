@@ -305,26 +305,32 @@ def create_config_router() -> APIRouter:
             if provider == "anthropic":
                 for m in ("claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"):
                     if m not in seen:
-                        models.append({"id": m, "label": m, "credential": "anthropic"})
+                        models.append({"id": m, "label": f"Anthropic: {m}", "credential": "anthropic"})
                         seen.add(m)
             elif provider == "openai":
-                for m in (
-                    "gpt-4.1",
-                    "gpt-4.1-mini",
-                    "gpt-4.1-nano",
-                    "gpt-4o",
-                    "gpt-4o-mini",
-                    "o3",
-                    "o4-mini",
-                ):
-                    if m not in seen:
-                        models.append({"id": m, "label": m, "credential": "openai"})
-                        seen.add(m)
+                # API models require api_key (not available with codex_login only)
+                if cred.api_key:
+                    for m in (
+                        "gpt-5.4",
+                        "gpt-5.4-mini",
+                        "gpt-5.4-nano",
+                        "gpt-5",
+                        "gpt-5-mini",
+                        "gpt-5-nano",
+                        "gpt-4.1",
+                        "gpt-4.1-mini",
+                        "gpt-4.1-nano",
+                        "o3",
+                        "o4-mini",
+                    ):
+                        if m not in seen:
+                            models.append({"id": m, "label": f"OpenAI: {m}", "credential": "openai"})
+                            seen.add(m)
                 # Codex CLI models (codex_login or api_key)
                 if cred.type == "codex_login" or cred.api_key:
                     for m in _known_codex_models():
                         if m not in seen:
-                            models.append({"id": m, "label": m, "credential": "openai"})
+                            models.append({"id": m, "label": f"OpenAI: {m}", "credential": "openai"})
                             seen.add(m)
             elif provider in ("google", "gemini"):
                 for m in (
@@ -342,7 +348,7 @@ def create_config_router() -> APIRouter:
         if is_codex_login_available():
             for m in _known_codex_models():
                 if m not in seen:
-                    models.append({"id": m, "label": m, "credential": "codex"})
+                    models.append({"id": m, "label": f"OpenAI: {m}", "credential": "codex"})
                     seen.add(m)
 
         # nanoGPT models (dynamic fetch)
