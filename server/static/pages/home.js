@@ -197,9 +197,12 @@ function _resetToJst(value) {
   } catch { return String(value); }
 }
 
-function _remainingColor(remaining) {
-  if (remaining <= 10) return "var(--aw-color-error, #dc2626)";
-  if (remaining <= 30) return "var(--aw-color-warning, #d97706)";
+function _remainingColor(remaining, timePct) {
+  if (timePct !== null && timePct !== undefined) {
+    const room = remaining - timePct;
+    if (room < -10) return "var(--aw-color-error, #dc2626)";
+    if (room < 0) return "var(--aw-color-warning, #d97706)";
+  }
   return "var(--aw-color-success, #16a34a)";
 }
 
@@ -313,10 +316,10 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
   const effectiveUtil = resetInPast ? 0 : utilization;
   const remaining = Math.max(0, 100 - effectiveUtil);
   const resetStr = resetInPast ? "" : (resetAt ? _resetToJst(resetAt) : "");
-  const color = _remainingColor(remaining);
 
   // Time-proportional marker — shown on ALL windows (5h and 7d)
   const timePct = _calcTimePct(resetAt, windowSeconds);
+  const color = _remainingColor(remaining, timePct);
   let markerHtml = "";
   if (timePct !== null && windowSeconds) {
     const markerLabel = `${timePct.toFixed(0)}%`;
