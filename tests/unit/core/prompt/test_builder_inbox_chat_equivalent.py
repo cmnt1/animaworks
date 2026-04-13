@@ -184,8 +184,8 @@ class TestInboxChatEquivalent:
             )
         assert "I specialize in DevOps" in result.system_prompt
 
-    def test_task_still_excludes_specialty(self, tmp_path):
-        """Regression: task trigger should still exclude specialty."""
+    def test_task_includes_specialty(self, tmp_path):
+        """Task trigger now includes specialty (full-context TaskExec)."""
         memory = _mock_memory(tmp_path, specialty="## Specialty\nI specialize in DevOps.")
 
         with ExitStack() as stack:
@@ -196,4 +196,4 @@ class TestInboxChatEquivalent:
                 trigger="task:abc123",
                 context_window=200_000,
             )
-        assert "I specialize in DevOps" not in result.system_prompt
+        assert "I specialize in DevOps" in result.system_prompt
