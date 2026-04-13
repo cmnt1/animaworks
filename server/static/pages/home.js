@@ -337,9 +337,17 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
     forecastHtml = `<div class="usage-forecast">`;
     // Line 1: 残り Xd (YY%) / Zd (AA%) ▲delta
     forecastHtml += _fmtRemainLine(fc);
-    // Line 2: Runway Xd     着地 ZZ%
+    // Line 2: Runway Xd     着地 ±Xd (runway - timeToReset)
+    const isHours = fc.windowSeconds <= 86400;
+    const landingDelta = fc.runwayDays - fc.daysToResetRaw;
+    const landingAbs = Math.abs(landingDelta);
+    const landingUnit = isHours ? "h" : "d";
+    const landingVal = isHours ? (landingAbs * 24).toFixed(1) : landingAbs.toFixed(1);
+    const landingSign = landingDelta >= 0 ? "+" : "▲";
+    const landingClr = landingDelta >= 0 ? "var(--aw-color-success,#16a34a)" : "var(--aw-color-error,#dc2626)";
+    const landingStr = fc.runwayDays === Infinity ? "∞" : `${landingSign}${landingVal}${landingUnit}`;
     forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">Runway</span> ${fc.runway}`;
-    forecastHtml += `<span style="margin-left:1.5em;"><span class="usage-forecast-label">着地</span> <span style="color:${fc.landingColor || "inherit"}">${fc.landing}</span></span>`;
+    forecastHtml += `<span style="margin-left:1.5em;"><span class="usage-forecast-label">着地</span> <span style="color:${landingClr}">${landingStr}</span></span>`;
     forecastHtml += `</span>`;
     forecastHtml += `</div>`;
   }
