@@ -28,7 +28,7 @@ import pytest
 # ── Expected config defaults ─────────────────────────────────────
 
 
-EXPECTED_CONSOLIDATION_MODEL = "anthropic/claude-sonnet-4-6"
+EXPECTED_CONSOLIDATION_MODEL = "claude-sonnet-4-6"
 EXPECTED_ANIMA_DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
@@ -412,13 +412,20 @@ class TestConfigDefaults:
         defaults = AnimaDefaults()
         assert defaults.model == EXPECTED_ANIMA_DEFAULT_MODEL
 
-    def test_consolidation_model_has_provider_prefix(self):
-        """ConsolidationConfig().llm_model includes the provider prefix."""
+    def test_consolidation_model_no_provider_prefix(self):
+        """ConsolidationConfig().llm_model must NOT include a provider prefix.
+
+        The 'anthropic/' prefix routes through LiteLLM directly (Mode A),
+        which fails in Max-plan environments where ANTHROPIC_API_KEY is absent.
+        The bare model name routes through models.json → Mode S / Agent SDK.
+        """
         from core.config.models import ConsolidationConfig
 
         cfg = ConsolidationConfig()
-        assert "/" in cfg.llm_model, (
-            "llm_model should include provider prefix (e.g. 'anthropic/')"
+        assert "/" not in cfg.llm_model, (
+            "llm_model must not include a provider prefix ('anthropic/'). "
+            "Use bare model name (e.g. 'claude-sonnet-4-6') so resolve_execution_mode() "
+            "routes via models.json → Mode S / Agent SDK in Max-plan environments."
         )
 
     def test_anima_defaults_model_no_provider_prefix(self):

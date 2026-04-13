@@ -70,7 +70,7 @@ class AnimaModelConfig(BaseModel):
 
 # ── Default model names (single source of truth) ─────────────────────────────
 DEFAULT_ANIMA_MODEL: str = "claude-sonnet-4-6"
-DEFAULT_CONSOLIDATION_MODEL: str = f"anthropic/{DEFAULT_ANIMA_MODEL}"
+DEFAULT_CONSOLIDATION_MODEL: str = DEFAULT_ANIMA_MODEL
 
 
 class AnimaDefaults(BaseModel):
