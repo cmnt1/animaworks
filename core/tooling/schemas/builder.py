@@ -36,11 +36,22 @@ _CONSOLIDATION_BLOCKED_TOOLS: frozenset[str] = frozenset(
     {"delegate_task", "submit_tasks", "send_message", "post_channel"}
 )
 
-_COMPACT_COMM_TOOLS: frozenset[str] = frozenset({
-    "Read", "Write", "Edit", "Bash", "Grep", "Glob",
-    "search_memory", "read_memory_file", "write_memory_file",
-    "send_message", "post_channel", "completion_gate",
-})
+_COMPACT_COMM_TOOLS: frozenset[str] = frozenset(
+    {
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob",
+        "search_memory",
+        "read_memory_file",
+        "write_memory_file",
+        "send_message",
+        "post_channel",
+        "completion_gate",
+    }
+)
 
 
 def build_tool_list(
