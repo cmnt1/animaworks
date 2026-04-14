@@ -14,6 +14,7 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 _DEVICE_URL_RE = re.compile(r"https://auth\.openai\.com/codex/device", re.IGNORECASE)
 _DEVICE_CODE_RE = re.compile(r"\b([A-Z0-9]{4}-[A-Z0-9]{5})\b")
 
@@ -189,8 +190,9 @@ def get_codex_device_login(*, force: bool = False) -> dict[str, str | bool]:
         proc.kill()
         output, _ = proc.communicate()
 
-    login_url = _DEVICE_URL_RE.search(output)
-    device_code = _DEVICE_CODE_RE.search(output)
+    clean_output = _ANSI_ESCAPE_RE.sub("", output)
+    login_url = _DEVICE_URL_RE.search(clean_output)
+    device_code = _DEVICE_CODE_RE.search(clean_output)
 
     ok = bool(login_url and device_code)
 
@@ -215,14 +217,14 @@ def get_codex_device_login(*, force: bool = False) -> dict[str, str | bool]:
     result: dict[str, str | bool] = {
         "ok": ok,
         "already_logged_in": False,
-        "message": output.strip(),
+        "message": clean_output.strip(),
     }
     if login_url:
         result["login_url"] = login_url.group(0)
     if device_code:
         result["device_code"] = device_code.group(1)
     if not result["ok"]:
-        result["message"] = output.strip() or "Failed to start Codex device login"
+        result["message"] = clean_output.strip() or "Failed to start Codex device login"
     return result
 
 
