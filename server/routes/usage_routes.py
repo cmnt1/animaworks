@@ -396,7 +396,17 @@ def _relogin_claude() -> tuple[dict[str, Any], int]:
 def _relogin_openai() -> tuple[dict[str, Any], int]:
     """Start Codex browser login when needed, or report active login."""
     _clear_usage_cache("openai")
-    if is_codex_login_available():
+    # If there is an active auth alert for openai, the refresh token is known
+    # to be broken even though the access_token file still exists.  Skip the
+    # "already logged in" short-circuit and proceed to device login.
+    try:
+        from core.auth_alert import has_alert
+
+        force_relogin = has_alert("openai")
+    except Exception:
+        force_relogin = False
+
+    if not force_relogin and is_codex_login_available():
         return (
             {
                 "success": True,
