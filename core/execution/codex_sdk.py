@@ -59,6 +59,15 @@ _FOREGROUND_EVENT_IDLE_TIMEOUT_SEC = 120.0
 _RESUME_PROMPT_SIZE_LIMIT = 50_000
 _FATAL_STDERR_PATTERNS = ("error: stream closed",)
 
+# Patterns indicating Codex auth has expired and needs manual re-login.
+_AUTH_EXPIRED_PATTERNS = (
+    "refresh token was already used",
+    "refresh_token_reused",
+    "failed to refresh token",
+    "please log out and sign in again",
+    "please try signing in again",
+)
+
 # Increase the asyncio.StreamReader buffer limit for Codex subprocess pipes.
 # The default 64 KB (2**16) is too small for large prompts that produce JSONL
 # lines exceeding 64 KB on stdout (e.g., thread resume with full context echo).
@@ -384,6 +393,40 @@ def _stderr_contains_fatal_signal(text: str) -> bool:
     """Return True when Codex stderr already indicates the stream is unrecoverable."""
     lowered = text.lower()
     return any(pattern in lowered for pattern in _FATAL_STDERR_PATTERNS)
+
+
+def _stderr_contains_auth_expired(text: str) -> bool:
+    """Return True when stderr indicates Codex auth token has expired."""
+    lowered = text.lower()
+    return any(pattern in lowered for pattern in _AUTH_EXPIRED_PATTERNS)
+
+
+def _notify_auth_expired(anima_name: str) -> None:
+    """Fire-and-forget notification that Codex auth has expired."""
+    try:
+        from core.notification.notifier import HumanNotifier
+
+        notifier = HumanNotifier()
+
+        async def _send() -> None:
+            await notifier.notify(
+                subject=f"Codex auth expired ({anima_name})",
+                body=(
+                    f"Codex (OpenAI) の認証トークンが期限切れです。\n"
+                    f"ターミナルで `codex auth login` を実行して再認証してください。\n"
+                    f"対象Anima: {anima_name}"
+                ),
+                priority="high",
+                anima_name=anima_name,
+            )
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_send())
+        except RuntimeError:
+            pass
+    except Exception:
+        logger.debug("Failed to send auth-expired notification", exc_info=True)
 
 
 def _should_cli_exec_fallback(exc: BaseException) -> bool:
@@ -919,8 +962,28 @@ class CodexSDKExecutor(BaseExecutor):
             returncode = await proc.wait()
             await stderr_task
             stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
+            if stderr_text and _stderr_contains_auth_expired(stderr_text):
+                logger.error(
+                    "Codex auth expired for %s — run `codex auth login` to re-authenticate",
+                    self._anima_name,
+                )
+                _notify_auth_expired(self._anima_name)
+                raise RuntimeError(
+                    f"Codex auth expired — run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
+                )
             if returncode != 0:
                 raise RuntimeError(stderr_text or f"codex exec exited with code {returncode}")
+            # Auth expired with exit 0 but empty output (codex sometimes
+            # exits cleanly despite auth errors in stderr).
+            if not response_parts and stderr_text and _stderr_contains_auth_expired(stderr_text):
+                logger.error(
+                    "Codex auth expired for %s (exit 0 but no output) — run `codex auth login`",
+                    self._anima_name,
+                )
+                _notify_auth_expired(self._anima_name)
+                raise RuntimeError(
+                    f"Codex auth expired — run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
+                )
             if stderr_text:
                 logger.debug("Codex CLI exec stderr: %s", stderr_text[:500])
         finally:

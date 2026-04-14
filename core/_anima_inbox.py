@@ -578,7 +578,10 @@ class InboxMixin:
                     # returned nothing (e.g. SDK empty response due to API
                     # outage / rate limit).  Keeping them lets the next
                     # inbox cycle retry, up to _INBOX_EMPTY_RETRY_LIMIT.
-                    if accumulated_text.strip() or self.agent.replied_to:
+                    # Terminal errors (action="error") are always archived
+                    # to prevent infinite retry loops.
+                    _is_terminal_error = result is not None and result.action == "error"
+                    if accumulated_text.strip() or self.agent.replied_to or _is_terminal_error:
                         self._inbox_empty_retries = 0
                         await self._archive_processed_messages(
                             inbox_result.inbox_items,
