@@ -403,15 +403,29 @@ async function _runUsageRelogin(provider) {
       window.open(data.login_url, "_blank", "noopener,noreferrer");
     }
 
-    const lines = [];
-    if (data.message) lines.push(data.message);
-    if (data.device_code) lines.push(`Code: ${data.device_code}`);
-    if (data.login_url) lines.push(`URL: ${data.login_url}`);
-    if (!data.success && data.manual_command) {
-      lines.push("");
-      lines.push(`Terminal: ${data.manual_command}`);
+    // Build user-friendly message
+    let msg;
+    if (provider === "openai" && data.device_code && data.login_url) {
+      msg = [
+        "ブラウザで認証ページが開きます。",
+        "",
+        `認証コード: ${data.device_code}`,
+        "",
+        "ブラウザでログイン後、上のコードを入力してください。",
+        `URL: ${data.login_url}`,
+      ].join("\n");
+    } else {
+      const lines = [];
+      if (data.message) lines.push(data.message);
+      if (data.device_code) lines.push(`Code: ${data.device_code}`);
+      if (data.login_url) lines.push(`URL: ${data.login_url}`);
+      if (!data.success && data.manual_command) {
+        lines.push("");
+        lines.push(`Terminal: ${data.manual_command}`);
+      }
+      msg = lines.join("\n");
     }
-    alert(lines.join("\n") || (res.ok ? "Done" : "Failed"));
+    alert(msg || (res.ok ? "Done" : "Failed"));
   } catch (err) {
     alert(err.message || "Failed");
   }
