@@ -362,8 +362,13 @@ class InboxResult:
     prompt_parts: list[str] = field(default_factory=list)
 
 
+_INBOX_EMPTY_RETRY_LIMIT = 3
+
+
 class InboxMixin:
     """Mixin: Anima-to-Anima inbox processing, filtering, dedup, archiving."""
+
+    _inbox_empty_retries: int = 0
 
     # ── Inbox MSG Immediate Processing ────────────────────────
 
@@ -572,18 +577,35 @@ class InboxMixin:
                     # Archive processed messages — but NOT when the LLM
                     # returned nothing (e.g. SDK empty response due to API
                     # outage / rate limit).  Keeping them lets the next
-                    # inbox cycle retry.
+                    # inbox cycle retry, up to _INBOX_EMPTY_RETRY_LIMIT.
                     if accumulated_text.strip() or self.agent.replied_to:
+                        self._inbox_empty_retries = 0
                         await self._archive_processed_messages(
                             inbox_result.inbox_items,
                             inbox_result.senders,
                             self.agent.replied_to,
                         )
                     else:
-                        logger.warning(
-                            "[%s] Empty LLM response for inbox — messages NOT archived (will retry)",
-                            self.name,
-                        )
+                        self._inbox_empty_retries += 1
+                        if self._inbox_empty_retries >= _INBOX_EMPTY_RETRY_LIMIT:
+                            logger.error(
+                                "[%s] Empty LLM response for inbox — retry limit (%d) reached, archiving to stop loop",
+                                self.name,
+                                _INBOX_EMPTY_RETRY_LIMIT,
+                            )
+                            self._inbox_empty_retries = 0
+                            await self._archive_processed_messages(
+                                inbox_result.inbox_items,
+                                inbox_result.senders,
+                                set(),
+                            )
+                        else:
+                            logger.warning(
+                                "[%s] Empty LLM response for inbox — messages NOT archived (retry %d/%d)",
+                                self.name,
+                                self._inbox_empty_retries,
+                                _INBOX_EMPTY_RETRY_LIMIT,
+                            )
 
                     self._activity.log(
                         "inbox_processing_end",
