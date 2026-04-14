@@ -661,9 +661,12 @@ class CodexSDKExecutor(BaseExecutor):
             "PATH": _default_path_env(),
             "HOME": _default_home_dir(),
         }
-        # Omit CODEX_HOME when no auth.json exists (Codex ≥0.115 keychain).
+        # When per-anima auth.json is absent, use the system CODEX_HOME
+        # (from env var) or omit entirely for default ~/.codex/ keychain.
         if not self._use_default_codex_home:
             env["CODEX_HOME"] = str(self._codex_home)
+        elif os.environ.get("CODEX_HOME"):
+            env["CODEX_HOME"] = os.environ["CODEX_HOME"]
         # Windows requires SYSTEMROOT for Winsock/TLS initialisation and
         # TEMP/TMP for scratch files.  Without these the Codex CLI subprocess
         # fails with OS error 10106 (WSAEPROVIDERFAILEDINIT).
@@ -714,7 +717,12 @@ class CodexSDKExecutor(BaseExecutor):
            omits CODEX_HOME entirely (letting Codex use OS keychain).
            Per-anima config is then passed via ``-c`` flags instead.
         """
-        default_auth = Path.home() / ".codex" / "auth.json"
+        # Check the system-level CODEX_HOME first (env var), then ~/.codex/
+        _sys_codex_home = os.environ.get("CODEX_HOME")
+        if _sys_codex_home:
+            default_auth = Path(_sys_codex_home) / "auth.json"
+        else:
+            default_auth = Path.home() / ".codex" / "auth.json"
         target = self._codex_home / "auth.json"
 
         if target.exists() and not target.is_symlink():
@@ -776,7 +784,8 @@ class CodexSDKExecutor(BaseExecutor):
     def _effective_codex_home(self) -> Path:
         """Return the actual CODEX_HOME directory that will be used."""
         if self._use_default_codex_home:
-            return Path.home() / ".codex"
+            _sys = os.environ.get("CODEX_HOME")
+            return Path(_sys) if _sys else Path.home() / ".codex"
         return self._codex_home
 
     def _write_codex_config(self, system_prompt: str) -> None:
