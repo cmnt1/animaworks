@@ -978,9 +978,9 @@ class CodexSDKExecutor(BaseExecutor):
             if stderr_text and _stderr_contains_auth_expired(stderr_text):
                 logger.error(
                     "Codex auth expired for %s — run `codex auth login` to re-authenticate",
-                    self._anima_name,
+                    self._anima_dir.name,
                 )
-                _notify_auth_expired(self._anima_name)
+                _notify_auth_expired(self._anima_dir.name)
                 raise RuntimeError(
                     f"Codex auth expired — run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
                 )
@@ -991,9 +991,9 @@ class CodexSDKExecutor(BaseExecutor):
             if not response_parts and stderr_text and _stderr_contains_auth_expired(stderr_text):
                 logger.error(
                     "Codex auth expired for %s (exit 0 but no output) — run `codex auth login`",
-                    self._anima_name,
+                    self._anima_dir.name,
                 )
-                _notify_auth_expired(self._anima_name)
+                _notify_auth_expired(self._anima_dir.name)
                 raise RuntimeError(
                     f"Codex auth expired — run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
                 )

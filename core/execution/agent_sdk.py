@@ -399,7 +399,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                     raise_alert(
                         "claude",
                         "Claude の認証に失敗しました。ダッシュボードから再ログインしてください。",
-                        anima_name=self._anima_name,
+                        anima_name=self._anima_dir.name,
                     )
                 except Exception:
                     pass
@@ -587,7 +587,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                     raise_alert(
                         "claude",
                         "Claude の認証に失敗しました。ダッシュボードから再ログインしてください。",
-                        anima_name=self._anima_name,
+                        anima_name=self._anima_dir.name,
                     )
                 except Exception:
                     pass
