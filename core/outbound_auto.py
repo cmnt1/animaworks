@@ -352,6 +352,11 @@ class BoardDiscordSync:
         if source == "discord":
             return None
 
+        # DM boards (dm-*) are handled by AutoResponder directly;
+        # forwarding them here would create an infinite loop.
+        if board_name.startswith("dm-"):
+            return None
+
         from core.config.models import load_config
 
         cfg = load_config()
