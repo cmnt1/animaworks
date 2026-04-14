@@ -465,6 +465,13 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
                     "limit_tokens": ac.get("limit", 0),
                 }
 
+        # Successful fetch proves auth is working — clear any stale alert
+        try:
+            from core.auth_alert import clear_alert
+
+            clear_alert("claude")
+        except Exception:
+            pass
         _set_cache("claude", result)
         return result
 
@@ -687,6 +694,13 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
                 "window_seconds": window_sec,
             }
 
+        # Successful fetch proves auth is working — clear any stale alert
+        try:
+            from core.auth_alert import clear_alert
+
+            clear_alert("openai")
+        except Exception:
+            pass
         _set_cache("openai", result)
         return result
 
