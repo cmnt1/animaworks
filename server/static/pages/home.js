@@ -629,7 +629,7 @@ function _renderGovernor(gov) {
     </div>
   `;
 
-  if (needsRelogin) {
+  {
     const btn = document.getElementById("govReloginBtn");
     btn?.addEventListener("click", async () => {
       btn.disabled = true;
