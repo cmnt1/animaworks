@@ -394,29 +394,11 @@ def _relogin_claude() -> tuple[dict[str, Any], int]:
 
 
 def _relogin_openai() -> tuple[dict[str, Any], int]:
-    """Start Codex browser login when needed, or report active login."""
+    """Start Codex device login.  Always forces the device flow because the
+    user explicitly clicked the re-auth button on the dashboard."""
     _clear_usage_cache("openai")
-    # If there is an active auth alert for openai, the refresh token is known
-    # to be broken even though the access_token file still exists.  Skip the
-    # "already logged in" short-circuit and proceed to device login.
-    try:
-        from core.auth_alert import has_alert
 
-        force_relogin = has_alert("openai")
-    except Exception:
-        force_relogin = False
-
-    if not force_relogin and is_codex_login_available():
-        return (
-            {
-                "success": True,
-                "already_logged_in": True,
-                "message": "Codex login is already available",
-            },
-            200,
-        )
-
-    payload = get_codex_device_login(force=force_relogin)
+    payload = get_codex_device_login(force=True)
     _clear_usage_cache("openai")
     status_code = 200 if payload.get("ok") else 400
     return (
@@ -894,7 +876,9 @@ def create_usage_router() -> APIRouter:
     @router.post("/usage/openai/relogin")
     async def relogin_openai() -> JSONResponse:
         payload, status_code = _relogin_openai()
-        if payload.get("success"):
+        # Only clear the alert when a real device login was initiated
+        # (not when it short-circuited with "already_logged_in").
+        if payload.get("success") and not payload.get("already_logged_in"):
             try:
                 from core.auth_alert import clear_alert
 
