@@ -668,7 +668,10 @@ class CodexSDKExecutor(BaseExecutor):
         # TEMP/TMP for scratch files.  Without these the Codex CLI subprocess
         # fails with OS error 10106 (WSAEPROVIDERFAILEDINIT).
         if sys.platform == "win32":
-            for var in ("SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "APPDATA"):
+            for var in (
+                "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "APPDATA",
+                "LOCALAPPDATA", "PROGRAMDATA",
+            ):
                 val = os.environ.get(var)
                 if val:
                     env[var] = val
