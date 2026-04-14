@@ -52,6 +52,7 @@ export function render(container) {
         </div>
       </div>
     </div>
+    <div id="usageAuthAlerts" style="display:none;"></div>
     <div id="usageGovernorBar" style="display:none;"></div>
 
     <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem;">
@@ -503,6 +504,57 @@ function _renderNanogptUsage(data) {
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
+function _renderAuthAlerts(alerts) {
+  const el = document.getElementById("usageAuthAlerts");
+  if (!el) return;
+  if (!alerts || alerts.length === 0) {
+    el.style.display = "none";
+    return;
+  }
+
+  const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "nanoGPT" };
+  const RELOGIN_PATHS = {
+    claude: "/api/usage/claude/relogin",
+    openai: "/api/usage/openai/relogin",
+  };
+
+  let rowsHtml = "";
+  for (const alert of alerts) {
+    const label = LABELS[alert.provider] || alert.provider;
+    const hasRelogin = RELOGIN_PATHS[alert.provider];
+    const animaInfo = alert.anima_name ? ` (${escapeHtml(alert.anima_name)})` : "";
+    const btnHtml = hasRelogin
+      ? `<button class="btn-secondary auth-alert-relogin-btn" data-provider="${alert.provider}" style="font-size:0.78rem;padding:2px 10px;margin-left:0.75rem;">再認証</button>`
+      : "";
+    rowsHtml += `
+      <div class="auth-alert-row" style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;">
+        <strong>${escapeHtml(label)}</strong>${animaInfo}:
+        <span>${escapeHtml(alert.message)}</span>
+        ${btnHtml}
+      </div>`;
+  }
+
+  el.style.display = "block";
+  el.innerHTML = `
+    <div class="governor-bar governor-bar--active" style="border-color:var(--aw-color-error,#dc2626);">
+      <div class="governor-header"><span class="governor-icon">&#x26A0;</span><strong>認証エラー</strong></div>
+      ${rowsHtml}
+    </div>
+  `;
+
+  // Attach relogin button handlers
+  for (const btn of el.querySelectorAll(".auth-alert-relogin-btn")) {
+    btn.addEventListener("click", async () => {
+      const provider = btn.dataset.provider;
+      btn.disabled = true;
+      btn.textContent = "...";
+      await _runUsageRelogin(provider);
+      btn.disabled = false;
+      btn.textContent = "再認証";
+    });
+  }
+}
+
 function _renderGovernor(gov) {
   const el = document.getElementById("usageGovernorBar");
   if (!el) return;
@@ -612,6 +664,7 @@ async function _loadUsage(forceRefresh = false) {
     if (data.claude) _renderClaudeUsage(data.claude);
     if (data.openai) _renderOpenaiUsage(data.openai);
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
+    _renderAuthAlerts(data.auth_alerts);
     _renderGovernor(data.governor);
     const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;
     _updateUsageLastUpdated(Date.now(), serverFetchedAt);

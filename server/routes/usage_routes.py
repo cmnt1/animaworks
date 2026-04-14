@@ -847,12 +847,21 @@ def create_usage_router() -> APIRouter:
                 "since": st.since,
                 "last_check": st.last_check,
             }
+        # Auth alerts from executor-detected failures
+        try:
+            from core.auth_alert import get_alerts
+
+            auth_alerts = get_alerts()
+        except Exception:
+            auth_alerts = []
+
         payload = {
             "claude": _fetch_claude_usage(skip_cache=skip_cache),
             "openai": _fetch_openai_usage(skip_cache=skip_cache),
             "nanogpt": _fetch_nanogpt_usage(skip_cache=skip_cache),
             "cached_at": time.time(),
             "governor": governor_info,
+            "auth_alerts": auth_alerts,
         }
         payload = _merge_usage_snapshot(payload)
         payload["snapshot_path"] = str(_usage_snapshot_path())
@@ -863,11 +872,25 @@ def create_usage_router() -> APIRouter:
     @router.post("/usage/claude/relogin")
     async def relogin_claude() -> JSONResponse:
         payload, status_code = _relogin_claude()
+        if payload.get("success"):
+            try:
+                from core.auth_alert import clear_alert
+
+                clear_alert("claude")
+            except Exception:
+                pass
         return JSONResponse(payload, status_code=status_code)
 
     @router.post("/usage/openai/relogin")
     async def relogin_openai() -> JSONResponse:
         payload, status_code = _relogin_openai()
+        if payload.get("success"):
+            try:
+                from core.auth_alert import clear_alert
+
+                clear_alert("openai")
+            except Exception:
+                pass
         return JSONResponse(payload, status_code=status_code)
 
     @router.get("/usage/policy")

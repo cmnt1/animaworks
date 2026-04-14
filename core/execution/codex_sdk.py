@@ -403,6 +403,19 @@ def _stderr_contains_auth_expired(text: str) -> bool:
 
 def _notify_auth_expired(anima_name: str) -> None:
     """Fire-and-forget notification that Codex auth has expired."""
+    # Record in the auth alert registry for dashboard display
+    try:
+        from core.auth_alert import raise_alert
+
+        raise_alert(
+            "openai",
+            "Codex (OpenAI) の認証トークンが期限切れです。ダッシュボードから再ログインしてください。",
+            anima_name=anima_name,
+        )
+    except Exception:
+        logger.debug("Failed to raise auth alert", exc_info=True)
+
+    # Also send human notification
     try:
         from core.notification.notifier import HumanNotifier
 
@@ -413,7 +426,7 @@ def _notify_auth_expired(anima_name: str) -> None:
                 subject=f"Codex auth expired ({anima_name})",
                 body=(
                     f"Codex (OpenAI) の認証トークンが期限切れです。\n"
-                    f"ターミナルで `codex auth login` を実行して再認証してください。\n"
+                    f"ダッシュボードから再ログインするか、ターミナルで `codex auth login` を実行してください。\n"
                     f"対象Anima: {anima_name}"
                 ),
                 priority="high",

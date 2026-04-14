@@ -393,6 +393,16 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 )
             except Exception as retry_exc:
                 logger.exception("Agent SDK auth failure retry failed")
+                try:
+                    from core.auth_alert import raise_alert
+
+                    raise_alert(
+                        "claude",
+                        "Claude の認証に失敗しました。ダッシュボードから再ログインしてください。",
+                        anima_name=self._anima_name,
+                    )
+                except Exception:
+                    pass
                 return ExecutionResult(
                     text=f"[Agent SDK Error: {retry_exc}]",
                     tool_call_records=[],
@@ -568,6 +578,19 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 if ev.get("type") == "text_delta":
                     emitted_text_delta = True
                 yield ev
+            # If still failing after retry, raise alert
+            retry_auth = _detect_sdk_auth_failure("\n".join(state.response_text))
+            if retry_auth:
+                try:
+                    from core.auth_alert import raise_alert
+
+                    raise_alert(
+                        "claude",
+                        "Claude の認証に失敗しました。ダッシュボードから再ログインしてください。",
+                        anima_name=self._anima_name,
+                    )
+                except Exception:
+                    pass
 
         all_tool_records = _finalize_pending_records(state.pending_records)
         full_text = "\n".join(state.response_text) or "(no response)"
