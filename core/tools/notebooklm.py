@@ -134,11 +134,13 @@ async def _get_notebook(notebook_id: str) -> dict[str, Any]:
     path = _resolve_storage_path()
     async with await NotebookLMClient.from_storage(path) as client:
         desc = await client.notebooks.get_description(notebook_id)
+        topics = []
+        for t in desc.suggested_topics or []:
+            topics.append(t.question if hasattr(t, "question") else str(t))
         return {
             "id": notebook_id,
-            "title": desc.title if hasattr(desc, "title") else None,
-            "summary": desc.summary if hasattr(desc, "summary") else None,
-            "topics": desc.topics if hasattr(desc, "topics") else [],
+            "summary": desc.summary,
+            "suggested_topics": topics,
         }
 
 
@@ -148,8 +150,8 @@ async def _get_source_fulltext(notebook_id: str, source_id: str) -> dict[str, An
         ft = await client.sources.get_fulltext(notebook_id, source_id)
         return {
             "source_id": source_id,
-            "title": ft.title if hasattr(ft, "title") else None,
-            "text": ft.text if hasattr(ft, "text") else str(ft),
+            "title": ft.title,
+            "content": ft.content,
         }
 
 
