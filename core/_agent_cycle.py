@@ -259,9 +259,10 @@ class CycleMixin:
                 usage=_b_usage,
                 duration_ms=duration_ms,
             )
+            _b_action = "error" if result.text.startswith("[Agent SDK Error:") or result.text.startswith("[Codex Error:") else "responded"
             return CycleResult(
                 trigger=trigger,
-                action="responded",
+                action=_b_action,
                 summary=result.text,
                 duration_ms=duration_ms,
                 context_window=tracker.context_window,
@@ -305,9 +306,10 @@ class CycleMixin:
                 usage=_c_usage,
                 duration_ms=duration_ms,
             )
+            _c_action = "error" if result.text.startswith("[Agent SDK Error:") or result.text.startswith("[Codex Error:") else "responded"
             return CycleResult(
                 trigger=trigger,
-                action="responded",
+                action=_c_action,
                 summary=result.text,
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,
@@ -367,9 +369,10 @@ class CycleMixin:
                 usage=_d_usage,
                 duration_ms=duration_ms,
             )
+            _d_action = "error" if result.text.startswith(("[Agent SDK Error:", "[Cursor Error:", "[Error:")) else "responded"
             return CycleResult(
                 trigger=trigger,
-                action="responded",
+                action=_d_action,
                 summary=result.text,
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,
@@ -414,9 +417,10 @@ class CycleMixin:
                 usage=_g_usage,
                 duration_ms=duration_ms,
             )
+            _g_action = "error" if result.text.startswith(("[Agent SDK Error:", "[Gemini Error:", "[Error:")) else "responded"
             return CycleResult(
                 trigger=trigger,
-                action="responded",
+                action=_g_action,
                 summary=result.text,
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,
@@ -461,9 +465,10 @@ class CycleMixin:
                 usage=_a_usage,
                 duration_ms=duration_ms,
             )
+            _a_action = "error" if result.text.startswith(("[Agent SDK Error:", "[LiteLLM Error:", "[Error:")) else "responded"
             return CycleResult(
                 trigger=trigger,
-                action="responded",
+                action=_a_action,
                 summary=result.text,
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,
@@ -594,9 +599,10 @@ class CycleMixin:
             turns=total_turns,
             chains=chain_count if session_chained else 0,
         )
+        _s_nb_action = "error" if accumulated_text.startswith("[Agent SDK Error:") else "responded"
         return CycleResult(
             trigger=trigger,
-            action="responded",
+            action=_s_nb_action,
             summary=accumulated_text,
             duration_ms=duration_ms,
             context_usage_ratio=tracker.usage_ratio,
