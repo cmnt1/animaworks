@@ -643,6 +643,7 @@ class CodexSDKExecutor(BaseExecutor):
         self._tool_registry = tool_registry or []
         self._personal_tools = personal_tools or {}
         self._codex_home = anima_dir / ".codex_home"
+        self._use_default_codex_home = False
 
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
@@ -658,9 +659,11 @@ class CodexSDKExecutor(BaseExecutor):
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PATH": _default_path_env(),
-            "CODEX_HOME": str(self._codex_home),
             "HOME": _default_home_dir(),
         }
+        # Omit CODEX_HOME when no auth.json exists (Codex ≥0.115 keychain).
+        if not self._use_default_codex_home:
+            env["CODEX_HOME"] = str(self._codex_home)
         # Windows requires SYSTEMROOT for Winsock/TLS initialisation and
         # TEMP/TMP for scratch files.  Without these the Codex CLI subprocess
         # fails with OS error 10106 (WSAEPROVIDERFAILEDINIT).
@@ -698,15 +701,15 @@ class CodexSDKExecutor(BaseExecutor):
         }
 
     def _propagate_auth(self) -> None:
-        """Propagate ``auth.json`` from the default CODEX_HOME into per-anima CODEX_HOME.
+        """Ensure per-anima CODEX_HOME has valid auth.
 
-        This lets animas share the ChatGPT subscription auth obtained via
-        ``codex auth`` (or ``login_with_device_code``).  Token refreshes
-        propagate automatically when a symlink or hardlink is available.
-        On Windows, symlink creation may be disallowed for non-admin users,
-        so we gracefully fall back to a hardlink and then to a plain file
-        copy.  If the per-anima directory already has a real ``auth.json``
-        (e.g. written by a prior API-key login), it is left untouched.
+        Strategy:
+        1. If per-anima ``auth.json`` exists and is real → keep it.
+        2. If ``~/.codex/auth.json`` exists → symlink/hardlink/copy.
+        3. Otherwise (Codex ≥0.115 keychain auth) → set
+           ``self._use_default_codex_home = True`` so ``_build_env()``
+           omits CODEX_HOME entirely (letting Codex use OS keychain).
+           Per-anima config is then passed via ``-c`` flags instead.
         """
         default_auth = Path.home() / ".codex" / "auth.json"
         target = self._codex_home / "auth.json"
@@ -740,6 +743,17 @@ class CodexSDKExecutor(BaseExecutor):
                 default_auth,
                 target,
             )
+            return
+
+        # No auth.json anywhere — Codex ≥0.115 uses OS keychain.
+        # Tell _build_env() to omit CODEX_HOME so keychain auth works.
+        # Per-anima config will be passed via -c flags in the CLI command.
+        self._use_default_codex_home = True
+        logger.info(
+            "No auth.json found in %s or %s; omitting CODEX_HOME for keychain auth",
+            self._codex_home,
+            default_auth.parent,
+        )
 
     # Injected via config.toml ``developer_instructions`` so the Codex
     # model always produces a visible text response, even when it only
@@ -756,16 +770,27 @@ class CodexSDKExecutor(BaseExecutor):
         "respond naturally in text before or after any tool use."
     )
 
+    def _effective_codex_home(self) -> Path:
+        """Return the actual CODEX_HOME directory that will be used."""
+        if self._use_default_codex_home:
+            return Path.home() / ".codex"
+        return self._codex_home
+
     def _write_codex_config(self, system_prompt: str) -> None:
         """Write CODEX_HOME config.toml and model instructions file.
 
         The CODEX_HOME lives at ``{anima_dir}/.codex_home/`` and persists
         across sessions so that Codex's thread data (``sessions/``) survives.
+        When using default CODEX_HOME (keychain auth), config is written to
+        ``~/.codex/`` instead.
         """
         self._codex_home.mkdir(parents=True, exist_ok=True)
         self._propagate_auth()
 
-        instructions_file = self._codex_home / "instructions.md"
+        config_home = self._effective_codex_home()
+        config_home.mkdir(parents=True, exist_ok=True)
+
+        instructions_file = config_home / "instructions.md"
         instructions_file.write_text(system_prompt, encoding="utf-8")
 
         bare_model = _resolve_codex_model(self._model_config.model)
@@ -813,7 +838,7 @@ class CodexSDKExecutor(BaseExecutor):
             f"[mcp_servers.aw.env]\n"
             f"{mcp_env_lines}\n"
         )
-        (self._codex_home / "config.toml").write_text(config_toml, encoding="utf-8")
+        (config_home / "config.toml").write_text(config_toml, encoding="utf-8")
 
     def _create_codex_client(self) -> Any:
         """Create a ``Codex`` SDK client instance.
@@ -837,20 +862,59 @@ class CodexSDKExecutor(BaseExecutor):
         _patch_codex_exec_stream_limit(client._exec)
         return client
 
+    def _build_config_overrides(self) -> list[str]:
+        """Return ``-c key=value`` flags when CODEX_HOME is omitted.
+
+        When ``_use_default_codex_home`` is True, per-anima settings from
+        ``config.toml`` must be passed as CLI overrides instead.
+        """
+        if not self._use_default_codex_home:
+            return []
+
+        flags: list[str] = []
+        config_path = (self._anima_dir / ".codex_home" / "config.toml")
+        if not config_path.is_file():
+            return []
+
+        try:
+            import tomllib  # Python 3.11+
+
+            data = tomllib.loads(config_path.read_text("utf-8"))
+        except Exception:
+            logger.debug("Failed to parse config.toml for -c overrides", exc_info=True)
+            return []
+
+        # Flatten top-level scalar keys into -c flags
+        _SKIP_KEYS = {"mcp_servers"}  # MCP config uses env-based setup
+        for key, value in data.items():
+            if key in _SKIP_KEYS or isinstance(value, dict):
+                continue
+            # TOML values need quoting for strings
+            if isinstance(value, str):
+                flags.extend(["-c", f'{key}="{value}"'])
+            elif isinstance(value, bool):
+                flags.extend(["-c", f"{key}={'true' if value else 'false'}"])
+            else:
+                flags.extend(["-c", f"{key}={value}"])
+
+        return flags
+
     def _build_cli_exec_command(self) -> list[str]:
         """Build the `codex exec --json` command used as a runtime fallback."""
         executable = get_codex_executable()
         if not executable:
             raise RuntimeError("Codex CLI executable not available for exec fallback")
-        return [
+        cmd = [
             executable,
             "exec",
             "-C",
             str(self._task_cwd or self._anima_dir),
             "--skip-git-repo-check",
             "--json",
-            "-",
         ]
+        cmd.extend(self._build_config_overrides())
+        cmd.append("-")
+        return cmd
 
     async def _execute_streaming_via_cli_exec(
         self,
