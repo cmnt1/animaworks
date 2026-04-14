@@ -77,7 +77,7 @@ class TestSchemas:
         mod = _get_mod()
         schemas = mod.get_tool_schemas()
         assert isinstance(schemas, list)
-        assert len(schemas) == 10
+        assert len(schemas) == 12
 
     def test_all_schemas_have_required_fields(self):
         mod = _get_mod()
@@ -166,6 +166,23 @@ class TestDispatch:
             result = mod.dispatch(
                 "notebooklm_generate_artifact",
                 {"notebook_id": "nb1", "artifact_type": "audio_overview"},
+            )
+            assert result == expected
+
+    def test_dispatch_get_notebook(self):
+        mod = _get_mod()
+        expected = {"id": "nb1", "title": "Test", "summary": "A summary", "topics": []}
+        with patch.object(mod, "_run_async", return_value=expected):
+            result = mod.dispatch("notebooklm_get_notebook", {"notebook_id": "nb1"})
+            assert result == expected
+
+    def test_dispatch_get_source_fulltext(self):
+        mod = _get_mod()
+        expected = {"source_id": "s1", "title": "Doc", "text": "Full content here"}
+        with patch.object(mod, "_run_async", return_value=expected):
+            result = mod.dispatch(
+                "notebooklm_get_source_fulltext",
+                {"notebook_id": "nb1", "source_id": "s1"},
             )
             assert result == expected
 

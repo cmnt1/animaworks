@@ -42,8 +42,10 @@ logger = logging.getLogger(__name__)
 
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "list_notebooks": {"expected_seconds": 10, "background_eligible": False},
+    "get_notebook": {"expected_seconds": 15, "background_eligible": False},
     "create_notebook": {"expected_seconds": 10, "background_eligible": False},
     "delete_notebook": {"expected_seconds": 10, "background_eligible": False},
+    "get_source_fulltext": {"expected_seconds": 15, "background_eligible": False},
     "add_source_url": {"expected_seconds": 30, "background_eligible": False},
     "add_source_text": {"expected_seconds": 15, "background_eligible": False},
     "add_source_file": {"expected_seconds": 60, "background_eligible": True},
@@ -126,6 +128,29 @@ async def _add_source_file(notebook_id: str, file_path: str) -> dict[str, Any]:
     async with await NotebookLMClient.from_storage(path) as client:
         source = await client.sources.add_file(notebook_id, file_path)
         return {"id": source.id, "title": source.title, "type": str(source.type)}
+
+
+async def _get_notebook(notebook_id: str) -> dict[str, Any]:
+    path = _resolve_storage_path()
+    async with await NotebookLMClient.from_storage(path) as client:
+        desc = await client.notebooks.get_description(notebook_id)
+        return {
+            "id": notebook_id,
+            "title": desc.title if hasattr(desc, "title") else None,
+            "summary": desc.summary if hasattr(desc, "summary") else None,
+            "topics": desc.topics if hasattr(desc, "topics") else [],
+        }
+
+
+async def _get_source_fulltext(notebook_id: str, source_id: str) -> dict[str, Any]:
+    path = _resolve_storage_path()
+    async with await NotebookLMClient.from_storage(path) as client:
+        ft = await client.sources.get_fulltext(notebook_id, source_id)
+        return {
+            "source_id": source_id,
+            "title": ft.title if hasattr(ft, "title") else None,
+            "text": ft.text if hasattr(ft, "text") else str(ft),
+        }
 
 
 async def _list_sources(notebook_id: str) -> list[dict[str, Any]]:
@@ -239,6 +264,17 @@ def get_tool_schemas() -> list[dict]:
             },
         },
         {
+            "name": "notebooklm_get_notebook",
+            "description": "Get a NotebookLM notebook's summary, description, and topics.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "notebook_id": {"type": "string", "description": "Notebook ID"},
+                },
+                "required": ["notebook_id"],
+            },
+        },
+        {
             "name": "notebooklm_create_notebook",
             "description": "Create a new Google NotebookLM notebook.",
             "input_schema": {
@@ -295,6 +331,18 @@ def get_tool_schemas() -> list[dict]:
                     "file_path": {"type": "string", "description": "Absolute path to the file"},
                 },
                 "required": ["notebook_id", "file_path"],
+            },
+        },
+        {
+            "name": "notebooklm_get_source_fulltext",
+            "description": "Get the full text content of a source in a NotebookLM notebook.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "notebook_id": {"type": "string", "description": "Notebook ID"},
+                    "source_id": {"type": "string", "description": "Source ID (from notebooklm_list_sources)"},
+                },
+                "required": ["notebook_id", "source_id"],
             },
         },
         {
@@ -377,6 +425,8 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
     try:
         if name == "notebooklm_list_notebooks":
             return _run_async(_list_notebooks())
+        if name == "notebooklm_get_notebook":
+            return _run_async(_get_notebook(args["notebook_id"]))
         if name == "notebooklm_create_notebook":
             return _run_async(_create_notebook(args["title"]))
         if name == "notebooklm_delete_notebook":
@@ -387,6 +437,8 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
             return _run_async(_add_source_text(args["notebook_id"], args["text"], title=args.get("title")))
         if name == "notebooklm_add_source_file":
             return _run_async(_add_source_file(args["notebook_id"], args["file_path"]))
+        if name == "notebooklm_get_source_fulltext":
+            return _run_async(_get_source_fulltext(args["notebook_id"], args["source_id"]))
         if name == "notebooklm_list_sources":
             return _run_async(_list_sources(args["notebook_id"]))
         if name == "notebooklm_chat":
@@ -422,11 +474,13 @@ def get_cli_guide() -> str:
 ### NotebookLM
 ```bash
 animaworks-tool notebooklm list
+animaworks-tool notebooklm get <notebook_id>
 animaworks-tool notebooklm create "My Notebook"
 animaworks-tool notebooklm delete <notebook_id>
 animaworks-tool notebooklm add-source-url <notebook_id> <url>
 animaworks-tool notebooklm add-source-text <notebook_id> --title "Title" --text "Content"
 animaworks-tool notebooklm add-source-file <notebook_id> /path/to/file.pdf
+animaworks-tool notebooklm source-text <notebook_id> <source_id>
 animaworks-tool notebooklm sources <notebook_id>
 animaworks-tool notebooklm chat <notebook_id> "Your question here"
 animaworks-tool notebooklm generate <notebook_id> --type audio_overview
@@ -445,6 +499,10 @@ def cli_main(argv: list[str] | None = None) -> None:
 
     # list notebooks
     sub.add_parser("list", help="List all notebooks")
+
+    # get notebook
+    p_get = sub.add_parser("get", help="Get notebook summary and description")
+    p_get.add_argument("notebook_id", help="Notebook ID")
 
     # create
     p_create = sub.add_parser("create", help="Create a new notebook")
@@ -469,6 +527,11 @@ def cli_main(argv: list[str] | None = None) -> None:
     p_file = sub.add_parser("add-source-file", help="Add a file source")
     p_file.add_argument("notebook_id", help="Notebook ID")
     p_file.add_argument("file_path", help="Path to the file")
+
+    # source-text
+    p_st = sub.add_parser("source-text", help="Get full text of a source")
+    p_st.add_argument("notebook_id", help="Notebook ID")
+    p_st.add_argument("source_id", help="Source ID")
 
     # sources
     p_sources = sub.add_parser("sources", help="List sources in a notebook")
@@ -506,6 +569,8 @@ def cli_main(argv: list[str] | None = None) -> None:
     try:
         if ns.command == "list":
             result = _run_async(_list_notebooks())
+        elif ns.command == "get":
+            result = _run_async(_get_notebook(ns.notebook_id))
         elif ns.command == "create":
             result = _run_async(_create_notebook(ns.title))
         elif ns.command == "delete":
@@ -516,6 +581,8 @@ def cli_main(argv: list[str] | None = None) -> None:
             result = _run_async(_add_source_text(ns.notebook_id, ns.text, title=ns.title))
         elif ns.command == "add-source-file":
             result = _run_async(_add_source_file(ns.notebook_id, ns.file_path))
+        elif ns.command == "source-text":
+            result = _run_async(_get_source_fulltext(ns.notebook_id, ns.source_id))
         elif ns.command == "sources":
             result = _run_async(_list_sources(ns.notebook_id))
         elif ns.command == "chat":
