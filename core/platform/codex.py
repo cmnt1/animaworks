@@ -148,12 +148,26 @@ def is_codex_login_available() -> bool:
     return result.returncode == 0 and "Logged in" in combined
 
 
-def get_codex_device_login(*, force: bool = False) -> dict[str, str | bool]:
-    """Start device auth briefly and return the browser URL/code prompt.
+def _launch_codex_login_terminal(executable: str) -> bool:
+    """Open a new CMD window running ``codex login``."""
+    try:
+        creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+        subprocess.Popen(
+            ["cmd.exe", "/k", f"{executable} login"],
+            creationflags=creationflags,
+            cwd=str(Path(default_home_dir())),
+            env=_status_env(),
+        )
+        return True
+    except Exception:
+        return False
 
-    When *force* is True the "already logged in" short-circuit is skipped
-    and the existing auth.json is temporarily moved aside so that
-    ``codex login --device-auth`` actually starts the device flow.
+
+def get_codex_device_login(*, force: bool = False) -> dict[str, str | bool]:
+    """Open a new CMD window running ``codex login`` so the user can
+    complete the interactive device-auth flow.
+
+    When *force* is True the "already logged in" short-circuit is skipped.
     """
     executable = get_codex_executable()
     if not executable:
@@ -166,66 +180,21 @@ def get_codex_device_login(*, force: bool = False) -> dict[str, str | bool]:
             if status.returncode == 0 and "Logged in" in combined:
                 return {"ok": True, "already_logged_in": True, "message": combined.strip() or "Logged in"}
 
-    # Move broken auth.json aside so ``codex login`` doesn't think we're
-    # already authenticated.
-    auth = codex_auth_path()
-    backup = auth.with_suffix(".bak") if force and auth.is_file() else None
-    if backup:
-        try:
-            auth.rename(backup)
-        except OSError:
-            backup = None
-
-    proc = subprocess.Popen(
-        [executable, "login", "--device-auth"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=_status_env(),
-    )
-    output = ""
-    try:
-        output, _ = proc.communicate(timeout=8.0)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        output, _ = proc.communicate()
-
-    clean_output = _ANSI_ESCAPE_RE.sub("", output)
-    login_url = _DEVICE_URL_RE.search(clean_output)
-    device_code = _DEVICE_CODE_RE.search(clean_output)
-
-    ok = bool(login_url and device_code)
-
-    # Restore or clean up backup
-    if backup:
-        if ok:
-            # Device flow started — new auth will be written; remove stale backup
-            try:
-                backup.unlink(missing_ok=True)
-            except OSError:
-                pass
-        else:
-            # Device flow failed — restore the original auth.json
-            try:
-                if not auth.is_file():
-                    backup.rename(auth)
-                else:
-                    backup.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-    result: dict[str, str | bool] = {
-        "ok": ok,
+    launched = _launch_codex_login_terminal(executable)
+    if launched:
+        return {
+            "ok": True,
+            "already_logged_in": False,
+            "message": "Codex ログインウィンドウを開きました。ウィンドウ内の指示に従ってください。",
+            "terminal_launched": True,
+            "manual_command": "codex login",
+        }
+    return {
+        "ok": False,
         "already_logged_in": False,
-        "message": clean_output.strip(),
+        "message": "ログインウィンドウを開けませんでした。ターミナルで 'codex login' を実行してください。",
+        "manual_command": "codex login",
     }
-    if login_url:
-        result["login_url"] = login_url.group(0)
-    if device_code:
-        result["device_code"] = device_code.group(1)
-    if not result["ok"]:
-        result["message"] = clean_output.strip() or "Failed to start Codex device login"
-    return result
 
 
 __all__ = [
