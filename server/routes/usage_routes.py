@@ -416,7 +416,7 @@ def _relogin_openai() -> tuple[dict[str, Any], int]:
             200,
         )
 
-    payload = get_codex_device_login()
+    payload = get_codex_device_login(force=force_relogin)
     _clear_usage_cache("openai")
     status_code = 200 if payload.get("ok") else 400
     return (

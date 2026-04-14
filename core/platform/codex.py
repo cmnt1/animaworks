@@ -147,17 +147,33 @@ def is_codex_login_available() -> bool:
     return result.returncode == 0 and "Logged in" in combined
 
 
-def get_codex_device_login() -> dict[str, str | bool]:
-    """Start device auth briefly and return the browser URL/code prompt."""
+def get_codex_device_login(*, force: bool = False) -> dict[str, str | bool]:
+    """Start device auth briefly and return the browser URL/code prompt.
+
+    When *force* is True the "already logged in" short-circuit is skipped
+    and the existing auth.json is temporarily moved aside so that
+    ``codex login --device-auth`` actually starts the device flow.
+    """
     executable = get_codex_executable()
     if not executable:
         return {"ok": False, "message": "Codex CLI is not installed"}
 
-    status = _run_codex_command(["login", "status"])
-    if status is not None:
-        combined = (status.stdout or "") + (status.stderr or "")
-        if status.returncode == 0 and "Logged in" in combined:
-            return {"ok": True, "already_logged_in": True, "message": combined.strip() or "Logged in"}
+    if not force:
+        status = _run_codex_command(["login", "status"])
+        if status is not None:
+            combined = (status.stdout or "") + (status.stderr or "")
+            if status.returncode == 0 and "Logged in" in combined:
+                return {"ok": True, "already_logged_in": True, "message": combined.strip() or "Logged in"}
+
+    # Move broken auth.json aside so ``codex login`` doesn't think we're
+    # already authenticated.
+    auth = codex_auth_path()
+    backup = auth.with_suffix(".bak") if force and auth.is_file() else None
+    if backup:
+        try:
+            auth.rename(backup)
+        except OSError:
+            backup = None
 
     proc = subprocess.Popen(
         [executable, "login", "--device-auth"],
@@ -176,8 +192,28 @@ def get_codex_device_login() -> dict[str, str | bool]:
     login_url = _DEVICE_URL_RE.search(output)
     device_code = _DEVICE_CODE_RE.search(output)
 
+    ok = bool(login_url and device_code)
+
+    # Restore or clean up backup
+    if backup:
+        if ok:
+            # Device flow started — new auth will be written; remove stale backup
+            try:
+                backup.unlink(missing_ok=True)
+            except OSError:
+                pass
+        else:
+            # Device flow failed — restore the original auth.json
+            try:
+                if not auth.is_file():
+                    backup.rename(auth)
+                else:
+                    backup.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     result: dict[str, str | bool] = {
-        "ok": bool(login_url and device_code),
+        "ok": ok,
         "already_logged_in": False,
         "message": output.strip(),
     }
