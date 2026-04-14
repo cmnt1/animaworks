@@ -20,7 +20,6 @@ import pytest
 
 _NOTEBOOKLM_MODULES = [
     "notebooklm",
-    "notebooklm.artifacts",
 ]
 
 
@@ -41,11 +40,9 @@ def _mock_notebooklm_modules():
     top.AuthError = type("AuthError", (Exception,), {})
     top.NotebookLMError = type("NotebookLMError", (Exception,), {})
     top.ArtifactType = MagicMock()
-
-    art_mod = mocks["notebooklm.artifacts"]
-    art_mod.ReportFormat = MagicMock()
-    art_mod.ReportFormat.BRIEFING_DOC = "briefing_doc"
-    art_mod.ReportFormat.STUDY_GUIDE = "study_guide"
+    top.ReportFormat = MagicMock()
+    top.ReportFormat.BRIEFING_DOC = "briefing_doc"
+    top.ReportFormat.STUDY_GUIDE = "study_guide"
 
     # Reload / import
     if "core.tools.notebooklm" in sys.modules:

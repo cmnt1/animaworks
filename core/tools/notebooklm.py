@@ -29,8 +29,8 @@ try:
         AuthError,
         NotebookLMClient,
         NotebookLMError,
+        ReportFormat,
     )
-    from notebooklm.artifacts import ReportFormat
 except ImportError:
     raise ImportError(
         "notebooklm tool requires notebooklm-py. Install with: pip install animaworks[notebooklm]"
