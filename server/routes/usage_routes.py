@@ -138,6 +138,7 @@ def _discover_claude_cred_paths() -> list[str]:
 
 _CODEX_CRED_PATHS: list[str] = [
     "env:CODEX_CREDENTIALS_PATH",
+    "env_dir:CODEX_HOME",  # $CODEX_HOME/auth.json
     "~/.codex/auth.json",
 ]
 
@@ -149,6 +150,14 @@ def _find_credential_file(candidates: list[str]) -> Path | None:
             env_val = os.environ.get(env_key)
             if env_val:
                 p = Path(env_val)
+                if p.is_file():
+                    return p
+            continue
+        if candidate.startswith("env_dir:"):
+            env_key = candidate[8:]
+            env_val = os.environ.get(env_key)
+            if env_val:
+                p = Path(env_val) / "auth.json"
                 if p.is_file():
                     return p
             continue

@@ -590,7 +590,7 @@ function _renderGovernor(gov) {
 
   const perSuspended = gov.per_provider_suspended || {};
   const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT" };
-  const needsRelogin = /rate_limited|unauthorized|no_credentials/.test(gov.reason || "");
+  const _reloginPat = /rate_limited|unauthorized|no_credentials/;
 
   let rowsHtml = "";
   for (const [prov, label] of Object.entries(LABELS)) {
@@ -602,7 +602,8 @@ function _renderGovernor(gov) {
     const suspendedText = suspended.length > 0
       ? `<span class="governor-suspended">停止中: ${escapeHtml(suspended.join(", "))}</span>`
       : "";
-    const reloginBtn = (prov === "claude" && needsRelogin)
+    const provNeedsRelogin = _reloginPat.test(reasons.join(" "));
+    const reloginBtn = (prov === "claude" && provNeedsRelogin)
       ? `<button class="btn-secondary governor-relogin-btn" id="govReloginBtn" style="font-size:0.78rem;padding:2px 8px;">再認証</button>`
       : "";
 
