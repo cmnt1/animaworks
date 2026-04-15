@@ -330,7 +330,25 @@ class DiscordAutoResponder:
 
         ``external_channel_id`` = parent channel (webhook target).
         ``external_thread_ts``  = thread channel ID if threaded, else "".
+
+        **DM channels** (``#dm-*``) are excluded.  Those channels are
+        dedicated to human↔Anima communication; auto-posting the full
+        ``accumulated_text`` there would leak Anima-to-Anima responses
+        that happen to share the same inbox batch.  DM-originated
+        messages use ``reply_instruction`` instead so the LLM can
+        respond selectively.
         """
+        # Load board_mapping once to identify DM channels
+        _dm_channel_ids: set[str] = set()
+        try:
+            from core.config.models import load_config
+
+            for ch_id, board in load_config().external_messaging.discord.board_mapping.items():
+                if board.startswith("dm-"):
+                    _dm_channel_ids.add(ch_id)
+        except Exception:
+            pass
+
         seen: set[str] = set()
         targets: list[dict[str, str]] = []
         for item in inbox_items:
@@ -344,6 +362,15 @@ class DiscordAutoResponder:
                     getattr(msg, "from_name", "?"),
                 )
                 continue
+
+            # Skip DM channels — human↔Anima only
+            if channel_id in _dm_channel_ids:
+                logger.info(
+                    "DiscordAutoResponder: skipping DM channel %s (human↔Anima only)",
+                    channel_id,
+                )
+                continue
+
             thread_id = getattr(msg, "external_thread_ts", "")
             dedup_key = f"{channel_id}:{thread_id}" if thread_id else channel_id
             logger.info(

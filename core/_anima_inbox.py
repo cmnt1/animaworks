@@ -132,6 +132,19 @@ def _is_auto_response_enabled_discord() -> bool:
         return False
 
 
+def _is_discord_dm_channel(channel_id: str) -> bool:
+    """Return True if *channel_id* maps to a ``dm-*`` board in board_mapping."""
+    if not channel_id:
+        return False
+    try:
+        from core.config.models import load_config
+
+        board = load_config().external_messaging.discord.board_mapping.get(channel_id, "")
+        return board.startswith("dm-")
+    except Exception:
+        return False
+
+
 def _build_reply_instruction(m: Any) -> str:
     """Build platform-specific reply instruction metadata for external messages.
 
@@ -149,7 +162,13 @@ def _build_reply_instruction(m: Any) -> str:
         )
 
     if m.source == "discord":
-        if _is_auto_response_enabled_discord():
+        # DM channels (#dm-*) are human↔Anima only; auto-response is
+        # disabled for them because the full accumulated_text (which may
+        # contain Anima-to-Anima responses) would leak into the DM
+        # channel.  Always use reply_instruction so the LLM responds
+        # selectively via discord_channel_post.
+        _is_dm_channel = _is_discord_dm_channel(m.external_channel_id)
+        if _is_auto_response_enabled_discord() and not _is_dm_channel:
             return f"  [auto_reply: {t('discord.auto_reply_instruction')}]"
 
         mention = f"<@{m.external_user_id}> " if m.external_user_id else ""
