@@ -268,6 +268,12 @@ class DiscordAutoResponder:
                 )
                 if msg_id:
                     posted_ids.append(msg_id)
+                    # Mirror to AnimaWorks board so thread conversations
+                    # appear in the shared channel JSONL alongside the
+                    # human messages routed by the gateway.
+                    self._mirror_to_board(
+                        target["channel_id"], response_text, anima_name,
+                    )
             except Exception:
                 logger.exception(
                     "DiscordAutoResponder: failed to post to %s",
@@ -281,6 +287,39 @@ class DiscordAutoResponder:
                 anima_name,
             )
         return posted_ids
+
+    @staticmethod
+    def _mirror_to_board(
+        channel_id: str, text: str, anima_name: str,
+    ) -> None:
+        """Write the auto-response to the AnimaWorks board mapped to *channel_id*.
+
+        This ensures that Anima replies sent via Discord webhook also appear
+        in the shared channel JSONL, matching how the gateway records
+        inbound human messages.
+        """
+        try:
+            from core.config.models import load_config
+            from core.messenger import Messenger
+            from core.paths import get_shared_dir
+
+            board_mapping = load_config().external_messaging.discord.board_mapping
+            board_name = board_mapping.get(channel_id)
+            if not board_name:
+                return
+            # DM boards are per-Anima; skip to avoid noise
+            if board_name.startswith("dm-"):
+                return
+            messenger = Messenger(get_shared_dir(), anima_name)
+            messenger.post_channel(
+                board_name, text, source="anima", from_name=anima_name,
+            )
+        except Exception:
+            logger.debug(
+                "DiscordAutoResponder: board mirror failed for channel %s",
+                channel_id,
+                exc_info=True,
+            )
 
     @staticmethod
     def _collect_discord_targets(
