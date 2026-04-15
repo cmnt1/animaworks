@@ -217,29 +217,16 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         finally:
             client.close()
     if name == "discord_channel_post":
-        # Block during inbox processing — auto-responder handles posting.
-        # Exception: DM channels (#dm-*) are excluded from auto-response
-        # to prevent Anima-to-Anima reply leakage, so the LLM must post
-        # explicitly via this tool.
+        # Block during inbox processing — auto-responder handles posting
         _trigger = args.get("_trigger", "")
         if _trigger.startswith("inbox"):
-            _ch_id = args.get("channel_id", "")
-            _is_dm = False
-            try:
-                from core.config.models import load_config
-
-                _board = load_config().external_messaging.discord.board_mapping.get(_ch_id, "")
-                _is_dm = _board.startswith("dm-")
-            except Exception:
-                pass
-            if not _is_dm:
-                return {
-                    "status": "blocked",
-                    "message": "discord_channel_post is unnecessary during inbox processing. "
-                    "Your final text response is AUTOMATICALLY posted to Discord by the framework. "
-                    "Do NOT attempt to send via TaskExec or any other workaround. "
-                    "Just write your response as plain text — it will be delivered.",
-                }
+            return {
+                "status": "blocked",
+                "message": "discord_channel_post is unnecessary during inbox processing. "
+                "Your final text response is AUTOMATICALLY posted to Discord by the framework. "
+                "Do NOT attempt to send via TaskExec or any other workaround. "
+                "Just write your response as plain text — it will be delivered.",
+            }
 
         discord_text = md_to_discord(args["text"])
         anima_name = ""

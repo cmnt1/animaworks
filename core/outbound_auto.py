@@ -331,23 +331,30 @@ class DiscordAutoResponder:
         ``external_channel_id`` = parent channel (webhook target).
         ``external_thread_ts``  = thread channel ID if threaded, else "".
 
-        **DM channels** (``#dm-*``) are excluded.  Those channels are
-        dedicated to human↔Anima communication; auto-posting the full
-        ``accumulated_text`` there would leak Anima-to-Anima responses
-        that happen to share the same inbox batch.  DM-originated
-        messages use ``reply_instruction`` instead so the LLM can
-        respond selectively.
+        **DM channels** (``#dm-*``) are skipped when the inbox batch
+        also contains non-Discord messages (internal Anima DMs, task
+        results, etc.).  In a mixed batch the ``accumulated_text``
+        contains responses to *all* messages, so posting it to a DM
+        channel would leak Anima-to-Anima content into the human
+        communication channel.  Pure-Discord batches are fine.
         """
+        # Detect mixed batch: has non-discord items?
+        _has_non_discord = any(
+            getattr(item.msg, "source", "") != "discord"
+            for item in inbox_items
+        )
+
         # Load board_mapping once to identify DM channels
         _dm_channel_ids: set[str] = set()
-        try:
-            from core.config.models import load_config
+        if _has_non_discord:
+            try:
+                from core.config.models import load_config
 
-            for ch_id, board in load_config().external_messaging.discord.board_mapping.items():
-                if board.startswith("dm-"):
-                    _dm_channel_ids.add(ch_id)
-        except Exception:
-            pass
+                for ch_id, board in load_config().external_messaging.discord.board_mapping.items():
+                    if board.startswith("dm-"):
+                        _dm_channel_ids.add(ch_id)
+            except Exception:
+                pass
 
         seen: set[str] = set()
         targets: list[dict[str, str]] = []
@@ -363,10 +370,10 @@ class DiscordAutoResponder:
                 )
                 continue
 
-            # Skip DM channels — human↔Anima only
+            # Skip DM channels in mixed batches to prevent cross-talk
             if channel_id in _dm_channel_ids:
                 logger.info(
-                    "DiscordAutoResponder: skipping DM channel %s (human↔Anima only)",
+                    "DiscordAutoResponder: skipping DM channel %s in mixed batch",
                     channel_id,
                 )
                 continue
