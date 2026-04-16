@@ -429,9 +429,7 @@ class SchedulerManager:
             now = now_local()
             window_start = now - timedelta(hours=_HEALTH_CHECK_HOURS)
 
-            expected_jobs = [
-                job for job in cron_jobs if self._job_has_schedule_in_window(job, window_start, now)
-            ]
+            expected_jobs = [job for job in cron_jobs if self._job_has_schedule_in_window(job, window_start, now)]
             # If no runs were expected in this window, this is healthy by design.
             if not expected_jobs:
                 return

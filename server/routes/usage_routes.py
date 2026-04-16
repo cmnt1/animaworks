@@ -26,7 +26,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from core.platform.claude_code import get_claude_executable
-from core.platform.codex import get_codex_device_login, is_codex_login_available
+from core.platform.codex import get_codex_device_login
 
 logger = logging.getLogger("animaworks.routes.usage")
 

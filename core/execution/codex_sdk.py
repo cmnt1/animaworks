@@ -672,8 +672,13 @@ class CodexSDKExecutor(BaseExecutor):
         # fails with OS error 10106 (WSAEPROVIDERFAILEDINIT).
         if sys.platform == "win32":
             for var in (
-                "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "APPDATA",
-                "LOCALAPPDATA", "PROGRAMDATA",
+                "SYSTEMROOT",
+                "TEMP",
+                "TMP",
+                "USERPROFILE",
+                "APPDATA",
+                "LOCALAPPDATA",
+                "PROGRAMDATA",
             ):
                 val = os.environ.get(var)
                 if val:
@@ -884,7 +889,7 @@ class CodexSDKExecutor(BaseExecutor):
             return []
 
         flags: list[str] = []
-        config_path = (self._anima_dir / ".codex_home" / "config.toml")
+        config_path = self._anima_dir / ".codex_home" / "config.toml"
         if not config_path.is_file():
             return []
 

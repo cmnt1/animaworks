@@ -272,7 +272,9 @@ class DiscordAutoResponder:
                     # appear in the shared channel JSONL alongside the
                     # human messages routed by the gateway.
                     self._mirror_to_board(
-                        target["channel_id"], response_text, anima_name,
+                        target["channel_id"],
+                        response_text,
+                        anima_name,
                     )
             except Exception:
                 logger.exception(
@@ -290,7 +292,9 @@ class DiscordAutoResponder:
 
     @staticmethod
     def _mirror_to_board(
-        channel_id: str, text: str, anima_name: str,
+        channel_id: str,
+        text: str,
+        anima_name: str,
     ) -> None:
         """Write the auto-response to the AnimaWorks board mapped to *channel_id*.
 
@@ -312,7 +316,10 @@ class DiscordAutoResponder:
                 return
             messenger = Messenger(get_shared_dir(), anima_name)
             messenger.post_channel(
-                board_name, text, source="anima", from_name=anima_name,
+                board_name,
+                text,
+                source="anima",
+                from_name=anima_name,
             )
         except Exception:
             logger.debug(
@@ -339,10 +346,7 @@ class DiscordAutoResponder:
         communication channel.  Pure-Discord batches are fine.
         """
         # Detect mixed batch: has non-discord items?
-        _has_non_discord = any(
-            getattr(item.msg, "source", "") != "discord"
-            for item in inbox_items
-        )
+        _has_non_discord = any(getattr(item.msg, "source", "") != "discord" for item in inbox_items)
 
         # Load board_mapping once to identify DM channels
         _dm_channel_ids: set[str] = set()
