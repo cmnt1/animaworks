@@ -461,22 +461,32 @@ class LifecycleMixin:
             consolidation_model,
         )
 
-        # Temporarily override model AND credential to consolidation model for Phase B.
-        # Animas that use a non-Anthropic credential (e.g. vllm-local for qwen3)
-        # must also switch api_key/api_base_url so the call reaches the correct
-        # provider endpoint instead of the local LLM proxy.
+        # Temporarily override model, credential, AND executor to consolidation model
+        # for Phase B.  Animas that use a non-Anthropic executor (e.g. LiteLLMExecutor
+        # for qwen3) must swap to the executor that matches the consolidation model so
+        # that the call reaches the correct provider endpoint.  Without this, a Mode-A
+        # Anima would route "anthropic/claude-*" through LiteLLM without an API key
+        # and raise AuthenticationError (the system uses Max plan via Agent SDK, not
+        # direct Anthropic API).
+        from core.config.model_mode import resolve_execution_mode as _resolve_mode
+
         _orig_model = self.model_config.model
         _orig_api_key = self.model_config.api_key
         _orig_api_base_url = self.model_config.api_base_url
         _orig_api_key_env = self.model_config.api_key_env
         _orig_extra_keys = self.model_config.extra_keys
+        _orig_resolved_mode = self.model_config.resolved_mode
+        _orig_executor = self.agent._executor
         _cred_override = _resolve_consolidation_credential(consolidation_model, cfg)
+        _consolidation_mode = _resolve_mode(cfg, consolidation_model)
         try:
             self.model_config.model = consolidation_model
             self.model_config.api_key = _cred_override["api_key"]
             self.model_config.api_base_url = _cred_override["api_base_url"]
             self.model_config.api_key_env = _cred_override["api_key_env"]
             self.model_config.extra_keys = _cred_override["extra_keys"]
+            self.model_config.resolved_mode = _consolidation_mode
+            self.agent._executor = self.agent._create_executor()
             result = await self.agent.run_cycle(
                 prompt,
                 trigger="consolidation:daily",
@@ -489,6 +499,8 @@ class LifecycleMixin:
             self.model_config.api_base_url = _orig_api_base_url
             self.model_config.api_key_env = _orig_api_key_env
             self.model_config.extra_keys = _orig_extra_keys
+            self.model_config.resolved_mode = _orig_resolved_mode
+            self.agent._executor = _orig_executor
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
@@ -531,19 +543,27 @@ class LifecycleMixin:
             total_knowledge_count=len(knowledge_files),
         )
 
-        # Temporarily override model AND credential (same rationale as daily consolidation).
+        # Temporarily override model, credential, AND executor (same rationale as daily
+        # consolidation — see that block's comment for the full explanation).
+        from core.config.model_mode import resolve_execution_mode as _resolve_mode
+
         _orig_model = self.model_config.model
         _orig_api_key = self.model_config.api_key
         _orig_api_base_url = self.model_config.api_base_url
         _orig_api_key_env = self.model_config.api_key_env
         _orig_extra_keys = self.model_config.extra_keys
+        _orig_resolved_mode = self.model_config.resolved_mode
+        _orig_executor = self.agent._executor
         _cred_override = _resolve_consolidation_credential(consolidation_model, cfg)
+        _consolidation_mode = _resolve_mode(cfg, consolidation_model)
         try:
             self.model_config.model = consolidation_model
             self.model_config.api_key = _cred_override["api_key"]
             self.model_config.api_base_url = _cred_override["api_base_url"]
             self.model_config.api_key_env = _cred_override["api_key_env"]
             self.model_config.extra_keys = _cred_override["extra_keys"]
+            self.model_config.resolved_mode = _consolidation_mode
+            self.agent._executor = self.agent._create_executor()
             result = await self.agent.run_cycle(
                 prompt,
                 trigger="consolidation:weekly",
@@ -556,6 +576,8 @@ class LifecycleMixin:
             self.model_config.api_base_url = _orig_api_base_url
             self.model_config.api_key_env = _orig_api_key_env
             self.model_config.extra_keys = _orig_extra_keys
+            self.model_config.resolved_mode = _orig_resolved_mode
+            self.agent._executor = _orig_executor
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(

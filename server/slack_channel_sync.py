@@ -112,7 +112,10 @@ async def _join_channel_if_needed(
         error = data.get("error", "unknown")
         if error == "already_in_channel":
             return False
-        logger.warning(
+        # missing_scope is a known bot-token limitation; downgrade to debug to
+        # avoid polluting the warning log at every 5-minute sync cycle.
+        log_fn = logger.debug if error == "missing_scope" else logger.warning
+        log_fn(
             "Bot %s failed to join #%s: %s",
             bot_label,
             channel_name,
@@ -144,7 +147,10 @@ async def _create_channel(token: str, name: str) -> dict[str, Any] | None:
             # (e.g. private channel, or bot lacks visibility).
             logger.debug("Slack channel #%s already exists (name_taken)", name)
             return None
-        logger.warning("Failed to create Slack channel #%s: %s", name, error)
+        # missing_scope is a known bot-token limitation; downgrade to debug to
+        # avoid polluting the warning log at every 5-minute sync cycle.
+        log_fn = logger.debug if error == "missing_scope" else logger.warning
+        log_fn("Failed to create Slack channel #%s: %s", name, error)
         return None
 
 

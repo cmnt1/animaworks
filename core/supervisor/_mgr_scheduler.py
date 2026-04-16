@@ -92,6 +92,7 @@ class SchedulerMixin:
                 id="system_daily_consolidation",
                 name="System: Daily Consolidation",
                 replace_existing=True,
+                misfire_grace_time=600,
             )
             logger.info("System cron: Daily consolidation at %s", daily_time)
 
@@ -113,6 +114,7 @@ class SchedulerMixin:
                 id="system_weekly_integration",
                 name="System: Weekly Integration",
                 replace_existing=True,
+                misfire_grace_time=600,
             )
             logger.info("System cron: Weekly integration on %s at %s:%s", day_of_week, time_parts[0], time_parts[1])
 
@@ -134,6 +136,7 @@ class SchedulerMixin:
                 id="system_monthly_forgetting",
                 name="System: Monthly Forgetting",
                 replace_existing=True,
+                misfire_grace_time=600,
             )
             logger.info(
                 "System cron: Monthly forgetting on day %d at %02d:%02d",
@@ -160,6 +163,7 @@ class SchedulerMixin:
                 id="system_daily_indexing",
                 name="System: Daily RAG Indexing",
                 replace_existing=True,
+                misfire_grace_time=600,
             )
             logger.info("System cron: Daily RAG indexing at %s", indexing_time)
 
@@ -188,6 +192,7 @@ class SchedulerMixin:
                     id="system_activity_log_rotation",
                     name="System: Activity Log Rotation",
                     replace_existing=True,
+                    misfire_grace_time=600,
                 )
                 logger.info("System cron: Activity log rotation at %s", activity_cfg.rotation_time)
         except Exception:
@@ -218,6 +223,7 @@ class SchedulerMixin:
                     id="system_housekeeping",
                     name="System: Housekeeping",
                     replace_existing=True,
+                    misfire_grace_time=600,
                 )
                 logger.info("System cron: Housekeeping at %s", hk_cfg.run_time)
         except Exception:
@@ -230,6 +236,7 @@ class SchedulerMixin:
             id="system_dm_log_rotation",
             name="System: DM Log Rotation",
             replace_existing=True,
+            misfire_grace_time=600,
         )
         logger.info("System cron: DM log rotation at 04:30")
 

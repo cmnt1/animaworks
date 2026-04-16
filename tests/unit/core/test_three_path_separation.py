@@ -166,17 +166,19 @@ class TestTriggerBasedPromptFiltering:
         result = build_system_prompt(mm, trigger=trigger)
         return result.system_prompt
 
-    def test_task_trigger_excludes_behavior_rules(self, data_dir, make_anima):
+    def test_task_trigger_includes_full_context(self, data_dir, make_anima):
+        """TaskExec now gets full-context prompts (same as cron-level)."""
         anima_dir = make_anima("filter_test")
         prompt = self._build("task:test-id", anima_dir)
-        assert "メタ設定" not in prompt or len(prompt) < 5000
+        assert "メタ設定" in prompt
 
-    def test_task_trigger_shorter_than_chat(self, data_dir, make_anima):
+    def test_task_trigger_similar_to_cron(self, data_dir, make_anima):
+        """Task prompt should be roughly comparable to cron (no longer minimal)."""
         anima_dir = make_anima("filter_test2")
-        chat_prompt = self._build("", anima_dir)
+        cron_prompt = self._build("cron:test", anima_dir)
         task_prompt = self._build("task:test-id", anima_dir)
-        assert len(task_prompt) < len(chat_prompt), (
-            f"task prompt ({len(task_prompt)}) should be shorter than chat ({len(chat_prompt)})"
+        assert len(task_prompt) >= len(cron_prompt) * 0.8, (
+            f"task prompt ({len(task_prompt)}) should be comparable to cron ({len(cron_prompt)})"
         )
 
     def test_inbox_trigger_shorter_than_chat(self, data_dir, make_anima):
@@ -225,13 +227,14 @@ class TestTriggerBasedPromptFiltering:
         has_emotion_inbox = "表情メタデータ" in inbox_prompt
         assert has_emotion_chat == has_emotion_inbox
 
-    def test_cron_trigger_longer_than_task(self, data_dir, make_anima):
-        """Cron should have more context than task (minimal) trigger."""
+    def test_cron_and_task_comparable_length(self, data_dir, make_anima):
+        """Task and cron should have comparable context (both full-context)."""
         anima_dir = make_anima("filter_cron4")
         cron_prompt = self._build("cron:test", anima_dir)
         task_prompt = self._build("task:test-id", anima_dir)
-        assert len(cron_prompt) > len(task_prompt), (
-            f"cron ({len(cron_prompt)}) should be longer than task ({len(task_prompt)})"
+        ratio = len(task_prompt) / max(len(cron_prompt), 1)
+        assert 0.8 <= ratio <= 1.5, (
+            f"task ({len(task_prompt)}) and cron ({len(cron_prompt)}) should be comparable (ratio={ratio:.2f})"
         )
 
 

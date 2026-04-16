@@ -70,6 +70,7 @@ TIER_FULL = "full"
 TIER_STANDARD = "standard"
 TIER_LIGHT = "light"
 TIER_MINIMAL = "minimal"
+TIER_MICRO = "micro"
 
 
 def resolve_prompt_tier(context_window: int) -> str:
@@ -80,7 +81,9 @@ def resolve_prompt_tier(context_window: int) -> str:
         return TIER_STANDARD
     if context_window >= 16_000:
         return TIER_LIGHT
-    return TIER_MINIMAL
+    if context_window > 8_192:
+        return TIER_MINIMAL
+    return TIER_MICRO
 
 
 def _build_emotion_instruction() -> str:
@@ -152,6 +155,8 @@ def _build_group1(
     is_task: bool,
     prompt_store: Any,
     _ss: dict[str, str],
+    *,
+    tier: str = TIER_FULL,
 ) -> list[SectionEntry]:
     """Group 1: Environment, identity, injection, time, behaviour rules."""
     out: list[SectionEntry] = []
@@ -162,13 +167,13 @@ def _build_group1(
 
     _add(_ss.get("group1_header", "# 1. Environment and Action Rules"), "group1_header", 1)
 
-    dw = _read_default_workspace(pd)
-    if dw:
-        _add(dw, "default_workspace", 2)
-
-    if is_task:
-        _add(f"Anima: {pd.name}\nData directory: {data_dir}", "environment", 1)
+    if tier == TIER_MICRO:
+        _add(f"Anima: {pd.name} | Data: {data_dir}", "environment", 1)
     else:
+        dw = _read_default_workspace(pd)
+        if dw:
+            _add(dw, "default_workspace", 2)
+
         _env = prompt_store.get_section("environment") if prompt_store else None
         if _env:
             try:
@@ -205,11 +210,11 @@ def _build_group1(
     current_time = now_local().strftime("%Y-%m-%d %H:%M (%Z)")
     _add(f"{_ss.get('current_time_label', '**Current time**:')} {current_time}", "current_time", 1)
 
-    _br = (prompt_store.get_section("behavior_rules") if prompt_store else None) or load_prompt("behavior_rules")
-    if _br:
-        _add(_br, "behavior_rules", 2)
+    if tier != TIER_MICRO:
+        _br = (prompt_store.get_section("behavior_rules") if prompt_store else None) or load_prompt("behavior_rules")
+        if _br:
+            _add(_br, "behavior_rules", 2)
 
-    if not is_task:
         _tdi = load_prompt("tool_data_interpretation")
         if _tdi:
             _add(_tdi, "tool_data_interpretation", 2)
@@ -232,15 +237,13 @@ def _build_group2(
             out.append(SectionEntry(id=sid, priority=pri, kind=kind, content=c))
 
     _add(_ss.get("group2_header", "# 2. Yourself"), "group2_header", 1)
-    if not is_task:
-        b = memory.read_bootstrap()
-        if b:
-            _add(b, "bootstrap", 3)
-    if not is_task:
-        v = memory.read_company_vision()
-        if v:
-            _add(v, "vision", 3)
-    if not is_background_auto and not is_task:
+    b = memory.read_bootstrap()
+    if b:
+        _add(b, "bootstrap", 3)
+    v = memory.read_company_vision()
+    if v:
+        _add(v, "vision", 3)
+    if not is_background_auto:
         sp = memory.read_specialty_prompt()
         if sp:
             _add(sp, "specialty", 3)
@@ -271,45 +274,43 @@ def _build_group3(
 
     _add(_ss.get("group3_header", "# 3. Current Situation"), "group3_header", 1)
 
-    if not is_task:
-        _state_max = max(int(_CURRENT_STATE_MAX_CHARS * scale), 500)
-        state = memory.read_current_state()
-        state_content = ""
-        if state and state.strip() != "status: idle":
-            if len(state) > _state_max:
-                truncated = state[-_state_max:]
-                first_nl = truncated.find("\n")
-                if first_nl != -1 and first_nl < _state_max * 0.2:
-                    truncated = truncated[first_nl + 1 :]
-                state = f"{_fs.get('truncated', '(earlier portion omitted)')}\n\n{truncated}"
-            state_content = load_prompt("builder/task_in_progress", state=state)
-        elif state:
-            state_content = f"{_ss.get('current_state_header', '## Current State')}\n\n{state}"
-        if state_content:
-            _add(state_content, "current_state", 2, "elastic")
+    _state_max = max(int(_CURRENT_STATE_MAX_CHARS * scale), 500)
+    state = memory.read_current_state()
+    state_content = ""
+    if state and state.strip() != "status: idle":
+        if len(state) > _state_max:
+            truncated = state[-_state_max:]
+            first_nl = truncated.find("\n")
+            if first_nl != -1 and first_nl < _state_max * 0.2:
+                truncated = truncated[first_nl + 1 :]
+            state = f"{_fs.get('truncated', '(earlier portion omitted)')}\n\n{truncated}"
+        state_content = load_prompt("builder/task_in_progress", state=state)
+    elif state:
+        state_content = f"{_ss.get('current_state_header', '## Current State')}\n\n{state}"
+    if state_content:
+        _add(state_content, "current_state", 2, "elastic")
 
-    if not is_task:
-        try:
-            resolutions = memory.read_resolutions(days=7)
-            if resolutions:
-                seen: dict[str, dict] = {}
-                for r in resolutions:
-                    seen[r.get("issue", "")] = r
-                deduped = sorted(seen.values(), key=lambda x: x.get("ts", ""))
-                lines = [
-                    f"- [{r.get('ts', '')[:16]}] {r.get('resolver', 'unknown')}: {r.get('issue', '')}"
-                    for r in deduped[-10:]
-                ]
-                _add(
-                    load_prompt("builder/resolution_registry", res_lines="\n".join(lines)),
-                    "resolution_registry",
-                    3,
-                    "elastic",
-                )
-        except Exception:
-            logger.debug("Failed to inject resolution registry", exc_info=True)
+    try:
+        resolutions = memory.read_resolutions(days=7)
+        if resolutions:
+            seen: dict[str, dict] = {}
+            for r in resolutions:
+                seen[r.get("issue", "")] = r
+            deduped = sorted(seen.values(), key=lambda x: x.get("ts", ""))
+            lines = [
+                f"- [{r.get('ts', '')[:16]}] {r.get('resolver', 'unknown')}: {r.get('issue', '')}"
+                for r in deduped[-10:]
+            ]
+            _add(
+                load_prompt("builder/resolution_registry", res_lines="\n".join(lines)),
+                "resolution_registry",
+                3,
+                "elastic",
+            )
+    except Exception:
+        logger.debug("Failed to inject resolution registry", exc_info=True)
 
-    if not is_task and priming_section:
+    if priming_section:
         _add(priming_section, "priming", 2, "elastic")
     if pending_human_notifications and (is_chat or is_heartbeat):
         _add(pending_human_notifications, "pending_human_notifications", 3, "elastic")
@@ -368,8 +369,8 @@ def _build_group4(
     injected_procs: list[Path] = []
     injected_know: list[str] = []
     overflow: list[str] = []
-    proc_budget = 0 if is_task else max(int(_PROC_SUMMARY_BUDGET * scale), 0)
-    know_budget = 0 if is_task else max(int(_KNOW_SUMMARY_BUDGET * scale), 0)
+    proc_budget = max(int(_PROC_SUMMARY_BUDGET * scale), 0)
+    know_budget = max(int(_KNOW_SUMMARY_BUDGET * scale), 0)
     procedures_list, knowledge_list = memory.collect_distilled_knowledge_separated()
 
     proc_parts, proc_used = [], 0
@@ -408,13 +409,12 @@ def _build_group4(
             "elastic",
         )
 
-    if not is_task:
-        ck_dir = data_dir / "common_knowledge"
-        if ck_dir.exists() and any(ck_dir.rglob("*.md")):
-            _add(load_prompt("builder/common_knowledge_hint"), "common_knowledge_hint", 4)
-        ref_dir = data_dir / "reference"
-        if ref_dir.exists() and any(ref_dir.rglob("*.md")):
-            _add(load_prompt("builder/reference_hint"), "reference_hint", 4)
+    ck_dir = data_dir / "common_knowledge"
+    if ck_dir.exists() and any(ck_dir.rglob("*.md")):
+        _add(load_prompt("builder/common_knowledge_hint"), "common_knowledge_hint", 4)
+    ref_dir = data_dir / "reference"
+    if ref_dir.exists() and any(ref_dir.rglob("*.md")):
+        _add(load_prompt("builder/reference_hint"), "reference_hint", 4)
 
     # ── Tool guides ───
     if not prompt_store:
@@ -467,7 +467,7 @@ def _build_group4(
             _add(et, "external_tools", 2)
 
     # ── Skill catalog (Agent Skills standard) ───
-    if not is_task and not is_heartbeat:
+    if not is_heartbeat:
         from core.memory.skill_metadata import SkillMetadataService
 
         _DESC_LIMIT = 250
@@ -518,6 +518,8 @@ def _build_group5(
     is_task: bool,
     _ss: dict[str, str],
     _fs: dict[str, str],
+    *,
+    tier: str = TIER_FULL,
 ) -> list[SectionEntry]:
     """Group 5: Org context, messaging, human notification."""
     out: list[SectionEntry] = []
@@ -528,24 +530,26 @@ def _build_group5(
 
     _add(_ss.get("group5_header", "# 5. Organization and Communication"), "group5_header", 1)
 
+    if tier == TIER_MICRO:
+        return out
+
     oc = _build_org_context(pd.name, other_animas, execution_mode)
     if oc:
         _add(oc, "org_context", 2)
 
-    if not is_task:
-        msg = _build_messaging_section(pd, other_animas, execution_mode)
-        if is_background_auto and len(msg) > 500:
-            msg = msg[:500] + "\n" + _fs.get("summary", "(summary)")
-        _add(msg, "messaging", 2)
-        try:
-            from core.config import load_config as _lc
+    msg = _build_messaging_section(pd, other_animas, execution_mode)
+    if is_background_auto and len(msg) > 500:
+        msg = msg[:500] + "\n" + _fs.get("summary", "(summary)")
+    _add(msg, "messaging", 2)
+    try:
+        from core.config import load_config as _lc
 
-            cfg = _lc()
-            pcfg = cfg.animas.get(pd.name)
-            if (pcfg is None or pcfg.supervisor is None) and cfg.human_notification.enabled:
-                _add(_build_human_notification_guidance(execution_mode), "human_notification", 4)
-        except Exception:
-            logger.debug("Skipped human notification guidance injection", exc_info=True)
+        cfg = _lc()
+        pcfg = cfg.animas.get(pd.name)
+        if (pcfg is None or pcfg.supervisor is None) and cfg.human_notification.enabled:
+            _add(_build_human_notification_guidance(execution_mode), "human_notification", 4)
+    except Exception:
+        logger.debug("Skipped human notification guidance injection", exc_info=True)
     return out
 
 
@@ -556,6 +560,8 @@ def _build_group6(
     is_background_auto: bool,
     is_task: bool,
     _ss: dict[str, str],
+    *,
+    tier: str = TIER_FULL,
 ) -> list[SectionEntry]:
     """Group 6: Emotion, reflection, Codex response requirement."""
     out: list[SectionEntry] = []
@@ -564,8 +570,11 @@ def _build_group6(
         if c and c.strip():
             out.append(SectionEntry(id=sid, priority=pri, kind=kind, content=c))
 
-    if not is_task:
-        _add(_ss.get("group6_header", "# 6. Meta Settings"), "group6_header", 1)
+    _add(_ss.get("group6_header", "# 6. Meta Settings"), "group6_header", 1)
+
+    if tier == TIER_MICRO:
+        return out
+
     if is_chat:
         ei = (prompt_store.get_section("emotion_instruction") if prompt_store else None) or EMOTION_INSTRUCTION
         if ei:
@@ -574,7 +583,7 @@ def _build_group6(
         ar = (prompt_store.get_section("a_reflection") if prompt_store else None) or _load_a_reflection()
         if ar:
             _add(ar, "a_reflection", 4)
-    if execution_mode == "c" and not is_background_auto and not is_task:
+    if execution_mode == "c" and not is_background_auto:
         _add(t("builder.c_response_requirement"), "c_response_requirement", 2)
     return out
 
@@ -625,7 +634,7 @@ def build_system_prompt(
     permissions = memory.read_permissions()
 
     # Assemble sections from all 6 groups
-    sections = _build_group1(pd, data_dir, memory, is_task, prompt_store, _ss)
+    sections = _build_group1(pd, data_dir, memory, is_task, prompt_store, _ss, tier=tier)
     sections += _build_group2(memory, permissions, is_background_auto, is_task, _ss)
     sections += _build_group3(
         pd,
@@ -667,6 +676,7 @@ def build_system_prompt(
         is_task,
         _ss,
         _fs,
+        tier=tier,
     )
     sections += _build_group6(
         execution_mode,
@@ -675,6 +685,7 @@ def build_system_prompt(
         is_background_auto,
         is_task,
         _ss,
+        tier=tier,
     )
 
     # Budget allocation + Final assembly
