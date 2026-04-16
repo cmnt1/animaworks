@@ -35,6 +35,7 @@ class SystemCronsMixin:
             id="system_daily_indexing",
             name="System: Daily RAG Indexing",
             replace_existing=True,
+            misfire_grace_time=600,
         )
         logger.info("System cron: Daily RAG indexing at 04:00")
 
@@ -45,6 +46,7 @@ class SystemCronsMixin:
             id="system_daily_consolidation",
             name="System: Daily Consolidation",
             replace_existing=True,
+            misfire_grace_time=600,
         )
         logger.info("System cron: Daily consolidation at 02:00")
 
@@ -55,6 +57,7 @@ class SystemCronsMixin:
             id="system_weekly_integration",
             name="System: Weekly Integration",
             replace_existing=True,
+            misfire_grace_time=600,
         )
         logger.info("System cron: Weekly integration on Sunday at 03:00")
 
@@ -65,6 +68,7 @@ class SystemCronsMixin:
             id="system_monthly_forgetting",
             name="System: Monthly Forgetting",
             replace_existing=True,
+            misfire_grace_time=600,
         )
         logger.info("System cron: Monthly forgetting on 1st at 03:00")
 
@@ -75,6 +79,7 @@ class SystemCronsMixin:
             id="system_dm_log_rotation",
             name="System: DM Log Rotation",
             replace_existing=True,
+            misfire_grace_time=600,
         )
         logger.info("System cron: DM log rotation at 04:30")
 

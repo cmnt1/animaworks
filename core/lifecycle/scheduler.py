@@ -201,6 +201,7 @@ class SchedulerMixin:
                     name=f"{anima.name}: {task.name}",
                     args=[anima.name, task],  # Pass entire CronTask object
                     replace_existing=True,
+                    misfire_grace_time=600,
                 )
                 logger.info(
                     "Cron '%s': %s (%s) [%s]",
