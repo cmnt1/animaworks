@@ -122,13 +122,18 @@ def is_channel_member(
     """Check whether *anima_name* may access *channel*.
 
     Rules:
-    - ``human`` source always has access (Web UI bypass).
+    - ``human`` and ``discord`` sources always have access (gateway bypass).
+    - ``dm-{name}`` channels are exclusive: only the named Anima may post.
     - If no ``.meta.json`` exists the channel is open — everyone has access.
     - If ``members`` list is empty the channel is open.
     - Otherwise the anima must appear in the ``members`` list.
     """
-    if source == "human":
+    if source in ("human", "discord"):
         return True
+    # DM channels: only the owning Anima may post
+    if channel.startswith("dm-"):
+        owner = channel[3:]  # "dm-hikaru" → "hikaru"
+        return anima_name == owner
     meta = load_channel_meta(shared_dir, channel)
     if meta is None or not meta.members:
         return True
