@@ -20,10 +20,10 @@ logger = logging.getLogger("animaworks.routes.assets")
 
 _UNSET = object()
 
-# ── Slack avatar helper ──────────────────────────────────────────────
+# ── Platform avatar helper ───────────────────────────────────────────
 
-_SLACK_AVATAR_DIR = Path(__file__).resolve().parents[2] / "assets" / "slack-avatars"
-_SLACK_ICON_SIZE = 512
+_PLATFORM_AVATAR_DIR = Path(__file__).resolve().parents[2] / "assets" / "platform-avatars"
+_PLATFORM_ICON_SIZE = 512
 
 _BUSTUP_CANDIDATES = [
     "avatar_bustup_realistic.png",
@@ -31,16 +31,17 @@ _BUSTUP_CANDIDATES = [
 ]
 
 
-def _update_slack_avatar(anima_name: str, assets_dir: Path, *, force: bool = False) -> bool:
-    """Crop bustup image to square and save to slack-avatars/ directory.
+def _update_platform_avatar(anima_name: str, assets_dir: Path, *, force: bool = False) -> bool:
+    """Crop bustup image to square and save to platform-avatars/ directory.
 
-    Skips if a hand-crafted avatar already exists (git-tracked) unless
-    *force* is True.  Returns True if the avatar was updated.
+    Used by Discord/Slack webhooks for Anima icon display.
+    Skips if a hand-crafted avatar already exists unless *force* is True.
+    Returns True if the avatar was updated.
     """
-    _SLACK_AVATAR_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = _SLACK_AVATAR_DIR / f"{anima_name}.png"
+    _PLATFORM_AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = _PLATFORM_AVATAR_DIR / f"{anima_name}.png"
     if out_path.is_file() and not force:
-        logger.debug("Slack avatar already exists for '%s'; skipping auto-generation", anima_name)
+        logger.debug("Platform avatar already exists for '%s'; skipping", anima_name)
         return False
 
     src: Path | None = None
@@ -64,10 +65,10 @@ def _update_slack_avatar(anima_name: str, assets_dir: Path, *, force: bool = Fal
             cropped = img.crop((offset, 0, offset + h, h))
         else:
             cropped = img
-        resized = cropped.resize((_SLACK_ICON_SIZE, _SLACK_ICON_SIZE), Image.LANCZOS)
+        resized = cropped.resize((_PLATFORM_ICON_SIZE, _PLATFORM_ICON_SIZE), Image.LANCZOS)
 
     resized.save(out_path, format="PNG", optimize=True)
-    logger.info("Slack avatar updated: %s (%s -> %s)", anima_name, src.name, out_path)
+    logger.info("Platform avatar updated: %s (%s -> %s)", anima_name, src.name, out_path)
     return True
 
 
@@ -1289,7 +1290,7 @@ def create_assets_router() -> APIRouter:
                     logger.info("Removed backup after successful rebuild: %s", backup_dir.name)
 
                 try:
-                    _update_slack_avatar(name, assets_dir)
+                    _update_platform_avatar(name, assets_dir)
                 except Exception:
                     logger.debug("Slack avatar update failed for %s", name, exc_info=True)
 
@@ -1356,5 +1357,42 @@ def create_assets_router() -> APIRouter:
             pf.unlink(missing_ok=True)
 
         return {"status": "restored", "backup_used": latest_backup.name}
+
+    @router.post("/animas/{name}/assets/discord-avatar")
+    async def generate_discord_avatar(name: str, request: Request):
+        """Crop bustup to square icon and upload to XSERVER for Discord webhook use."""
+        import asyncio
+
+        animas_dir = request.app.state.animas_dir
+        anima_dir = animas_dir / name
+        if not anima_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        assets_dir = anima_dir / "assets"
+
+        # Step 1: crop bustup → platform-avatars/{name}.png
+        cropped = _update_platform_avatar(name, assets_dir, force=True)
+        if not cropped:
+            raise HTTPException(
+                status_code=404,
+                detail="No bustup image found to crop",
+            )
+
+        # Step 2: upload to XSERVER via FTP (blocking I/O → thread)
+        from server.avatar_upload import upload_avatar
+
+        loop = asyncio.get_running_loop()
+        url = await loop.run_in_executor(None, upload_avatar, name)
+
+        if not url:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "partial",
+                    "message": "Avatar cropped locally but FTP upload failed. Check XSERVER credentials.",
+                },
+            )
+
+        return {"status": "ok", "url": url}
 
     return router

@@ -21,7 +21,9 @@ from pathlib import Path
 
 logger = logging.getLogger("animaworks.avatar_upload")
 
-_AVATAR_DIR = Path(__file__).resolve().parents[1] / "assets" / "slack-avatars"
+_AVATAR_DIR = Path(__file__).resolve().parents[1] / "assets" / "platform-avatars"
+# Legacy fallback for migration
+_LEGACY_AVATAR_DIR = Path(__file__).resolve().parents[1] / "assets" / "slack-avatars"
 _FTP_REMOTE_DIR = "/xs642990.xsrv.jp/public_html/animaworks-avatars"
 _PUBLIC_BASE_URL = "https://xs642990.xsrv.jp/animaworks-avatars"
 
@@ -48,8 +50,25 @@ def _get_xserver_config() -> dict | None:
         except Exception:
             pass
 
+    # Fallback: abconfig secrets_local.XSERVER dict
     if not all((host, user, password)):
-        logger.debug("XSERVER FTP credentials not found in env/config")
+        try:
+            import sys
+
+            abconfig_dir = r"E:\OneDriveBiz\Tools\abconfig"
+            if abconfig_dir not in sys.path:
+                sys.path.insert(0, abconfig_dir)
+            import secrets_local
+
+            xserver = getattr(secrets_local, "XSERVER", None) or {}
+            host = host or xserver.get("ftp_host", "")
+            user = user or xserver.get("ftp_user", "")
+            password = password or xserver.get("ftp_pass", "")
+        except Exception:
+            pass
+
+    if not all((host, user, password)):
+        logger.debug("XSERVER FTP credentials not found in env/config/abconfig")
         return None
 
     return {"ftp_host": host, "ftp_user": user, "ftp_pass": password}
@@ -70,6 +89,9 @@ def upload_avatar(anima_name: str) -> str:
     Returns the public URL on success, or empty string on failure.
     """
     png_path = _AVATAR_DIR / f"{anima_name}.png"
+    if not png_path.is_file():
+        # Legacy fallback
+        png_path = _LEGACY_AVATAR_DIR / f"{anima_name}.png"
     if not png_path.is_file():
         logger.debug("No avatar PNG for '%s' at %s", anima_name, png_path)
         return ""
@@ -100,15 +122,19 @@ def upload_avatar(anima_name: str) -> str:
 
 
 def upload_all_avatars() -> dict[str, str]:
-    """Upload all avatar PNGs found in assets/slack-avatars/.
+    """Upload all avatar PNGs found in assets/platform-avatars/ (or legacy slack-avatars/).
 
     Returns dict of {anima_name: public_url} for successful uploads.
     """
-    if not _AVATAR_DIR.is_dir():
-        logger.info("No avatars directory at %s", _AVATAR_DIR)
-        return {}
-
-    png_files = list(_AVATAR_DIR.glob("*.png"))
+    # Collect PNGs from both new and legacy directories
+    png_files: list[Path] = []
+    seen: set[str] = set()
+    for d in (_AVATAR_DIR, _LEGACY_AVATAR_DIR):
+        if d.is_dir():
+            for p in d.glob("*.png"):
+                if p.stem not in seen:
+                    png_files.append(p)
+                    seen.add(p.stem)
     if not png_files:
         logger.info("No avatar PNGs found in %s", _AVATAR_DIR)
         return {}

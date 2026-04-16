@@ -198,10 +198,11 @@ async function _loadGallery() {
   html += _renderExpressionGrid(secondaryStyle);
   html += "</details>";
 
-  // Remake button
+  // Remake + Discord Avatar buttons
   html += `
-    <div style="margin-top: 1.5rem;">
+    <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
       <button class="btn-primary" id="assetsRemakeBtn">Remake Assets</button>
+      <button class="btn-secondary" id="assetsDiscordAvatarBtn">Discord Avatar</button>
     </div>
   `;
 
@@ -211,6 +212,28 @@ async function _loadGallery() {
 
   document.getElementById("assetsRemakeBtn")?.addEventListener("click", () => {
     _openRemakeModal();
+  });
+
+  document.getElementById("assetsDiscordAvatarBtn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("assetsDiscordAvatarBtn");
+    if (!btn || !_selectedAnima) return;
+    btn.disabled = true;
+    btn.textContent = "Uploading...";
+    try {
+      const data = await api(`/api/animas/${_selectedAnima}/assets/discord-avatar`, { method: "POST" });
+      if (data.status === "ok") {
+        btn.textContent = "✓ Uploaded";
+        setTimeout(() => { btn.textContent = "Discord Avatar"; btn.disabled = false; }, 3000);
+      } else {
+        alert(data.message || "Upload failed");
+        btn.textContent = "Discord Avatar";
+        btn.disabled = false;
+      }
+    } catch (e) {
+      alert("Discord avatar upload failed: " + (e.message || e));
+      btn.textContent = "Discord Avatar";
+      btn.disabled = false;
+    }
   });
 
   _bindExpressionButtons();
