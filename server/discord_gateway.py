@@ -112,12 +112,20 @@ def _route_to_board(
 # ── Annotation builder ───────────────────────────────────────
 
 
-def _build_discord_annotation(is_dm: bool, has_mention: bool, ch_name: str = "") -> str:
+def _build_discord_annotation(
+    is_dm: bool,
+    has_mention: bool,
+    ch_name: str = "",
+    *,
+    routed_as_lead: bool = False,
+) -> str:
     if is_dm:
         return "[discord:DM]\n"
     ch_label = f"#{ch_name}" if ch_name else "channel"
     if has_mention:
         return f"[discord:{ch_label} — {t('discord.annotation_mentioned')}]\n"
+    if routed_as_lead:
+        return f"[discord:{ch_label} — {t('discord.annotation_channel_lead')}]\n"
     return f"[discord:{ch_label} — {t('discord.annotation_no_mention')}]\n"
 
 
@@ -417,6 +425,7 @@ class DiscordGatewayManager:
 
         # 2. Text/name detection and channel member routing
         #    Use routing_channel_id (parent channel for threads) for membership lookups.
+        routed_as_lead = False
         if target_anima is None:
             target_anima = self._detect_target_anima(cleaned_text, routing_channel_id, discord_cfg)
 
@@ -429,10 +438,12 @@ class DiscordGatewayManager:
                 members = discord_cfg.channel_members.get(routing_channel_id, [])
                 if members:
                     target_anima = members[0]
+                    routed_as_lead = True
                 elif discord_cfg.default_anima and self._is_anima_in_channel(
                     discord_cfg.default_anima, routing_channel_id, discord_cfg
                 ):
                     target_anima = discord_cfg.default_anima
+                    routed_as_lead = True
 
         # Enforce channel membership
         if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, routing_channel_id, discord_cfg):
@@ -470,7 +481,9 @@ class DiscordGatewayManager:
             has_mention = bot_mentioned or (
                 self._anima_name_re is not None and self._anima_name_re.search(cleaned_text) is not None
             )
-            annotation = _build_discord_annotation(is_dm, has_mention, ch_name)
+            annotation = _build_discord_annotation(
+                is_dm, has_mention, ch_name, routed_as_lead=routed_as_lead,
+            )
             intent = "question"
 
             full_content = annotation + thread_ctx + cleaned_text

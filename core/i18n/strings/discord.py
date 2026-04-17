@@ -15,6 +15,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "あなたへの直接メンションはありません",
         "en": "no direct mention for you",
     },
+    "discord.annotation_channel_lead": {
+        "ja": "あなたはこのチャンネルの担当Animaとして指名されました。直接メンションはありませんが、応答してください",
+        "en": "You are the designated lead Anima for this channel. Though not directly mentioned, you should respond",
+    },
     "discord.auto_reply_instruction": {
         "ja": (
             "あなたの最終回答テキストはDiscordの送信元（スレッド含む）に自動投稿されます。"
