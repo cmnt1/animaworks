@@ -92,6 +92,7 @@ DEFAULT_MODEL_MODES = DEFAULT_MODEL_MODE_PATTERNS
 # informational and does NOT restrict which models can be used.
 KNOWN_MODELS: list[dict[str, str]] = [
     # ── Claude / Anthropic (Mode S) ──────────────────────────────────────────
+    {"name": "claude-opus-4-7", "mode": "S", "note": "最高性能・最新"},
     {"name": "claude-opus-4-6", "mode": "S", "note": "最高性能・推奨"},
     {"name": "claude-sonnet-4-6", "mode": "S", "note": "バランス型・推奨"},
     {"name": "claude-haiku-4-5-20251001", "mode": "S", "note": "軽量・高速"},

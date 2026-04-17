@@ -303,7 +303,7 @@ def create_config_router() -> APIRouter:
             if not cred.api_key and cred.type not in ("claude_code_login", "codex_login"):
                 continue
             if provider == "anthropic":
-                for m in ("claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"):
+                for m in ("claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"):
                     if m not in seen:
                         models.append({"id": m, "label": f"Anthropic: {m}", "credential": "anthropic"})
                         seen.add(m)
