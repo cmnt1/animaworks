@@ -86,17 +86,19 @@ def clean_discord_markup(text: str, cache: dict[str, str] | None = None) -> str:
 
 
 def md_to_discord(text: str) -> str:
-    """Prepare text for Discord ``content`` field with length cap.
+    """Prepare text for Discord ``content`` field.
 
     Discord supports CommonMark-style formatting natively, so this is
-    mostly a pass-through that enforces :data:`DISCORD_MESSAGE_LIMIT`.
-    Newlines are preserved (Discord renders them as line breaks).
+    mostly a pass-through.  Newlines are preserved (Discord renders them
+    as line breaks).  Length is **not** capped here — the webhook layer
+    (``_split_message``) chunks long text into multiple 2000-char
+    messages so nothing is truncated.
 
     Args:
         text: Markdown source.
 
     Returns:
-        Truncated text safe for ``content`` fields.
+        Cleaned text safe for ``content`` fields.
     """
     if not text:
         return ""
@@ -114,9 +116,7 @@ def md_to_discord(text: str) -> str:
     text = _RE_HTML_COMMENT.sub("", text).strip()
     if emoji_suffix:
         text = f"{text} {emoji_suffix}"
-    if len(text) <= DISCORD_MESSAGE_LIMIT:
-        return text
-    return text[: DISCORD_MESSAGE_LIMIT - 3] + "..."
+    return text
 
 
 def truncate(text: str, limit: int = 2000) -> str:
