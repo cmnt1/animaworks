@@ -478,9 +478,16 @@ class HeartbeatMixin:
 
             _cfg = _load_config_fresh()
             _hb_cfg = _cfg.heartbeat
+            _activity = _cfg.activity_level
+            # Governor throttle: use the more restrictive level
+            from core.supervisor.scheduler_manager import _read_governor_activity_level
+
+            _gov = _read_governor_activity_level()
+            if _gov is not None:
+                _activity = min(_activity, _gov)
             effective_max_turns = _calc_effective_max_turns(
                 base_max_turns=self.agent.model_config.max_turns,
-                activity_level=_cfg.activity_level,
+                activity_level=_activity,
                 hb_max_turns=_hb_cfg.max_turns,
             )
 
