@@ -487,6 +487,13 @@ class InboxMixin:
                     self.agent.reset_reply_tracking(session_type="inbox")
                     self.agent.reset_posted_channels(session_type="inbox")
                     self.agent.reset_read_paths()
+                    # Clear replied_to persistence file so follow-up inbox
+                    # cycles don't inherit the previous cycle's sent-to set
+                    # (otherwise delegating to the same subordinate twice
+                    # across separate inbox batches is blocked).
+                    _replied_to_path = self.anima_dir / "run" / "replied_to.jsonl"
+                    if _replied_to_path.exists():
+                        _replied_to_path.unlink(missing_ok=True)
 
                     journal = StreamingJournal(self.anima_dir, session_type="inbox")
                     journal.open(trigger=trigger, from_person=senders_str)
