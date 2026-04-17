@@ -186,6 +186,33 @@ def is_monthly_missed(now: datetime) -> bool:
     return (last_success.year, last_success.month) < (now.year, now.month)
 
 
+# ── Already-ran detection (for skipping scheduled runs) ──────────
+
+
+def already_ran_in_period(job_type: str, now: datetime | None = None) -> bool:
+    """Return True if the job has a successful run within the current period.
+
+    - daily: success timestamp on today (local date)
+    - weekly: success timestamp within the current ISO week
+    - monthly: success timestamp within the current calendar month
+
+    Used by the scheduler to skip a scheduled run when the job has already
+    been triggered manually within the same period.
+    """
+    if now is None:
+        now = now_local()
+    last_success = _parse_success_dt(load_status().get(job_type, {}))
+    if last_success is None:
+        return False
+    if job_type == "daily":
+        return last_success.date() == now.date()
+    if job_type == "weekly":
+        return last_success.isocalendar()[:2] == now.isocalendar()[:2]
+    if job_type == "monthly":
+        return (last_success.year, last_success.month) == (now.year, now.month)
+    return False
+
+
 # ── Payload ───────────────────────────────────────────────────────
 
 

@@ -93,6 +93,7 @@ class SchedulerMixin:
                 name="System: Daily Consolidation",
                 replace_existing=True,
                 misfire_grace_time=600,
+                kwargs={"scheduled": True},
             )
             logger.info("System cron: Daily consolidation at %s", daily_time)
 
@@ -115,6 +116,7 @@ class SchedulerMixin:
                 name="System: Weekly Integration",
                 replace_existing=True,
                 misfire_grace_time=600,
+                kwargs={"scheduled": True},
             )
             logger.info("System cron: Weekly integration on %s at %s:%s", day_of_week, time_parts[0], time_parts[1])
 
@@ -137,6 +139,7 @@ class SchedulerMixin:
                 name="System: Monthly Forgetting",
                 replace_existing=True,
                 misfire_grace_time=600,
+                kwargs={"scheduled": True},
             )
             logger.info(
                 "System cron: Monthly forgetting on day %d at %02d:%02d",
@@ -266,19 +269,27 @@ class SchedulerMixin:
         """Return the runtime data directory (``~/.animaworks`` or override)."""
         return self.animas_dir.parent
 
-    async def _run_daily_consolidation(self) -> None:
+    async def _run_daily_consolidation(self, scheduled: bool = False) -> None:
         """Run daily consolidation for all animas via IPC.
 
         Sends ``run_consolidation`` IPC requests to running Anima processes,
         then performs metadata-based post-processing (synaptic downscaling,
         RAG index rebuild) from the supervisor process.
+
+        When ``scheduled`` is True, skip if a successful run already occurred
+        today (a manual run was already performed).
         """
         from core.lifecycle.system_status import (
+            already_ran_in_period,
             build_status_payload,
             mark_failed,
             mark_started,
             mark_succeeded,
         )
+
+        if scheduled and already_ran_in_period("daily"):
+            logger.info("Daily consolidation skipped: already ran today (manual)")
+            return
 
         lock = self._system_job_locks["daily"]
         if lock.locked():
@@ -410,14 +421,23 @@ class SchedulerMixin:
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_daily_consolidation")
 
-    async def _run_weekly_integration(self) -> None:
-        """Run weekly integration for all animas via IPC."""
+    async def _run_weekly_integration(self, scheduled: bool = False) -> None:
+        """Run weekly integration for all animas via IPC.
+
+        When ``scheduled`` is True, skip if a successful run already occurred
+        within the current ISO week.
+        """
         from core.lifecycle.system_status import (
+            already_ran_in_period,
             build_status_payload,
             mark_failed,
             mark_started,
             mark_succeeded,
         )
+
+        if scheduled and already_ran_in_period("weekly"):
+            logger.info("Weekly integration skipped: already ran this week (manual)")
+            return
 
         lock = self._system_job_locks["weekly"]
         if lock.locked():
@@ -534,14 +554,23 @@ class SchedulerMixin:
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_weekly_integration")
 
-    async def _run_monthly_forgetting(self) -> None:
-        """Run monthly forgetting for all animas."""
+    async def _run_monthly_forgetting(self, scheduled: bool = False) -> None:
+        """Run monthly forgetting for all animas.
+
+        When ``scheduled`` is True, skip if a successful run already occurred
+        within the current calendar month.
+        """
         from core.lifecycle.system_status import (
+            already_ran_in_period,
             build_status_payload,
             mark_failed,
             mark_started,
             mark_succeeded,
         )
+
+        if scheduled and already_ran_in_period("monthly"):
+            logger.info("Monthly forgetting skipped: already ran this month (manual)")
+            return
 
         lock = self._system_job_locks["monthly"]
         if lock.locked():

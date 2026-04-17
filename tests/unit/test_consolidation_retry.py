@@ -164,3 +164,59 @@ class TestDailyConsolidationRetryTrigger:
             await mgr._handle_daily_consolidation()
 
         mgr._schedule_consolidation_retry.assert_called_once_with("kotoha", 30)
+
+
+class TestScheduledSkipsIfAlreadyRan:
+    """Scheduled runs must skip when the job already ran in the current period."""
+
+    @pytest.mark.asyncio
+    async def test_daily_scheduled_skips_when_already_ran_today(self, tmp_path):
+        mgr = _make_lifecycle(tmp_path)
+        mgr._handle_daily_consolidation_inner = AsyncMock()
+
+        with patch(
+            "core.lifecycle.system_status.already_ran_in_period",
+            return_value=True,
+        ):
+            await mgr._handle_daily_consolidation(scheduled=True)
+
+        mgr._handle_daily_consolidation_inner.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_daily_manual_runs_even_if_already_ran(self, tmp_path):
+        mgr = _make_lifecycle(tmp_path)
+        mgr._handle_daily_consolidation_inner = AsyncMock()
+
+        with patch(
+            "core.lifecycle.system_status.already_ran_in_period",
+            return_value=True,
+        ):
+            await mgr._handle_daily_consolidation()  # scheduled=False (default)
+
+        mgr._handle_daily_consolidation_inner.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_weekly_scheduled_skips_when_already_ran_this_week(self, tmp_path):
+        mgr = _make_lifecycle(tmp_path)
+        mgr._handle_weekly_integration_inner = AsyncMock()
+
+        with patch(
+            "core.lifecycle.system_status.already_ran_in_period",
+            return_value=True,
+        ):
+            await mgr._handle_weekly_integration(scheduled=True)
+
+        mgr._handle_weekly_integration_inner.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_monthly_scheduled_skips_when_already_ran_this_month(self, tmp_path):
+        mgr = _make_lifecycle(tmp_path)
+        mgr._handle_monthly_forgetting_inner = AsyncMock()
+
+        with patch(
+            "core.lifecycle.system_status.already_ran_in_period",
+            return_value=True,
+        ):
+            await mgr._handle_monthly_forgetting(scheduled=True)
+
+        mgr._handle_monthly_forgetting_inner.assert_not_called()

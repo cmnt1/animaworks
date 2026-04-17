@@ -201,6 +201,90 @@ class TestIsMonthlyMissed:
         assert is_monthly_missed(now) is False
 
 
+# ── already_ran_in_period ────────────────────────────────
+
+
+class TestAlreadyRanInPeriod:
+    def test_daily_false_when_no_success(self, status_dir):
+        from core.lifecycle.system_status import already_ran_in_period
+
+        now = datetime(2026, 4, 11, 10, 0, 0, tzinfo=JST)
+        assert already_ran_in_period("daily", now=now) is False
+
+    def test_daily_true_when_today_success(self, status_dir):
+        from core.lifecycle.system_status import already_ran_in_period, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 11, 2, 5, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("daily")
+
+        now = datetime(2026, 4, 11, 10, 0, 0, tzinfo=JST)
+        assert already_ran_in_period("daily", now=now) is True
+
+    def test_daily_false_when_yesterday_success(self, status_dir):
+        from core.lifecycle.system_status import already_ran_in_period, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 10, 2, 5, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("daily")
+
+        now = datetime(2026, 4, 11, 10, 0, 0, tzinfo=JST)
+        assert already_ran_in_period("daily", now=now) is False
+
+    def test_weekly_true_when_same_iso_week(self, status_dir):
+        from core.lifecycle.system_status import already_ran_in_period, mark_succeeded
+
+        # 2026-04-06 is Monday, 2026-04-12 is Sunday — same ISO week
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 6, 3, 5, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("weekly")
+
+        now = datetime(2026, 4, 12, 10, 0, 0, tzinfo=JST)
+        assert already_ran_in_period("weekly", now=now) is True
+
+    def test_weekly_false_when_previous_week(self, status_dir):
+        from core.lifecycle.system_status import already_ran_in_period, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 3, 30, 3, 5, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("weekly")
+
+        now = datetime(2026, 4, 12, 10, 0, 0, tzinfo=JST)
+        assert already_ran_in_period("weekly", now=now) is False
+
+    def test_monthly_true_when_same_month(self, status_dir):
+        from core.lifecycle.system_status import already_ran_in_period, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 1, 3, 5, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("monthly")
+
+        now = datetime(2026, 4, 20, 10, 0, 0, tzinfo=JST)
+        assert already_ran_in_period("monthly", now=now) is True
+
+    def test_monthly_false_when_previous_month(self, status_dir):
+        from core.lifecycle.system_status import already_ran_in_period, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 3, 15, 3, 5, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("monthly")
+
+        now = datetime(2026, 4, 1, 10, 0, 0, tzinfo=JST)
+        assert already_ran_in_period("monthly", now=now) is False
+
+
 # ── build_status_payload ─────────────────────────────────
 
 class TestBuildStatusPayload:

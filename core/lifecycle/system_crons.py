@@ -47,6 +47,7 @@ class SystemCronsMixin:
             name="System: Daily Consolidation",
             replace_existing=True,
             misfire_grace_time=600,
+            kwargs={"scheduled": True},
         )
         logger.info("System cron: Daily consolidation at 02:00")
 
@@ -58,6 +59,7 @@ class SystemCronsMixin:
             name="System: Weekly Integration",
             replace_existing=True,
             misfire_grace_time=600,
+            kwargs={"scheduled": True},
         )
         logger.info("System cron: Weekly integration on Sunday at 03:00")
 
@@ -69,6 +71,7 @@ class SystemCronsMixin:
             name="System: Monthly Forgetting",
             replace_existing=True,
             misfire_grace_time=600,
+            kwargs={"scheduled": True},
         )
         logger.info("System cron: Monthly forgetting on 1st at 03:00")
 

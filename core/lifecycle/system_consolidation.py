@@ -17,18 +17,26 @@ logger = logging.getLogger("animaworks.lifecycle")
 class SystemConsolidationMixin:
     """Mixin providing daily/weekly/monthly consolidation handlers."""
 
-    async def _handle_daily_consolidation(self) -> None:
+    async def _handle_daily_consolidation(self, scheduled: bool = False) -> None:
         """Run daily consolidation for all animas.
 
         New flow: Anima-driven consolidation via run_consolidation(),
         followed by metadata-based synaptic downscaling and RAG rebuild.
+
+        When ``scheduled`` is True (called from the scheduler), skip if a
+        successful run already occurred today (manual execution already done).
         """
         from core.lifecycle.system_status import (
+            already_ran_in_period,
             build_status_payload,
             mark_failed,
             mark_started,
             mark_succeeded,
         )
+
+        if scheduled and already_ran_in_period("daily"):
+            logger.info("Daily consolidation skipped: already ran today (manual)")
+            return
 
         lock = self._system_job_locks["daily"]
         if lock.locked():
@@ -160,14 +168,23 @@ class SystemConsolidationMixin:
                 logger.exception("Daily consolidation failed for anima=%s", anima_name)
                 self._schedule_consolidation_retry(anima_name, max_turns)
 
-    async def _handle_weekly_integration(self) -> None:
-        """Run weekly integration for all animas."""
+    async def _handle_weekly_integration(self, scheduled: bool = False) -> None:
+        """Run weekly integration for all animas.
+
+        When ``scheduled`` is True, skip if a successful run already occurred
+        within the current ISO week.
+        """
         from core.lifecycle.system_status import (
+            already_ran_in_period,
             build_status_payload,
             mark_failed,
             mark_started,
             mark_succeeded,
         )
+
+        if scheduled and already_ran_in_period("weekly"):
+            logger.info("Weekly integration skipped: already ran this week (manual)")
+            return
 
         lock = self._system_job_locks["weekly"]
         if lock.locked():
@@ -277,14 +294,23 @@ class SystemConsolidationMixin:
             except Exception:
                 logger.exception("Weekly integration failed for anima=%s", anima_name)
 
-    async def _handle_monthly_forgetting(self) -> None:
-        """Run monthly forgetting for all animas."""
+    async def _handle_monthly_forgetting(self, scheduled: bool = False) -> None:
+        """Run monthly forgetting for all animas.
+
+        When ``scheduled`` is True, skip if a successful run already occurred
+        within the current calendar month.
+        """
         from core.lifecycle.system_status import (
+            already_ran_in_period,
             build_status_payload,
             mark_failed,
             mark_started,
             mark_succeeded,
         )
+
+        if scheduled and already_ran_in_period("monthly"):
+            logger.info("Monthly forgetting skipped: already ran this month (manual)")
+            return
 
         lock = self._system_job_locks["monthly"]
         if lock.locked():
