@@ -33,6 +33,7 @@ class DelegationMixin(OrgHelpersMixin):
     _messenger: Messenger | None
     _session_origin: str
     _session_origin_chain: list[str]
+    _current_discord_origin: dict[str, str]
 
     def _handle_delegate_task(self, args: dict[str, Any]) -> str:
         """Delegate a task to a direct subordinate."""
@@ -154,6 +155,17 @@ class DelegationMixin(OrgHelpersMixin):
             logger.debug("Failed to check subordinate process status for %s", target_name, exc_info=True)
 
         own_tqm = TaskQueueManager(self._anima_dir)
+        _meta: dict[str, Any] = {
+            "delegated_to": target_name,
+            "delegated_task_id": sub_entry.task_id,
+        }
+        # If the current inbox batch contains a Discord message, tag the
+        # delegation with that origin so completion can be reported back.
+        _disc = getattr(self, "_current_discord_origin", {}) or {}
+        if _disc.get("channel_id"):
+            _meta["discord_origin_channel_id"] = _disc["channel_id"]
+            _meta["discord_origin_thread_ts"] = _disc.get("thread_ts", "")
+            _meta["discord_origin_user_id"] = _disc.get("user_id", "")
         try:
             own_entry = own_tqm.add_delegated_task(
                 original_instruction=instruction,
@@ -161,10 +173,7 @@ class DelegationMixin(OrgHelpersMixin):
                 summary=t("handler.delegation_summary", summary=summary),
                 deadline=deadline,
                 relay_chain=[self._anima_name, target_name],
-                meta={
-                    "delegated_to": target_name,
-                    "delegated_task_id": sub_entry.task_id,
-                },
+                meta=_meta,
             )
         except Exception as e:
             logger.warning("Failed to persist tracking entry for delegate_task (DM already sent): %s", e)

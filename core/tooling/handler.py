@@ -159,6 +159,12 @@ class ToolHandler(
         # ── Discord thread source flag (set by inbox processor) ──
         self._has_thread_source: bool = False
 
+        # ── Discord origin context (set by inbox processor when current
+        #    batch contains a discord-sourced message) ──
+        # Used by delegate_task to tag delegated tasks with their origin
+        # so completion can be reported back to the originating thread.
+        self._current_discord_origin: dict[str, str] = {}
+
         # ── Session trust tracking (security: min trust across all tools used) ──
         # 2 = trusted, 1 = medium, 0 = untrusted; default trusted (no tools used yet)
         self._min_trust_seen: int = 2

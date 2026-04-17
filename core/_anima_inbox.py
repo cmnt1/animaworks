@@ -452,6 +452,23 @@ class InboxMixin:
                         getattr(item.msg, "external_thread_ts", "") for item in inbox_result.inbox_items
                     )
 
+                    # Capture Discord origin context for delegate_task tagging.
+                    # Pick the first discord-sourced item in the batch so that
+                    # tasks delegated during this cycle carry origin info and
+                    # completion reports flow back to the correct thread.
+                    self.agent._tool_handler._current_discord_origin = {}
+                    for _item in inbox_result.inbox_items:
+                        _m = _item.msg
+                        if getattr(_m, "source", "") == "discord":
+                            _ch = getattr(_m, "external_channel_id", "")
+                            if _ch:
+                                self.agent._tool_handler._current_discord_origin = {
+                                    "channel_id": _ch,
+                                    "thread_ts": getattr(_m, "external_thread_ts", "") or "",
+                                    "user_id": getattr(_m, "external_user_id", "") or "",
+                                }
+                                break
+
                     # Set session origin from the most untrusted message
                     _batch_origins: list[str] = []
                     _batch_chains: list[str] = []

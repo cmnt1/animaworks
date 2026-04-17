@@ -558,12 +558,20 @@ class TaskQueueManager:
                     "done",
                     summary=t("task_queue.sync_done", orig=task.summary, target=target),
                 )
+                _post_delegation_completion_to_discord(
+                    task, self.anima_dir, target, child_id, animas_dir,
+                    status="done",
+                )
                 synced += 1
             elif sub_status == "failed":
                 self.update_status(
                     task.task_id,
                     "failed",
                     summary=t("task_queue.sync_failed", orig=task.summary, target=target),
+                )
+                _post_delegation_completion_to_discord(
+                    task, self.anima_dir, target, child_id, animas_dir,
+                    status="failed",
                 )
                 synced += 1
         return synced
@@ -602,7 +610,9 @@ class TaskQueueManager:
             logger.debug("sync_delegated: archive unreadable at %s", archive, exc_info=True)
         return None
 
-    def format_delegated_for_priming(self, animas_dir: Path, budget_chars: int = 400) -> str:
+    def format_delegated_for_priming(
+        self, animas_dir: Path, budget_chars: int = 400,
+    ) -> str:
         """Format delegated tasks with subordinate status for Priming display."""
         delegated = self.get_delegated_tasks()
         if not delegated:
@@ -702,3 +712,76 @@ class TaskQueueManager:
         except OSError as exc:
             logger.exception("Failed to append to task queue")
             raise TaskPersistenceError(str(exc)) from exc
+
+
+def _post_delegation_completion_to_discord(
+    task: Any,
+    delegator_dir: Path,
+    target: str,
+    child_id: str,
+    animas_dir: Path,
+    *,
+    status: str,
+) -> None:
+    """Auto-post completion of a delegated task to its originating Discord thread.
+
+    Looks up the subordinate's completion summary (if available) and the
+    origin channel/thread recorded on the delegated task's meta, then
+    fires a webhook post as the delegating Anima.  Silently no-ops if
+    Discord origin info is absent or the webhook manager is unavailable.
+    """
+    meta = task.meta or {}
+    channel_id = meta.get("discord_origin_channel_id", "")
+    if not channel_id:
+        return
+    thread_ts = meta.get("discord_origin_thread_ts", "") or None
+    user_id = meta.get("discord_origin_user_id", "")
+
+    # Delegator name = parent dir of the delegator's anima_dir
+    delegator = delegator_dir.name
+
+    # Fetch subordinate's completion summary for a richer message
+    sub_summary = ""
+    try:
+        target_dir = animas_dir / target
+        sub_tqm = TaskQueueManager(target_dir)
+        sub_task = sub_tqm.get_task_by_id(child_id)
+        if sub_task:
+            sub_summary = sub_task.summary or ""
+    except Exception:
+        logger.debug(
+            "delegation-completion-to-discord: failed to read subordinate task %s/%s",
+            target,
+            child_id,
+            exc_info=True,
+        )
+
+    mention = f"<@{user_id}> " if user_id else ""
+    status_icon = "✅" if status == "done" else "❌"
+    status_label = "完了" if status == "done" else "失敗"
+    orig_summary = task.summary or "(no summary)"
+    body = (
+        f"{mention}{status_icon} 委任タスク{status_label}報告\n\n"
+        f"依頼内容: {orig_summary}\n"
+        f"担当: {target}\n"
+    )
+    if sub_summary:
+        body += f"\n【{target}からの完了報告】\n{sub_summary}"
+
+    try:
+        from core.discord_webhooks import get_webhook_manager
+
+        wm = get_webhook_manager()
+        wm.send_as_anima(channel_id, delegator, body, thread_id=thread_ts)
+        logger.info(
+            "delegation-completion-to-discord: posted completion for %s → #%s thread=%s",
+            child_id,
+            channel_id,
+            thread_ts or "(none)",
+        )
+    except Exception:
+        logger.warning(
+            "delegation-completion-to-discord: failed to post for %s",
+            child_id,
+            exc_info=True,
+        )
