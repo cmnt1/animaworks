@@ -30,6 +30,25 @@ from core.time_utils import get_app_timezone, now_local
 
 _INDENTED_SCHEDULE_RE = re.compile(r"^\s+schedule:", re.MULTILINE)
 _HEALTH_CHECK_HOURS = 3
+
+
+def _read_governor_activity_level() -> int | None:
+    """Read ``governor_activity_level`` from usage_governor_state.json.
+
+    Returns the Governor-imposed activity level, or None if no throttle is active.
+    """
+    from core.paths import get_data_dir
+
+    state_path = get_data_dir() / "usage_governor_state.json"
+    if not state_path.is_file():
+        return None
+    try:
+        data = json.loads(state_path.read_text("utf-8"))
+        return data.get("governor_activity_level")
+    except Exception:
+        return None
+
+
 _SECONDS_PER_HOUR = 3600
 _DAILY_STALE_THRESHOLD_SEC = 36 * _SECONDS_PER_HOUR
 _WEEKLY_STALE_THRESHOLD_SEC = 8 * 24 * _SECONDS_PER_HOUR
@@ -139,6 +158,12 @@ class SchedulerManager:
         app_config = load_config()
         base_interval = self._read_per_anima_interval(app_config)
         activity_pct = max(10, min(400, app_config.activity_level))
+
+        # Governor throttle: use the more restrictive of config vs governor
+        governor_level = _read_governor_activity_level()
+        if governor_level is not None:
+            activity_pct = min(activity_pct, governor_level)
+
         effective_interval = base_interval / (activity_pct / 100.0)
         effective_interval = max(5.0, effective_interval)
         interval = round(effective_interval)

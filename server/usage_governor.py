@@ -137,6 +137,7 @@ class GovernorState:
         self.since: str = ""
         self.last_check: float = 0.0
         self.last_usage: dict[str, Any] = {}
+        self.governor_activity_level: int | None = None  # None = no throttle
         self._relogin_timestamps: dict[str, list[float]] = {}
         self._relogin_cooldown_until: dict[str, float] = {}
         self._load()
@@ -165,6 +166,7 @@ class GovernorState:
             self.suspended_animas = data.get("suspended_animas", [])
             self.reason = data.get("reason", "")
             self.since = data.get("since", "")
+            self.governor_activity_level = data.get("governor_activity_level")
         except Exception:
             logger.debug("Failed to load governor state", exc_info=True)
 
@@ -173,6 +175,7 @@ class GovernorState:
             "suspended_animas": self.suspended_animas,
             "reason": self.reason,
             "since": self.since,
+            "governor_activity_level": self.governor_activity_level,
         }
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -185,7 +188,7 @@ class GovernorState:
 
     @property
     def is_governing(self) -> bool:
-        return bool(self.suspended_animas) or bool(self.reason)
+        return bool(self.suspended_animas) or bool(self.reason) or self.governor_activity_level is not None
 
 
 # ── Policy I/O ───────────────────────────────────────────────────────────────
@@ -631,6 +634,7 @@ class UsageGovernor:
 
         all_suspend: list[str] = []
         reasons: list[str] = []
+        worst_level: int | None = None
 
         for provider_key in ("claude", "openai", "nanogpt"):
             provider_animas = groups.get(provider_key, [])
@@ -649,11 +653,15 @@ class UsageGovernor:
                     reasons.append(f"{provider_key} usage unavailable ({error_code})")
                 continue
 
-            remaining, _level, reason = _evaluate_provider_remaining(
+            remaining, level, reason = _evaluate_provider_remaining(
                 usage_data,
                 policy,
                 provider_key,
             )
+
+            # Track worst (most restrictive) activity level across all providers
+            if level is not None:
+                worst_level = min(worst_level, level) if worst_level is not None else level
 
             to_suspend = _animas_to_suspend(remaining, policy, provider_animas)
             all_suspend.extend(to_suspend)
@@ -668,13 +676,31 @@ class UsageGovernor:
         # Apply suspensions (only cloud-provider animas; local ones untouched)
         await self._apply_suspensions(set(all_suspend))
 
+        # Apply activity level throttling (affects heartbeat interval & max_turns)
+        prev_level = self._state.governor_activity_level
+        if worst_level != prev_level:
+            self._state.governor_activity_level = worst_level
+            logger.info("Governor: activity_level %s → %s", prev_level, worst_level)
+            await self._broadcast_reschedule()
+
         self._state.reason = " | ".join(reasons) if reasons else ""
         if all_suspend and not self._state.since:
             self._state.since = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-        elif not all_suspend:
+        elif not all_suspend and not worst_level:
             self._state.since = ""
 
         self._state.save()
+
+    async def _broadcast_reschedule(self) -> None:
+        """Broadcast reschedule_heartbeat IPC to all running animas."""
+        supervisor = getattr(self._app.state, "supervisor", None)
+        if not supervisor or not hasattr(supervisor, "send_request"):
+            return
+        for name in list(getattr(supervisor, "processes", {}).keys()):
+            try:
+                await supervisor.send_request(name, "reschedule_heartbeat", {})
+            except Exception:
+                logger.debug("Governor: failed to reschedule %s", name, exc_info=True)
 
     def _get_all_anima_names(self) -> list[str]:
         """Get all registered anima names (running + governor-suspended)."""
