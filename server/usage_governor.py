@@ -188,7 +188,8 @@ class GovernorState:
 
     @property
     def is_governing(self) -> bool:
-        return bool(self.suspended_animas) or bool(self.reason) or self.governor_activity_level is not None
+        throttling = self.governor_activity_level is not None and self.governor_activity_level < 100
+        return bool(self.suspended_animas) or bool(self.reason) or throttling
 
 
 # ── Policy I/O ───────────────────────────────────────────────────────────────
@@ -684,9 +685,10 @@ class UsageGovernor:
             await self._broadcast_reschedule()
 
         self._state.reason = " | ".join(reasons) if reasons else ""
+        throttling = worst_level is not None and worst_level < 100
         if all_suspend and not self._state.since:
             self._state.since = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-        elif not all_suspend and not worst_level:
+        elif not all_suspend and not throttling:
             self._state.since = ""
 
         self._state.save()
