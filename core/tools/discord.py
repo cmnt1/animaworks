@@ -111,11 +111,25 @@ def get_tool_schemas() -> list[dict]:
                 "properties": {
                     "channel_id": {
                         "type": "string",
-                        "description": "Discord channel ID",
+                        "description": (
+                            "Discord parent channel ID. When replying into a thread, "
+                            "this MUST be the parent text channel ID (not the thread ID) — "
+                            "Discord webhooks are attached to the parent channel and "
+                            "target the thread via the separate thread_id parameter."
+                        ),
                     },
                     "text": {
                         "type": "string",
                         "description": "Message text (Markdown supported, max 2000 chars)",
+                    },
+                    "thread_id": {
+                        "type": "string",
+                        "description": (
+                            "Thread channel ID to post into. REQUIRED when replying to "
+                            "a message that arrived from within a thread — otherwise the "
+                            "post lands in the parent channel. Use the value shown in the "
+                            "[reply_instruction: ...] annotation of the incoming message."
+                        ),
                     },
                 },
                 "required": ["channel_id", "text"],
@@ -240,8 +254,19 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
                 from core.discord_webhooks import get_webhook_manager
 
                 wm = get_webhook_manager()
-                msg_id = wm.send_as_anima(args["channel_id"], anima_name, discord_text)
-                return {"status": "ok", "channel_id": args["channel_id"], "message_id": msg_id}
+                thread_id = args.get("thread_id") or None
+                msg_id = wm.send_as_anima(
+                    args["channel_id"],
+                    anima_name,
+                    discord_text,
+                    thread_id=thread_id,
+                )
+                return {
+                    "status": "ok",
+                    "channel_id": args["channel_id"],
+                    "thread_id": thread_id or "",
+                    "message_id": msg_id,
+                }
             except Exception:
                 logger.debug("Webhook send failed, falling back to bot token", exc_info=True)
 

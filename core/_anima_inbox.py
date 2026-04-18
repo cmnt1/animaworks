@@ -157,9 +157,22 @@ def _build_reply_instruction(m: Any) -> str:
         parts = [
             "use tool discord_channel_post with",
             f'channel_id="{m.external_channel_id}"',
-            f'text="{mention}{reply_placeholder}"',
         ]
-        return f"  [reply_instruction: {', '.join(parts)}]"
+        # When the message arrived from inside a thread, the reply MUST carry
+        # thread_id back to the tool — otherwise the post lands in the parent
+        # channel. `external_thread_ts` holds the thread channel ID for Discord.
+        thread_id = getattr(m, "external_thread_ts", "") or ""
+        if thread_id:
+            parts.append(f'thread_id="{thread_id}"')
+        parts.append(f'text="{mention}{reply_placeholder}"')
+        instr = f"  [reply_instruction: {', '.join(parts)}]"
+        if thread_id:
+            instr += (
+                f"\n  [thread_required: このメッセージはスレッド内から届いています。"
+                f'返信時は discord_channel_post に必ず thread_id="{thread_id}" を指定すること。'
+                "指定し忘れると親チャネルに投稿されてしまう]"
+            )
+        return instr
 
     if m.source == "chatwork":
         cmd = f"animaworks-tool chatwork send {m.external_channel_id} '{{返信内容}}'"
