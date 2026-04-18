@@ -781,9 +781,12 @@ class PendingTaskExecutor:
                     error_message = ""
                 elif chunk_type == "cycle_done":
                     cycle_result = chunk.get("cycle_result", {})
+                    # Prefer LLM-provided summary; fall back to full accumulated_text
+                    # (we intentionally preserve the entire text so downstream
+                    # notifications and board mirrors never truncate content).
                     result_summary = cycle_result.get(
                         "summary",
-                        accumulated_text[:500],
+                        accumulated_text,
                     )
                     if cycle_result.get("action") == "error":
                         task_failed_reason = result_summary or "task execution failed"
@@ -798,7 +801,7 @@ class PendingTaskExecutor:
             raise RuntimeError(task_failed_reason)
 
         if not result_summary:
-            result_summary = accumulated_text[:500] or t("pending_executor.task_completed")
+            result_summary = accumulated_text or t("pending_executor.task_completed")
 
         auth_failure = _detect_task_auth_failure(result_summary or accumulated_text)
         if auth_failure:
@@ -807,6 +810,7 @@ class PendingTaskExecutor:
         activity.log(
             "task_exec_end",
             summary=t("pending_executor.task_exec_end", title=title, result=result_summary[:200]),
+            content=result_summary,
             meta={"task_id": task_id},
         )
 
@@ -816,13 +820,23 @@ class PendingTaskExecutor:
                 reply_to = reply_to.get("name")
             elif not isinstance(reply_to, str):
                 reply_to = None
+        # Skip self-notifications: when an Anima submits a task for itself,
+        # a completion DM back to self is pure noise and the body often
+        # carries human-directed content that gets misrouted.
+        if reply_to and reply_to == self._anima_name:
+            logger.info(
+                "[%s] Skipping self-directed completion notification for task %s",
+                self._anima_name,
+                task_id,
+            )
+            reply_to = None
         if reply_to:
             try:
                 notify_text = load_prompt(
                     "task_complete_notify",
                     task_id=task_id,
                     title=title,
-                    result_summary=result_summary[:1000],
+                    result_summary=result_summary,
                 )
                 from core.execution._sanitize import ORIGIN_ANIMA
 

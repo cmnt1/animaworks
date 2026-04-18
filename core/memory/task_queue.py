@@ -785,3 +785,19 @@ def _post_delegation_completion_to_discord(
             child_id,
             exc_info=True,
         )
+        return
+
+    # Mirror to the AnimaWorks board so the full completion text is
+    # recorded even if Discord presentation truncates it.  Without this
+    # mirror the body only lives on Discord, and any truncation or
+    # webhook failure means the content is lost.
+    try:
+        from core.outbound_auto import DiscordAutoResponder
+
+        DiscordAutoResponder._mirror_to_board(channel_id, body, delegator)
+    except Exception:
+        logger.debug(
+            "delegation-completion-to-discord: board mirror failed for %s",
+            child_id,
+            exc_info=True,
+        )

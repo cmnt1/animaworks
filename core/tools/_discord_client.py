@@ -297,14 +297,19 @@ class DiscordClient:
         params: dict[str, str] = {"wait": "true"}
         if thread_id:
             params["thread_id"] = thread_id
-        # Webhook execute uses a different URL pattern — no Bot auth needed
-        client = self._ensure_http()
+        # Webhook execute uses a different URL pattern — no Bot auth needed.
+        # CRITICAL: we MUST NOT send the Bot Authorization header here. When an
+        # application-owned webhook (created by our bot) is executed with bot
+        # auth, Discord treats it as the bot app and silently drops the
+        # per-message `username` / `avatar_url` overrides, displaying the
+        # webhook's stored name ("AnimaWorks") instead of the Anima name.
+        # Use a bare httpx client with no Authorization header.
         try:
-            response = client.request(
-                "POST",
-                f"/webhooks/{webhook_id}/{webhook_token}",
+            response = httpx.post(
+                f"{API_BASE}/webhooks/{webhook_id}/{webhook_token}",
                 json=body,
                 params=params,
+                timeout=_DEFAULT_TIMEOUT,
             )
             if response.status_code == 429:
                 message, code = self._parse_error_response(response)
