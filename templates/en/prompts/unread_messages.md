@@ -4,6 +4,17 @@ The following unread messages are available. **Respond only to messages that req
 
 {summary}
 
+### Absolute Rule: Per-Thread Individual Replies (MUST — no duplicate broadcasting)
+
+The list above may mix messages from **multiple threads, channels, and senders**. Follow these rules strictly.
+
+- **MUST NOT (most important)**: **Never post identical or near-identical content across multiple threads.** Do not craft one reply and broadcast it "just in case" to every thread. Each post must be specific to the message received in that thread.
+- **MUST**: A single `post_channel` (`discord_channel_post`) call carries **a reply to exactly one message**. Never bundle multiple topics into one post.
+- **MUST**: When a message carries `[reply_instruction: ... channel_id="X" ...]`, that post must only contain the reply to that message. Replies to other messages must be issued separately against their own channel_id / thread_id.
+- **MUST NOT**: Do not merge unrelated topics into one "status summary" or "today's roll-up" post.
+- **If multiple threads ask essentially the same thing**: answer in **one** thread, and in the others either skip the reply entirely or post only a short pointer (e.g. "Answered in #<thread>"). **Never copy-paste the same body to multiple places.**
+- Example: the inbox contains #ops thread A, #general thread B, and DM C → issue three separate calls with thread-specific content: `post_channel`(→A, A-specific) / `post_channel`(→B, B-specific) / `send_message`(→C, C-specific). Do not reuse the body.
+
 ### Response Procedure
 
 1. Read each message carefully

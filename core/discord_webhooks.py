@@ -59,6 +59,10 @@ class DiscordWebhookManager:
 
     # Dedup: block identical content to same channel within this window
     _DEDUP_TTL_SEC = 60.0
+    # Cross-channel dedup: block the same anima from sending the same body
+    # to *any* channel within this window. Guards against the LLM
+    # broadcasting one reply across every thread in its inbox.
+    _CROSS_DEDUP_TTL_SEC = 300.0
 
     def __init__(self) -> None:
         self._webhooks: dict[str, dict[str, str]] = {}  # channel_id → {id, token}
@@ -67,6 +71,8 @@ class DiscordWebhookManager:
         self._client: DiscordClient | None = None
         # Dedup: (channel_id, anima_name, content_hash) → timestamp
         self._recent_sends: dict[tuple[str, str, str], float] = {}
+        # Cross-channel dedup: (anima_name, content_hash) → timestamp
+        self._recent_bodies: dict[tuple[str, str], float] = {}
         self._load_persisted()
 
     def _ensure_client(self) -> DiscordClient:
@@ -138,13 +144,21 @@ class DiscordWebhookManager:
         now = time.monotonic()
         content_hash = hashlib.md5(content.encode("utf-8", errors="replace")).hexdigest()[:16]
         dedup_key = (channel_id, anima_name, content_hash)
+        # Cross-channel key: same anima + same body, regardless of channel.
+        # Short bodies (acks, pointers like "Answered in #xxx") are exempt to
+        # avoid blocking legitimate brief references.
+        cross_key = (anima_name, content_hash)
+        cross_eligible = len(content.strip()) >= 80
 
         with self._lock:
             # Evict stale entries
             stale = [k for k, ts in self._recent_sends.items() if now - ts > self._DEDUP_TTL_SEC]
             for k in stale:
                 del self._recent_sends[k]
-            # Check duplicate
+            stale_cross = [k for k, ts in self._recent_bodies.items() if now - ts > self._CROSS_DEDUP_TTL_SEC]
+            for k in stale_cross:
+                del self._recent_bodies[k]
+            # Check duplicate (same channel)
             if dedup_key in self._recent_sends:
                 logger.info(
                     "Dedup: blocking duplicate send to %s by %s (within %ds)",
@@ -153,7 +167,19 @@ class DiscordWebhookManager:
                     int(self._DEDUP_TTL_SEC),
                 )
                 return ""
+            # Check cross-channel duplicate (same body to any channel)
+            if cross_eligible and cross_key in self._recent_bodies:
+                logger.warning(
+                    "Cross-channel dedup: blocking %s from broadcasting identical "
+                    "body to channel %s (already posted within %ds)",
+                    anima_name,
+                    channel_id,
+                    int(self._CROSS_DEDUP_TTL_SEC),
+                )
+                return ""
             self._recent_sends[dedup_key] = now
+            if cross_eligible:
+                self._recent_bodies[cross_key] = now
 
         wh_id, wh_token = self._get_or_create_webhook(channel_id)
         client = self._ensure_client()
