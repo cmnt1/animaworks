@@ -152,6 +152,16 @@ send_message(
 - SHOULD NOT: 別の話題を既存スレッドに混ぜないこと。新しい話題は新しいスレッドで開始する
 - MAY: `thread_id` が不明な場合は省略してよい（新しいスレッドとして扱われる）
 
+### スレッド別返信の原則（Discord／チャネル投稿）
+
+1 回の inbox バッチに、複数のスレッド（または複数のチャネル）由来のメッセージが含まれることがある。このとき返答をまとめてはいけない。
+
+- MUST: 1 回の `post_channel`（`discord_channel_post`）呼び出しは、**1 つのスレッドの 1 案件だけ**を扱うこと。複数案件を 1 投稿にまとめない
+- MUST: 複数スレッドから受信した場合は、**スレッドごとに別の `post_channel` 呼び出し**を発行すること
+- MUST: `[reply_instruction: discord_channel_post channel_id="X" thread_id="Y"]` が付いているメッセージには、**必ず channel_id=X / thread_id=Y 宛ての単独投稿**で応答すること（他のメッセージへの応答は絶対に混ぜない）
+- MUST NOT: 別スレッドで進行中の話題を、このスレッドに書き込まないこと。他案件は対応する thread_id で別途投稿する
+- 例: inbox に #ops スレッド A、#general スレッド B、DM C が入っていたら、`post_channel`（A 宛）／`post_channel`（B 宛）／`send_message`（C 宛）と **3 回に分けて** 発行する
+
 ## CLI によるメッセージ送信
 
 ツールが使えない場合や Bash 経由で送信する場合の方法。

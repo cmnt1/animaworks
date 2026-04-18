@@ -152,6 +152,16 @@ send_message(
 - SHOULD NOT: Mix different topics in an existing thread. Start a new thread for new topics
 - MAY: Omit `thread_id` if unknown (treated as a new thread)
 
+### One-Thread-Per-Reply Rule (Discord / channel posts)
+
+A single inbox batch may contain messages originating from multiple threads (or multiple channels). You must NOT combine replies.
+
+- MUST: Each `post_channel` (`discord_channel_post`) call handles **exactly one topic in one thread**. Never bundle multiple topics into a single post
+- MUST: When the inbox contains messages from multiple threads, issue **one separate `post_channel` call per thread**
+- MUST: When a message carries `[reply_instruction: discord_channel_post channel_id="X" thread_id="Y"]`, reply **with a standalone post targeting channel_id=X / thread_id=Y only** — never mix in content meant for other messages
+- MUST NOT: Write content about another ongoing thread's topic into this thread. Post unrelated topics separately with their own thread_id
+- Example: if the inbox holds #ops thread A, #general thread B, and DM C, issue **three separate calls**: `post_channel` (A), `post_channel` (B), and `send_message` (C)
+
 ## Sending Messages via CLI
 
 For when tools are unavailable or sending via Bash.
