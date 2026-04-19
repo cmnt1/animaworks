@@ -637,6 +637,36 @@ def cmd_anima_set_model(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _warn_low_tool_use_capability(model: str, force: bool) -> bool:
+    """Warn when setting a background model with weak tool_use support.
+
+    Returns True if the caller should proceed, False to abort.
+    """
+    from core.config.model_mode import resolve_tool_use_capability
+
+    try:
+        capability = resolve_tool_use_capability(model)
+    except Exception:
+        return True
+
+    if capability not in ("low", "none"):
+        return True
+
+    msg = (
+        f"WARNING: model '{model}' has tool_use_capability='{capability}'. "
+        "Bash and external tools (Gmail/Slack/GitHub/...) may fail silently or "
+        "loop without effect.  The dynamic model router will escalate tool-"
+        "requiring requests to the main model when possible."
+    )
+    if force:
+        print(msg)
+        return True
+
+    print(msg)
+    print("Re-run with --force to proceed anyway.")
+    return False
+
+
 def cmd_anima_set_background_model(args: argparse.Namespace) -> None:
     """Set an anima's background model for heartbeat/cron (updates status.json)."""
     from core.config.models import update_status_model
@@ -696,6 +726,8 @@ def cmd_anima_set_background_model(args: argparse.Namespace) -> None:
             if not model:
                 print("Error: model is required (e.g. animaworks anima set-background-model claude-sonnet-4-6 --all)")
                 sys.exit(1)
+            if not _warn_low_tool_use_capability(model, getattr(args, "force", False)):
+                sys.exit(1)
             credential = args.credential
             updated = 0
             for entry in sorted(animas_dir.iterdir()):
@@ -733,6 +765,8 @@ def cmd_anima_set_background_model(args: argparse.Namespace) -> None:
             anima_dir = animas_dir / args.anima
             if not anima_dir.exists():
                 print(f"Error: Anima '{args.anima}' not found")
+                sys.exit(1)
+            if not _warn_low_tool_use_capability(args.model, getattr(args, "force", False)):
                 sys.exit(1)
             kwargs_update: dict = {"background_model": args.model}
             if args.credential:

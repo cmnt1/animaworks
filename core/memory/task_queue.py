@@ -153,6 +153,7 @@ class TaskQueueManager:
         task_id: str | None = None,
         meta: dict[str, Any] | None = None,
         status: str = "pending",
+        priority: Literal["normal", "urgent"] = "normal",
     ) -> TaskEntry:
         """Add a new task to the queue.
 
@@ -205,6 +206,7 @@ class TaskQueueManager:
             deadline=parsed_deadline,
             relay_chain=relay_chain or [],
             updated_at=now,
+            priority=priority,
             meta=meta or {},
         )
         self._append(entry.model_dump())
@@ -226,6 +228,7 @@ class TaskQueueManager:
         deadline: str,
         relay_chain: list[str] | None = None,
         meta: dict[str, Any] | None = None,
+        priority: Literal["normal", "urgent"] = "normal",
     ) -> TaskEntry:
         """Add a task with 'delegated' status for tracking delegation.
 
@@ -249,6 +252,7 @@ class TaskQueueManager:
             deadline=parsed_deadline,
             relay_chain=relay_chain or [],
             updated_at=now,
+            priority=priority,
             meta=meta or {},
         )
         self._append(entry.model_dump())

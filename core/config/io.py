@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,13 +29,104 @@ _config: AnimaWorksConfig | None = None
 _config_path: Path | None = None
 _config_mtime: float = 0.0
 
+# Guard so stale-activity-level repair runs at most once per process.
+_stale_activity_level_checked: bool = False
+
+# Low-value band that indicates the Governor previously wrote a throttled
+# value into config.json (legacy behaviour, now deprecated).  The Governor
+# itself is authoritative at runtime via ``usage_governor_state.json``.
+_STALE_ACTIVITY_LOWER: int = 10
+_STALE_ACTIVITY_UPPER: int = 90
+_STALE_ACTIVITY_REPLACEMENT: int = 100
+
 
 def invalidate_cache() -> None:
     """Reset the module-level singleton cache."""
-    global _config, _config_path, _config_mtime
+    global _config, _config_path, _config_mtime, _stale_activity_level_checked
     _config = None
     _config_path = None
     _config_mtime = 0.0
+    _stale_activity_level_checked = False
+
+
+def _read_governor_activity_level(data_dir: Path) -> int | None:
+    """Return ``governor_activity_level`` from usage_governor_state.json, or None."""
+    state_path = data_dir / "usage_governor_state.json"
+    if not state_path.is_file():
+        return None
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        val = data.get("governor_activity_level")
+        if isinstance(val, (int, float)):
+            return int(val)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    return None
+
+
+def _maybe_repair_stale_activity_level(
+    config: AnimaWorksConfig,
+    config_path: Path,
+    raw_data: dict[str, Any],
+) -> AnimaWorksConfig:
+    """Detect and repair a stale low ``activity_level`` in config.json.
+
+    Historically the UsageGovernor wrote its computed level back into
+    ``config.json``.  With the Governor now authoritative via
+    ``usage_governor_state.json``, a stuck low value (e.g. ``20``) masks the
+    Governor's healthier value through ``min(config, governor)`` arithmetic.
+    When the Governor is currently healthy and the config value sits in the
+    throttled band, rewrite it to 100 and leave a NOTICE audit trail.
+    """
+    global _stale_activity_level_checked
+
+    if _stale_activity_level_checked:
+        return config
+    _stale_activity_level_checked = True
+
+    if "activity_level" not in raw_data:
+        return config
+
+    current = config.activity_level
+    if not (_STALE_ACTIVITY_LOWER <= current <= _STALE_ACTIVITY_UPPER):
+        return config
+
+    data_dir = config_path.parent
+    governor_level = _read_governor_activity_level(data_dir)
+    if governor_level is None or governor_level <= current:
+        return config
+
+    logger.warning(
+        "NOTICE: stale activity_level=%d in %s (Governor currently at %d); "
+        "rewriting to %d. Governor is authoritative at runtime.",
+        current,
+        config_path,
+        governor_level,
+        _STALE_ACTIVITY_REPLACEMENT,
+    )
+
+    try:
+        run_dir = data_dir / "run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        audit_path = run_dir / "activity_level_audit.log"
+        timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+        audit_line = (
+            f"{timestamp} NOTICE stale_activity_level_repair "
+            f"before={current} after={_STALE_ACTIVITY_REPLACEMENT} "
+            f"governor={governor_level} path={config_path}\n"
+        )
+        with audit_path.open("a", encoding="utf-8") as fh:
+            fh.write(audit_line)
+    except OSError as exc:
+        logger.debug("Failed to write activity_level audit: %s", exc)
+
+    config.activity_level = _STALE_ACTIVITY_REPLACEMENT
+    try:
+        save_config(config, config_path)
+    except Exception as exc:  # noqa: BLE001 - best-effort repair
+        logger.warning("Failed to persist repaired activity_level: %s", exc)
+
+    return config
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +191,7 @@ def load_config(path: Path | None = None) -> AnimaWorksConfig:
         except Exception as exc:
             logger.error("Failed to load config from %s: %s", path, exc)
             raise ConfigError(f"Failed to load config from {path}: {exc}") from exc
+        config = _maybe_repair_stale_activity_level(config, path, data)
     else:
         logger.info("Config file not found at %s; using defaults", path)
         config = AnimaWorksConfig()

@@ -220,4 +220,5 @@ class TaskEntry(BaseModel):
     deadline: str | None = None  # ISO8601 期限（任意）
     relay_chain: list[str] = Field(default_factory=list)  # 委任経路
     updated_at: str  # ISO8601 最終更新日時
+    priority: Literal["normal", "urgent"] = "normal"  # 緊急度（urgent = レート制限/クールダウン等を無視）
     meta: dict[str, Any] = Field(default_factory=dict)  # 追加メタデータ（委譲追跡等）

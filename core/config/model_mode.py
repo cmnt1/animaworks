@@ -140,6 +140,95 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "ollama/gemma3:12b", "mode": "B", "note": "中型ローカル"},
 ]
 
+# ── Tool-use capability ─────────────────────────────────────
+# Labels the model's observed reliability when calling tools (function calling
+# / Anthropic tool_use).  Used by the dynamic model router to decide whether a
+# request that needs Bash or external tools should run on the background model
+# or escalate to the main model.
+#
+#   "high"   - Frontier cloud models.  Any tool list works.
+#   "medium" - Solid tool_use but limited context.  Use the compact tool list.
+#   "low"    - Inconsistent tool_use.  Avoid for tasks that need Bash/externals.
+#   "none"   - No tool_use support at all.  Forced into Mode B.
+ToolUseCapability = str  # Literal["high", "medium", "low", "none"]
+
+DEFAULT_TOOL_USE_CAPABILITY_PATTERNS: dict[str, str] = {
+    # ── high ────────────────────────────────────────────
+    "claude-*": "high",
+    "anthropic/claude-*": "high",
+    "nanogpt/anthropic/claude-*": "high",
+    "nanogpt/openai/gpt-*": "high",
+    "openai/gpt-4.1*": "high",
+    "openai/gpt-5*": "high",
+    "openai/o3*": "high",
+    "openai/o4*": "high",
+    "openai/gpt-4o*": "high",
+    "azure/gpt-4.1*": "high",
+    "azure/*": "high",
+    "google/*": "high",
+    "vertex_ai/*": "high",
+    "xai/*": "high",
+    "mistral/*": "high",
+    "bedrock/*": "high",
+    "cursor/*": "high",
+    "codex/*": "high",
+    "gemini/*": "high",
+    # ── medium ──────────────────────────────────────────
+    "ollama/qwen3:14b": "medium",
+    "ollama/qwen3:30b": "medium",
+    "ollama/qwen3:32b": "medium",
+    "ollama/qwen3:235b": "medium",
+    "ollama/qwen3-coder:*": "medium",
+    "ollama/qwen3.5*": "medium",
+    "ollama/glm-4.7*": "medium",
+    "ollama/glm-5*": "medium",
+    "ollama/kimi-k2*": "medium",
+    "ollama/llama4:*": "medium",
+    "ollama/devstral*": "medium",
+    "ollama/mistral-small3.2:*": "medium",
+    "openai/qwen3.5*": "medium",
+    "openai/zai.glm*": "medium",
+    "openai/gemma4-*": "medium",
+    # ── low ─────────────────────────────────────────────
+    "nanogpt/google/gemma-*": "low",
+    "nanogpt/google/*": "low",
+    "ollama/gemma4*": "low",
+    # ── none ────────────────────────────────────────────
+    "ollama/gemma3*": "none",
+    "ollama/phi4*": "none",
+    "ollama/deepseek-r1*": "none",
+    "ollama/deepseek-v3*": "none",
+    "ollama/qwen3:0.6b": "none",
+    "ollama/qwen3:1.7b": "none",
+    "ollama/qwen3:4b": "none",
+    "ollama/qwen3:8b": "none",
+    "ollama/*": "none",
+}
+
+_VALID_TOOL_USE_CAPABILITIES: frozenset[str] = frozenset({"high", "medium", "low", "none"})
+
+
+def resolve_tool_use_capability(model_name: str) -> str:
+    """Return the tool_use capability label for *model_name*.
+
+    Priority:
+      1. ``tool_use_capability`` field on the matched models.json entry.
+      2. ``DEFAULT_TOOL_USE_CAPABILITY_PATTERNS`` (code defaults).
+      3. Fallback ``"high"`` (cloud APIs assumed capable).
+    """
+    entry = _match_models_json(model_name)
+    if entry is not None:
+        raw = entry.get("tool_use_capability")
+        if isinstance(raw, str) and raw.lower() in _VALID_TOOL_USE_CAPABILITIES:
+            return raw.lower()
+
+    match = _match_pattern_table(model_name, DEFAULT_TOOL_USE_CAPABILITY_PATTERNS)
+    if match is not None:
+        return match.lower()
+
+    return "high"
+
+
 # ── Legacy mode value mapping ──────────────────────────────
 # Maps legacy A1/A1F/A2 and text-based values to canonical S/C/D/G/A/B scheme.
 _LEGACY_MODE_MAP: dict[str, str] = {
@@ -374,12 +463,15 @@ def resolve_execution_mode(
 __all__ = [
     "DEFAULT_MODEL_MODE_PATTERNS",
     "DEFAULT_MODEL_MODES",
+    "DEFAULT_TOOL_USE_CAPABILITY_PATTERNS",
     "KNOWN_MODELS",
+    "ToolUseCapability",
     "_LEGACY_MODE_MAP",
     "_pattern_specificity",
     "_match_pattern_table",
     "_normalise_mode",
     "resolve_execution_mode",
+    "resolve_tool_use_capability",
     "_load_models_json",
     "invalidate_models_json_cache",
     "_match_models_json",

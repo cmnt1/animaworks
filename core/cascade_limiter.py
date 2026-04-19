@@ -62,9 +62,17 @@ class ConversationDepthLimiter:
         in the last hour and last 24 hours. Uses per-Anima limits resolved
         from status.json → role defaults → general fallback.
 
+        When the Anima is in urgent mode (``state/urgent_active.json``
+        non-empty), the check is bypassed entirely.
+
         Returns True if allowed, or a descriptive error string if blocked.
         """
         from core.config.models import resolve_outbound_limits
+        from core.urgent import is_urgent_active
+
+        if is_urgent_active(sender_anima_dir):
+            logger.info("urgent mode: skipping global outbound check for %s", sender)
+            return True
 
         if self._max_per_hour_override is not None and self._max_per_day_override is not None:
             max_per_hour = self._max_per_hour_override
@@ -170,7 +178,13 @@ class ConversationDepthLimiter:
 
         Returns:
             True if allowed, False if depth exceeded.
+
+        Urgent mode bypasses the depth check.
         """
+        from core.urgent import is_urgent_active
+
+        if is_urgent_active(sender_anima_dir):
+            return True
         try:
             from core.memory.activity import ActivityLogger
 

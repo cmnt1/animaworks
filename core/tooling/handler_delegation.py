@@ -70,8 +70,15 @@ class DelegationMixin(OrgHelpersMixin):
 
         from core.memory.task_queue import TaskQueueManager
         from core.paths import get_animas_dir
+        from core.urgent import add_urgent, is_urgent_active
 
         target_dir = get_animas_dir() / target_name
+
+        # Urgent-mode cascade (Phase C-4): if the delegator is currently in
+        # urgent mode, propagate priority=urgent to the subordinate so all
+        # throttles bypass there too.  This recurses via further delegation.
+        delegator_urgent = is_urgent_active(self._anima_dir)
+        cascade_priority = "urgent" if delegator_urgent else "normal"
 
         sub_tqm = TaskQueueManager(target_dir)
         try:
@@ -82,12 +89,33 @@ class DelegationMixin(OrgHelpersMixin):
                 summary=summary,
                 deadline=deadline,
                 relay_chain=[self._anima_name],
+                priority=cascade_priority,
             )
         except ValueError as e:
             return _error_result("InvalidArguments", str(e))
         except Exception as e:
             logger.error("Task persistence failed in delegate_task (subordinate queue): %s", e)
             return _error_result("PersistenceFailed", f"Failed to persist task to subordinate queue: {e}")
+
+        # If urgent, register the subordinate in their own urgent_active.json
+        # BEFORE the pending JSON is written so any scheduler re-check during
+        # the brief pickup window already sees urgent-mode.  The subordinate's
+        # PendingExecutor will also re-register on pickup via task_desc.priority,
+        # but pre-registering here lifts scheduler throttling sooner.
+        if delegator_urgent:
+            try:
+                add_urgent(
+                    target_dir,
+                    sub_entry.task_id,
+                    note=f"delegated from {self._anima_name}",
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "urgent cascade registration failed for %s → %s",
+                    self._anima_name,
+                    target_name,
+                    exc_info=True,
+                )
 
         # Write pending task JSON so PendingTaskExecutor picks it up for immediate execution
         task_desc = {
@@ -104,6 +132,7 @@ class DelegationMixin(OrgHelpersMixin):
             "reply_to": self._anima_name,
             "source": "delegation",
             "working_directory": resolved_wd,
+            "priority": cascade_priority,
         }
         pending_dir = target_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
@@ -174,6 +203,7 @@ class DelegationMixin(OrgHelpersMixin):
                 deadline=deadline,
                 relay_chain=[self._anima_name, target_name],
                 meta=_meta,
+                priority=cascade_priority,
             )
         except Exception as e:
             logger.warning("Failed to persist tracking entry for delegate_task (DM already sent): %s", e)

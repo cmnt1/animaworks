@@ -64,7 +64,17 @@ class InboxRateLimiter:
     # ── Cooldown ─────────────────────────────────────────────────
 
     def is_in_cooldown(self) -> bool:
-        """Return True if a message-triggered heartbeat finished too recently."""
+        """Return True if a message-triggered heartbeat finished too recently.
+
+        Urgent-mode active → cooldown is treated as 0.
+        """
+        try:
+            from core.urgent import is_urgent_active
+
+            if is_urgent_active(self._anima.anima_dir):
+                return False
+        except Exception:
+            pass
         return (time.monotonic() - self._last_msg_heartbeat_end) < self._cooldown_sec
 
     def _has_external_platform_message(self) -> bool:

@@ -385,10 +385,21 @@ class PendingTaskExecutor:
                     del self._batch_tasks[batch_id]
                     await self._dispatch_batch(batch_id, tasks)
 
+                # Urgent mode shortens the poll interval so newly-submitted
+                # urgent tasks are picked up with minimal latency instead of
+                # waiting the full 3 seconds.
+                poll_timeout = _PENDING_WATCHER_POLL_INTERVAL
+                try:
+                    from core.urgent import is_urgent_active
+
+                    if is_urgent_active(self._anima_dir):
+                        poll_timeout = 0.2
+                except Exception:  # noqa: BLE001
+                    pass
                 try:
                     await asyncio.wait_for(
                         self._wake_event.wait(),
-                        timeout=_PENDING_WATCHER_POLL_INTERVAL,
+                        timeout=poll_timeout,
                     )
                     self._wake_event.clear()
                 except TimeoutError:
@@ -758,6 +769,31 @@ class PendingTaskExecutor:
         had_error = False
         error_message = ""
 
+        # Urgent-mode activation (Phase C-3): if this task is flagged urgent
+        # (by Inbox prefix detection, delegate_task cascade, or CLI
+        # urgent-submit), register the task_id in urgent_active.json so rate
+        # limits / cooldowns / scheduler throttling are bypassed for the
+        # duration.  Remove on completion / failure.
+        _urgent_task = task_desc.get("priority") == "urgent"
+        _urgent_registered = False
+        if _urgent_task:
+            try:
+                from core.urgent import add_urgent
+
+                add_urgent(
+                    self._anima_dir,
+                    task_id,
+                    note=f"task:{title[:80]} from {submitted_by}",
+                )
+                _urgent_registered = True
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[%s] urgent registration failed for task %s",
+                    self._anima_name,
+                    task_id,
+                    exc_info=True,
+                )
+
         try:
             async for chunk in self._anima.agent.run_cycle_streaming(
                 prompt,
@@ -794,6 +830,13 @@ class PendingTaskExecutor:
         finally:
             journal.close()
             self._anima.agent.set_task_cwd(None)
+            if _urgent_registered:
+                try:
+                    from core.urgent import remove_urgent
+
+                    remove_urgent(self._anima_dir, task_id)
+                except Exception:  # noqa: BLE001
+                    logger.debug("urgent removal failed for %s", task_id, exc_info=True)
 
         if had_error:
             raise TaskExecError(f"Task {task_id} encountered streaming error: {error_message}")

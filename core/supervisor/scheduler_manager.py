@@ -157,12 +157,29 @@ class SchedulerManager:
 
         app_config = load_config()
         base_interval = self._read_per_anima_interval(app_config)
-        activity_pct = max(10, min(400, app_config.activity_level))
 
-        # Governor throttle: use the more restrictive of config vs governor
+        # Governor is authoritative when present: it already accounts for
+        # budget/time pressure.  Manual ``config.activity_level`` is only used
+        # as a fallback when no governor state is available.
         governor_level = _read_governor_activity_level()
         if governor_level is not None:
-            activity_pct = min(activity_pct, governor_level)
+            activity_pct = max(10, min(400, governor_level))
+            activity_source = "governor"
+        else:
+            activity_pct = max(10, min(400, app_config.activity_level))
+            activity_source = "config"
+
+        # Urgent-mode override: if this Anima has active urgent tasks, pin
+        # activity to 100% regardless of governor/config so heartbeat /
+        # scheduler cadence is not throttled.
+        try:
+            from core.urgent import is_urgent_active
+
+            if is_urgent_active(self._anima_dir):
+                activity_pct = max(activity_pct, 100)
+                activity_source = f"{activity_source}+urgent"
+        except Exception:  # noqa: BLE001
+            logger.debug("urgent check failed during scheduler setup", exc_info=True)
 
         effective_interval = base_interval / (activity_pct / 100.0)
         effective_interval = max(5.0, effective_interval)
@@ -205,12 +222,13 @@ class SchedulerManager:
                 max_instances=1,
             )
             logger.info(
-                "Heartbeat registered: %s minute=%s (offset=%d, interval=%dmin, activity=%d%%), %s",
+                "Heartbeat registered: %s minute=%s (offset=%d, interval=%dmin, activity=%d%% [%s]), %s",
                 self._anima_name,
                 minute_spec,
                 offset,
                 interval,
                 activity_pct,
+                activity_source,
                 log_active,
             )
         else:
@@ -232,11 +250,12 @@ class SchedulerManager:
                 max_instances=1,
             )
             logger.info(
-                "Heartbeat registered (polling): %s every %dmin (offset=%d, activity=%d%%), %s",
+                "Heartbeat registered (polling): %s every %dmin (offset=%d, activity=%d%% [%s]), %s",
                 self._anima_name,
                 interval,
                 offset,
                 activity_pct,
+                activity_source,
                 log_active,
             )
 

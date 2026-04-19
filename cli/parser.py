@@ -437,7 +437,47 @@ def cli_main() -> None:
     p_bg.add_argument("--credential", default=None, help="Credential name")
     p_bg.add_argument("--all", action="store_true", help="Apply to all enabled animas")
     p_bg.add_argument("--clear", action="store_true", help="Remove background model override")
+    p_bg.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip the tool_use-capability confirmation prompt (low/none models).",
+    )
     p_bg.set_defaults(func=_lazy_anima_set_background_model)
+
+    # anima urgent-submit
+    p_urgent = anima_sub.add_parser(
+        "urgent-submit",
+        help="Submit an urgent task that bypasses rate limits and cooldowns.",
+    )
+    p_urgent.add_argument("name", help="Anima name")
+    p_urgent.add_argument("body", help="Task body / instruction")
+    p_urgent.add_argument(
+        "--summary",
+        default=None,
+        help="Optional one-line summary (defaults to first line of body).",
+    )
+    p_urgent.add_argument(
+        "--deadline",
+        default=None,
+        help="Optional deadline (ISO8601 or relative like '1h', '1d').",
+    )
+    p_urgent.set_defaults(func=_lazy_anima_urgent_submit)
+
+    # anima urgent-status
+    p_urgent_status = anima_sub.add_parser(
+        "urgent-status",
+        help="Show active urgent tasks for an Anima.",
+    )
+    p_urgent_status.add_argument("name", help="Anima name")
+    p_urgent_status.set_defaults(func=_lazy_anima_urgent_status)
+
+    # anima urgent-clear
+    p_urgent_clear = anima_sub.add_parser(
+        "urgent-clear",
+        help="Clear all active urgent tasks for an Anima (emergency reset).",
+    )
+    p_urgent_clear.add_argument("name", help="Anima name")
+    p_urgent_clear.set_defaults(func=_lazy_anima_urgent_clear)
 
     # anima set-outbound-limit
     p_set_outbound = anima_sub.add_parser(
@@ -843,6 +883,24 @@ def _lazy_anima_set_background_model(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_set_background_model
 
     cmd_anima_set_background_model(args)
+
+
+def _lazy_anima_urgent_submit(args: argparse.Namespace) -> None:
+    from cli.commands.anima_urgent import cmd_anima_urgent_submit
+
+    cmd_anima_urgent_submit(args)
+
+
+def _lazy_anima_urgent_status(args: argparse.Namespace) -> None:
+    from cli.commands.anima_urgent import cmd_anima_urgent_status
+
+    cmd_anima_urgent_status(args)
+
+
+def _lazy_anima_urgent_clear(args: argparse.Namespace) -> None:
+    from cli.commands.anima_urgent import cmd_anima_urgent_clear
+
+    cmd_anima_urgent_clear(args)
 
 
 def _lazy_anima_set_outbound_limit(args: argparse.Namespace) -> None:

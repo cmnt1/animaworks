@@ -516,9 +516,44 @@ class InboxMixin:
 
                     original_config = None
                     bg_config = self._resolve_background_config()
-                    if bg_config is not None:
+                    # Preemptive model routing (B-3a): when the background
+                    # model has weak tool_use and the request looks like it
+                    # needs Bash / external tools, run on the main model
+                    # instead.  Null result means "use the main model".
+                    from core.execution._model_router import route_model_config
+                    from core.urgent import add_urgent, detect_urgent_prefix, remove_urgent
+
+                    # Urgent detection (Phase C-2): if any prompt part starts
+                    # with [至急]/[緊急]/[urgent], mark this inbox cycle urgent
+                    # so rate limits, cooldowns, and activity scaling are
+                    # bypassed for the duration.  Force main model too.
+                    urgent_task_id: str | None = None
+                    is_urgent_inbox = any(
+                        detect_urgent_prefix(part) for part in inbox_result.prompt_parts
+                    )
+                    if is_urgent_inbox:
+                        urgent_task_id = f"inbox:{senders_str}:{int(started_at.timestamp())}"
+                        add_urgent(
+                            self.agent.anima_dir,
+                            urgent_task_id,
+                            note=f"inbox urgent from {senders_str}",
+                        )
+                        logger.info(
+                            "[%s] inbox urgent detected — bypassing throttles (task=%s)",
+                            self.name,
+                            urgent_task_id,
+                        )
+                        routed_config = None  # force main model
+                    else:
+                        routed_config = route_model_config(
+                            main_config=self.agent.model_config,
+                            bg_config=bg_config,
+                            body=messages_text,
+                            trigger=trigger,
+                        )
+                    if routed_config is not None and routed_config is not self.agent.model_config:
                         original_config = self.agent.model_config
-                        self.agent.update_model_config(bg_config)
+                        self.agent.update_model_config(routed_config)
 
                     try:
                         async for chunk in self.agent.run_cycle_streaming(
@@ -551,6 +586,8 @@ class InboxMixin:
                     finally:
                         if original_config is not None:
                             self.agent.update_model_config(original_config)
+                        if urgent_task_id is not None:
+                            remove_urgent(self.agent.anima_dir, urgent_task_id)
                         journal.close()
                         if _fanout_token is not None:
                             suppress_board_fanout.reset(_fanout_token)

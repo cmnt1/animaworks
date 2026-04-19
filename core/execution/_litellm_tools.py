@@ -157,8 +157,22 @@ class ToolProcessingMixin:
     )
 
     def _build_base_tools(self, *, trigger: str = "") -> list[dict[str, Any]]:
-        """Build the base LiteLLM-format tool list (unified 18-tool schema)."""
+        """Build the base LiteLLM-format tool list (unified 18-tool schema).
+
+        Also switches to the compact tool set when the model has only
+        ``medium`` tool_use capability, to reduce schema pressure on
+        weaker function-calling models.
+        """
+        from core.config.model_mode import resolve_tool_use_capability
+
         compact = self._resolve_cw() <= 8_192
+        if not compact:
+            try:
+                capability = resolve_tool_use_capability(self._model_config.model)
+                if capability in ("medium", "low", "none"):
+                    compact = True
+            except Exception:
+                pass
         canonical = build_unified_tool_list(
             include_notification_tools=self._tool_handler._human_notifier is not None,
             include_supervisor_tools=self._has_subordinates(),

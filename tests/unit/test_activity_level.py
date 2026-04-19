@@ -302,8 +302,9 @@ class TestSchedulerActivityLevel:
         mgr.shutdown()
 
     @pytest.mark.asyncio
+    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=None)
     @patch("core.supervisor.scheduler_manager.load_config")
-    async def test_low_activity_uses_polling(self, mock_load_config, tmp_path):
+    async def test_low_activity_uses_polling(self, mock_load_config, _mock_gov, tmp_path):
         """Activity 10% with base 30min -> effective 300min (>60) -> polling mode."""
         config = AnimaWorksConfig(activity_level=10)
         mock_load_config.return_value = config
@@ -331,6 +332,59 @@ class TestSchedulerActivityLevel:
         jobs = mgr.scheduler.get_jobs()
         heartbeat_jobs = [j for j in jobs if "heartbeat" in j.id]
         assert len(heartbeat_jobs) == 1
+        mgr.shutdown()
+
+
+# ── Governor authoritative ────────────────────────────────────
+
+
+class TestGovernorAuthoritative:
+    """Governor, when present, overrides the config activity_level."""
+
+    def _make_mgr(self, tmp_path: Path, anima_name: str = "test-anima"):
+        from core.supervisor.scheduler_manager import SchedulerManager
+
+        mock_anima = MagicMock()
+        mock_anima.memory.read_heartbeat_config.return_value = "30分ごと"
+        mock_anima.memory.read_cron_config.return_value = ""
+        mock_anima.set_on_schedule_changed = MagicMock()
+        anima_dir = tmp_path / "animas" / anima_name
+        anima_dir.mkdir(parents=True, exist_ok=True)
+        return SchedulerManager(
+            anima=mock_anima,
+            anima_name=anima_name,
+            anima_dir=anima_dir,
+            emit_event=MagicMock(),
+        )
+
+    @pytest.mark.asyncio
+    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=130)
+    @patch("core.supervisor.scheduler_manager.load_config")
+    async def test_governor_overrides_stale_config(self, mock_load_config, _mock_gov, tmp_path):
+        """Config says 20 (stale) but governor says 130 -> use 130."""
+        config = AnimaWorksConfig(activity_level=20)
+        mock_load_config.return_value = config
+
+        mgr = self._make_mgr(tmp_path)
+        mgr.setup()
+
+        # 30 / 1.30 = 23.07 -> round 23
+        assert mgr._hb_effective_interval == 23
+        mgr.shutdown()
+
+    @pytest.mark.asyncio
+    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=None)
+    @patch("core.supervisor.scheduler_manager.load_config")
+    async def test_config_used_when_governor_absent(self, mock_load_config, _mock_gov, tmp_path):
+        """Governor absent -> config value drives interval (polling path)."""
+        # activity=40 with base=30 -> 30/0.4 = 75 (>60) -> polling mode.
+        config = AnimaWorksConfig(activity_level=40)
+        mock_load_config.return_value = config
+
+        mgr = self._make_mgr(tmp_path)
+        mgr.setup()
+
+        assert mgr._hb_effective_interval == 75
         mgr.shutdown()
 
 
@@ -540,8 +594,9 @@ class TestHeartbeatPolling:
         assert mgr._hb_first_check_done is True
 
     @pytest.mark.asyncio
+    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=None)
     @patch("core.supervisor.scheduler_manager.load_config")
-    async def test_setup_polling_mode_registers_job(self, mock_load_config, tmp_path):
+    async def test_setup_polling_mode_registers_job(self, mock_load_config, _mock_gov, tmp_path):
         """interval > 60 registers a CronTrigger(minute='*') polling job."""
         config = AnimaWorksConfig(activity_level=10)
         mock_load_config.return_value = config
@@ -561,8 +616,9 @@ class TestHeartbeatPolling:
         mgr.shutdown()
 
     @pytest.mark.asyncio
+    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=None)
     @patch("core.supervisor.scheduler_manager.load_config")
-    async def test_reschedule_preserves_polling_mode(self, mock_load_config, tmp_path):
+    async def test_reschedule_preserves_polling_mode(self, mock_load_config, _mock_gov, tmp_path):
         """Rescheduling with interval > 60 stays in polling mode."""
         config = AnimaWorksConfig(activity_level=10)
         mock_load_config.return_value = config

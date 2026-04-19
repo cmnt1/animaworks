@@ -353,6 +353,82 @@ class TestLoadConfig:
         assert config.animas["alice"].speciality == "engineer"
 
 
+# ── stale activity_level repair ───────────────────────────
+
+
+class TestStaleActivityLevelRepair:
+    @pytest.fixture(autouse=True)
+    def _clear(self):
+        invalidate_cache()
+        yield
+        invalidate_cache()
+
+    @staticmethod
+    def _write_config(path: Path, activity_level: int) -> None:
+        payload = {
+            "version": 1,
+            "system": {"mode": "server", "log_level": "INFO"},
+            "credentials": {"anthropic": {"api_key": ""}},
+            "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
+            "activity_level": activity_level,
+        }
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    @staticmethod
+    def _write_governor(data_dir: Path, level: int | None) -> None:
+        state = data_dir / "usage_governor_state.json"
+        if level is None:
+            if state.exists():
+                state.unlink()
+            return
+        state.write_text(
+            json.dumps({"governor_activity_level": level}), encoding="utf-8"
+        )
+
+    def test_repairs_stale_when_governor_healthy(self, tmp_path):
+        path = tmp_path / "config.json"
+        self._write_config(path, 20)
+        self._write_governor(tmp_path, 130)
+
+        config = load_config(path)
+
+        assert config.activity_level == 100
+        on_disk = json.loads(path.read_text(encoding="utf-8"))
+        assert on_disk["activity_level"] == 100
+        audit = tmp_path / "run" / "activity_level_audit.log"
+        assert audit.exists()
+        assert "stale_activity_level_repair" in audit.read_text(encoding="utf-8")
+
+    def test_no_repair_when_governor_absent(self, tmp_path):
+        path = tmp_path / "config.json"
+        self._write_config(path, 20)
+        self._write_governor(tmp_path, None)
+
+        config = load_config(path)
+
+        assert config.activity_level == 20
+        on_disk = json.loads(path.read_text(encoding="utf-8"))
+        assert on_disk["activity_level"] == 20
+
+    def test_no_repair_when_governor_equally_low(self, tmp_path):
+        path = tmp_path / "config.json"
+        self._write_config(path, 20)
+        self._write_governor(tmp_path, 20)
+
+        config = load_config(path)
+
+        assert config.activity_level == 20
+
+    def test_no_repair_when_config_value_normal(self, tmp_path):
+        path = tmp_path / "config.json"
+        self._write_config(path, 130)
+        self._write_governor(tmp_path, 130)
+
+        config = load_config(path)
+
+        assert config.activity_level == 130
+
+
 # ── save_config ───────────────────────────────────────────
 
 
