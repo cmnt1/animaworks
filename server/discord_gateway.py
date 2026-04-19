@@ -323,26 +323,38 @@ class DiscordGatewayManager:
         channel_id: str,
         discord_cfg: Any,
     ) -> str | None:
-        """Detect which Anima a message is targeting.
+        """Detect the first Anima a message is targeting.
 
-        Returns canonical anima name or None.
-        *discord_cfg* is the pre-loaded ``ExternalMessagingChannelConfig``
-        (required — caller must supply it to avoid repeated config loads).
+        Returns canonical anima name or None. For messages naming multiple
+        Animas, use :meth:`_detect_all_target_animas` instead.
         """
-        # 1. Anima name in message text
-        if self._anima_name_re and text:
-            m = self._anima_name_re.search(text)
-            if m:
-                canonical = self._resolve_canonical_name(m.group(1))
-                if canonical:
-                    return canonical
+        targets = self._detect_all_target_animas(text)
+        if targets:
+            return targets[0]
 
-        # 2. Channel-member config (if only one member, route to them)
+        # Channel-member config (if only one member, route to them)
         members = discord_cfg.channel_members.get(channel_id, [])
         if len(members) == 1:
             return members[0]
 
         return None
+
+    def _detect_all_target_animas(self, text: str) -> list[str]:
+        """Return every canonical Anima name mentioned in *text*, in order.
+
+        Duplicates are removed while preserving first-occurrence order so
+        that messages like ``"sora mira ..."`` route to both Animas.
+        """
+        if not (self._anima_name_re and text):
+            return []
+        seen: set[str] = set()
+        out: list[str] = []
+        for m in self._anima_name_re.finditer(text):
+            canonical = self._resolve_canonical_name(m.group(1))
+            if canonical and canonical not in seen:
+                seen.add(canonical)
+                out.append(canonical)
+        return out
 
     @staticmethod
     def _is_anima_in_channel(anima_name: str, channel_id: str, discord_cfg: Any) -> bool:
@@ -409,8 +421,10 @@ class DiscordGatewayManager:
             logger.debug("Failed to load config for Discord routing", exc_info=True)
             return
 
-        # Determine target Anima
-        target_anima: str | None = None
+        # Determine target Anima(s). A single message can name multiple
+        # Animas (e.g. "sora mira に..."); deliver to each in turn.
+        target_animas: list[str] = []
+        routed_as_lead = False
 
         # 1. Thread reply mapping — route replies to the Anima that sent the parent
         if reference_id:
@@ -419,50 +433,58 @@ class DiscordGatewayManager:
 
                 thread_anima = get_webhook_manager().lookup_thread_anima(reference_id)
                 if thread_anima:
-                    target_anima = thread_anima
+                    target_animas = [thread_anima]
             except Exception:
                 logger.debug("Thread map lookup failed", exc_info=True)
 
-        # 2. Text/name detection and channel member routing
-        #    Use routing_channel_id (parent channel for threads) for membership lookups.
-        routed_as_lead = False
-        if target_anima is None:
-            target_anima = self._detect_target_anima(cleaned_text, routing_channel_id, discord_cfg)
+        # 2. Collect every Anima named in the text (preserves order, dedup).
+        if not target_animas:
+            target_animas = self._detect_all_target_animas(cleaned_text)
 
-        if target_anima is None and not is_dm:
-            if bot_mentioned:
-                target_anima = discord_cfg.default_anima or None
+        # 3. Single-member channel fallback
+        if not target_animas:
+            members = discord_cfg.channel_members.get(routing_channel_id, [])
+            if len(members) == 1:
+                target_animas = [members[0]]
 
-            # No mention, no name detected: route to channel lead
-            if target_anima is None:
+        # 4. No name detected: bot-mention / channel-lead fallback
+        if not target_animas and not is_dm:
+            if bot_mentioned and discord_cfg.default_anima:
+                target_animas = [discord_cfg.default_anima]
+            else:
                 members = discord_cfg.channel_members.get(routing_channel_id, [])
                 if members:
-                    target_anima = members[0]
+                    target_animas = [members[0]]
                     routed_as_lead = True
                 elif discord_cfg.default_anima and self._is_anima_in_channel(
                     discord_cfg.default_anima, routing_channel_id, discord_cfg
                 ):
-                    target_anima = discord_cfg.default_anima
+                    target_animas = [discord_cfg.default_anima]
                     routed_as_lead = True
 
-        # Enforce channel membership
-        if target_anima and not is_dm and not self._is_anima_in_channel(target_anima, routing_channel_id, discord_cfg):
-            logger.info(
-                "Discord routing: '%s' not a member of channel %s (#%s) — dropping",
-                target_anima,
-                channel_id,
-                ch_name,
-            )
-            target_anima = None
+        # Enforce channel membership per target
+        if not is_dm:
+            filtered: list[str] = []
+            for name in target_animas:
+                if self._is_anima_in_channel(name, routing_channel_id, discord_cfg):
+                    filtered.append(name)
+                else:
+                    logger.info(
+                        "Discord routing: '%s' not a member of channel %s (#%s) — dropping",
+                        name,
+                        channel_id,
+                        ch_name,
+                    )
+            target_animas = filtered
 
         logger.info(
-            "Discord routing: channel=#%s (%s) routing=%s is_dm=%s bot_mentioned=%s -> target=%s",
+            "Discord routing: channel=#%s (%s) routing=%s is_dm=%s bot_mentioned=%s -> targets=%s",
             ch_name,
             channel_id,
             routing_channel_id,
             is_dm,
             bot_mentioned,
-            target_anima,
+            target_animas,
         )
 
         # Board routing (always, regardless of target)
@@ -476,8 +498,8 @@ class DiscordGatewayManager:
                 board_mapping=discord_cfg.board_mapping,
             )
 
-        # Deliver to Anima inbox if we have a target
-        if target_anima:
+        # Deliver to each target's inbox
+        if target_animas:
             has_mention = bot_mentioned or (
                 self._anima_name_re is not None and self._anima_name_re.search(cleaned_text) is not None
             )
@@ -485,40 +507,40 @@ class DiscordGatewayManager:
                 is_dm, has_mention, ch_name, routed_as_lead=routed_as_lead,
             )
             intent = "question"
-
             full_content = annotation + thread_ctx + cleaned_text
+            is_thread = parent_id is not None
+            data_dir = get_data_dir()
 
-            try:
-                data_dir = get_data_dir()
-                anima_dir = data_dir / "animas" / target_anima
-                if not anima_dir.is_dir():
-                    logger.warning("Anima directory not found: %s", target_anima)
-                    return
+            for target_anima in target_animas:
+                try:
+                    anima_dir = data_dir / "animas" / target_anima
+                    if not anima_dir.is_dir():
+                        logger.warning("Anima directory not found: %s", target_anima)
+                        continue
 
-                messenger = Messenger(get_shared_dir(), target_anima)
-                # For threads: external_channel_id = parent channel (webhook target),
-                # external_thread_ts = thread channel ID (for webhook thread_id param).
-                # For normal channels: external_channel_id = channel, thread_ts = "".
-                is_thread = parent_id is not None
-                messenger.receive_external(
-                    content=full_content,
-                    source="discord",
-                    source_message_id=msg_id,
-                    external_user_id=str(message.author.id),
-                    external_channel_id=routing_channel_id,
-                    external_thread_ts=channel_id if is_thread else "",
-                    intent=intent,
-                )
+                    messenger = Messenger(get_shared_dir(), target_anima)
+                    # For threads: external_channel_id = parent channel (webhook target),
+                    # external_thread_ts = thread channel ID (for webhook thread_id param).
+                    # For normal channels: external_channel_id = channel, thread_ts = "".
+                    messenger.receive_external(
+                        content=full_content,
+                        source="discord",
+                        source_message_id=msg_id,
+                        external_user_id=str(message.author.id),
+                        external_channel_id=routing_channel_id,
+                        external_thread_ts=channel_id if is_thread else "",
+                        intent=intent,
+                    )
 
-                logger.info(
-                    "Discord message routed: %s -> %s (channel=%s, intent=%s)",
-                    author_display,
-                    target_anima,
-                    channel_id,
-                    intent or "none",
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to deliver Discord message to %s",
-                    target_anima,
-                )
+                    logger.info(
+                        "Discord message routed: %s -> %s (channel=%s, intent=%s)",
+                        author_display,
+                        target_anima,
+                        channel_id,
+                        intent or "none",
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to deliver Discord message to %s",
+                        target_anima,
+                    )
