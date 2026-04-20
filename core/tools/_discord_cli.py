@@ -147,6 +147,32 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
                 )
                 return
 
+        # ACL: mirror `is_channel_member` dm-{name} ownership rule.
+        # `post_channel` enforces this via messenger, but this CLI path
+        # would otherwise bypass the check and allow any Anima to post to
+        # another Anima's exclusive DM channel.
+        caller_name = Path(anima_dir_env).name if anima_dir_env else ""
+        if caller_name:
+            try:
+                from core.config import load_config
+
+                board_mapping = load_config().external_messaging.discord.board_mapping or {}
+                board_name = board_mapping.get(str(args.channel_id), "")
+                if board_name.startswith("dm-"):
+                    owner = board_name[3:]
+                    if caller_name != owner:
+                        print(
+                            f"Blocked: #{board_name} is {owner}'s exclusive DM channel. "
+                            f"{caller_name} cannot post there. "
+                            f'Use send_message(to="{owner}") for internal DM instead.',
+                            file=sys.stderr,
+                        )
+                        sys.exit(2)
+            except SystemExit:
+                raise
+            except Exception:
+                logging.debug("DM ACL check failed (non-fatal)", exc_info=True)
+
         body = " ".join(args.message)
         reply_to = getattr(args, "reply_to", None)
 
