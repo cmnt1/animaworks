@@ -298,7 +298,10 @@ class TestBuildToolSchemas:
         model_config = ModelConfig(model="ollama/gemma3:27b", max_tokens=4096, max_turns=5)
         memory = MemoryManager(anima_dir)
         tool_handler = ToolHandler(anima_dir=anima_dir, memory=memory)
-        with patch.object(AssistedExecutor, "_has_subordinates", return_value=has_subs):
+        with (
+            patch.object(AssistedExecutor, "_has_subordinates", return_value=has_subs),
+            patch.object(AssistedExecutor, "_resolve_cw", return_value=128_000),
+        ):
             executor = AssistedExecutor(
                 model_config=model_config,
                 anima_dir=anima_dir,
