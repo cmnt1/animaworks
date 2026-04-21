@@ -104,7 +104,9 @@ class DiscordChannel(NotificationChannel):
             return await self._send_via_dm(bot_token, user_id, text, interaction=interaction, components=components)
 
         if webhook_url:
-            return await self._send_via_webhook(webhook_url, text, anima_name, interaction=interaction, components=components)
+            return await self._send_via_webhook(
+                webhook_url, text, anima_name, interaction=interaction, components=components
+            )
 
         if bot_token and not user_id and not channel_id:
             return "discord: ERROR - bot_token set but no user_id or channel_id configured"
