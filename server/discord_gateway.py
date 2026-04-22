@@ -437,17 +437,26 @@ class DiscordGatewayManager:
             except Exception:
                 logger.debug("Thread map lookup failed", exc_info=True)
 
-        # 2. Collect every Anima named in the text (preserves order, dedup).
+        # 2. DM single-member precedence — a DM channel bound to exactly one
+        # Anima is always for that Anima, regardless of text. Anima aliases
+        # can collide with common Japanese words (e.g. `空`=sora vs. `空`=empty)
+        # so body-name detection must not override the channel owner here.
+        if not target_animas and is_dm:
+            members = discord_cfg.channel_members.get(routing_channel_id, [])
+            if len(members) == 1:
+                target_animas = [members[0]]
+
+        # 3. Collect every Anima named in the text (preserves order, dedup).
         if not target_animas:
             target_animas = self._detect_all_target_animas(cleaned_text)
 
-        # 3. Single-member channel fallback
+        # 4. Single-member channel fallback (non-DM)
         if not target_animas:
             members = discord_cfg.channel_members.get(routing_channel_id, [])
             if len(members) == 1:
                 target_animas = [members[0]]
 
-        # 4. No name detected: bot-mention / channel-lead fallback
+        # 5. No name detected: bot-mention / channel-lead fallback
         if not target_animas and not is_dm:
             if bot_mentioned and discord_cfg.default_anima:
                 target_animas = [discord_cfg.default_anima]
