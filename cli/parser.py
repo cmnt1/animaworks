@@ -625,6 +625,11 @@ def cli_main() -> None:
 
     register_models_command(sub)
 
+    # ── Memory ──────────────────────────────────────────────
+    from cli.commands.memory_cmd import register_memory_command
+
+    register_memory_command(sub)
+
     # ── Profile ───────────────────────────────────────────────
     from cli.commands.profile import register_profile_command
 
