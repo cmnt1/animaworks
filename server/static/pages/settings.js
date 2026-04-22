@@ -6,6 +6,19 @@ const _LS_ACTIVITY  = "aw-activity-level";
 const _LS_SCHEDULE  = "aw-activity-schedule";
 const _LS_ENTER_SEND = "aw-enter-to-send";
 
+function _perProviderRow(key, label) {
+  return `
+    <div class="activity-per-provider-row">
+      <label class="activity-per-provider-toggle">
+        <input type="checkbox" class="activity-provider-enable" data-provider="${key}" />
+        <span class="activity-per-provider-label">${label}</span>
+      </label>
+      <input type="range" min="10" max="400" value="100" step="10"
+             class="activity-level-slider activity-provider-slider" data-provider="${key}" disabled />
+      <div class="activity-level-value activity-provider-value" data-provider="${key}">100%</div>
+    </div>`;
+}
+
 const THEMES = [
   { id: "default",   label: "Default",   colors: ["#374151", "#f5f5f5", "#fff"] },
   { id: "graphite",  label: "Graphite",  colors: ["#1f2937", "#f9fafb", "#fff"] },
@@ -46,6 +59,15 @@ export function render(container) {
           <div class="activity-level-value" id="activityLevelValue">100%</div>
         </div>
         <div class="activity-level-effect" id="activityLevelEffect"></div>
+
+        <details class="activity-per-provider" id="activityPerProviderSection">
+          <summary>${t("settings.activity_level.per_provider.title")}</summary>
+          <p class="settings-section-desc" style="margin-top:0.5rem">${t("settings.activity_level.per_provider.desc")}</p>
+          ${_perProviderRow("claude", "Claude")}
+          ${_perProviderRow("openai", "OpenAI")}
+          ${_perProviderRow("nanogpt", "nanoGPT")}
+          ${_perProviderRow("default", t("settings.activity_level.per_provider.default_label"))}
+        </details>
 
         <div class="night-mode-section">
           <label class="night-mode-toggle">
@@ -219,6 +241,7 @@ function _updateThemeGrid(container, theme) {
 async function _initActivityLevel(container) {
   let schedule = [];
   let level = 100;
+  let byProvider = {};
   let fromApi = false;
   try {
     const res = await fetch("/api/settings/activity-level");
@@ -226,6 +249,7 @@ async function _initActivityLevel(container) {
       const data = await res.json();
       level = data.activity_level || 100;
       schedule = data.activity_schedule || [];
+      byProvider = data.activity_level_by_provider || {};
       fromApi = true;
       _cacheActivityState(level, schedule);
     } else {
@@ -247,6 +271,9 @@ async function _initActivityLevel(container) {
     _updateActivityEffect(container, level);
     _updatePresetButtons(container, level);
   }
+
+  // Per-provider sliders
+  _initPerProvider(container, byProvider, level);
 
   if (slider) {
     slider.addEventListener("input", (e) => {
@@ -329,6 +356,69 @@ async function _setActivityLevel(level, container) {
     if (toggle && toggle.checked) {
       _saveNightMode(container, false);
     }
+  }
+}
+
+// ── Per-provider activity level ──────────────────────────────
+
+function _initPerProvider(container, byProvider, globalLevel) {
+  const providers = ["claude", "openai", "nanogpt", "default"];
+  for (const prov of providers) {
+    const cb = container.querySelector(`.activity-provider-enable[data-provider="${prov}"]`);
+    const sl = container.querySelector(`.activity-provider-slider[data-provider="${prov}"]`);
+    const vd = container.querySelector(`.activity-provider-value[data-provider="${prov}"]`);
+    if (!cb || !sl || !vd) continue;
+
+    const hasOverride = Object.prototype.hasOwnProperty.call(byProvider, prov);
+    const val = hasOverride ? byProvider[prov] : globalLevel;
+    cb.checked = hasOverride;
+    sl.disabled = !hasOverride;
+    sl.value = val;
+    _updateActivityDisplay(vd, val);
+
+    cb.addEventListener("change", () => {
+      sl.disabled = !cb.checked;
+      _savePerProvider(container);
+    });
+    sl.addEventListener("input", () => {
+      const v = parseInt(sl.value, 10);
+      _updateActivityDisplay(vd, v);
+    });
+    sl.addEventListener("change", () => {
+      _savePerProvider(container);
+    });
+  }
+
+  // Open the details section if any override is active
+  const details = container.querySelector("#activityPerProviderSection");
+  if (details && Object.keys(byProvider).length > 0) {
+    details.open = true;
+  }
+}
+
+async function _savePerProvider(container) {
+  const providers = ["claude", "openai", "nanogpt", "default"];
+  const dict = {};
+  for (const prov of providers) {
+    const cb = container.querySelector(`.activity-provider-enable[data-provider="${prov}"]`);
+    const sl = container.querySelector(`.activity-provider-slider[data-provider="${prov}"]`);
+    if (cb && cb.checked && sl) {
+      dict[prov] = parseInt(sl.value, 10);
+    }
+  }
+  try {
+    const res = await fetch("/api/settings/activity-level", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activity_level_by_provider: dict }),
+    });
+    if (!res.ok) {
+      console.warn("[Settings] PUT activity_level_by_provider failed:", res.status);
+      _showSettingsStatus(container, t("settings.save_error"), true);
+    }
+  } catch (err) {
+    console.warn("[Settings] PUT activity_level_by_provider error:", err);
+    _showSettingsStatus(container, t("settings.save_error"), true);
   }
 }
 

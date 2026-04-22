@@ -132,6 +132,26 @@ _CREDENTIAL_FALLBACK_BACKGROUND: dict[str, str] = {
 }
 
 
+def resolve_user_activity_level(config, anima_dir: Path) -> int:
+    """Resolve the user-configured activity level for an Anima.
+
+    Looks up ``config.activity_level_by_provider[provider]`` using the
+    Anima's main-credential provider (mapped via
+    ``_CREDENTIAL_TO_GOVERNOR_PROVIDER``).  Falls back to the
+    ``default`` entry, then to ``config.activity_level``.
+    """
+    by_provider = getattr(config, "activity_level_by_provider", None) or {}
+    if not by_provider:
+        return config.activity_level
+    credential = _read_anima_credential(anima_dir)
+    provider = _CREDENTIAL_TO_GOVERNOR_PROVIDER.get(credential, "default")
+    if provider in by_provider:
+        return by_provider[provider]
+    if "default" in by_provider:
+        return by_provider["default"]
+    return config.activity_level
+
+
 _SECONDS_PER_HOUR = 3600
 _DAILY_STALE_THRESHOLD_SEC = 36 * _SECONDS_PER_HOUR
 _WEEKLY_STALE_THRESHOLD_SEC = 8 * 24 * _SECONDS_PER_HOUR
@@ -242,15 +262,16 @@ class SchedulerManager:
         base_interval = self._read_per_anima_interval(app_config)
 
         # Governor is authoritative when present: it already accounts for
-        # budget/time pressure.  Manual ``config.activity_level`` is only used
-        # as a fallback when no governor state is available.
-        # Only the Anima's front-model provider is consulted.
+        # budget/time pressure.  Manual ``config.activity_level`` (resolved
+        # per-provider) is only used as a fallback when no governor state
+        # is available.  Only the Anima's front-model provider is consulted.
         governor_level = _read_governor_activity_level(self._anima_dir)
         if governor_level is not None:
             activity_pct = max(10, min(400, governor_level))
             activity_source = "governor"
         else:
-            activity_pct = max(10, min(400, app_config.activity_level))
+            user_level = resolve_user_activity_level(app_config, self._anima_dir)
+            activity_pct = max(10, min(400, user_level))
             activity_source = "config"
 
         # Urgent-mode override: if this Anima has active urgent tasks, pin
