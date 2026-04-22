@@ -53,6 +53,7 @@ DEFAULT_POLICY: dict[str, Any] = {
     "enabled": True,
     "check_interval_seconds": 120,
     "hard_floor_pct": 15,  # absolute minimum remaining % for any window
+    "background_fallback_below": 15,  # remaining% threshold for background_model fallback
     "providers": {
         "claude": {
             "five_hour": {
@@ -138,6 +139,7 @@ class GovernorState:
         self.last_check: float = 0.0
         self.last_usage: dict[str, Any] = {}
         self.governor_activity_level: int | None = None  # None = no throttle
+        self.background_fallback_providers: list[str] = []  # providers needing bg fallback
         self._relogin_timestamps: dict[str, list[float]] = {}
         self._relogin_cooldown_until: dict[str, float] = {}
         self._load()
@@ -167,6 +169,7 @@ class GovernorState:
             self.reason = data.get("reason", "")
             self.since = data.get("since", "")
             self.governor_activity_level = data.get("governor_activity_level")
+            self.background_fallback_providers = data.get("background_fallback_providers", []) or []
         except Exception:
             logger.debug("Failed to load governor state", exc_info=True)
 
@@ -176,6 +179,7 @@ class GovernorState:
             "reason": self.reason,
             "since": self.since,
             "governor_activity_level": self.governor_activity_level,
+            "background_fallback_providers": self.background_fallback_providers,
         }
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,7 +193,12 @@ class GovernorState:
     @property
     def is_governing(self) -> bool:
         throttling = self.governor_activity_level is not None and self.governor_activity_level < 100
-        return bool(self.suspended_animas) or bool(self.reason) or throttling
+        return (
+            bool(self.suspended_animas)
+            or bool(self.reason)
+            or throttling
+            or bool(self.background_fallback_providers)
+        )
 
 
 # ── Policy I/O ───────────────────────────────────────────────────────────────
@@ -636,22 +645,24 @@ class UsageGovernor:
         all_suspend: list[str] = []
         reasons: list[str] = []
         worst_level: int | None = None
+        fallback_providers: list[str] = []
+        fallback_below = policy.get("background_fallback_below", 15)
 
+        # Evaluate all three providers (fallback works on any, even with no animas using it)
         for provider_key in ("claude", "openai", "nanogpt"):
             provider_animas = groups.get(provider_key, [])
-            if not provider_animas:
-                continue  # No animas using this provider — skip
 
             if _provider_usage_fetch_failed(usage_data, provider_key):
-                retained = sorted(currently_suspended.intersection(provider_animas))
-                all_suspend.extend(retained)
-                error_code = usage_data.get(provider_key, {}).get("error", "unknown")
-                if retained:
-                    reasons.append(
-                        f"{provider_key} usage unavailable ({error_code}) → keeping {', '.join(retained)} suspended",
-                    )
-                else:
-                    reasons.append(f"{provider_key} usage unavailable ({error_code})")
+                if provider_animas:
+                    retained = sorted(currently_suspended.intersection(provider_animas))
+                    all_suspend.extend(retained)
+                    error_code = usage_data.get(provider_key, {}).get("error", "unknown")
+                    if retained:
+                        reasons.append(
+                            f"{provider_key} usage unavailable ({error_code}) → keeping {', '.join(retained)} suspended",
+                        )
+                    else:
+                        reasons.append(f"{provider_key} usage unavailable ({error_code})")
                 continue
 
             remaining, level, reason = _evaluate_provider_remaining(
@@ -664,8 +675,13 @@ class UsageGovernor:
             if level is not None:
                 worst_level = min(worst_level, level) if worst_level is not None else level
 
-            to_suspend = _animas_to_suspend(remaining, policy, provider_animas)
-            all_suspend.extend(to_suspend)
+            # Background model fallback: provider is tight but not yet suspend-critical
+            if remaining < fallback_below:
+                fallback_providers.append(provider_key)
+
+            if provider_animas:
+                to_suspend = _animas_to_suspend(remaining, policy, provider_animas)
+                all_suspend.extend(to_suspend)
             if reason:
                 reasons.append(reason)
 
@@ -679,16 +695,33 @@ class UsageGovernor:
 
         # Apply activity level throttling (affects heartbeat interval & max_turns)
         prev_level = self._state.governor_activity_level
+        state_changed = False
         if worst_level != prev_level:
             self._state.governor_activity_level = worst_level
             logger.info("Governor: activity_level %s → %s", prev_level, worst_level)
+            state_changed = True
+
+        # Apply background_model fallback (per-provider list)
+        prev_fallback = set(self._state.background_fallback_providers)
+        new_fallback = set(fallback_providers)
+        if prev_fallback != new_fallback:
+            self._state.background_fallback_providers = sorted(new_fallback)
+            logger.info(
+                "Governor: background_fallback %s → %s",
+                sorted(prev_fallback),
+                sorted(new_fallback),
+            )
+            state_changed = True
+
+        if state_changed:
             await self._broadcast_reschedule()
 
         self._state.reason = " | ".join(reasons) if reasons else ""
         throttling = worst_level is not None and worst_level < 100
+        active = throttling or bool(new_fallback)
         if all_suspend and not self._state.since:
             self._state.since = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-        elif not all_suspend and not throttling:
+        elif not all_suspend and not active:
             self._state.since = ""
 
         self._state.save()
