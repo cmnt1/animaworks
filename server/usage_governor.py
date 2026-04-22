@@ -138,7 +138,9 @@ class GovernorState:
         self.since: str = ""
         self.last_check: float = 0.0
         self.last_usage: dict[str, Any] = {}
-        self.governor_activity_level: int | None = None  # None = no throttle
+        # Per-provider activity level (claude / openai / nanogpt → level or None).
+        # Each Anima picks its own provider's level based on its main credential.
+        self.governor_activity_level_by_provider: dict[str, int | None] = {}
         self.background_fallback_providers: list[str] = []  # providers needing bg fallback
         self._relogin_timestamps: dict[str, list[float]] = {}
         self._relogin_cooldown_until: dict[str, float] = {}
@@ -168,7 +170,21 @@ class GovernorState:
             self.suspended_animas = data.get("suspended_animas", [])
             self.reason = data.get("reason", "")
             self.since = data.get("since", "")
-            self.governor_activity_level = data.get("governor_activity_level")
+            # Prefer new per-provider map; fall back to legacy single-value field
+            by_provider = data.get("governor_activity_level_by_provider")
+            if isinstance(by_provider, dict):
+                self.governor_activity_level_by_provider = {
+                    k: v for k, v in by_provider.items() if v is None or isinstance(v, int)
+                }
+            else:
+                legacy = data.get("governor_activity_level")
+                if legacy is not None:
+                    # Migration: apply legacy single value to all three providers
+                    self.governor_activity_level_by_provider = {
+                        "claude": legacy,
+                        "openai": legacy,
+                        "nanogpt": legacy,
+                    }
             self.background_fallback_providers = data.get("background_fallback_providers", []) or []
         except Exception:
             logger.debug("Failed to load governor state", exc_info=True)
@@ -178,7 +194,7 @@ class GovernorState:
             "suspended_animas": self.suspended_animas,
             "reason": self.reason,
             "since": self.since,
-            "governor_activity_level": self.governor_activity_level,
+            "governor_activity_level_by_provider": self.governor_activity_level_by_provider,
             "background_fallback_providers": self.background_fallback_providers,
         }
         try:
@@ -192,7 +208,10 @@ class GovernorState:
 
     @property
     def is_governing(self) -> bool:
-        throttling = self.governor_activity_level is not None and self.governor_activity_level < 100
+        throttling = any(
+            lvl is not None and lvl < 100
+            for lvl in self.governor_activity_level_by_provider.values()
+        )
         return (
             bool(self.suspended_animas)
             or bool(self.reason)
@@ -644,7 +663,7 @@ class UsageGovernor:
 
         all_suspend: list[str] = []
         reasons: list[str] = []
-        worst_level: int | None = None
+        level_by_provider: dict[str, int | None] = {}
         fallback_providers: list[str] = []
         fallback_below = policy.get("background_fallback_below", 15)
 
@@ -671,9 +690,9 @@ class UsageGovernor:
                 provider_key,
             )
 
-            # Track worst (most restrictive) activity level across all providers
-            if level is not None:
-                worst_level = min(worst_level, level) if worst_level is not None else level
+            # Record this provider's activity level (throttles only animas
+            # whose main credential matches this provider)
+            level_by_provider[provider_key] = level
 
             # Background model fallback: provider is tight but not yet suspend-critical
             if remaining < fallback_below:
@@ -693,12 +712,17 @@ class UsageGovernor:
         # Apply suspensions (only cloud-provider animas; local ones untouched)
         await self._apply_suspensions(set(all_suspend))
 
-        # Apply activity level throttling (affects heartbeat interval & max_turns)
-        prev_level = self._state.governor_activity_level
+        # Apply per-provider activity level throttling (each Anima reads the
+        # level matching its main credential's provider)
+        prev_by_provider = self._state.governor_activity_level_by_provider
         state_changed = False
-        if worst_level != prev_level:
-            self._state.governor_activity_level = worst_level
-            logger.info("Governor: activity_level %s → %s", prev_level, worst_level)
+        if prev_by_provider != level_by_provider:
+            self._state.governor_activity_level_by_provider = level_by_provider
+            logger.info(
+                "Governor: activity_level_by_provider %s → %s",
+                prev_by_provider,
+                level_by_provider,
+            )
             state_changed = True
 
         # Apply background_model fallback (per-provider list)
@@ -717,7 +741,9 @@ class UsageGovernor:
             await self._broadcast_reschedule()
 
         self._state.reason = " | ".join(reasons) if reasons else ""
-        throttling = worst_level is not None and worst_level < 100
+        throttling = any(
+            lvl is not None and lvl < 100 for lvl in level_by_provider.values()
+        )
         active = throttling or bool(new_fallback)
         if all_suspend and not self._state.since:
             self._state.since = time.strftime("%Y-%m-%dT%H:%M:%S%z")
