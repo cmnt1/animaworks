@@ -51,6 +51,12 @@ CREATE (e:Entity {
 RETURN e.uuid AS uuid
 """
 
+UPDATE_ENTITY_SUMMARY = """
+MATCH (e:Entity {uuid: $uuid})
+SET e.summary = $summary
+RETURN e.uuid AS uuid
+"""
+
 # ── RELATES_TO (Fact) ──────────
 
 CREATE_FACT = """
@@ -75,4 +81,63 @@ CREATE_MENTION = """
 MATCH (ep:Episode {uuid: $episode_uuid}), (en:Entity {uuid: $entity_uuid})
 CREATE (ep)-[r:MENTIONS {uuid: $uuid, created_at: datetime($created_at)}]->(en)
 RETURN r.uuid AS uuid
+"""
+
+# ── Entity Resolution ──────────
+
+FIND_ENTITIES_BY_NAME = """
+MATCH (e:Entity)
+WHERE e.group_id = $group_id
+  AND e.name =~ $name_pattern
+RETURN e.uuid AS uuid, e.name AS name, e.summary AS summary, e.entity_type AS entity_type
+LIMIT $limit
+"""
+
+FIND_ENTITIES_BY_VECTOR = """
+CALL db.index.vector.queryNodes('entity_name_embedding', $top_k, $embedding)
+YIELD node, score
+WHERE node.group_id = $group_id
+  AND score >= $min_score
+RETURN node.uuid AS uuid, node.name AS name, node.summary AS summary, node.entity_type AS entity_type, score
+"""
+
+UPDATE_ENTITY_SUMMARY = """
+MATCH (e:Entity {uuid: $uuid})
+SET e.summary = $summary
+"""
+
+REDIRECT_MENTIONS = """
+MATCH (ep:Episode)-[old:MENTIONS]->(old_entity:Entity {uuid: $old_uuid})
+MATCH (new_entity:Entity {uuid: $new_uuid})
+CREATE (ep)-[:MENTIONS {uuid: old.uuid, created_at: old.created_at}]->(new_entity)
+DELETE old
+"""
+
+REDIRECT_OUTGOING_FACTS = """
+MATCH (old_entity:Entity {uuid: $old_uuid})-[old:RELATES_TO]->(target:Entity)
+MATCH (new_entity:Entity {uuid: $new_uuid})
+CREATE (new_entity)-[r:RELATES_TO {
+  uuid: old.uuid, fact: old.fact, fact_embedding: old.fact_embedding,
+  group_id: old.group_id, created_at: old.created_at, valid_at: old.valid_at,
+  invalid_at: old.invalid_at, expired_at: old.expired_at,
+  source_episode_uuids: old.source_episode_uuids
+}]->(target)
+DELETE old
+"""
+
+REDIRECT_INCOMING_FACTS = """
+MATCH (source:Entity)-[old:RELATES_TO]->(old_entity:Entity {uuid: $old_uuid})
+MATCH (new_entity:Entity {uuid: $new_uuid})
+CREATE (source)-[r:RELATES_TO {
+  uuid: old.uuid, fact: old.fact, fact_embedding: old.fact_embedding,
+  group_id: old.group_id, created_at: old.created_at, valid_at: old.valid_at,
+  invalid_at: old.invalid_at, expired_at: old.expired_at,
+  source_episode_uuids: old.source_episode_uuids
+}]->(new_entity)
+DELETE old
+"""
+
+DELETE_ENTITY = """
+MATCH (e:Entity {uuid: $uuid})
+DETACH DELETE e
 """

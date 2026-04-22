@@ -123,7 +123,13 @@ class Neo4jGraphBackend(MemoryBackend):
     # ── Ingest methods ──────────────────────────────────────────────────────
 
     async def ingest_text(self, text: str, source: str, metadata: dict | None = None) -> int:
-        """Ingest text: create Episode, extract Entities + Facts via LLM, store in Neo4j."""
+        """Ingest text: create Episode, extract Entities + Facts via LLM, store in Neo4j.
+
+        The EntityResolver session cache persists across multiple ``ingest_text``
+        calls so that entities mentioned in different episodes within the same
+        batch are correctly de-duplicated.  Call :meth:`clear_resolver_cache`
+        explicitly when a logical batch is complete.
+        """
         from core.memory.graph.queries import (
             CREATE_ENTITY,
             CREATE_EPISODE,
@@ -157,37 +163,53 @@ class Neo4jGraphBackend(MemoryBackend):
                 logger.warning("Extraction failed, Episode-only fallback", exc_info=True)
                 return 1
 
+            # 3. Resolve + Create Entity nodes
             entity_count = 0
             entity_uuid_map: dict[str, str] = {}
+            resolver = self._get_resolver()
+
             for ent in entities:
                 if not ent.name.strip():
                     continue
-                ent_uuid = str(uuid4())
-                entity_uuid_map[ent.name] = ent_uuid
                 try:
-                    await driver.execute_write(
-                        CREATE_ENTITY,
-                        {
-                            "uuid": ent_uuid,
-                            "name": ent.name,
-                            "summary": ent.summary,
-                            "group_id": self._group_id,
-                            "created_at": now_str,
-                            "name_embedding": [],
-                        },
-                    )
-                    entity_count += 1
+                    resolved = await resolver.resolve(ent, name_embedding=[])
+                    entity_uuid_map[ent.name] = resolved.uuid
+
+                    if resolved.is_new:
+                        await driver.execute_write(
+                            CREATE_ENTITY,
+                            {
+                                "uuid": resolved.uuid,
+                                "name": resolved.name,
+                                "summary": resolved.summary,
+                                "group_id": self._group_id,
+                                "created_at": now_str,
+                                "name_embedding": [],
+                            },
+                        )
+                        entity_count += 1
+                    else:
+                        from core.memory.graph.queries import UPDATE_ENTITY_SUMMARY
+
+                        await driver.execute_write(
+                            UPDATE_ENTITY_SUMMARY,
+                            {
+                                "uuid": resolved.uuid,
+                                "summary": resolved.summary,
+                            },
+                        )
+
                     await driver.execute_write(
                         CREATE_MENTION,
                         {
                             "episode_uuid": episode_uuid,
-                            "entity_uuid": ent_uuid,
+                            "entity_uuid": resolved.uuid,
                             "uuid": str(uuid4()),
                             "created_at": now_str,
                         },
                     )
                 except Exception:
-                    logger.warning("Entity creation failed: %s", ent.name, exc_info=True)
+                    logger.warning("Entity resolution/creation failed: %s", ent.name, exc_info=True)
 
             fact_count = 0
             for fact in facts:
@@ -243,6 +265,26 @@ class Neo4jGraphBackend(MemoryBackend):
         return total
 
     # ── Helpers ────────────────────────────────────────────────────────────
+
+    def _get_resolver(self):  # noqa: ANN202 – lazy import avoids circular
+        """Create or return cached EntityResolver."""
+        if not hasattr(self, "_resolver") or self._resolver is None:
+            from core.memory.extraction.resolver import EntityResolver
+
+            model = self._resolve_background_model()
+            locale = self._resolve_locale()
+            self._resolver = EntityResolver(
+                self._driver,
+                self._group_id,
+                model=model,
+                locale=locale,
+            )
+        return self._resolver
+
+    def clear_resolver_cache(self) -> None:
+        """Clear the session cache after an ingest batch."""
+        if hasattr(self, "_resolver") and self._resolver is not None:
+            self._resolver.clear_cache()
 
     def _get_extractor(self):  # noqa: ANN202 – lazy import avoids circular
         """Create or return cached FactExtractor."""

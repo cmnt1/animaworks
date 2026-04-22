@@ -49,3 +49,25 @@ Extract relationships (facts) between the entities above and return them in the 
   ]
 }}
 ```"""
+
+# ── Entity deduplication ──────────────────────────────────
+
+DEDUPE_SYSTEM = (
+    "You are an entity deduplication agent. Determine whether a new entity is the same as any existing candidate."
+)
+
+DEDUPE_USER = """## New Entity
+Name: {new_entity_name}
+Type: {new_entity_type}
+Summary: {new_entity_summary}
+
+## Existing Entity Candidates
+{candidates_json}
+
+## Instructions
+If the new entity refers to the same real-world entity as one of the candidates, return its UUID and a merged summary in JSON format.
+If it is not a duplicate, or you are not confident, set duplicate_of_uuid to null.
+
+```json
+{{"duplicate_of_uuid": "existing UUID or null", "merged_summary": "merged 1-2 sentence description"}}
+```"""

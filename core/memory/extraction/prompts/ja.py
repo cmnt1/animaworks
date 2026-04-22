@@ -50,3 +50,25 @@ FACT_USER = """## テキスト
   ]
 }}
 ```"""
+
+# ── Entity deduplication ──────────────────────────────────
+
+DEDUPE_SYSTEM = (
+    "あなたはエンティティ重複判定エージェントです。新しいエンティティが既存の候補と同一かどうかを判定してください。"
+)
+
+DEDUPE_USER = """## 新規エンティティ
+名前: {new_entity_name}
+タイプ: {new_entity_type}
+概要: {new_entity_summary}
+
+## 既存エンティティ候補
+{candidates_json}
+
+## 指示
+新規エンティティが既存候補のいずれかと同一の実体を指す場合、そのUUIDと統合サマリーをJSON形式で返してください。
+同一でない場合、または判断に自信がない場合は duplicate_of_uuid を null にしてください。
+
+```json
+{{"duplicate_of_uuid": "既存のUUID or null", "merged_summary": "統合した1-2文の説明"}}
+```"""
