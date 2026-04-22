@@ -95,7 +95,7 @@ class TestAnimaDefaults:
         pd = AnimaDefaults()
         assert pd.model == "claude-sonnet-4-6"
         assert pd.max_tokens == 8192
-        assert pd.max_turns == 20
+        assert pd.max_turns == 10000
         assert pd.credential == "anthropic"
         assert pd.context_threshold == 0.50
         assert pd.max_chains == 2
@@ -438,7 +438,7 @@ class TestResolveAnimaConfig:
         resolved, cred = resolve_anima_config(config, "alice", anima_dir=tmp_path)
         assert resolved.model == "gpt-4o"
         assert resolved.max_tokens == 8192
-        assert resolved.max_turns == 20  # from anima_defaults
+        assert resolved.max_turns == 10000  # from anima_defaults
 
     def test_mode_s_auth_loaded_from_status_json(self, tmp_path):
         """mode_s_auth in status.json is loaded into resolved config."""
@@ -738,7 +738,7 @@ class TestLoadModelConfig:
         mc = load_model_config(anima_dir)
         assert mc.model == "openai/gpt-4o"
         assert mc.max_tokens == 8192
-        assert mc.max_turns == 20  # from anima_defaults
+        assert mc.max_turns == 10000  # from anima_defaults
 
     def test_resolves_credential(self, data_dir):
         import json as _json

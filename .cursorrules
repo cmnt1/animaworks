@@ -774,12 +774,12 @@ animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name
 
 | Role | Model | background_model | max_turns | max_chains |
 |------|-------|-----------------|-----------|------------|
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 200 | 10 |
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 50 | 3 |
-| writer | claude-sonnet-4-6 | — | 80 | 5 |
-| researcher | claude-sonnet-4-6 | — | 30 | 2 |
-| ops | openai/glm-4.7-flash | — | 30 | 2 |
-| general | claude-sonnet-4-6 | — | 20 | 2 |
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 10000 | 10 |
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 10000 | 3 |
+| writer | claude-sonnet-4-6 | — | 10000 | 5 |
+| researcher | claude-sonnet-4-6 | — | 10000 | 2 |
+| ops | openai/glm-4.7-flash | — | 10000 | 2 |
+| general | claude-sonnet-4-6 | — | 10000 | 2 |
 
 ## CLI管理コマンド
 

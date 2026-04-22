@@ -156,7 +156,7 @@ injection.md はあなたの**可変の行動指針**。業務方針の変更に
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
-  "max_turns": 200,
+  "max_turns": 10000,
   "supervisor": "aoi"
 }
 ```

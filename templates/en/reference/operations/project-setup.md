@@ -105,7 +105,7 @@ Role of each section:
 | `background_model` | `str | None` | None |  |
 | `background_credential` | `str | None` | None |  |
 | `max_tokens` | `int` | `8192` |  |
-| `max_turns` | `int` | `20` |  |
+| `max_turns` | `int` | `10000` |  |
 | `credential` | `str` | `"anthropic"` |  |
 | `context_threshold` | `float` | `0.5` |  |
 | `max_chains` | `int` | `2` |  |
@@ -412,7 +412,7 @@ Path: `~/.animaworks/animas/{name}/status.json`
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
-  "max_turns": 200,
+  "max_turns": 10000,
   "max_chains": 10,
   "context_threshold": 0.80,
   "execution_mode": null
@@ -459,7 +459,7 @@ Same applies if you edit `status.json` manually.
 |-------|---------|------|
 | `model` | `claude-sonnet-4-6` | LLM model to use |
 | `max_tokens` | `8192` | Max tokens per response |
-| `max_turns` | `20` | Max turns per session |
+| `max_turns` | `10000` | Max turns per session |
 | `credential` | `"anthropic"` | Credential name to use |
 | `context_threshold` | `0.50` | Short-term memory is externalized when context usage exceeds this threshold |
 | `max_chains` | `2` | Max automatic session continuation count |

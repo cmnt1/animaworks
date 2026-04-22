@@ -81,7 +81,7 @@ class AnimaDefaults(BaseModel):
     background_model: str | None = None
     background_credential: str | None = None
     max_tokens: int = 8192
-    max_turns: int = 20
+    max_turns: int = 10000
     credential: str = "anthropic"
     context_threshold: float = 0.50
     max_chains: int = 2
@@ -504,7 +504,7 @@ class HeartbeatConfig(BaseModel):
     max_turns: int | None = Field(
         default=None,
         ge=3,
-        le=200,
+        le=10000,
         description="HB-specific max_turns override (None = use per-anima model_config.max_turns)",
     )
 

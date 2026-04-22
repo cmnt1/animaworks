@@ -156,7 +156,7 @@ The **Single Source of Truth (SSoT)** for your execution parameters.
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
-  "max_turns": 200,
+  "max_turns": 10000,
   "supervisor": "aoi"
 }
 ```

@@ -283,7 +283,7 @@ The `animas` section in `config.json` holds only the organization layout (`super
 |`model`                              |`str`           |`claude-sonnet-4-6`       |Model name to use (provider prefix allowed)|
 |`fallback_model`                     |`str \| null`   |`null`                    |Fallback model                     |
 |`max_tokens`                         |`int`           |`8192`                    |Maximum tokens per response        |
-|`max_turns`                          |`int`           |`20`                      |Maximum turns per cycle            |
+|`max_turns`                          |`int`           |`10000`                   |Maximum turns per cycle            |
 |`credential`                         |`str`           |`"anthropic"`             |Credential name to use             |
 |`context_threshold`                  |`float`         |`0.50`                    |Threshold for short-term memory externalization (context usage ratio)|
 |`max_chains`                         |`int`           |`2`                       |Maximum automatic session continuations|
@@ -306,7 +306,7 @@ The `animas` section in `config.json` holds only the organization layout (`super
   "anima_defaults": {
     "model": "claude-sonnet-4-6",
     "max_tokens": 4096,
-    "max_turns": 20,
+    "max_turns": 10000,
     "credential": "anthropic",
     "context_threshold": 0.50,
     "conversation_history_threshold": 0.30

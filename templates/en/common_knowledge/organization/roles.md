@@ -242,12 +242,12 @@ Model and execution parameters:
 
 | Role | model | background_model | context_threshold | max_turns | max_chains | conversation_history_threshold |
 |------|-------|------------------|-------------------|-----------|------------|--------------------------------|
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 50 | 3 | 0.30 |
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 200 | 10 | 0.40 |
-| researcher | claude-sonnet-4-6 | — | 0.50 | 30 | 2 | 0.30 |
-| writer | claude-sonnet-4-6 | — | 0.70 | 80 | 5 | 0.30 |
-| ops | ollama/glm-4.7 | — | 0.50 | 30 | 2 | 0.30 |
-| general | claude-sonnet-4-6 | — | 0.50 | 20 | 2 | 0.30 |
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 10000 | 3 | 0.30 |
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 10000 | 10 | 0.40 |
+| researcher | claude-sonnet-4-6 | — | 0.50 | 10000 | 2 | 0.30 |
+| writer | claude-sonnet-4-6 | — | 0.70 | 10000 | 5 | 0.30 |
+| ops | ollama/glm-4.7 | — | 0.50 | 10000 | 2 | 0.30 |
+| general | claude-sonnet-4-6 | — | 0.50 | 10000 | 2 | 0.30 |
 
 Messaging caps (rate-related keys inside `defaults.json`):
 

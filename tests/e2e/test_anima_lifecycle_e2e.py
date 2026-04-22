@@ -33,7 +33,7 @@ def anima_env(tmp_path: Path):
         "anima_defaults": {
             "model": "claude-sonnet-4-6",
             "max_tokens": 4096,
-            "max_turns": 20,
+            "max_turns": 10000,
             "credential": "anthropic",
             "context_threshold": 0.5,
             "max_chains": 2,

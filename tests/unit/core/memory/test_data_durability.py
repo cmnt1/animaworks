@@ -50,7 +50,7 @@ def model_config() -> ModelConfig:
     return ModelConfig(
         model="claude-sonnet-4-6",
         max_tokens=4096,
-        max_turns=20,
+        max_turns=10000,
     )
 
 

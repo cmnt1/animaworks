@@ -156,7 +156,7 @@ injection.md는 당신의 **가변적 행동 지침**입니다. 업무 방침의
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
-  "max_turns": 200,
+  "max_turns": 10000,
   "supervisor": "aoi"
 }
 ```

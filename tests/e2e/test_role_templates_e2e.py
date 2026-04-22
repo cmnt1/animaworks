@@ -146,7 +146,7 @@ class TestCreateFromMdEngineerRole:
         )
         # Engineer defaults.json specifies these values
         assert status["model"] == "claude-opus-4-6"
-        assert status["max_turns"] == 200
+        assert status["max_turns"] == 10000
         assert status["max_chains"] == 10
         assert status["context_threshold"] == 0.80
         assert status["conversation_history_threshold"] == 0.40
@@ -187,7 +187,7 @@ class TestCreateFromMdEngineerRole:
         # Character sheet model should override role default
         assert status["model"] == "claude-sonnet-4-6"
         # But other role defaults should still be applied
-        assert status["max_turns"] == 200
+        assert status["max_turns"] == 10000
         assert status["max_chains"] == 10
 
 
@@ -237,7 +237,7 @@ class TestCreateFromMdGeneralRole:
         )
         # general defaults.json values
         assert status["model"] == "claude-sonnet-4-6"
-        assert status["max_turns"] == 20
+        assert status["max_turns"] == 10000
         assert status["max_chains"] == 2
         assert status["context_threshold"] == 0.50
         assert status["conversation_history_threshold"] == 0.30
@@ -300,7 +300,7 @@ class TestTwoLayerConfigResolution:
 
         # Engineer role defaults in status.json should override global defaults
         assert model_config.model == "claude-opus-4-6"
-        assert model_config.max_turns == 200
+        assert model_config.max_turns == 10000
         assert model_config.max_chains == 10
         assert model_config.context_threshold == 0.80
         assert model_config.conversation_history_threshold == 0.40
