@@ -32,10 +32,33 @@ _INDENTED_SCHEDULE_RE = re.compile(r"^\s+schedule:", re.MULTILINE)
 _HEALTH_CHECK_HOURS = 3
 
 
-def _read_governor_activity_level() -> int | None:
-    """Read ``governor_activity_level`` from usage_governor_state.json.
+# Map an Anima's main-credential field value to the Governor provider key.
+# Kept local to avoid a core → server import.
+_CREDENTIAL_TO_GOVERNOR_PROVIDER: dict[str, str] = {
+    "anthropic": "claude",
+    "openai": "openai",
+    "nanogpt": "nanogpt",
+}
 
-    Returns the Governor-imposed activity level, or None if no throttle is active.
+
+def _read_anima_credential(anima_dir: Path) -> str:
+    """Read the ``credential`` field from an Anima's status.json."""
+    status = anima_dir / "status.json"
+    if not status.is_file():
+        return ""
+    try:
+        data = json.loads(status.read_text("utf-8"))
+        return data.get("credential", "") or ""
+    except Exception:
+        return ""
+
+
+def _read_governor_activity_level(anima_dir: Path | None = None) -> int | None:
+    """Read the Governor-imposed activity level for an Anima's front-model provider.
+
+    Only the provider matching the Anima's main ``credential`` is consulted.
+    Returns None if no throttle is active for that provider, or if the
+    credential maps to an untracked provider (local models, etc.).
     """
     from core.paths import get_data_dir
 
@@ -44,9 +67,23 @@ def _read_governor_activity_level() -> int | None:
         return None
     try:
         data = json.loads(state_path.read_text("utf-8"))
-        return data.get("governor_activity_level")
     except Exception:
         return None
+
+    by_provider = data.get("governor_activity_level_by_provider")
+    if not isinstance(by_provider, dict) or not by_provider:
+        # Backward compat: legacy single-value field
+        legacy = data.get("governor_activity_level")
+        return legacy if isinstance(legacy, int) else None
+
+    if anima_dir is None:
+        return None
+    credential = _read_anima_credential(anima_dir)
+    provider = _CREDENTIAL_TO_GOVERNOR_PROVIDER.get(credential)
+    if provider is None:
+        return None
+    level = by_provider.get(provider)
+    return level if isinstance(level, int) else None
 
 
 def _read_governor_fallback_providers() -> list[str]:
@@ -205,8 +242,9 @@ class SchedulerManager:
         base_interval = self._read_per_anima_interval(app_config)
         activity_pct = max(10, min(400, app_config.activity_level))
 
-        # Governor throttle: use the more restrictive of config vs governor
-        governor_level = _read_governor_activity_level()
+        # Governor throttle: use the more restrictive of config vs governor.
+        # Only the Anima's front-model provider is consulted.
+        governor_level = _read_governor_activity_level(self._anima_dir)
         if governor_level is not None:
             activity_pct = min(activity_pct, governor_level)
 

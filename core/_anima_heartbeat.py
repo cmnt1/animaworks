@@ -520,10 +520,11 @@ class HeartbeatMixin:
             _cfg = _load_config_fresh()
             _hb_cfg = _cfg.heartbeat
             _activity = _cfg.activity_level
-            # Governor throttle: use the more restrictive level
+            # Governor throttle: use the more restrictive level.
+            # Only the Anima's front-model provider is consulted.
             from core.supervisor.scheduler_manager import _read_governor_activity_level
 
-            _gov = _read_governor_activity_level()
+            _gov = _read_governor_activity_level(self.agent.anima_dir)
             if _gov is not None:
                 _activity = min(_activity, _gov)
             effective_max_turns = _calc_effective_max_turns(

@@ -554,13 +554,17 @@ function _renderGovernor(gov) {
     rowsHtml = `<div class="governor-row"><span class="governor-suspended">停止中: ${escapeHtml(gov.suspended_animas.join(", "))}</span></div>`;
   }
 
-  // Activity level throttle (< 100 = actual throttle, >= 100 = boost/normal)
-  const actLvl = gov.activity_level;
-  if (actLvl !== null && actLvl !== undefined && actLvl < 100) {
+  // Activity level throttle per provider (< 100 = actual throttle).
+  // Each row applies only to Animas whose main credential matches the provider.
+  const actByProv = gov.activity_level_by_provider || {};
+  const ACT_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT" };
+  for (const [prov, lvl] of Object.entries(actByProv)) {
+    if (lvl === null || lvl === undefined || lvl >= 100) continue;
+    const label = ACT_LABELS[prov] || prov;
     rowsHtml += `
       <div class="governor-row">
-        <span class="governor-provider">Activity:</span>
-        <span class="governor-row-reason">ハートビート間隔・max_turnsを${actLvl}%にスロットル中</span>
+        <span class="governor-provider">Activity (${escapeHtml(label)}):</span>
+        <span class="governor-row-reason">${escapeHtml(label)}使用のAnimaのハートビート間隔・max_turnsを${lvl}%にスロットル中</span>
       </div>`;
   }
 
