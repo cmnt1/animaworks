@@ -106,9 +106,19 @@ class HeartbeatMixin:
           1. status.json background_model (per-anima)
           2. config.heartbeat.default_model (global)
           3. None (use main model)
+
+        Governor fallback: if the chosen background_model belongs to a
+        provider that the Governor has flagged for fallback (remaining <
+        background_fallback_below), swap to the Anima's main credential's
+        lightweight fallback model.
         """
         from core.config.models import load_config, resolve_execution_mode
         from core.schemas import ModelConfig
+        from core.supervisor.scheduler_manager import (
+            _CREDENTIAL_FALLBACK_BACKGROUND,
+            _model_to_governor_provider,
+            _read_governor_fallback_providers,
+        )
 
         bg_model = self.agent.model_config.background_model
         if not bg_model:
@@ -116,6 +126,25 @@ class HeartbeatMixin:
             bg_model = config.heartbeat.default_model
         if not bg_model:
             return None
+
+        # Governor fallback check
+        fallback_providers = _read_governor_fallback_providers()
+        bg_credential = self.agent.model_config.background_credential
+        if fallback_providers:
+            bg_provider = _model_to_governor_provider(bg_model)
+            if bg_provider and bg_provider in fallback_providers:
+                main_credential = self._read_main_credential()
+                fallback_model = _CREDENTIAL_FALLBACK_BACKGROUND.get(main_credential)
+                if fallback_model:
+                    logger.info(
+                        "Governor background fallback: %s (%s depleted) → %s",
+                        bg_model,
+                        bg_provider,
+                        fallback_model,
+                    )
+                    bg_model = fallback_model
+                    bg_credential = main_credential
+
         if bg_model == self.agent.model_config.model:
             return None
 
@@ -126,7 +155,6 @@ class HeartbeatMixin:
         config = load_config()
         bg_resolved_mode = resolve_execution_mode(config, bg_model)
 
-        bg_credential = self.agent.model_config.background_credential
         new_config: ModelConfig = self.agent.model_config.model_copy(
             update={"model": bg_model, "resolved_mode": bg_resolved_mode},
         )
@@ -137,6 +165,19 @@ class HeartbeatMixin:
                 new_config.api_base_url = cred.base_url or None
                 new_config.extra_keys = dict(cred.keys) if cred.keys else {}
         return new_config
+
+    def _read_main_credential(self) -> str:
+        """Read the main ``credential`` field from status.json."""
+        try:
+            import json as _json
+
+            status = self.agent.anima_dir / "status.json"
+            if status.is_file():
+                data = _json.loads(status.read_text(encoding="utf-8"))
+                return data.get("credential", "") or ""
+        except Exception:
+            logger.debug("Failed to read main credential", exc_info=True)
+        return ""
 
     # ── Heartbeat history ────────────────────────────────────
 

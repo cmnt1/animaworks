@@ -49,6 +49,52 @@ def _read_governor_activity_level() -> int | None:
         return None
 
 
+def _read_governor_fallback_providers() -> list[str]:
+    """Read ``background_fallback_providers`` from usage_governor_state.json.
+
+    Returns provider keys (``claude``/``openai``/``nanogpt``) whose background
+    models should be swapped to the Anima's credential fallback model.
+    """
+    from core.paths import get_data_dir
+
+    state_path = get_data_dir() / "usage_governor_state.json"
+    if not state_path.is_file():
+        return []
+    try:
+        data = json.loads(state_path.read_text("utf-8"))
+        return data.get("background_fallback_providers", []) or []
+    except Exception:
+        return []
+
+
+def _model_to_governor_provider(model_name: str | None) -> str | None:
+    """Map a model name to the Governor provider key used by usage policy.
+
+    Returns ``None`` for models not tracked by the Governor (ollama, bedrock,
+    cursor, gemini, etc.).
+    """
+    if not model_name:
+        return None
+    # Anthropic: bare ``claude-*`` or ``anthropic/claude-*``
+    if model_name.startswith("claude-") or model_name.startswith("anthropic/"):
+        return "claude"
+    # OpenAI: ``openai/*`` and ``codex/*`` (Codex uses OpenAI credentials)
+    if model_name.startswith("openai/") or model_name.startswith("codex/"):
+        return "openai"
+    if model_name.startswith("nanogpt/"):
+        return "nanogpt"
+    return None
+
+
+# Per-credential lightweight fallback model used when the Anima's
+# background_model provider is depleted (Governor-driven).
+_CREDENTIAL_FALLBACK_BACKGROUND: dict[str, str] = {
+    "anthropic": "claude-sonnet-4-6",
+    "openai": "openai/gpt-4.1-mini",
+    "nanogpt": "qwen/qwen3.5-9b",
+}
+
+
 _SECONDS_PER_HOUR = 3600
 _DAILY_STALE_THRESHOLD_SEC = 36 * _SECONDS_PER_HOUR
 _WEEKLY_STALE_THRESHOLD_SEC = 8 * 24 * _SECONDS_PER_HOUR
