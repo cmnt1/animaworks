@@ -106,6 +106,30 @@ tool: health_check
         assert len(tasks) == 1
         assert tasks[0].schedule == "*/5 * * * *"
 
+    def test_sched_alias_is_accepted(self):
+        """Backward-compat: ``SCHED:`` is accepted as ``schedule:``."""
+        content = """\
+## Morning Report
+SCHED: 0 9 * * *
+type: llm
+Summarize yesterday.
+"""
+        tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].schedule == "0 9 * * *"
+
+    def test_sched_alias_case_insensitive(self):
+        """Alias parsing is case-insensitive (e.g., ``sched:``)."""
+        content = """\
+## Evening Report
+sched: 0 17 * * 1-5
+type: llm
+Summarize today.
+"""
+        tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].schedule == "0 17 * * 1-5"
+
     def test_no_schedule_line(self):
         """Task without schedule: line gets empty schedule."""
         content = """\

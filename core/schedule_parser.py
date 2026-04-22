@@ -161,8 +161,9 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
         if stripped.startswith("- "):
             stripped = stripped[2:]
 
-        if stripped.startswith("schedule:"):
-            schedule = _strip_inline_comment(stripped[len("schedule:") :].strip())
+        if re.match(r"^(schedule|sched)\s*:", stripped, flags=re.IGNORECASE):
+            _, value = stripped.split(":", 1)
+            schedule = _strip_inline_comment(value.strip())
             schedule = _strip_outer_quotes(schedule)
         elif stripped.startswith("type:"):
             task_type = _strip_inline_comment(stripped[5:].strip())
