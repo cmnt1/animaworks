@@ -718,38 +718,77 @@ def create_system_router() -> APIRouter:
         config = load_config()
         return {
             "activity_level": config.activity_level,
+            "activity_level_by_provider": dict(config.activity_level_by_provider),
             "activity_schedule": [e.model_dump() for e in config.activity_schedule],
         }
 
     @router.put("/settings/activity-level")
     async def set_activity_level(request: Request):
-        """Update global activity level and reschedule all heartbeats."""
+        """Update global and/or per-provider activity levels, then reschedule.
+
+        Body may contain any of:
+          - ``activity_level`` (int 10-400): global/default slider
+          - ``activity_level_by_provider`` (dict): per-provider overrides.
+            Keys limited to ``claude``/``openai``/``nanogpt``/``default``.
+            Values validated 10-400.  Pass ``{}`` to clear overrides.
+        """
         try:
             body = await request.json()
         except Exception:
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
 
         level = body.get("activity_level")
-        if not isinstance(level, int) or not (10 <= level <= 400):
+        by_provider = body.get("activity_level_by_provider")
+
+        if level is not None and (not isinstance(level, int) or not (10 <= level <= 400)):
             return JSONResponse(
                 {"error": "activity_level must be int 10-400"},
+                status_code=400,
+            )
+
+        valid_keys = {"claude", "openai", "nanogpt", "default"}
+        if by_provider is not None:
+            if not isinstance(by_provider, dict):
+                return JSONResponse(
+                    {"error": "activity_level_by_provider must be an object"},
+                    status_code=400,
+                )
+            for k, v in by_provider.items():
+                if k not in valid_keys:
+                    return JSONResponse(
+                        {"error": f"invalid provider key: {k}"},
+                        status_code=400,
+                    )
+                if not isinstance(v, int) or not (10 <= v <= 400):
+                    return JSONResponse(
+                        {"error": f"{k}: value must be int 10-400"},
+                        status_code=400,
+                    )
+
+        if level is None and by_provider is None:
+            return JSONResponse(
+                {"error": "provide activity_level and/or activity_level_by_provider"},
                 status_code=400,
             )
 
         from core.config.models import load_config, save_config
 
         config = load_config()
-        config.activity_level = level
+        if level is not None:
+            config.activity_level = level
 
-        # When night mode is active, also update the matching schedule entry
-        if config.activity_schedule:
-            from core.supervisor.scheduler_manager import _time_in_range
+            # When night mode is active, also update the matching schedule entry
+            if config.activity_schedule:
+                from core.supervisor.scheduler_manager import _time_in_range
 
-            now_hhmm = now_local().strftime("%H:%M")
-            for entry in config.activity_schedule:
-                if _time_in_range(entry.start, entry.end, now_hhmm):
-                    entry.level = level
-                    break
+                now_hhmm = now_local().strftime("%H:%M")
+                for entry in config.activity_schedule:
+                    if _time_in_range(entry.start, entry.end, now_hhmm):
+                        entry.level = level
+                        break
+
+        if by_provider is not None:
+            config.activity_level_by_provider = dict(by_provider)
 
         save_config(config)
 
@@ -764,8 +803,16 @@ def create_system_router() -> APIRouter:
                     exc_info=True,
                 )
 
-        logger.info("Activity level changed to %d%%", level)
-        return {"ok": True, "activity_level": level}
+        logger.info(
+            "Activity level updated: global=%s, by_provider=%s",
+            level,
+            by_provider,
+        )
+        return {
+            "ok": True,
+            "activity_level": config.activity_level,
+            "activity_level_by_provider": dict(config.activity_level_by_provider),
+        }
 
     @router.put("/settings/activity-schedule")
     async def set_activity_schedule(request: Request):

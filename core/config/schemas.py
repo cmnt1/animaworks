@@ -747,6 +747,15 @@ class AnimaWorksConfig(BaseModel):
         le=400,
         description="Global activity level (10-400%). Scales heartbeat interval and max_turns.",
     )
+    activity_level_by_provider: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Per-provider activity level overrides (10-400%). Keys: "
+            "'claude', 'openai', 'nanogpt', 'default'. Empty dict or missing "
+            "key falls back to activity_level. Each Anima picks the entry "
+            "matching its main credential's provider."
+        ),
+    )
     activity_schedule: list[ActivityScheduleEntry] = Field(
         default_factory=list,
         description="Time-based activity level schedule. Empty = use fixed activity_level.",
