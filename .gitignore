@@ -129,3 +129,4 @@ swe/results/
 # Local Codex app metadata
 .codex/
 .claude/worktrees/
+.claude/settings.local.json
