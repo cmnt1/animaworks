@@ -861,6 +861,8 @@ def create_usage_router() -> APIRouter:
                 "reason": st.reason,
                 "since": st.since,
                 "last_check": st.last_check,
+                "activity_level": st.governor_activity_level,
+                "background_fallback_providers": st.background_fallback_providers,
             }
         # Auth alerts from executor-detected failures
         try:

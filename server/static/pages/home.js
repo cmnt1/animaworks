@@ -621,6 +621,28 @@ function _renderGovernor(gov) {
     rowsHtml = `<div class="governor-row"><span class="governor-suspended">停止中: ${escapeHtml(gov.suspended_animas.join(", "))}</span></div>`;
   }
 
+  // Activity level throttle (< 100 = actual throttle, >= 100 = boost/normal)
+  const actLvl = gov.activity_level;
+  if (actLvl !== null && actLvl !== undefined && actLvl < 100) {
+    rowsHtml += `
+      <div class="governor-row">
+        <span class="governor-provider">Activity:</span>
+        <span class="governor-row-reason">ハートビート間隔・max_turnsを${actLvl}%にスロットル中</span>
+      </div>`;
+  }
+
+  // Background model fallback
+  const fbProviders = gov.background_fallback_providers || [];
+  if (fbProviders.length > 0) {
+    const FB_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT" };
+    const providerList = fbProviders.map((p) => FB_LABELS[p] || p).join(", ");
+    rowsHtml += `
+      <div class="governor-row">
+        <span class="governor-provider">BG Fallback:</span>
+        <span class="governor-row-reason">${escapeHtml(providerList)} 枯渇 → background_modelをcredentialの軽量モデルに切替中</span>
+      </div>`;
+  }
+
   el.style.display = "block";
   el.innerHTML = `
     <div class="governor-bar governor-bar--active">
