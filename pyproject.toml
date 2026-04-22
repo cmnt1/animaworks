@@ -21,6 +21,11 @@ classifiers = [
 ]
 
 dependencies = [
+    # Windows からは除外: claude-agent-sdk 0.1.51 以降の同梱 claude.exe は
+    # ネイティブバイナリ (2.1.112+) で、Windows 11 上で 0xc0000005 クラッシュする
+    # (upstream issue: anthropics/claude-code#50640)。0.1.50 + claude.exe 2.1.81
+    # (JSビルド) の組み合わせで pin し、`pip install -U` で上書きしないこと。
+    # 事故時は scripts/restore_claude_binary.ps1 で復元する。
     "claude-agent-sdk>=0.1.40; platform_system != 'Windows'",
     "anthropic>=0.42.0",
     "openai-codex-sdk>=0.1.11,<0.2",
