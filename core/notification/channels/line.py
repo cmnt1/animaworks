@@ -7,6 +7,7 @@ from __future__ import annotations
 """LINE Messaging API notification channel."""
 
 import logging
+from typing import Any
 
 import httpx
 
@@ -32,6 +33,7 @@ class LineChannel(NotificationChannel):
         priority: str = "normal",
         *,
         anima_name: str = "",
+        interaction: Any | None = None,
     ) -> str:
         token = self._resolve_credential_with_vault(
             "channel_access_token_env",
@@ -44,6 +46,13 @@ class LineChannel(NotificationChannel):
         user_id = self._config.get("user_id", "")
         if not user_id:
             return "line: ERROR - user_id not configured"
+
+        if interaction is not None:
+            from core.config.models import load_config
+            from core.notification.interactive import build_text_fallback
+
+            web_url = load_config().interaction.web_base_url
+            body = body + "\n" + build_text_fallback(interaction, web_base_url=web_url)
 
         prefix = f"[{priority.upper()}] " if priority in ("high", "urgent") else ""
         sender = f" (from {anima_name})" if anima_name else ""

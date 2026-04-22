@@ -17,10 +17,17 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from pathlib import Path
+from typing import Any
 
-logger = logging.getLogger("animaworks.tools.call_human")
+import httpx
+
+from core.i18n import t
+from core.notification.interactive import InteractionRequest
+
+logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
@@ -35,8 +42,6 @@ def _load_config() -> dict:
 
 def _get_bot_token(channel_cfg: dict) -> str:
     """Resolve bot token from channel config (direct, env, vault/shared, credentials)."""
-    import os
-
     token = channel_cfg.get("bot_token", "")
     if token:
         return token
@@ -67,13 +72,18 @@ def _get_bot_token(channel_cfg: dict) -> str:
         return ""
 
 
+def _resolve_cli_anima_name() -> str:
+    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    if anima_dir:
+        return Path(anima_dir).name
+    return ""
+
+
 def _resolve_cli_anima_identity(channel_cfg: dict) -> tuple[str, str]:
     """Resolve Anima name and icon URL for CLI call_human invocations.
 
     Returns (username, icon_url) — either may be empty string.
     """
-    import os
-
     from core.tools._anima_icon_url import resolve_anima_icon_identity
 
     anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
@@ -81,6 +91,30 @@ def _resolve_cli_anima_identity(channel_cfg: dict) -> tuple[str, str]:
         return ("", "")
 
     return resolve_anima_icon_identity(Path(anima_dir).name, channel_cfg)
+
+
+def _button_emoji(opt: str) -> str:
+    return {"approve": "✅", "reject": "❌", "comment": "💬"}.get(opt, "▶️")
+
+
+def _build_slack_blocks(text: str, interaction: InteractionRequest) -> list[dict[str, Any]]:
+    """Build Slack Block Kit blocks with action buttons."""
+    style_map = {"approve": "primary", "reject": "danger"}
+    elements: list[dict[str, Any]] = []
+    for opt in interaction.options:
+        btn: dict[str, Any] = {
+            "type": "button",
+            "text": {"type": "plain_text", "text": _button_emoji(opt) + " " + opt.capitalize()},
+            "action_id": f"aw_interact_{opt}",
+            "value": interaction.callback_id,
+        }
+        if opt in style_map:
+            btn["style"] = style_map[opt]
+        elements.append(btn)
+    return [
+        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+        {"type": "actions", "block_id": f"aw_interact:{interaction.callback_id}", "elements": elements},
+    ]
 
 
 async def _send_slack(
@@ -91,15 +125,17 @@ async def _send_slack(
     username: str = "",
     icon_url: str = "",
     notification_text: str = "",
-) -> str:
-    import httpx
-
+    interaction: InteractionRequest | None = None,
+) -> tuple[str, str | None]:
+    """Post to Slack; returns (status_message, message_ts_on_success)."""
     try:
-        payload: dict[str, str] = {"channel": channel, "text": text}
+        payload: dict[str, Any] = {"channel": channel, "text": text}
         if username:
             payload["username"] = username
         if icon_url:
             payload["icon_url"] = icon_url
+        if interaction is not None:
+            payload["blocks"] = _build_slack_blocks(text, interaction)
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
@@ -110,25 +146,35 @@ async def _send_slack(
             resp.raise_for_status()
             data = resp.json()
             if not data.get("ok"):
-                return f"ERROR: {data.get('error', 'unknown')}"
+                return f"ERROR: {data.get('error', 'unknown')}", None
+
+            ts_val: str | None = str(data["ts"]) if data.get("ts") else None
 
             # Save ts→anima mapping so Slack thread replies are routed back
-            if username and data.get("ts") and notification_text:
+            if username and ts_val and notification_text:
                 try:
                     from core.notification.reply_routing import save_notification_mapping
 
                     save_notification_mapping(
-                        ts=data["ts"],
+                        ts=ts_val,
                         channel=data.get("channel", channel),
                         anima_name=username,
                         notification_text=notification_text[:2000],
+                        callback_id=interaction.callback_id if interaction is not None else "",
                     )
                 except Exception:
                     logger.debug("Failed to save notification mapping", exc_info=True)
 
-            return "OK"
+            return "OK", ts_val
     except Exception as e:
-        return f"ERROR: {e}"
+        return f"ERROR: {e}", None
+
+
+async def _persist_interaction_slack_ts(callback_id: str, ts_val: str) -> None:
+    """Store Slack message ts on the interaction record (CLI path)."""
+    from core.notification.interactive import get_interaction_router
+
+    await get_interaction_router().update_message_ts(callback_id, "slack", ts_val)
 
 
 def get_cli_guide() -> str:
@@ -174,6 +220,26 @@ def cli_main(args: list[str]) -> None:
         choices=["low", "normal", "high", "urgent"],
         default="normal",
     )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Send Slack Block Kit action buttons (bot token mode)",
+    )
+    parser.add_argument(
+        "--callback-id",
+        default="",
+        help="Stable callback id for interactive mode (auto-generated if omitted)",
+    )
+    parser.add_argument(
+        "--options",
+        default="approve,reject,comment",
+        help="Comma-separated button labels for interactive mode",
+    )
+    parser.add_argument(
+        "--category",
+        default="approval",
+        help="Interaction category label",
+    )
     ns = parser.parse_args(args)
 
     cfg = _load_config()
@@ -191,7 +257,29 @@ def cli_main(args: list[str]) -> None:
     prefix = f"[{ns.priority.upper()}] " if ns.priority in ("high", "urgent") else ""
     text = f"{prefix}*{ns.subject}*\n{ns.body}"
 
-    results = []
+    interaction: InteractionRequest | None = None
+    if ns.interactive:
+        from core.notification.interactive import get_interaction_router
+
+        anima_name = _resolve_cli_anima_name()
+        opts_list = [p.strip() for p in ns.options.split(",") if p.strip()]
+
+        async def _create_interaction() -> InteractionRequest:
+            return await get_interaction_router().create(
+                anima_name,
+                ns.category,
+                opts_list,
+                allowed_users={"slack": []},
+                callback_id=ns.callback_id or None,
+            )
+
+        try:
+            interaction = asyncio.run(_create_interaction())
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    results: list[str] = []
     for ch in channels:
         if not ch.get("enabled", True):
             continue
@@ -208,7 +296,8 @@ def cli_main(args: list[str]) -> None:
                 results.append("slack: ERROR - no channel configured")
                 continue
             username, icon_url = _resolve_cli_anima_identity(ch_cfg)
-            result = asyncio.run(
+
+            status, slack_ts = asyncio.run(
                 _send_slack(
                     channel_id,
                     token,
@@ -216,16 +305,28 @@ def cli_main(args: list[str]) -> None:
                     username=username,
                     icon_url=icon_url,
                     notification_text=f"{ns.subject}\n{ns.body}",
+                    interaction=interaction if ns.interactive else None,
                 )
             )
-            results.append(f"slack: {result}")
+            results.append(f"slack: {status}")
+
+            if ns.interactive and interaction is not None and status == "OK" and slack_ts:
+                asyncio.run(
+                    _persist_interaction_slack_ts(interaction.callback_id, str(slack_ts)),
+                )
         else:
             results.append(f"{ch_type}: not supported in CLI mode")
 
     for r in results:
         print(r)
 
+    if ns.interactive and interaction is not None:
+        print(t("tools.call_human.callback_id", callback_id=interaction.callback_id))
+
     sent_ok = any("OK" in r for r in results)
     has_error = any("ERROR" in r for r in results)
     if has_error or not sent_ok:
         sys.exit(1)
+
+
+__all__ = ["_build_slack_blocks", "cli_main", "get_cli_guide"]

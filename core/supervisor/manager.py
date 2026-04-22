@@ -119,6 +119,7 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
         self._permanently_failed: set[str] = set()
         self._failed_log_times: dict[str, float] = {}
         self._bootstrapping: set[str] = set()
+        self._consolidating: set[str] = set()  # animas currently running daily/weekly consolidation
         self._recently_stopped: dict[str, float] = {}  # anima_name → monotonic timestamp
         self._bootstrap_retry_counts: dict[str, int] = {}
         self._bootstrap_max_retries: int = 3

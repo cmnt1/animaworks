@@ -86,6 +86,26 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "通知の件名（簡潔に）",
         "en": "Notification subject (keep it brief)",
     },
+    "tools.call_human.callback_id": {
+        "ja": "callback_id: {callback_id}",
+        "en": "callback_id: {callback_id}",
+    },
+    "schema.call_human.interactive_desc": {
+        "ja": "trueの場合、承認ボタン付きメッセージを送信",
+        "en": "When true, send message with approval buttons",
+    },
+    "schema.call_human.options_desc": {
+        "ja": "選択肢のリスト",
+        "en": "List of response options",
+    },
+    "schema.call_human.category_desc": {
+        "ja": "通知カテゴリ（inbox分岐用）",
+        "en": "Notification category for inbox routing",
+    },
+    "schema.call_human.allowed_users_desc": {
+        "ja": "プラットフォーム別の承認者ID",
+        "en": "Per-platform approver user IDs",
+    },
     "schema.check_background_task.desc": {
         "ja": (
             "バックグラウンドタスクの状態を確認する。task_idを指定して、実行中・完了・失敗の状態と結果を取得する。ツール呼び出しが background ステータスで返された場合に使用する。"

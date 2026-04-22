@@ -7,14 +7,46 @@ from __future__ import annotations
 """Slack notification channel via Incoming Webhook or Bot Token API."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from core.notification.notifier import NotificationChannel, register_channel
+
+if TYPE_CHECKING:
+    from core.notification.interactive import InteractionRequest
 from core.tools.slack import md_to_slack_mrkdwn
 
 logger = logging.getLogger("animaworks.notification.slack")
+
+
+def _build_interactive_blocks(text: str, interaction: InteractionRequest) -> list[dict[str, Any]]:
+    """Build Slack Block Kit blocks with action buttons for interactive call_human."""
+    style_map = {"approve": "primary", "reject": "danger"}
+    emoji_map = {"approve": "✅", "reject": "❌", "comment": "💬"}
+    elements: list[dict[str, Any]] = []
+    for opt in interaction.options:
+        btn: dict[str, Any] = {
+            "type": "button",
+            "text": {
+                "type": "plain_text",
+                "text": f"{emoji_map.get(opt, '▶️')} {opt.capitalize()}",
+            },
+            "action_id": f"aw_interact_{opt}",
+            "value": interaction.callback_id,
+        }
+        style = style_map.get(opt)
+        if style:
+            btn["style"] = style
+        elements.append(btn)
+    return [
+        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+        {
+            "type": "actions",
+            "block_id": f"aw_interact:{interaction.callback_id}",
+            "elements": elements,
+        },
+    ]
 
 
 @register_channel("slack")
@@ -44,6 +76,7 @@ class SlackChannel(NotificationChannel):
         priority: str = "normal",
         *,
         anima_name: str = "",
+        interaction: InteractionRequest | None = None,
     ) -> str:
         bot_token = self._config.get("bot_token", "")
         if not bot_token:
@@ -53,7 +86,7 @@ class SlackChannel(NotificationChannel):
 
             per_key = f"SLACK_BOT_TOKEN__{anima_name}"
             bot_token = resolve_env_style_credential(per_key) or ""
-        if not bot_token:
+        if not bot_token and self._config.get("channel"):
             try:
                 from core.tools._base import get_credential
 
@@ -62,7 +95,14 @@ class SlackChannel(NotificationChannel):
                 bot_token = ""
 
         if bot_token:
-            return await self._send_via_bot(bot_token, subject, body, priority, anima_name)
+            return await self._send_via_bot(
+                bot_token,
+                subject,
+                body,
+                priority,
+                anima_name,
+                interaction=interaction,
+            )
 
         # Fall back to webhook mode
         webhook_url = self._config.get("webhook_url", "")
@@ -87,6 +127,8 @@ class SlackChannel(NotificationChannel):
         body: str,
         priority: str,
         anima_name: str,
+        *,
+        interaction: InteractionRequest | None = None,
     ) -> str:
         channel = self._config.get("channel", "")
         if not channel:
@@ -111,6 +153,9 @@ class SlackChannel(NotificationChannel):
             if icon_url:
                 payload["icon_url"] = icon_url
 
+        if interaction is not None:
+            payload["blocks"] = _build_interactive_blocks(text, interaction)
+
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
@@ -125,6 +170,21 @@ class SlackChannel(NotificationChannel):
                     logger.error(msg)
                     return msg
 
+                if interaction is not None and data.get("ts"):
+                    try:
+                        from core.notification.interactive import get_interaction_router
+
+                        await get_interaction_router().update_message_ts(
+                            interaction.callback_id,
+                            "slack",
+                            str(data["ts"]),
+                        )
+                    except Exception:
+                        logger.debug(
+                            "Failed to persist interactive Slack ts",
+                            exc_info=True,
+                        )
+
                 if anima_name and data.get("ts"):
                     try:
                         from core.notification.reply_routing import (
@@ -136,6 +196,7 @@ class SlackChannel(NotificationChannel):
                             channel=data.get("channel", channel),
                             anima_name=anima_name,
                             notification_text=f"{subject}\n{body}"[:2000],
+                            callback_id=interaction.callback_id if interaction is not None else "",
                         )
                     except Exception:
                         logger.debug(

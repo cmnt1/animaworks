@@ -7,6 +7,119 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-21
+
+### Added
+
+#### Discord Integration
+- Discord連携を追加 — Gateway Bot + Webhook + チャネル同期 + UI (#156)
+- per-channelリードAnima — `channel_members` の先頭メンバーがチャネル担当
+- 全ロールテンプレートのデフォルト外部ツールにDiscord・Notionを追加
+
+#### Slack Enhancement
+- Slack受信メッセージにチャネル名・宛先注釈・observe intentを追加
+- Board→Slack双方向同期を有効化
+- Slackアバター自動同期 + 自動返信にAnimaアイコン表示
+- XSERVERへのSlackアバター自動アップロードとicon_url自動解決
+- `AVATAR_URL__` で .env 経由のSlackアバターURL対応
+- `default_anima` のみチャンネルメッセージに自動応答
+- 限定チャンネル対応 + Shared bot fallbackガード
+
+#### Execution & Models
+- MICRO tier + compact_comm ツールプロファイル追加（8Kコンテキストモデル対応）
+- Gemma 4 モデルサポート追加（Mode A、コンテキストウィンドウ、ベンチマーク）
+- nanoGPT を LLM プロバイダとして追加
+- Codex サブスクリプションモデルをモデルピッカーに追加
+- ロールベースのローカルLLMプリセットを追加
+- Anthropic サブスクリプション認証、Claude Code CLI検出、Diffusersローカルバックエンド追加
+
+#### TaskExec & Agent
+- TaskExec にフルコンテキストシステムプロンプトを付与（Minimal → Full）
+- TaskExec からの Agent/Task サブタスク生成をブロック
+
+#### Notification
+- `call_human` にインタラクティブモード追加 — チャネル横断の承認ボタン
+
+#### Memory & Prompt
+- S-mode アイドルコンパクションをactivity_log + セッション破棄ベースにリライト
+- Inbox (DM) の Priming とプロンプト構築をChat同等に強化
+
+#### Usage & Dashboard
+- Usage ダッシュボード、Usage Governor、マルチプロバイダ対応追加
+- nanoGPT usage をダッシュボードに追加（3カラム: Claude / OpenAI / nanoGPT）
+- Runway・着地予測・Refresh ボタンをダッシュボードに追加
+- Usage Governor に時間比例のウィークリー使用制約を追加
+
+#### Image Generation
+- IP-Adapter Face Reference サポートの改善（全画像生成バックエンド対応）
+- Face Reference 画像の直接インポートオプションをアセット管理に追加
+- remake-preview にStepsスライダー追加（品質/速度のユーザー制御）
+- Diffusers IP-Adapter で OpenCV による顔検出・クロップ
+- PIL高速パス（低VRAMでvibe reference利用時にSDXLスキップ）
+
+#### CLI & Audit
+- `animaworks anima audit` に `--date` オプション追加（単日クエリ）
+- 日本語/エイリアス名でのAnima解決をサポート
+
+#### UI
+- Anima 詳細エディタ、パラメータ化ルート追加
+- 権限UIにパス別read-onlyトグル追加
+- チームビルダーに8つの新ロール追加・OpenAIモデルリスト拡張
+- Web検索（DuckDuckGo）、アセットfullbody-onlyモード追加
+
+#### CI/CD
+- PyPI publishing ワークフロー追加（Trusted Publishing）
+
+### Changed
+- Agent/Task ツールをハードブロック方式に変更（intercepting to pending → hard-block）
+- `animaworks anima audit` をレポートモードに統一（サマリーモードを廃止）
+- Anima name regex が日本語エイリアス・助詞（は、に、を等）に対応
+
+### Fixed
+
+#### Supervisor & Background
+- Consolidation を busy_hang 検出から除外、cron command timeout を追加
+- 全cronジョブ登録に `misfire_grace_time=600` を追加
+- Consolidation IPC タイムアウトを600秒→1800秒に延長
+- Phase B でモデルをオーバーライドする際のexecutorスワップ修正
+- `DEFAULT_CONSOLIDATION_MODEL` から `anthropic/` プレフィックスを削除
+- `supervisor.stop()` の NoneType poll エラーガード
+- 不審な・POSIXのみのcronコマンドをWindowsでブロック
+
+#### Slack
+- `default_anima` 欠損時に利用可能botへのフォールバック
+- Slackチャネル同期で missing_scope をdebugレベルに引き下げ
+- Slackアイコン URL解決の強化（不正テンプレート・非httpスキーム対応）+ 3層アイコンURL設定追加
+
+#### Discord
+- inbox処理中の `discord_channel_post` ブロック（重複防止）
+- Discord auto_reply 指示の強化（重複投稿防止）
+- Guild の `#dm-*` チャネルをDMとして扱い `intent=question` をルーティング
+- `discord_channel_sync` の None チェック修正
+
+#### Image Generation
+- IP-Adapter 使用後の UNet `encoder_hid_dim_type` 復元
+- SCRFD出力パースをInsightFace ONNX形式に対応（2-D shape、RGB→BGRチャネル順序修正）
+- IP-Adapter の毎回リロードでFace Reference安定性向上
+- remake-preview 中のアバター上書き防止（リトライフィードバックループ解消）
+- low-VRAM ステップキャップを10→25に引き上げ（顔品質改善）
+- LLM プロンプト合成に45秒タイムアウトを追加
+- remake-preview セッション中のアセット再調整をスキップ
+
+#### Prompt & Priming
+- TIER_MICRO で Priming をスキップ
+- MICRO tier 境界を8192コンテキストウィンドウに調整
+
+#### Governor
+- Governor notify で Messenger API 使用を修正、i18n subject追加
+- Heartbeat レイヤー違反の削除、Ollama プリセットガード追加
+- PR #149 機能のセーフデフォルト適用 (#153 #154 #155)
+
+#### Other
+- Brave Search バックエンド復元（DuckDuckGo フォールバック付き）
+- `pyproject.toml` セクション順序とPEP 639準拠修正
+- サイレント `except Exception: pass` をlogger.debugに置換
+
 ## [0.6.3] - 2026-04-02
 
 ### Added

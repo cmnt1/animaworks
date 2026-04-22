@@ -17,7 +17,6 @@ import pytest
 
 from core.notification.notifier import HumanNotifier, NotificationChannel
 
-
 # ── _resolve_credential_with_vault (base class) ─────────────
 
 
@@ -28,8 +27,15 @@ class _DummyChannel(NotificationChannel):
     def channel_type(self) -> str:
         return "dummy"
 
-    async def send(self, subject: str, body: str, priority: str = "normal",
-                   *, anima_name: str = "") -> str:
+    async def send(
+        self,
+        subject: str,
+        body: str,
+        priority: str = "normal",
+        *,
+        anima_name: str = "",
+        interaction: Any | None = None,
+    ) -> str:
         return "dummy: OK"
 
 
@@ -109,7 +115,7 @@ class _OkChannel(NotificationChannel):
     def channel_type(self) -> str:
         return "ok_ch"
 
-    async def send(self, subject, body, priority="normal", *, anima_name=""):
+    async def send(self, subject, body, priority="normal", *, anima_name="", interaction=None):
         return "ok_ch: OK"
 
 
@@ -118,7 +124,7 @@ class _FailChannel(NotificationChannel):
     def channel_type(self) -> str:
         return "fail_ch"
 
-    async def send(self, subject, body, priority="normal", *, anima_name=""):
+    async def send(self, subject, body, priority="normal", *, anima_name="", interaction=None):
         return "fail_ch: ERROR - broken"
 
 
@@ -127,7 +133,7 @@ class _RaiseChannel(NotificationChannel):
     def channel_type(self) -> str:
         return "raise_ch"
 
-    async def send(self, subject, body, priority="normal", *, anima_name=""):
+    async def send(self, subject, body, priority="normal", *, anima_name="", interaction=None):
         raise ConnectionError("connection refused")
 
 
@@ -144,7 +150,7 @@ class TestNotifierPartialFailureLogging:
     async def test_partial_failure_logs_warning(self, caplog):
         notifier = HumanNotifier([_OkChannel({}), _FailChannel({})])
         with caplog.at_level(logging.WARNING, logger="animaworks.notification"):
-            results = await notifier.notify("test", "body")
+            await notifier.notify("test", "body")
         assert any("partial failure" in r.message for r in caplog.records)
         warning = [r for r in caplog.records if "partial failure" in r.message][0]
         assert "failed=1" in warning.message

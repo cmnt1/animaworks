@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from core.config.models import HumanNotificationConfig, NotificationChannelConfig
+from core.notification.interactive import InteractionRequest
 
 logger = logging.getLogger("animaworks.notification")
 
@@ -47,6 +48,7 @@ class NotificationChannel(ABC):
         priority: str = "normal",
         *,
         anima_name: str = "",
+        interaction: InteractionRequest | None = None,
     ) -> str:
         """Send a notification. Returns a status message."""
 
@@ -149,6 +151,7 @@ class HumanNotifier:
         priority: str = "normal",
         *,
         anima_name: str = "",
+        interaction: InteractionRequest | None = None,
     ) -> list[str]:
         """Send notification to all channels in parallel.
 
@@ -162,7 +165,10 @@ class HumanNotifier:
             priority = "normal"
 
         results = await asyncio.gather(
-            *[ch.send(subject, body, priority, anima_name=anima_name) for ch in self._channels],
+            *[
+                ch.send(subject, body, priority, anima_name=anima_name, interaction=interaction)
+                for ch in self._channels
+            ],
             return_exceptions=True,
         )
 

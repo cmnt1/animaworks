@@ -196,6 +196,7 @@ class DiscordClient:
         content: str,
         *,
         reply_to: str | None = None,
+        components: list[dict[str, Any]] | None = None,
     ) -> dict:
         """POST /channels/{channel_id}/messages with optional reply reference."""
         body: dict[str, Any] = {"content": content}
@@ -204,6 +205,8 @@ class DiscordClient:
                 "message_id": reply_to,
                 "channel_id": channel_id,
             }
+        if components:
+            body["components"] = components
         result = self._request("POST", f"/channels/{channel_id}/messages", json=body)
         return result if isinstance(result, dict) else {}
 
@@ -278,22 +281,29 @@ class DiscordClient:
         self,
         webhook_id: str,
         webhook_token: str,
-        content: str,
+        content: str | None = None,
         *,
         username: str | None = None,
         avatar_url: str | None = None,
         thread_id: str | None = None,
+        components: list[dict[str, Any]] | None = None,
     ) -> dict:
         """POST /webhooks/{id}/{token} — execute a webhook.
 
         Uses the webhook token URL (no Bot Authorization needed).
         Supports per-message ``username`` and ``avatar_url`` override.
         """
-        body: dict[str, Any] = {"content": content[:DISCORD_MESSAGE_LIMIT]}
+        body: dict[str, Any] = {}
+        if content is not None:
+            body["content"] = content[:DISCORD_MESSAGE_LIMIT]
         if username:
             body["username"] = username
         if avatar_url:
             body["avatar_url"] = avatar_url
+        if components:
+            body["components"] = components
+        if "content" not in body and "components" not in body:
+            body["content"] = ""
         params: dict[str, str] = {"wait": "true"}
         if thread_id:
             params["thread_id"] = thread_id

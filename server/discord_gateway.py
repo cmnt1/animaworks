@@ -112,6 +112,220 @@ def _route_to_board(
 # ── Annotation builder ───────────────────────────────────────
 
 
+def _interaction_custom_id(interaction_data: Any) -> str:
+    """Return ``custom_id`` from discord.py interaction data (object or mapping)."""
+    if interaction_data is None:
+        return ""
+    cid = getattr(interaction_data, "custom_id", None)
+    if isinstance(cid, str) and cid:
+        return cid
+    if isinstance(interaction_data, dict):
+        return str(interaction_data.get("custom_id") or "")
+    return ""
+
+
+def _modal_extract_comment_text(interaction_data: Any) -> str:
+    """Extract ``comment_text`` value from a modal_submit payload."""
+    rows: Any = getattr(interaction_data, "components", None)
+    if rows is None and isinstance(interaction_data, dict):
+        rows = interaction_data.get("components", [])
+    if not rows:
+        return ""
+    for row in rows:
+        comps: Any = getattr(row, "components", None)
+        if comps is None and isinstance(row, dict):
+            comps = row.get("components", [])
+        if not comps:
+            continue
+        for comp in comps:
+            cc = getattr(comp, "custom_id", None)
+            if cc is None and isinstance(comp, dict):
+                cc = comp.get("custom_id")
+            if str(cc or "") != "comment_text":
+                continue
+            val = getattr(comp, "value", None)
+            if val is None and isinstance(comp, dict):
+                val = comp.get("value")
+            return str(val or "")
+    return ""
+
+
+def _build_discord_comment_modal(dpy: Any, callback_id: str) -> Any:
+    """Build a discord.py :class:`ui.Modal` for interactive comment input."""
+    title = t("interactive.comment_modal_title")
+    label = t("interactive.comment_modal_label")
+
+    class _InteractiveCommentModal(dpy.ui.Modal):
+        def __init__(self) -> None:
+            super().__init__(
+                title=title,
+                custom_id=f"aw_interact_comment:{callback_id}",
+            )
+            self._comment = dpy.ui.TextInput(
+                label=label,
+                style=dpy.TextStyle.paragraph,
+                custom_id="comment_text",
+                required=True,
+                max_length=2000,
+            )
+            self.add_item(self._comment)
+
+    return _InteractiveCommentModal()
+
+
+async def _handle_discord_interaction(interaction: Any, dpy: Any) -> None:
+    """Handle button and modal interactions for :mod:`core.notification.interactive`."""
+    # ── Modal submit (comment) ─────────────────────────────────────
+    if interaction.type is dpy.InteractionType.modal_submit:
+        modal_cid = _interaction_custom_id(interaction.data)
+        if not modal_cid.startswith("aw_interact_comment:"):
+            return
+        callback_id = modal_cid.removeprefix("aw_interact_comment:")
+        comment_text = _modal_extract_comment_text(interaction.data)
+        user_id = str(interaction.user.id)
+        user_name = interaction.user.display_name or interaction.user.name
+
+        from core.notification.interactive import get_interaction_router
+
+        router = get_interaction_router()
+        try:
+            req = await router.lookup(callback_id)
+        except Exception:
+            logger.exception("InteractionRouter.lookup failed for modal callback_id=%s", callback_id)
+            try:
+                await interaction.response.send_message(t("interactive.expired"), ephemeral=True)
+            except Exception:
+                logger.debug("ephemeral send after lookup error failed", exc_info=True)
+            return
+
+        if req is None:
+            try:
+                await interaction.response.send_message(t("interactive.expired"), ephemeral=True)
+            except Exception:
+                logger.debug("ephemeral send for expired modal failed", exc_info=True)
+            return
+
+        allowed = req.allowed_users.get("discord", [])
+        if allowed and user_id not in allowed:
+            try:
+                await interaction.response.send_message(t("interactive.unauthorized"), ephemeral=True)
+            except Exception:
+                logger.debug("ephemeral send for unauthorized modal failed", exc_info=True)
+            return
+
+        try:
+            result = await router.resolve(
+                callback_id,
+                decision="comment",
+                actor=user_name,
+                source="discord",
+                comment=comment_text,
+            )
+        except Exception:
+            logger.exception("InteractionRouter.resolve failed for modal callback_id=%s", callback_id)
+            try:
+                await interaction.response.send_message(t("interactive.already_resolved"), ephemeral=True)
+            except Exception:
+                logger.debug("ephemeral send after resolve error failed", exc_info=True)
+            return
+
+        if result is None:
+            try:
+                await interaction.response.send_message(t("interactive.already_resolved"), ephemeral=True)
+            except Exception:
+                logger.debug("ephemeral send for already_resolved modal failed", exc_info=True)
+            return
+
+        try:
+            await interaction.response.send_message(t("interactive.comment_submitted"), ephemeral=True)
+        except Exception:
+            logger.debug("ephemeral send comment_submitted failed", exc_info=True)
+        return
+
+    # ── Message components (buttons) ───────────────────────────────
+    if interaction.type is not dpy.InteractionType.component:
+        return
+
+    custom_id = _interaction_custom_id(interaction.data)
+    if not custom_id.startswith("aw_interact:"):
+        return
+
+    parts = custom_id.split(":", 2)
+    if len(parts) != 3:
+        return
+    _, callback_id, option = parts
+
+    user_id = str(interaction.user.id)
+    user_name = interaction.user.display_name or interaction.user.name
+
+    from core.notification.interactive import get_interaction_router
+
+    router = get_interaction_router()
+
+    try:
+        req = await router.lookup(callback_id)
+    except Exception:
+        logger.exception("InteractionRouter.lookup failed for callback_id=%s", callback_id)
+        try:
+            await interaction.response.send_message(t("interactive.expired"), ephemeral=True)
+        except Exception:
+            logger.debug("ephemeral send after lookup error failed", exc_info=True)
+        return
+
+    if req is None:
+        try:
+            await interaction.response.send_message(t("interactive.expired"), ephemeral=True)
+        except Exception:
+            logger.debug("ephemeral send for expired interaction failed", exc_info=True)
+        return
+
+    allowed = req.allowed_users.get("discord", [])
+    if allowed and user_id not in allowed:
+        try:
+            await interaction.response.send_message(t("interactive.unauthorized"), ephemeral=True)
+        except Exception:
+            logger.debug("ephemeral send for unauthorized failed", exc_info=True)
+        return
+
+    if option == "comment":
+        try:
+            await interaction.response.send_modal(_build_discord_comment_modal(dpy, callback_id))
+        except Exception:
+            logger.exception("send_modal for comment failed callback_id=%s", callback_id)
+        return
+
+    try:
+        result = await router.resolve(
+            callback_id,
+            decision=option,
+            actor=user_name,
+            source="discord",
+        )
+    except Exception:
+        logger.exception("InteractionRouter.resolve failed for callback_id=%s", callback_id)
+        try:
+            await interaction.response.send_message(t("interactive.already_resolved"), ephemeral=True)
+        except Exception:
+            logger.debug("ephemeral send after resolve error failed", exc_info=True)
+        return
+
+    if result is None:
+        try:
+            await interaction.response.send_message(t("interactive.already_resolved"), ephemeral=True)
+        except Exception:
+            logger.debug("ephemeral send for already_resolved failed", exc_info=True)
+        return
+
+    resolved_text = t("interactive.resolved_by", actor=user_name, decision=option)
+    try:
+        if interaction.message is None:
+            await interaction.response.send_message(resolved_text, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=resolved_text, view=None)
+    except Exception:
+        logger.exception("edit_message after interactive resolve failed callback_id=%s", callback_id)
+
+
 def _build_discord_annotation(
     is_dm: bool,
     has_mention: bool,
@@ -230,6 +444,19 @@ class DiscordGatewayManager:
         @client.event
         async def on_message(message: Any) -> None:
             await self._handle_message(message)
+
+        @client.event
+        async def on_interaction(interaction: Any) -> None:
+            try:
+                await _handle_discord_interaction(interaction, _discord)
+            except Exception:
+                logger.exception("Error handling Discord interaction")
+                try:
+                    if interaction.response.is_done():
+                        return
+                    await interaction.response.send_message(t("interactive.error"), ephemeral=True)
+                except Exception:
+                    pass
 
         # Start in background task (client.start is blocking)
         asyncio.create_task(self._run_client(client, token))
@@ -513,7 +740,10 @@ class DiscordGatewayManager:
                 self._anima_name_re is not None and self._anima_name_re.search(cleaned_text) is not None
             )
             annotation = _build_discord_annotation(
-                is_dm, has_mention, ch_name, routed_as_lead=routed_as_lead,
+                is_dm,
+                has_mention,
+                ch_name,
+                routed_as_lead=routed_as_lead,
             )
             intent = "question"
             full_content = annotation + thread_ctx + cleaned_text

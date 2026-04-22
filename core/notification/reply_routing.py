@@ -54,6 +54,7 @@ def save_notification_mapping(
     anima_name: str,
     *,
     notification_text: str = "",
+    callback_id: str = "",
 ) -> None:
     """Persist a Slack message ts → Anima mapping for reply routing.
 
@@ -63,6 +64,7 @@ def save_notification_mapping(
         anima_name: Name of the Anima that sent the notification.
         notification_text: Original notification content (subject + body)
             so that thread replies can include context about what was notified.
+        callback_id: When set, thread replies with a number resolve interactive approval.
     """
     path = _map_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,6 +82,8 @@ def save_notification_mapping(
             }
             if notification_text:
                 entry["notification_text"] = notification_text[:2000]
+            if callback_id:
+                entry["callback_id"] = callback_id
             data[ts] = entry
             _prune_old_entries_inplace(data)
 
@@ -94,8 +98,8 @@ def save_notification_mapping(
 def lookup_notification_mapping(thread_ts: str) -> dict[str, str] | None:
     """Look up which Anima sent the notification with the given ts.
 
-    Returns ``{"anima": "...", "channel": "...", "notification_text": "..."}``
-    or ``None``.  ``notification_text`` may be empty for older mappings.
+    Returns ``{"anima": "...", "channel": "...", "notification_text": "...", "callback_id": "..."}``
+    or ``None``.  ``notification_text`` and ``callback_id`` may be empty for older mappings.
     """
     path = _map_path()
     if not path.exists():
@@ -112,6 +116,7 @@ def lookup_notification_mapping(thread_ts: str) -> dict[str, str] | None:
         "anima": entry["anima"],
         "channel": entry["channel"],
         "notification_text": entry.get("notification_text", ""),
+        "callback_id": entry.get("callback_id", ""),
     }
 
 
@@ -157,7 +162,7 @@ def _age_days(iso_str: str, now: datetime) -> float:
         return float("inf")
 
 
-def route_thread_reply(
+async def route_thread_reply(
     event: dict,
     shared_dir: Path,
     *,
@@ -169,6 +174,10 @@ def route_thread_reply(
     is found, sanitizes the reply text, fetches thread context (so the
     Anima knows what the reply is about), and delivers it to the
     originating Anima's inbox via Messenger.receive_external().
+
+    When the mapping includes ``callback_id`` (interactive call_human) and the
+    reply is a plain number (1, 2, 3, ...), resolves the interaction instead
+    of delivering a free-form thread reply.
 
     Args:
         event: Slack message event dict containing at minimum 'thread_ts',
@@ -187,6 +196,43 @@ def route_thread_reply(
     mapping = lookup_notification_mapping(thread_ts)
     if mapping is None:
         return False
+
+    callback_id = (mapping.get("callback_id") or "").strip()
+    raw_reply = (event.get("text") or "").strip()
+    if callback_id and raw_reply.isdigit():
+        from core.notification.interactive import get_interaction_router
+
+        router = get_interaction_router()
+        req = await router.lookup(callback_id)
+        if req is not None:
+            idx = int(raw_reply) - 1
+            if 0 <= idx < len(req.options):
+                decision = req.options[idx]
+                user_id = str(event.get("user") or "")
+                actor = user_id
+                try:
+                    from server.slack_socket import _get_cached_user_name
+
+                    actor = _get_cached_user_name(user_id) or user_id
+                except Exception:
+                    logger.debug(
+                        "Failed to resolve Slack display name for text_reply actor",
+                        exc_info=True,
+                    )
+                result = await router.resolve(
+                    callback_id,
+                    decision=decision,
+                    actor=actor,
+                    source="text_reply",
+                )
+                if result is not None:
+                    logger.info(
+                        "Interactive text reply resolved: thread_ts=%s callback_id=%s decision=%s",
+                        thread_ts,
+                        callback_id,
+                        decision,
+                    )
+                    return True
 
     target = mapping["anima"]
     text = sanitize_slack_reply(event.get("text", ""))

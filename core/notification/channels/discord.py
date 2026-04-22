@@ -9,10 +9,28 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from core.notification.interactive import InteractionRequest
 from core.notification.notifier import NotificationChannel, register_channel
 from core.tools._discord_markdown import md_to_discord
 
 logger = logging.getLogger("animaworks.notification.discord")
+
+
+def _build_discord_components(interaction: InteractionRequest) -> list[dict[str, Any]]:
+    """Build Discord Message Components (Action Row with buttons)."""
+    style_map = {"approve": 3, "reject": 4, "comment": 2}  # 3=Success/green, 4=Danger/red, 2=Secondary/gray
+    emoji_map = {"approve": "✅", "reject": "❌", "comment": "💬"}
+    buttons: list[dict[str, Any]] = []
+    for opt in interaction.options:
+        buttons.append(
+            {
+                "type": 2,  # Button
+                "style": style_map.get(opt, 2),
+                "label": f"{emoji_map.get(opt, '▶️')} {opt.capitalize()}",
+                "custom_id": f"aw_interact:{interaction.callback_id}:{opt}",
+            }
+        )
+    return [{"type": 1, "components": buttons}]  # Action Row
 
 
 @register_channel("discord")
@@ -46,6 +64,7 @@ class DiscordChannel(NotificationChannel):
         priority: str = "normal",
         *,
         anima_name: str = "",
+        interaction: InteractionRequest | None = None,
     ) -> str:
         bot_token = self._config.get("bot_token", "")
         if not bot_token:
@@ -67,16 +86,34 @@ class DiscordChannel(NotificationChannel):
 
         channel_id = self._config.get("channel_id", "")
 
+        components = _build_discord_components(interaction) if interaction is not None else None
+
         if channel_id and bot_token:
             # Use webhook manager for channel posting with Anima identity
-            return await self._send_via_channel(bot_token, channel_id, text, anima_name)
+            return await self._send_via_channel(
+                bot_token,
+                channel_id,
+                text,
+                anima_name,
+                interaction=interaction,
+                components=components,
+            )
 
         user_id = self._config.get("user_id", "")
         if user_id and bot_token:
-            return await self._send_via_dm(bot_token, user_id, text, anima_name)
+            return await self._send_via_dm(
+                bot_token,
+                user_id,
+                text,
+                anima_name,
+                interaction=interaction,
+                components=components,
+            )
 
         if webhook_url:
-            return await self._send_via_webhook(webhook_url, text, anima_name)
+            return await self._send_via_webhook(
+                webhook_url, text, anima_name, interaction=interaction, components=components
+            )
 
         if bot_token and not user_id and not channel_id:
             return "discord: ERROR - bot_token set but no user_id or channel_id configured"
@@ -93,10 +130,20 @@ class DiscordChannel(NotificationChannel):
         return f"{prefix}**{subject}**{sender}\n{body}"
 
     @staticmethod
-    async def _send_via_dm(token: str, user_id: str, text: str, anima_name: str = "") -> str:
+    async def _send_via_dm(
+        token: str,
+        user_id: str,
+        text: str,
+        anima_name: str = "",
+        *,
+        interaction: InteractionRequest | None = None,
+        components: list[dict[str, Any]] | None = None,
+    ) -> str:
         """Send a DM to a Discord user, preferring #dm-{anima} webhook."""
-        # Try #dm-{anima} channel via webhook first (Anima identity)
-        if anima_name:
+        # Try #dm-{anima} channel via webhook first (Anima identity).
+        # Note: webhook path doesn't support interactive components; skip when
+        # components are required so buttons render via the Bot DM fallback.
+        if anima_name and not components:
             try:
                 from core.config.models import load_config
                 from core.discord_webhooks import get_webhook_manager
@@ -114,8 +161,9 @@ class DiscordChannel(NotificationChannel):
             except Exception:
                 logger.debug("Discord webhook DM notification fallback", exc_info=True)
 
-        # Fallback: Bot DM
+        # Fallback: Bot DM (supports interactive components)
         try:
+            from core.notification.interactive import get_interaction_router
             from core.tools._discord_client import DiscordClient
 
             client = DiscordClient(token=token)
@@ -123,33 +171,64 @@ class DiscordChannel(NotificationChannel):
             dm_channel_id = str(dm.get("id", ""))
             if not dm_channel_id:
                 return f"discord: ERROR - failed to open DM with user {user_id}"
-            result = client.send_message(dm_channel_id, text[:2000])
-            msg_id = result.get("id", "")
+            result = client.send_message(
+                dm_channel_id,
+                text[:2000],
+                components=components,
+            )
+            msg_id = str(result.get("id", ""))
             logger.info("Discord notification sent via DM: user=%s msg=%s", user_id, msg_id)
+            if interaction is not None and msg_id:
+                await get_interaction_router().update_message_ts(interaction.callback_id, "discord", msg_id)
             return f"discord: DM sent to {user_id} (msg_id={msg_id})"
         except Exception as exc:
             logger.exception("Discord DM notification failed")
             return f"discord: ERROR - {exc}"
 
     @staticmethod
-    async def _send_via_channel(token: str, channel_id: str, text: str, anima_name: str) -> str:
+    async def _send_via_channel(
+        token: str,
+        channel_id: str,
+        text: str,
+        anima_name: str,
+        *,
+        interaction: InteractionRequest | None = None,
+        components: list[dict[str, Any]] | None = None,
+    ) -> str:
         """Send to a Discord channel via webhook manager (Anima identity)."""
         try:
             from core.discord_webhooks import get_webhook_manager
+            from core.notification.interactive import get_interaction_router
 
             wm = get_webhook_manager()
-            msg_id = wm.send_as_anima(channel_id, anima_name or "AnimaWorks", text)
+            msg_id = wm.send_as_anima(
+                channel_id,
+                anima_name or "AnimaWorks",
+                text,
+                components=components,
+            )
             logger.info("Discord notification sent via channel: ch=%s msg=%s", channel_id, msg_id)
+            if interaction is not None and msg_id:
+                await get_interaction_router().update_message_ts(interaction.callback_id, "discord", msg_id)
             return f"discord: channel {channel_id} (msg_id={msg_id})"
         except Exception as exc:
             logger.exception("Discord channel notification failed")
             return f"discord: ERROR - {exc}"
 
     @staticmethod
-    async def _send_via_webhook(webhook_url: str, text: str, anima_name: str) -> str:
+    async def _send_via_webhook(
+        webhook_url: str,
+        text: str,
+        anima_name: str,
+        *,
+        interaction: InteractionRequest | None = None,
+        components: list[dict[str, Any]] | None = None,
+    ) -> str:
         """Send via raw webhook URL."""
         try:
             import httpx
+
+            from core.notification.interactive import get_interaction_router
 
             payload: dict[str, Any] = {"content": text[:2000]}
             if anima_name:
@@ -162,11 +241,17 @@ class DiscordChannel(NotificationChannel):
                         payload["avatar_url"] = avatar
                 except Exception:
                     logger.debug("Failed to resolve avatar for %s", anima_name, exc_info=True)
+            if components:
+                payload["components"] = components
 
             async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(webhook_url, json=payload)
+                resp = await client.post(webhook_url, json=payload, params={"wait": "true"})
                 resp.raise_for_status()
+                data = resp.json()
+                msg_id = str(data.get("id", "")) if isinstance(data, dict) else ""
                 logger.info("Discord notification sent via webhook")
+                if interaction is not None and msg_id:
+                    await get_interaction_router().update_message_ts(interaction.callback_id, "discord", msg_id)
                 return "discord: webhook sent"
         except Exception as exc:
             logger.exception("Discord webhook notification failed")

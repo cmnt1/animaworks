@@ -45,6 +45,7 @@ class TestNotificationMapping:
         assert result["anima"] == "mikoto"
         assert result["channel"] == "C0123ABC"
         assert result["notification_text"] == ""
+        assert result.get("callback_id", "") == ""
 
     def test_save_and_lookup_with_notification_text(self, routing_dir: Path) -> None:
         from core.notification.reply_routing import (
@@ -63,6 +64,25 @@ class TestNotificationMapping:
         assert result is not None
         assert result["anima"] == "mikoto"
         assert result["notification_text"] == "Alert: disk full\nPlease investigate."
+        assert result.get("callback_id", "") == ""
+
+    def test_save_and_lookup_with_callback_id(self, routing_dir: Path) -> None:
+        from core.notification.reply_routing import (
+            lookup_notification_mapping,
+            save_notification_mapping,
+        )
+
+        save_notification_mapping(
+            "1234567890.123456",
+            "C0123ABC",
+            "mikoto",
+            notification_text="x",
+            callback_id="cb-abc",
+        )
+
+        result = lookup_notification_mapping("1234567890.123456")
+        assert result is not None
+        assert result["callback_id"] == "cb-abc"
 
     def test_lookup_unknown_ts(self, routing_dir: Path) -> None:
         from core.notification.reply_routing import lookup_notification_mapping
@@ -258,7 +278,8 @@ class TestSanitizeSlackReply:
 
 
 class TestRouteThreadReply:
-    def test_thread_reply_routes_to_originator(self, routing_dir: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_thread_reply_routes_to_originator(self, routing_dir: Path) -> None:
         from core.notification.reply_routing import save_notification_mapping
 
         save_notification_mapping("parent.ts", "C001", "mikoto")
@@ -275,7 +296,7 @@ class TestRouteThreadReply:
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
         with patch("core.messenger.Messenger", return_value=messenger_mock):
-            result = route_thread_reply(event, shared_dir)
+            result = await route_thread_reply(event, shared_dir)
 
         assert result is True
         call_kwargs = messenger_mock.receive_external.call_args[1]
@@ -286,7 +307,8 @@ class TestRouteThreadReply:
         assert call_kwargs["external_thread_ts"] == "parent.ts"
         assert "Got it, looking into this now" in call_kwargs["content"]
 
-    def test_thread_reply_includes_stored_notification_text(self, routing_dir: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_thread_reply_includes_stored_notification_text(self, routing_dir: Path) -> None:
         from core.notification.reply_routing import save_notification_mapping
 
         save_notification_mapping(
@@ -308,7 +330,7 @@ class TestRouteThreadReply:
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
         with patch("core.messenger.Messenger", return_value=messenger_mock):
-            result = route_thread_reply(event, shared_dir)
+            result = await route_thread_reply(event, shared_dir)
 
         assert result is True
         call_kwargs = messenger_mock.receive_external.call_args[1]
@@ -317,7 +339,8 @@ class TestRouteThreadReply:
         assert "Disk usage is at 95%" in call_kwargs["content"]
         assert "[Thread context" in call_kwargs["content"]
 
-    def test_thread_reply_with_slack_token_fetches_api_context(self, routing_dir: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_thread_reply_with_slack_token_fetches_api_context(self, routing_dir: Path) -> None:
         from core.notification.reply_routing import save_notification_mapping
 
         save_notification_mapping("parent.ts", "C001", "mikoto")
@@ -346,14 +369,15 @@ class TestRouteThreadReply:
                 return_value=thread_ctx,
             ),
         ):
-            result = route_thread_reply(event, shared_dir, slack_token="xoxb-test")
+            result = await route_thread_reply(event, shared_dir, slack_token="xoxb-test")
 
         assert result is True
         call_kwargs = messenger_mock.receive_external.call_args[1]
         assert "対応した" in call_kwargs["content"]
         assert "Server alert: disk 95%" in call_kwargs["content"]
 
-    def test_no_thread_ts_returns_false(self, routing_dir: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_no_thread_ts_returns_false(self, routing_dir: Path) -> None:
         event = {
             "type": "message",
             "text": "hello world",
@@ -361,9 +385,10 @@ class TestRouteThreadReply:
             "channel": "C001",
             "ts": "msg.ts",
         }
-        assert route_thread_reply(event, routing_dir / "shared") is False
+        assert await route_thread_reply(event, routing_dir / "shared") is False
 
-    def test_unknown_thread_ts_returns_false(self, routing_dir: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_unknown_thread_ts_returns_false(self, routing_dir: Path) -> None:
         event = {
             "type": "message",
             "text": "reply to unknown thread",
@@ -372,9 +397,10 @@ class TestRouteThreadReply:
             "ts": "reply.ts",
             "thread_ts": "unknown.thread.ts",
         }
-        assert route_thread_reply(event, routing_dir / "shared") is False
+        assert await route_thread_reply(event, routing_dir / "shared") is False
 
-    def test_empty_text_returns_false(self, routing_dir: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_empty_text_returns_false(self, routing_dir: Path) -> None:
         from core.notification.reply_routing import save_notification_mapping
 
         save_notification_mapping("parent.ts", "C001", "aoi")
@@ -387,9 +413,10 @@ class TestRouteThreadReply:
             "ts": "reply.ts",
             "thread_ts": "parent.ts",
         }
-        assert route_thread_reply(event, routing_dir / "shared") is False
+        assert await route_thread_reply(event, routing_dir / "shared") is False
 
-    def test_sanitizes_text_before_delivery(self, routing_dir: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_sanitizes_text_before_delivery(self, routing_dir: Path) -> None:
         from core.notification.reply_routing import save_notification_mapping
 
         save_notification_mapping("parent.ts", "C001", "aoi")
@@ -406,13 +433,65 @@ class TestRouteThreadReply:
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
         with patch("core.messenger.Messenger", return_value=messenger_mock):
-            result = route_thread_reply(event, shared_dir)
+            result = await route_thread_reply(event, shared_dir)
 
         assert result is True
         call_kwargs = messenger_mock.receive_external.call_args[1]
         assert "<@U0123BOT>" not in call_kwargs["content"]
         assert "*" not in call_kwargs["content"]
         assert "Acknowledged" in call_kwargs["content"]
+
+    @pytest.mark.asyncio
+    async def test_numbered_reply_resolves_interaction(
+        self,
+        routing_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Thread reply '1'/'2'/… routes to InteractionRouter when callback_id is stored."""
+        import core.notification.interactive as interactive_mod
+
+        monkeypatch.setattr(interactive_mod, "_router", None)
+        monkeypatch.setattr("core.notification.interactive.get_data_dir", lambda: routing_dir)
+        monkeypatch.setattr(
+            "core.notification.interactive.get_shared_dir",
+            lambda: routing_dir / "shared",
+        )
+        (routing_dir / "shared").mkdir(parents=True, exist_ok=True)
+
+        from core.notification.interactive import get_interaction_router
+        from core.notification.reply_routing import save_notification_mapping
+
+        router = get_interaction_router()
+        req = await router.create("mikoto", "approval", ["approve", "reject", "comment"])
+
+        save_notification_mapping(
+            "parent.ts",
+            "C001",
+            "mikoto",
+            notification_text="Please approve\nThing",
+            callback_id=req.callback_id,
+        )
+
+        event = {
+            "type": "message",
+            "text": "2",
+            "user": "U_HUMAN",
+            "channel": "C001",
+            "ts": "reply.ts",
+            "thread_ts": "parent.ts",
+        }
+        shared_dir = routing_dir / "shared"
+        messenger_mock = MagicMock()
+        with (
+            patch("core.messenger.Messenger", return_value=messenger_mock),
+            patch("server.slack_socket._get_cached_user_name", return_value="Human"),
+        ):
+            result = await route_thread_reply(event, shared_dir, slack_token="")
+
+        assert result is True
+        call_kwargs = messenger_mock.receive_external.call_args[1]
+        assert call_kwargs["source"] == "text_reply"
+        assert "reject" in call_kwargs["content"]
 
 
 # ── Backward compatibility ───────────────────────────────

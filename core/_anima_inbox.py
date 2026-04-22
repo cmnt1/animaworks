@@ -141,6 +141,9 @@ def _build_reply_instruction(m: Any) -> str:
     When Slack ``auto_response`` is enabled, returns an ``[auto_reply: ...]``
     annotation instead, telling the LLM that the reply will be sent
     automatically and it should NOT call ``slack_channel_post``.
+
+    When intent is ``observe``, returns an observation-only annotation
+    discouraging the LLM from taking action.
     """
     if m.source == "slack":
         # Slack disabled – Discord migration.  Do not reply via Slack.
@@ -528,9 +531,7 @@ class InboxMixin:
                     # so rate limits, cooldowns, and activity scaling are
                     # bypassed for the duration.  Force main model too.
                     urgent_task_id: str | None = None
-                    is_urgent_inbox = any(
-                        detect_urgent_prefix(part) for part in inbox_result.prompt_parts
-                    )
+                    is_urgent_inbox = any(detect_urgent_prefix(part) for part in inbox_result.prompt_parts)
                     if is_urgent_inbox:
                         urgent_task_id = f"inbox:{senders_str}:{int(started_at.timestamp())}"
                         add_urgent(

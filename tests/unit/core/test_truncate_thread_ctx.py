@@ -2,6 +2,8 @@ from __future__ import annotations
 
 """Unit tests for _truncate_with_thread_ctx in core._anima_inbox."""
 
+import pytest
+
 from core._anima_inbox import (
     _MSG_BODY_BUDGET,
     _RE_THREAD_CTX,
@@ -149,7 +151,8 @@ class TestFetchThreadContextForReply:
 class TestRouteThreadReplyFallback:
     """Test that route_thread_reply fallback uses truncated notification_text."""
 
-    def test_stored_notification_text_truncated(self, monkeypatch, tmp_path):
+    @pytest.mark.asyncio
+    async def test_stored_notification_text_truncated(self, monkeypatch, tmp_path):
         from unittest.mock import MagicMock
 
         from core.notification import reply_routing
@@ -162,6 +165,7 @@ class TestRouteThreadReplyFallback:
                 "anima": "sakura",
                 "channel": "C123",
                 "notification_text": long_notification,
+                "callback_id": "",
             },
         )
         monkeypatch.setattr(
@@ -183,7 +187,8 @@ class TestRouteThreadReplyFallback:
             "user": "U_HUMAN",
             "channel": "C123",
         }
-        result = reply_routing.route_thread_reply(event, tmp_path, slack_token="")
+
+        result = await reply_routing.route_thread_reply(event, tmp_path, slack_token="")
         assert result is True
         assert len(received_content) == 1
         content = received_content[0]

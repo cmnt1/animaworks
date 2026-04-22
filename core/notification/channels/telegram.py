@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import logging
+from typing import Any
 
 import httpx
 
@@ -33,6 +34,7 @@ class TelegramChannel(NotificationChannel):
         priority: str = "normal",
         *,
         anima_name: str = "",
+        interaction: Any | None = None,
     ) -> str:
         token = self._resolve_credential_with_vault(
             "bot_token_env",
@@ -45,6 +47,13 @@ class TelegramChannel(NotificationChannel):
         chat_id = self._config.get("chat_id", "")
         if not chat_id:
             return "telegram: ERROR - chat_id not configured"
+
+        if interaction is not None:
+            from core.config.models import load_config
+            from core.notification.interactive import build_text_fallback
+
+            web_url = load_config().interaction.web_base_url
+            body = body + "\n" + build_text_fallback(interaction, web_base_url=web_url)
 
         prefix = f"[{priority.upper()}] " if priority in ("high", "urgent") else ""
         sender = f" (from {anima_name})" if anima_name else ""

@@ -762,10 +762,28 @@ class LifecycleMixin:
                             stdout=asyncio.subprocess.PIPE,
                             stderr=asyncio.subprocess.PIPE,
                         )
-                        stdout_bytes, stderr_bytes = await proc.communicate()
-                        stdout = stdout_bytes.decode("utf-8", errors="replace")
-                        stderr = stderr_bytes.decode("utf-8", errors="replace")
-                        exit_code = proc.returncode or 0
+                        try:
+                            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=600.0)
+                        except TimeoutError:
+                            logger.warning(
+                                "[%s] Cron command '%s' timed out after 600s, killing subprocess",
+                                self.name,
+                                task_name,
+                            )
+                            try:
+                                proc.kill()
+                            except ProcessLookupError:
+                                pass
+                            try:
+                                await proc.wait()
+                            except ProcessLookupError:
+                                pass
+                            stderr = "TimeoutError: cron command exceeded 600s limit"
+                            exit_code = 1
+                        else:
+                            stdout = stdout_bytes.decode("utf-8", errors="replace")
+                            stderr = stderr_bytes.decode("utf-8", errors="replace")
+                            exit_code = proc.returncode or 0
 
                     elif tool:
                         # Execute internal tool via ToolHandler

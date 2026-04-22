@@ -591,6 +591,19 @@ class CommsToolsMixin:
         subject = args.get("subject", "")
         body = args.get("body", "")
         priority = args.get("priority", "normal")
+        interactive = bool(args.get("interactive", False))
+        category = str(args.get("category") or "approval")
+        raw_opts = args.get("options", "approve,reject,comment")
+
+        raw_allowed = args.get("allowed_users")
+        allowed_list: list[str]
+        if raw_allowed is None:
+            allowed_list = []
+        elif isinstance(raw_allowed, list):
+            allowed_list = [str(x).strip() for x in raw_allowed if str(x).strip()]
+        else:
+            s = str(raw_allowed).strip()
+            allowed_list = [s] if s else []
 
         if not subject or not body:
             return _error_result(
@@ -598,12 +611,52 @@ class CommsToolsMixin:
                 "subject and body are required",
             )
 
+        interaction_req = None
+        if interactive:
+            from core.config.models import load_config
+            from core.notification.interactive import InteractionRequest, get_interaction_router
+
+            cfg = load_config()
+            defaults = list(cfg.interaction.default_approver_ids)
+            merged = list(dict.fromkeys(allowed_list + defaults))
+            if isinstance(raw_opts, list):
+                opts_list = [str(x).strip() for x in raw_opts if str(x).strip()]
+            else:
+                opts_list = [p.strip() for p in str(raw_opts).split(",") if p.strip()]
+            if not opts_list:
+                opts_list = ["approve", "reject", "comment"]
+            aud: dict[str, list[str]] = {"slack": merged} if merged else {}
+
+            async def _create_interaction() -> InteractionRequest:
+                return await get_interaction_router().create(
+                    self._anima_name,
+                    category,
+                    opts_list,
+                    allowed_users=aud or None,
+                )
+
+            try:
+                try:
+                    _loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    _loop = None
+                if _loop is not None:
+                    import concurrent.futures
+
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        interaction_req = pool.submit(asyncio.run, _create_interaction()).result(timeout=60)
+                else:
+                    interaction_req = asyncio.run(_create_interaction())
+            except ValueError as ve:
+                return _error_result("InvalidArguments", str(ve))
+
         try:
             coro = self._human_notifier.notify(
                 subject,
                 body,
                 priority,
                 anima_name=self._anima_name,
+                interaction=interaction_req,
             )
             try:
                 loop = asyncio.get_running_loop()
@@ -629,7 +682,9 @@ class CommsToolsMixin:
         }
         self._pending_notifications.append(notif_data)
 
-        return _json.dumps(
-            {"status": "sent", "results": results},
-            ensure_ascii=False,
-        )
+        payload: dict[str, Any] = {"status": "sent", "results": results}
+        if interactive and interaction_req is not None:
+            payload["interactive"] = True
+            payload["callback_id"] = interaction_req.callback_id
+
+        return _json.dumps(payload, ensure_ascii=False)

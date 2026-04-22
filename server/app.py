@@ -666,7 +666,12 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
 
     # ── Auth guard middleware ──────────────────────────────
     # Paths that don't require authentication
-    _AUTH_WHITELIST_PREFIXES = ("/api/auth/login", "/api/setup", "/health")
+    _AUTH_WHITELIST_PREFIXES = (
+        "/api/auth/login",
+        "/api/setup",
+        "/api/approve",
+        "/health",
+    )
 
     @app.middleware("http")
     async def auth_guard(request: Request, call_next):

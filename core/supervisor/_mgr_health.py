@@ -26,6 +26,10 @@ class HealthMixin:
         """Return True if the anima is currently in bootstrap mode."""
         return anima_name in getattr(self, "_bootstrapping", set())
 
+    def is_consolidating(self, anima_name: str) -> bool:
+        """Return True if the anima is currently running daily/weekly consolidation."""
+        return anima_name in getattr(self, "_consolidating", set())
+
     async def _health_check_loop(self) -> None:
         """Periodically pings all processes and handles failures."""
         logger.info("Health check loop started")
@@ -196,6 +200,13 @@ class HealthMixin:
                 if self.is_bootstrapping(anima_name):
                     logger.debug(
                         "Skipping hang detection for %s (bootstrapping)",
+                        anima_name,
+                    )
+                    return
+                # Skip hang detection during daily/weekly consolidation
+                if self.is_consolidating(anima_name):
+                    logger.debug(
+                        "Skipping hang detection for %s (consolidating)",
                         anima_name,
                     )
                     return

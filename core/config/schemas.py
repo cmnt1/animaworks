@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 logger = logging.getLogger("animaworks.config")
 
@@ -287,6 +287,33 @@ class HumanNotificationConfig(BaseModel):
 
     enabled: bool = False
     channels: list[NotificationChannelConfig] = []
+
+
+class InteractionConfig(BaseModel):
+    """Configuration for interactive call_human approvals."""
+
+    default_approver_ids: list[str] = Field(
+        default_factory=list,
+        description="Default Slack user IDs merged with per-call call_human allowed_users.",
+    )
+    ttl_days: int = 7
+    web_base_url: str = ""
+
+    @field_validator("default_approver_ids", mode="before")
+    @classmethod
+    def _coerce_default_approver_ids(cls, v: object) -> list[str]:
+        """Accept legacy dict[str, list[str]] from older config.json."""
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if str(x).strip()]
+        if isinstance(v, dict):
+            out: list[str] = []
+            for ids in v.values():
+                if isinstance(ids, list):
+                    out.extend(str(x).strip() for x in ids if str(x).strip())
+            return out
+        return []
 
 
 class UserAliasConfig(BaseModel):
@@ -731,6 +758,7 @@ class AnimaWorksConfig(BaseModel):
     priming: PrimingConfig = PrimingConfig()
     image_gen: ImageGenConfig = ImageGenConfig()
     human_notification: HumanNotificationConfig = HumanNotificationConfig()
+    interaction: InteractionConfig = InteractionConfig()
     server: ServerConfig = ServerConfig()
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
     background_task: BackgroundTaskConfig = BackgroundTaskConfig()
@@ -788,6 +816,7 @@ __all__ = [
     "HousekeepingConfig",
     "HumanNotificationConfig",
     "ImageGenConfig",
+    "InteractionConfig",
     "LocalLLMConfig",
     "MachineConfig",
     "MediaProxyConfig",

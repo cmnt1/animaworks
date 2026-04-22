@@ -359,11 +359,16 @@ class SchedulerMixin:
                 )
 
             try:
-                response = await handle.send_request(
-                    "run_consolidation",
-                    {"consolidation_type": "daily", "max_turns": max_turns},
-                    timeout=1800.0,
-                )
+                _consolidating: set[str] = getattr(self, "_consolidating", set())
+                _consolidating.add(anima_name)
+                try:
+                    response = await handle.send_request(
+                        "run_consolidation",
+                        {"consolidation_type": "daily", "max_turns": max_turns},
+                        timeout=1800.0,
+                    )
+                finally:
+                    _consolidating.discard(anima_name)
 
                 if response.error:
                     logger.error(
@@ -490,11 +495,16 @@ class SchedulerMixin:
                 continue
 
             try:
-                response = await handle.send_request(
-                    "run_consolidation",
-                    {"consolidation_type": "weekly", "max_turns": max_turns},
-                    timeout=1800.0,
-                )
+                _consolidating_w: set[str] = getattr(self, "_consolidating", set())
+                _consolidating_w.add(anima_name)
+                try:
+                    response = await handle.send_request(
+                        "run_consolidation",
+                        {"consolidation_type": "weekly", "max_turns": max_turns},
+                        timeout=1800.0,
+                    )
+                finally:
+                    _consolidating_w.discard(anima_name)
 
                 if response.error:
                     logger.error(

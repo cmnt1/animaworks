@@ -14,14 +14,13 @@ from core.config.models import (
     NotificationChannelConfig,
 )
 from core.notification.notifier import (
+    _CHANNEL_REGISTRY,
+    PRIORITY_LEVELS,
     HumanNotifier,
     NotificationChannel,
-    PRIORITY_LEVELS,
-    _CHANNEL_REGISTRY,
     create_channel,
     register_channel,
 )
-
 
 # ── Test Channel Implementation ──────────────────────────────
 
@@ -45,6 +44,7 @@ class MockChannel(NotificationChannel):
         priority: str = "normal",
         *,
         anima_name: str = "",
+        interaction: Any | None = None,
     ) -> str:
         if self._fail:
             raise ConnectionError("Mock connection error")
@@ -156,7 +156,7 @@ class TestChannelRegistry:
             def channel_type(self) -> str:
                 return "test_registered"
 
-            async def send(self, subject, body, priority="normal", *, anima_name=""):
+            async def send(self, subject, body, priority="normal", *, anima_name="", interaction=None):
                 return "test_registered: OK"
 
         assert "test_registered" in _CHANNEL_REGISTRY

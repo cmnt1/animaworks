@@ -7,6 +7,7 @@ from __future__ import annotations
 """Chatwork API notification channel."""
 
 import logging
+from typing import Any
 
 import httpx
 
@@ -32,6 +33,7 @@ class ChatworkChannel(NotificationChannel):
         priority: str = "normal",
         *,
         anima_name: str = "",
+        interaction: Any | None = None,
     ) -> str:
         token = self._resolve_credential_with_vault(
             "api_token_env",
@@ -47,6 +49,13 @@ class ChatworkChannel(NotificationChannel):
         room_id = str(room_id)
         if not room_id.isdigit():
             return "chatwork: ERROR - room_id must be numeric"
+
+        if interaction is not None:
+            from core.config.models import load_config
+            from core.notification.interactive import build_text_fallback
+
+            web_url = load_config().interaction.web_base_url
+            body = body + "\n" + build_text_fallback(interaction, web_base_url=web_url)
 
         from core.tools.chatwork import md_to_chatwork
 

@@ -35,6 +35,27 @@ def _notification_tools() -> list[dict[str, Any]]:
                         "enum": ["low", "normal", "high", "urgent"],
                         "description": _t("schema.call_human.priority"),
                     },
+                    "interactive": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": _t("schema.call_human.interactive_desc"),
+                    },
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "default": ["approve", "reject", "comment"],
+                        "description": _t("schema.call_human.options_desc"),
+                    },
+                    "category": {
+                        "type": "string",
+                        "default": "approval",
+                        "description": _t("schema.call_human.category_desc"),
+                    },
+                    "allowed_users": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": _t("schema.call_human.allowed_users_desc"),
+                    },
                 },
                 "required": ["subject", "body"],
             },

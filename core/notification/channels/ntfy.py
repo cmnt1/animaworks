@@ -7,6 +7,7 @@ from __future__ import annotations
 """ntfy push notification channel."""
 
 import logging
+from typing import Any
 
 import httpx
 
@@ -38,6 +39,7 @@ class NtfyChannel(NotificationChannel):
         priority: str = "normal",
         *,
         anima_name: str = "",
+        interaction: Any | None = None,
     ) -> str:
         server_url = self._config.get("server_url", "https://ntfy.sh")
         topic = self._config.get("topic", "")
@@ -45,6 +47,13 @@ class NtfyChannel(NotificationChannel):
             return "ntfy: ERROR - topic not configured"
 
         url = f"{server_url.rstrip('/')}/{topic}"
+
+        if interaction is not None:
+            from core.config.models import load_config
+            from core.notification.interactive import build_text_fallback
+
+            web_url = load_config().interaction.web_base_url
+            body = body + "\n" + build_text_fallback(interaction, web_base_url=web_url)
 
         sender = f" (from {anima_name})" if anima_name else ""
         title = f"{subject}{sender}"[:256]

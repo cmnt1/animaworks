@@ -7,6 +7,7 @@ from fastapi import APIRouter
 
 from server.routes.activity_report import create_activity_report_router
 from server.routes.animas import create_animas_router
+from server.routes.approve import create_approve_router
 from server.routes.assets import create_assets_router
 from server.routes.auth import create_auth_router
 from server.routes.brainstorm import create_brainstorm_router
@@ -35,6 +36,7 @@ def create_router() -> APIRouter:
     api = APIRouter(prefix="/api")
 
     api.include_router(create_animas_router())
+    api.include_router(create_approve_router())
     api.include_router(create_channels_router())
     api.include_router(create_chat_router())
     api.include_router(create_chat_ui_state_router())

@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── logs.py tests ─────────────────────────────────────────
 
 
@@ -234,7 +233,7 @@ class TestCallHumanExitCode:
             },
         }
         mock_get_token.return_value = "xoxb-fake"
-        mock_send_slack.return_value = "OK"
+        mock_send_slack.return_value = ("OK", None)
 
         cli_main(["Subject", "Body"])
         mock_send_slack.assert_called_once()
@@ -264,7 +263,7 @@ class TestCallHumanExitCode:
             },
         }
         mock_get_token.return_value = "xoxb-fake"
-        mock_send_slack.return_value = "ERROR: channel_not_found"
+        mock_send_slack.return_value = ("ERROR: channel_not_found", None)
 
         with pytest.raises(SystemExit) as exc_info:
             cli_main(["Subject", "Body"])

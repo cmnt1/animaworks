@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnimaWorks — Approval</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }
+        .card h1 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+            color: #f8fafc;
+        }
+        .card .meta {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 1.5rem;
+        }
+        .buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 0.85rem 1rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn:active { transform: scale(0.98); }
+        .btn-approve { background: #22c55e; color: #fff; }
+        .btn-reject { background: #ef4444; color: #fff; }
+        .btn-comment { background: #3b82f6; color: #fff; }
+        .btn-default { background: #475569; color: #fff; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .comment-area {
+            display: none;
+            margin-top: 1rem;
+        }
+        .comment-area textarea {
+            width: 100%;
+            min-height: 80px;
+            padding: 0.75rem;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-size: 0.95rem;
+            resize: vertical;
+        }
+        .comment-area .btn { margin-top: 0.75rem; }
+        .result {
+            display: none;
+            text-align: center;
+            padding: 2rem 0;
+        }
+        .result .icon { font-size: 3rem; margin-bottom: 0.5rem; }
+        .result p { font-size: 1.1rem; }
+        .error { color: #f87171; margin-top: 1rem; display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div id="form-view">
+            <h1>Approval Request</h1>
+            <div class="meta" id="meta"></div>
+            <div class="buttons" id="buttons"></div>
+            <div class="comment-area" id="comment-area">
+                <textarea id="comment-text" placeholder="Enter your comment..."></textarea>
+                <button class="btn btn-comment" onclick="submitDecision('comment')">Submit Comment</button>
+            </div>
+            <div class="error" id="error"></div>
+        </div>
+        <div class="result" id="result-view">
+            <div class="icon" id="result-icon"></div>
+            <p id="result-text"></p>
+        </div>
+    </div>
+    <script>
+        const ctx = __APPROVAL_CONTEXT__;
+        const meta = document.getElementById('meta');
+        meta.textContent = `From: ${ctx.anima_name} · Category: ${ctx.category}`;
+
+        const btnContainer = document.getElementById('buttons');
+        const styleMap = { approve: 'btn-approve', reject: 'btn-reject', comment: 'btn-comment' };
+        const emojiMap = { approve: '✅', reject: '❌', comment: '💬' };
+
+        ctx.options.forEach(opt => {
+            const btn = document.createElement('button');
+            btn.className = `btn ${styleMap[opt] || 'btn-default'}`;
+            btn.textContent = `${emojiMap[opt] || '▶️'} ${opt.charAt(0).toUpperCase() + opt.slice(1)}`;
+            btn.onclick = () => {
+                if (opt === 'comment') {
+                    document.getElementById('comment-area').style.display = 'block';
+                } else {
+                    submitDecision(opt);
+                }
+            };
+            btnContainer.appendChild(btn);
+        });
+
+        async function submitDecision(decision) {
+            const buttons = document.querySelectorAll('.btn');
+            buttons.forEach(b => b.disabled = true);
+
+            const comment = decision === 'comment' ? document.getElementById('comment-text').value : '';
+
+            try {
+                const res = await fetch(`/api/approve/${ctx.callback_id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token: ctx.token,
+                        decision: decision,
+                        comment: comment,
+                        actor: 'web_user',
+                    }),
+                });
+
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.detail || `HTTP ${res.status}`);
+                }
+
+                const resultIcons = { approve: '✅', reject: '❌', comment: '💬' };
+                document.getElementById('form-view').style.display = 'none';
+                document.getElementById('result-view').style.display = 'block';
+                document.getElementById('result-icon').textContent = resultIcons[decision] || '✓';
+                document.getElementById('result-text').textContent = `${decision.charAt(0).toUpperCase() + decision.slice(1)} submitted successfully.`;
+            } catch (err) {
+                const errorEl = document.getElementById('error');
+                errorEl.textContent = err.message;
+                errorEl.style.display = 'block';
+                buttons.forEach(b => b.disabled = false);
+            }
+        }
+    </script>
+</body>
+</html>

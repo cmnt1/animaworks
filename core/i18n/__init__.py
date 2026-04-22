@@ -16,6 +16,58 @@ from core.i18n.strings import _merge_strings
 logger = logging.getLogger(__name__)
 
 _STRINGS: dict[str, dict[str, str]] = _merge_strings()
+_STRINGS.update(
+    {
+        "interactive.expired": {
+            "ja": "この承認リクエストは期限切れです",
+            "en": "This approval request has expired",
+        },
+        "interactive.already_resolved": {
+            "ja": "既に回答済みです",
+            "en": "Already resolved",
+        },
+        "interactive.unauthorized": {
+            "ja": "この操作の権限がありません",
+            "en": "You are not authorized for this action",
+        },
+        "interactive.resolved_by": {
+            "ja": "{actor} が {decision} しました",
+            "en": "{actor} chose {decision}",
+        },
+        "interactive.comment_modal_title": {
+            "ja": "コメント",
+            "en": "Comment",
+        },
+        "interactive.comment_modal_submit": {
+            "ja": "送信",
+            "en": "Submit",
+        },
+        "interactive.comment_modal_label": {
+            "ja": "コメント",
+            "en": "Comment",
+        },
+        "interactive.comment_submitted": {
+            "ja": "コメントを送信しました",
+            "en": "Comment submitted.",
+        },
+        "interactive.error": {
+            "ja": "エラーが発生しました",
+            "en": "An error occurred.",
+        },
+        "interactive.fallback_header": {
+            "ja": "回答方法:",
+            "en": "How to respond:",
+        },
+        "interactive.fallback_instruction": {
+            "ja": "番号を返信してください。",
+            "en": "Reply with a number.",
+        },
+        "interactive.fallback_url_or": {
+            "ja": "または: {url}",
+            "en": "Or: {url}",
+        },
+    }
+)
 
 
 class _SafeFormatDict(dict):
