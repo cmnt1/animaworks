@@ -300,7 +300,9 @@ class DiscordAutoResponder:
 
         This ensures that Anima replies sent via Discord webhook also appear
         in the shared channel JSONL, matching how the gateway records
-        inbound human messages.
+        inbound human messages. DM boards (``dm-{anima}``) are mirrored too
+        so both sides of a human<->Anima DM conversation are captured — the
+        ACL naturally allows the DM owner to post to their own board.
         """
         try:
             from core.config.models import load_config
@@ -310,9 +312,6 @@ class DiscordAutoResponder:
             board_mapping = load_config().external_messaging.discord.board_mapping
             board_name = board_mapping.get(channel_id)
             if not board_name:
-                return
-            # DM boards are per-Anima; skip to avoid noise
-            if board_name.startswith("dm-"):
                 return
             messenger = Messenger(get_shared_dir(), anima_name)
             messenger.post_channel(
@@ -338,28 +337,15 @@ class DiscordAutoResponder:
         ``external_channel_id`` = parent channel (webhook target).
         ``external_thread_ts``  = thread channel ID if threaded, else "".
 
-        **DM channels** (``#dm-*``) are skipped when the inbox batch
-        also contains non-Discord messages (internal Anima DMs, task
-        results, etc.).  In a mixed batch the ``accumulated_text``
-        contains responses to *all* messages, so posting it to a DM
-        channel would leak Anima-to-Anima content into the human
-        communication channel.  Pure-Discord batches are fine.
+        Note: a previous version skipped DM channels in mixed batches
+        (Discord DM + internal Anima messages) to prevent Anima-to-Anima
+        content leaking into the human DM. That was dropped because it
+        silently swallowed human-facing replies whenever the inbox also
+        had any unrelated internal item — and losing a reply to a human
+        is worse than occasional internal-context leakage. The Anima's
+        reply text itself is expected to address the originating sender
+        per ``[reply_instruction]`` annotations.
         """
-        # Detect mixed batch: has non-discord items?
-        _has_non_discord = any(getattr(item.msg, "source", "") != "discord" for item in inbox_items)
-
-        # Load board_mapping once to identify DM channels
-        _dm_channel_ids: set[str] = set()
-        if _has_non_discord:
-            try:
-                from core.config.models import load_config
-
-                for ch_id, board in load_config().external_messaging.discord.board_mapping.items():
-                    if board.startswith("dm-"):
-                        _dm_channel_ids.add(ch_id)
-            except Exception:
-                pass
-
         seen: set[str] = set()
         targets: list[dict[str, str]] = []
         for item in inbox_items:
@@ -371,14 +357,6 @@ class DiscordAutoResponder:
                 logger.warning(
                     "DiscordAutoResponder: inbox item from discord has no external_channel_id, from=%s",
                     getattr(msg, "from_name", "?"),
-                )
-                continue
-
-            # Skip DM channels in mixed batches to prevent cross-talk
-            if channel_id in _dm_channel_ids:
-                logger.info(
-                    "DiscordAutoResponder: skipping DM channel %s in mixed batch",
-                    channel_id,
                 )
                 continue
 

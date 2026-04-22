@@ -725,14 +725,16 @@ class DiscordGatewayManager:
 
         # Board routing (always, regardless of target)
         # Use routing_channel_id so thread messages map to the parent channel's board.
-        if not is_dm:
-            _route_to_board(
-                routing_channel_id,
-                cleaned_text,
-                author_display,
-                message_id=msg_id,
-                board_mapping=discord_cfg.board_mapping,
-            )
+        # DMs are mirrored to the mapped `dm-{name}` board too — otherwise the
+        # human side of a DM conversation has no record on the AnimaWorks board
+        # and only the Anima's replies (via webhook echo) would show up.
+        _route_to_board(
+            routing_channel_id,
+            cleaned_text,
+            author_display,
+            message_id=msg_id,
+            board_mapping=discord_cfg.board_mapping,
+        )
 
         # Deliver to each target's inbox
         if target_animas:
