@@ -97,4 +97,8 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
         parts.append(wrap_priming("recent_outbound", result.recent_outbound, trust="trusted"))
         parts.append("")
 
+    if result.graph_context:
+        parts.append(wrap_priming("graph_context", result.graph_context, trust="medium"))
+        parts.append("")
+
     return "\n".join(parts)

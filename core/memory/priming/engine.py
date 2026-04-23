@@ -36,9 +36,13 @@ from core.memory.priming import (
     channel_f as _channel_f,
 )
 from core.memory.priming import (
+    channel_g as _channel_g,
+)
+from core.memory.priming import (
     outbound as _outbound,
 )
 from core.memory.priming.constants import (
+    _BUDGET_GRAPH_CONTEXT,
     _BUDGET_GREETING,
     _BUDGET_HEARTBEAT,
     _BUDGET_PENDING_TASKS,
@@ -68,6 +72,7 @@ class PrimingResult:
     recent_outbound: str = ""
     episodes: str = ""
     pending_human_notifications: str = ""
+    graph_context: str = ""
 
     def is_empty(self) -> bool:
         """Return True if no memories were primed."""
@@ -80,6 +85,7 @@ class PrimingResult:
             and not self.recent_outbound
             and not self.episodes
             and not self.pending_human_notifications
+            and not self.graph_context
         )
 
     def total_chars(self) -> int:
@@ -93,6 +99,7 @@ class PrimingResult:
             + len(self.recent_outbound)
             + len(self.episodes)
             + len(self.pending_human_notifications)
+            + len(self.graph_context)
         )
 
     def estimated_tokens(self) -> int:
@@ -103,12 +110,13 @@ class PrimingResult:
 class PrimingEngine:
     """Automatic memory priming engine.
 
-    Executes 5-channel parallel memory retrieval:
+    Executes 6-channel parallel memory retrieval:
       A. Sender profile (direct file read)
       B. Recent activity (unified activity log, replaces old episodes + channels)
       C. Related knowledge (dense vector search)
       E. Pending tasks (persistent task queue summary)
       F. Episodes (dense vector search over episode memory)
+      G. Graph context (community summaries + recent facts via MemoryBackend)
     """
 
     def __init__(
@@ -132,6 +140,8 @@ class PrimingEngine:
         self._budget_heartbeat = _BUDGET_HEARTBEAT
         self._heartbeat_context_pct = 0.05
         self._get_active_parallel_tasks: Callable[[], dict[str, dict]] | None = None
+        self._memory_backend: Any | None = None
+        self._memory_backend_init_failed = False
 
     def _get_or_create_retriever(self):
         """Get or create a retriever instance from the RetrieverCache."""
@@ -142,6 +152,25 @@ class PrimingEngine:
     def _get_retriever(self):
         """Delegate to _get_or_create_retriever (tests may patch either)."""
         return self._get_or_create_retriever()
+
+    def _get_memory_backend(self):
+        """Return lazy-initialized MemoryBackend from config."""
+        if self._memory_backend is not None:
+            return self._memory_backend
+        if self._memory_backend_init_failed:
+            return None
+        try:
+            from core.config.models import load_config
+            from core.memory.backend.registry import get_backend
+
+            cfg = load_config()
+            backend_type = getattr(getattr(cfg, "memory", None), "backend", "legacy")
+            self._memory_backend = get_backend(backend_type, self.anima_dir)
+            return self._memory_backend
+        except Exception:
+            logger.debug("Failed to init MemoryBackend for priming", exc_info=True)
+            self._memory_backend_init_failed = True
+            return None
 
     def _load_config_budgets(self) -> None:
         if self._config_loaded:
@@ -265,6 +294,7 @@ class PrimingEngine:
                 recent_human_messages=recent_human_messages,
             ),
             self._collect_pending_human_notifications(channel=channel),
+            self._channel_g_graph_context(effective_message),
             return_exceptions=True,
         )
 
@@ -286,6 +316,7 @@ class PrimingEngine:
         recent_outbound = results[5] if isinstance(results[5], str) else ""
         episodes = results[6] if isinstance(results[6], str) else ""
         pending_human_notifications = results[7] if isinstance(results[7], str) else ""
+        graph_context = results[8] if isinstance(results[8], str) else ""
 
         for i, r in enumerate(results):
             if isinstance(r, Exception):
@@ -307,6 +338,8 @@ class PrimingEngine:
             else ""
         )
 
+        budget_graph = int(_BUDGET_GRAPH_CONTEXT * budget_ratio)
+
         result = PrimingResult(
             sender_profile=truncate_head(sender_profile, budget_profile),
             recent_activity=truncate_tail(recent_activity, budget_activity),
@@ -316,6 +349,7 @@ class PrimingEngine:
             recent_outbound=recent_outbound,
             episodes=truncate_tail(episodes, budget_episodes),
             pending_human_notifications=pending_human_notifications,
+            graph_context=truncate_tail(graph_context, budget_graph),
         )
 
         logger.info(
@@ -403,6 +437,16 @@ class PrimingEngine:
 
     async def _collect_pending_human_notifications(self, *, channel: str = "") -> str:
         return await _outbound.collect_pending_human_notifications(self.anima_dir, channel=channel)
+
+    async def _channel_g_graph_context(self, query: str) -> str:
+        backend = self._get_memory_backend()
+        if backend is None:
+            return ""
+        return await _channel_g.collect_graph_context(
+            backend,
+            query,
+            budget_tokens=_BUDGET_GRAPH_CONTEXT,
+        )
 
     def _extract_keywords(self, message: str) -> list[str]:
         """Backward compat: delegate to utils.extract_keywords."""

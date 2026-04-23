@@ -23,9 +23,11 @@ from core.memory.priming import (
     channel_c,
     channel_e,
     channel_f,
+    channel_g,
     outbound,
 )
 from core.memory.priming.constants import (
+    _BUDGET_GRAPH_CONTEXT,
     _BUDGET_GREETING,
     _BUDGET_HEARTBEAT,
     _BUDGET_IMPORTANT_KNOWLEDGE,
@@ -50,6 +52,7 @@ __all__ = [
     "PrimingEngine",
     "PrimingResult",
     "format_priming_section",
+    "_BUDGET_GRAPH_CONTEXT",
     "_BUDGET_GREETING",
     "_BUDGET_HEARTBEAT",
     "_BUDGET_IMPORTANT_KNOWLEDGE",
