@@ -101,10 +101,9 @@ def _rich_text_to_markdown(rich_text: list[dict[str, Any]]) -> str:
             expr = rt.get("equation", {}).get("expression", "")
             parts.append(f"${expr}$")
             continue
-        content = rt.get("plain_text", rt.get("text", {}).get("content", ""))
-        link = rt.get("href") or (
-            rt.get("text", {}).get("link", {}).get("url") if isinstance(rt.get("text"), dict) else None
-        )
+        text_obj = rt.get("text") if isinstance(rt.get("text"), dict) else {}
+        content = rt.get("plain_text", (text_obj or {}).get("content", ""))
+        link = rt.get("href") or ((text_obj or {}).get("link") or {}).get("url")
         ann = rt.get("annotations", {}) or {}
         if ann.get("code"):
             content = f"`{content}`"

@@ -1,7 +1,8 @@
 {
   "version": 1,
   "file_roots": [
-    "/"
+    "/",
+    "E:\\OneDriveBiz\\Obsidian"
   ],
   "commands": {
     "allow_all": true,
