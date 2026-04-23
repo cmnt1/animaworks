@@ -200,6 +200,7 @@ VECTOR_SEARCH_FACTS = """
 CALL db.index.vector.queryRelationships('fact_embedding', $top_k, $embedding)
 YIELD relationship, score
 WHERE relationship.group_id = $group_id
+  AND relationship.deleted_at IS NULL
   AND (relationship.invalid_at IS NULL OR relationship.invalid_at > datetime($as_of_time))
   AND (relationship.expired_at IS NULL OR relationship.expired_at > datetime($as_of_time))
 WITH relationship AS r, score,
@@ -212,6 +213,7 @@ VECTOR_SEARCH_ENTITIES = """
 CALL db.index.vector.queryNodes('entity_name_embedding', $top_k, $embedding)
 YIELD node, score
 WHERE node.group_id = $group_id
+  AND node.deleted_at IS NULL
 RETURN node.uuid AS uuid, node.name AS name, node.summary AS summary,
        node.entity_type AS entity_type, score
 """
@@ -220,6 +222,7 @@ FULLTEXT_SEARCH_FACTS = """
 CALL db.index.fulltext.queryRelationships('fact_fulltext', $query, {limit: $top_k})
 YIELD relationship, score
 WHERE relationship.group_id = $group_id
+  AND relationship.deleted_at IS NULL
   AND (relationship.invalid_at IS NULL OR relationship.invalid_at > datetime($as_of_time))
   AND (relationship.expired_at IS NULL OR relationship.expired_at > datetime($as_of_time))
 WITH relationship AS r, score,
@@ -232,6 +235,7 @@ FULLTEXT_SEARCH_ENTITIES = """
 CALL db.index.fulltext.queryNodes('entity_name_fulltext', $query, {limit: $top_k})
 YIELD node, score
 WHERE node.group_id = $group_id
+  AND node.deleted_at IS NULL
 RETURN node.uuid AS uuid, node.name AS name, node.summary AS summary,
        node.entity_type AS entity_type, score
 """
@@ -242,6 +246,7 @@ WHERE related.group_id = $group_id
 WITH DISTINCT related
 MATCH (related)-[r:RELATES_TO]-(other:Entity)
 WHERE r.group_id = $group_id
+  AND r.deleted_at IS NULL
   AND (r.invalid_at IS NULL OR r.invalid_at > datetime($as_of_time))
   AND (r.expired_at IS NULL OR r.expired_at > datetime($as_of_time))
 WITH r, startNode(r) AS s, endNode(r) AS t
@@ -255,6 +260,7 @@ LIMIT $limit
 FETCH_ENTITIES_FOR_COMMUNITY = """
 MATCH (e:Entity)
 WHERE e.group_id = $group_id
+  AND e.deleted_at IS NULL
 RETURN e.uuid AS uuid, e.name AS name, e.summary AS summary
 """
 
@@ -317,4 +323,37 @@ RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_n
        toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at
 ORDER BY r.created_at DESC
 LIMIT $limit
+"""
+
+# ── Soft-delete operations ──────────
+
+SOFT_DELETE_EPISODE = """
+MATCH (e:Episode {uuid: $uuid, group_id: $group_id})
+SET e.deleted_at = datetime($deleted_at)
+WITH e
+OPTIONAL MATCH (e)-[m:MENTIONS]->(en:Entity)
+DELETE m
+RETURN e.uuid AS uuid
+"""
+
+SOFT_DELETE_ENTITY = """
+MATCH (e:Entity {uuid: $uuid, group_id: $group_id})
+SET e.deleted_at = datetime($deleted_at)
+WITH e
+MATCH (e)-[r:RELATES_TO]-()
+WHERE r.invalid_at IS NULL
+SET r.invalid_at = datetime($deleted_at)
+RETURN e.uuid AS uuid
+"""
+
+SOFT_DELETE_FACT = """
+MATCH ()-[r:RELATES_TO {uuid: $uuid, group_id: $group_id}]->()
+SET r.deleted_at = datetime($deleted_at)
+RETURN r.uuid AS uuid
+"""
+
+PURGE_DELETED = """
+MATCH (n)
+WHERE n.group_id = $group_id AND n.deleted_at IS NOT NULL
+DETACH DELETE n
 """

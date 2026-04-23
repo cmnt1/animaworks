@@ -84,12 +84,17 @@ class TestNeo4jGraphBackendStubs:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_delete_raises(self, tmp_path):
+    async def test_delete_works(self, tmp_path):
         from core.memory.backend.neo4j_graph import Neo4jGraphBackend
 
         backend = Neo4jGraphBackend(tmp_path)
-        with pytest.raises(NotImplementedError, match="Issue #3"):
-            await backend.delete("source")
+        mock_driver = AsyncMock()
+        mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
+        backend._driver = mock_driver
+        backend._schema_ensured = True
+        await backend.delete("episode:test-uuid")
+        mock_driver.execute_write.assert_called_once()
 
 
 class TestNeo4jGraphBackendWithMockedDriver:
