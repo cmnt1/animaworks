@@ -171,6 +171,84 @@ class MemoryToolsMixin:
     _min_trust_seen: int
     _read_paths: set[str]
 
+    # ── Neo4j backend integration ──────────────────────────────────────────
+
+    _NEO4J_SCOPE_MAP: dict[str, str] = {
+        "knowledge": "fact",
+        "episodes": "episode",
+        "procedures": "fact",
+        "all": "all",
+    }
+    _LEGACY_ONLY_SCOPES: frozenset[str] = frozenset({"common_knowledge", "skills", "activity_log"})
+
+    def _should_use_neo4j(self, scope: str) -> bool:
+        """Return True if this scope should be routed to Neo4j backend."""
+        if scope in self._LEGACY_ONLY_SCOPES:
+            return False
+        try:
+            backend = self._memory.memory_backend
+            return type(backend).__name__ == "Neo4jGraphBackend"
+        except Exception:
+            return False
+
+    def _search_via_neo4j(self, query: str, scope: str, offset: int) -> str | None:
+        """Execute search via Neo4j backend, returning formatted string or None on failure."""
+        import asyncio
+
+        neo4j_scope = self._NEO4J_SCOPE_MAP.get(scope, "all")
+        limit = 10
+
+        try:
+            backend = self._memory.memory_backend
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                import concurrent.futures
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    memories = pool.submit(
+                        asyncio.run,
+                        backend.retrieve(query, scope=neo4j_scope, limit=limit + offset),
+                    ).result(timeout=30)
+            else:
+                memories = asyncio.run(
+                    backend.retrieve(query, scope=neo4j_scope, limit=limit + offset)
+                )
+
+            if offset:
+                memories = memories[offset:]
+
+            if not memories:
+                return ""
+
+            scale = min(1.0, getattr(self, "_context_window", _SEARCH_CONTEXT_BASE) / _SEARCH_CONTEXT_BASE)
+            max_tokens = int(_SEARCH_MAX_TOKENS * scale)
+
+            header = f'Search results for "{query}" (graph, {scope}, {offset + 1}-{offset + len(memories)}):\n'
+            parts: list[str] = [header]
+            total_tokens = len(header) // 4
+
+            for i, mem in enumerate(memories):
+                entry = (
+                    f"\n[{offset + i + 1}] score={mem.score:.2f} | {mem.source}\n"
+                    f"{mem.content}\n"
+                )
+                entry_tokens = len(entry) // 4
+                if total_tokens + entry_tokens > max_tokens and i >= _SEARCH_MIN_RESULTS:
+                    parts.append(f"\n... {len(memories) - i} more results truncated")
+                    break
+                parts.append(entry)
+                total_tokens += entry_tokens
+
+            return "".join(parts)
+        except Exception:
+            logger.warning("Neo4j search failed, falling back to legacy", exc_info=True)
+            return None
+
     def _anima_search_hint(self, query: str) -> str | None:
         """If query looks like a search for a registered Anima, return a redirect hint.
 
@@ -229,6 +307,15 @@ class MemoryToolsMixin:
 
         # If the query seems to be about a registered Anima, redirect immediately.
         anima_hint = self._anima_search_hint(query)
+
+        # Neo4j backend: delegate to HybridSearch for eligible scopes
+        if self._should_use_neo4j(scope):
+            neo4j_result = self._search_via_neo4j(query, scope, offset)
+            if neo4j_result is not None:
+                if not neo4j_result and anima_hint:
+                    return f"No results for '{query}'\n\n{anima_hint}"
+                if neo4j_result:
+                    return neo4j_result
 
         results = self._memory.search_memory_text(
             query,
