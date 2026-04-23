@@ -314,13 +314,22 @@ class DiscordClient:
         # per-message `username` / `avatar_url` overrides, displaying the
         # webhook's stored name ("AnimaWorks") instead of the Anima name.
         # Use a bare httpx client with no Authorization header.
-        try:
-            response = httpx.post(
-                f"{API_BASE}/webhooks/{webhook_id}/{webhook_token}",
-                json=body,
-                params=params,
-                timeout=_DEFAULT_TIMEOUT,
-            )
+
+        def _get_retry_after(exc: Exception) -> float | None:
+            if isinstance(exc, _DiscordRateLimitError):
+                return float(exc.retry_after)
+            return None
+
+        def _do() -> dict:
+            try:
+                response = httpx.post(
+                    f"{API_BASE}/webhooks/{webhook_id}/{webhook_token}",
+                    json=body,
+                    params=params,
+                    timeout=_DEFAULT_TIMEOUT,
+                )
+            except httpx.TimeoutException as exc:
+                raise DiscordAPIError(0, f"Webhook timeout: {exc}") from exc
             if response.status_code == 429:
                 message, code = self._parse_error_response(response)
                 retry_after = 1.0
@@ -330,15 +339,25 @@ class DiscordClient:
                         retry_after = float(data["retry_after"])
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
-                raise DiscordAPIError(429, f"Rate limited ({retry_after}s)", code=code)
+                api_err = DiscordAPIError(429, f"Rate limited ({retry_after}s)", code=code)
+                raise _DiscordRateLimitError(api_err, retry_after) from None
             if response.status_code < 200 or response.status_code >= 300:
                 message, code = self._parse_error_response(response)
                 raise DiscordAPIError(response.status_code, message, code=code)
             if not response.content:
                 return {}
             return response.json()
-        except httpx.TimeoutException as exc:
-            raise DiscordAPIError(0, f"Webhook timeout: {exc}") from exc
+
+        try:
+            return retry_on_rate_limit(
+                _do,
+                max_retries=RATE_LIMIT_RETRY_MAX,
+                default_wait=1.0,
+                get_retry_after=_get_retry_after,
+                retry_on=(_DiscordRateLimitError,),
+            )
+        except _DiscordRateLimitError as exc:
+            raise exc.api_error from None
 
     # ── DM channel ────────────────────────────────────────────
 
