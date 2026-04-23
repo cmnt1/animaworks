@@ -51,6 +51,7 @@ dependencies = [
     "tzlocal>=5.0",
     "psutil>=5.9.0",
     "rank-bm25>=0.2",
+    "datasketch>=1.1.3",
 ]
 
 [project.urls]
@@ -69,6 +70,7 @@ gmail = ["google-api-python-client>=2.0", "google-auth-oauthlib>=1.0", "google-a
 transcribe = ["faster-whisper>=1.0"]
 aws = ["boto3>=1.34"]
 rag = ["networkx>=3.0", "watchdog>=3.0.0"]
+neo4j = ["neo4j>=5.20.0", "datasketch>=1.6.5"]
 codex = ["openai-codex-sdk>=0.1.11,<0.2"]
 notebooklm = ["notebooklm-py>=0.3"]
 all-tools = ["animaworks[claude,communication,gmail,transcribe,aws,rag,notification,codex,notebooklm]"]

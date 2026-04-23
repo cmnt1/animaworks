@@ -2,7 +2,7 @@
   "model": "claude-opus-4-6",
   "background_model": "claude-sonnet-4-6",
   "context_threshold": 0.80,
-  "max_turns": 200,
+  "max_turns": 10000,
   "max_chains": 10,
   "conversation_history_threshold": 0.40,
   "max_outbound_per_hour": 40,

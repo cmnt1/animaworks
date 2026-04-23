@@ -596,13 +596,13 @@ class TestLoadStatusJson:
             anima_dir,
             {
                 "model": "openai/gpt-4o",
-                "max_turns": 50,
+                "max_turns": 10000,
                 "enabled": True,
             },
         )
 
         result = _load_status_json(anima_dir)
-        assert result == {"model": "openai/gpt-4o", "max_turns": 50}
+        assert result == {"model": "openai/gpt-4o", "max_turns": 10000}
 
 
 # ── 4. resolve_anima_config 2-layer merge (status.json SSoT) ──────
@@ -644,7 +644,7 @@ class TestResolveAnimaConfig2Layer:
         )
 
         config = self._make_config(
-            defaults_overrides={"model": "from-defaults", "max_turns": 20},
+            defaults_overrides={"model": "from-defaults", "max_turns": 10000},
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
@@ -664,7 +664,7 @@ class TestResolveAnimaConfig2Layer:
         )
 
         config = self._make_config(
-            defaults_overrides={"model": "from-defaults", "max_turns": 20},
+            defaults_overrides={"model": "from-defaults", "max_turns": 10000},
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
@@ -704,7 +704,7 @@ class TestResolveAnimaConfig2Layer:
         config = self._make_config(
             defaults_overrides={
                 "model": "default-model",
-                "max_turns": 20,
+                "max_turns": 10000,
                 "max_chains": 2,
                 "context_threshold": 0.50,
             },
@@ -721,12 +721,12 @@ class TestResolveAnimaConfig2Layer:
     def test_without_anima_dir_uses_defaults(self) -> None:
         """When anima_dir is None, only anima_defaults are used."""
         config = self._make_config(
-            defaults_overrides={"model": "default-model", "max_turns": 20},
+            defaults_overrides={"model": "default-model", "max_turns": 10000},
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=None)
         assert resolved.model == "default-model"
-        assert resolved.max_turns == 20
+        assert resolved.max_turns == 10000
 
     def test_backward_compatible_defaults_only(self) -> None:
         """Pure defaults used when no anima override and anima_dir=None."""

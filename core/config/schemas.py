@@ -81,7 +81,7 @@ class AnimaDefaults(BaseModel):
     background_model: str | None = None
     background_credential: str | None = None
     max_tokens: int = 8192
-    max_turns: int = 20
+    max_turns: int = 10000
     credential: str = "anthropic"
     context_threshold: float = 0.50
     max_chains: int = 2
@@ -212,6 +212,22 @@ class RAGConfig(BaseModel):
     spreading_memory_types: list[str] = ["knowledge", "episodes"]
     min_retrieval_score: float = 0.3
     skill_match_min_score: float = 0.75
+
+
+class Neo4jConfig(BaseModel):
+    """Neo4j connection settings."""
+
+    uri: str = "bolt://localhost:7687"
+    user: str = "neo4j"
+    password: str = "animaworks"
+    database: str = "neo4j"
+
+
+class MemoryConfig(BaseModel):
+    """Configuration for memory backend selection."""
+
+    backend: Literal["legacy", "neo4j"] = "legacy"
+    neo4j: Neo4jConfig = Neo4jConfig()
 
 
 class PromptConfig(BaseModel):
@@ -489,7 +505,7 @@ class HeartbeatConfig(BaseModel):
     max_turns: int | None = Field(
         default=None,
         ge=3,
-        le=200,
+        le=10000,
         description="HB-specific max_turns override (None = use per-anima model_config.max_turns)",
     )
 
@@ -754,6 +770,7 @@ class AnimaWorksConfig(BaseModel):
     animas: dict[str, AnimaModelConfig] = {}
     consolidation: ConsolidationConfig = ConsolidationConfig()
     rag: RAGConfig = RAGConfig()
+    memory: MemoryConfig = MemoryConfig()
     prompt: PromptConfig = PromptConfig()
     priming: PrimingConfig = PrimingConfig()
     image_gen: ImageGenConfig = ImageGenConfig()
@@ -820,6 +837,8 @@ __all__ = [
     "LocalLLMConfig",
     "MachineConfig",
     "MediaProxyConfig",
+    "MemoryConfig",
+    "Neo4jConfig",
     "NotificationChannelConfig",
     "PrimingConfig",
     "PromptConfig",

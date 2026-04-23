@@ -283,7 +283,7 @@ Anima起動時のモデル設定は `status.json` を Single Source of Truth（S
 |`model`                          |`str`          |`claude-sonnet-4-6`       |使用するモデル名（プロバイダprefix付き可）|
 |`fallback_model`                 |`str \| null`  |`null`                  |フォールバックモデル                  |
 |`max_tokens`                     |`int`          |`8192`                  |1回のレスポンスの最大トークン数             |
-|`max_turns`                      |`int`          |`20`                    |1サイクルの最大ターン数                |
+|`max_turns`                      |`int`          |`10000`                 |1サイクルの最大ターン数                |
 |`credential`                     |`str`          |`"anthropic"`           |使用するcredentials名             |
 |`context_threshold`              |`float`        |`0.50`                  |短期記憶外部化の閾値（コンテキスト使用率）       |
 |`max_chains`                     |`int`          |`2`                     |自動セッション継続の最大回数              |
@@ -306,7 +306,7 @@ Anima起動時のモデル設定は `status.json` を Single Source of Truth（S
   "anima_defaults": {
     "model": "claude-sonnet-4-6",
     "max_tokens": 4096,
-    "max_turns": 20,
+    "max_turns": 10000,
     "credential": "anthropic",
     "context_threshold": 0.50,
     "conversation_history_threshold": 0.30
