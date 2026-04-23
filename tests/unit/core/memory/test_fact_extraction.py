@@ -275,6 +275,7 @@ class TestNeo4jGraphBackendIngest:
         backend = Neo4jGraphBackend(tmp_path)
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
         backend._driver = mock_driver
         backend._schema_ensured = True
 
@@ -308,6 +309,7 @@ class TestNeo4jGraphBackendIngest:
         backend = Neo4jGraphBackend(tmp_path)
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
         backend._driver = mock_driver
         backend._schema_ensured = True
 
@@ -325,6 +327,7 @@ class TestNeo4jGraphBackendIngest:
         backend = Neo4jGraphBackend(tmp_path)
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
         backend._driver = mock_driver
         backend._schema_ensured = True
 
@@ -372,6 +375,7 @@ class TestNeo4jGraphBackendIngest:
         backend = Neo4jGraphBackend(tmp_path)
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
         backend._driver = mock_driver
         backend._schema_ensured = True
 

@@ -157,6 +157,7 @@ class Neo4jGraphBackend(MemoryBackend):
         explicitly when a logical batch is complete.
         """
         from core.memory.graph.queries import (
+            CHECK_EPISODE_EXISTS,
             CREATE_ENTITY,
             CREATE_EPISODE,
             CREATE_FACT,
@@ -166,7 +167,15 @@ class Neo4jGraphBackend(MemoryBackend):
         async with self._ingest_semaphore:
             driver = await self._ensure_driver()
             now_str = datetime.now(tz=UTC).isoformat()
-            episode_uuid = str(uuid4())
+            episode_uuid = (metadata or {}).get("episode_uuid") or str(uuid4())
+
+            existing = await driver.execute_query(
+                CHECK_EPISODE_EXISTS,
+                {"uuid": episode_uuid, "group_id": self._group_id},
+            )
+            if existing:
+                logger.debug("Episode %s already exists, skipping", episode_uuid)
+                return 0
 
             await driver.execute_write(
                 CREATE_EPISODE,

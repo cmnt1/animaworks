@@ -37,6 +37,12 @@ CREATE (e:Episode {
 RETURN e.uuid AS uuid
 """
 
+CHECK_EPISODE_EXISTS = """
+MATCH (e:Episode {uuid: $uuid, group_id: $group_id})
+RETURN e.uuid AS uuid
+LIMIT 1
+"""
+
 # ── Entity ──────────
 
 CREATE_ENTITY = """

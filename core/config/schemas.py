@@ -227,6 +227,7 @@ class MemoryConfig(BaseModel):
 
     backend: Literal["legacy", "neo4j"] = "legacy"
     neo4j: Neo4jConfig = Neo4jConfig()
+    neo4j_realtime_ingest: bool = False
 
 
 class PromptConfig(BaseModel):

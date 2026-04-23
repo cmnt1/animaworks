@@ -406,6 +406,8 @@ class MessagingMixin:
                         meta=resp_meta,
                     )
 
+                    self._maybe_neo4j_realtime_ingest(from_person, display_summary)
+
                     logger.info(
                         "[%s] process_message END duration_ms=%d",
                         self.name,
@@ -692,6 +694,8 @@ class MessagingMixin:
                                 meta=resp_meta,
                             )
 
+                            self._maybe_neo4j_realtime_ingest(from_person, display_summary)
+
                             # Finalize streaming journal (deletes the file)
                             journal.finalize(summary=display_summary[:500])
 
@@ -888,3 +892,48 @@ class MessagingMixin:
                 active_session_type.reset(_session_token)
                 self._status_slots["conversation:default"] = prev_status
                 self._task_slots["conversation:default"] = prev_task
+
+    # ── Neo4j realtime ingest ────────────────────────────────
+
+    def _maybe_neo4j_realtime_ingest(self, from_person: str, response_text: str) -> None:
+        """Fire-and-forget Neo4j ingest of the latest conversation turn."""
+        import asyncio
+
+        try:
+            from core.config.models import load_config
+
+            cfg = load_config()
+            mem_cfg = getattr(cfg, "memory", None)
+            if not mem_cfg:
+                return
+            if getattr(mem_cfg, "backend", "legacy") != "neo4j":
+                return
+            if not getattr(mem_cfg, "neo4j_realtime_ingest", False):
+                return
+
+            text = f"[{from_person} → {self.name}]\n{response_text}"
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                loop.create_task(self._neo4j_ingest_turn(text))
+            else:
+                asyncio.run(self._neo4j_ingest_turn(text))
+        except Exception:
+            logger.debug("[%s] Neo4j realtime ingest check failed", self.name, exc_info=True)
+
+    async def _neo4j_ingest_turn(self, text: str) -> None:
+        """Ingest a single conversation turn into Neo4j."""
+        try:
+            backend = self.memory.memory_backend
+            cls_name = type(backend).__name__
+            has_ingest = hasattr(backend, "ingest_text") and hasattr(backend, "_group_id")
+            if cls_name == "LegacyRAGBackend" or (cls_name != "Neo4jGraphBackend" and not has_ingest):
+                return
+            await backend.ingest_text(text, source=f"chat:{self.name}")
+            logger.debug("[%s] Realtime Neo4j ingest complete", self.name)
+        except Exception:
+            logger.debug("[%s] Realtime Neo4j ingest failed", self.name, exc_info=True)
