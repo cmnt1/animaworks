@@ -583,8 +583,48 @@ class Neo4jGraphBackend(MemoryBackend):
             return []
 
     async def delete(self, source: str) -> None:
-        """Raise NotImplementedError until Issue #3."""
-        raise NotImplementedError("Neo4j delete will be implemented in Issue #3")
+        """Soft-delete an episode, entity, or fact by prefixed ID.
+
+        Accepted formats:
+            ``episode:{uuid}`` — soft-delete episode + remove MENTIONS
+            ``entity:{uuid}``  — soft-delete entity + invalidate facts
+            ``fact:{uuid}``    — soft-delete fact (RELATES_TO)
+
+        Unprefixed IDs are treated as episode UUIDs for backward compat.
+        """
+        driver = await self._ensure_driver()
+        now_str = datetime.now(tz=UTC).isoformat()
+
+        if ":" in source:
+            prefix, uuid = source.split(":", 1)
+        else:
+            prefix, uuid = "episode", source
+
+        from core.memory.graph.queries import (
+            SOFT_DELETE_ENTITY,
+            SOFT_DELETE_EPISODE,
+            SOFT_DELETE_FACT,
+        )
+
+        query_map = {
+            "episode": SOFT_DELETE_EPISODE,
+            "entity": SOFT_DELETE_ENTITY,
+            "fact": SOFT_DELETE_FACT,
+        }
+
+        query = query_map.get(prefix)
+        if not query:
+            logger.warning("Unknown delete prefix: %s", prefix)
+            return
+
+        try:
+            await driver.execute_write(
+                query,
+                {"uuid": uuid, "group_id": self._group_id, "deleted_at": now_str},
+            )
+            logger.info("Soft-deleted %s:%s (group=%s)", prefix, uuid, self._group_id)
+        except Exception:
+            logger.warning("Failed to delete %s:%s", prefix, uuid, exc_info=True)
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
