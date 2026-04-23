@@ -107,6 +107,18 @@ class SystemConsolidationMixin:
                         anima_name,
                     )
 
+                # Post-processing: Neo4j backend ingest
+                try:
+                    from core.memory.consolidation import ConsolidationEngine as _CE
+
+                    neo4j_engine = _CE(anima.memory.anima_dir, anima_name)
+                    await neo4j_engine.ingest_recent_to_backend(hours=48)
+                except Exception:
+                    logger.exception(
+                        "Neo4j ingest failed for anima=%s",
+                        anima_name,
+                    )
+
                 # Broadcast result via WebSocket
                 if self._ws_broadcast:
                     await self._ws_broadcast(
@@ -191,6 +203,18 @@ class SystemConsolidationMixin:
                 except Exception:
                     logger.exception(
                         "RAG index rebuild failed for anima=%s",
+                        anima_name,
+                    )
+
+                # Post-processing: Neo4j backend ingest
+                try:
+                    from core.memory.consolidation import ConsolidationEngine as _CE
+
+                    neo4j_engine = _CE(anima.memory.anima_dir, anima_name)
+                    await neo4j_engine.ingest_recent_to_backend(hours=168)
+                except Exception:
+                    logger.exception(
+                        "Neo4j ingest failed for anima=%s",
                         anima_name,
                     )
 

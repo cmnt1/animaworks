@@ -1084,6 +1084,88 @@ class ConsolidationEngine:
                 continue
         return False
 
+    # ── Neo4j Backend Ingest ──────────────────────────────────────
+
+    async def ingest_recent_to_backend(self, hours: int = 48) -> dict[str, int]:
+        """Ingest recent episode and knowledge files to Neo4j backend.
+
+        Runs only when ``config.memory.backend == "neo4j"``.  For legacy
+        mode this is a no-op returning zeroes.  Failures are logged but
+        never interrupt the caller.
+
+        Args:
+            hours: Look-back window.  48 h covers daily consolidation even
+                when it runs slightly late.
+
+        Returns:
+            Dict with ``episodes``, ``knowledge``, ``errors`` counts.
+        """
+        stats: dict[str, int] = {"episodes": 0, "knowledge": 0, "errors": 0}
+
+        try:
+            from core.config.models import load_config
+
+            cfg = load_config()
+            backend_type = getattr(getattr(cfg, "memory", None), "backend", "legacy")
+            if backend_type != "neo4j":
+                return stats
+        except Exception:
+            return stats
+
+        try:
+            from core.memory.backend.registry import get_backend
+
+            backend = get_backend("neo4j", self.anima_dir)
+        except Exception:
+            logger.debug("Neo4j backend unavailable for post-consolidation ingest", exc_info=True)
+            return stats
+
+        cutoff = now_local() - timedelta(hours=hours)
+
+        for ep_file in sorted(self.episodes_dir.glob("*.md")):
+            try:
+                mtime = datetime.fromtimestamp(ep_file.stat().st_mtime)
+                if ensure_aware(mtime) < cutoff:
+                    continue
+                await backend.ingest_file(ep_file)
+                stats["episodes"] += 1
+                logger.info("Neo4j ingest (consolidation_episode): %s", ep_file.name)
+            except Exception:
+                stats["errors"] += 1
+                logger.warning("Neo4j ingest failed (episode): %s", ep_file.name, exc_info=True)
+
+        for kn_file in sorted(self.knowledge_dir.rglob("*.md")):
+            rel = kn_file.relative_to(self.knowledge_dir)
+            if self._is_archive_dir(rel):
+                continue
+            try:
+                mtime = datetime.fromtimestamp(kn_file.stat().st_mtime)
+                if ensure_aware(mtime) < cutoff:
+                    continue
+                await backend.ingest_file(kn_file)
+                stats["knowledge"] += 1
+                logger.info("Neo4j ingest (consolidation_knowledge): %s", kn_file.name)
+            except Exception:
+                stats["errors"] += 1
+                logger.warning("Neo4j ingest failed (knowledge): %s", kn_file.name, exc_info=True)
+
+        if hasattr(backend, "clear_resolver_cache"):
+            backend.clear_resolver_cache()
+
+        try:
+            await backend.close()
+        except Exception:
+            pass
+
+        logger.info(
+            "Post-consolidation Neo4j ingest for %s: episodes=%d knowledge=%d errors=%d",
+            self.anima_name,
+            stats["episodes"],
+            stats["knowledge"],
+            stats["errors"],
+        )
+        return stats
+
     # ── RAG Index ────────────────────────────────────────────────
 
     def _update_rag_index(
