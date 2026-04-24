@@ -248,8 +248,36 @@ class DiscordAutoResponder:
 
         discord_text = md_to_discord(response_text)
 
+        # ── ACL pre-check ──
+        # Resolve each target's mapped board name and verify posting is
+        # allowed BEFORE we hit the Discord webhook. Without this check,
+        # an Anima @mentioned in a restricted channel (e.g. #ops with
+        # explicitly-empty members) would still reply into Discord even
+        # though the board mirror is later denied — a half-posted state.
+        from core.config.models import load_config as _load_config
+        from core.messenger import is_channel_member
+        from core.paths import get_shared_dir as _get_shared_dir
+
+        try:
+            _board_mapping = _load_config().external_messaging.discord.board_mapping
+            _shared_dir = _get_shared_dir()
+        except Exception:
+            _board_mapping = {}
+            _shared_dir = None
+
         posted_ids: list[str] = []
         for target in targets:
+            channel_id = target["channel_id"]
+            board_name = _board_mapping.get(channel_id) if _board_mapping else None
+            if board_name and _shared_dir is not None:
+                if not is_channel_member(_shared_dir, board_name, anima_name):
+                    logger.warning(
+                        "DiscordAutoResponder: ACL denied — %s cannot post to #%s (channel_id=%s), skipping",
+                        anima_name,
+                        board_name,
+                        channel_id,
+                    )
+                    continue
             try:
                 mention = target.get("mention_prefix", "")
                 text = f"{mention}{discord_text}" if mention else discord_text
