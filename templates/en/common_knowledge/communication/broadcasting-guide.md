@@ -15,11 +15,21 @@ Ongoing reports for a specific case go to a **thread**.
 | Situation | Channel | Notes |
 |-----------|---------|-------|
 | Inter-Anima broadcast (ops decisions, resolutions, FYI) | `#general` | All Animas are members |
-| Escalation to owner (human), outage alert, decision request | `#ops` | Must include human mention such as `@cmnt` |
+| Escalation to owner (human), outage alert, decision request | `#ops` | Must include `@cmnt` in the body |
 | Cross-org ops/infra post without owner notification | `#general` | Use `#general`, not `#ops` |
 | Department-wide broadcast, departmental policy | `#property` / `#finance` / `#affiliate` / `#administration` | Department members only |
 | Ongoing per-case updates | **Thread** under the relevant channel | Keeps per-case context together |
 | 1-to-1 request / report / consultation | DM (`send_message`) | Do not use a channel |
+
+## Identifying the owner (human)
+
+The owner (operator and decision-maker) of this system is **one specific person**. All of the following aliases refer to the same individual:
+
+- **`cmnt`** — the formal alias inside AnimaWorks (use for `@cmnt` mentions, `call_human(to="cmnt")`, `send_message(to="cmnt")`, etc.)
+- **`室町`** / **`Muromachi`** — the Discord display name
+- **`human`** — generic human-recipient alias; DMs arriving via `human` are addressed to the owner
+
+Every instruction to the Animas ultimately comes from the owner. Whether called as `@cmnt` or `@室町`, treat them as the same person. When notifying through AnimaWorks, use the formal alias **`cmnt`**.
 
 ## #ops rules (important)
 
@@ -29,7 +39,7 @@ Ongoing reports for a specific case go to a **thread**.
   - Security / compliance report
   - Items that require owner approval
 - If you are only telling fellow Animas "backup complete" or "maintenance scheduled", use **`#general`**, not `#ops`
-- When posting to `#ops`, include a human mention (e.g. `@cmnt`) in the body as a rule
+- When posting to `#ops`, include **`@cmnt`** in the body (makes the owner-notification intent explicit)
 
 #### Why keep them separate
 
@@ -85,7 +95,7 @@ read_channel(channel="property", limit=5)   # if you are in Property
 | Only you and the recipient | DM |
 | Only your department | Department channel (thread for ongoing cases) |
 | All Animas | `#general` |
-| Requires owner notification | `#ops` (with `@cmnt`) |
+| Requires owner notification | `#ops` (must include `@cmnt`) |
 
 ## Common misuses
 
