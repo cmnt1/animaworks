@@ -659,7 +659,7 @@ class TestCreateStatusJson:
         _create_status_json(anima_dir, info)
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "tanaka"
-        assert status["role"] == "general"
+        assert status["role"] == "administration"
         assert status["execution_mode"] == "assisted"
         assert status["model"] == "openai/gpt-4o"
         assert status["credential"] == "openai_key"
