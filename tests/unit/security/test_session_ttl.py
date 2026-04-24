@@ -13,13 +13,13 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-
 from core.auth.manager import (
     create_session,
+    get_session_cookie_max_age,
     hash_password,
     load_auth,
     save_auth,
@@ -146,7 +146,7 @@ class TestValidateSessionTTL:
 class TestServerConfigDefault:
     def test_default_session_ttl_days(self):
         cfg = ServerConfig()
-        assert cfg.session_ttl_days == 7
+        assert cfg.session_ttl_days == 90
 
     def test_session_ttl_days_nullable(self):
         cfg = ServerConfig(session_ttl_days=None)
@@ -157,6 +157,31 @@ class TestServerConfigDefault:
         assert cfg.session_ttl_days == 30
 
 
+# ── Cookie max-age ───────────────────────────────────────────
+
+
+class TestGetSessionCookieMaxAge:
+    """get_session_cookie_max_age() returns seconds matching TTL config."""
+
+    def test_default_ttl(self):
+        server_cfg = ServerConfig()
+        with patch(_LOAD_CONFIG_PATH) as mock_cfg:
+            mock_cfg.return_value.server = server_cfg
+            assert get_session_cookie_max_age() == 90 * 86400
+
+    def test_custom_ttl(self):
+        server_cfg = ServerConfig(session_ttl_days=30)
+        with patch(_LOAD_CONFIG_PATH) as mock_cfg:
+            mock_cfg.return_value.server = server_cfg
+            assert get_session_cookie_max_age() == 30 * 86400
+
+    def test_unlimited_ttl_returns_400_days(self):
+        server_cfg = ServerConfig(session_ttl_days=None)
+        with patch(_LOAD_CONFIG_PATH) as mock_cfg:
+            mock_cfg.return_value.server = server_cfg
+            assert get_session_cookie_max_age() == 400 * 86400
+
+
 # ── change_password session revocation ───────────────────────
 
 
@@ -165,6 +190,7 @@ class TestChangePasswordRevokesSession:
 
     def _create_test_app(self, data_dir: Path):
         import json
+
         from server.app import create_app
 
         animas_dir = data_dir / "animas"

@@ -391,7 +391,7 @@ class UsageGovernorConfig(BaseModel):
 class ServerConfig(BaseModel):
     """Server runtime configuration."""
 
-    session_ttl_days: int | None = 7  # None = unlimited
+    session_ttl_days: int | None = 90  # None = unlimited
     usage_governor: UsageGovernorConfig = UsageGovernorConfig()
     ipc_stream_timeout: int = 60  # per-chunk timeout in seconds
     keepalive_interval: int = 30  # keep-alive emission interval in seconds

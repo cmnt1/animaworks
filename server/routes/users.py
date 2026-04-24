@@ -17,6 +17,7 @@ from core.auth.manager import (
     create_session,
     find_user,
     get_all_users,
+    get_session_cookie_max_age,
     hash_password,
     load_auth,
     revoke_all_sessions,
@@ -244,11 +245,14 @@ def create_users_router() -> APIRouter:
             token = create_session(auth_config, user.username)
             save_auth(auth_config)
             response = JSONResponse({"status": "ok"})
+            is_https = request.headers.get("x-forwarded-proto") == "https" or request.url.scheme == "https"
             response.set_cookie(
                 key="session_token",
                 value=token,
+                max_age=get_session_cookie_max_age(),
                 httponly=True,
-                samesite="strict",
+                secure=is_https,
+                samesite="lax",
                 path="/",
             )
             logger.info("User '%s' set password (upgraded from local_trust)", caller.username)
