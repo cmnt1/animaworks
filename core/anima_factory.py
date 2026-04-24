@@ -165,6 +165,41 @@ def list_anima_templates() -> list[str]:
     return [d.name for d in sorted(anima_templates_dir.iterdir()) if d.is_dir() and not d.name.startswith("_")]
 
 
+def _trigger_discord_channel_sync(anima_name: str) -> None:
+    """Best-effort Discord channel sync after anima creation.
+
+    Runs the channel sync so the newly-created Anima is enrolled in
+    ``#general`` / ``#ops`` and its department channel immediately — without
+    waiting for the next server restart.  Failures are logged and swallowed;
+    anima creation must never be blocked by Discord reachability.
+
+    The underlying ``_sync_blocking`` uses httpx synchronously and does not
+    depend on any asyncio event loop, so this is safe to call from plain
+    sync contexts (CLI, sync server routes).
+    """
+    try:
+        from core.config.models import load_config
+
+        cfg = load_config()
+        discord_cfg = cfg.external_messaging.discord
+        if not discord_cfg.enabled or not discord_cfg.guild_id:
+            return
+
+        from server.discord_channel_sync import DiscordChannelSync
+
+        DiscordChannelSync()._sync_blocking(cfg, discord_cfg, discord_cfg.guild_id)
+        logger.info(
+            "Discord channel sync triggered after creating anima '%s'",
+            anima_name,
+        )
+    except Exception:
+        logger.warning(
+            "Discord channel sync failed after creating anima '%s' (non-fatal)",
+            anima_name,
+            exc_info=True,
+        )
+
+
 def create_from_template(animas_dir: Path, template_name: str, *, anima_name: str | None = None) -> Path:
     """Create an anima by copying a named template.
 
@@ -201,10 +236,11 @@ def create_from_template(animas_dir: Path, template_name: str, *, anima_name: st
         raise
 
     logger.info("Created anima '%s' from template '%s'", name, template_name)
+    _trigger_discord_channel_sync(name)
     return anima_dir
 
 
-def create_blank(animas_dir: Path, name: str) -> Path:
+def create_blank(animas_dir: Path, name: str, *, _skip_discord_sync: bool = False) -> Path:
     """Create a blank anima with skeleton files.
 
     The {name} placeholder in skeleton files is replaced with the actual name.
@@ -213,6 +249,8 @@ def create_blank(animas_dir: Path, name: str) -> Path:
     Args:
         animas_dir: Runtime animas directory.
         name: Anima name (lowercase alphanumeric).
+        _skip_discord_sync: Internal flag — set by ``create_from_md`` so the
+            post-create sync fires only once, after department is applied.
 
     Returns:
         Path to the created anima directory.
@@ -245,6 +283,8 @@ def create_blank(animas_dir: Path, name: str) -> Path:
         raise
 
     logger.info("Created blank anima '%s'", name)
+    if not _skip_discord_sync:
+        _trigger_discord_channel_sync(name)
     return anima_dir
 
 
@@ -306,8 +346,10 @@ def create_from_md(
             "Could not extract anima name from MD file. Add a '# Character: name' heading or specify --name."
         )
 
-    # Create blank skeleton first, then layer character sheet on top
-    anima_dir = create_blank(animas_dir, name)
+    # Create blank skeleton first, then layer character sheet on top.
+    # Suppress the per-function Discord sync — we fire a single sync at the
+    # end, once the department field from the character sheet is applied.
+    anima_dir = create_blank(animas_dir, name, _skip_discord_sync=True)
     try:
         (anima_dir / "character_sheet.md").write_text(md_content, encoding="utf-8")
         _apply_defaults_from_sheet(anima_dir, md_content)
@@ -326,6 +368,7 @@ def create_from_md(
         raise
 
     logger.info("Created anima '%s' from MD file '%s'", name, md_path)
+    _trigger_discord_channel_sync(name)
     return anima_dir
 
 
