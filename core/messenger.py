@@ -124,8 +124,12 @@ def is_channel_member(
     Rules:
     - ``human`` and ``discord`` sources always have access (gateway bypass).
     - ``dm-{name}`` channels are exclusive: only the named Anima may post.
-    - If no ``.meta.json`` exists the channel is open — everyone has access.
-    - If ``members`` list is empty the channel is open.
+    - If no ``.meta.json`` exists the channel is open — everyone has access
+      (legacy/auto-created channels default to permissive).
+    - If ``.meta.json`` exists and ``members`` is empty, the channel is
+      explicitly closed — nobody may post. This is the semantics used when
+      an administrator clears the membership list via the UI to lock the
+      channel down (e.g. ``#ops``).
     - Otherwise the anima must appear in the ``members`` list.
     """
     if source in ("human", "discord"):
@@ -135,8 +139,10 @@ def is_channel_member(
         owner = channel[3:]  # "dm-hikaru" → "hikaru"
         return anima_name == owner
     meta = load_channel_meta(shared_dir, channel)
-    if meta is None or not meta.members:
+    if meta is None:
         return True
+    if not meta.members:
+        return False
     return anima_name in meta.members
 
 

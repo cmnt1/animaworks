@@ -235,6 +235,28 @@ class DiscordChannelSync:
         cfg.external_messaging.discord.channel_members = channel_members
         save_config(cfg)
 
+        # ── Mirror channel_members to shared/channels/{board}.meta.json ──
+        # The meta.json roster is the source of truth for post_channel ACL
+        # (is_channel_member). Keep it aligned with the UI-managed config
+        # so posting permissions follow the configured membership.
+        meta_synced = 0
+        for ch_id, members in channel_members.items():
+            board_name = board_mapping.get(ch_id)
+            if not board_name:
+                continue
+            try:
+                meta = load_channel_meta(shared_dir, board_name) or ChannelMeta(members=[])
+                if meta.members != list(members):
+                    meta.members = list(members)
+                    save_channel_meta(shared_dir, board_name, meta)
+                    meta_synced += 1
+            except Exception:
+                logger.warning(
+                    "Failed to sync meta.json for board '%s'",
+                    board_name,
+                    exc_info=True,
+                )
+
         summary = {
             "status": "ok",
             "forward_created": forward_created,
@@ -242,6 +264,7 @@ class DiscordChannelSync:
             "dm_created": dm_created,
             "total_mappings": len(board_mapping),
             "total_members_config": len(channel_members),
+            "meta_synced": meta_synced,
         }
         logger.info("Discord channel sync complete: %s", summary)
         return summary

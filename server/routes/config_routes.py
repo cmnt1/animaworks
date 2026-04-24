@@ -578,6 +578,29 @@ def create_config_router() -> APIRouter:
             config.external_messaging.discord.channel_members.pop(channel_id, None)
         save_config(config)
 
+        # Mirror membership to shared/channels/{board}.meta.json so
+        # is_channel_member() (which is the source of truth for post_channel
+        # ACL) reflects the UI-configured roster. Without this mirror the
+        # two systems drift: config.json governs gateway routing while
+        # meta.json governs posting ACL, and UI edits would only affect
+        # the former.
+        try:
+            from core.messenger import ChannelMeta, load_channel_meta, save_channel_meta
+            from core.paths import get_shared_dir
+
+            board_name = config.external_messaging.discord.board_mapping.get(channel_id)
+            if board_name:
+                shared_dir = get_shared_dir()
+                meta = load_channel_meta(shared_dir, board_name) or ChannelMeta(members=[])
+                meta.members = list(members)
+                save_channel_meta(shared_dir, board_name, meta)
+        except Exception:
+            logger.warning(
+                "Failed to mirror channel members to meta.json for %s",
+                channel_id,
+                exc_info=True,
+            )
+
         # Reload gateway routing if available
         gw = getattr(request.app.state, "discord_gateway_manager", None)
         if gw:

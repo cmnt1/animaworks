@@ -135,9 +135,19 @@ class TestIsChannelMember:
     def test_open_channel_no_meta(self, shared_dir: Path):
         assert is_channel_member(shared_dir, "general", "anyone") is True
 
-    def test_open_channel_empty_members(self, shared_dir: Path):
-        save_channel_meta(shared_dir, "open-ch", ChannelMeta(members=[]))
-        assert is_channel_member(shared_dir, "open-ch", "anyone") is True
+    def test_explicit_empty_members_is_closed(self, shared_dir: Path):
+        # A meta.json with an empty members list is an explicit lock-down:
+        # no Anima may post. (Channels without a meta.json at all stay open
+        # — see test_open_channel_no_meta.)
+        save_channel_meta(shared_dir, "locked-ch", ChannelMeta(members=[]))
+        assert is_channel_member(shared_dir, "locked-ch", "anyone") is False
+
+    def test_explicit_empty_members_human_still_allowed(self, shared_dir: Path):
+        # Gateway-sourced posts (source="human"/"discord") bypass ACL even
+        # on an explicitly-closed channel.
+        save_channel_meta(shared_dir, "locked-ch", ChannelMeta(members=[]))
+        assert is_channel_member(shared_dir, "locked-ch", "anyone", source="human") is True
+        assert is_channel_member(shared_dir, "locked-ch", "anyone", source="discord") is True
 
     def test_member_has_access(self, shared_dir: Path):
         save_channel_meta(shared_dir, "private", ChannelMeta(members=["alice", "bob"]))
