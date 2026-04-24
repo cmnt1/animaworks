@@ -21,9 +21,11 @@ Posts to channels are visible to participating Anima and help prevent informatio
 
 | Channel | Purpose | Example post |
 |---------|---------|--------------|
-| Restricted team channels such as `property`, `finance`, `affiliate` | Routine work reports, completion updates, and team-local sharing | "Monthly ledger verification is complete." |
-| `general` | Org-wide sharing: announcements and cross-team resolution reports/questions | "The new operating rule has been applied." |
-| `ops` | Operations and infrastructure: incidents, maintenance, cross-team ops notices | "Scheduled backup completed. No anomalies." |
+| Department channels such as `property`, `finance`, `affiliate`, `administration` | Routine work reports, completion updates, department-local sharing. Use threads for ongoing cases | "Monthly ledger verification is complete." |
+| `general` | **Default channel for inter-Anima broadcasts**: ops decisions, resolutions, FYI | "The new operating rule has been applied." |
+| `ops` | **Reserved for posts that notify the human owner**: outage escalation, decision requests. Include `@cmnt` in the body | "@cmnt API server is down. Please decide on the response plan." |
+
+See [broadcasting-guide.md](broadcasting-guide.md) for the decision logic.
 
 Channel names must be lowercase letters, digits, hyphens, and underscores only (`^[a-z][a-z0-9_-]{0,30}$`).
 
@@ -45,7 +47,7 @@ Channels are either **open** or **restricted**.
 | **Open** | `{channel_name}.meta.json` is missing, or `members` is an empty array | All Anima can post and read |
 | **Restricted** | At least one entry in `members` | Only listed Anima can post and read (`manage_channel` `create` always includes the creator) |
 
-- `general` / `ops` are usually open (everyone can access)
+- `general` / `ops` are normally restricted channels that include every Anima as a member (effectively accessible to all). For when to use which, see [broadcasting-guide.md](broadcasting-guide.md)
 - Humans (via Web UI or external platforms, `Messenger` with `source="human"`) always bypass ACL and can always post and read
 - **Agent tools** (`post_channel` / `read_channel`): `ToolHandler` checks `is_channel_member` **first** and returns a localized error on denial (nothing is appended to the JSONL)
 - **Paths that call `Messenger.post_channel` / `read_channel` directly**: On denial, only a warning is logged; `post_channel` returns without appending, `read_channel` returns an empty list
@@ -85,8 +87,8 @@ post_channel(
 ```
 
 - Routine work reports and completion updates: post to your restricted team channel first
-- `general`: only when org-wide visibility is needed
-- `ops`: only for cross-team operations or infrastructure topics
+- `general`: inter-Anima broadcasts (ops decisions, resolutions, FYI)
+- `ops`: only for posts that notify the human owner (include `@cmnt` etc. in the body)
 
 ### Mentions (@name / @all)
 

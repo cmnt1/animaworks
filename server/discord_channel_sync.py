@@ -230,6 +230,57 @@ class DiscordChannelSync:
                     exc_info=True,
                 )
 
+        # ── Phase 4: Enroll enabled Animas in core channels ──
+        # Every enabled Anima is registered to #general and #ops (org-wide
+        # participation, per policy A1 2026-04: #ops = all-member roster so
+        # owner-notification posts reach the right audience), plus their
+        # department channel when ``department`` is set in status.json.
+        # Runs every sync so newly-hired Animas are enrolled without manual
+        # UI action. Idempotent: does nothing if already enrolled.
+        from core.paths import get_animas_dir
+
+        _CORE_BOARDS = ("general", "ops")
+        _DEPARTMENT_CHANNELS = {"property", "finance", "affiliate", "administration"}
+        board_to_channel_id = {v: k for k, v in board_mapping.items()}
+        enrolled = 0
+
+        for anima_name in enabled_animas:
+            department_board: str | None = None
+            try:
+                status_file = get_animas_dir() / anima_name / "status.json"
+                if status_file.is_file():
+                    status = json.loads(status_file.read_text(encoding="utf-8"))
+                    dept = (status.get("department") or "").strip().lower()
+                    if dept in _DEPARTMENT_CHANNELS:
+                        department_board = dept
+            except Exception:
+                logger.debug(
+                    "Failed to read department for '%s'",
+                    anima_name,
+                    exc_info=True,
+                )
+
+            target_boards = [*_CORE_BOARDS]
+            if department_board:
+                target_boards.append(department_board)
+
+            for board_name in target_boards:
+                ch_id = board_to_channel_id.get(board_name)
+                if not ch_id:
+                    # Channel not yet synced — will be picked up next cycle.
+                    continue
+                current = list(channel_members.get(ch_id, []))
+                if anima_name not in current:
+                    current.append(anima_name)
+                    channel_members[ch_id] = current
+                    enrolled += 1
+                    logger.info(
+                        "Enrolled Anima '%s' in channel #%s (ch_id=%s)",
+                        anima_name,
+                        board_name,
+                        ch_id,
+                    )
+
         # ── Persist config ──
         cfg.external_messaging.discord.board_mapping = board_mapping
         cfg.external_messaging.discord.channel_members = channel_members
@@ -262,6 +313,7 @@ class DiscordChannelSync:
             "forward_created": forward_created,
             "reverse_created": reverse_created,
             "dm_created": dm_created,
+            "anima_enrollments": enrolled,
             "total_mappings": len(board_mapping),
             "total_members_config": len(channel_members),
             "meta_synced": meta_synced,

@@ -30,6 +30,7 @@ After reading, use the index below to find details on each topic.
 |---------|-----------|
 | Don't know how to send messages | `communication/messaging-guide.md` |
 | Don't know how to use Board (shared channels) | `communication/board-guide.md` |
+| Unsure which channel to broadcast to (#ops / #general / department / thread) | `communication/broadcasting-guide.md` |
 | Don't know how to give instructions or report | `communication/instruction-patterns.md` / `communication/reporting-guide.md` |
 | Want to check required fields for delegation/reports/escalation | `communication/message-quality-protocol.md` |
 | Message sending was limited | `communication/sending-limits.md` |
@@ -135,6 +136,7 @@ After reading, use the index below to find details on each topic.
 |------|-------------|
 | `messaging-guide.md` | Full guide to messaging (send_message params, thread management, one-round rule) |
 | `board-guide.md` | Board (shared channels) guide (post_channel / read_channel usage, posting rules) |
+| `broadcasting-guide.md` | Broadcast channel selection (#ops = owner notification only, inter-Anima default = #general, departments use domain channels + threads) |
 | `instruction-patterns.md` | Instruction patterns (clear instructions, delegation patterns, progress checks) |
 | `reporting-guide.md` | How to report and escalate (timing, format, urgent vs routine) |
 | `message-quality-protocol.md` | Message quality protocol (delegation 4 fields, completion 3 fields, escalation 4 fields) |
@@ -241,6 +243,7 @@ Per-role templates under `team-design/infrastructure/{director,monitor}/`: `inje
 | basics, intro, overview, essential, getting started | `anatomy/essentials.md` |
 | message, send_message, reply, thread, inbox | `communication/messaging-guide.md` |
 | Board, channel, post_channel, read_channel | `communication/board-guide.md` |
+| broadcast, broadcasting, org-wide sharing, #ops, #general, department channel, thread, escalation | `communication/broadcasting-guide.md` |
 | DM history, read_dm_history, past conversation | `communication/board-guide.md` |
 | instruction, delegation, task request | `communication/instruction-patterns.md` |
 | report, daily report, summary, escalation | `communication/reporting-guide.md` |

@@ -30,6 +30,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 |---------|--------|
 | メッセージの送り方がわからない | `communication/messaging-guide.md` |
 | Board（共有チャネル）の使い方がわからない | `communication/board-guide.md` |
+| どのチャネルで周知するか迷う（#ops / #general / 部門チャネル / スレッド） | `communication/broadcasting-guide.md` |
 | 指示の出し方・報告の仕方がわからない | `communication/instruction-patterns.md` / `communication/reporting-guide.md` |
 | 委譲・完了報告・エスカレーションの必須項目を確認したい | `communication/message-quality-protocol.md` |
 | メッセージ送信が制限された | `communication/sending-limits.md` |
@@ -135,6 +136,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 |---------|------|
 | `messaging-guide.md` | メッセージ送受信の完全ガイド（send_message のパラメータ、スレッド管理、1ラウンドルール） |
 | `board-guide.md` | Board（共有チャネル）ガイド（post_channel / read_channel の使い分け、投稿ルール） |
+| `broadcasting-guide.md` | 周知チャネル選択ガイド（#ops はオーナー通知専用、Anima 間は #general 基本、部門はドメインチャネル＋スレッド） |
 | `instruction-patterns.md` | 指示の出し方パターン集（明確な指示の書き方、委任パターン、進捗確認） |
 | `reporting-guide.md` | 報告・エスカレーションの方法（報告タイミング、フォーマット、緊急 vs 定期） |
 | `message-quality-protocol.md` | メッセージ品質プロトコル（委譲4項目・完了報告3項目・エスカレーション4項目の必須チェック） |
@@ -241,6 +243,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | 基礎, 入門, 全体像, エッセンシャル, 始め方, 概要 | `anatomy/essentials.md` |
 | メッセージ, send_message, 送信, 返信, スレッド, inbox | `communication/messaging-guide.md` |
 | Board, チャネル, post_channel, read_channel | `communication/board-guide.md` |
+| 周知, ブロードキャスト, 全体共有, #ops, #general, 部門チャネル, スレッド, エスカレーション | `communication/broadcasting-guide.md` |
 | DM履歴, read_dm_history, 過去の会話 | `communication/board-guide.md` |
 | 指示, 委任, タスク依頼, デリゲーション | `communication/instruction-patterns.md` |
 | 報告, 日報, サマリー, 完了報告, エスカレーション | `communication/reporting-guide.md` |

@@ -585,7 +585,27 @@ class DiscordGatewayManager:
 
     @staticmethod
     def _is_anima_in_channel(anima_name: str, channel_id: str, discord_cfg: Any) -> bool:
-        """Check if an Anima is configured as a member of a channel."""
+        """Check if an Anima may participate in a channel.
+
+        Uses the unified ``is_channel_member`` ACL (meta.json is SSoT). This
+        guarantees the gateway drops messages that the posting side
+        (``DiscordAutoResponder``) would later refuse anyway, so we don't
+        spend LLM tokens generating replies that can't be delivered.
+
+        Falls back to the config-based empty-is-open rule for channels that
+        aren't yet mapped (first-sync edge case) to avoid blocking during
+        initial bootstrap.
+        """
+        try:
+            from core.messenger import is_channel_member
+            from core.paths import get_shared_dir
+
+            board_name = discord_cfg.board_mapping.get(channel_id)
+            if board_name:
+                return is_channel_member(get_shared_dir(), board_name, anima_name)
+        except Exception:
+            pass
+        # Fallback: unmapped channel — permissive if no members configured.
         members = discord_cfg.channel_members.get(channel_id, [])
         if not members:
             return True
