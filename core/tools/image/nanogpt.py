@@ -10,10 +10,12 @@
 from __future__ import annotations
 
 import base64
+import json
 from collections.abc import Callable
 
 import httpx
 
+from core.paths import get_data_dir
 from core.tools._base import get_credential, logger
 
 from .constants import _HTTP_TIMEOUT
@@ -27,6 +29,31 @@ NANOGPT_SUBSCRIPTION_MODELS = ("chroma", "hidream", "qwen-image", "z-image-turbo
 
 # Models that support image-to-image via imageDataUrl parameter.
 NANOGPT_IMG2IMG_MODELS = frozenset({"hidream"})
+NANOGPT_IMAGE_MODEL_CATALOG_CACHE_FILE = "image_model_catalog_cache.json"
+
+
+def _cached_img2img_models() -> set[str]:
+    path = get_data_dir() / NANOGPT_IMAGE_MODEL_CATALOG_CACHE_FILE
+    if not path.is_file():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    providers = data.get("providers") if isinstance(data, dict) else None
+    entry = providers.get("nanogpt") if isinstance(providers, dict) else None
+    models = entry.get("models") if isinstance(entry, dict) else None
+    if not isinstance(models, list):
+        return set()
+    return {
+        str(model.get("id", "")).strip()
+        for model in models
+        if isinstance(model, dict) and model.get("image_to_image") is True and str(model.get("id", "")).strip()
+    }
+
+
+def supports_image_to_image(model: str) -> bool:
+    return model in NANOGPT_IMG2IMG_MODELS or model in _cached_img2img_models()
 
 
 class NanoGPTImageClient:
@@ -79,7 +106,7 @@ class NanoGPTImageClient:
             payload["seed"] = seed
 
         # Image-to-image: send face reference as imageDataUrl for supported models
-        if face_reference_image is not None and self._model in NANOGPT_IMG2IMG_MODELS:
+        if face_reference_image is not None and supports_image_to_image(self._model):
             b64_ref = base64.b64encode(face_reference_image).decode()
             payload["imageDataUrl"] = f"data:image/png;base64,{b64_ref}"
             logger.info("NanoGPT img2img: sending face reference (%d bytes)", len(face_reference_image))

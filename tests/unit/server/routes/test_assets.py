@@ -27,6 +27,58 @@ def _make_test_app(animas_dir: Path | None = None):
     return app
 
 
+# Image model catalog endpoints
+
+
+class TestImageModelCatalog:
+    async def test_get_image_models_returns_known_nanogpt_models(self, tmp_path):
+        app = _make_test_app(animas_dir=tmp_path / "animas")
+        transport = ASGITransport(app=app)
+
+        with patch("server.routes.assets.get_data_dir", return_value=tmp_path):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/assets/image-models")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        values = {model["value"] for model in data["models"]}
+        assert "nanogpt:chroma" in values
+        assert "nanogpt:hidream" in values
+        hidream = next(model for model in data["models"] if model["value"] == "nanogpt:hidream")
+        assert hidream["image_to_image"] is True
+
+    async def test_refresh_image_models_caches_api_models_and_allows_generation_model(self, tmp_path):
+        app = _make_test_app(animas_dir=tmp_path / "animas")
+        transport = ASGITransport(app=app)
+        api_models = [
+            {
+                "id": "new-image-model",
+                "label": "New Image Model",
+                "provider": "nanogpt",
+                "image_to_image": True,
+                "source": "api",
+            }
+        ]
+
+        with (
+            patch("server.routes.assets.get_data_dir", return_value=tmp_path),
+            patch("server.routes.assets._nanogpt_image_api_key", return_value="test-key"),
+            patch("server.routes.assets._list_nanogpt_image_models", return_value=api_models),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/assets/image-models/refresh")
+
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["providers"][0]["dynamic"] is True
+            assert any(model["value"] == "nanogpt:new-image-model" for model in data["models"])
+
+            from server.routes.assets import RemakePreviewRequest
+
+            parsed = RemakePreviewRequest.model_validate({"generation_model": "nanogpt:new-image-model"})
+            assert parsed.generation_model == "nanogpt:new-image-model"
+
+
 # ── GET /animas/{name}/assets ───────────────────────────
 
 

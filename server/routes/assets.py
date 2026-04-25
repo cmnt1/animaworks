@@ -4,15 +4,21 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 import hashlib
+import json
 import logging
+import os
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+import httpx
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
+from core.paths import get_data_dir
+from core.tools.image.nanogpt import NANOGPT_IMG2IMG_MODELS, NANOGPT_SUBSCRIPTION_MODELS
 from server.events import emit
 from server.routes.media_proxy import proxy_external_image
 
@@ -112,7 +118,215 @@ class AssetRegenerateRequest(BaseModel):
     negative_prompt: str = ""
 
 
-_VALID_NANOGPT_MODELS = {"chroma", "hidream", "qwen-image", "z-image-turbo"}
+IMAGE_MODEL_CATALOG_CACHE_FILE = "image_model_catalog_cache.json"
+NANOGPT_IMAGE_MODELS_URL = "https://nano-gpt.com/api/v1/image-models"
+_VALID_NANOGPT_MODELS = set(NANOGPT_SUBSCRIPTION_MODELS)
+
+
+def _unique_image_models(models: list[dict[str, object]]) -> list[dict[str, object]]:
+    seen: set[str] = set()
+    result: list[dict[str, object]] = []
+    for model in models:
+        raw_id = str(model.get("id", "")).strip()
+        if not raw_id or raw_id in seen:
+            continue
+        label = str(model.get("label") or model.get("name") or raw_id).strip() or raw_id
+        provider = str(model.get("provider") or "nanogpt").strip() or "nanogpt"
+        result.append(
+            {
+                "id": raw_id,
+                "value": str(model.get("value") or f"{provider}:{raw_id}"),
+                "label": label,
+                "provider": provider,
+                "image_to_image": bool(model.get("image_to_image")),
+                "source": str(model.get("source") or "api"),
+            }
+        )
+        seen.add(raw_id)
+    return result
+
+
+def _known_nanogpt_image_models() -> list[dict[str, object]]:
+    return _unique_image_models(
+        [
+            {
+                "id": model_id,
+                "label": model_id,
+                "provider": "nanogpt",
+                "image_to_image": model_id in NANOGPT_IMG2IMG_MODELS,
+                "source": "known",
+            }
+            for model_id in NANOGPT_SUBSCRIPTION_MODELS
+        ]
+    )
+
+
+def _image_model_catalog_cache_path() -> Path:
+    return get_data_dir() / IMAGE_MODEL_CATALOG_CACHE_FILE
+
+
+def _load_image_model_catalog_cache() -> dict[str, object]:
+    path = _image_model_catalog_cache_path()
+    if not path.is_file():
+        return {"version": 1, "providers": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.warning("Failed to read image model catalog cache from %s", path, exc_info=True)
+        return {"version": 1, "providers": {}}
+    if not isinstance(data, dict):
+        return {"version": 1, "providers": {}}
+    if not isinstance(data.get("providers"), dict):
+        data["providers"] = {}
+    return data
+
+
+def _save_image_model_catalog_cache(data: dict[str, object]) -> None:
+    path = _image_model_catalog_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _cached_nanogpt_image_models() -> list[dict[str, object]]:
+    cache = _load_image_model_catalog_cache()
+    providers = cache.get("providers")
+    if not isinstance(providers, dict):
+        return []
+    entry = providers.get("nanogpt")
+    if not isinstance(entry, dict):
+        return []
+    models = entry.get("models")
+    if not isinstance(models, list):
+        return []
+    return _unique_image_models([model for model in models if isinstance(model, dict)])
+
+
+def _cache_nanogpt_image_models(models: list[dict[str, object]], *, status: str, message: str = "") -> None:
+    cache = _load_image_model_catalog_cache()
+    providers = cache.setdefault("providers", {})
+    if not isinstance(providers, dict):
+        providers = {}
+        cache["providers"] = providers
+    providers["nanogpt"] = {
+        "models": _unique_image_models(models),
+        "status": status,
+        "message": message,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    _save_image_model_catalog_cache(cache)
+
+
+def _nanogpt_image_api_key() -> str:
+    try:
+        from core.config.models import CredentialConfig, load_config
+
+        credential = load_config().credentials.get("nanogpt", CredentialConfig())
+        if credential.api_key:
+            return credential.api_key
+    except Exception:
+        pass
+    if os.environ.get("NANOGPT_API_KEY"):
+        return os.environ["NANOGPT_API_KEY"]
+    try:
+        from server.routes.config_routes import _abconfig_value
+
+        return _abconfig_value("nanogpt_api")
+    except Exception:
+        logger.warning("Failed to read nanoGPT key from abconfig", exc_info=True)
+        return ""
+
+
+def _as_model_items(data: object) -> list[object]:
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        return []
+    for key in ("data", "models", "image_models", "items"):
+        value = data.get(key)
+        if isinstance(value, list):
+            return value
+    return [{"id": key, **value} for key, value in data.items() if isinstance(value, dict)]
+
+
+def _bool_from_capabilities(item: dict[str, object], *keys: str) -> bool:
+    for key in keys:
+        if item.get(key) is True:
+            return True
+    capabilities = item.get("capabilities")
+    if isinstance(capabilities, dict):
+        for key in keys:
+            if capabilities.get(key) is True:
+                return True
+    return False
+
+
+def _parse_nanogpt_image_models(data: object) -> list[dict[str, object]]:
+    models: list[dict[str, object]] = []
+    for item in _as_model_items(data):
+        if isinstance(item, str):
+            model_id = item.strip()
+            label = model_id
+            image_to_image = model_id in NANOGPT_IMG2IMG_MODELS
+        elif isinstance(item, dict):
+            model_id = str(item.get("id") or item.get("model") or item.get("name") or "").strip()
+            if not model_id:
+                continue
+            label = str(item.get("label") or item.get("name") or item.get("display_name") or model_id).strip()
+            image_to_image = _bool_from_capabilities(item, "image_to_image", "img2img") or (
+                model_id in NANOGPT_IMG2IMG_MODELS
+            )
+        else:
+            continue
+        models.append(
+            {
+                "id": model_id,
+                "label": label or model_id,
+                "provider": "nanogpt",
+                "image_to_image": image_to_image,
+                "source": "api",
+            }
+        )
+    return _unique_image_models(sorted(models, key=lambda model: str(model["id"])))
+
+
+def _list_nanogpt_image_models(api_key: str = "") -> list[dict[str, object]]:
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    response = httpx.get(
+        NANOGPT_IMAGE_MODELS_URL,
+        params={"detailed": "true"},
+        headers=headers,
+        timeout=httpx.Timeout(10.0, connect=5.0),
+    )
+    response.raise_for_status()
+    return _parse_nanogpt_image_models(response.json())
+
+
+def _image_models_payload() -> dict[str, object]:
+    known = _known_nanogpt_image_models()
+    cached = _cached_nanogpt_image_models()
+    models = _unique_image_models([*known, *cached])
+    source = "cache" if cached else "known"
+    return {
+        "providers": [
+            {
+                "provider": "nanogpt",
+                "status": source,
+                "source": source,
+                "dynamic": source == "cache",
+                "count": len(cached or known),
+            }
+        ],
+        "models": models,
+    }
+
+
+def _valid_nanogpt_image_model_ids() -> set[str]:
+    return {
+        str(model["id"])
+        for model in _unique_image_models([*_known_nanogpt_image_models(), *_cached_nanogpt_image_models()])
+    }
 
 
 class RemakePreviewRequest(BaseModel):
@@ -135,7 +349,7 @@ class RemakePreviewRequest(BaseModel):
             return v
         if v.startswith("nanogpt:"):
             model_name = v.split(":", 1)[1]
-            if model_name not in _VALID_NANOGPT_MODELS:
+            if model_name not in _valid_nanogpt_image_model_ids():
                 raise ValueError(f"Unknown NanoGPT model: {model_name}")
             return v
         raise ValueError(f"Invalid generation_model: {v}")
@@ -238,6 +452,48 @@ def _effective_image_config(
 
 def create_assets_router() -> APIRouter:
     router = APIRouter()
+
+    @router.get("/assets/image-models")
+    async def get_image_models():
+        """Return image generation models supported by the assets remake UI."""
+        return _image_models_payload()
+
+    @router.post("/assets/image-models/refresh")
+    async def refresh_image_models():
+        """Refresh image-generation model catalogs and return the updated dropdown payload."""
+        fallback = _known_nanogpt_image_models()
+        try:
+            models = _list_nanogpt_image_models(_nanogpt_image_api_key())
+        except Exception as exc:
+            cached = _cached_nanogpt_image_models()
+            if not cached:
+                _cache_nanogpt_image_models(fallback, status="fallback", message=str(exc))
+            return {
+                "providers": [
+                    {
+                        "provider": "nanogpt",
+                        "status": "cached" if cached else "fallback",
+                        "source": "cache" if cached else "known",
+                        "dynamic": False,
+                        "count": len(cached or fallback),
+                        "message": str(exc),
+                    }
+                ],
+                "models": _unique_image_models([*fallback, *(cached or [])]),
+            }
+        _cache_nanogpt_image_models(models, status="ok")
+        return {
+            "providers": [
+                {
+                    "provider": "nanogpt",
+                    "status": "ok",
+                    "source": "api",
+                    "dynamic": True,
+                    "count": len(models),
+                }
+            ],
+            "models": _unique_image_models([*fallback, *models]),
+        }
 
     @router.get("/animas/{name}/assets")
     async def list_assets(name: str, request: Request):
