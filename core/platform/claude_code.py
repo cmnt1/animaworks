@@ -17,7 +17,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _iter_claude_candidates() -> list[str]:
+def _iter_claude_candidates(*, include_bundled: bool = True) -> list[str]:
     """Return plausible Claude Code CLI locations.
 
     Order of preference:
@@ -32,6 +32,12 @@ def _iter_claude_candidates() -> list[str]:
         if p and p not in seen:
             seen.add(p)
             candidates.append(p)
+
+    # Explicit override for pinned/known-good Claude Code builds.
+    for env_name in ("ANIMAWORKS_CLAUDE_CODE_PATH", "CLAUDE_CODE_PATH"):
+        override = os.environ.get(env_name)
+        if override and Path(override).is_file():
+            _add(str(Path(override)))
 
     # npm global bin (Windows: %APPDATA%/npm, Unix: varies)
     if sys.platform == "win32":
@@ -60,9 +66,10 @@ def _iter_claude_candidates() -> list[str]:
         _add(direct)
 
     # SDK bundled binary (lowest priority – can intermittently fail to launch)
-    bundled = _find_sdk_bundled_cli()
-    if bundled:
-        _add(bundled)
+    if include_bundled:
+        bundled = _find_sdk_bundled_cli()
+        if bundled:
+            _add(bundled)
 
     return candidates
 
@@ -95,9 +102,9 @@ def _is_usable_claude_executable(candidate: str) -> bool:
     return result.returncode == 0
 
 
-def get_claude_executable() -> str | None:
+def get_claude_executable(*, include_bundled: bool = True) -> str | None:
     """Return the best available Claude Code CLI executable path."""
-    for candidate in _iter_claude_candidates():
+    for candidate in _iter_claude_candidates(include_bundled=include_bundled):
         if _is_usable_claude_executable(candidate):
             return candidate
     return None

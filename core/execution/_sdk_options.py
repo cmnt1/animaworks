@@ -55,6 +55,10 @@ _cached_cli_path: str | None = None
 _cli_path_resolved: bool = False
 
 
+class AgentSDKCLIUnavailableError(RuntimeError):
+    """Raised when Mode S cannot safely start Claude Code CLI."""
+
+
 def _build_sdk_path_env(anima_dir: Path, project_dir: Path) -> str:
     """Build PATH for Claude Code subprocesses.
 
@@ -88,12 +92,21 @@ def _resolve_sdk_cli_path() -> str | None:
 
     from core.platform.claude_code import get_claude_executable
 
-    _cached_cli_path = get_claude_executable()
+    # On Windows, never use the SDK-bundled claude.exe. It can pass
+    # --version but still crash when launched for stream-json sessions,
+    # producing an OS modal dialog that gets respawned by supervisor loops.
+    allow_bundled = sys.platform != "win32"
+    _cached_cli_path = get_claude_executable(include_bundled=allow_bundled)
     _cli_path_resolved = True
     if _cached_cli_path:
         logger.info("Resolved Claude Code CLI: %s", _cached_cli_path)
     else:
-        logger.warning("Could not resolve a verified Claude Code CLI; SDK will fall back to its own discovery")
+        logger.warning("Could not resolve a verified Claude Code CLI")
+        if sys.platform == "win32":
+            raise AgentSDKCLIUnavailableError(
+                "Claude Code CLI was not found outside claude-agent-sdk's bundled claude.exe. "
+                "Install @anthropic-ai/claude-code or configure PATH so Mode S can use an external CLI."
+            )
     return _cached_cli_path
 
 
