@@ -79,6 +79,7 @@ class ModelConfig(BaseModel):
     api_key: str | None = None  # direct API key (resolved from config.json)
     api_key_env: str = "ANTHROPIC_API_KEY"  # fallback: env var name
     api_base_url: str | None = None  # e.g. http://localhost:11434/v1
+    credential_type: str = "api_key"  # api_key, codex_login, claude_code_login, etc.
     context_threshold: float = 0.50  # short-term memory externalization threshold
     max_chains: int = 2  # max auto-continuation sessions
     conversation_history_threshold: float = 0.30  # conversation compression trigger

@@ -336,6 +336,17 @@ class TestExecutorInit:
         assert env.get("OPENAI_API_KEY") == "test-key-123"
         assert "CODEX_HOME" in env
 
+    def test_build_env_omits_api_key_for_codex_login(self, model_config, anima_dir):
+        model_config.api_key = None
+        model_config.credential_type = "codex_login"
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-env-should-not-leak"}):
+            env = exc._build_env()
+
+        assert "OPENAI_API_KEY" not in env
+        assert env["CODEX_HOME"] == str(anima_dir / ".codex_home")
+
     def test_default_home_dir_prefers_userprofile_when_home_missing(self):
         with patch.dict("os.environ", {"USERPROFILE": r"C:\Users\Tester"}, clear=True):
             assert _default_home_dir() == r"C:\Users\Tester"
@@ -411,6 +422,34 @@ class TestConfigWriting:
         assert "danger-full-access" in config_toml  # default file_roots=["/"]
         assert 'approval_policy = "never"' in config_toml
         assert "[mcp_servers.aw]" in config_toml
+        assert 'preferred_auth_method = "apikey"' in config_toml
+
+    def test_write_codex_config_prefers_chatgpt_for_codex_login(self, model_config, anima_dir):
+        model_config.api_key = None
+        model_config.credential_type = "codex_login"
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with (
+            patch.object(exc, "_propagate_auth"),
+            patch("core.execution.codex_sdk.is_codex_login_available", return_value=True),
+        ):
+            exc._write_codex_config("prompt")
+
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        assert 'preferred_auth_method = "chatgpt"' in config_toml
+        assert 'model = "o4-mini"' in config_toml
+
+    def test_write_codex_config_raises_when_codex_login_missing(self, model_config, anima_dir):
+        model_config.api_key = None
+        model_config.credential_type = "codex_login"
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with (
+            patch.object(exc, "_propagate_auth"),
+            patch("core.execution.codex_sdk.is_codex_login_available", return_value=False),
+            pytest.raises(RuntimeError, match="Codex CLI login is required"),
+        ):
+            exc._write_codex_config("prompt")
 
     @patch("sys.platform", "linux")
     def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir):

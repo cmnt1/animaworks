@@ -41,7 +41,7 @@ from core.execution.base import (
     _truncate_for_record,
 )
 from core.memory.shortterm import ShortTermMemory
-from core.platform.codex import default_home_dir, get_codex_executable
+from core.platform.codex import default_home_dir, get_codex_executable, is_codex_login_available
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -684,7 +684,9 @@ class CodexSDKExecutor(BaseExecutor):
                 if val:
                     env[var] = val
         api_key = self._resolve_api_key()
-        if api_key and _is_openai_api_key(api_key):
+        if self._uses_codex_login_auth():
+            logger.debug("Using Codex login auth; not forwarding OPENAI_API_KEY to Codex child")
+        elif api_key and _is_openai_api_key(api_key):
             env["OPENAI_API_KEY"] = api_key
         elif api_key:
             logger.debug(
@@ -700,6 +702,16 @@ class CodexSDKExecutor(BaseExecutor):
             env["OPENAI_BASE_URL"] = base
         return env
 
+    def _uses_codex_login_auth(self) -> bool:
+        """Return True when Mode C should use Codex CLI ChatGPT login auth."""
+        credential_type = (self._model_config.credential_type or "").strip().lower()
+        if credential_type == "codex_login":
+            return True
+        # Codex-prefixed models are CLI-native.  If no explicit OpenAI API key
+        # is configured, prefer the user's Codex CLI login session.
+        model = self._model_config.model
+        return (model.startswith("codex/") or model.startswith("openai-codex/")) and not self._resolve_api_key()
+
     def _build_mcp_env(self) -> dict[str, str]:
         """Build env dict for the MCP server subprocess."""
         from core.paths import PROJECT_DIR
@@ -711,7 +723,7 @@ class CodexSDKExecutor(BaseExecutor):
             "PATH": _default_path_env(),
         }
 
-    def _propagate_auth(self) -> None:
+    def _propagate_auth(self, *, force: bool = False) -> None:
         """Ensure per-anima CODEX_HOME has valid auth.
 
         Strategy:
@@ -730,12 +742,14 @@ class CodexSDKExecutor(BaseExecutor):
             default_auth = Path.home() / ".codex" / "auth.json"
         target = self._codex_home / "auth.json"
 
-        if target.exists() and not target.is_symlink():
+        if target.exists() and not target.is_symlink() and not force:
             return
 
         if target.is_symlink():
             if target.resolve() == default_auth.resolve():
                 return
+            target.unlink()
+        elif target.exists() and force and default_auth.is_file():
             target.unlink()
 
         if default_auth.is_file():
@@ -802,7 +816,13 @@ class CodexSDKExecutor(BaseExecutor):
         ``~/.codex/`` instead.
         """
         self._codex_home.mkdir(parents=True, exist_ok=True)
-        self._propagate_auth()
+        uses_codex_login = self._uses_codex_login_auth()
+        self._propagate_auth(force=uses_codex_login)
+        if uses_codex_login and not is_codex_login_available():
+            raise RuntimeError(
+                "Codex CLI login is required for codex_login auth. "
+                "Run `codex login` (or use the setup browser login) before starting this Anima."
+            )
 
         config_home = self._effective_codex_home()
         config_home.mkdir(parents=True, exist_ok=True)
@@ -837,9 +857,17 @@ class CodexSDKExecutor(BaseExecutor):
         mcp_env = self._build_mcp_env()
         mcp_env_lines = "\n".join(f'{k} = "{esc(v)}"' for k, v in mcp_env.items())
 
+        if uses_codex_login:
+            auth_method_line = 'preferred_auth_method = "chatgpt"\n'
+        elif self._resolve_api_key():
+            auth_method_line = 'preferred_auth_method = "apikey"\n'
+        else:
+            auth_method_line = ""
+
         config_toml = (
             f'model = "{esc(bare_model)}"\n'
             f'model_provider = "openai"\n'
+            f"{auth_method_line}"
             f'model_instructions_file = "{esc(str(instructions_file))}"\n'
             f'developer_instructions = "{esc(self._CODEX_DEVELOPER_INSTRUCTIONS)}"\n'
             f'personality = "friendly"\n'

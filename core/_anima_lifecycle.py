@@ -70,6 +70,7 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
     cred = cfg.credentials.get(provider) if provider else None
     api_key = cred.api_key if cred else None
     api_base_url = (cred.base_url if cred else None) or None
+    credential_type = (cred.type if cred else None) or "api_key"
     api_key_env = _PROVIDER_ENV_MAP.get(provider, "ANTHROPIC_API_KEY")
     extra_keys: dict[str, str] = {}
     if cred and hasattr(cred, "keys") and cred.keys:
@@ -77,6 +78,7 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
     return {
         "api_key": api_key,
         "api_base_url": api_base_url,
+        "credential_type": credential_type,
         "api_key_env": api_key_env,
         "extra_keys": extra_keys,
     }
@@ -473,6 +475,7 @@ class LifecycleMixin:
         _orig_model = self.model_config.model
         _orig_api_key = self.model_config.api_key
         _orig_api_base_url = self.model_config.api_base_url
+        _orig_credential_type = self.model_config.credential_type
         _orig_api_key_env = self.model_config.api_key_env
         _orig_extra_keys = self.model_config.extra_keys
         _orig_resolved_mode = self.model_config.resolved_mode
@@ -483,6 +486,7 @@ class LifecycleMixin:
             self.model_config.model = consolidation_model
             self.model_config.api_key = _cred_override["api_key"]
             self.model_config.api_base_url = _cred_override["api_base_url"]
+            self.model_config.credential_type = _cred_override["credential_type"]
             self.model_config.api_key_env = _cred_override["api_key_env"]
             self.model_config.extra_keys = _cred_override["extra_keys"]
             self.model_config.resolved_mode = _consolidation_mode
@@ -497,6 +501,7 @@ class LifecycleMixin:
             self.model_config.model = _orig_model
             self.model_config.api_key = _orig_api_key
             self.model_config.api_base_url = _orig_api_base_url
+            self.model_config.credential_type = _orig_credential_type
             self.model_config.api_key_env = _orig_api_key_env
             self.model_config.extra_keys = _orig_extra_keys
             self.model_config.resolved_mode = _orig_resolved_mode

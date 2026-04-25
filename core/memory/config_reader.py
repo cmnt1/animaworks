@@ -56,6 +56,7 @@ class ConfigReader:
                 api_key=credential.api_key or None,
                 api_key_env=api_key_env,
                 api_base_url=credential.base_url,
+                credential_type=credential.type or "api_key",
                 context_threshold=resolved.context_threshold,
                 max_chains=resolved.max_chains,
                 conversation_history_threshold=resolved.conversation_history_threshold,
