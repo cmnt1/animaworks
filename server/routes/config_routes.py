@@ -3,6 +3,8 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+from datetime import UTC, datetime
+import importlib.util
 import json
 import logging
 import os
@@ -28,20 +30,141 @@ from core.config.models import (
     save_config,
 )
 from core.i18n import t
-from core.paths import get_animas_dir
+from core.paths import get_animas_dir, get_data_dir
 from core.platform.claude_code import is_claude_code_available
 from core.platform.codex import is_codex_cli_available, is_codex_login_available
 
 logger = logging.getLogger("animaworks.routes.config")
 
+ABCONFIG_ENV_FILE = Path(r"E:\OneDriveBiz\Tools\abconfig\Cnct_Env.py")
+ABCONFIG_KEYS = {"openai_id", "openai_key", "claude_token", "claude_api", "nanogpt_api", "gemini_api"}
+MODEL_CATALOG_CACHE_FILE = "model_catalog_cache.json"
+MODEL_CATALOG_PROVIDERS = ("claude_code", "codex", "nanogpt", "google")
+
 
 def _known_codex_models() -> list[str]:
     """Return UI-visible Codex model ids from the shared known-model catalog."""
-    return [
+    models = [
         str(item["name"])
         for item in KNOWN_MODELS
         if item.get("mode") == "C" and str(item.get("name", "")).startswith("codex/")
     ]
+    return _unique_model_ids(["codex/gpt-5.5", *models])
+
+
+def _known_claude_code_models() -> list[str]:
+    """Return UI-visible Claude Code model ids from the shared known-model catalog."""
+    return [
+        str(item["name"])
+        for item in KNOWN_MODELS
+        if item.get("mode") == "S" and str(item.get("name", "")).startswith("claude-")
+    ]
+
+
+def _known_google_models() -> list[str]:
+    return [
+        "google/gemini-2.5-pro",
+        "google/gemini-2.5-flash",
+        "google/gemini-2.0-flash",
+        "google/gemini-2.0-flash-lite",
+    ]
+
+
+def _load_abconfig_credentials() -> dict[str, str]:
+    if not ABCONFIG_ENV_FILE.is_file():
+        return {}
+    try:
+        spec = importlib.util.spec_from_file_location("_animaworks_abconfig_cnct_env", ABCONFIG_ENV_FILE)
+        if spec is None or spec.loader is None:
+            return {}
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        logger.warning("Failed to load abconfig environment file: %s", ABCONFIG_ENV_FILE, exc_info=True)
+        return {}
+    return {key: value for key in ABCONFIG_KEYS if isinstance((value := getattr(module, key, "")), str) and value}
+
+
+def _abconfig_value(key: str) -> str:
+    return _load_abconfig_credentials().get(key, "")
+
+
+def _first_secret(*values: str | None) -> str:
+    for value in values:
+        if value:
+            return value
+    return ""
+
+
+def _unique_model_ids(models: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for model in models:
+        model_id = str(model).strip()
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        result.append(model_id)
+    return result
+
+
+def _model_catalog_cache_path() -> Path:
+    return get_data_dir() / MODEL_CATALOG_CACHE_FILE
+
+
+def _load_model_catalog_cache() -> dict[str, object]:
+    path = _model_catalog_cache_path()
+    if not path.is_file():
+        return {"version": 1, "providers": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.warning("Failed to read model catalog cache from %s", path, exc_info=True)
+        return {"version": 1, "providers": {}}
+    if not isinstance(data, dict):
+        return {"version": 1, "providers": {}}
+    if not isinstance(data.get("providers"), dict):
+        data["providers"] = {}
+    return data
+
+
+def _save_model_catalog_cache(data: dict[str, object]) -> None:
+    path = _model_catalog_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _cached_provider_models(provider: str) -> list[str]:
+    cache = _load_model_catalog_cache()
+    providers = cache.get("providers")
+    if not isinstance(providers, dict):
+        return []
+    entry = providers.get(provider)
+    if not isinstance(entry, dict):
+        return []
+    models = entry.get("models")
+    if not isinstance(models, list):
+        return []
+    return _unique_model_ids([str(model) for model in models])
+
+
+def _cache_provider_models(provider: str, models: list[str], *, status: str, message: str = "") -> None:
+    cache = _load_model_catalog_cache()
+    providers = cache.setdefault("providers", {})
+    if not isinstance(providers, dict):
+        providers = {}
+        cache["providers"] = providers
+    providers[provider] = {
+        "models": _unique_model_ids(models),
+        "status": status,
+        "message": message,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    _save_model_catalog_cache(cache)
+
+
+def _models_for_provider(provider: str, fallback: list[str]) -> list[str]:
+    return _unique_model_ids([*fallback, *_cached_provider_models(provider)])
 
 
 class UpdateAnthropicAuthRequest(BaseModel):
@@ -59,6 +182,10 @@ class UpdateLocalLLMRequest(BaseModel):
     default_model: str = DEFAULT_LOCAL_LLM_PRESETS["coding"]
     presets: dict[str, str] = {}
     role_presets: dict[str, str] = {}
+
+
+class RefreshAvailableModelsRequest(BaseModel):
+    providers: list[str] | None = None
 
 
 def _mask_secrets(obj: object) -> object:
@@ -162,6 +289,263 @@ def _list_ollama_models(base_url: str) -> list[str]:
         }
     )
     return [model for model in models if model]
+
+
+def _list_openai_models(api_key: str, organization: str = "") -> list[str]:
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if organization.startswith("org-"):
+        headers["OpenAI-Organization"] = organization
+    response = httpx.get(
+        "https://api.openai.com/v1/models",
+        headers=headers,
+        timeout=httpx.Timeout(10.0, connect=5.0),
+    )
+    response.raise_for_status()
+    data = response.json()
+    ids = [
+        str(item.get("id", "")).strip()
+        for item in data.get("data", [])
+        if isinstance(item, dict) and item.get("id")
+    ]
+    return _unique_model_ids([f"codex/{model_id}" for model_id in sorted(ids) if model_id.startswith(("gpt-", "o"))])
+
+
+def _list_anthropic_models(api_key: str = "", auth_token: str = "") -> list[str]:
+    headers = {"anthropic-version": "2023-06-01"}
+    if api_key:
+        headers["x-api-key"] = api_key
+    elif auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    response = httpx.get(
+        "https://api.anthropic.com/v1/models",
+        headers=headers,
+        timeout=httpx.Timeout(10.0, connect=5.0),
+    )
+    response.raise_for_status()
+    data = response.json()
+    return sorted(
+        {
+            str(item.get("id", "")).strip()
+            for item in data.get("data", [])
+            if isinstance(item, dict) and item.get("id")
+        }
+    )
+
+
+def _list_google_models(api_key: str) -> list[str]:
+    response = httpx.get(
+        "https://generativelanguage.googleapis.com/v1beta/models",
+        params={"key": api_key},
+        timeout=httpx.Timeout(10.0, connect=5.0),
+    )
+    response.raise_for_status()
+    data = response.json()
+    models: list[str] = []
+    for item in data.get("models", []):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip().removeprefix("models/")
+        if name and name.startswith("gemini-"):
+            models.append(f"google/{name}")
+    return _unique_model_ids(sorted(models))
+
+
+def _refresh_claude_code_models(config) -> dict[str, object]:
+    credential = config.credentials.get("anthropic", CredentialConfig())
+    fallback = _known_claude_code_models()
+    api_key = _first_secret(credential.api_key, os.environ.get("ANTHROPIC_API_KEY"), _abconfig_value("claude_api"))
+    auth_token = _first_secret(_abconfig_value("claude_token"))
+    if not api_key and not auth_token:
+        _cache_provider_models("claude_code", fallback, status="fallback", message="No Anthropic API key configured.")
+        return {"provider": "claude_code", "status": "fallback", "source": "known", "dynamic": False, "count": len(fallback)}
+    try:
+        models = _list_anthropic_models(api_key=api_key, auth_token=auth_token)
+    except Exception as exc:
+        cached = _cached_provider_models("claude_code")
+        if cached:
+            return {
+                "provider": "claude_code",
+                "status": "cached",
+                "source": "cache",
+                "dynamic": False,
+                "count": len(cached),
+                "message": str(exc),
+            }
+        _cache_provider_models("claude_code", fallback, status="fallback", message=str(exc))
+        return {
+            "provider": "claude_code",
+            "status": "fallback",
+            "source": "known",
+            "dynamic": False,
+            "count": len(fallback),
+            "message": str(exc),
+        }
+    _cache_provider_models("claude_code", models, status="ok")
+    return {"provider": "claude_code", "status": "ok", "source": "api", "dynamic": True, "count": len(models)}
+
+
+def _refresh_codex_models(config) -> dict[str, object]:
+    credential = config.credentials.get("openai", CredentialConfig())
+    fallback = _known_codex_models()
+    api_key = _first_secret(credential.api_key, os.environ.get("OPENAI_API_KEY"), _abconfig_value("openai_key"))
+    if not api_key:
+        _cache_provider_models("codex", fallback, status="fallback", message="No OpenAI API key configured.")
+        return {"provider": "codex", "status": "fallback", "source": "known", "dynamic": False, "count": len(fallback)}
+    try:
+        models = _list_openai_models(api_key, organization=_abconfig_value("openai_id"))
+    except Exception as exc:
+        cached = _cached_provider_models("codex")
+        if cached:
+            return {
+                "provider": "codex",
+                "status": "cached",
+                "source": "cache",
+                "dynamic": False,
+                "count": len(cached),
+                "message": str(exc),
+            }
+        _cache_provider_models("codex", fallback, status="fallback", message=str(exc))
+        return {
+            "provider": "codex",
+            "status": "fallback",
+            "source": "known",
+            "dynamic": False,
+            "count": len(fallback),
+            "message": str(exc),
+        }
+    _cache_provider_models("codex", models, status="ok")
+    return {"provider": "codex", "status": "ok", "source": "api", "dynamic": True, "count": len(models)}
+
+
+def _refresh_nanogpt_models(config) -> dict[str, object]:
+    credential = config.credentials.get("nanogpt", CredentialConfig())
+    api_key = _first_secret(credential.api_key, os.environ.get("NANOGPT_API_KEY"), _abconfig_value("nanogpt_api"))
+    if not api_key:
+        cached = _cached_provider_models("nanogpt")
+        return {
+            "provider": "nanogpt",
+            "status": "skipped",
+            "source": "none",
+            "dynamic": False,
+            "count": len(cached),
+            "message": "No nanoGPT API key configured.",
+        }
+    try:
+        base_url = credential.base_url or "https://nano-gpt.com/api/subscription/v1"
+        models = [f"nanogpt/{model}" for model in _list_nanogpt_models(base_url, api_key)]
+    except Exception as exc:
+        cached = _cached_provider_models("nanogpt")
+        return {
+            "provider": "nanogpt",
+            "status": "cached" if cached else "error",
+            "source": "cache" if cached else "none",
+            "dynamic": False,
+            "count": len(cached),
+            "message": str(exc),
+        }
+    _cache_provider_models("nanogpt", models, status="ok")
+    return {"provider": "nanogpt", "status": "ok", "source": "api", "dynamic": True, "count": len(models)}
+
+
+def _refresh_google_models(config) -> dict[str, object]:
+    credential = config.credentials.get("google") or config.credentials.get("gemini") or CredentialConfig()
+    fallback = _known_google_models()
+    api_key = _first_secret(credential.api_key, os.environ.get("GOOGLE_API_KEY"), _abconfig_value("gemini_api"))
+    if not api_key:
+        _cache_provider_models("google", fallback, status="fallback", message="No Google API key configured.")
+        return {"provider": "google", "status": "fallback", "source": "known", "dynamic": False, "count": len(fallback)}
+    try:
+        models = _list_google_models(api_key)
+    except Exception as exc:
+        cached = _cached_provider_models("google")
+        if cached:
+            return {
+                "provider": "google",
+                "status": "cached",
+                "source": "cache",
+                "dynamic": False,
+                "count": len(cached),
+                "message": str(exc),
+            }
+        _cache_provider_models("google", fallback, status="fallback", message=str(exc))
+        return {
+            "provider": "google",
+            "status": "fallback",
+            "source": "known",
+            "dynamic": False,
+            "count": len(fallback),
+            "message": str(exc),
+        }
+    _cache_provider_models("google", models, status="ok")
+    return {"provider": "google", "status": "ok", "source": "api", "dynamic": True, "count": len(models)}
+
+
+def _available_models_payload(config) -> list[dict[str, str]]:
+    models: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(model_id: str, *, label: str, credential: str) -> None:
+        if model_id in seen:
+            return
+        models.append({"id": model_id, "label": label, "credential": credential})
+        seen.add(model_id)
+
+    for provider, cred in config.credentials.items():
+        if not cred.api_key and cred.type not in ("claude_code_login", "codex_login"):
+            continue
+        if provider == "anthropic":
+            for model_id in _models_for_provider("claude_code", _known_claude_code_models()):
+                add(model_id, label=f"Anthropic: {model_id}", credential="anthropic")
+        elif provider == "openai":
+            if cred.api_key:
+                for model_id in (
+                    "gpt-5.4",
+                    "gpt-5.4-mini",
+                    "gpt-5.4-nano",
+                    "gpt-5",
+                    "gpt-5-mini",
+                    "gpt-5-nano",
+                    "gpt-4.1",
+                    "gpt-4.1-mini",
+                    "gpt-4.1-nano",
+                    "o3",
+                    "o4-mini",
+                ):
+                    add(model_id, label=f"OpenAI: {model_id}", credential="openai")
+            if cred.type == "codex_login" or cred.api_key:
+                for model_id in _models_for_provider("codex", _known_codex_models()):
+                    add(model_id, label=f"OpenAI: {model_id}", credential="openai")
+        elif provider in ("google", "gemini"):
+            for model_id in _models_for_provider("google", _known_google_models()):
+                add(model_id, label=f"Google: {model_id.removeprefix('google/')}", credential="google")
+
+    if is_codex_login_available():
+        for model_id in _models_for_provider("codex", _known_codex_models()):
+            add(model_id, label=f"OpenAI: {model_id}", credential="codex")
+
+    nanogpt_cred = config.credentials.get("nanogpt")
+    if nanogpt_cred and nanogpt_cred.api_key:
+        nanogpt_models = _cached_provider_models("nanogpt")
+        if not nanogpt_models:
+            try:
+                ngpt_base = nanogpt_cred.base_url or "https://nano-gpt.com/api/subscription/v1"
+                nanogpt_models = [f"nanogpt/{model}" for model in _list_nanogpt_models(ngpt_base, nanogpt_cred.api_key)]
+            except Exception:
+                nanogpt_models = []
+        for model_id in nanogpt_models:
+            add(model_id, label=f"nanoGPT: {model_id.removeprefix('nanogpt/')}", credential="nanogpt")
+
+    try:
+        local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
+        base_url = normalize_ollama_base_url(local_llm.base_url)
+        for model in _list_ollama_models(base_url):
+            model_id = f"ollama/{model}" if not model.startswith("ollama/") else model
+            label = model.removeprefix("ollama/") if model.startswith("ollama/") else model
+            add(model_id, label=label, credential="ollama")
+    except Exception:
+        pass
+
+    return models
 
 
 def _serialize_local_llm() -> dict[str, object]:
@@ -295,89 +679,32 @@ def create_config_router() -> APIRouter:
     async def get_available_models(request: Request):
         """Return all available models (cloud + local) for UI dropdowns."""
         config = load_config()
-        models: list[dict[str, str]] = []
-        seen: set[str] = set()
+        return {"models": _available_models_payload(config)}
 
-        # Cloud providers
-        for provider, cred in config.credentials.items():
-            if not cred.api_key and cred.type not in ("claude_code_login", "codex_login"):
-                continue
-            if provider == "anthropic":
-                for m in ("claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"):
-                    if m not in seen:
-                        models.append({"id": m, "label": f"Anthropic: {m}", "credential": "anthropic"})
-                        seen.add(m)
-            elif provider == "openai":
-                # API models require api_key (not available with codex_login only)
-                if cred.api_key:
-                    for m in (
-                        "gpt-5.4",
-                        "gpt-5.4-mini",
-                        "gpt-5.4-nano",
-                        "gpt-5",
-                        "gpt-5-mini",
-                        "gpt-5-nano",
-                        "gpt-4.1",
-                        "gpt-4.1-mini",
-                        "gpt-4.1-nano",
-                        "o3",
-                        "o4-mini",
-                    ):
-                        if m not in seen:
-                            models.append({"id": m, "label": f"OpenAI: {m}", "credential": "openai"})
-                            seen.add(m)
-                # Codex CLI models (codex_login or api_key)
-                if cred.type == "codex_login" or cred.api_key:
-                    for m in _known_codex_models():
-                        if m not in seen:
-                            models.append({"id": m, "label": f"OpenAI: {m}", "credential": "openai"})
-                            seen.add(m)
-            elif provider in ("google", "gemini"):
-                for m in (
-                    "gemini-2.5-pro",
-                    "gemini-2.5-flash",
-                    "gemini-2.0-flash",
-                    "gemini-2.0-flash-lite",
-                ):
-                    mid = f"google/{m}"
-                    if mid not in seen:
-                        models.append({"id": mid, "label": f"Google: {m}", "credential": "google"})
-                        seen.add(mid)
+    @router.post("/system/available-models/refresh")
+    async def refresh_available_models(body: RefreshAvailableModelsRequest = RefreshAvailableModelsRequest()):
+        """Refresh provider model catalogs and return the updated dropdown payload."""
+        config = load_config()
+        requested = body.providers or list(MODEL_CATALOG_PROVIDERS)
+        providers = [provider for provider in requested if provider in MODEL_CATALOG_PROVIDERS]
+        if not providers:
+            raise HTTPException(status_code=400, detail="No supported providers requested.")
 
-        # Codex CLI models (standalone — no openai credential entry needed)
-        if is_codex_login_available():
-            for m in _known_codex_models():
-                if m not in seen:
-                    models.append({"id": m, "label": f"OpenAI: {m}", "credential": "codex"})
-                    seen.add(m)
+        results: list[dict[str, object]] = []
+        for provider in providers:
+            if provider == "claude_code":
+                results.append(_refresh_claude_code_models(config))
+            elif provider == "codex":
+                results.append(_refresh_codex_models(config))
+            elif provider == "nanogpt":
+                results.append(_refresh_nanogpt_models(config))
+            elif provider == "google":
+                results.append(_refresh_google_models(config))
 
-        # nanoGPT models (dynamic fetch)
-        nanogpt_cred = config.credentials.get("nanogpt")
-        if nanogpt_cred and nanogpt_cred.api_key:
-            try:
-                ngpt_base = nanogpt_cred.base_url or "https://nano-gpt.com/api/subscription/v1"
-                for m in _list_nanogpt_models(ngpt_base, nanogpt_cred.api_key):
-                    mid = f"nanogpt/{m}"
-                    if mid not in seen:
-                        models.append({"id": mid, "label": f"nanoGPT: {m}", "credential": "nanogpt"})
-                        seen.add(mid)
-            except Exception:
-                pass
-
-        # Local Ollama models
-        try:
-            local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
-            base_url = normalize_ollama_base_url(local_llm.base_url)
-            for m in _list_ollama_models(base_url):
-                mid = f"ollama/{m}" if not m.startswith("ollama/") else m
-                label = m.removeprefix("ollama/") if m.startswith("ollama/") else m
-                if mid not in seen:
-                    models.append({"id": mid, "label": label, "credential": "ollama"})
-                    seen.add(mid)
-        except Exception:
-            pass
-
-        return {"models": models}
+        return {
+            "providers": results,
+            "models": _available_models_payload(config),
+        }
 
     @router.get("/system/available-tools")
     async def get_available_tools(request: Request):

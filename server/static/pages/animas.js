@@ -55,8 +55,12 @@ async function _renderList() {
   if (!_container) return;
 
   _container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
       <h2>${t("nav.animas")}</h2>
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        <span id="animasModelRefreshStatus" style="font-size:0.75rem; color:var(--text-secondary,#888);"></span>
+        <button class="btn-secondary" id="animasModelRefreshBtn" style="font-size:0.85rem; padding:0.4rem 0.75rem;">${t("animas.model_refresh")}</button>
+      </div>
     </div>
     <div id="animasListContent">
       <div class="loading-placeholder">${t("common.loading")}</div>
@@ -65,6 +69,10 @@ async function _renderList() {
 
   const content = document.getElementById("animasListContent");
   if (!content) return;
+  _bindModelRefreshButton({
+    buttonId: "animasModelRefreshBtn",
+    statusId: "animasModelRefreshStatus",
+  });
 
   try {
     const animas = await api("/api/animas");
@@ -161,8 +169,8 @@ async function _renderList() {
 
 // ── Detail View ────────────────────────────
 
-async function _fetchModels() {
-  if (_modelsCache) return _modelsCache;
+async function _fetchModels(force = false) {
+  if (_modelsCache && !force) return _modelsCache;
   try {
     const res = await api("/api/system/available-models");
     _modelsCache = res.models || [];
@@ -170,6 +178,114 @@ async function _fetchModels() {
     _modelsCache = [];
   }
   return _modelsCache;
+}
+
+function _modelOptionsHtml(models, currentModel) {
+  return `
+    ${models.map(m => {
+      const selected = m.id === currentModel ? " selected" : "";
+      return `<option value="${escapeHtml(m.id)}" data-credential="${escapeHtml(m.credential)}"${selected}>${escapeHtml(m.label)}</option>`;
+    }).join("")}
+    ${currentModel && !models.find(m => m.id === currentModel) ? `<option value="${escapeHtml(currentModel)}" selected>${escapeHtml(currentModel)} (current)</option>` : ""}
+  `;
+}
+
+const MODEL_REFRESH_PROVIDER_LABELS = {
+  claude_code: "Claude Code",
+  codex: "Codex",
+  nanogpt: "nanoGPT",
+  google: "Google",
+};
+
+function _modelRefreshProviderLabel(provider) {
+  return MODEL_REFRESH_PROVIDER_LABELS[provider] || provider || "";
+}
+
+function _modelRefreshSourceLabel(result) {
+  const source = result?.source || "";
+  const status = result?.status || "";
+  if (source === "known" || status === "fallback") return t("animas.model_refresh_source_known");
+  if (source === "cache" || status === "cached") return t("animas.model_refresh_source_cache");
+  if (source === "none" || status === "skipped") return t("animas.model_refresh_source_none");
+  if (status === "error") return t("animas.model_refresh_source_error");
+  return status || t("animas.model_refresh_source_unknown");
+}
+
+function _modelRefreshStatusInfo(results) {
+  const nonDynamic = (Array.isArray(results) ? results : []).filter(r => r && r.dynamic !== true);
+  if (nonDynamic.length === 0) {
+    return {
+      text: t("animas.model_refreshed"),
+      color: "var(--color-success, #28a745)",
+      title: "",
+      transient: true,
+    };
+  }
+
+  const providers = nonDynamic.map(r => `${_modelRefreshProviderLabel(r.provider)}: ${_modelRefreshSourceLabel(r)}`).join(", ");
+  const details = nonDynamic
+    .map(r => {
+      const label = _modelRefreshProviderLabel(r.provider);
+      const source = _modelRefreshSourceLabel(r);
+      return r.message ? `${label}: ${source} - ${r.message}` : `${label}: ${source}`;
+    })
+    .join("\n");
+  return {
+    text: t("animas.model_refresh_non_dynamic", { providers }),
+    color: "var(--color-warning, #e8a000)",
+    title: details,
+    transient: false,
+  };
+}
+
+function _bindModelRefreshButton({ buttonId, statusId, selectId = null, currentModel = "" }) {
+  const btn = document.getElementById(buttonId);
+  const status = document.getElementById(statusId);
+  if (!btn) return;
+
+  btn.addEventListener("click", async () => {
+    const select = selectId ? document.getElementById(selectId) : null;
+    const selectedModel = select?.value || currentModel;
+
+    btn.disabled = true;
+    btn.textContent = t("animas.model_refreshing");
+    if (status) {
+      status.textContent = "";
+      status.removeAttribute("title");
+    }
+
+    try {
+      const res = await api("/api/system/available-models/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providers: ["claude_code", "codex", "nanogpt", "google"] }),
+      });
+      _modelsCache = res.models || await _fetchModels(true);
+      if (select) {
+        select.innerHTML = _modelOptionsHtml(_modelsCache, selectedModel);
+      }
+      if (status) {
+        const info = _modelRefreshStatusInfo(res.providers);
+        status.textContent = info.text;
+        status.style.color = info.color;
+        if (info.title) status.title = info.title;
+        if (info.transient) {
+          setTimeout(() => {
+            status.textContent = "";
+            status.removeAttribute("title");
+          }, 5000);
+        }
+      }
+    } catch {
+      if (status) {
+        status.textContent = t("animas.model_refresh_failed");
+        status.style.color = "var(--color-danger, #dc3545)";
+        status.removeAttribute("title");
+      }
+    }
+    btn.disabled = false;
+    btn.textContent = t("animas.model_refresh");
+  });
 }
 
 async function _fetchTools() {
@@ -876,11 +992,7 @@ async function _showDetail(name) {
           <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
             <label style="font-weight:600; font-size:0.9rem; min-width:160px; flex-shrink:0;">${t("animas.model_select")}:</label>
             <select id="modelSelect" style="flex:1; min-width:200px; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
-              ${models.map(m => {
-                const selected = m.id === currentModel ? " selected" : "";
-                return `<option value="${escapeHtml(m.id)}" data-credential="${escapeHtml(m.credential)}"${selected}>${escapeHtml(m.label)}</option>`;
-              }).join("")}
-              ${currentModel && !models.find(m => m.id === currentModel) ? `<option value="${escapeHtml(currentModel)}" selected>${escapeHtml(currentModel)} (current)</option>` : ""}
+              ${_modelOptionsHtml(models, currentModel)}
             </select>
             <button class="btn-primary" id="modelChangeBtn" style="font-size:0.85rem; padding:0.4rem 0.75rem;">${t("animas.model_change")}</button>
             <span id="modelChangeStatus" style="font-size:0.75rem; color:var(--text-secondary,#888);"></span>

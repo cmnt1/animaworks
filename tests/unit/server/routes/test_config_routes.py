@@ -239,10 +239,107 @@ class TestOpenAIAuthSettings:
         models = resp.json()["models"]
         ids = {item["id"] for item in models}
 
+        assert "codex/gpt-5.5" in ids
         assert "codex/gpt-5.4" in ids
         assert "codex/gpt-5.4-mini" in ids
         assert "codex/gpt-5.3-codex" in ids
         assert "openai-codex/gpt-5.3-codex" not in ids
+
+    async def test_refresh_available_models_updates_codex_cache(self, tmp_path):
+        config = AnimaWorksConfig(
+            credentials={
+                "openai": CredentialConfig(type="api_key", api_key="sk-test"),
+            }
+        )
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
+            patch("server.routes.config_routes._list_openai_models", return_value=["codex/gpt-5.6"]),
+            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
+            patch("server.routes.config_routes._load_abconfig_credentials", return_value={}),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/system/available-models/refresh",
+                    json={"providers": ["codex"]},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        ids = {item["id"] for item in data["models"]}
+        assert data["providers"][0]["status"] == "ok"
+        assert data["providers"][0]["source"] == "api"
+        assert data["providers"][0]["dynamic"] is True
+        assert "codex/gpt-5.6" in ids
+        assert "codex/gpt-5.5" in ids
+
+        cache = json.loads((tmp_path / "model_catalog_cache.json").read_text(encoding="utf-8"))
+        assert "codex/gpt-5.6" in cache["providers"]["codex"]["models"]
+
+    async def test_refresh_available_models_reports_non_dynamic_fallback(self, tmp_path):
+        config = AnimaWorksConfig(
+            credentials={
+                "openai": CredentialConfig(type="codex_login"),
+            }
+        )
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
+            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=True),
+            patch("server.routes.config_routes._load_abconfig_credentials", return_value={}),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/system/available-models/refresh",
+                    json={"providers": ["codex"]},
+                )
+
+        assert resp.status_code == 200
+        result = resp.json()["providers"][0]
+        assert result["status"] == "fallback"
+        assert result["source"] == "known"
+        assert result["dynamic"] is False
+
+    async def test_refresh_available_models_uses_abconfig_openai_key(self, tmp_path):
+        config = AnimaWorksConfig(
+            credentials={
+                "openai": CredentialConfig(type="codex_login"),
+            }
+        )
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
+            patch(
+                "server.routes.config_routes._load_abconfig_credentials",
+                return_value={"openai_key": "sk-abconfig", "openai_id": "org-test"},
+            ),
+            patch("server.routes.config_routes._list_openai_models", return_value=["codex/gpt-5.7"]) as list_models,
+            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/system/available-models/refresh",
+                    json={"providers": ["codex"]},
+                )
+
+        assert resp.status_code == 200
+        result = resp.json()["providers"][0]
+        assert result["status"] == "ok"
+        assert result["source"] == "api"
+        assert result["dynamic"] is True
+        list_models.assert_called_once_with("sk-abconfig", organization="org-test")
 
 
 class TestLocalLLMSettings:
