@@ -30,7 +30,7 @@ def get_cli_guide() -> str:
 animaworks-tool discord guilds -j
 animaworks-tool discord channels GUILD_ID -j
 animaworks-tool discord messages CHANNEL_ID [-n 20] -j
-animaworks-tool discord send CHANNEL_ID "メッセージ本文" [--reply-to MSG_ID]
+animaworks-tool discord send CHANNEL_ID "メッセージ本文" [--thread-id THREAD_ID]
 animaworks-tool discord search "キーワード" [-c CHANNEL_ID] [-n 50] -j
 ```"""
 
@@ -175,6 +175,7 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
 
         body = " ".join(args.message)
         reply_to = getattr(args, "reply_to", None)
+        thread_id = getattr(args, "thread_id", None)
 
         # Prefer webhook (Anima identity) over bot token (AnimaWorks identity)
         anima_name = Path(anima_dir_env).name if anima_dir_env else ""
@@ -184,12 +185,26 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
                 from core.discord_webhooks import get_webhook_manager
 
                 wm = get_webhook_manager()
-                msg_id = wm.send_as_anima(args.channel_id, anima_name, body)
+                msg_id = wm.send_as_anima(
+                    args.channel_id,
+                    anima_name,
+                    body,
+                    thread_id=thread_id,
+                )
                 if msg_id:
-                    print(f"Sent via webhook (channel: {args.channel_id}, id: {msg_id})")
+                    thread_label = f", thread: {thread_id}" if thread_id else ""
+                    print(f"Sent via webhook (channel: {args.channel_id}{thread_label}, id: {msg_id})")
                     sent_via_webhook = True
             except Exception:
-                logging.debug("Webhook send failed, falling back to bot token", exc_info=True)
+                logging.debug("Webhook send failed", exc_info=True)
+
+            if not sent_via_webhook:
+                print(
+                    "Error: webhook send failed; refusing to fall back to the AnimaWorks bot account "
+                    "inside an Anima execution context.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
         if not sent_via_webhook:
             response = client.send_message(
@@ -320,6 +335,7 @@ def cli_main(argv: list[str] | None = None) -> None:
         p.add_argument("channel_id", help="Discord channel ID")
         p.add_argument("message", nargs="+", help="Message body")
         p.add_argument("--reply-to", dest="reply_to", help="Message ID to reply to")
+        p.add_argument("--thread-id", dest="thread_id", help="Thread channel ID to post into")
 
         p = sub.add_parser("messages", help="Get recent messages")
         p.add_argument("channel_id", help="Discord channel ID")

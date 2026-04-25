@@ -165,6 +165,28 @@ def get_tool_schemas() -> list[dict]:
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
     if name == "discord_send":
+        anima_dir = args.get("anima_dir")
+        if anima_dir:
+            anima_name = Path(anima_dir).name
+            discord_text = md_to_discord(args["message"])
+            try:
+                from core.discord_webhooks import get_webhook_manager
+
+                msg_id = get_webhook_manager().send_as_anima(
+                    args["channel_id"],
+                    anima_name,
+                    discord_text,
+                    thread_id=args.get("thread_id") or None,
+                )
+                return {
+                    "status": "ok",
+                    "channel_id": args["channel_id"],
+                    "thread_id": args.get("thread_id") or "",
+                    "message_id": msg_id,
+                }
+            except Exception:
+                logger.debug("Webhook send failed for discord_send", exc_info=True)
+                return {"status": "error", "message": "Webhook send failed; refusing bot-account fallback"}
         client = DiscordClient(token=_resolve_discord_token(args))
         try:
             return client.send_message(
@@ -268,7 +290,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
                     "message_id": msg_id,
                 }
             except Exception:
-                logger.debug("Webhook send failed, falling back to bot token", exc_info=True)
+                logger.debug("Webhook send failed; refusing bot-account fallback", exc_info=True)
 
         # Bot-token fallback removed: sending as the bot account (AnimaWorks)
         # instead of the Anima's identity is confusing to users.

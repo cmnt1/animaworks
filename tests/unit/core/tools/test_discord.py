@@ -79,12 +79,10 @@ class TestDiscordMarkdown:
     def test_clean_empty(self) -> None:
         assert clean_discord_markup("") == ""
 
-    def test_md_to_discord_truncates(self) -> None:
+    def test_md_to_discord_preserves_long_text(self) -> None:
         long_text = "a" * (DISCORD_MESSAGE_LIMIT + 50)
         out = md_to_discord(long_text)
-        assert len(out) == DISCORD_MESSAGE_LIMIT
-        assert out.endswith("...")
-        assert out.startswith("a" * (DISCORD_MESSAGE_LIMIT - 3))
+        assert out == long_text
 
     def test_md_to_discord_passthrough(self) -> None:
         text = "**bold** and `code`"
@@ -461,8 +459,34 @@ class TestDiscordDispatch:
                 "discord_channel_post",
                 {"channel_id": "ch1", "text": "hello **world**", "anima_dir": "/data/animas/sakura"},
             )
-            assert result == {"status": "ok", "channel_id": "ch1", "message_id": "mid"}
+            assert result == {"status": "ok", "channel_id": "ch1", "thread_id": "", "message_id": "mid"}
             mock_wm.send_as_anima.assert_called_once()
+
+    def test_dispatch_discord_send_anima_context_uses_webhook(self) -> None:
+        with patch("core.discord_webhooks.get_webhook_manager") as mock_gwm:
+            mock_wm = mock_gwm.return_value
+            mock_wm.send_as_anima.return_value = "mid"
+            result = dispatch(
+                "discord_send",
+                {
+                    "channel_id": "parent-ch",
+                    "thread_id": "thread-ch",
+                    "message": "hello",
+                    "anima_dir": "/data/animas/sakura",
+                },
+            )
+            assert result == {
+                "status": "ok",
+                "channel_id": "parent-ch",
+                "thread_id": "thread-ch",
+                "message_id": "mid",
+            }
+            mock_wm.send_as_anima.assert_called_once_with(
+                "parent-ch",
+                "sakura",
+                "hello",
+                thread_id="thread-ch",
+            )
 
     def test_dispatch_discord_channel_post_blocked_during_inbox(self) -> None:
         result = dispatch(
