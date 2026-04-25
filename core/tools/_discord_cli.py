@@ -199,22 +199,19 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
                 logging.debug("Webhook send failed", exc_info=True)
 
             if not sent_via_webhook:
-                print(
-                    "Error: webhook send failed; refusing to fall back to the AnimaWorks bot account "
-                    "inside an Anima execution context.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
+                logging.warning("Webhook send failed; falling back to the AnimaWorks bot account")
 
         if not sent_via_webhook:
+            fallback_channel_id = thread_id or args.channel_id
             response = client.send_message(
-                args.channel_id,
+                fallback_channel_id,
                 body,
                 reply_to=reply_to,
             )
             mid = response.get("id", "") if isinstance(response, dict) else ""
-            ch = response.get("channel_id", args.channel_id) if isinstance(response, dict) else args.channel_id
-            print(f"Sent (channel: {ch}, id: {mid})")
+            ch = response.get("channel_id", fallback_channel_id) if isinstance(response, dict) else fallback_channel_id
+            label = "Sent via bot fallback" if anima_name else "Sent"
+            print(f"{label} (channel: {ch}, id: {mid})")
         return
 
     # ── messages ─────────────────────────────────────────────

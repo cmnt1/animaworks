@@ -178,15 +178,35 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
                     discord_text,
                     thread_id=args.get("thread_id") or None,
                 )
+                if msg_id:
+                    return {
+                        "status": "ok",
+                        "channel_id": args["channel_id"],
+                        "thread_id": args.get("thread_id") or "",
+                        "message_id": msg_id,
+                    }
+                logger.warning("Webhook send returned no message id for discord_send; falling back to bot token")
+            except Exception:
+                logger.warning("Webhook send failed for discord_send; falling back to bot token", exc_info=True)
+            fallback_channel_id = args.get("thread_id") or args["channel_id"]
+            client = DiscordClient(token=_resolve_discord_token(args))
+            try:
+                response = client.send_message(
+                    fallback_channel_id,
+                    discord_text,
+                    reply_to=args.get("reply_to"),
+                )
                 return {
                     "status": "ok",
-                    "channel_id": args["channel_id"],
+                    "channel_id": response.get("channel_id", fallback_channel_id)
+                    if isinstance(response, dict)
+                    else fallback_channel_id,
                     "thread_id": args.get("thread_id") or "",
-                    "message_id": msg_id,
+                    "message_id": response.get("id", "") if isinstance(response, dict) else "",
+                    "fallback": "bot_token",
                 }
-            except Exception:
-                logger.debug("Webhook send failed for discord_send", exc_info=True)
-                return {"status": "error", "message": "Webhook send failed; refusing bot-account fallback"}
+            finally:
+                client.close()
         client = DiscordClient(token=_resolve_discord_token(args))
         try:
             return client.send_message(
@@ -270,32 +290,46 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         if anima_dir:
             anima_name = Path(anima_dir).name
 
+        thread_id = args.get("thread_id") or None
+
         # Use webhook manager for Anima identity if available
         if anima_name:
             try:
                 from core.discord_webhooks import get_webhook_manager
 
                 wm = get_webhook_manager()
-                thread_id = args.get("thread_id") or None
                 msg_id = wm.send_as_anima(
                     args["channel_id"],
                     anima_name,
                     discord_text,
                     thread_id=thread_id,
                 )
-                return {
-                    "status": "ok",
-                    "channel_id": args["channel_id"],
-                    "thread_id": thread_id or "",
-                    "message_id": msg_id,
-                }
+                if msg_id:
+                    return {
+                        "status": "ok",
+                        "channel_id": args["channel_id"],
+                        "thread_id": thread_id or "",
+                        "message_id": msg_id,
+                    }
+                logger.warning("Webhook send returned no message id; falling back to bot token")
             except Exception:
-                logger.debug("Webhook send failed; refusing bot-account fallback", exc_info=True)
+                logger.warning("Webhook send failed; falling back to bot token", exc_info=True)
 
-        # Bot-token fallback removed: sending as the bot account (AnimaWorks)
-        # instead of the Anima's identity is confusing to users.
-        # If webhook failed, report the error rather than falling back.
-        return {"status": "error", "message": "Webhook send failed; cannot post as Anima identity"}
+        fallback_channel_id = thread_id or args["channel_id"]
+        client = DiscordClient(token=_resolve_discord_token(args))
+        try:
+            response = client.send_message(fallback_channel_id, discord_text)
+            return {
+                "status": "ok",
+                "channel_id": response.get("channel_id", fallback_channel_id)
+                if isinstance(response, dict)
+                else fallback_channel_id,
+                "thread_id": thread_id or "",
+                "message_id": response.get("id", "") if isinstance(response, dict) else "",
+                "fallback": "bot_token",
+            }
+        finally:
+            client.close()
 
     if name == "discord_unreplied":
         cache = MessageCache()

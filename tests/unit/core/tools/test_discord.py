@@ -488,6 +488,86 @@ class TestDiscordDispatch:
                 thread_id="thread-ch",
             )
 
+    def test_dispatch_discord_send_anima_context_falls_back_to_bot_thread(self) -> None:
+        with (
+            patch("core.discord_webhooks.get_webhook_manager") as mock_gwm,
+            patch("core.tools.discord.DiscordClient") as MockClient,
+        ):
+            mock_gwm.return_value.send_as_anima.side_effect = RuntimeError("webhook down")
+            mock_client = MockClient.return_value
+            mock_client.send_message.return_value = {"id": "fallback-mid", "channel_id": "thread-ch"}
+            result = dispatch(
+                "discord_send",
+                {
+                    "channel_id": "parent-ch",
+                    "thread_id": "thread-ch",
+                    "message": "hello",
+                    "anima_dir": "/data/animas/sakura",
+                },
+            )
+            assert result == {
+                "status": "ok",
+                "channel_id": "thread-ch",
+                "thread_id": "thread-ch",
+                "message_id": "fallback-mid",
+                "fallback": "bot_token",
+            }
+            mock_client.send_message.assert_called_once_with("thread-ch", "hello", reply_to=None)
+            mock_client.close.assert_called_once_with()
+
+    def test_dispatch_discord_send_empty_webhook_result_falls_back_to_bot(self) -> None:
+        with (
+            patch("core.discord_webhooks.get_webhook_manager") as mock_gwm,
+            patch("core.tools.discord.DiscordClient") as MockClient,
+        ):
+            mock_gwm.return_value.send_as_anima.return_value = ""
+            mock_client = MockClient.return_value
+            mock_client.send_message.return_value = {"id": "fallback-mid", "channel_id": "parent-ch"}
+            result = dispatch(
+                "discord_send",
+                {
+                    "channel_id": "parent-ch",
+                    "message": "hello",
+                    "anima_dir": "/data/animas/sakura",
+                },
+            )
+            assert result == {
+                "status": "ok",
+                "channel_id": "parent-ch",
+                "thread_id": "",
+                "message_id": "fallback-mid",
+                "fallback": "bot_token",
+            }
+            mock_client.send_message.assert_called_once_with("parent-ch", "hello", reply_to=None)
+            mock_client.close.assert_called_once_with()
+
+    def test_dispatch_discord_channel_post_falls_back_to_bot_thread(self) -> None:
+        with (
+            patch("core.discord_webhooks.get_webhook_manager") as mock_gwm,
+            patch("core.tools.discord.DiscordClient") as MockClient,
+        ):
+            mock_gwm.return_value.send_as_anima.side_effect = RuntimeError("webhook down")
+            mock_client = MockClient.return_value
+            mock_client.send_message.return_value = {"id": "fallback-mid", "channel_id": "thread-ch"}
+            result = dispatch(
+                "discord_channel_post",
+                {
+                    "channel_id": "parent-ch",
+                    "thread_id": "thread-ch",
+                    "text": "hello **world**",
+                    "anima_dir": "/data/animas/sakura",
+                },
+            )
+            assert result == {
+                "status": "ok",
+                "channel_id": "thread-ch",
+                "thread_id": "thread-ch",
+                "message_id": "fallback-mid",
+                "fallback": "bot_token",
+            }
+            mock_client.send_message.assert_called_once_with("thread-ch", "hello **world**")
+            mock_client.close.assert_called_once_with()
+
     def test_dispatch_discord_channel_post_blocked_during_inbox(self) -> None:
         result = dispatch(
             "discord_channel_post",
