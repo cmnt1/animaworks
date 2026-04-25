@@ -10,6 +10,7 @@ import pytest
 from core.config.models import ActivityScheduleEntry
 from core.supervisor.scheduler_manager import (
     SchedulerManager,
+    resolve_background_fallback_model,
     _time_in_range,
 )
 
@@ -72,3 +73,23 @@ class TestResolveScheduledLevel:
         """Empty schedule returns None."""
         result = SchedulerManager.resolve_scheduled_level([], "12:00")
         assert result is None
+
+
+class TestResolveBackgroundFallbackModel:
+    def test_openai_codex_login_uses_codex_model(self) -> None:
+        class Credential:
+            type = "codex_login"
+
+        class Config:
+            credentials = {"openai": Credential()}
+
+        assert resolve_background_fallback_model("openai", Config()) == "codex/gpt-5.4-mini"
+
+    def test_openai_api_key_uses_litellm_model(self) -> None:
+        class Credential:
+            type = "api_key"
+
+        class Config:
+            credentials = {"openai": Credential()}
+
+        assert resolve_background_fallback_model("openai", Config()) == "openai/gpt-4.1-mini"

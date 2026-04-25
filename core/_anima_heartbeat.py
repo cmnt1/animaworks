@@ -115,9 +115,9 @@ class HeartbeatMixin:
         from core.config.models import load_config, resolve_execution_mode
         from core.schemas import ModelConfig
         from core.supervisor.scheduler_manager import (
-            _CREDENTIAL_FALLBACK_BACKGROUND,
             _model_to_governor_provider,
             _read_governor_fallback_providers,
+            resolve_background_fallback_model,
         )
 
         bg_model = self.agent.model_config.background_model
@@ -130,11 +130,12 @@ class HeartbeatMixin:
         # Governor fallback check
         fallback_providers = _read_governor_fallback_providers()
         bg_credential = self.agent.model_config.background_credential
+        config = load_config()
         if fallback_providers:
             bg_provider = _model_to_governor_provider(bg_model)
             if bg_provider and bg_provider in fallback_providers:
                 main_credential = self._read_main_credential()
-                fallback_model = _CREDENTIAL_FALLBACK_BACKGROUND.get(main_credential)
+                fallback_model = resolve_background_fallback_model(main_credential, config)
                 if fallback_model:
                     logger.info(
                         "Governor background fallback: %s (%s depleted) → %s",
@@ -152,7 +153,6 @@ class HeartbeatMixin:
         # the correct executor type is created (e.g. claude-* → S, codex/* → C).
         # Without this, model_copy carries the main model's resolved_mode,
         # which may be incompatible with the background model name.
-        config = load_config()
         bg_resolved_mode = resolve_execution_mode(config, bg_model)
 
         new_config: ModelConfig = self.agent.model_config.model_copy(

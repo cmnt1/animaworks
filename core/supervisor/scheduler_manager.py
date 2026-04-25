@@ -132,6 +132,25 @@ _CREDENTIAL_FALLBACK_BACKGROUND: dict[str, str] = {
 }
 
 
+def resolve_background_fallback_model(credential_name: str, config: Any | None = None) -> str | None:
+    """Return a background fallback model compatible with *credential_name*.
+
+    The ``openai`` credential may be a Codex login rather than an API key.
+    LiteLLM cannot use that login for ``openai/*`` models, so use a
+    ``codex/*`` model in that case.
+    """
+    if credential_name == "openai":
+        if config is None:
+            try:
+                config = load_config()
+            except Exception:
+                config = None
+        credential = getattr(config, "credentials", {}).get("openai") if config is not None else None
+        if getattr(credential, "type", "") == "codex_login":
+            return "codex/gpt-5.4-mini"
+    return _CREDENTIAL_FALLBACK_BACKGROUND.get(credential_name)
+
+
 def resolve_user_activity_level(config, anima_dir: Path) -> int:
     """Resolve the user-configured activity level for an Anima.
 
