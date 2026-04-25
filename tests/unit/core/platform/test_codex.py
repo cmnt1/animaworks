@@ -127,23 +127,16 @@ class TestCodexLoginAvailability:
         ):
             assert codex.is_codex_login_available() is True
 
-    def test_get_codex_device_login_returns_url_and_code(self):
+    def test_get_codex_device_login_launches_terminal(self):
         codex.get_codex_executable.cache_clear()
         status = MagicMock(returncode=1, stdout="", stderr="")
-        output = """
-Follow these steps to sign in with ChatGPT using device code authorization:
-https://auth.openai.com/codex/device
-73U2-6NBJ3
-"""
-        fake_proc = MagicMock()
-        fake_proc.communicate.side_effect = [subprocess.TimeoutExpired(cmd="codex", timeout=8.0), (output, "")]
         with (
             patch("core.platform.codex.get_codex_executable", return_value="codex.exe"),
             patch("core.platform.codex._run_codex_command", return_value=status),
-            patch("subprocess.Popen", return_value=fake_proc),
+            patch("core.platform.codex._launch_codex_login_terminal", return_value=True),
         ):
             result = codex.get_codex_device_login()
 
         assert result["ok"] is True
-        assert result["login_url"] == "https://auth.openai.com/codex/device"
-        assert result["device_code"] == "73U2-6NBJ3"
+        assert result["terminal_launched"] is True
+        assert result["manual_command"] == "codex login"

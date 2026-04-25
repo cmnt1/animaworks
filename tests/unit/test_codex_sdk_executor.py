@@ -491,6 +491,7 @@ class TestConfigWriting:
         source_auth.write_text('{"token":"abc"}', encoding="utf-8")
 
         with (
+            patch.dict("os.environ", {}, clear=True),
             patch("core.execution.codex_sdk.Path.home", return_value=default_codex.parent),
             patch("pathlib.Path.symlink_to", side_effect=OSError("symlink blocked")),
             patch("core.execution.codex_sdk.os.link", side_effect=OSError("hardlink blocked")),
