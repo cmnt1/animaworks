@@ -54,11 +54,11 @@ class TestCodexLoginAvailability:
         ):
             assert codex.is_codex_login_available() is False
 
-    def test_finds_embedded_codex_executable(self, tmp_path: Path):
+    def test_finds_embedded_openai_codex_executable(self, tmp_path: Path):
         codex.get_codex_executable.cache_clear()
-        ext_dir = tmp_path / ".antigravity" / "extensions" / "openai.chatgpt-1" / "bin" / "windows-x86_64"
-        ext_dir.mkdir(parents=True)
-        exe = ext_dir / "codex.exe"
+        pkg_dir = tmp_path / "AppData" / "Local" / "Packages" / "OpenAI.Codex_abc" / "LocalCache" / "bin"
+        pkg_dir.mkdir(parents=True)
+        exe = pkg_dir / "codex.exe"
         exe.write_text("", encoding="utf-8")
 
         with (
@@ -67,6 +67,39 @@ class TestCodexLoginAvailability:
             patch("core.platform.codex._is_usable_codex_executable", return_value=True),
         ):
             assert codex.get_codex_executable() == str(exe)
+
+    def test_prefers_openai_codex_package_over_antigravity(self, tmp_path: Path):
+        codex.get_codex_executable.cache_clear()
+        pkg_dir = tmp_path / "AppData" / "Local" / "Packages" / "OpenAI.Codex_abc" / "LocalCache" / "bin"
+        pkg_dir.mkdir(parents=True)
+        package_exe = pkg_dir / "codex.exe"
+        package_exe.write_text("", encoding="utf-8")
+
+        ext_dir = tmp_path / ".antigravity" / "extensions" / "openai.chatgpt-1" / "bin" / "windows-x86_64"
+        ext_dir.mkdir(parents=True)
+        antigravity_exe = ext_dir / "codex.exe"
+        antigravity_exe.write_text("", encoding="utf-8")
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch("core.platform.codex.default_home_dir", return_value=str(tmp_path)),
+            patch("core.platform.codex._is_usable_codex_executable", return_value=True),
+        ):
+            assert codex.get_codex_executable() == str(package_exe)
+
+    def test_explicit_codex_path_overrides_discovery(self, tmp_path: Path):
+        codex.get_codex_executable.cache_clear()
+        explicit = tmp_path / "tools" / "codex.exe"
+        explicit.parent.mkdir(parents=True)
+        explicit.write_text("", encoding="utf-8")
+
+        with (
+            patch.dict("os.environ", {"ANIMAWORKS_CODEX_PATH": str(explicit)}),
+            patch("shutil.which", return_value=None),
+            patch("core.platform.codex.default_home_dir", return_value=str(tmp_path)),
+            patch("core.platform.codex._is_usable_codex_executable", return_value=True),
+        ):
+            assert codex.get_codex_executable() == str(explicit)
 
     def test_skips_unusable_windowsapps_alias(self, tmp_path: Path):
         codex.get_codex_executable.cache_clear()

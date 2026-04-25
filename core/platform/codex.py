@@ -34,20 +34,25 @@ def _iter_embedded_codex_candidates() -> list[Path]:
     candidates: list[Path] = []
     user_home = Path(default_home_dir())
 
-    antigravity = user_home / ".antigravity" / "extensions"
-    if antigravity.is_dir():
-        candidates.extend(
-            sorted(
-                antigravity.glob("openai.chatgpt-*/bin/windows-x86_64/codex.exe"),
-                reverse=True,
-            )
-        )
-
+    # Prefer the OpenAI Codex app cache over editor/agent extension bundles.
+    # The WindowsApps alias itself is often not directly executable from
+    # subprocesses, while this LocalCache binary is.
     packages = user_home / "AppData" / "Local" / "Packages"
     if packages.is_dir():
         candidates.extend(
             sorted(
                 packages.glob("OpenAI.Codex_*/LocalCache/**/codex.exe"),
+                reverse=True,
+            )
+        )
+
+    # Legacy fallback: older desktop integrations bundled Codex under
+    # Antigravity.  Keep it available, but do not prefer it for new setups.
+    antigravity = user_home / ".antigravity" / "extensions"
+    if antigravity.is_dir():
+        candidates.extend(
+            sorted(
+                antigravity.glob("openai.chatgpt-*/bin/windows-x86_64/codex.exe"),
                 reverse=True,
             )
         )
@@ -59,8 +64,9 @@ def _iter_codex_candidates() -> list[str]:
     seen: set[str] = set()
     candidates: list[str] = []
 
-    for path in _iter_embedded_codex_candidates():
-        value = str(path)
+    explicit = os.environ.get("ANIMAWORKS_CODEX_PATH") or os.environ.get("CODEX_PATH")
+    if explicit:
+        value = str(Path(explicit).expanduser())
         if value not in seen:
             seen.add(value)
             candidates.append(value)
@@ -69,6 +75,12 @@ def _iter_codex_candidates() -> list[str]:
     if direct and direct not in seen:
         seen.add(direct)
         candidates.append(direct)
+
+    for path in _iter_embedded_codex_candidates():
+        value = str(path)
+        if value not in seen:
+            seen.add(value)
+            candidates.append(value)
 
     return candidates
 
