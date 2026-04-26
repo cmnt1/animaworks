@@ -287,6 +287,80 @@ class TestAlreadyRanInPeriod:
 
 # ── build_status_payload ─────────────────────────────────
 
+class TestAlreadyRanWithinInterval:
+    def test_daily_true_when_success_under_24_hours(self, status_dir):
+        from core.lifecycle.system_status import already_ran_within_interval, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 10, 23, 0, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("daily")
+
+        now = datetime(2026, 4, 11, 10, 0, 0, tzinfo=JST)
+        assert already_ran_within_interval("daily", now=now) is True
+
+    def test_daily_false_when_success_over_24_hours(self, status_dir):
+        from core.lifecycle.system_status import already_ran_within_interval, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 10, 2, 0, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("daily")
+
+        now = datetime(2026, 4, 11, 10, 0, 0, tzinfo=JST)
+        assert already_ran_within_interval("daily", now=now) is False
+
+    def test_weekly_true_when_success_under_seven_days_across_iso_week(self, status_dir):
+        from core.lifecycle.system_status import already_ran_within_interval, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 5, 21, 0, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("weekly")
+
+        now = datetime(2026, 4, 12, 3, 0, 0, tzinfo=JST)
+        assert already_ran_within_interval("weekly", now=now) is True
+
+    def test_weekly_false_when_success_over_seven_days(self, status_dir):
+        from core.lifecycle.system_status import already_ran_within_interval, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 4, 3, 0, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("weekly")
+
+        now = datetime(2026, 4, 12, 3, 0, 0, tzinfo=JST)
+        assert already_ran_within_interval("weekly", now=now) is False
+
+    def test_monthly_true_when_success_under_thirty_days(self, status_dir):
+        from core.lifecycle.system_status import already_ran_within_interval, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 10, 4, 0, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("monthly")
+
+        now = datetime(2026, 5, 1, 4, 0, 0, tzinfo=JST)
+        assert already_ran_within_interval("monthly", now=now) is True
+
+    def test_monthly_false_when_success_over_thirty_days(self, status_dir):
+        from core.lifecycle.system_status import already_ran_within_interval, mark_succeeded
+
+        with patch(
+            "core.lifecycle.system_status.now_iso",
+            return_value=datetime(2026, 4, 1, 3, 0, 0, tzinfo=JST).isoformat(),
+        ):
+            mark_succeeded("monthly")
+
+        now = datetime(2026, 5, 1, 4, 0, 0, tzinfo=JST)
+        assert already_ran_within_interval("monthly", now=now) is False
+
+
 class TestBuildStatusPayload:
     def test_includes_missed_flags(self, status_dir):
         from core.lifecycle.system_status import build_status_payload

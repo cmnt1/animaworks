@@ -24,6 +24,11 @@ from core.time_utils import now_iso, now_local
 logger = logging.getLogger("animaworks.lifecycle.system_status")
 
 JOB_TYPES = ("daily", "weekly", "monthly")
+MIN_SUCCESS_INTERVALS = {
+    "daily": timedelta(days=1),
+    "weekly": timedelta(days=7),
+    "monthly": timedelta(days=30),
+}
 
 _file_lock = threading.Lock()
 
@@ -211,6 +216,27 @@ def already_ran_in_period(job_type: str, now: datetime | None = None) -> bool:
     if job_type == "monthly":
         return (last_success.year, last_success.month) == (now.year, now.month)
     return False
+
+
+def already_ran_within_interval(job_type: str, now: datetime | None = None) -> bool:
+    """Return True if the job succeeded more recently than its minimum interval.
+
+    - daily: 24 hours
+    - weekly: 7 days
+    - monthly: 30 days
+
+    Used by scheduled runs so a manual execution resets the cooldown window
+    instead of only suppressing jobs within the same calendar period.
+    """
+    if now is None:
+        now = now_local()
+    min_interval = MIN_SUCCESS_INTERVALS.get(job_type)
+    if min_interval is None:
+        return False
+    last_success = _parse_success_dt(load_status().get(job_type, {}))
+    if last_success is None:
+        return False
+    return now - last_success < min_interval
 
 
 # ── Payload ───────────────────────────────────────────────────────

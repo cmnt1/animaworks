@@ -167,7 +167,7 @@ class TestDailyConsolidationRetryTrigger:
 
 
 class TestScheduledSkipsIfAlreadyRan:
-    """Scheduled runs must skip when the job already ran in the current period."""
+    """Scheduled runs must skip when the last success is within the cooldown."""
 
     @pytest.mark.asyncio
     async def test_daily_scheduled_skips_when_already_ran_today(self, tmp_path):
@@ -175,7 +175,7 @@ class TestScheduledSkipsIfAlreadyRan:
         mgr._handle_daily_consolidation_inner = AsyncMock()
 
         with patch(
-            "core.lifecycle.system_status.already_ran_in_period",
+            "core.lifecycle.system_status.already_ran_within_interval",
             return_value=True,
         ):
             await mgr._handle_daily_consolidation(scheduled=True)
@@ -188,7 +188,7 @@ class TestScheduledSkipsIfAlreadyRan:
         mgr._handle_daily_consolidation_inner = AsyncMock()
 
         with patch(
-            "core.lifecycle.system_status.already_ran_in_period",
+            "core.lifecycle.system_status.already_ran_within_interval",
             return_value=True,
         ):
             await mgr._handle_daily_consolidation()  # scheduled=False (default)
@@ -201,7 +201,7 @@ class TestScheduledSkipsIfAlreadyRan:
         mgr._handle_weekly_integration_inner = AsyncMock()
 
         with patch(
-            "core.lifecycle.system_status.already_ran_in_period",
+            "core.lifecycle.system_status.already_ran_within_interval",
             return_value=True,
         ):
             await mgr._handle_weekly_integration(scheduled=True)
@@ -214,7 +214,7 @@ class TestScheduledSkipsIfAlreadyRan:
         mgr._handle_monthly_forgetting_inner = AsyncMock()
 
         with patch(
-            "core.lifecycle.system_status.already_ran_in_period",
+            "core.lifecycle.system_status.already_ran_within_interval",
             return_value=True,
         ):
             await mgr._handle_monthly_forgetting(scheduled=True)

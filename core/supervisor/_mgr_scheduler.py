@@ -280,15 +280,15 @@ class SchedulerMixin:
         today (a manual run was already performed).
         """
         from core.lifecycle.system_status import (
-            already_ran_in_period,
+            already_ran_within_interval,
             build_status_payload,
             mark_failed,
             mark_started,
             mark_succeeded,
         )
 
-        if scheduled and already_ran_in_period("daily"):
-            logger.info("Daily consolidation skipped: already ran today (manual)")
+        if scheduled and already_ran_within_interval("daily"):
+            logger.info("Daily consolidation skipped: last success was less than 24 hours ago")
             return
 
         lock = self._system_job_locks["daily"]
@@ -433,15 +433,15 @@ class SchedulerMixin:
         within the current ISO week.
         """
         from core.lifecycle.system_status import (
-            already_ran_in_period,
+            already_ran_within_interval,
             build_status_payload,
             mark_failed,
             mark_started,
             mark_succeeded,
         )
 
-        if scheduled and already_ran_in_period("weekly"):
-            logger.info("Weekly integration skipped: already ran this week (manual)")
+        if scheduled and already_ran_within_interval("weekly"):
+            logger.info("Weekly integration skipped: last success was less than 7 days ago")
             return
 
         lock = self._system_job_locks["weekly"]
@@ -571,15 +571,15 @@ class SchedulerMixin:
         within the current calendar month.
         """
         from core.lifecycle.system_status import (
-            already_ran_in_period,
+            already_ran_within_interval,
             build_status_payload,
             mark_failed,
             mark_started,
             mark_succeeded,
         )
 
-        if scheduled and already_ran_in_period("monthly"):
-            logger.info("Monthly forgetting skipped: already ran this month (manual)")
+        if scheduled and already_ran_within_interval("monthly"):
+            logger.info("Monthly forgetting skipped: last success was less than 30 days ago")
             return
 
         lock = self._system_job_locks["monthly"]
