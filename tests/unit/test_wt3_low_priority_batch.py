@@ -106,6 +106,20 @@ class TestFanoutAllExcludesStoppedAnimas:
         call_kwargs = messenger.send.call_args_list[0][1]
         assert call_kwargs["to"] == "bob"
 
+    def test_ops_fanout_all_is_suppressed(self, tmp_path):
+        """#ops should not turn @all into cross-department inbox fanout."""
+        handler = _make_handler(tmp_path, anima_name="alice")
+
+        sockets_dir = tmp_path / "run" / "sockets"
+        sockets_dir.mkdir(parents=True)
+        (sockets_dir / "bob.sock").touch()
+        (sockets_dir / "carol.sock").touch()
+
+        with patch("core.paths.get_data_dir", return_value=tmp_path):
+            handler._fanout_board_mentions("ops", "Hey @all")
+
+        handler._messenger.send.assert_not_called()
+
 
 class TestFanoutNamedExcludesStoppedAnimas:
     """Fix 8: Named @mention only reaches running targets."""

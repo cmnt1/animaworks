@@ -31,6 +31,24 @@ from core.tools._discord_markdown import clean_discord_markup
 
 logger = logging.getLogger("animaworks.discord_gateway")
 
+_BROADCAST_ONLY_BOARDS = {"ops"}
+
+
+def _board_name_for_channel(channel_id: str, channel_name: str, discord_cfg: Any) -> str:
+    """Return the AnimaWorks board name associated with a Discord channel."""
+    try:
+        mapped = discord_cfg.board_mapping.get(channel_id)
+        if mapped:
+            return str(mapped).lower()
+    except Exception:
+        pass
+    return (channel_name or "").lower()
+
+
+def _is_broadcast_only_channel(channel_id: str, channel_name: str, discord_cfg: Any) -> bool:
+    """Whether ambiguous messages should be mirrored but not inbox-routed."""
+    return _board_name_for_channel(channel_id, channel_name, discord_cfg) in _BROADCAST_ONLY_BOARDS
+
 # ── Dedup ────────────────────────────────────────────────────
 
 _DEDUP_TTL_SEC = 10
@@ -667,6 +685,11 @@ class DiscordGatewayManager:
         except Exception:
             logger.debug("Failed to load config for Discord routing", exc_info=True)
             return
+        suppress_implicit_routing = (not is_dm) and _is_broadcast_only_channel(
+            routing_channel_id,
+            ch_name,
+            discord_cfg,
+        )
 
         # Determine target Anima(s). A single message can name multiple
         # Animas (e.g. "sora mira に..."); deliver to each in turn.
@@ -697,14 +720,16 @@ class DiscordGatewayManager:
         if not target_animas:
             target_animas = self._detect_all_target_animas(cleaned_text)
 
-        # 4. Single-member channel fallback (non-DM)
-        if not target_animas:
+        # 4. Single-member channel fallback (non-DM). Broadcast-only boards
+        # such as #ops are mirrored for visibility but should not create work
+        # unless a specific Anima is named or a thread reply is already mapped.
+        if not target_animas and not suppress_implicit_routing:
             members = discord_cfg.channel_members.get(routing_channel_id, [])
             if len(members) == 1:
                 target_animas = [members[0]]
 
         # 5. No name detected: bot-mention / channel-lead fallback
-        if not target_animas and not is_dm:
+        if not target_animas and not is_dm and not suppress_implicit_routing:
             if bot_mentioned and discord_cfg.default_anima:
                 target_animas = [discord_cfg.default_anima]
             else:
@@ -717,6 +742,11 @@ class DiscordGatewayManager:
                 ):
                     target_animas = [discord_cfg.default_anima]
                     routed_as_lead = True
+        elif not target_animas and suppress_implicit_routing:
+            logger.info(
+                "Discord routing: #%s is broadcast-only; suppressing implicit inbox delivery",
+                ch_name,
+            )
 
         # Enforce channel membership per target
         if not is_dm:

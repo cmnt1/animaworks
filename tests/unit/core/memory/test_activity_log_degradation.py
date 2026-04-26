@@ -180,7 +180,7 @@ class TestReadSharedChannels:
             entries.append(json.dumps({
                 "ts": ts, "from": f"user{i}", "text": f"Msg {i}", "source": source,
             }, ensure_ascii=False))
-        (channels_dir / "ops.jsonl").write_text(
+        (channels_dir / "general.jsonl").write_text(
             "\n".join(entries) + "\n", encoding="utf-8",
         )
 
@@ -190,6 +190,52 @@ class TestReadSharedChannels:
         # The human post at index 1 (within 24h) should be included
         contents = [e.content for e in result]
         assert "Msg 1" in contents
+
+    def test_ops_channel_only_includes_direct_mentions(self, anima_dir: Path, shared_dir: Path):
+        """Verify that #ops does not prime ambient chatter unless this Anima is mentioned."""
+        from core.memory.priming import PrimingEngine
+
+        channels_dir = shared_dir / "channels"
+        channels_dir.mkdir(parents=True)
+
+        entries = [
+            json.dumps(
+                {
+                    "ts": (now_jst() - timedelta(minutes=3)).isoformat(),
+                    "from": "human",
+                    "text": "General ops announcement",
+                    "source": "human",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "ts": (now_jst() - timedelta(minutes=2)).isoformat(),
+                    "from": "alice",
+                    "text": "@all please look",
+                    "source": "anima",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "ts": (now_jst() - timedelta(minutes=1)).isoformat(),
+                    "from": "bob",
+                    "text": "Hey @test-anima please review",
+                    "source": "anima",
+                },
+                ensure_ascii=False,
+            ),
+        ]
+        (channels_dir / "ops.jsonl").write_text(
+            "\n".join(entries) + "\n", encoding="utf-8",
+        )
+
+        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
+        result = engine._read_shared_channels(limit_per_channel=5)
+
+        contents = [e.content for e in result]
+        assert contents == ["Hey @test-anima please review"]
 
     def test_limits_to_limit_per_channel(self, anima_dir: Path, shared_dir: Path):
         """Verify that at most limit_per_channel latest entries are returned."""

@@ -19,6 +19,8 @@ from core.tools._async_compat import run_sync
 
 logger = logging.getLogger("animaworks.priming")
 
+_MENTION_ONLY_SHARED_CHANNELS = {"ops"}
+
 # Event types that are noise for heartbeat/cron priming — tool invocations
 # and heartbeat lifecycle events crowd out actionable messages.
 _HEARTBEAT_NOISE_TYPES = frozenset(
@@ -168,11 +170,13 @@ def read_shared_channels(
 
             selected: list[dict] = []
             seen_indices: set[int] = set()
+            mention_only = channel_name in _MENTION_ONLY_SHARED_CHANNELS
 
-            for i in range(max(0, len(all_entries) - limit_per_channel), len(all_entries)):
-                if i not in seen_indices:
-                    selected.append(all_entries[i])
-                    seen_indices.add(i)
+            if not mention_only:
+                for i in range(max(0, len(all_entries) - limit_per_channel), len(all_entries)):
+                    if i not in seen_indices:
+                        selected.append(all_entries[i])
+                        seen_indices.add(i)
 
             for i, entry in enumerate(all_entries):
                 if i in seen_indices:
@@ -184,7 +188,7 @@ def read_shared_channels(
                     continue
                 is_human = entry.get("source") == "human"
                 is_mention = mention_tag in entry.get("text", "")
-                if (is_human and ts >= cutoff_24h) or is_mention:
+                if is_mention or ((not mention_only) and is_human and ts >= cutoff_24h):
                     selected.append(entry)
                     seen_indices.add(i)
 
@@ -367,11 +371,13 @@ async def read_old_channels(anima_dir: Path, shared_dir: Path | None) -> str:
 
         selected: list[dict] = []
         seen_indices: set[int] = set()
+        mention_only = channel_name in _MENTION_ONLY_SHARED_CHANNELS
 
-        for i in range(max(0, len(entries) - 5), len(entries)):
-            if i not in seen_indices:
-                selected.append(entries[i])
-                seen_indices.add(i)
+        if not mention_only:
+            for i in range(max(0, len(entries) - 5), len(entries)):
+                if i not in seen_indices:
+                    selected.append(entries[i])
+                    seen_indices.add(i)
 
         for i, entry in enumerate(entries):
             if i in seen_indices:
@@ -383,7 +389,7 @@ async def read_old_channels(anima_dir: Path, shared_dir: Path | None) -> str:
                 continue
             is_human = entry.get("source") == "human"
             is_mention = mention_tag in entry.get("text", "")
-            if (is_human and ts >= cutoff_24h) or is_mention:
+            if is_mention or ((not mention_only) and is_human and ts >= cutoff_24h):
                 selected.append(entry)
                 seen_indices.add(i)
 

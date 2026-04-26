@@ -93,15 +93,17 @@ class TestFallbackChannels:
         assert "Hello!" in result
         assert "#general" in result
 
-    async def test_reads_ops_channel(self, anima_dir, shared_dir):
+    async def test_reads_ops_channel_only_when_mentioned(self, anima_dir, shared_dir):
         now = now_jst()
         _write_channel(shared_dir, "ops", [
             {"ts": now.isoformat(), "from": "yuki", "text": "Server down", "source": "anima"},
+            {"ts": now.isoformat(), "from": "yuki", "text": "@sakura Server down", "source": "anima"},
         ])
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
         result = await engine._read_old_channels()
         assert "#ops" in result
-        assert "Server down" in result
+        assert "@sakura Server down" in result
+        assert "yuki: Server down" not in result
 
     async def test_last_5_entries(self, anima_dir, shared_dir):
         now = now_jst()

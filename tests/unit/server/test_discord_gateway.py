@@ -13,6 +13,7 @@ import pytest
 from server.discord_gateway import (
     DiscordGatewayManager,
     _build_discord_annotation,
+    _is_broadcast_only_channel,
     _is_duplicate_id,
 )
 
@@ -62,9 +63,10 @@ class TestDiscordGatewayManagerRouting:
             "ch1": ["sakura", "kotoha"],
             "ch2": ["kotoha"],
             "dm-sakura": ["sakura"],
+            "ops-ch": ["sakura", "kotoha"],
         }
         mock_cfg.external_messaging.discord.default_anima = "sakura"
-        mock_cfg.external_messaging.discord.board_mapping = {}
+        mock_cfg.external_messaging.discord.board_mapping = {"ops-ch": "ops"}
 
         monkeypatch.setattr(
             "server.discord_gateway.load_config",
@@ -82,6 +84,73 @@ class TestDiscordGatewayManagerRouting:
         discord_cfg = _mock_config.external_messaging.discord
         result = manager._detect_target_anima("sakuraに聞いて", "ch1", discord_cfg)
         assert result == "sakura"
+
+    def test_ops_board_is_broadcast_only(self, _mock_config):
+        discord_cfg = _mock_config.external_messaging.discord
+        assert _is_broadcast_only_channel("ops-ch", "ops", discord_cfg) is True
+        assert _is_broadcast_only_channel("ch1", "general", discord_cfg) is False
+
+    @pytest.mark.asyncio
+    async def test_ops_without_explicit_anima_is_not_delivered_to_inbox(
+        self,
+        manager: DiscordGatewayManager,
+    ):
+        message = MagicMock()
+        message.id = "ops-no-target-001"
+        message.author.id = "human-1"
+        message.author.display_name = "Human"
+        message.author.name = "human"
+        message.webhook_id = None
+        message.mentions = []
+        message.content = "状況共有です"
+        message.channel.id = "ops-ch"
+        message.channel.parent_id = None
+        message.channel.name = "ops"
+        message.guild = object()
+        message.reference = None
+
+        with (
+            patch("server.discord_gateway._route_to_board"),
+            patch("server.discord_gateway.Messenger") as MockMessenger,
+        ):
+            await manager._handle_message(message)
+
+        MockMessenger.return_value.receive_external.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ops_with_explicit_anima_is_delivered_to_that_inbox(
+        self,
+        manager: DiscordGatewayManager,
+        tmp_path,
+    ):
+        anima_dir = tmp_path / "animas" / "sakura"
+        anima_dir.mkdir(parents=True)
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+
+        message = MagicMock()
+        message.id = "ops-target-001"
+        message.author.id = "human-1"
+        message.author.display_name = "Human"
+        message.author.name = "human"
+        message.webhook_id = None
+        message.mentions = []
+        message.content = "sakura 対応お願いします"
+        message.channel.id = "ops-ch"
+        message.channel.parent_id = None
+        message.channel.name = "ops"
+        message.guild = object()
+        message.reference = None
+
+        with (
+            patch("server.discord_gateway._route_to_board"),
+            patch("server.discord_gateway.get_data_dir", return_value=tmp_path),
+            patch("server.discord_gateway.get_shared_dir", return_value=shared_dir),
+            patch("server.discord_gateway.Messenger") as MockMessenger,
+        ):
+            await manager._handle_message(message)
+
+        MockMessenger.return_value.receive_external.assert_called_once()
 
     def test_detect_anima_by_japanese_alias(self, manager: DiscordGatewayManager, _mock_config):
         discord_cfg = _mock_config.external_messaging.discord

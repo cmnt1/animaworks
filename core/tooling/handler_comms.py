@@ -314,6 +314,13 @@ class CommsToolsMixin:
 
         is_all = "all" in mentions
 
+        if is_all and channel == "ops":
+            logger.info(
+                "Suppressed @all board fanout for #%s to preserve department routing",
+                channel,
+            )
+            return
+
         from core.paths import get_data_dir
 
         sockets_dir = get_data_dir() / "run" / "sockets"
