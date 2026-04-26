@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.execution.base import ExecutionResult
+from core.execution.base import ExecutionResult, StreamDisconnectedError
 from core.execution.codex_sdk import (
     CodexSDKExecutor,
     _clear_thread_id,
@@ -207,6 +207,10 @@ class TestHelpers:
 
     def test_should_cli_exec_fallback_detects_fatal_stderr(self):
         exc = RuntimeError("Codex Exec aborted after fatal stderr signal: Reading prompt from stdin...")
+        assert _should_cli_exec_fallback(exc)
+
+    def test_should_cli_exec_fallback_detects_sdk_idle_timeout(self):
+        exc = StreamDisconnectedError("Codex SDK stream idle timeout after 45s")
         assert _should_cli_exec_fallback(exc)
 
     def test_is_desktop_extension_codex(self):
@@ -1167,7 +1171,7 @@ class TestProgressiveStreaming:
         assert full_text == "Complete text here"
 
     @pytest.mark.asyncio
-    async def test_stream_idle_timeout_raises_stream_disconnected(self, executor):
+    async def test_stream_idle_timeout_falls_back_to_cli_exec(self, executor):
         class NeverEvents:
             def __aiter__(self):
                 return self
@@ -1186,13 +1190,69 @@ class TestProgressiveStreaming:
         mock_codex = MagicMock()
         mock_codex.start_thread.return_value = mock_thread
 
+        async def fallback_events(*_args, **_kwargs):
+            yield {"type": "text_delta", "text": "fallback after idle"}
+            yield {
+                "type": "done",
+                "full_text": "fallback after idle",
+                "result_message": None,
+                "replied_to_from_transcript": set(),
+                "tool_call_records": [],
+                "usage": {},
+            }
+
         with (
             patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
+            patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=fallback_events) as mock_fallback,
             patch("core.execution.codex_sdk._BACKGROUND_EVENT_IDLE_TIMEOUT_SEC", 0.01),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
-            with pytest.raises(Exception) as exc_info:
+            events = []
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="Hello",
+                tracker=tracker,
+                trigger="heartbeat",
+            ):
+                events.append(ev)
+
+        assert [e["type"] for e in events] == ["text_delta", "done"]
+        assert events[-1]["full_text"] == "fallback after idle"
+        mock_fallback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stream_idle_timeout_without_cli_exec_still_surfaces_error(self, executor):
+        class NeverEvents:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                await asyncio.sleep(3600)
+                raise StopAsyncIteration
+
+        mock_streamed = MagicMock()
+        mock_streamed.events = NeverEvents()
+
+        mock_thread = MagicMock()
+        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.id = "idle-thread"
+
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        async def broken_fallback(*_args, **_kwargs):
+            raise RuntimeError("fallback unavailable")
+            yield  # pragma: no cover
+
+        with (
+            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch.object(executor, "_create_codex_client", return_value=mock_codex),
+            patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=broken_fallback),
+            patch("core.execution.codex_sdk._BACKGROUND_EVENT_IDLE_TIMEOUT_SEC", 0.01),
+        ):
+            tracker = ContextTracker(model="codex/o4-mini")
+            with pytest.raises(RuntimeError, match="fallback unavailable"):
                 async for _ in executor.execute_streaming(
                     system_prompt="test",
                     prompt="Hello",
@@ -1200,8 +1260,6 @@ class TestProgressiveStreaming:
                     trigger="heartbeat",
                 ):
                     pass
-
-        assert "idle timeout" in str(exc_info.value)
 
 
 # ── Mode resolution tests ────────────────────────────────────

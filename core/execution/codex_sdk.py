@@ -451,6 +451,8 @@ def _should_cli_exec_fallback(exc: BaseException) -> bool:
             return True
         if "stream closed" in lowered:
             return True
+        if "stream idle timeout" in lowered:
+            return True
         if "reading prompt from stdin" in lowered:
             return True
         cur = cur.__cause__ or cur.__context__
