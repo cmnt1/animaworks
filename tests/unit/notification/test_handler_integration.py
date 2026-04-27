@@ -88,11 +88,13 @@ def handler_with_notifier(
     memory: MagicMock,
     notifier: HumanNotifier,
 ) -> ToolHandler:
-    return ToolHandler(
+    handler = ToolHandler(
         anima_dir=anima_dir,
         memory=memory,
         human_notifier=notifier,
     )
+    handler._reload_human_notifier_from_config = lambda: (notifier, None)  # type: ignore[attr-defined]
+    return handler
 
 
 @pytest.fixture
@@ -151,6 +153,14 @@ class TestCallHumanHandler:
         self,
         handler_without_notifier: ToolHandler,
     ):
+        handler_without_notifier._reload_human_notifier_from_config = lambda: (  # type: ignore[attr-defined]
+            None,
+            (
+                "NotificationDisabled",
+                "Human notification is disabled",
+                "Set human_notification.enabled to true in config.json",
+            ),
+        )
         result = handler_without_notifier.handle(
             "call_human",
             {
@@ -160,7 +170,25 @@ class TestCallHumanHandler:
         )
         parsed = json.loads(result)
         assert parsed["status"] == "error"
-        assert parsed["error_type"] == "NotConfigured"
+        assert parsed["error_type"] == "NotificationDisabled"
+
+    def test_call_human_reloads_notifier_from_config(
+        self,
+        handler_without_notifier: ToolHandler,
+        notifier: HumanNotifier,
+        stub_channel: StubChannel,
+    ):
+        handler_without_notifier._reload_human_notifier_from_config = lambda: (notifier, None)  # type: ignore[attr-defined]
+        result = handler_without_notifier.handle(
+            "call_human",
+            {
+                "subject": "Reloaded",
+                "body": "Config changed",
+            },
+        )
+        parsed = json.loads(result)
+        assert parsed["status"] == "sent"
+        assert stub_channel.calls[0]["subject"] == "Reloaded"
 
     def test_call_human_no_channels(
         self,
@@ -173,6 +201,14 @@ class TestCallHumanHandler:
             memory=memory,
             human_notifier=empty_notifier,
         )
+        handler._reload_human_notifier_from_config = lambda: (  # type: ignore[attr-defined]
+            None,
+            (
+                "NoNotificationChannels",
+                "No enabled notification channels configured",
+                "Add an enabled channel to human_notification.channels in config.json",
+            ),
+        )
         result = handler.handle(
             "call_human",
             {
@@ -182,7 +218,30 @@ class TestCallHumanHandler:
         )
         parsed = json.loads(result)
         assert parsed["status"] == "error"
-        assert parsed["error_type"] == "NotConfigured"
+        assert parsed["error_type"] == "NoNotificationChannels"
+
+    def test_call_human_discord_target_missing(
+        self,
+        handler_without_notifier: ToolHandler,
+    ):
+        handler_without_notifier._reload_human_notifier_from_config = lambda: (  # type: ignore[attr-defined]
+            None,
+            (
+                "DiscordTargetMissing",
+                "Discord notification channel has no user_id, channel_id, or webhook_url configured",
+                "Set human_notification.channels[].config.user_id, channel_id, or webhook_url",
+            ),
+        )
+        result = handler_without_notifier.handle(
+            "call_human",
+            {
+                "subject": "Test",
+                "body": "Body",
+            },
+        )
+        parsed = json.loads(result)
+        assert parsed["status"] == "error"
+        assert parsed["error_type"] == "DiscordTargetMissing"
 
     def test_call_human_missing_subject(
         self,
@@ -225,6 +284,7 @@ class TestCallHumanHandler:
             memory=memory,
             human_notifier=notifier,
         )
+        handler._reload_human_notifier_from_config = lambda: (notifier, None)  # type: ignore[attr-defined]
         result = handler.handle(
             "call_human",
             {

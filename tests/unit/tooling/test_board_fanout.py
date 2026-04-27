@@ -5,13 +5,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.tooling.handler import ToolHandler
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -74,6 +75,52 @@ class TestBoardMentionFanout:
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
         with patch("core.messenger.is_channel_member", return_value=True):
             yield
+
+    def test_subordinate_ops_routine_post_is_blocked(
+        self,
+        handler_with_messenger: ToolHandler,
+        messenger: MagicMock,
+    ):
+        cfg = SimpleNamespace(
+            animas={"test-anima": SimpleNamespace(supervisor="sakura")},
+            heartbeat=SimpleNamespace(
+                channel_post_cooldown_s=0,
+                depth_window_s=600,
+                max_depth=6,
+            ),
+        )
+        with patch("core.config.models.load_config", return_value=cfg):
+            result = handler_with_messenger.handle(
+                "post_channel",
+                {"channel": "ops", "text": "定例確認の報告です。問題ありません。"},
+            )
+
+        parsed = json.loads(result)
+        assert parsed["status"] == "error"
+        assert parsed["error_type"] == "OpsEscalationRequired"
+        messenger.post_channel.assert_not_called()
+
+    def test_subordinate_ops_escalation_post_is_allowed(
+        self,
+        handler_with_messenger: ToolHandler,
+        messenger: MagicMock,
+    ):
+        cfg = SimpleNamespace(
+            animas={"test-anima": SimpleNamespace(supervisor="sakura")},
+            heartbeat=SimpleNamespace(
+                channel_post_cooldown_s=0,
+                depth_window_s=600,
+                max_depth=6,
+            ),
+        )
+        with patch("core.config.models.load_config", return_value=cfg):
+            result = handler_with_messenger.handle(
+                "post_channel",
+                {"channel": "ops", "text": "緊急エスカレーションです。call_human が必要です。"},
+            )
+
+        assert result == "Posted to #ops"
+        messenger.post_channel.assert_called_once()
 
     def test_fanout_at_all_sends_to_running_animas(
         self,

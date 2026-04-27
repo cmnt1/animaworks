@@ -28,6 +28,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("animaworks.tool_handler")
 
+_OPS_ESCALATION_RE = re.compile(
+    r"(escalat|エスカレ|緊急|urgent|critical|重大|障害|incident|停止|異常|blocked|"
+    r"ブロック|call_human|owner|オーナー|人間|human)",
+    re.IGNORECASE,
+)
+
 
 class CommsToolsMixin:
     """Message sending, channel posting/reading, DM history, and human notification."""
@@ -43,6 +49,81 @@ class CommsToolsMixin:
     _pending_notifications: list[dict[str, Any]]
     _session_origin: str
     _session_origin_chain: list[str]
+
+    def _is_subordinate_anima(self) -> bool:
+        try:
+            from core.config.models import load_config
+
+            anima_cfg = load_config().animas.get(self._anima_name)
+            return bool(anima_cfg and anima_cfg.supervisor)
+        except Exception:
+            logger.debug("Failed to resolve supervisor for %s", self._anima_name, exc_info=True)
+            return False
+
+    @staticmethod
+    def _human_notification_config_error(config: Any) -> tuple[str, str, str] | None:
+        if not getattr(config, "enabled", False):
+            return (
+                "NotificationDisabled",
+                "Human notification is disabled",
+                "Set human_notification.enabled to true in config.json",
+            )
+
+        enabled_channels = [ch for ch in getattr(config, "channels", []) if getattr(ch, "enabled", False)]
+        if not enabled_channels:
+            return (
+                "NoNotificationChannels",
+                "No enabled notification channels configured",
+                "Add an enabled channel to human_notification.channels in config.json",
+            )
+
+        discord_channels = [ch for ch in enabled_channels if getattr(ch, "type", "") == "discord"]
+        if discord_channels and len(discord_channels) == len(enabled_channels):
+            has_discord_target = False
+            for ch in discord_channels:
+                cfg = getattr(ch, "config", {}) or {}
+                if any(cfg.get(k) for k in ("user_id", "channel_id", "webhook_url", "webhook_url_env")):
+                    has_discord_target = True
+                    break
+            if not has_discord_target:
+                return (
+                    "DiscordTargetMissing",
+                    "Discord notification channel has no user_id, channel_id, or webhook_url configured",
+                    "Set human_notification.channels[].config.user_id, channel_id, or webhook_url",
+                )
+
+        return None
+
+    def _reload_human_notifier_from_config(self) -> tuple[HumanNotifier | None, tuple[str, str, str] | None]:
+        try:
+            from core.config.models import load_config
+            from core.notification.notifier import HumanNotifier
+
+            config = load_config().human_notification
+            config_error = self._human_notification_config_error(config)
+            if config_error is not None:
+                self._human_notifier = None
+                return None, config_error
+
+            notifier = HumanNotifier.from_config(config)
+            if notifier.channel_count == 0:
+                config_error = (
+                    "NoNotificationChannels",
+                    "No supported notification channels configured",
+                    "Check human_notification.channels[].type in config.json",
+                )
+                self._human_notifier = None
+                return None, config_error
+
+            self._human_notifier = notifier
+            return notifier, None
+        except Exception as exc:
+            logger.debug("Failed to reload HumanNotifier", exc_info=True)
+            return None, (
+                "NotificationConfigError",
+                f"Failed to load human notification config: {exc}",
+                "Check config.json syntax and human_notification settings",
+            )
 
     def _handle_send_message(self, args: dict[str, Any]) -> str:
         if not self._messenger:
@@ -217,6 +298,13 @@ class CommsToolsMixin:
         if not channel or not text:
             return _error_result("InvalidArguments", "channel and text are required")
 
+        if channel == "ops" and self._is_subordinate_anima() and not _OPS_ESCALATION_RE.search(text):
+            return _error_result(
+                "OpsEscalationRequired",
+                "Subordinate Animas may post to #ops only for human escalation or urgent incidents",
+                suggestion="Send routine reports to your supervisor with send_message instead",
+            )
+
         # ── ACL gate ──
         from core.messenger import is_channel_member
 
@@ -298,7 +386,7 @@ class CommsToolsMixin:
         result = f"Posted to #{channel}"
 
         # Guardrail: warn when posting to board during thread-sourced inbox processing
-        if self._trigger.startswith("inbox") and self._has_thread_source:
+        if getattr(self, "_trigger", "").startswith("inbox") and getattr(self, "_has_thread_source", False):
             result += f"\n{t('discord.thread_post_channel_warning')}"
 
         return result
@@ -580,18 +668,16 @@ class CommsToolsMixin:
     # ── Human notification handler ────────────────────────────
 
     def _handle_call_human(self, args: dict[str, Any]) -> str:
-        if not self._human_notifier:
+        notifier, config_error = self._reload_human_notifier_from_config()
+        if config_error is not None:
+            error_type, message, suggestion = config_error
             return _error_result(
-                "NotConfigured",
-                "Human notification is not configured",
-                suggestion="Enable human_notification in config.json",
+                error_type,
+                message,
+                suggestion=suggestion,
             )
-        if self._human_notifier.channel_count == 0:
-            return _error_result(
-                "NotConfigured",
-                "No notification channels configured",
-                suggestion="Add channels to human_notification.channels in config.json",
-            )
+        if not notifier:
+            return _error_result("NotConfigured", "Human notification is not configured")
 
         import asyncio
 
@@ -658,7 +744,7 @@ class CommsToolsMixin:
                 return _error_result("InvalidArguments", str(ve))
 
         try:
-            coro = self._human_notifier.notify(
+            coro = notifier.notify(
                 subject,
                 body,
                 priority,
