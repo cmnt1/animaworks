@@ -30,6 +30,7 @@ from core.tools._discord_markdown import DISCORD_MESSAGE_LIMIT
 
 logger = logging.getLogger("animaworks.discord_webhooks")
 _WEBHOOK_NAME = "AnimaWorks"
+_DISCORD_THREAD_TYPES = {10, 11, 12}
 
 # Thread-to-Anima mapping TTL
 _THREAD_MAP_TTL_DAYS = 7
@@ -116,9 +117,27 @@ class DiscordWebhookManager:
             self._persist()
             logger.info("Created webhook for channel %s: %s", channel_id, wh_id)
             return wh_id, wh_token
-        except DiscordAPIError:
-            logger.exception("Failed to create webhook for channel %s", channel_id)
+        except DiscordAPIError as exc:
+            log = logger.debug if exc.status == 404 else logger.exception
+            log("Failed to create webhook for channel %s", channel_id, exc_info=True)
             raise
+
+    def _resolve_parent_for_thread_channel(self, client: DiscordClient, channel_id: str) -> str | None:
+        """Return parent channel ID when *channel_id* is actually a thread."""
+        try:
+            channel = client.get_channel(channel_id)
+        except DiscordAPIError:
+            logger.debug("Failed to inspect Discord channel %s", channel_id, exc_info=True)
+            return None
+
+        parent_id = channel.get("parent_id")
+        try:
+            channel_type = int(channel.get("type", -1))
+        except (TypeError, ValueError):
+            channel_type = -1
+        if parent_id and channel_type in _DISCORD_THREAD_TYPES:
+            return str(parent_id)
+        return None
 
     def send_as_anima(
         self,
@@ -182,8 +201,24 @@ class DiscordWebhookManager:
             if cross_eligible:
                 self._recent_bodies[cross_key] = now
 
-        wh_id, wh_token = self._get_or_create_webhook(channel_id)
         client = self._ensure_client()
+
+        try:
+            wh_id, wh_token = self._get_or_create_webhook(channel_id)
+        except DiscordAPIError as exc:
+            parent_id = None
+            if exc.status == 404 and not thread_id:
+                parent_id = self._resolve_parent_for_thread_channel(client, channel_id)
+            if not parent_id:
+                raise
+            logger.warning(
+                "Discord webhook target %s is a thread; retrying via parent channel %s",
+                channel_id,
+                parent_id,
+            )
+            thread_id = channel_id
+            channel_id = parent_id
+            wh_id, wh_token = self._get_or_create_webhook(channel_id)
 
         avatar_url = resolve_anima_icon_url(anima_name)
 

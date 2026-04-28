@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, patch
 
 import pytest
 
@@ -18,7 +18,7 @@ from core.discord_webhooks import (
     DiscordWebhookManager,
     _split_message,
 )
-
+from core.tools._discord_client import DiscordAPIError
 
 # ── _split_message ───────────────────────────────────────
 
@@ -116,3 +116,38 @@ class TestDiscordWebhookManager:
         mock_client.execute_webhook.assert_called_once()
         _, kwargs = mock_client.execute_webhook.call_args
         assert kwargs.get("username") == "sakura"
+
+    @patch("core.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.discord_webhooks.DiscordClient")
+    def test_send_as_anima_retries_thread_id_as_parent_channel(
+        self,
+        MockClient,
+        _mock_cred,
+        mgr: DiscordWebhookManager,
+    ):
+        mock_client = MockClient.return_value
+        mock_client.list_webhooks.side_effect = [
+            DiscordAPIError(404, "Unknown Channel"),
+            [{"name": "AnimaWorks", "id": "wh-parent", "token": "tok-parent"}],
+        ]
+        mock_client.create_webhook.side_effect = DiscordAPIError(404, "Unknown Channel")
+        mock_client.get_channel.return_value = {
+            "id": "thread-ch",
+            "type": 11,
+            "parent_id": "parent-ch",
+        }
+        mock_client.execute_webhook.return_value = {"id": "msg-thread"}
+
+        msg_id = mgr.send_as_anima("thread-ch", "hikaru", "hello")
+
+        assert msg_id == "msg-thread"
+        mock_client.get_channel.assert_called_once_with("thread-ch")
+        mock_client.execute_webhook.assert_called_once_with(
+            "wh-parent",
+            "tok-parent",
+            "hello",
+            username="hikaru",
+            avatar_url=ANY,
+            thread_id="thread-ch",
+            components=None,
+        )

@@ -190,6 +190,11 @@ class DiscordClient:
         )
         return result if isinstance(result, list) else []
 
+    def get_channel(self, channel_id: str) -> dict:
+        """GET /channels/{channel_id}."""
+        result = self._request("GET", f"/channels/{channel_id}")
+        return result if isinstance(result, dict) else {}
+
     def send_message(
         self,
         channel_id: str,
