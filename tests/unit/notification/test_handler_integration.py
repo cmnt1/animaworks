@@ -362,7 +362,7 @@ class TestCallHumanHandler:
         _cargs, ckwargs = mock_get_ir.return_value.create.call_args
         assert ckwargs["allowed_users"] == {"slack": ["U1", "U9"]}
 
-    def test_ops_post_requires_interactive_call_human(
+    def test_ops_post_without_interactive_call_human_falls_back_to_general(
         self,
         handler_with_notifier_and_messenger: ToolHandler,
     ):
@@ -371,10 +371,10 @@ class TestCallHumanHandler:
             {"channel": "ops", "text": "Routine status report"},
         )
 
-        parsed = json.loads(result)
-        assert parsed["error_type"] == "OpsInteractiveHumanEscalationRequired"
+        assert "Posted to #general" in result
+        assert "redirected from #ops" in result
 
-    def test_noninteractive_call_human_does_not_allow_ops_post(
+    def test_noninteractive_call_human_ops_post_falls_back_to_general(
         self,
         handler_with_notifier_and_messenger: ToolHandler,
     ):
@@ -392,8 +392,8 @@ class TestCallHumanHandler:
             {"channel": "ops", "text": "Escalation-looking text after non-interactive notify"},
         )
 
-        parsed = json.loads(post_result)
-        assert parsed["error_type"] == "OpsInteractiveHumanEscalationRequired"
+        assert "Posted to #general" in post_result
+        assert "redirected from #ops" in post_result
 
     def test_interactive_call_human_allows_one_ops_post(
         self,
@@ -441,5 +441,5 @@ class TestCallHumanHandler:
         assert json.loads(notify_result)["callback_id"] == "cb_ops_1"
         assert "Posted to #ops" in first_post
         assert "cb_ops_1" in first_post
-        parsed = json.loads(second_post)
-        assert parsed["error_type"] == "OpsInteractiveHumanEscalationRequired"
+        assert "Posted to #general" in second_post
+        assert "redirected from #ops" in second_post

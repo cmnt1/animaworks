@@ -198,6 +198,7 @@ DEFAULT_DESCRIPTIONS: dict[str, dict[str, str]] = {
             "Routine work reports and completion updates should go to your team/department channel first. "
             "Use general for org-wide sharing. #ops is only for issues that require Human judgment; "
             "a successful interactive call_human notification in the same run is required before posting there. "
+            "Attempts to post to #ops without that escalation are redirected to #general. "
             "Use send_message for 1:1 communication."
         ),
         "ko": (

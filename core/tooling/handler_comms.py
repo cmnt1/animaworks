@@ -327,15 +327,13 @@ class CommsToolsMixin:
         if not channel or not text:
             return _error_result("InvalidArguments", "channel and text are required")
 
+        fallback_from_ops = False
         if channel == "ops" and not self._has_ops_human_escalation():
-            return _error_result(
-                "OpsInteractiveHumanEscalationRequired",
-                "#ops posts require a successful interactive call_human notification in the same run",
-                suggestion=(
-                    "Use call_human with interactive=true when Human judgment is required, "
-                    "then post the same escalation context to #ops. Send routine reports "
-                    "to your supervisor with send_message instead."
-                ),
+            channel = "general"
+            fallback_from_ops = True
+            logger.info(
+                "Redirecting non-escalation #ops post to #general: anima=%s",
+                self._anima_name,
             )
 
         # ── ACL gate ──
@@ -402,10 +400,11 @@ class CommsToolsMixin:
         self._messenger.post_channel(channel, text)
         self._posted_channels.setdefault(active_session_type.get(), set()).add(channel)
         logger.info(
-            "post_channel channel=%s anima=%s ops_callback_id=%s",
+            "post_channel channel=%s anima=%s ops_callback_id=%s fallback_from_ops=%s",
             channel,
             self._anima_name,
             ops_callback_id,
+            fallback_from_ops,
         )
 
         if not suppress_board_fanout.get():
@@ -426,6 +425,8 @@ class CommsToolsMixin:
         result = f"Posted to #{channel}"
         if ops_callback_id:
             result += f" (linked call_human callback: {ops_callback_id})"
+        if fallback_from_ops:
+            result += " (redirected from #ops: interactive Human escalation required)"
 
         # Guardrail: warn when posting to board during thread-sourced inbox processing
         if getattr(self, "_trigger", "").startswith("inbox") and getattr(self, "_has_thread_source", False):
