@@ -340,6 +340,15 @@ class UserAliasConfig(BaseModel):
     discord_user_id: str = ""
 
 
+class SystemAgentConfig(BaseModel):
+    """External automation account that may post operational events."""
+
+    name: str = ""
+    kind: str = "system_agent"
+    board_from: str = ""
+    route_to_animas: bool = False
+
+
 class ExternalMessagingChannelConfig(BaseModel):
     """Configuration for a single external messaging platform."""
 
@@ -352,6 +361,7 @@ class ExternalMessagingChannelConfig(BaseModel):
     board_mapping: dict[str, str] = {}  # channel_id → animaworks_board_name (auto-populated)
     guild_id: str = ""  # Discord guild snowflake ID (Discord only)
     channel_members: dict[str, list[str]] = {}  # channel_id → [anima_name, ...] (Discord only)
+    system_agents: dict[str, SystemAgentConfig] = {}  # external_user_id -> SystemAgentConfig
 
 
 class ExternalMessagingConfig(BaseModel):

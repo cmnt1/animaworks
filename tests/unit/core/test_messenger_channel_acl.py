@@ -148,6 +148,7 @@ class TestIsChannelMember:
         save_channel_meta(shared_dir, "locked-ch", ChannelMeta(members=[]))
         assert is_channel_member(shared_dir, "locked-ch", "anyone", source="human") is True
         assert is_channel_member(shared_dir, "locked-ch", "anyone", source="discord") is True
+        assert is_channel_member(shared_dir, "locked-ch", "anyone", source="system_agent") is True
 
     def test_member_has_access(self, shared_dir: Path):
         save_channel_meta(shared_dir, "private", ChannelMeta(members=["alice", "bob"]))
@@ -198,6 +199,22 @@ class TestPostChannelACL:
         alice.post_channel("restricted", "From human", source="human", from_name="human")
         lines = (shared_dir / "channels" / "restricted.jsonl").read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 1
+
+    def test_system_agent_source_bypasses_acl(self, shared_dir: Path):
+        save_channel_meta(shared_dir, "restricted", ChannelMeta(members=["bob"]))
+        (shared_dir / "channels" / "restricted.jsonl").write_text("", encoding="utf-8")
+        agent = Messenger(shared_dir, "daily-ops-dashboard")
+        agent.post_channel(
+            "restricted",
+            "NBO取込が完了しました",
+            source="system_agent",
+            from_name="daily-ops-dashboard",
+        )
+        lines = (shared_dir / "channels" / "restricted.jsonl").read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        entry = json.loads(lines[0])
+        assert entry["from"] == "daily-ops-dashboard"
+        assert entry["source"] == "system_agent"
 
 
 # ── read_channel with ACL ────────────────────────────────

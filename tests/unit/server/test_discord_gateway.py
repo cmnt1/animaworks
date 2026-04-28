@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -64,9 +65,11 @@ class TestDiscordGatewayManagerRouting:
             "ch2": ["kotoha"],
             "dm-sakura": ["sakura"],
             "ops-ch": ["sakura", "kotoha"],
+            "finance-ch": ["sakura", "kotoha"],
         }
         mock_cfg.external_messaging.discord.default_anima = "sakura"
-        mock_cfg.external_messaging.discord.board_mapping = {"ops-ch": "ops"}
+        mock_cfg.external_messaging.discord.board_mapping = {"ops-ch": "ops", "finance-ch": "finance"}
+        mock_cfg.external_messaging.discord.system_agents = {}
 
         monkeypatch.setattr(
             "server.discord_gateway.load_config",
@@ -115,6 +118,50 @@ class TestDiscordGatewayManagerRouting:
         ):
             await manager._handle_message(message)
 
+        MockMessenger.return_value.receive_external.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_system_agent_is_mirrored_to_board_without_inbox_delivery(
+        self,
+        manager: DiscordGatewayManager,
+        _mock_config,
+    ):
+        _mock_config.external_messaging.discord.system_agents = {
+            "system-bot-1": SimpleNamespace(
+                name="Daily Ops Dashboard Bot",
+                board_from="daily-ops-dashboard",
+                route_to_animas=False,
+            )
+        }
+
+        message = MagicMock()
+        message.id = "system-agent-001"
+        message.author.id = "system-bot-1"
+        message.author.display_name = "Daily_Ops_Dashboard_Bot"
+        message.author.name = "Daily_Ops_Dashboard_Bot"
+        message.webhook_id = None
+        message.mentions = []
+        message.content = "NBO取込が完了しました"
+        message.channel.id = "finance-ch"
+        message.channel.parent_id = None
+        message.channel.name = "finance"
+        message.guild = object()
+        message.reference = None
+
+        with (
+            patch("server.discord_gateway._route_to_board") as route_to_board,
+            patch("server.discord_gateway.Messenger") as MockMessenger,
+        ):
+            await manager._handle_message(message)
+
+        route_to_board.assert_called_once_with(
+            "finance-ch",
+            "NBO取込が完了しました",
+            "daily-ops-dashboard",
+            message_id="system-agent-001",
+            board_mapping=_mock_config.external_messaging.discord.board_mapping,
+            source="system_agent",
+        )
         MockMessenger.return_value.receive_external.assert_not_called()
 
     @pytest.mark.asyncio

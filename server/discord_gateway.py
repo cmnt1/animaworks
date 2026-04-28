@@ -51,6 +51,29 @@ def _is_broadcast_only_channel(channel_id: str, channel_name: str, discord_cfg: 
 
 # ── Dedup ────────────────────────────────────────────────────
 
+def _config_value(config: Any, key: str, default: Any = "") -> Any:
+    if isinstance(config, dict):
+        return config.get(key, default)
+    return getattr(config, key, default)
+
+
+def _system_agent_for_author(discord_cfg: Any, author_id: str) -> Any | None:
+    """Return configured System Agent metadata for a Discord author ID."""
+    agents = getattr(discord_cfg, "system_agents", {}) or {}
+    if not isinstance(agents, dict):
+        return None
+    return agents.get(str(author_id)) or agents.get(author_id)
+
+
+def _system_agent_board_from(system_agent: Any, fallback: str) -> str:
+    """Return the board display name for a System Agent post."""
+    for key in ("board_from", "name"):
+        value = _config_value(system_agent, key, "")
+        if str(value or "").strip():
+            return str(value).strip()
+    return fallback or "system_agent"
+
+
 _DEDUP_TTL_SEC = 10
 _dedup_lock = threading.Lock()
 _recent_ids: collections.OrderedDict[str, float] = collections.OrderedDict()
@@ -104,6 +127,7 @@ def _route_to_board(
     *,
     message_id: str = "",
     board_mapping: dict[str, str] | None = None,
+    source: str = "discord",
 ) -> None:
     """Post a Discord message to the mapped AnimaWorks board (if any)."""
     if message_id:
@@ -121,8 +145,8 @@ def _route_to_board(
         board_name = board_mapping.get(channel_id)
         if not board_name:
             return
-        messenger = Messenger(get_shared_dir(), user_name or "discord")
-        messenger.post_channel(board_name, text, source="discord", from_name=user_name or "discord")
+        messenger = Messenger(get_shared_dir(), user_name or source)
+        messenger.post_channel(board_name, text, source=source, from_name=user_name or source)
     except Exception:
         logger.debug("Board routing failed for channel %s", channel_id, exc_info=True)
 
@@ -690,6 +714,26 @@ class DiscordGatewayManager:
             ch_name,
             discord_cfg,
         )
+        board_from = author_display
+        board_source = "discord"
+        system_agent = _system_agent_for_author(discord_cfg, str(message.author.id))
+        if system_agent:
+            board_from = _system_agent_board_from(system_agent, author_display)
+            board_source = "system_agent"
+            if not bool(_config_value(system_agent, "route_to_animas", False)):
+                _route_to_board(
+                    routing_channel_id,
+                    cleaned_text,
+                    board_from,
+                    message_id=msg_id,
+                    board_mapping=discord_cfg.board_mapping,
+                    source=board_source,
+                )
+                logger.info(
+                    "Discord routing: system agent %s mirrored to board only",
+                    board_from,
+                )
+                return
 
         # Determine target Anima(s). A single message can name multiple
         # Animas (e.g. "sora mira に..."); deliver to each in turn.
@@ -781,9 +825,10 @@ class DiscordGatewayManager:
         _route_to_board(
             routing_channel_id,
             cleaned_text,
-            author_display,
+            board_from,
             message_id=msg_id,
             board_mapping=discord_cfg.board_mapping,
+            source=board_source,
         )
 
         # Deliver to each target's inbox

@@ -122,7 +122,7 @@ def is_channel_member(
     """Check whether *anima_name* may access *channel*.
 
     Rules:
-    - ``human`` and ``discord`` sources always have access (gateway bypass).
+    - ``human``, ``discord``, and ``system_agent`` sources always have access (gateway bypass).
     - ``dm-{name}`` channels are exclusive: only the named Anima may post.
     - If no ``.meta.json`` exists the channel is open — everyone has access
       (legacy/auto-created channels default to permissive).
@@ -132,7 +132,7 @@ def is_channel_member(
       channel down (e.g. ``#ops``).
     - Otherwise the anima must appear in the ``members`` list.
     """
-    if source in ("human", "discord"):
+    if source in ("human", "discord", "system_agent"):
         return True
     # DM channels: only the owning Anima may post
     if channel.startswith("dm-"):
@@ -307,8 +307,8 @@ class Messenger:
             )
             return
 
-        # Validate from_name: must be a known anima or "human"
-        if poster != "human":
+        # Validate Anima-authored posts: from_name must be a known anima or "human".
+        if source == "anima" and poster != "human":
             try:
                 from core.config.models import load_config
 
