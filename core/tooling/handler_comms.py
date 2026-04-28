@@ -47,6 +47,7 @@ class CommsToolsMixin:
     _posted_channels: dict[str, set[str]]
     _human_notifier: HumanNotifier | None
     _pending_notifications: list[dict[str, Any]]
+    _interactive_human_notifications: dict[str, list[str]]
     _session_origin: str
     _session_origin_chain: list[str]
 
@@ -59,6 +60,34 @@ class CommsToolsMixin:
         except Exception:
             logger.debug("Failed to resolve supervisor for %s", self._anima_name, exc_info=True)
             return False
+
+    def _interactive_human_notifications_for(self, session_type: str) -> list[str]:
+        store = getattr(self, "_interactive_human_notifications", None)
+        if store is None:
+            store = {"chat": [], "background": []}
+            self._interactive_human_notifications = store
+        return store.setdefault(session_type, [])
+
+    def _has_ops_human_escalation(self) -> bool:
+        return bool(self._interactive_human_notifications_for(active_session_type.get()))
+
+    def _record_ops_human_escalation(self, callback_id: str) -> None:
+        if callback_id:
+            self._interactive_human_notifications_for(active_session_type.get()).append(callback_id)
+
+    def _consume_ops_human_escalation(self) -> str:
+        callbacks = self._interactive_human_notifications_for(active_session_type.get())
+        if not callbacks:
+            return ""
+        return callbacks.pop(0)
+
+    @staticmethod
+    def _has_successful_notification_result(results: list[str]) -> bool:
+        for result in results:
+            lowered = result.lower()
+            if "error" not in lowered and "no notification channels configured" not in lowered:
+                return True
+        return False
 
     @staticmethod
     def _human_notification_config_error(config: Any) -> tuple[str, str, str] | None:
@@ -298,11 +327,15 @@ class CommsToolsMixin:
         if not channel or not text:
             return _error_result("InvalidArguments", "channel and text are required")
 
-        if channel == "ops" and self._is_subordinate_anima() and not _OPS_ESCALATION_RE.search(text):
+        if channel == "ops" and not self._has_ops_human_escalation():
             return _error_result(
-                "OpsEscalationRequired",
-                "Subordinate Animas may post to #ops only for human escalation or urgent incidents",
-                suggestion="Send routine reports to your supervisor with send_message instead",
+                "OpsInteractiveHumanEscalationRequired",
+                "#ops posts require a successful interactive call_human notification in the same run",
+                suggestion=(
+                    "Use call_human with interactive=true when Human judgment is required, "
+                    "then post the same escalation context to #ops. Send routine reports "
+                    "to your supervisor with send_message instead."
+                ),
             )
 
         # ── ACL gate ──
@@ -364,9 +397,16 @@ class CommsToolsMixin:
                 except (ValueError, TypeError):
                     pass
 
+        ops_callback_id = self._consume_ops_human_escalation() if channel == "ops" else ""
+
         self._messenger.post_channel(channel, text)
         self._posted_channels.setdefault(active_session_type.get(), set()).add(channel)
-        logger.info("post_channel channel=%s anima=%s", channel, self._anima_name)
+        logger.info(
+            "post_channel channel=%s anima=%s ops_callback_id=%s",
+            channel,
+            self._anima_name,
+            ops_callback_id,
+        )
 
         if not suppress_board_fanout.get():
             self._fanout_board_mentions(channel, text)
@@ -384,6 +424,8 @@ class CommsToolsMixin:
         self._fire_board_discord_sync(channel, text)
 
         result = f"Posted to #{channel}"
+        if ops_callback_id:
+            result += f" (linked call_human callback: {ops_callback_id})"
 
         # Guardrail: warn when posting to board during thread-sourced inbox processing
         if getattr(self, "_trigger", "").startswith("inbox") and getattr(self, "_has_thread_source", False):
@@ -779,5 +821,7 @@ class CommsToolsMixin:
         if interactive and interaction_req is not None:
             payload["interactive"] = True
             payload["callback_id"] = interaction_req.callback_id
+            if self._has_successful_notification_result(results):
+                self._record_ops_human_escalation(interaction_req.callback_id)
 
         return _json.dumps(payload, ensure_ascii=False)

@@ -19,7 +19,6 @@ from core.messenger import Messenger
 from core.time_utils import now_jst
 from core.tooling.handler import ToolHandler
 
-
 # ── Helpers ──────────────────────────────────────────────────
 
 
@@ -67,15 +66,15 @@ class TestPostChannelPerRunGuard:
         assert "Error" in result2
         assert "投稿済み" in result2
 
-    def test_post_channel_per_run_allows_different_channels(self, tmp_path: Path) -> None:
+    def test_post_channel_per_run_allows_different_non_ops_channels(self, tmp_path: Path) -> None:
         """異なるチャネルへの投稿は許可される。"""
         handler, _, _ = _make_handler(tmp_path)
 
         result1 = handler.handle("post_channel", {"channel": "general", "text": "Hello"})
         assert "Posted to #general" in result1
 
-        result2 = handler.handle("post_channel", {"channel": "ops", "text": "Status OK"})
-        assert "Posted to #ops" in result2
+        result2 = handler.handle("post_channel", {"channel": "team", "text": "Status OK"})
+        assert "Posted to #team" in result2
 
     def test_reset_posted_channels_clears_tracking(self, tmp_path: Path) -> None:
         """reset_posted_channels後は再投稿可能になる。"""

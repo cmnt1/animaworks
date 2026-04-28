@@ -152,6 +152,94 @@ class TestDiscordComponents:
             "999888777",
         )
 
+    @pytest.mark.asyncio
+    async def test_send_dm_prefers_dm_board_webhook_with_components(self):
+        req = _sample_request()
+        channel = DiscordChannel({"bot_token": "bot-token", "user_id": "U-owner"})
+
+        cfg = MagicMock()
+        cfg.external_messaging.discord.board_mapping = {"C-dm-sakura": "dm-sakura"}
+        wm = MagicMock()
+        wm.send_as_anima.return_value = "msg-webhook"
+
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.discord_webhooks.get_webhook_manager", return_value=wm),
+            patch(
+                "core.notification.interactive.get_interaction_router",
+            ) as mock_router_factory,
+            patch("core.tools._discord_client.DiscordClient") as mock_discord_client,
+        ):
+            mock_router = MagicMock()
+            mock_router.update_message_ts = AsyncMock()
+            mock_router_factory.return_value = mock_router
+
+            result = await channel.send(
+                "Hi",
+                "Body",
+                anima_name="sakura",
+                interaction=req,
+            )
+
+        assert result == "discord: sent via #dm-sakura (msg_id=msg-webhook)"
+        wm.send_as_anima.assert_called_once()
+        args, kwargs = wm.send_as_anima.call_args
+        assert args[:3] == (
+            "C-dm-sakura",
+            "sakura",
+            "<@U-owner> **Hi** (from sakura)\nBody",
+        )
+        assert kwargs["components"][0]["components"][0]["custom_id"].endswith(":approve")
+        mock_router.update_message_ts.assert_awaited_once_with(
+            req.callback_id,
+            "discord",
+            "msg-webhook",
+        )
+        mock_discord_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_send_dm_falls_back_to_bot_dm_when_dm_board_webhook_fails(self):
+        req = _sample_request()
+        channel = DiscordChannel({"bot_token": "bot-token", "user_id": "U-owner"})
+
+        cfg = MagicMock()
+        cfg.external_messaging.discord.board_mapping = {"C-dm-sakura": "dm-sakura"}
+        wm = MagicMock()
+        wm.send_as_anima.side_effect = RuntimeError("webhook failed")
+        mock_client = MagicMock()
+        mock_client.create_dm.return_value = {"id": "DM-channel"}
+        mock_client.send_message.return_value = {"id": "msg-bot-dm"}
+
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.discord_webhooks.get_webhook_manager", return_value=wm),
+            patch(
+                "core.notification.interactive.get_interaction_router",
+            ) as mock_router_factory,
+            patch("core.tools._discord_client.DiscordClient", return_value=mock_client),
+        ):
+            mock_router = MagicMock()
+            mock_router.update_message_ts = AsyncMock()
+            mock_router_factory.return_value = mock_router
+
+            result = await channel.send(
+                "Hi",
+                "Body",
+                anima_name="sakura",
+                interaction=req,
+            )
+
+        assert result == "discord: DM sent to U-owner (msg_id=msg-bot-dm)"
+        mock_client.create_dm.assert_called_once_with("U-owner")
+        mock_client.send_message.assert_called_once()
+        _args, kwargs = mock_client.send_message.call_args
+        assert kwargs["components"][0]["components"][0]["custom_id"].endswith(":approve")
+        mock_router.update_message_ts.assert_awaited_once_with(
+            req.callback_id,
+            "discord",
+            "msg-bot-dm",
+        )
+
 
 def _mock_config_with_web_base(web_base: str) -> AnimaWorksConfig:
     cfg = AnimaWorksConfig()

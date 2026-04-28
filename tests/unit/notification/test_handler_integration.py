@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.messenger import Messenger
 from core.notification.interactive import InteractionRequest
 from core.notification.notifier import HumanNotifier, NotificationChannel
 from core.tooling.handler import ToolHandler
@@ -106,6 +107,26 @@ def handler_without_notifier(
         anima_dir=anima_dir,
         memory=memory,
     )
+
+
+@pytest.fixture
+def handler_with_notifier_and_messenger(
+    tmp_path: Path,
+    anima_dir: Path,
+    memory: MagicMock,
+    notifier: HumanNotifier,
+) -> ToolHandler:
+    shared_dir = tmp_path / "shared"
+    (shared_dir / "inbox").mkdir(parents=True, exist_ok=True)
+    (shared_dir / "channels").mkdir(parents=True, exist_ok=True)
+    handler = ToolHandler(
+        anima_dir=anima_dir,
+        memory=memory,
+        messenger=Messenger(shared_dir, anima_dir.name),
+        human_notifier=notifier,
+    )
+    handler._reload_human_notifier_from_config = lambda: (notifier, None)  # type: ignore[attr-defined]
+    return handler
 
 
 # ── Tests ─────────────────────────────────────────────────────
@@ -340,3 +361,85 @@ class TestCallHumanHandler:
         mock_get_ir.return_value.create.assert_called_once()
         _cargs, ckwargs = mock_get_ir.return_value.create.call_args
         assert ckwargs["allowed_users"] == {"slack": ["U1", "U9"]}
+
+    def test_ops_post_requires_interactive_call_human(
+        self,
+        handler_with_notifier_and_messenger: ToolHandler,
+    ):
+        result = handler_with_notifier_and_messenger.handle(
+            "post_channel",
+            {"channel": "ops", "text": "Routine status report"},
+        )
+
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "OpsInteractiveHumanEscalationRequired"
+
+    def test_noninteractive_call_human_does_not_allow_ops_post(
+        self,
+        handler_with_notifier_and_messenger: ToolHandler,
+    ):
+        notify_result = handler_with_notifier_and_messenger.handle(
+            "call_human",
+            {
+                "subject": "FYI",
+                "body": "Non-interactive notification",
+            },
+        )
+        assert json.loads(notify_result)["status"] == "sent"
+
+        post_result = handler_with_notifier_and_messenger.handle(
+            "post_channel",
+            {"channel": "ops", "text": "Escalation-looking text after non-interactive notify"},
+        )
+
+        parsed = json.loads(post_result)
+        assert parsed["error_type"] == "OpsInteractiveHumanEscalationRequired"
+
+    def test_interactive_call_human_allows_one_ops_post(
+        self,
+        handler_with_notifier_and_messenger: ToolHandler,
+    ):
+        req = InteractionRequest(
+            callback_id="cb_ops_1",
+            anima_name="test-anima",
+            category="approval",
+            options=["approve", "reject"],
+            allowed_users={},
+            metadata={},
+            created_at=datetime.now(UTC),
+            approval_token="tok",
+            message_ts={},
+        )
+        cfg = MagicMock()
+        cfg.interaction.default_approver_ids = []
+        cfg.heartbeat.channel_post_cooldown_s = 0
+        cfg.animas = {}
+
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.notification.interactive.get_interaction_router") as mock_get_ir,
+        ):
+            mock_get_ir.return_value.create = AsyncMock(return_value=req)
+
+            notify_result = handler_with_notifier_and_messenger.handle(
+                "call_human",
+                {
+                    "subject": "Need owner decision",
+                    "body": "Please decide whether to proceed.",
+                    "interactive": True,
+                },
+            )
+            first_post = handler_with_notifier_and_messenger.handle(
+                "post_channel",
+                {"channel": "ops", "text": "Owner decision requested via interactive call_human."},
+            )
+            second_post = handler_with_notifier_and_messenger.handle(
+                "post_channel",
+                {"channel": "ops", "text": "Second ops post without another interactive call_human."},
+            )
+
+        assert json.loads(notify_result)["callback_id"] == "cb_ops_1"
+        assert "Posted to #ops" in first_post
+        assert "cb_ops_1" in first_post
+        parsed = json.loads(second_post)
+        assert parsed["error_type"] == "OpsInteractiveHumanEscalationRequired"

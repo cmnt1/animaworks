@@ -131,6 +131,7 @@ class ToolHandler(
         self._context_window = context_window
         self._process_supervisor = process_supervisor
         self._pending_notifications: list[dict[str, Any]] = []
+        self._interactive_human_notifications: dict[str, list[str]] = {"chat": [], "background": []}
         self._replied_to: dict[str, set[str]] = {"chat": set(), "background": set()}
         self._posted_channels: dict[str, set[str]] = {"chat": set(), "background": set()}
         self._read_paths: set[str] = set()

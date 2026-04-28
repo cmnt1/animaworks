@@ -354,7 +354,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "Boardチャネルにメッセージを投稿する。通常の作業報告・完了報告は、まず所属している部門/チームのチャネルに投稿する。generalは全体共有、opsは部門横断の運用・インフラ共有に使う。1対1の連絡にはsend_messageを使う。"
         ),
         "en": (
-            "Post a message to a Board channel. Routine work reports and completion updates should go to your team/department channel first. Use general for org-wide sharing and ops for cross-team operations or infrastructure topics. Use send_message for 1-to-1 communication."
+            "Post a message to a Board channel. Routine work reports and completion updates should go to your team/department channel first. Use general for org-wide sharing. #ops is only for issues that require Human judgment; a successful interactive call_human notification in the same run is required before posting there. Use send_message for 1-to-1 communication."
         ),
     },
     "schema.post_channel.text": {

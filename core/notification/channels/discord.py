@@ -141,12 +141,11 @@ class DiscordChannel(NotificationChannel):
     ) -> str:
         """Send a DM to a Discord user, preferring #dm-{anima} webhook."""
         # Try #dm-{anima} channel via webhook first (Anima identity).
-        # Note: webhook path doesn't support interactive components; skip when
-        # components are required so buttons render via the Bot DM fallback.
-        if anima_name and not components:
+        if anima_name:
             try:
                 from core.config.models import load_config
                 from core.discord_webhooks import get_webhook_manager
+                from core.notification.interactive import get_interaction_router
 
                 cfg = load_config()
                 bm = cfg.external_messaging.discord.board_mapping
@@ -154,8 +153,19 @@ class DiscordChannel(NotificationChannel):
                 dm_ch_id = next((cid for cid, bn in bm.items() if bn == dm_board), "")
                 if dm_ch_id:
                     wm = get_webhook_manager()
-                    msg_id = wm.send_as_anima(dm_ch_id, anima_name, f"<@{user_id}> {text[:2000]}")
+                    msg_id = wm.send_as_anima(
+                        dm_ch_id,
+                        anima_name,
+                        f"<@{user_id}> {text[:2000]}",
+                        components=components,
+                    )
                     if msg_id:
+                        if interaction is not None:
+                            await get_interaction_router().update_message_ts(
+                                interaction.callback_id,
+                                "discord",
+                                msg_id,
+                            )
                         logger.info("Discord notification via webhook #%s: user=%s", dm_board, user_id)
                         return f"discord: sent via #{dm_board} (msg_id={msg_id})"
             except Exception:

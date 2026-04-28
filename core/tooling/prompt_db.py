@@ -196,7 +196,8 @@ DEFAULT_DESCRIPTIONS: dict[str, dict[str, str]] = {
         "en": (
             "Post a message to a Board channel. "
             "Routine work reports and completion updates should go to your team/department channel first. "
-            "Use general for org-wide sharing and ops for cross-team operations or infrastructure. "
+            "Use general for org-wide sharing. #ops is only for issues that require Human judgment; "
+            "a successful interactive call_human notification in the same run is required before posting there. "
             "Use send_message for 1:1 communication."
         ),
         "ko": (
