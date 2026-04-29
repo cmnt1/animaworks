@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 _BATCH_LIMIT = 1000
 
 _lock = threading.Lock()
+_native_ops_lock = threading.Lock()
 _vector_stores: dict[str | None, VectorStore | None] = {}
 _http_stores: dict[str | None, HttpVectorStore] = {}
 _embedding_model: SentenceTransformer | None = None
@@ -182,6 +183,40 @@ def get_embedding_model(model_name: str | None = None) -> SentenceTransformer:
     return _embedding_model
 
 
+def thread_safe_encode(
+    texts: list[str],
+    *,
+    convert_to_numpy: bool = True,
+    show_progress_bar: bool = False,
+) -> list[list[float]]:
+    """Serialize SentenceTransformer.encode() via _native_ops_lock.
+
+    PyTorch models and ChromaDB Rust bindings both use native code
+    that can SEGV when run concurrently under glibc 2.43+.  All native
+    operations share a single lock to prevent parallel native execution.
+    """
+    import numpy as np
+
+    model = get_embedding_model()
+    with _native_ops_lock:
+        embeddings = model.encode(
+            texts,
+            convert_to_numpy=convert_to_numpy,
+            show_progress_bar=show_progress_bar,
+        )
+    if isinstance(embeddings, np.ndarray):
+        return [emb.tolist() for emb in embeddings]
+    return embeddings
+
+
+def native_ops_lock() -> threading.Lock:
+    """Return the global lock for native operations.
+
+    Used by internal API endpoints to serialize ChromaDB Rust calls.
+    """
+    return _native_ops_lock
+
+
 def get_embedding_dimension() -> int:
     """Return the dimensionality of the current embedding model.
 
@@ -232,9 +267,7 @@ def _generate_embeddings_http(texts: list[str], embed_url: str) -> list[list[flo
 
 def _generate_embeddings_local(texts: list[str]) -> list[list[float]]:
     """Use local SentenceTransformer model."""
-    model = get_embedding_model()
-    embeddings = model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
-    return [emb.tolist() for emb in embeddings]
+    return thread_safe_encode(texts)
 
 
 def get_embedding_model_name() -> str:

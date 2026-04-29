@@ -354,8 +354,21 @@ def cmd_start(args: argparse.Namespace) -> None:
     _start_foreground(args)
 
 
+def _pin_native_threads() -> None:
+    """Mitigate tokenizer thread race before importing torch.
+
+    ``TOKENIZERS_PARALLELISM=false``: prevents HuggingFace tokenizer
+    Rust threads from racing with Python threading in multi-thread
+    embedding scenarios.
+    """
+    if "TOKENIZERS_PARALLELISM" not in os.environ:
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
 def _start_foreground(args: argparse.Namespace) -> None:
     """Run the server in the foreground (blocking, with log output)."""
+    _pin_native_threads()
+
     import uvicorn
 
     from core.init import ensure_runtime_dir
