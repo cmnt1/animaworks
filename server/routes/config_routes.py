@@ -1,13 +1,14 @@
-from __future__ import annotations
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-from datetime import UTC, datetime
+
+from __future__ import annotations
+
 import importlib.util
 import json
 import logging
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -303,9 +304,7 @@ def _list_openai_models(api_key: str, organization: str = "") -> list[str]:
     response.raise_for_status()
     data = response.json()
     ids = [
-        str(item.get("id", "")).strip()
-        for item in data.get("data", [])
-        if isinstance(item, dict) and item.get("id")
+        str(item.get("id", "")).strip() for item in data.get("data", []) if isinstance(item, dict) and item.get("id")
     ]
     return _unique_model_ids([f"codex/{model_id}" for model_id in sorted(ids) if model_id.startswith(("gpt-", "o"))])
 
@@ -324,11 +323,7 @@ def _list_anthropic_models(api_key: str = "", auth_token: str = "") -> list[str]
     response.raise_for_status()
     data = response.json()
     return sorted(
-        {
-            str(item.get("id", "")).strip()
-            for item in data.get("data", [])
-            if isinstance(item, dict) and item.get("id")
-        }
+        {str(item.get("id", "")).strip() for item in data.get("data", []) if isinstance(item, dict) and item.get("id")}
     )
 
 
@@ -357,7 +352,13 @@ def _refresh_claude_code_models(config) -> dict[str, object]:
     auth_token = _first_secret(_abconfig_value("claude_token"))
     if not api_key and not auth_token:
         _cache_provider_models("claude_code", fallback, status="fallback", message="No Anthropic API key configured.")
-        return {"provider": "claude_code", "status": "fallback", "source": "known", "dynamic": False, "count": len(fallback)}
+        return {
+            "provider": "claude_code",
+            "status": "fallback",
+            "source": "known",
+            "dynamic": False,
+            "count": len(fallback),
+        }
     try:
         models = _list_anthropic_models(api_key=api_key, auth_token=auth_token)
     except Exception as exc:
@@ -682,9 +683,10 @@ def create_config_router() -> APIRouter:
         return {"models": _available_models_payload(config)}
 
     @router.post("/system/available-models/refresh")
-    async def refresh_available_models(body: RefreshAvailableModelsRequest = RefreshAvailableModelsRequest()):
+    async def refresh_available_models(body: RefreshAvailableModelsRequest | None = None):
         """Refresh provider model catalogs and return the updated dropdown payload."""
         config = load_config()
+        body = body or RefreshAvailableModelsRequest()
         requested = body.providers or list(MODEL_CATALOG_PROVIDERS)
         providers = [provider for provider in requested if provider in MODEL_CATALOG_PROVIDERS]
         if not providers:

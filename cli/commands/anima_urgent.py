@@ -92,7 +92,7 @@ def cmd_anima_urgent_submit(args: argparse.Namespace) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("task_queue registration failed: %s", exc)
 
-    add_urgent(anima_dir, task_id, note=f"cli:urgent-submit from human")
+    add_urgent(anima_dir, task_id, note="cli:urgent-submit from human")
 
     print(f"[urgent] submitted task {task_id} to {args.name}")
     print(f"  summary: {summary}")

@@ -563,7 +563,11 @@ class TaskQueueManager:
                     summary=t("task_queue.sync_done", orig=task.summary, target=target),
                 )
                 _post_delegation_completion_to_discord(
-                    task, self.anima_dir, target, child_id, animas_dir,
+                    task,
+                    self.anima_dir,
+                    target,
+                    child_id,
+                    animas_dir,
                     status="done",
                 )
                 synced += 1
@@ -574,7 +578,11 @@ class TaskQueueManager:
                     summary=t("task_queue.sync_failed", orig=task.summary, target=target),
                 )
                 _post_delegation_completion_to_discord(
-                    task, self.anima_dir, target, child_id, animas_dir,
+                    task,
+                    self.anima_dir,
+                    target,
+                    child_id,
+                    animas_dir,
                     status="failed",
                 )
                 synced += 1
@@ -615,7 +623,9 @@ class TaskQueueManager:
         return None
 
     def format_delegated_for_priming(
-        self, animas_dir: Path, budget_chars: int = 400,
+        self,
+        animas_dir: Path,
+        budget_chars: int = 400,
     ) -> str:
         """Format delegated tasks with subordinate status for Priming display."""
         delegated = self.get_delegated_tasks()
@@ -764,11 +774,7 @@ def _post_delegation_completion_to_discord(
     status_icon = "✅" if status == "done" else "❌"
     status_label = "完了" if status == "done" else "失敗"
     orig_summary = task.summary or "(no summary)"
-    body = (
-        f"{mention}{status_icon} 委任タスク{status_label}報告\n\n"
-        f"依頼内容: {orig_summary}\n"
-        f"担当: {target}\n"
-    )
+    body = f"{mention}{status_icon} 委任タスク{status_label}報告\n\n依頼内容: {orig_summary}\n担当: {target}\n"
     if sub_summary:
         body += f"\n【{target}からの完了報告】\n{sub_summary}"
 

@@ -49,7 +49,9 @@ def _is_broadcast_only_channel(channel_id: str, channel_name: str, discord_cfg: 
     """Whether ambiguous messages should be mirrored but not inbox-routed."""
     return _board_name_for_channel(channel_id, channel_name, discord_cfg) in _BROADCAST_ONLY_BOARDS
 
+
 # ── Dedup ────────────────────────────────────────────────────
+
 
 def _config_value(config: Any, key: str, default: Any = "") -> Any:
     if isinstance(config, dict):

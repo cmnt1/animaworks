@@ -83,9 +83,7 @@ _BASH_KEYWORDS: tuple[str, ...] = (
 # legitimately run on the background model; we do not want to silently
 # upgrade them to the main model just because the observation checklist
 # mentions the word "gmail".
-_ROUTING_EXCLUDED_TRIGGERS: frozenset[str] = frozenset(
-    {"heartbeat"}
-)
+_ROUTING_EXCLUDED_TRIGGERS: frozenset[str] = frozenset({"heartbeat"})
 
 
 def _trigger_is_excluded(trigger: str) -> bool:
@@ -94,9 +92,7 @@ def _trigger_is_excluded(trigger: str) -> bool:
     if trigger in _ROUTING_EXCLUDED_TRIGGERS:
         return True
     # Prefix matches: consolidation:*, cron:*
-    if trigger.startswith("consolidation:") or trigger.startswith("cron:"):
-        return True
-    return False
+    return trigger.startswith("consolidation:") or trigger.startswith("cron:")
 
 
 def _needs_heavy_tools(body: str) -> bool:
@@ -135,8 +131,7 @@ def route_model_config(
 
     if _needs_heavy_tools(body):
         logger.info(
-            "model_router: preemptive escalation to main model "
-            "(bg=%s capability=%s trigger=%s)",
+            "model_router: preemptive escalation to main model (bg=%s capability=%s trigger=%s)",
             bg_config.model,
             capability,
             trigger,
