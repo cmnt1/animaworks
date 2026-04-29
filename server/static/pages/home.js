@@ -296,14 +296,14 @@ function _fmtRemainLine(fc) {
   const timeToResetStr = `${timeToReset.toFixed(1)}${unit}`;
   const remainTimePct = `${(fc.remainPct).toFixed(0)}%`;
   const timeToResetPct = `${(fc.timePct).toFixed(0)}%`;
-  // delta = 残り予算時間 - リセットまでの時間
+  // ratio = remaining usage budget / time remaining
   const timeDelta = remainTime - timeToReset;
-  const deltaPct = Math.round(fc.remainPct) - Math.round(fc.timePct);
-  const deltaPctStr = deltaPct >= 0 ? `+${deltaPct}pt` : `▲${Math.abs(deltaPct)}pt`;
+  const room = fc.timePct <= 0 ? Infinity : fc.remainPct / fc.timePct;
+  const roomStr = Number.isFinite(room) ? `x${room.toFixed(2)}` : "x∞";
   const deltaColor = timeDelta >= 0 ? "var(--aw-color-success,#16a34a)" : "var(--aw-color-error,#dc2626)";
   const deltaSign = timeDelta >= 0 ? "+" : "▲";
   const deltaVal = timeDelta >= 0 ? timeDelta : Math.abs(timeDelta);
-  const deltaStr = `<span style="color:${deltaColor}">${deltaSign}${deltaVal.toFixed(1)}${unit}</span> <span style="color:${deltaColor}">(${deltaPctStr})</span>`;
+  const deltaStr = `<span style="color:${deltaColor}">${deltaSign}${deltaVal.toFixed(1)}${unit}</span> <span style="color:${deltaColor}">(${roomStr})</span>`;
   return `<span class="usage-forecast-item"><span class="usage-forecast-label">残り</span> `
     + `<b>${remainTimeStr}</b> (${remainTimePct}) / <b>${timeToResetStr}</b> (${timeToResetPct}) ${deltaStr}</span>`;
 }
