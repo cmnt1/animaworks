@@ -220,7 +220,7 @@ def load_policy(data_dir: Path) -> dict[str, Any]:
     path = _policy_path(data_dir)
     if path.is_file():
         try:
-            return json.loads(path.read_text("utf-8"))
+            return json.loads(path.read_text("utf-8-sig"))
         except Exception:
             logger.warning("Failed to load usage policy, using defaults")
     return dict(DEFAULT_POLICY)
@@ -267,7 +267,7 @@ def ensure_policy_file(data_dir: Path) -> None:
         return
 
     try:
-        policy = json.loads(path.read_text("utf-8"))
+        policy = json.loads(path.read_text("utf-8-sig"))
         changed = False
 
         # Migrate deficit_rules/deficit_above → throttle_rules/room_under
