@@ -121,9 +121,7 @@ class FactExtractor:
             [e.model_dump(mode="json") for e in entities],
             ensure_ascii=False,
         )
-        edge_types_list = "\n".join(
-            f"- `{k}`: {v}" for k, v in EDGE_TYPE_DESCRIPTIONS.items()
-        )
+        edge_types_list = "\n".join(f"- `{k}`: {v}" for k, v in EDGE_TYPE_DESCRIPTIONS.items())
         user_prompt = prompts.FACT_USER.format(
             content=content,
             entities_json=entities_json,

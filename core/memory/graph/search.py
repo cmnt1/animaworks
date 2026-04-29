@@ -97,10 +97,7 @@ class HybridSearch:
             return []
 
         if edge_type_filter and scope in ("fact", "all"):
-            merged = [
-                r for r in merged
-                if r.get("edge_type", "RELATES_TO") == edge_type_filter
-            ]
+            merged = [r for r in merged if r.get("edge_type", "RELATES_TO") == edge_type_filter]
 
         try:
             from core.memory.graph.reranker import get_reranker

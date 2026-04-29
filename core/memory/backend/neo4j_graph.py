@@ -513,7 +513,9 @@ class Neo4jGraphBackend(MemoryBackend):
                 source = f"community:{r.get('uuid', '')}"
             else:
                 edge_label = r.get("edge_type", "RELATES_TO")
-                content = f"{r.get('source_name', '')} -[{edge_label}]-> {r.get('target_name', '')}: {r.get('fact', '')}"
+                content = (
+                    f"{r.get('source_name', '')} -[{edge_label}]-> {r.get('target_name', '')}: {r.get('fact', '')}"
+                )
                 source = f"fact:{r.get('uuid', '')}"
 
             memories.append(
