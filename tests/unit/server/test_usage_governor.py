@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from server.usage_governor import DEFAULT_POLICY, UsageGovernor
+from server import usage_governor
+from server.usage_governor import DEFAULT_POLICY, UsageGovernor, _evaluate_time_proportional
 
 
 def _write_status(animas_dir, name: str, credential: str) -> None:
@@ -16,6 +17,110 @@ def _write_status(animas_dir, name: str, credential: str) -> None:
         json.dumps({"credential": credential}),
         encoding="utf-8",
     )
+
+
+def test_time_proportional_room_uses_usage_remaining_over_time_remaining(monkeypatch):
+    monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
+    window_data = {
+        "remaining": 37.5,
+        "resets_at": 1050.0,
+        "window_seconds": 100,
+    }
+    config = {
+        "mode": "time_proportional",
+        "throttle_rules": [
+            {"room_under": 1, "activity_level": 100},
+            {"room_under": 0.9, "activity_level": 90},
+            {"room_under": 0.8, "activity_level": 80},
+        ],
+    }
+
+    level, reason = _evaluate_time_proportional(
+        37.5,
+        window_data,
+        config,
+        "openai",
+        "5h",
+    )
+
+    assert level == 80
+    assert "room 0.75 < 0.8" in reason
+
+
+def test_time_proportional_room_ratio_can_boost(monkeypatch):
+    monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
+    window_data = {
+        "remaining": 70,
+        "resets_at": 1020.0,
+        "window_seconds": 100,
+    }
+    config = {
+        "mode": "time_proportional",
+        "throttle_rules": [
+            {"room_under": 4, "activity_level": 400},
+            {"room_under": 3, "activity_level": 300},
+            {"room_under": 2, "activity_level": 200},
+        ],
+    }
+
+    level, reason = _evaluate_time_proportional(
+        70,
+        window_data,
+        config,
+        "claude",
+        "five_hour",
+    )
+
+    assert level == 400
+    assert "room 3.50 < 4" in reason
+
+
+def test_time_proportional_handles_zero_time_remaining_without_dividing(monkeypatch):
+    monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
+    window_data = {
+        "remaining": 20,
+        "resets_at": 1000.0,
+        "window_seconds": 100,
+    }
+    config = {
+        "mode": "time_proportional",
+        "throttle_rules": [{"room_under": 4, "activity_level": 500}],
+    }
+
+    level, reason = _evaluate_time_proportional(
+        20,
+        window_data,
+        config,
+        "claude",
+        "five_hour",
+    )
+
+    assert level is None
+    assert reason == ""
+
+
+def test_time_proportional_caps_activity_level_at_400(monkeypatch):
+    monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
+    window_data = {
+        "remaining": 70,
+        "resets_at": 1020.0,
+        "window_seconds": 100,
+    }
+    config = {
+        "mode": "time_proportional",
+        "throttle_rules": [{"room_under": 4, "activity_level": 500}],
+    }
+
+    level, reason = _evaluate_time_proportional(
+        70,
+        window_data,
+        config,
+        "claude",
+        "five_hour",
+    )
+
+    assert level == 400
+    assert "activity 400%" in reason
 
 
 @pytest.mark.asyncio

@@ -21,10 +21,11 @@ Credential-to-provider mapping:
 
 Rule mode:
   - **time_proportional** — compares ``usage_remaining_%`` against
-    ``time_remaining_%``; room (= remaining - time, in percentage points)
-    determines throttle severity.  Positive room = headroom, negative =
-    over-consuming.  ``throttle_rules`` with ``room_under`` thresholds
-    fire when room drops below the specified value.
+    ``time_remaining_%``; room (= remaining / time) determines throttle
+    severity.  ``1.0`` means usage is on pace, values above ``1.0`` mean
+    headroom, and values below ``1.0`` mean over-consuming.
+    ``throttle_rules`` with ``room_under`` thresholds fire when room drops
+    below the specified value.
   - **threshold** (list format, legacy) — fixed remaining-% cut-offs.
 """
 
@@ -49,6 +50,26 @@ _CREDENTIAL_TO_PROVIDER: dict[str, str] = {
 
 # ── Policy schema ────────────────────────────────────────────────────────────
 
+
+def _default_throttle_rules() -> list[dict[str, int | float]]:
+    return [
+        {"room_under": 4, "activity_level": 400},
+        {"room_under": 3, "activity_level": 300},
+        {"room_under": 2, "activity_level": 200},
+        {"room_under": 1.5, "activity_level": 150},
+        {"room_under": 1, "activity_level": 100},
+        {"room_under": 0.9, "activity_level": 90},
+        {"room_under": 0.8, "activity_level": 80},
+        {"room_under": 0.7, "activity_level": 70},
+        {"room_under": 0.6, "activity_level": 60},
+        {"room_under": 0.5, "activity_level": 50},
+        {"room_under": 0.4, "activity_level": 40},
+        {"room_under": 0.3, "activity_level": 30},
+        {"room_under": 0.2, "activity_level": 20},
+        {"room_under": 0.1, "activity_level": 10},
+    ]
+
+
 DEFAULT_POLICY: dict[str, Any] = {
     "enabled": True,
     "check_interval_seconds": 120,
@@ -58,57 +79,27 @@ DEFAULT_POLICY: dict[str, Any] = {
         "claude": {
             "five_hour": {
                 "mode": "time_proportional",
-                "throttle_rules": [
-                    {"room_under": 20, "activity_level": 50},
-                    {"room_under": 10, "activity_level": 40},
-                    {"room_under": 0, "activity_level": 30},
-                    {"room_under": -10, "activity_level": 20},
-                    {"room_under": -20, "activity_level": 10},
-                ],
+                "throttle_rules": _default_throttle_rules(),
             },
             "seven_day": {
                 "mode": "time_proportional",
-                "throttle_rules": [
-                    {"room_under": 20, "activity_level": 50},
-                    {"room_under": 10, "activity_level": 40},
-                    {"room_under": 0, "activity_level": 30},
-                    {"room_under": -10, "activity_level": 20},
-                    {"room_under": -20, "activity_level": 10},
-                ],
+                "throttle_rules": _default_throttle_rules(),
             },
         },
         "openai": {
             "5h": {
                 "mode": "time_proportional",
-                "throttle_rules": [
-                    {"room_under": 20, "activity_level": 50},
-                    {"room_under": 10, "activity_level": 40},
-                    {"room_under": 0, "activity_level": 30},
-                    {"room_under": -10, "activity_level": 20},
-                    {"room_under": -20, "activity_level": 10},
-                ],
+                "throttle_rules": _default_throttle_rules(),
             },
             "Week": {
                 "mode": "time_proportional",
-                "throttle_rules": [
-                    {"room_under": 20, "activity_level": 50},
-                    {"room_under": 10, "activity_level": 40},
-                    {"room_under": 0, "activity_level": 30},
-                    {"room_under": -10, "activity_level": 20},
-                    {"room_under": -20, "activity_level": 10},
-                ],
+                "throttle_rules": _default_throttle_rules(),
             },
         },
         "nanogpt": {
             "Week": {
                 "mode": "time_proportional",
-                "throttle_rules": [
-                    {"room_under": 20, "activity_level": 50},
-                    {"room_under": 10, "activity_level": 40},
-                    {"room_under": 0, "activity_level": 30},
-                    {"room_under": -10, "activity_level": 20},
-                    {"room_under": -20, "activity_level": 10},
-                ],
+                "throttle_rules": _default_throttle_rules(),
             },
         },
     },
@@ -364,13 +355,18 @@ def _evaluate_threshold(
     sorted_thresholds = sorted(thresholds, key=lambda t: t["remaining_below"])
     for rule in sorted_thresholds:
         if remaining < rule["remaining_below"]:
-            level = rule["activity_level"]
+            level = _clamp_activity_level(rule["activity_level"])
             reason = (
                 f"{provider_key}.{window_key} remaining {remaining:.0f}% "
                 f"< {rule['remaining_below']}% → activity {level}%"
             )
             return level, reason
     return None, ""
+
+
+def _clamp_activity_level(level: Any) -> int:
+    """Keep Governor policy output within the supported activity level range."""
+    return max(10, min(400, int(level)))
 
 
 def _evaluate_time_proportional(
@@ -383,7 +379,7 @@ def _evaluate_time_proportional(
     """Evaluate time-proportional rules.  Returns (activity_level, reason).
 
     Compares ``usage_remaining_%`` vs ``time_remaining_%`` of the window.
-    ``room = remaining - time_pct`` (positive = headroom, negative = over-consuming).
+    ``room = remaining / time_pct`` (1.0 = on pace; lower = over-consuming).
     ``throttle_rules`` with ``room_under`` thresholds fire when room drops
     below the specified value.  Sorted ascending; first match wins (most
     restrictive applicable rule).
@@ -400,7 +396,10 @@ def _evaluate_time_proportional(
         return None, ""
 
     time_pct = _time_remaining_pct(resets_ts, window_seconds)
-    room = remaining - time_pct  # positive = headroom
+    if time_pct <= 0:
+        room = float("inf") if remaining > 0 else 0.0
+    else:
+        room = remaining / time_pct
 
     # Support both new (throttle_rules/room_under) and legacy (deficit_rules/deficit_above)
     rules = config.get("throttle_rules") or config.get("deficit_rules", [])
@@ -415,10 +414,10 @@ def _evaluate_time_proportional(
     for rule in sorted_rules:
         threshold = _threshold(rule)
         if room < threshold:
-            level = rule["activity_level"]
+            level = _clamp_activity_level(rule["activity_level"])
             reason = (
                 f"{provider_key}.{window_key} remaining {remaining:.0f}% "
-                f"vs time {time_pct:.0f}% (room {room:+.0f}pt < {threshold}) "
+                f"vs time {time_pct:.0f}% (room {room:.2f} < {threshold}) "
                 f"→ activity {level}%"
             )
             return level, reason

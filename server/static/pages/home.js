@@ -200,9 +200,9 @@ function _resetToJst(value) {
 
 function _remainingColor(remaining, timePct) {
   if (timePct !== null && timePct !== undefined) {
-    const room = remaining - timePct;
-    if (room < -10) return "var(--aw-color-error, #dc2626)";
-    if (room < 0) return "var(--aw-color-warning, #d97706)";
+    const room = timePct <= 0 ? Infinity : remaining / timePct;
+    if (room < 0.8) return "var(--aw-color-error, #dc2626)";
+    if (room < 1) return "var(--aw-color-warning, #d97706)";
   }
   return "var(--aw-color-success, #16a34a)";
 }
@@ -215,7 +215,7 @@ function _calcTimePct(resetAt, windowSeconds) {
     : new Date(resetAt).getTime();
   if (isNaN(resetMs)) return null;
   const remainingSec = (resetMs - Date.now()) / 1000;
-  if (remainingSec <= 0) return 100;
+  if (remainingSec <= 0) return 0;
   const pct = (remainingSec / windowSeconds) * 100;
   return Math.min(pct, 100);
 }
@@ -327,11 +327,13 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
     markerHtml = `<div class="usage-bar-time-marker" style="left:${timePct}%" data-label="${markerLabel}"></div>`;
   }
 
-  // Deficit warning text
+  // Ratio warning text
   let deficitHtml = "";
-  if (timePct !== null && windowSeconds && timePct > remaining) {
-    const gap = (timePct - remaining).toFixed(0);
-    deficitHtml = `<span class="usage-deficit" style="color:var(--aw-color-error,#dc2626);font-size:0.7rem;margin-left:0.5rem;">-${gap}pt</span>`;
+  if (timePct !== null && windowSeconds && timePct > 0) {
+    const room = remaining / timePct;
+    if (room < 1) {
+      deficitHtml = `<span class="usage-deficit" style="color:var(--aw-color-error,#dc2626);font-size:0.7rem;margin-left:0.5rem;">x${room.toFixed(2)}</span>`;
+    }
   }
 
   // Forecast: Runway + 着地予測
