@@ -550,6 +550,20 @@ def cli_main() -> None:
     )
     p_anima_audit.set_defaults(func=_lazy_anima_audit)
 
+    # anima detect-communities
+    p_detect_communities = anima_sub.add_parser(
+        "detect-communities",
+        help="Run batch community detection for Neo4j backend",
+    )
+    p_detect_communities.add_argument("anima", nargs="?", default=None, help="Anima name (omit with --all)")
+    p_detect_communities.add_argument(
+        "--all",
+        action="store_true",
+        dest="detect_all",
+        help="Run for all Neo4j-enabled animas",
+    )
+    p_detect_communities.set_defaults(func=_lazy_anima_detect_communities)
+
     # ── Logs ──────────────────────────────────────────────────
     p_logs = sub.add_parser("logs", help="View anima logs")
     p_logs.add_argument("anima", nargs="?", default=None, help="Anima name (required unless --all)")
@@ -885,6 +899,12 @@ def _lazy_anima_audit(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_audit
 
     cmd_anima_audit(args)
+
+
+def _lazy_anima_detect_communities(args: argparse.Namespace) -> None:
+    from cli.commands.anima_mgmt import cmd_anima_detect_communities
+
+    cmd_anima_detect_communities(args)
 
 
 def _lazy_board_read(args: argparse.Namespace) -> None:

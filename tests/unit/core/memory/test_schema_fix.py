@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-
 # ── TestSchemaVersion ────────────────────────────────────────
 
 
@@ -55,6 +54,7 @@ class TestFactFulltextIndex:
 
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
         counts = await ensure_schema(mock_driver)
         assert counts["advanced"] >= 2
 
@@ -115,9 +115,7 @@ class TestEntityTypeInIngest:
         await backend.ingest_text("Tokyo is the capital", source="test")
 
         create_entity_calls = [
-            c
-            for c in mock_driver.execute_write.call_args_list
-            if c[0] and "entity_type" in str(c[0][0])
+            c for c in mock_driver.execute_write.call_args_list if c[0] and "entity_type" in str(c[0][0])
         ]
         assert len(create_entity_calls) >= 1
         params = create_entity_calls[0][0][1]
@@ -245,6 +243,7 @@ class TestSchemaIdempotency:
 
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(side_effect=[[], [{"version": 4}]])
 
         counts1 = await ensure_schema(mock_driver)
         counts2 = await ensure_schema(mock_driver)
@@ -253,7 +252,7 @@ class TestSchemaIdempotency:
 
     @pytest.mark.asyncio
     async def test_ensure_schema_handles_advanced_index_failure(self) -> None:
-        from core.memory.graph.schema import ADVANCED_INDEXES, ensure_schema
+        from core.memory.graph.schema import ensure_schema
 
         call_count = 0
 
@@ -265,6 +264,7 @@ class TestSchemaIdempotency:
 
         mock_driver = AsyncMock()
         mock_driver.execute_write = _flaky_write
+        mock_driver.execute_query = AsyncMock(return_value=[])
         counts = await ensure_schema(mock_driver)
         assert counts["errors"] >= 1
         assert counts["advanced"] >= 1

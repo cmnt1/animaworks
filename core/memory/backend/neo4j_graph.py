@@ -222,10 +222,16 @@ class Neo4jGraphBackend(MemoryBackend):
 
             for idx, ent in enumerate(valid_entities):
                 emb = entity_embeddings[idx] if idx < len(entity_embeddings) else []
+
                 try:
                     resolved = await resolver.resolve(ent, name_embedding=emb)
-                    entity_uuid_map[ent.name] = resolved.uuid
+                except Exception:
+                    logger.warning("Entity resolution failed (resolve): %s", ent.name, exc_info=True)
+                    continue
 
+                entity_uuid_map[ent.name] = resolved.uuid
+
+                try:
                     if resolved.is_new:
                         await driver.execute_write(
                             CREATE_ENTITY,
@@ -251,7 +257,15 @@ class Neo4jGraphBackend(MemoryBackend):
                                 "summary": resolved.summary,
                             },
                         )
+                except Exception:
+                    logger.warning(
+                        "Entity write failed (create/update): %s",
+                        ent.name,
+                        exc_info=True,
+                    )
+                    continue
 
+                try:
                     await driver.execute_write(
                         CREATE_MENTION,
                         {
@@ -262,7 +276,12 @@ class Neo4jGraphBackend(MemoryBackend):
                         },
                     )
                 except Exception:
-                    logger.warning("Entity resolution/creation failed: %s", ent.name, exc_info=True)
+                    logger.warning(
+                        "Mention creation failed: %s -> %s",
+                        episode_uuid[:8],
+                        ent.name,
+                        exc_info=True,
+                    )
 
             # 5. Batch-generate fact embeddings
             valid_facts = [
@@ -438,6 +457,11 @@ class Neo4jGraphBackend(MemoryBackend):
             return (cfg.anima_defaults.background_model or cfg.anima_defaults.model), llm_extra
         except Exception:
             return "claude-sonnet-4-6", llm_extra
+
+    def _resolve_background_model(self) -> str:
+        """Return the model name used for background / community LLM tasks."""
+        model, _ = self._resolve_extraction_config()
+        return model
 
     @staticmethod
     def _resolve_locale() -> str:

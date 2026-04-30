@@ -39,6 +39,28 @@ def register_memory_command(subparsers: argparse._SubParsersAction) -> None:
     backup_sub.add_parser("list", help="List available backups")
     backup_sub.add_parser("create", help="Create manual backup")
 
+    # memory cleanup
+    p_cleanup = sub.add_parser("cleanup", help="Clean up graph data by source prefix")
+    p_cleanup.add_argument("--anima", required=True, help="Anima name")
+    p_cleanup.add_argument(
+        "--source-prefix",
+        required=True,
+        dest="source_prefix",
+        help="Episode source prefix to match",
+    )
+    p_cleanup.add_argument(
+        "--include-orphans",
+        action="store_true",
+        dest="include_orphans",
+        help="Also delete orphaned entities",
+    )
+    p_cleanup.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="cleanup_dry_run",
+        help="Show what would be deleted without deleting",
+    )
+
     p.set_defaults(func=_handle_memory)
 
 
@@ -54,8 +76,10 @@ def _handle_memory(args: argparse.Namespace) -> None:
         _cmd_rollback(args)
     elif cmd == "backup":
         _cmd_backup(args)
+    elif cmd == "cleanup":
+        _cmd_cleanup(args)
     else:
-        print("Usage: animaworks memory {status|migrate|rollback|backup}")
+        print("Usage: animaworks memory {status|migrate|rollback|backup|cleanup}")
         sys.exit(1)
 
 
@@ -237,3 +261,94 @@ def _cmd_backup(args: argparse.Namespace) -> None:
     else:
         print("Usage: animaworks memory backup {list|create}")
         sys.exit(1)
+
+
+def _cmd_cleanup(args: argparse.Namespace) -> None:
+    """Clean up Neo4j graph data by episode source prefix."""
+    import asyncio
+
+    from core.memory.backend.registry import resolve_backend_type
+    from core.paths import get_animas_dir
+
+    anima_dir = get_animas_dir() / args.anima
+    if not anima_dir.is_dir():
+        print(f"Error: anima '{args.anima}' not found")
+        sys.exit(1)
+
+    backend_type = resolve_backend_type(anima_dir)
+    if backend_type != "neo4j":
+        print(
+            f"Error: anima '{args.anima}' is not using Neo4j backend (current: {backend_type})",
+        )
+        sys.exit(1)
+
+    asyncio.run(
+        _run_cleanup(anima_dir, args.source_prefix, args.include_orphans, args.cleanup_dry_run),
+    )
+
+
+async def _run_cleanup(
+    anima_dir: Path,
+    prefix: str,
+    include_orphans: bool,
+    dry_run: bool,
+) -> None:
+    """Async cleanup runner."""
+    from core.memory.backend.registry import get_backend
+
+    backend = get_backend("neo4j", anima_dir)
+    driver = await backend._ensure_driver()
+    group_id = backend._group_id
+
+    try:
+        if dry_run:
+            # Count episodes to be deleted
+            count_result = await driver.execute_query(
+                "MATCH (ep:Episode) WHERE ep.group_id = $group_id AND ep.source STARTS WITH $prefix "
+                "RETURN count(ep) AS cnt",
+                {"group_id": group_id, "prefix": prefix},
+            )
+            ep_count = count_result[0]["cnt"] if count_result else 0
+            print(f"[DRY RUN] Episodes matching source prefix '{prefix}': {ep_count}")
+
+            if include_orphans:
+                orphan_result = await driver.execute_query(
+                    """MATCH (e:Entity)
+                    WHERE e.group_id = $group_id
+                      AND NOT EXISTS { (ep:Episode)-[:MENTIONS]->(e) WHERE NOT (ep.source STARTS WITH $prefix) }
+                      AND NOT EXISTS { ()-[:RELATES_TO]->(e) }
+                      AND NOT EXISTS { (e)-[:RELATES_TO]->() }
+                    RETURN count(e) AS cnt""",
+                    {"group_id": group_id, "prefix": prefix},
+                )
+                orphan_count = orphan_result[0]["cnt"] if orphan_result else 0
+                print(f"[DRY RUN] Orphaned entities (after episode deletion): {orphan_count}")
+
+            print("\nNo changes made (dry-run mode).")
+        else:
+            # Delete episodes
+            delete_result = await driver.execute_query(
+                "MATCH (ep:Episode) WHERE ep.group_id = $group_id AND ep.source STARTS WITH $prefix "
+                "DETACH DELETE ep RETURN count(ep) AS cnt",
+                {"group_id": group_id, "prefix": prefix},
+            )
+            ep_deleted = delete_result[0]["cnt"] if delete_result else 0
+            print(f"Deleted {ep_deleted} episodes with source prefix '{prefix}'")
+
+            if include_orphans:
+                orphan_result = await driver.execute_query(
+                    """MATCH (e:Entity)
+                    WHERE e.group_id = $group_id
+                      AND NOT EXISTS { (ep:Episode)-[:MENTIONS]->(e) }
+                      AND NOT EXISTS { ()-[:RELATES_TO]->(e) }
+                      AND NOT EXISTS { (e)-[:RELATES_TO]->() }
+                    DETACH DELETE e
+                    RETURN count(e) AS cnt""",
+                    {"group_id": group_id},
+                )
+                orphan_deleted = orphan_result[0]["cnt"] if orphan_result else 0
+                print(f"Deleted {orphan_deleted} orphaned entities")
+
+            print("\nCleanup complete.")
+    finally:
+        await backend.close()

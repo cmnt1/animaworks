@@ -51,12 +51,14 @@ class TestEnsureSchema:
             ADVANCED_INDEXES,
             CONSTRAINTS,
             INDEXES,
+            MIGRATIONS,
             VECTOR_INDEXES,
             ensure_schema,
         )
 
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
 
         result = await ensure_schema(mock_driver)
 
@@ -64,7 +66,10 @@ class TestEnsureSchema:
         assert "indexes" in result
         assert "advanced" in result
         assert "vector" in result
-        expected_calls = len(CONSTRAINTS) + len(INDEXES) + len(ADVANCED_INDEXES) + len(VECTOR_INDEXES)
+        migration_writes = sum(len(m["queries"]) + 1 for m in MIGRATIONS)
+        expected_calls = (
+            len(CONSTRAINTS) + len(INDEXES) + len(ADVANCED_INDEXES) + len(VECTOR_INDEXES) + migration_writes
+        )
         assert mock_driver.execute_write.call_count == expected_calls
 
     @pytest.mark.asyncio
@@ -79,6 +84,7 @@ class TestEnsureSchema:
 
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
 
         result = await ensure_schema(mock_driver)
 
@@ -95,15 +101,18 @@ class TestEnsureSchema:
             ADVANCED_INDEXES,
             CONSTRAINTS,
             INDEXES,
+            MIGRATIONS,
             VECTOR_INDEXES,
             ensure_schema,
         )
 
-        total = len(CONSTRAINTS) + len(INDEXES) + len(ADVANCED_INDEXES) + len(VECTOR_INDEXES)
+        migration_writes = sum(len(m["queries"]) + 1 for m in MIGRATIONS)
+        total = len(CONSTRAINTS) + len(INDEXES) + len(ADVANCED_INDEXES) + len(VECTOR_INDEXES) + migration_writes
         effects = [None] + [Exception("fail")] + [None] * (total - 2)
 
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock(side_effect=effects)
+        mock_driver.execute_query = AsyncMock(return_value=[])
 
         result = await ensure_schema(mock_driver)
         assert result["errors"] == 1
@@ -116,6 +125,7 @@ class TestEnsureSchema:
 
         mock_driver = AsyncMock()
         mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(side_effect=[[], [{"version": 4}]])
 
         r1 = await ensure_schema(mock_driver)
         r2 = await ensure_schema(mock_driver)
