@@ -6,9 +6,30 @@ from __future__ import annotations
 
 """Async Neo4j driver wrapper with lazy imports and connection pooling."""
 
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
+
+_MAX_RETRIES = 3
+_BASE_DELAY = 0.5
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Check if the exception is transient and worth retrying.
+
+    Args:
+        exc: Exception raised by the Neo4j driver.
+
+    Returns:
+        True when the driver signals a transient failure.
+    """
+    try:
+        from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
+
+        return isinstance(exc, (TransientError, ServiceUnavailable, SessionExpired))
+    except ImportError:
+        return False
 
 
 # ── Neo4jDriver ──────────
@@ -78,12 +99,28 @@ class Neo4jDriver:
     ) -> list[dict]:
         """Execute a Cypher query and return results as dicts."""
         self._ensure_connected()
-        result = await self._driver.execute_query(
-            query,
-            parameters_=parameters,
-            database_=database or self._database,
-        )
-        return [record.data() for record in result.records]
+        for attempt in range(_MAX_RETRIES):
+            try:
+                result = await self._driver.execute_query(
+                    query,
+                    parameters_=parameters,
+                    database_=database or self._database,
+                )
+                return [record.data() for record in result.records]
+            except Exception as exc:
+                if _is_retryable(exc) and attempt < _MAX_RETRIES - 1:
+                    delay = _BASE_DELAY * (2**attempt)
+                    logger.warning(
+                        "Retryable error on query (attempt %d/%d), retrying in %.1fs: %s",
+                        attempt + 1,
+                        _MAX_RETRIES,
+                        delay,
+                        exc,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    raise
+        return []  # unreachable but satisfies type checker
 
     async def execute_write(
         self,
@@ -92,11 +129,27 @@ class Neo4jDriver:
     ) -> None:
         """Execute a write Cypher query."""
         self._ensure_connected()
-        await self._driver.execute_query(
-            query,
-            parameters_=parameters,
-            database_=self._database,
-        )
+        for attempt in range(_MAX_RETRIES):
+            try:
+                await self._driver.execute_query(
+                    query,
+                    parameters_=parameters,
+                    database_=self._database,
+                )
+                return
+            except Exception as exc:
+                if _is_retryable(exc) and attempt < _MAX_RETRIES - 1:
+                    delay = _BASE_DELAY * (2**attempt)
+                    logger.warning(
+                        "Retryable error on write (attempt %d/%d), retrying in %.1fs: %s",
+                        attempt + 1,
+                        _MAX_RETRIES,
+                        delay,
+                        exc,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    raise
 
     # ── internal ──────────
 
