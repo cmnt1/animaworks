@@ -61,12 +61,12 @@ def test_tokenize_japanese() -> None:
 
 
 def test_tokenize_mixed() -> None:
-    text = "Gmail受信メール from nogizaka@tatemono.co.jp"
+    text = "Gmail受信メール from tanaka@example.co.jp"
     result = tokenize(text)
     joined = " ".join(result)
     assert "gmail" in joined.lower()
     assert any(any(ord(ch) > 127 for ch in tok) for tok in result)
-    assert "nogizaka" in result or "tatemono" in result
+    assert "tanaka" in result or "example" in result
 
 
 def test_tokenize_empty() -> None:

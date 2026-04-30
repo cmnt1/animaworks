@@ -4,6 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
+import concurrent.futures
 import json
 import logging
 from pathlib import Path
@@ -16,6 +17,11 @@ from pydantic import BaseModel
 from server.events import emit
 
 logger = logging.getLogger("animaworks.routes.internal")
+
+_native_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="native-ops",
+)
 
 
 class MessageSentNotification(BaseModel):
@@ -159,18 +165,27 @@ def create_internal_router() -> APIRouter:
         if not body.texts:
             return {"embeddings": []}
 
-        from core.memory.rag.singleton import get_embedding_model
+        from core.memory.rag.singleton import thread_safe_encode
 
-        model = get_embedding_model()
-        embeddings = await asyncio.to_thread(
-            model.encode,
+        loop = asyncio.get_running_loop()
+        embeddings = await loop.run_in_executor(
+            _native_executor,
+            thread_safe_encode,
             body.texts,
-            convert_to_numpy=True,
-            show_progress_bar=False,
         )
-        return {"embeddings": [emb.tolist() for emb in embeddings]}
+        return {"embeddings": embeddings}
 
     # ── Vector store endpoints (ChromaDB process separation) ───────
+
+    async def _run_native(fn, *args):
+        """Run *fn* in the single-threaded native executor.
+
+        ChromaDB Rust bindings and PyTorch native code SEGV when run
+        concurrently on glibc 2.43+ / kernel 7.x.  Pinning all native
+        operations to one OS thread eliminates the race.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_native_executor, fn, *args)
 
     @router.post("/internal/vector/query")
     async def vector_query(body: VectorQueryRequest):
@@ -179,7 +194,7 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return {"results": []}
-        results = await asyncio.to_thread(
+        results = await _run_native(
             store.query,
             body.collection,
             body.embedding,
@@ -215,7 +230,7 @@ def create_internal_router() -> APIRouter:
             )
             for d in body.documents
         ]
-        await asyncio.to_thread(store.upsert, body.collection, docs)
+        await _run_native(store.upsert, body.collection, docs)
         return {"status": "ok"}
 
     @router.post("/internal/vector/update-metadata")
@@ -225,7 +240,7 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await asyncio.to_thread(
+        await _run_native(
             store.update_metadata,
             body.collection,
             body.ids,
@@ -240,7 +255,7 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await asyncio.to_thread(store.delete_documents, body.collection, body.ids)
+        await _run_native(store.delete_documents, body.collection, body.ids)
         return {"status": "ok"}
 
     @router.post("/internal/vector/get-by-metadata")
@@ -250,7 +265,7 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return {"results": []}
-        results = await asyncio.to_thread(
+        results = await _run_native(
             store.get_by_metadata,
             body.collection,
             body.where,
@@ -275,7 +290,7 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return {"documents": []}
-        docs = await asyncio.to_thread(store.get_by_ids, body.collection, body.ids)
+        docs = await _run_native(store.get_by_ids, body.collection, body.ids)
         return {"documents": [{"id": d.id, "content": d.content, "metadata": d.metadata} for d in docs]}
 
     @router.post("/internal/vector/create-collection")
@@ -285,7 +300,7 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await asyncio.to_thread(store.create_collection, body.collection)
+        await _run_native(store.create_collection, body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/delete-collection")
@@ -295,7 +310,7 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await asyncio.to_thread(store.delete_collection, body.collection)
+        await _run_native(store.delete_collection, body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/list-collections")
@@ -305,7 +320,7 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return {"collections": []}
-        collections = await asyncio.to_thread(store.list_collections)
+        collections = await _run_native(store.list_collections)
         return {"collections": collections}
 
     return router

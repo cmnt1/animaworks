@@ -29,10 +29,14 @@ class HybridSearch:
         group_id: str,
         *,
         cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-12-v2",
+        max_depth: int = 2,
+        rrf_k: int = 60,
     ) -> None:
         self._driver = driver
         self._group_id = group_id
         self._ce_model = cross_encoder_model
+        self._max_depth = max_depth
+        self._rrf_k = rrf_k
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -44,6 +48,7 @@ class HybridSearch:
         limit: int = 10,
         as_of_time: str | None = None,
         query_embedding: list[float] | None = None,
+        edge_type_filter: str | None = None,
     ) -> list[dict]:
         """Execute hybrid search across 4 sources.
 
@@ -53,6 +58,8 @@ class HybridSearch:
             limit: Max results to return.
             as_of_time: ISO datetime for temporal filter (default: now).
             query_embedding: Pre-computed query embedding for vector search.
+            edge_type_filter: If set, only return facts with this edge_type.
+                Only applies when scope is "fact" or "all".
 
         Returns:
             List of result dicts sorted by relevance.
@@ -84,10 +91,13 @@ class HybridSearch:
 
         from core.memory.graph.rrf import rrf_merge
 
-        merged = rrf_merge(result_lists, top_k=min(30, limit * 3))
+        merged = rrf_merge(result_lists, top_k=min(30, limit * 3), k=self._rrf_k)
 
         if not merged:
             return []
+
+        if edge_type_filter and scope in ("fact", "all"):
+            merged = [r for r in merged if r.get("edge_type", "RELATES_TO") == edge_type_filter]
 
         try:
             from core.memory.graph.reranker import get_reranker
@@ -127,6 +137,17 @@ class HybridSearch:
         if scope == "entity":
             return await self._driver.execute_query(
                 VECTOR_SEARCH_ENTITIES,
+                {
+                    "embedding": embedding,
+                    "group_id": self._group_id,
+                    "top_k": 20,
+                },
+            )
+        if scope == "episode":
+            from core.memory.graph.queries import VECTOR_SEARCH_EPISODES
+
+            return await self._driver.execute_query(
+                VECTOR_SEARCH_EPISODES,
                 {
                     "embedding": embedding,
                     "group_id": self._group_id,
@@ -184,7 +205,7 @@ class HybridSearch:
         if not embedding:
             return []
 
-        from core.memory.graph.queries import BFS_FACTS_FROM_ENTITY, FIND_ENTITIES_BY_VECTOR
+        from core.memory.graph.queries import FIND_ENTITIES_BY_VECTOR, bfs_facts_query
 
         try:
             seeds = await self._driver.execute_query(
@@ -207,7 +228,7 @@ class HybridSearch:
                 if not seed_uuid:
                     continue
                 facts = await self._driver.execute_query(
-                    BFS_FACTS_FROM_ENTITY,
+                    bfs_facts_query(self._max_depth),
                     {
                         "entity_uuid": seed_uuid,
                         "group_id": self._group_id,

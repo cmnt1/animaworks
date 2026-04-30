@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from core.auth.manager import (
     create_session,
     find_user,
+    get_session_cookie_max_age,
     load_auth,
     revoke_session,
     save_auth,
@@ -87,6 +88,7 @@ def create_auth_router() -> APIRouter:
         response.set_cookie(
             key="session_token",
             value=token,
+            max_age=get_session_cookie_max_age(),
             httponly=True,
             secure=is_https,
             samesite="lax",

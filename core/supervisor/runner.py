@@ -20,9 +20,12 @@ import json
 import logging
 import os
 import sys
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
+
+import psutil
 
 from core.anima import DigitalAnima
 from core.exceptions import AnimaNotRunningError, ExecutionError, MemoryWriteError, ProcessError  # noqa: F401
@@ -37,6 +40,9 @@ from core.supervisor.streaming_handler import StreamingIPCHandler
 from core.time_utils import ensure_aware, now_local
 
 logger = logging.getLogger(__name__)
+
+_ORPHAN_CHECK_INTERVAL_SEC = 300  # 5 minutes
+_ORPHAN_MAX_AGE_SEC = 7200  # 2 hours
 
 # ── AnimaRunner ──────────────────────────────────────────────────
 
@@ -62,6 +68,7 @@ class AnimaRunner:
         self.ipc_server: IPCServer | None = None
         self.inbox_watcher_task: asyncio.Task | None = None
         self.pending_task_watcher_task: asyncio.Task | None = None
+        self._orphan_cleanup_task: asyncio.Task | None = None
         self.shutdown_event = asyncio.Event()
         self._ready_event = asyncio.Event()
         self._started_at = now_local()
@@ -190,6 +197,11 @@ class AnimaRunner:
 
             # Start pending task watcher (picks up animaworks-tool submit)
             self.pending_task_watcher_task = asyncio.create_task(self._pending_executor.watcher_loop())
+
+            self._orphan_cleanup_task = asyncio.create_task(
+                self._orphan_cleanup_loop(),
+                name=f"orphan-cleanup-{self.anima_name}",
+            )
 
             logger.info("Anima process ready: %s", self.anima_name)
 
@@ -360,6 +372,85 @@ class AnimaRunner:
                             thread_id,
                             exc_info=True,
                         )
+
+    # ── Orphan Process Cleanup ───────────────────────────────────
+
+    def _cleanup_orphaned_claude_processes(self) -> None:
+        """Terminate stale Claude CLI descendants of this process.
+
+        Walks the subprocess tree from the current PID, finds processes whose
+        executable name contains ``claude`` (case-insensitive) and is older
+        than :data:`_ORPHAN_MAX_AGE_SEC`, then kills each such process and its
+        descendants.
+
+        Individual process errors are ignored so one bad PID does not block
+        the rest. Failures in the overall walk are logged at DEBUG only.
+        """
+
+        def _parent_depth(proc: psutil.Process) -> int:
+            try:
+                return len(proc.parents())
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                return 0
+
+        try:
+            current = psutil.Process()
+            for child in current.children(recursive=True):
+                try:
+                    proc_name = child.name()
+                    if "claude" not in proc_name.lower():
+                        continue
+                    proc_age_sec = time.time() - child.create_time()
+                    if proc_age_sec <= _ORPHAN_MAX_AGE_SEC:
+                        continue
+                    descendants = child.children(recursive=True)
+
+                    for descendant in sorted(descendants, key=_parent_depth, reverse=True):
+                        try:
+                            desc_pid = descendant.pid
+                            desc_name = descendant.name()
+                            descendant.kill()
+                            logger.warning(
+                                "Killed orphaned Claude descendant pid=%s name=%s (orphan cleanup)",
+                                desc_pid,
+                                desc_name,
+                            )
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+                    try:
+                        child.kill()
+                        logger.warning(
+                            "Killed orphaned Claude process pid=%s name=%s age_sec=%.1f (orphan cleanup)",
+                            child.pid,
+                            proc_name,
+                            proc_age_sec,
+                        )
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except Exception:
+            logger.debug(
+                "Orphan Claude process cleanup failed for %s",
+                self.anima_name,
+                exc_info=True,
+            )
+
+    async def _orphan_cleanup_loop(self) -> None:
+        """Periodically run :meth:`_cleanup_orphaned_claude_processes` until shutdown.
+
+        Sleeps in chunks of :data:`_ORPHAN_CHECK_INTERVAL_SEC` using
+        ``shutdown_event`` so shutdown is not delayed for the full interval.
+        """
+        while True:
+            try:
+                await asyncio.wait_for(
+                    self.shutdown_event.wait(),
+                    timeout=_ORPHAN_CHECK_INTERVAL_SEC,
+                )
+                break
+            except TimeoutError:
+                self._cleanup_orphaned_claude_processes()
 
     # ── Event Emission ─────────────────────────────────────────────
 
@@ -649,6 +740,13 @@ class AnimaRunner:
             self.pending_task_watcher_task.cancel()
             try:
                 await self.pending_task_watcher_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._orphan_cleanup_task:
+            self._orphan_cleanup_task.cancel()
+            try:
+                await self._orphan_cleanup_task
             except asyncio.CancelledError:
                 pass
 

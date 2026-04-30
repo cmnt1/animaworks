@@ -839,7 +839,27 @@ class PendingTaskExecutor:
                     logger.debug("urgent removal failed for %s", task_id, exc_info=True)
 
         if had_error:
-            raise TaskExecError(f"Task {task_id} encountered streaming error: {error_message}")
+            _queue_done = False
+            try:
+                from core.memory.task_queue import TaskQueueManager
+
+                _entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
+                if _entry and _entry.status == "done":
+                    _queue_done = True
+                    logger.info(
+                        "[%s] Task %s stream error suppressed: already marked done in queue",
+                        self._anima_name,
+                        task_id,
+                    )
+                    if not result_summary:
+                        result_summary = (
+                            _entry.summary or accumulated_text[:500] or t("pending_executor.task_completed")
+                        )
+            except Exception as e:
+                logger.debug("pending_executor: failed to check task queue for task %s: %s", task_id, e)
+
+            if not _queue_done:
+                raise TaskExecError(f"Task {task_id} encountered streaming error: {error_message}")
         if task_failed_reason:
             raise RuntimeError(task_failed_reason)
 

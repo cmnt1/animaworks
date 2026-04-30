@@ -11,6 +11,9 @@ import re
 from typing import Any, get_args
 
 from core.memory.ontology.default import (
+    DEFAULT_EDGE_TYPE,
+    EDGE_TYPE_DESCRIPTIONS,
+    EDGE_TYPES,
     ENTITY_TYPES,
     EntityExtractionResult,
     ExtractedEntity,
@@ -21,6 +24,7 @@ from core.memory.ontology.default import (
 logger = logging.getLogger(__name__)
 
 _VALID_ENTITY_TYPES: frozenset[str] = frozenset(get_args(ENTITY_TYPES))
+_VALID_EDGE_TYPES: frozenset[str] = frozenset(get_args(EDGE_TYPES))
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)```", re.DOTALL)
 
 
@@ -44,11 +48,13 @@ class FactExtractor:
         locale: str = "ja",
         max_retries: int = 3,
         timeout: int = 30,
+        llm_extra: dict[str, object] | None = None,
     ) -> None:
         self._model = model
         self._locale = locale
         self._max_retries = max_retries
         self._timeout = timeout
+        self._llm_extra = llm_extra or {}
 
     # ── Public API ─────────────────────────────────────────
 
@@ -117,9 +123,11 @@ class FactExtractor:
             [e.model_dump(mode="json") for e in entities],
             ensure_ascii=False,
         )
+        edge_types_list = "\n".join(f"- `{k}`: {v}" for k, v in EDGE_TYPE_DESCRIPTIONS.items())
         user_prompt = prompts.FACT_USER.format(
             content=content,
             entities_json=entities_json,
+            edge_types_list=edge_types_list,
         )
 
         try:
@@ -141,6 +149,8 @@ class FactExtractor:
             if fact.target_entity not in entity_names:
                 logger.debug("Dropping fact: target %r not in entities", fact.target_entity)
                 continue
+            if fact.edge_type not in _VALID_EDGE_TYPES:
+                fact = fact.model_copy(update={"edge_type": DEFAULT_EDGE_TYPE})
             facts.append(fact)
 
         logger.debug("Extracted %d facts from text", len(facts))
@@ -170,6 +180,9 @@ class FactExtractor:
 
         llm_kwargs = get_llm_kwargs_for_model(self._model)
         resolved_model = llm_kwargs.pop("model", self._model)
+        if self._llm_extra:
+            llm_kwargs.update(self._llm_extra)
+        effective_timeout = llm_kwargs.pop("timeout", self._timeout)
 
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
@@ -184,7 +197,7 @@ class FactExtractor:
                     messages=messages,
                     temperature=0.0,
                     max_tokens=2048,
-                    timeout=self._timeout,
+                    timeout=effective_timeout,
                     **llm_kwargs,
                 )
                 text: str = response.choices[0].message.content or ""

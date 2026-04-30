@@ -57,6 +57,7 @@ class Neo4jGraphBackend(MemoryBackend):
         self._schema_ensured = False
         self._ingest_semaphore = asyncio.Semaphore(2)
         self._extractor: object | None = None
+        self._embedding_available: bool | None = None
 
     # ── Driver lifecycle ───────────────────────────────────────────────────
 
@@ -121,6 +122,30 @@ class Neo4jGraphBackend(MemoryBackend):
             logger.warning("Neo4j stats failed", exc_info=True)
             return {"total_chunks": 0, "total_sources": 0}
 
+    # ── Embedding ──────────────────────────────────────────────────────────
+
+    async def _embed_texts(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings using the shared singleton model.
+
+        Falls back to empty lists when sentence-transformers is unavailable
+        or embedding generation fails for any reason.
+        """
+        if not texts:
+            return []
+        if self._embedding_available is False:
+            return [[] for _ in texts]
+        try:
+            from core.memory.rag.singleton import generate_embeddings
+
+            result = await asyncio.to_thread(generate_embeddings, texts)
+            self._embedding_available = True
+            return result
+        except Exception:
+            if self._embedding_available is None:
+                logger.warning("Embedding generation unavailable, vectors will be empty", exc_info=True)
+            self._embedding_available = False
+            return [[] for _ in texts]
+
     # ── Ingest methods ──────────────────────────────────────────────────────
 
     async def ingest_text(self, text: str, source: str, metadata: dict | None = None) -> int:
@@ -132,6 +157,7 @@ class Neo4jGraphBackend(MemoryBackend):
         explicitly when a logical batch is complete.
         """
         from core.memory.graph.queries import (
+            CHECK_EPISODE_EXISTS,
             CREATE_ENTITY,
             CREATE_EPISODE,
             CREATE_FACT,
@@ -141,7 +167,15 @@ class Neo4jGraphBackend(MemoryBackend):
         async with self._ingest_semaphore:
             driver = await self._ensure_driver()
             now_str = datetime.now(tz=UTC).isoformat()
-            episode_uuid = str(uuid4())
+            episode_uuid = (metadata or {}).get("episode_uuid") or str(uuid4())
+
+            existing = await driver.execute_query(
+                CHECK_EPISODE_EXISTS,
+                {"uuid": episode_uuid, "group_id": self._group_id},
+            )
+            if existing:
+                logger.debug("Episode %s already exists, skipping", episode_uuid)
+                return 0
 
             await driver.execute_write(
                 CREATE_EPISODE,
@@ -156,6 +190,17 @@ class Neo4jGraphBackend(MemoryBackend):
                 },
             )
 
+            # Generate episode embedding for vector search
+            ep_embeddings = await self._embed_texts([text[:2000]])
+            if ep_embeddings and ep_embeddings[0]:
+                try:
+                    await driver.execute_write(
+                        "MATCH (e:Episode {uuid: $uuid}) SET e.content_embedding = $embedding",
+                        {"uuid": episode_uuid, "embedding": ep_embeddings[0]},
+                    )
+                except Exception:
+                    logger.debug("Episode embedding update failed", exc_info=True)
+
             try:
                 extractor = self._get_extractor()
                 entities = await extractor.extract_entities(text)
@@ -164,30 +209,43 @@ class Neo4jGraphBackend(MemoryBackend):
                 logger.warning("Extraction failed, Episode-only fallback", exc_info=True)
                 return 1
 
-            # 3. Resolve + Create Entity nodes
+            # 3. Batch-generate entity embeddings
+            valid_entities = [e for e in entities if e.name.strip()]
+            entity_texts = [f"{e.name}: {e.summary}" for e in valid_entities]
+            entity_embeddings = await self._embed_texts(entity_texts)
+
+            # 4. Resolve + Create Entity nodes
             entity_count = 0
             entity_uuid_map: dict[str, str] = {}
+            new_entity_uuids: list[str] = []
             resolver = self._get_resolver()
 
-            for ent in entities:
-                if not ent.name.strip():
-                    continue
-                try:
-                    resolved = await resolver.resolve(ent, name_embedding=[])
-                    entity_uuid_map[ent.name] = resolved.uuid
+            for idx, ent in enumerate(valid_entities):
+                emb = entity_embeddings[idx] if idx < len(entity_embeddings) else []
 
+                try:
+                    resolved = await resolver.resolve(ent, name_embedding=emb)
+                except Exception:
+                    logger.warning("Entity resolution failed (resolve): %s", ent.name, exc_info=True)
+                    continue
+
+                entity_uuid_map[ent.name] = resolved.uuid
+
+                try:
                     if resolved.is_new:
                         await driver.execute_write(
                             CREATE_ENTITY,
                             {
                                 "uuid": resolved.uuid,
                                 "name": resolved.name,
+                                "entity_type": ent.entity_type,
                                 "summary": resolved.summary,
                                 "group_id": self._group_id,
                                 "created_at": now_str,
-                                "name_embedding": [],
+                                "name_embedding": emb,
                             },
                         )
+                        new_entity_uuids.append(resolved.uuid)
                         entity_count += 1
                     else:
                         from core.memory.graph.queries import UPDATE_ENTITY_SUMMARY
@@ -199,7 +257,15 @@ class Neo4jGraphBackend(MemoryBackend):
                                 "summary": resolved.summary,
                             },
                         )
+                except Exception:
+                    logger.warning(
+                        "Entity write failed (create/update): %s",
+                        ent.name,
+                        exc_info=True,
+                    )
+                    continue
 
+                try:
                     await driver.execute_write(
                         CREATE_MENTION,
                         {
@@ -210,14 +276,25 @@ class Neo4jGraphBackend(MemoryBackend):
                         },
                     )
                 except Exception:
-                    logger.warning("Entity resolution/creation failed: %s", ent.name, exc_info=True)
+                    logger.warning(
+                        "Mention creation failed: %s -> %s",
+                        episode_uuid[:8],
+                        ent.name,
+                        exc_info=True,
+                    )
+
+            # 5. Batch-generate fact embeddings
+            valid_facts = [
+                f for f in facts if entity_uuid_map.get(f.source_entity) and entity_uuid_map.get(f.target_entity)
+            ]
+            fact_texts = [f"{f.source_entity} → {f.target_entity}: {f.fact}" for f in valid_facts]
+            fact_embeddings = await self._embed_texts(fact_texts)
 
             fact_count = 0
-            for fact in facts:
-                src_uuid = entity_uuid_map.get(fact.source_entity)
-                tgt_uuid = entity_uuid_map.get(fact.target_entity)
-                if not src_uuid or not tgt_uuid:
-                    continue
+            for idx, fact in enumerate(valid_facts):
+                src_uuid = entity_uuid_map[fact.source_entity]
+                tgt_uuid = entity_uuid_map[fact.target_entity]
+                f_emb = fact_embeddings[idx] if idx < len(fact_embeddings) else []
                 try:
                     fact_uuid = str(uuid4())
                     await driver.execute_write(
@@ -227,7 +304,8 @@ class Neo4jGraphBackend(MemoryBackend):
                             "target_uuid": tgt_uuid,
                             "uuid": fact_uuid,
                             "fact": fact.fact,
-                            "fact_embedding": [],
+                            "fact_embedding": f_emb,
+                            "edge_type": getattr(fact, "edge_type", "RELATES_TO") or "RELATES_TO",
                             "group_id": self._group_id,
                             "created_at": now_str,
                             "valid_at": fact.valid_at or now_str,
@@ -259,6 +337,14 @@ class Neo4jGraphBackend(MemoryBackend):
                 fact_count,
                 self._group_id,
             )
+
+            # 6. Dynamic community update for new entities
+            if new_entity_uuids:
+                try:
+                    await self._dynamic_community_update(driver, new_entity_uuids)
+                except Exception:
+                    logger.debug("Dynamic community update failed, continuing", exc_info=True)
+
             return total
 
     async def ingest_file(self, path: Path) -> int:
@@ -287,13 +373,14 @@ class Neo4jGraphBackend(MemoryBackend):
         if not hasattr(self, "_resolver") or self._resolver is None:
             from core.memory.extraction.resolver import EntityResolver
 
-            model = self._resolve_background_model()
+            model, llm_extra = self._resolve_extraction_config()
             locale = self._resolve_locale()
             self._resolver = EntityResolver(
                 self._driver,
                 self._group_id,
                 model=model,
                 locale=locale,
+                llm_extra=llm_extra,
             )
         return self._resolver
 
@@ -307,36 +394,74 @@ class Neo4jGraphBackend(MemoryBackend):
         if not hasattr(self, "_invalidator") or self._invalidator is None:
             from core.memory.extraction.invalidator import EdgeInvalidator
 
-            model = self._resolve_background_model()
+            model, llm_extra = self._resolve_extraction_config()
             locale = self._resolve_locale()
             self._invalidator = EdgeInvalidator(
                 self._driver,
                 self._group_id,
                 model=model,
                 locale=locale,
+                llm_extra=llm_extra,
             )
         return self._invalidator
 
     def _get_extractor(self):  # noqa: ANN202 – lazy import avoids circular
         """Create or return cached FactExtractor."""
         if self._extractor is None:
-            model = self._resolve_background_model()
+            model, llm_extra = self._resolve_extraction_config()
             locale = self._resolve_locale()
             from core.memory.extraction.extractor import FactExtractor
 
-            self._extractor = FactExtractor(model=model, locale=locale)
+            self._extractor = FactExtractor(model=model, locale=locale, llm_extra=llm_extra)
         return self._extractor
 
-    @staticmethod
-    def _resolve_background_model() -> str:
-        """Resolve the background model for extraction."""
+    def _resolve_extraction_config(self) -> tuple[str, dict[str, str]]:
+        """Resolve the model and LLM kwargs for extraction.
+
+        Returns:
+            ``(model_name, llm_extra)`` where *llm_extra* may contain
+            ``api_base`` and ``api_key`` for custom endpoints (e.g. vLLM).
+
+        Resolution order for model:
+            1. Per-anima status.json ``extraction_model``
+            2. Per-anima status.json ``background_model``
+            3. Global config ``anima_defaults.background_model``
+            4. Global config ``anima_defaults.model``
+            5. Fallback: ``claude-sonnet-4-6``
+        """
+        import json
+
+        llm_extra: dict[str, object] = {}
+        try:
+            status_path = self._anima_dir / "status.json"
+            if status_path.is_file():
+                data = json.loads(status_path.read_text(encoding="utf-8"))
+                if data.get("extraction_api_base"):
+                    llm_extra["api_base"] = data["extraction_api_base"]
+                if data.get("extraction_api_key"):
+                    llm_extra["api_key"] = data["extraction_api_key"]
+                if data.get("extraction_extra_body"):
+                    llm_extra["extra_body"] = data["extraction_extra_body"]
+                if data.get("extraction_timeout"):
+                    llm_extra["timeout"] = data["extraction_timeout"]
+                if data.get("extraction_model"):
+                    return data["extraction_model"], llm_extra
+                if data.get("background_model"):
+                    return data["background_model"], llm_extra
+        except Exception as e:
+            logger.debug("neo4j_graph: failed to read status.json for extraction config: %s", e)
         try:
             from core.config.models import load_config
 
             cfg = load_config()
-            return cfg.anima_defaults.background_model or cfg.anima_defaults.model
+            return (cfg.anima_defaults.background_model or cfg.anima_defaults.model), llm_extra
         except Exception:
-            return "claude-sonnet-4-6"
+            return "claude-sonnet-4-6", llm_extra
+
+    def _resolve_background_model(self) -> str:
+        """Return the model name used for background / community LLM tasks."""
+        model, _ = self._resolve_extraction_config()
+        return model
 
     @staticmethod
     def _resolve_locale() -> str:
@@ -360,6 +485,39 @@ class Neo4jGraphBackend(MemoryBackend):
                     result.append(section[i : i + max_chars])
         return result if result else [content]
 
+    async def _dynamic_community_update(
+        self,
+        driver: Neo4jDriver,
+        new_entity_uuids: list[str],
+    ) -> None:
+        """Assign newly created entities to existing communities via majority vote."""
+        try:
+            from core.memory.graph.community import CommunityDetector
+            from core.memory.graph.queries import FIND_ENTITY_NEIGHBORS
+
+            detector = CommunityDetector(
+                driver,
+                self._group_id,
+                model=self._resolve_background_model(),
+                locale=self._resolve_locale(),
+            )
+
+            for entity_uuid in new_entity_uuids:
+                try:
+                    rows = await driver.execute_query(
+                        FIND_ENTITY_NEIGHBORS,
+                        {"entity_uuid": entity_uuid, "group_id": self._group_id, "limit": 20},
+                    )
+                    neighbor_uuids = [r["uuid"] for r in rows if r.get("uuid")]
+                    if neighbor_uuids:
+                        assigned = await detector.dynamic_update(entity_uuid, neighbor_uuids)
+                        if assigned:
+                            logger.debug("Entity %s assigned to community %s", entity_uuid, assigned)
+                except Exception:
+                    logger.debug("Dynamic community update failed for %s", entity_uuid, exc_info=True)
+        except Exception:
+            logger.debug("Community module unavailable, skipping dynamic update", exc_info=True)
+
     async def retrieve(
         self,
         query: str,
@@ -367,9 +525,16 @@ class Neo4jGraphBackend(MemoryBackend):
         scope: str,
         limit: int = 10,
         min_score: float = 0.0,
+        edge_type_filter: str | None = None,
     ) -> list[RetrievedMemory]:
         """Retrieve memories using hybrid search (BM25 + Vector + BFS + reranker)."""
+        if scope == "community":
+            return await self._retrieve_communities(query, limit, min_score)
+
         driver = await self._ensure_driver()
+
+        query_embeddings = await self._embed_texts([query])
+        query_embedding = query_embeddings[0] if query_embeddings else []
 
         from core.memory.graph.search import HybridSearch
 
@@ -380,6 +545,8 @@ class Neo4jGraphBackend(MemoryBackend):
                 query,
                 scope=scope,
                 limit=limit,
+                query_embedding=query_embedding,
+                edge_type_filter=edge_type_filter,
             )
         except ValueError:
             return []
@@ -399,8 +566,14 @@ class Neo4jGraphBackend(MemoryBackend):
             elif scope == "episode":
                 content = r.get("content", "")
                 source = f"episode:{r.get('uuid', '')}"
+            elif scope == "community":
+                content = f"[{r.get('name', '')}] {r.get('summary', '')}"
+                source = f"community:{r.get('uuid', '')}"
             else:
-                content = f"{r.get('source_name', '')} → {r.get('target_name', '')}: {r.get('fact', '')}"
+                edge_label = r.get("edge_type", "RELATES_TO")
+                content = (
+                    f"{r.get('source_name', '')} -[{edge_label}]-> {r.get('target_name', '')}: {r.get('fact', '')}"
+                )
                 source = f"fact:{r.get('uuid', '')}"
 
             memories.append(
@@ -415,9 +588,122 @@ class Neo4jGraphBackend(MemoryBackend):
 
         return memories
 
+    async def _retrieve_communities(self, query: str, limit: int, min_score: float) -> list[RetrievedMemory]:
+        """Retrieve communities by simple text match."""
+        driver = await self._ensure_driver()
+        from core.memory.graph.queries import SEARCH_COMMUNITIES
+
+        rows = await driver.execute_query(
+            SEARCH_COMMUNITIES,
+            {"group_id": self._group_id, "limit": limit},
+        )
+
+        memories: list[RetrievedMemory] = []
+        for r in rows:
+            content = f"[{r.get('name', '')}] {r.get('summary', '')}"
+            memories.append(
+                RetrievedMemory(
+                    content=content,
+                    score=1.0,
+                    source=f"community:{r.get('uuid', '')}",
+                    metadata={k: v for k, v in r.items() if isinstance(v, (str, int, float, bool))},
+                    trust="medium",
+                )
+            )
+        return memories
+
+    async def get_community_context(
+        self,
+        query: str,
+        limit: int = 3,
+    ) -> list[RetrievedMemory]:
+        """Return community summaries from Neo4j."""
+        try:
+            return await self._retrieve_communities(query, limit, min_score=0.0)
+        except Exception:
+            logger.debug("get_community_context failed", exc_info=True)
+            return []
+
+    async def get_recent_facts(
+        self,
+        query: str,
+        *,
+        hours: int = 24,
+        limit: int = 10,
+    ) -> list[RetrievedMemory]:
+        """Return recently valid facts from Neo4j."""
+        try:
+            driver = await self._ensure_driver()
+            from datetime import timedelta
+
+            from core.memory.graph.queries import FIND_RECENT_FACTS
+
+            cutoff = (datetime.now(tz=UTC) - timedelta(hours=hours)).isoformat()
+            rows = await driver.execute_query(
+                FIND_RECENT_FACTS,
+                {"group_id": self._group_id, "since": cutoff, "limit": limit},
+            )
+            return [
+                RetrievedMemory(
+                    content=(
+                        f"{r.get('source_name', '')} "
+                        f"-[{r.get('edge_type', 'RELATES_TO')}]-> "
+                        f"{r.get('target_name', '')}: {r.get('fact', '')}"
+                    ),
+                    score=1.0,
+                    source=f"fact:{r.get('uuid', '')}",
+                    metadata={k: v for k, v in r.items() if isinstance(v, (str, int, float, bool))},
+                    trust="medium",
+                )
+                for r in rows
+            ]
+        except Exception:
+            logger.debug("get_recent_facts failed", exc_info=True)
+            return []
+
     async def delete(self, source: str) -> None:
-        """Raise NotImplementedError until Issue #3."""
-        raise NotImplementedError("Neo4j delete will be implemented in Issue #3")
+        """Soft-delete an episode, entity, or fact by prefixed ID.
+
+        Accepted formats:
+            ``episode:{uuid}`` — soft-delete episode + remove MENTIONS
+            ``entity:{uuid}``  — soft-delete entity + invalidate facts
+            ``fact:{uuid}``    — soft-delete fact (RELATES_TO)
+
+        Unprefixed IDs are treated as episode UUIDs for backward compat.
+        """
+        driver = await self._ensure_driver()
+        now_str = datetime.now(tz=UTC).isoformat()
+
+        if ":" in source:
+            prefix, uuid = source.split(":", 1)
+        else:
+            prefix, uuid = "episode", source
+
+        from core.memory.graph.queries import (
+            SOFT_DELETE_ENTITY,
+            SOFT_DELETE_EPISODE,
+            SOFT_DELETE_FACT,
+        )
+
+        query_map = {
+            "episode": SOFT_DELETE_EPISODE,
+            "entity": SOFT_DELETE_ENTITY,
+            "fact": SOFT_DELETE_FACT,
+        }
+
+        query = query_map.get(prefix)
+        if not query:
+            logger.warning("Unknown delete prefix: %s", prefix)
+            return
+
+        try:
+            await driver.execute_write(
+                query,
+                {"uuid": uuid, "group_id": self._group_id, "deleted_at": now_str},
+            )
+            logger.info("Soft-deleted %s:%s (group=%s)", prefix, uuid, self._group_id)
+        except Exception:
+            logger.warning("Failed to delete %s:%s", prefix, uuid, exc_info=True)
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 

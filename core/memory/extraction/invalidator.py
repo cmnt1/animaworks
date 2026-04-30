@@ -32,11 +32,13 @@ class EdgeInvalidator:
         *,
         model: str = "claude-sonnet-4-6",
         locale: str = "ja",
+        llm_extra: dict[str, object] | None = None,
     ) -> None:
         self._driver = driver
         self._group_id = group_id
         self._model = model
         self._locale = locale
+        self._llm_extra = llm_extra or {}
 
     async def find_and_invalidate(
         self,
@@ -105,7 +107,7 @@ class EdgeInvalidator:
             try:
                 await self._driver.execute_write(
                     INVALIDATE_FACT,
-                    {"uuid": fact_uuid, "invalid_at": new_valid_at},
+                    {"uuid": fact_uuid, "invalid_at": new_valid_at, "group_id": self._group_id},
                 )
                 invalidated.append(fact_uuid)
                 logger.info(
@@ -117,6 +119,21 @@ class EdgeInvalidator:
                 logger.warning("Failed to invalidate fact %s", fact_uuid, exc_info=True)
 
         return invalidated
+
+    async def expire_fact(self, fact_uuid: str, expired_at: str) -> bool:
+        """Mark a fact as expired (time-based lifecycle, distinct from contradiction)."""
+        from core.memory.graph.queries import EXPIRE_FACT
+
+        try:
+            await self._driver.execute_write(
+                EXPIRE_FACT,
+                {"uuid": fact_uuid, "expired_at": expired_at, "group_id": self._group_id},
+            )
+            logger.info("Expired fact %s at %s", fact_uuid, expired_at)
+            return True
+        except Exception:
+            logger.warning("Failed to expire fact %s", fact_uuid, exc_info=True)
+            return False
 
     # ── LLM judgment ──────────────────────────────────────
 
@@ -146,6 +163,8 @@ class EdgeInvalidator:
             existing_facts_json=candidates_json,
         )
 
+        extra = dict(self._llm_extra)
+        effective_timeout = extra.pop("timeout", 30)
         response = await litellm.acompletion(
             model=self._model,
             messages=[
@@ -154,7 +173,8 @@ class EdgeInvalidator:
             ],
             temperature=0.0,
             max_tokens=512,
-            timeout=30,
+            timeout=effective_timeout,
+            **extra,
         )
 
         text = response.choices[0].message.content or ""

@@ -201,16 +201,17 @@ class MemoryManager:
     def _init_memory_backend(self) -> None:
         """Lazily create the MemoryBackend from config."""
         try:
-            from core.config.models import load_config
-            from core.memory.backend.registry import get_backend
+            from core.memory.backend.registry import get_backend, resolve_backend_type
 
-            cfg = load_config()
-            backend_type = getattr(getattr(cfg, "memory", None), "backend", "legacy")
+            backend_type = resolve_backend_type(self.anima_dir)
+            extra_kwargs: dict[str, object] = {}
+            if backend_type == "legacy":
+                extra_kwargs["common_knowledge_dir"] = self.common_knowledge_dir
+                extra_kwargs["common_skills_dir"] = self.common_skills_dir
             self._memory_backend = get_backend(
                 backend_type,
                 self.anima_dir,
-                common_knowledge_dir=self.common_knowledge_dir,
-                common_skills_dir=self.common_skills_dir,
+                **extra_kwargs,
             )
         except Exception:
             logger.warning("Failed to init MemoryBackend, using legacy fallback", exc_info=True)

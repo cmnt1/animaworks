@@ -145,6 +145,21 @@ def validate_session(token: str | None) -> Session | None:
     return session
 
 
+def get_session_cookie_max_age() -> int:
+    """Return the ``max-age`` for session cookies in seconds.
+
+    Derived from ``server.session_ttl_days`` in config.  When the TTL is
+    unlimited (``None``), returns 400 days which is the practical upper
+    bound most browsers enforce.
+    """
+    from core.config.models import load_config
+
+    ttl_days = load_config().server.session_ttl_days
+    if ttl_days is None:
+        return 400 * 86400
+    return ttl_days * 86400
+
+
 def revoke_session(token: str) -> None:
     """Remove a single session by token."""
     config = load_auth()

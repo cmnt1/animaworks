@@ -573,7 +573,7 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
 
 def cmd_anima_set_model(args: argparse.Namespace) -> None:
     """Set an anima's model (updates status.json)."""
-    from core.config.models import update_status_model
+    from core.config.model_config import smart_update_model
     from core.paths import get_data_dir
 
     try:
@@ -601,9 +601,11 @@ def cmd_anima_set_model(args: argparse.Namespace) -> None:
                 except Exception:
                     continue
                 try:
-                    update_status_model(entry, model=model, credential=credential)
+                    result = smart_update_model(entry, model=model, credential=credential)
                     updated += 1
-                    print(f"  {entry.name}: model={model}")
+                    cred_info = f" credential={result['credential']}" if result.get("family_changed") else ""
+                    mode_info = f" mode={result['execution_mode']}"
+                    print(f"  {entry.name}: model={model}{cred_info}{mode_info}")
                 except Exception as e:
                     print(f"  {entry.name}: ERROR - {e}", file=sys.stderr)
             if updated == 0:
@@ -620,12 +622,14 @@ def cmd_anima_set_model(args: argparse.Namespace) -> None:
             if not anima_dir.exists():
                 print(f"Error: Anima '{args.anima}' not found")
                 sys.exit(1)
-            update_status_model(
+            result = smart_update_model(
                 anima_dir,
                 model=args.model,
                 credential=args.credential,
             )
-            print(f"Model updated to '{args.model}' for '{args.anima}'")
+            cred_info = f" (credential={result['credential']})" if result.get("family_changed") else ""
+            mode_info = f" [mode={result['execution_mode']}]"
+            print(f"Model updated to '{args.model}' for '{args.anima}'{cred_info}{mode_info}")
 
         if pid_file.exists():
             print("  Server is running. Restart animas to apply changes (animaworks anima restart <name>).")
@@ -776,6 +780,52 @@ def cmd_anima_set_background_model(args: argparse.Namespace) -> None:
 
         if pid_file.exists():
             print("  Server is running. Restart animas to apply changes (animaworks anima restart <name>).")
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_anima_set_memory_backend(args: argparse.Namespace) -> None:
+    """Set an anima's memory backend (updates status.json)."""
+    from core.config.model_config import update_status_model
+    from core.paths import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+        animas_dir = data_dir / "animas"
+        pid_file = data_dir / "server.pid"
+
+        if args.clear:
+            if not args.anima:
+                print("Error: anima name is required (e.g. animaworks anima set-memory-backend hinata --clear)")
+                sys.exit(1)
+            anima_dir = animas_dir / args.anima
+            if not anima_dir.exists():
+                print(f"Error: Anima '{args.anima}' not found")
+                sys.exit(1)
+            update_status_model(anima_dir, memory_backend="")
+            print(f"Memory backend cleared for '{args.anima}' (will use global config)")
+        else:
+            if not args.anima or not args.backend:
+                print(
+                    "Error: anima name and backend are required (e.g. animaworks anima set-memory-backend hinata neo4j)"
+                )
+                sys.exit(1)
+            if args.backend not in ("legacy", "neo4j"):
+                print(f"Error: backend must be 'legacy' or 'neo4j', got '{args.backend}'")
+                sys.exit(1)
+            anima_dir = animas_dir / args.anima
+            if not anima_dir.exists():
+                print(f"Error: Anima '{args.anima}' not found")
+                sys.exit(1)
+            update_status_model(anima_dir, memory_backend=args.backend)
+            print(f"Memory backend set to '{args.backend}' for '{args.anima}'")
+
+        if pid_file.exists():
+            print("  Server is running. Restart the anima to apply (animaworks anima restart <name>).")
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1200,3 +1250,57 @@ def cmd_anima_list(args: argparse.Namespace) -> None:
         count += 1
 
     print(f"\nTotal: {count}")
+
+
+def cmd_anima_detect_communities(args: argparse.Namespace) -> None:
+    """Run batch community detection for Neo4j-backed animas."""
+    import asyncio
+
+    from core.paths import get_animas_dir
+
+    animas_dir = get_animas_dir()
+
+    if args.detect_all:
+        names = [d.name for d in animas_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
+    elif args.anima:
+        names = [args.anima]
+    else:
+        print("Error: specify anima name or --all")
+        sys.exit(1)
+
+    asyncio.run(_run_detect_communities(names, animas_dir))
+
+
+async def _run_detect_communities(names: list[str], animas_dir: Path) -> None:
+    """Async runner for community detection."""
+    from core.memory.backend.registry import get_backend, resolve_backend_type
+
+    for name in names:
+        anima_dir = animas_dir / name
+        if not anima_dir.is_dir():
+            print(f"  {name}: not found, skipping")
+            continue
+
+        backend_type = resolve_backend_type(anima_dir)
+        if backend_type != "neo4j":
+            print(f"  {name}: not using Neo4j (backend={backend_type}), skipping")
+            continue
+
+        print(f"  {name}: detecting communities...")
+        try:
+            backend = get_backend("neo4j", anima_dir)
+            driver = await backend._ensure_driver()
+
+            from core.memory.graph.community import CommunityDetector
+
+            detector = CommunityDetector(
+                driver,
+                backend._group_id,
+                model=backend._resolve_background_model(),
+                locale=backend._resolve_locale(),
+            )
+            communities = await detector.detect_and_store()
+            print(f"  {name}: {len(communities)} communities detected")
+            await backend.close()
+        except Exception as e:
+            print(f"  {name}: ERROR - {e}")

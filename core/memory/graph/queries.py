@@ -18,7 +18,7 @@ RETURN labels(n)[0] AS label, count(n) AS cnt
 
 COUNT_EDGES_BY_GROUP = """
 MATCH ()-[r]->()
-WHERE r.group_id = $group_id OR (EXISTS(r.group_id) = false)
+WHERE r.group_id = $group_id OR r.group_id IS NULL
 RETURN type(r) AS rel_type, count(r) AS cnt
 """
 
@@ -37,12 +37,19 @@ CREATE (e:Episode {
 RETURN e.uuid AS uuid
 """
 
+CHECK_EPISODE_EXISTS = """
+MATCH (e:Episode {uuid: $uuid, group_id: $group_id})
+RETURN e.uuid AS uuid
+LIMIT 1
+"""
+
 # ── Entity ──────────
 
 CREATE_ENTITY = """
 CREATE (e:Entity {
   uuid: $uuid,
   name: $name,
+  entity_type: $entity_type,
   summary: $summary,
   group_id: $group_id,
   created_at: datetime($created_at),
@@ -65,6 +72,7 @@ CREATE (s)-[r:RELATES_TO {
   uuid: $uuid,
   fact: $fact,
   fact_embedding: $fact_embedding,
+  edge_type: $edge_type,
   group_id: $group_id,
   created_at: datetime($created_at),
   valid_at: datetime($valid_at),
@@ -118,6 +126,7 @@ MATCH (old_entity:Entity {uuid: $old_uuid})-[old:RELATES_TO]->(target:Entity)
 MATCH (new_entity:Entity {uuid: $new_uuid})
 CREATE (new_entity)-[r:RELATES_TO {
   uuid: old.uuid, fact: old.fact, fact_embedding: old.fact_embedding,
+  edge_type: coalesce(old.edge_type, 'RELATES_TO'),
   group_id: old.group_id, created_at: old.created_at, valid_at: old.valid_at,
   invalid_at: old.invalid_at, expired_at: old.expired_at,
   source_episode_uuids: old.source_episode_uuids
@@ -130,6 +139,7 @@ MATCH (source:Entity)-[old:RELATES_TO]->(old_entity:Entity {uuid: $old_uuid})
 MATCH (new_entity:Entity {uuid: $new_uuid})
 CREATE (source)-[r:RELATES_TO {
   uuid: old.uuid, fact: old.fact, fact_embedding: old.fact_embedding,
+  edge_type: coalesce(old.edge_type, 'RELATES_TO'),
   group_id: old.group_id, created_at: old.created_at, valid_at: old.valid_at,
   invalid_at: old.invalid_at, expired_at: old.expired_at,
   source_episode_uuids: old.source_episode_uuids
@@ -147,31 +157,44 @@ DETACH DELETE e
 FIND_ACTIVE_FACTS_FOR_PAIR = """
 MATCH (s:Entity {uuid: $source_uuid})-[r:RELATES_TO]->(t:Entity {uuid: $target_uuid})
 WHERE r.invalid_at IS NULL
+  AND r.expired_at IS NULL
   AND r.uuid <> $new_fact_uuid
   AND r.valid_at <= datetime($new_valid_at)
-RETURN r.uuid AS uuid, r.fact AS fact, toString(r.valid_at) AS valid_at
+RETURN r.uuid AS uuid, r.fact AS fact, toString(r.valid_at) AS valid_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type
 """
 
 FIND_ACTIVE_FACTS_FOR_PAIR_REVERSE = """
 MATCH (s:Entity {uuid: $target_uuid})-[r:RELATES_TO]->(t:Entity {uuid: $source_uuid})
 WHERE r.invalid_at IS NULL
+  AND r.expired_at IS NULL
   AND r.uuid <> $new_fact_uuid
   AND r.valid_at <= datetime($new_valid_at)
-RETURN r.uuid AS uuid, r.fact AS fact, toString(r.valid_at) AS valid_at
+RETURN r.uuid AS uuid, r.fact AS fact, toString(r.valid_at) AS valid_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type
 """
 
 INVALIDATE_FACT = """
 MATCH ()-[r:RELATES_TO {uuid: $uuid}]->()
+WHERE r.group_id = $group_id
 SET r.invalid_at = datetime($invalid_at)
+"""
+
+EXPIRE_FACT = """
+MATCH ()-[r:RELATES_TO {uuid: $uuid}]->()
+WHERE r.group_id = $group_id
+SET r.expired_at = datetime($expired_at)
 """
 
 FIND_VALID_FACTS_BY_GROUP = """
 MATCH (s:Entity)-[r:RELATES_TO]->(t:Entity)
 WHERE r.group_id = $group_id
   AND (r.invalid_at IS NULL OR r.invalid_at > datetime($as_of_time))
+  AND (r.expired_at IS NULL OR r.expired_at > datetime($as_of_time))
 RETURN r.uuid AS uuid, r.fact AS fact,
        s.name AS source_name, t.name AS target_name,
        toString(r.valid_at) AS valid_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type,
        r.group_id AS group_id
 ORDER BY r.valid_at DESC
 LIMIT $limit
@@ -183,36 +206,51 @@ VECTOR_SEARCH_FACTS = """
 CALL db.index.vector.queryRelationships('fact_embedding', $top_k, $embedding)
 YIELD relationship, score
 WHERE relationship.group_id = $group_id
+  AND relationship.deleted_at IS NULL
   AND (relationship.invalid_at IS NULL OR relationship.invalid_at > datetime($as_of_time))
+  AND (relationship.expired_at IS NULL OR relationship.expired_at > datetime($as_of_time))
 WITH relationship AS r, score,
      startNode(relationship) AS s, endNode(relationship) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, score
+       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
 """
 
 VECTOR_SEARCH_ENTITIES = """
 CALL db.index.vector.queryNodes('entity_name_embedding', $top_k, $embedding)
 YIELD node, score
 WHERE node.group_id = $group_id
+  AND node.deleted_at IS NULL
 RETURN node.uuid AS uuid, node.name AS name, node.summary AS summary,
        node.entity_type AS entity_type, score
+"""
+
+VECTOR_SEARCH_EPISODES = """
+CALL db.index.vector.queryNodes('episode_content_embedding', $top_k, $embedding)
+YIELD node, score
+WHERE node.group_id = $group_id
+  AND node.deleted_at IS NULL
+RETURN node.uuid AS uuid, node.content AS content, node.source AS source,
+       toString(node.valid_at) AS valid_at, score
 """
 
 FULLTEXT_SEARCH_FACTS = """
 CALL db.index.fulltext.queryRelationships('fact_fulltext', $query, {limit: $top_k})
 YIELD relationship, score
 WHERE relationship.group_id = $group_id
+  AND relationship.deleted_at IS NULL
   AND (relationship.invalid_at IS NULL OR relationship.invalid_at > datetime($as_of_time))
+  AND (relationship.expired_at IS NULL OR relationship.expired_at > datetime($as_of_time))
 WITH relationship AS r, score,
      startNode(relationship) AS s, endNode(relationship) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, score
+       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
 """
 
 FULLTEXT_SEARCH_ENTITIES = """
 CALL db.index.fulltext.queryNodes('entity_name_fulltext', $query, {limit: $top_k})
 YIELD node, score
 WHERE node.group_id = $group_id
+  AND node.deleted_at IS NULL
 RETURN node.uuid AS uuid, node.name AS name, node.summary AS summary,
        node.entity_type AS entity_type, score
 """
@@ -223,9 +261,140 @@ WHERE related.group_id = $group_id
 WITH DISTINCT related
 MATCH (related)-[r:RELATES_TO]-(other:Entity)
 WHERE r.group_id = $group_id
+  AND r.deleted_at IS NULL
   AND (r.invalid_at IS NULL OR r.invalid_at > datetime($as_of_time))
+  AND (r.expired_at IS NULL OR r.expired_at > datetime($as_of_time))
 WITH r, startNode(r) AS s, endNode(r) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at
+       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type
 LIMIT $limit
+"""
+
+
+def bfs_facts_query(max_depth: int = 2) -> str:
+    """Generate BFS query with variable path depth.
+
+    Neo4j Cypher does not support parameterized variable-length paths,
+    so we generate the query string with the depth baked in.
+    """
+    depth = max(1, min(max_depth, 5))
+    return f"""
+MATCH (seed:Entity {{uuid: $entity_uuid}})-[:RELATES_TO*1..{depth}]-(related:Entity)
+WHERE related.group_id = $group_id
+WITH DISTINCT related
+MATCH (related)-[r:RELATES_TO]-(other:Entity)
+WHERE r.group_id = $group_id
+  AND r.deleted_at IS NULL
+  AND (r.invalid_at IS NULL OR r.invalid_at > datetime($as_of_time))
+  AND (r.expired_at IS NULL OR r.expired_at > datetime($as_of_time))
+WITH r, startNode(r) AS s, endNode(r) AS t
+RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
+       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type
+LIMIT $limit
+"""
+
+
+# ── Community ──────────
+
+FETCH_ENTITIES_FOR_COMMUNITY = """
+MATCH (e:Entity)
+WHERE e.group_id = $group_id
+  AND e.deleted_at IS NULL
+RETURN e.uuid AS uuid, e.name AS name, e.summary AS summary
+"""
+
+FETCH_EDGES_FOR_COMMUNITY = """
+MATCH (s:Entity)-[r:RELATES_TO]->(t:Entity)
+WHERE r.group_id = $group_id
+  AND r.invalid_at IS NULL
+RETURN s.uuid AS source_uuid, t.uuid AS target_uuid, r.uuid AS edge_uuid,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type
+"""
+
+DELETE_COMMUNITIES_BY_GROUP = """
+MATCH (c:Community)
+WHERE c.group_id = $group_id
+DETACH DELETE c
+"""
+
+CREATE_COMMUNITY = """
+CREATE (c:Community {
+  uuid: $uuid,
+  name: $name,
+  summary: $summary,
+  group_id: $group_id,
+  created_at: datetime($created_at)
+})
+RETURN c.uuid AS uuid
+"""
+
+CREATE_HAS_MEMBER = """
+MATCH (c:Community {uuid: $community_uuid}), (e:Entity {uuid: $entity_uuid})
+CREATE (c)-[:HAS_MEMBER]->(e)
+"""
+
+FIND_COMMUNITY_FOR_ENTITY = """
+MATCH (c:Community)-[:HAS_MEMBER]->(e:Entity {uuid: $entity_uuid})
+RETURN c.uuid AS community_uuid, c.name AS name, c.summary AS summary
+"""
+
+FIND_ENTITY_NEIGHBORS = """
+MATCH (e:Entity {uuid: $entity_uuid})-[:RELATES_TO]-(neighbor:Entity)
+WHERE neighbor.group_id = $group_id
+RETURN DISTINCT neighbor.uuid AS uuid
+LIMIT $limit
+"""
+
+SEARCH_COMMUNITIES = """
+MATCH (c:Community)
+WHERE c.group_id = $group_id
+RETURN c.uuid AS uuid, c.name AS name, c.summary AS summary
+ORDER BY c.created_at DESC
+LIMIT $limit
+"""
+
+FIND_RECENT_FACTS = """
+MATCH (s:Entity)-[r:RELATES_TO]->(t:Entity)
+WHERE r.group_id = $group_id
+  AND r.invalid_at IS NULL
+  AND r.expired_at IS NULL
+  AND r.created_at >= datetime($since)
+RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
+       toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type
+ORDER BY r.created_at DESC
+LIMIT $limit
+"""
+
+# ── Soft-delete operations ──────────
+
+SOFT_DELETE_EPISODE = """
+MATCH (e:Episode {uuid: $uuid, group_id: $group_id})
+SET e.deleted_at = datetime($deleted_at)
+WITH e
+OPTIONAL MATCH (e)-[m:MENTIONS]->(en:Entity)
+DELETE m
+RETURN e.uuid AS uuid
+"""
+
+SOFT_DELETE_ENTITY = """
+MATCH (e:Entity {uuid: $uuid, group_id: $group_id})
+SET e.deleted_at = datetime($deleted_at)
+WITH e
+MATCH (e)-[r:RELATES_TO]-()
+WHERE r.invalid_at IS NULL
+SET r.invalid_at = datetime($deleted_at)
+RETURN e.uuid AS uuid
+"""
+
+SOFT_DELETE_FACT = """
+MATCH ()-[r:RELATES_TO {uuid: $uuid, group_id: $group_id}]->()
+SET r.deleted_at = datetime($deleted_at)
+RETURN r.uuid AS uuid
+"""
+
+PURGE_DELETED = """
+MATCH (n)
+WHERE n.group_id = $group_id AND n.deleted_at IS NOT NULL
+DETACH DELETE n
 """

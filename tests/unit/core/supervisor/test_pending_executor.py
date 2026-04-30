@@ -191,6 +191,195 @@ class TestMachineDirectiveInjection:
         assert prompt == base_prompt
 
 
+class TestStreamErrorSuppression:
+    """Test that stream errors are suppressed when task queue is already done."""
+
+    @pytest.mark.asyncio
+    async def test_suppressed_when_queue_is_done(self, tmp_path):
+        """Stream error should NOT raise when task queue status is 'done'."""
+        executor = _make_executor(tmp_path)
+        bg_event = asyncio.Event()
+        executor._anima._get_interrupt_event = lambda _name: bg_event
+
+        async def _stream_with_error(*args, **kwargs):
+            yield {"type": "text_delta", "text": "partial output"}
+            yield {"type": "error", "message": "stream disconnected 3 times"}
+
+        executor._anima.agent.run_cycle_streaming = _stream_with_error
+        executor._anima.agent.reset_reply_tracking = MagicMock()
+        executor._anima.agent.reset_read_paths = MagicMock()
+        executor._anima.agent.set_task_cwd = MagicMock()
+        executor._anima.messenger = MagicMock()
+
+        task_desc = {
+            "task_id": "task-done-1",
+            "title": "Already completed task",
+            "description": "Task that completes before stream error",
+        }
+
+        mock_entry = MagicMock()
+        mock_entry.status = "done"
+        mock_entry.summary = "Task completed successfully"
+
+        with (
+            patch("core.paths.load_prompt", return_value="test prompt"),
+            patch("core.memory.activity.ActivityLogger") as mock_activity,
+            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+        ):
+            mock_activity.return_value.log = MagicMock()
+            mock_tqm.return_value.get_task_by_id.return_value = mock_entry
+
+            result = await executor._run_llm_task(task_desc)
+            assert result == "Task completed successfully"
+
+    @pytest.mark.asyncio
+    async def test_raises_when_queue_is_not_done(self, tmp_path):
+        """Stream error should raise TaskExecError when queue status is not 'done'."""
+        from core.supervisor.pending_executor import TaskExecError
+
+        executor = _make_executor(tmp_path)
+        bg_event = asyncio.Event()
+        executor._anima._get_interrupt_event = lambda _name: bg_event
+
+        async def _stream_with_error(*args, **kwargs):
+            yield {"type": "error", "message": "stream disconnected"}
+
+        executor._anima.agent.run_cycle_streaming = _stream_with_error
+        executor._anima.agent.reset_reply_tracking = MagicMock()
+        executor._anima.agent.reset_read_paths = MagicMock()
+        executor._anima.agent.set_task_cwd = MagicMock()
+        executor._anima.messenger = MagicMock()
+
+        task_desc = {
+            "task_id": "task-pending-1",
+            "title": "Incomplete task",
+            "description": "Task that did not complete",
+        }
+
+        mock_entry = MagicMock()
+        mock_entry.status = "in_progress"
+
+        with (
+            patch("core.paths.load_prompt", return_value="test prompt"),
+            patch("core.memory.activity.ActivityLogger") as mock_activity,
+            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+        ):
+            mock_activity.return_value.log = MagicMock()
+            mock_tqm.return_value.get_task_by_id.return_value = mock_entry
+
+            with pytest.raises(TaskExecError, match="streaming error"):
+                await executor._run_llm_task(task_desc)
+
+    @pytest.mark.asyncio
+    async def test_raises_when_queue_lookup_fails(self, tmp_path):
+        """Stream error should raise TaskExecError when queue lookup raises."""
+        from core.supervisor.pending_executor import TaskExecError
+
+        executor = _make_executor(tmp_path)
+        bg_event = asyncio.Event()
+        executor._anima._get_interrupt_event = lambda _name: bg_event
+
+        async def _stream_with_error(*args, **kwargs):
+            yield {"type": "error", "message": "stream disconnected"}
+
+        executor._anima.agent.run_cycle_streaming = _stream_with_error
+        executor._anima.agent.reset_reply_tracking = MagicMock()
+        executor._anima.agent.reset_read_paths = MagicMock()
+        executor._anima.agent.set_task_cwd = MagicMock()
+        executor._anima.messenger = MagicMock()
+
+        task_desc = {
+            "task_id": "task-err-1",
+            "title": "Queue inaccessible task",
+            "description": "Task where queue cannot be read",
+        }
+
+        with (
+            patch("core.paths.load_prompt", return_value="test prompt"),
+            patch("core.memory.activity.ActivityLogger") as mock_activity,
+            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+        ):
+            mock_activity.return_value.log = MagicMock()
+            mock_tqm.return_value.get_task_by_id.side_effect = OSError("disk error")
+
+            with pytest.raises(TaskExecError, match="streaming error"):
+                await executor._run_llm_task(task_desc)
+
+    @pytest.mark.asyncio
+    async def test_raises_when_task_not_in_queue(self, tmp_path):
+        """Stream error should raise when task is not found in queue (None)."""
+        from core.supervisor.pending_executor import TaskExecError
+
+        executor = _make_executor(tmp_path)
+        bg_event = asyncio.Event()
+        executor._anima._get_interrupt_event = lambda _name: bg_event
+
+        async def _stream_with_error(*args, **kwargs):
+            yield {"type": "error", "message": "stream disconnected"}
+
+        executor._anima.agent.run_cycle_streaming = _stream_with_error
+        executor._anima.agent.reset_reply_tracking = MagicMock()
+        executor._anima.agent.reset_read_paths = MagicMock()
+        executor._anima.agent.set_task_cwd = MagicMock()
+        executor._anima.messenger = MagicMock()
+
+        task_desc = {
+            "task_id": "task-missing-1",
+            "title": "Unknown task",
+            "description": "Task not registered in queue",
+        }
+
+        with (
+            patch("core.paths.load_prompt", return_value="test prompt"),
+            patch("core.memory.activity.ActivityLogger") as mock_activity,
+            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+        ):
+            mock_activity.return_value.log = MagicMock()
+            mock_tqm.return_value.get_task_by_id.return_value = None
+
+            with pytest.raises(TaskExecError, match="streaming error"):
+                await executor._run_llm_task(task_desc)
+
+    @pytest.mark.asyncio
+    async def test_no_suppression_when_no_error(self, tmp_path):
+        """Normal completion (no stream error) returns result without raising."""
+        executor = _make_executor(tmp_path)
+        bg_event = asyncio.Event()
+        executor._anima._get_interrupt_event = lambda _name: bg_event
+
+        async def _stream_success(*args, **kwargs):
+            yield {"type": "text_delta", "text": "done"}
+            yield {
+                "type": "cycle_done",
+                "cycle_result": {"summary": "all good", "action": "complete"},
+            }
+
+        executor._anima.agent.run_cycle_streaming = _stream_success
+        executor._anima.agent.reset_reply_tracking = MagicMock()
+        executor._anima.agent.reset_read_paths = MagicMock()
+        executor._anima.agent.set_task_cwd = MagicMock()
+        executor._anima.messenger = MagicMock()
+
+        task_desc = {
+            "task_id": "task-ok-1",
+            "title": "Normal task",
+            "description": "Task that completes normally",
+        }
+
+        with (
+            patch("core.paths.load_prompt", return_value="test prompt"),
+            patch("core.memory.activity.ActivityLogger") as mock_activity,
+            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
+        ):
+            mock_activity.return_value.log = MagicMock()
+            result = await executor._run_llm_task(task_desc)
+            assert result == "all good"
+
+
 class TestLlmTaskFailurePropagation:
     @pytest.mark.asyncio
     async def test_run_llm_task_raises_when_cycle_done_action_is_error(self, tmp_path):

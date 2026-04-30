@@ -150,6 +150,21 @@ class SystemConsolidationMixin:
                         anima_name,
                     )
 
+                # Post-processing: Neo4j backend ingest
+                try:
+                    from core.memory.consolidation import ConsolidationEngine as _CE
+
+                    neo4j_engine = _CE(anima.memory.anima_dir, anima_name)
+                    await neo4j_engine.ingest_recent_to_backend(hours=48)
+                except Exception:
+                    logger.exception(
+                        "Neo4j ingest failed for anima=%s",
+                        anima_name,
+                    )
+
+                # Post-processing: Community detection (Neo4j only)
+                await self._detect_communities_if_neo4j(anima)
+
                 # Broadcast result via WebSocket
                 if self._ws_broadcast:
                     await self._ws_broadcast(
@@ -277,6 +292,21 @@ class SystemConsolidationMixin:
                         anima_name,
                     )
 
+                # Post-processing: Neo4j backend ingest
+                try:
+                    from core.memory.consolidation import ConsolidationEngine as _CE
+
+                    neo4j_engine = _CE(anima.memory.anima_dir, anima_name)
+                    await neo4j_engine.ingest_recent_to_backend(hours=168)
+                except Exception:
+                    logger.exception(
+                        "Neo4j ingest failed for anima=%s",
+                        anima_name,
+                    )
+
+                # Post-processing: Community detection (Neo4j only)
+                await self._detect_communities_if_neo4j(anima)
+
                 # Broadcast result via WebSocket
                 if self._ws_broadcast:
                     await self._ws_broadcast(
@@ -389,3 +419,39 @@ class SystemConsolidationMixin:
 
             except Exception:
                 logger.exception("Monthly forgetting failed for anima=%s", anima_name)
+
+    # ── Community detection helper ────────────────────────────
+
+    @staticmethod
+    async def _detect_communities_if_neo4j(anima) -> None:  # noqa: ANN001
+        """Run batch community detection if Neo4j backend is active."""
+        try:
+            from core.config.models import load_config
+
+            cfg = load_config()
+            mem_cfg = getattr(cfg, "memory", None)
+            if not mem_cfg or getattr(mem_cfg, "backend", "legacy") != "neo4j":
+                return
+
+            from core.memory.backend.registry import get_backend
+
+            backend = get_backend("neo4j", anima.memory.anima_dir)
+            driver = await backend._ensure_driver()
+
+            from core.memory.graph.community import CommunityDetector
+
+            detector = CommunityDetector(
+                driver,
+                backend._group_id,
+                model=backend._resolve_background_model(),
+                locale=backend._resolve_locale(),
+            )
+            communities = await detector.detect_and_store()
+            logger.info(
+                "Community detection for %s: %d communities",
+                anima.name,
+                len(communities),
+            )
+            await backend.close()
+        except Exception:
+            logger.exception("Community detection failed for anima=%s", anima.name)

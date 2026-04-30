@@ -31,6 +31,8 @@ from collections.abc import AsyncGenerator
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
+import psutil
+
 if TYPE_CHECKING:
     try:
         from claude_agent_sdk import ClaudeSDKClient, ResultMessage
@@ -144,6 +146,117 @@ def _detect_sdk_auth_failure(text: str) -> str | None:
     if not any(marker in folded for marker in ("401", "api error", "unauthorized", "auth")):
         return None
     return body
+
+
+# ── SDK subprocess PID tracking / cleanup ────────────
+
+
+def _extract_sdk_pid(client: Any) -> int | None:
+    """Return the Claude Agent SDK subprocess PID if available.
+
+    Reads ``client._transport._process.pid`` defensively when the SDK
+    wired a subprocess transport.
+
+    Args:
+        client: An active ``ClaudeSDKClient`` instance.
+
+    Returns:
+        Subprocess PID, or ``None`` when unavailable or invalid.
+    """
+    try:
+        transport = getattr(client, "_transport", None)
+        if transport is None:
+            return None
+        proc = getattr(transport, "_process", None)
+        if proc is None:
+            return None
+        raw_pid = getattr(proc, "pid", None)
+        if raw_pid is None:
+            return None
+        pid = int(raw_pid)
+    except Exception:
+        logger.debug("failed to extract SDK subprocess pid", exc_info=True)
+        return None
+    return pid if pid > 0 else None
+
+
+def _kill_sdk_process(pid: int | None, create_time: float | None) -> None:
+    """Best-effort terminate of a leaked SDK subprocess and its descendants.
+
+    Verifies the PID still refers to the same OS process (when ``create_time``
+    was recorded) and that the process name looks like Claude/node before
+    sending signals. Never raises.
+
+    Args:
+        pid: Target PID from :func:`_extract_sdk_pid`, or ``None``.
+        create_time: ``psutil.Process.create_time()`` captured while the client
+            was connected, used to detect PID reuse; ``None`` skips this check.
+    """
+    if pid is None:
+        return
+    try:
+        try:
+            proc = psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            return
+
+        if create_time is not None:
+            try:
+                actual_ct = float(proc.create_time())
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                return
+            except Exception:
+                logger.debug(
+                    "SDK cleanup: cannot read create_time for pid=%s",
+                    pid,
+                    exc_info=True,
+                )
+                return
+            if abs(actual_ct - create_time) > 2.0:
+                logger.debug(
+                    "SDK cleanup: skipping kill pid=%s (create_time mismatch, possible PID reuse)",
+                    pid,
+                )
+                return
+
+        try:
+            name = (proc.name() or "").lower()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return
+        except Exception:
+            logger.debug("SDK cleanup: cannot read name for pid=%s", pid, exc_info=True)
+            return
+        if "claude" not in name and "node" not in name:
+            logger.debug(
+                "SDK cleanup: skipping kill pid=%s (unexpected process name %r)",
+                pid,
+                name,
+            )
+            return
+
+        children = proc.children(recursive=True)
+        for child in children:
+            try:
+                child.kill()
+            except psutil.NoSuchProcess:
+                pass
+            except Exception:
+                logger.debug(
+                    "SDK cleanup: failed to kill child pid=%s",
+                    getattr(child, "pid", None),
+                    exc_info=True,
+                )
+        try:
+            proc.kill()
+        except psutil.NoSuchProcess:
+            pass
+        except Exception:
+            logger.debug("SDK cleanup: failed to kill pid=%s", pid, exc_info=True)
+            return
+
+        logger.info("terminated leaked Claude SDK subprocess tree (pid=%s)", pid)
+    except Exception:
+        logger.debug("SDK cleanup: unexpected error for pid=%s", pid, exc_info=True)
 
 
 # ── AgentSDKExecutor ─────────────────────────────────────────
@@ -330,10 +443,25 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
             thread_id=thread_id,
         )
 
+        sdk_pid: int | None = None
+        sdk_pid_create_time: float | None = None
+
         async def _run_blocking_client(run_options, *, log_label: str) -> ResultMessage | None:
+            nonlocal sdk_pid, sdk_pid_create_time
             logger.info("ClaudeSDKClient connecting (%s, resume=%s)", log_label, getattr(run_options, "resume", None))
             async with ClaudeSDKClient(options=run_options) as client:
                 logger.info("ClaudeSDKClient connected")
+                sdk_pid = _extract_sdk_pid(client)
+                sdk_pid_create_time = None
+                if sdk_pid is not None:
+                    try:
+                        sdk_pid_create_time = float(psutil.Process(sdk_pid).create_time())
+                    except Exception:
+                        logger.debug(
+                            "failed to read create_time for SDK subprocess pid=%s",
+                            sdk_pid,
+                            exc_info=True,
+                        )
                 return await self._process_blocking_messages(client, **_msg_args)
 
         try:
@@ -366,6 +494,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 tool_call_records=_finalize_pending_records(pending_records),
             )
         finally:
+            _kill_sdk_process(sdk_pid, sdk_pid_create_time)
             _cleanup_tool_outputs(self._anima_dir)
             _cleanup_prompt_files(_prompt_files)
 
@@ -408,6 +537,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                     tool_call_records=[],
                 )
             finally:
+                _kill_sdk_process(sdk_pid, sdk_pid_create_time)
                 _cleanup_tool_outputs(self._anima_dir)
                 _cleanup_prompt_files(retry_files)
 
@@ -473,7 +603,11 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         )
         emitted_text_delta = False
 
+        sdk_pid: int | None = None
+        sdk_pid_create_time: float | None = None
+
         async def _fresh_session() -> AsyncGenerator[dict[str, Any], None]:
+            nonlocal sdk_pid, sdk_pid_create_time
             fresh_opts, tfs = self._build_sdk_options(
                 system_prompt,
                 _max_turns,
@@ -486,6 +620,17 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
             try:
                 async with ClaudeSDKClient(options=fresh_opts) as fc:
                     logger.info("ClaudeSDKClient connected (fresh session retry)")
+                    sdk_pid = _extract_sdk_pid(fc)
+                    sdk_pid_create_time = None
+                    if sdk_pid is not None:
+                        try:
+                            sdk_pid_create_time = float(psutil.Process(sdk_pid).create_time())
+                        except Exception:
+                            logger.debug(
+                                "failed to read create_time for SDK subprocess pid=%s",
+                                sdk_pid,
+                                exc_info=True,
+                            )
                     async for ev in process_stream_messages(fc, ctx, state):
                         yield ev
             except BaseException as exc:
@@ -498,9 +643,20 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 ) from exc
 
         async def _run_stream_options(run_options, *, resume_guard: bool) -> AsyncGenerator[dict[str, Any], None]:
-            nonlocal emitted_text_delta
+            nonlocal emitted_text_delta, sdk_pid, sdk_pid_create_time
             async with ClaudeSDKClient(options=run_options) as client:
                 logger.info("ClaudeSDKClient connected")
+                sdk_pid = _extract_sdk_pid(client)
+                sdk_pid_create_time = None
+                if sdk_pid is not None:
+                    try:
+                        sdk_pid_create_time = float(psutil.Process(sdk_pid).create_time())
+                    except Exception:
+                        logger.debug(
+                            "failed to read create_time for SDK subprocess pid=%s",
+                            sdk_pid,
+                            exc_info=True,
+                        )
                 gen = process_stream_messages(client, ctx, state)
                 if resume_guard:
                     try:
@@ -552,6 +708,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 partial_text="\n".join(state.response_text),
             ) from e
         finally:
+            _kill_sdk_process(sdk_pid, sdk_pid_create_time)
             _cleanup_tool_outputs(self._anima_dir)
             _cleanup_prompt_files(_prompt_files)
 

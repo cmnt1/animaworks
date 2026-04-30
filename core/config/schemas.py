@@ -228,6 +228,7 @@ class MemoryConfig(BaseModel):
 
     backend: Literal["legacy", "neo4j"] = "legacy"
     neo4j: Neo4jConfig = Neo4jConfig()
+    neo4j_realtime_ingest: bool = False
 
 
 class PromptConfig(BaseModel):
@@ -401,7 +402,7 @@ class UsageGovernorConfig(BaseModel):
 class ServerConfig(BaseModel):
     """Server runtime configuration."""
 
-    session_ttl_days: int | None = 7  # None = unlimited
+    session_ttl_days: int | None = 90  # None = unlimited
     usage_governor: UsageGovernorConfig = UsageGovernorConfig()
     ipc_stream_timeout: int = 60  # per-chunk timeout in seconds
     keepalive_interval: int = 30  # keep-alive emission interval in seconds

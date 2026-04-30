@@ -479,6 +479,13 @@ def cli_main() -> None:
     p_urgent_clear.add_argument("name", help="Anima name")
     p_urgent_clear.set_defaults(func=_lazy_anima_urgent_clear)
 
+    # anima set-memory-backend
+    p_mb = anima_sub.add_parser("set-memory-backend", help="Set per-anima memory backend")
+    p_mb.add_argument("anima", nargs="?", default=None, help="Anima name")
+    p_mb.add_argument("backend", nargs="?", default=None, help="Backend type (legacy/neo4j)")
+    p_mb.add_argument("--clear", action="store_true", help="Remove per-anima override (use global)")
+    p_mb.set_defaults(func=_lazy_anima_set_memory_backend)
+
     # anima set-outbound-limit
     p_set_outbound = anima_sub.add_parser(
         "set-outbound-limit",
@@ -583,6 +590,20 @@ def cli_main() -> None:
     )
     p_anima_audit.set_defaults(func=_lazy_anima_audit)
 
+    # anima detect-communities
+    p_detect_communities = anima_sub.add_parser(
+        "detect-communities",
+        help="Run batch community detection for Neo4j backend",
+    )
+    p_detect_communities.add_argument("anima", nargs="?", default=None, help="Anima name (omit with --all)")
+    p_detect_communities.add_argument(
+        "--all",
+        action="store_true",
+        dest="detect_all",
+        help="Run for all Neo4j-enabled animas",
+    )
+    p_detect_communities.set_defaults(func=_lazy_anima_detect_communities)
+
     # ── Logs ──────────────────────────────────────────────────
     p_logs = sub.add_parser("logs", help="View anima logs")
     p_logs.add_argument("anima", nargs="?", default=None, help="Anima name (required unless --all)")
@@ -665,6 +686,11 @@ def cli_main() -> None:
     from cli.commands.models_cmd import register_models_command
 
     register_models_command(sub)
+
+    # ── Memory ──────────────────────────────────────────────
+    from cli.commands.memory_cmd import register_memory_command
+
+    register_memory_command(sub)
 
     # ── Profile ───────────────────────────────────────────────
     from cli.commands.profile import register_profile_command
@@ -904,6 +930,12 @@ def _lazy_anima_urgent_clear(args: argparse.Namespace) -> None:
     cmd_anima_urgent_clear(args)
 
 
+def _lazy_anima_set_memory_backend(args: argparse.Namespace) -> None:
+    from cli.commands.anima_mgmt import cmd_anima_set_memory_backend
+
+    cmd_anima_set_memory_backend(args)
+
+
 def _lazy_anima_set_outbound_limit(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_set_outbound_limit
 
@@ -926,6 +958,12 @@ def _lazy_anima_audit(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_audit
 
     cmd_anima_audit(args)
+
+
+def _lazy_anima_detect_communities(args: argparse.Namespace) -> None:
+    from cli.commands.anima_mgmt import cmd_anima_detect_communities
+
+    cmd_anima_detect_communities(args)
 
 
 def _lazy_board_read(args: argparse.Namespace) -> None:
