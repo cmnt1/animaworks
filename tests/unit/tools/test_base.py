@@ -14,11 +14,10 @@ from core.tools._base import (
     ToolConfigError,
     ToolResult,
     auto_cli_guide,
-    get_env_or_fail,
     get_credential,
+    get_env_or_fail,
     resolve_env_style_credential,
 )
-
 
 # ── ToolConfigError ───────────────────────────────────────────────
 
@@ -76,9 +75,8 @@ class TestGetEnvOrFail:
             assert "MISSING_KEY_XYZ" in str(exc_info.value)
 
     def test_raises_on_empty_value(self):
-        with patch.dict(os.environ, {"EMPTY_KEY": ""}):
-            with pytest.raises(ToolConfigError):
-                get_env_or_fail("EMPTY_KEY", "my_tool")
+        with patch.dict(os.environ, {"EMPTY_KEY": ""}), pytest.raises(ToolConfigError):
+            get_env_or_fail("EMPTY_KEY", "my_tool")
 
 
 # ── auto_cli_guide ────────────────────────────────────────────────
@@ -184,26 +182,26 @@ class TestAutoCliGuide:
 
 
 class TestAbconfigSlackCredentialFallback:
-    def test_reads_slack_bot_token_from_abconfig_secrets(self):
-        fake_module = type("FakeSecrets", (), {"slack_bot_token": "xoxb-abconfig-test"})()
+    def test_reads_slack_bot_token_from_abconfig_env(self):
+        fake_module = type("FakeCnctEnv", (), {"slack_bot_token": "xoxb-abconfig-test"})()
         with patch("core.tools._base._lookup_vault_credential", return_value=None), \
              patch("core.tools._base._lookup_shared_credentials", return_value=None), \
-             patch("core.tools._base._load_abconfig_secrets", return_value=fake_module):
+             patch("core.tools._base._load_abconfig_env", return_value=fake_module):
             result = get_credential("slack", "slack", env_var="SLACK_BOT_TOKEN")
         assert result == "xoxb-abconfig-test"
 
-    def test_reads_slack_app_token_from_abconfig_secrets(self):
-        fake_module = type("FakeSecrets", (), {"slack_app_token": "xapp-abconfig-test"})()
+    def test_reads_slack_app_token_from_abconfig_env(self):
+        fake_module = type("FakeCnctEnv", (), {"slack_app_token": "xapp-abconfig-test"})()
         with patch("core.tools._base._lookup_vault_credential", return_value=None), \
              patch("core.tools._base._lookup_shared_credentials", return_value=None), \
-             patch("core.tools._base._load_abconfig_secrets", return_value=fake_module):
+             patch("core.tools._base._load_abconfig_env", return_value=fake_module):
             result = get_credential("slack_app", "slack_socket", env_var="SLACK_APP_TOKEN")
         assert result == "xapp-abconfig-test"
 
     def test_environment_still_wins_when_abconfig_missing(self):
         with patch("core.tools._base._lookup_vault_credential", return_value=None), \
              patch("core.tools._base._lookup_shared_credentials", return_value=None), \
-             patch("core.tools._base._load_abconfig_secrets", return_value=None), \
+             patch("core.tools._base._load_abconfig_env", return_value=None), \
              patch.dict(os.environ, {"SLACK_BOT_TOKEN": "xoxb-env-test"}, clear=True):
             result = get_credential("slack", "slack", env_var="SLACK_BOT_TOKEN")
         assert result == "xoxb-env-test"

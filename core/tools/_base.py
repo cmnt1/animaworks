@@ -106,7 +106,7 @@ def get_credential(
             _log_resolved(credential_name, key_name, "shared/credentials.json", val)
             return val
 
-    # 4. Local abconfig bridge (secrets_local.py)
+    # 4. Local abconfig bridge (Cnct_Env.py)
     if env_var:
         val = _lookup_abconfig_credential(env_var)
         if val:
@@ -164,21 +164,16 @@ def _lookup_shared_credentials(key: str) -> str | None:
 
 
 def _lookup_abconfig_credential(key: str) -> str | None:
-    """Look up credential keys from the local abconfig secrets file.
-
-    ``Cnct_Env.py`` imports heavy desktop/database dependencies, so we avoid
-    importing it directly at server startup. Instead we treat its sibling
-    ``secrets_local.py`` as the source of truth for the tokens exposed there.
-    """
+    """Look up credential keys from the local abconfig Cnct_Env.py bridge."""
     attr_name = _ABCONFIG_KEY_MAP.get(key)
     if not attr_name:
         return None
 
-    secrets = _load_abconfig_secrets()
-    if secrets is None:
+    cnct_env = _load_abconfig_env()
+    if cnct_env is None:
         return None
 
-    val = getattr(secrets, attr_name, None)
+    val = getattr(cnct_env, attr_name, None)
     return val if isinstance(val, str) and val else None
 
 
@@ -206,27 +201,22 @@ def resolve_env_style_credential(key: str) -> str | None:
 
 
 @lru_cache(maxsize=1)
-def _load_abconfig_secrets() -> Any | None:
-    """Load ``secrets_local.py`` next to the fixed abconfig ``Cnct_Env.py``."""
+def _load_abconfig_env() -> Any | None:
+    """Load the fixed abconfig ``Cnct_Env.py`` module."""
     cnct_env_path = _ABCONFIG_CNCT_ENV_PATH
     if not cnct_env_path.is_file():
         return None
 
-    secrets_path = cnct_env_path.with_name("secrets_local.py")
-    if not secrets_path.is_file():
-        logger.debug("abconfig secrets file not found: %s", secrets_path)
-        return None
-
     try:
-        spec = importlib.util.spec_from_file_location("animaworks_abconfig_secrets", secrets_path)
+        spec = importlib.util.spec_from_file_location("animaworks_abconfig_cnct_env", cnct_env_path)
         if spec is None or spec.loader is None:
-            logger.warning("Failed to create import spec for %s", secrets_path)
+            logger.warning("Failed to create import spec for %s", cnct_env_path)
             return None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
     except Exception:
-        logger.warning("Failed to load Slack tokens from %s", secrets_path, exc_info=True)
+        logger.warning("Failed to load Slack tokens from %s", cnct_env_path, exc_info=True)
         return None
 
 

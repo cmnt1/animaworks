@@ -34,10 +34,7 @@ class TestTailAllLogsServerPath:
         captured = capsys.readouterr()
         assert "[SERVER]" in captured.out
         assert "animaworks.log" in captured.out
-        mock_follow.assert_called_once()
-        call_args = mock_follow.call_args[0][0]
-        assert "[SERVER]" in call_args
-        assert call_args["[SERVER]"].name == "animaworks.log"
+        mock_follow.assert_not_called()
 
     @patch("cli.commands.logs._follow_multiple_files")
     @patch("cli.commands.logs._show_last_lines")
@@ -58,9 +55,25 @@ class TestTailAllLogsServerPath:
         assert "[SERVER-DAEMON]" in captured.out
         assert "animaworks.log" in captured.out
         assert "server-daemon.log" in captured.out
+        mock_follow.assert_not_called()
+
+    @patch("cli.commands.logs._follow_multiple_files")
+    @patch("cli.commands.logs._show_last_lines")
+    def test_tail_all_logs_follow_opt_in(
+        self, mock_show: MagicMock, mock_follow: MagicMock, tmp_path: Path, capsys
+    ) -> None:
+        """--follow keeps tail behavior available as an explicit opt-in."""
+        from cli.commands.logs import _tail_all_logs
+
+        (tmp_path / "animas").mkdir()
+        (tmp_path / "animaworks.log").write_text("server\n", encoding="utf-8")
+
+        _tail_all_logs(tmp_path, follow=True)
+
+        mock_follow.assert_called_once()
         call_args = mock_follow.call_args[0][0]
         assert "[SERVER]" in call_args
-        assert "[SERVER-DAEMON]" in call_args
+        assert call_args["[SERVER]"].name == "animaworks.log"
 
     @patch("cli.commands.logs._follow_multiple_files")
     @patch("cli.commands.logs._show_last_lines")
@@ -82,8 +95,7 @@ class TestTailAllLogsServerPath:
         captured = capsys.readouterr()
         assert "[SERVER]" not in captured.out
         assert "[alice]" in captured.out
-        call_args = mock_follow.call_args[0][0]
-        assert "[SERVER]" not in call_args
+        mock_follow.assert_not_called()
 
     @patch("cli.commands.logs._follow_multiple_files")
     @patch("cli.commands.logs._show_last_lines")

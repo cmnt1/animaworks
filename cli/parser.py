@@ -589,6 +589,7 @@ def cli_main() -> None:
     p_logs.add_argument("--all", action="store_true", help="Show all logs (server + all animas)")
     p_logs.add_argument("--lines", type=int, default=50, help="Number of lines to show (default: 50)")
     p_logs.add_argument("--date", default=None, help="Specific date (YYYYMMDD format)")
+    p_logs.add_argument("--follow", action="store_true", help="Continue streaming new log lines")
     p_logs.set_defaults(func=_lazy_logs)
 
     # ── Cost ──────────────────────────────────────────────────

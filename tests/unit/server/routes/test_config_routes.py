@@ -9,23 +9,46 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from core.config.models import AnimaWorksConfig, CredentialConfig
 from server.routes.config_routes import _mask_secrets
-
 
 # ── Helper ──────────────────────────────────────────────────
 
 
 def _make_test_app():
     from fastapi import FastAPI
+
     from server.routes.config_routes import create_config_router
 
     app = FastAPI()
     router = create_config_router()
     app.include_router(router, prefix="/api")
     return app
+
+
+class TestAbconfigCredentials:
+    def test_loads_cnct_env_credentials(self, tmp_path):
+        from server.routes import config_routes
+
+        cnct_env = tmp_path / "Cnct_Env.py"
+        cnct_env.write_text("openai_key = 'sk-local'\nopenai_id = 'org-local'\n", encoding="utf-8")
+
+        with patch.object(config_routes, "ABCONFIG_ENV_FILE", cnct_env):
+            assert config_routes._load_abconfig_credentials() == {
+                "openai_id": "org-local",
+                "openai_key": "sk-local",
+            }
+
+    def test_missing_cnct_env_returns_empty(self, tmp_path):
+        from server.routes import config_routes
+
+        cnct_env = tmp_path / "Cnct_Env.py"
+
+        with patch.object(config_routes, "ABCONFIG_ENV_FILE", cnct_env):
+            assert config_routes._load_abconfig_credentials() == {}
 
 
 # ── _mask_secrets ───────────────────────────────────────────
@@ -448,6 +471,10 @@ class TestLocalLLMSettings:
 
 
 class TestInitStatus:
+    @pytest.fixture(autouse=True)
+    def _isolated_config(self, monkeypatch):
+        monkeypatch.setattr("server.routes.config_routes.load_config", lambda: AnimaWorksConfig())
+
     async def test_nothing_initialized(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)

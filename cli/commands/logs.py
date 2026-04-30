@@ -13,24 +13,31 @@ from pathlib import Path
 
 
 def cmd_logs(args: argparse.Namespace) -> None:
-    """View anima logs (tail -f style)."""
+    """View anima logs."""
     from core.paths import get_data_dir
 
     log_dir = get_data_dir() / "logs"
+    follow = bool(getattr(args, "follow", False))
 
     if args.all:
         # Show all logs (server + all animas)
-        _tail_all_logs(log_dir)
+        _tail_all_logs(log_dir, lines=args.lines, follow=follow)
     else:
         # Show specific anima log
         if not args.anima:
             print("Error: --anima is required (or use --all)")
             sys.exit(1)
 
-        _tail_anima_log(log_dir=log_dir, anima_name=args.anima, lines=args.lines, date=args.date)
+        _tail_anima_log(log_dir=log_dir, anima_name=args.anima, lines=args.lines, date=args.date, follow=follow)
 
 
-def _tail_anima_log(log_dir: Path, anima_name: str, lines: int = 50, date: str | None = None) -> None:
+def _tail_anima_log(
+    log_dir: Path,
+    anima_name: str,
+    lines: int = 50,
+    date: str | None = None,
+    follow: bool = False,
+) -> None:
     """Tail a specific anima's log file."""
     anima_log_dir = log_dir / "animas" / anima_name
 
@@ -63,13 +70,12 @@ def _tail_anima_log(log_dir: Path, anima_name: str, lines: int = 50, date: str |
                 print(f"Error: No log files found in {anima_log_dir}")
                 sys.exit(1)
             log_file = log_files[0]
-        follow = True
 
     if not log_file.exists():
         print(f"Error: Log file not found: {log_file}")
         sys.exit(1)
 
-    print(f"Tailing log: {log_file}")
+    print(f"{'Tailing' if follow else 'Showing'} log: {log_file}")
     print("-" * 60)
 
     # Show last N lines
@@ -83,7 +89,7 @@ def _tail_anima_log(log_dir: Path, anima_name: str, lines: int = 50, date: str |
             print("\n[Stopped]")
 
 
-def _tail_all_logs(log_dir: Path) -> None:
+def _tail_all_logs(log_dir: Path, lines: int = 50, follow: bool = False) -> None:
     """Tail all logs (server + all animas)."""
     # Find all anima log directories
     animas_log_dir = log_dir / "animas"
@@ -126,10 +132,13 @@ def _tail_all_logs(log_dir: Path) -> None:
         print("No log files found")
         return
 
-    # Show last 10 lines from each
+    # Show recent lines from each
     for prefix, log_file in log_files.items():
         print(f"\n{prefix} {log_file.name}")
-        _show_last_lines(log_file, 10, prefix=prefix)
+        _show_last_lines(log_file, lines, prefix=prefix)
+
+    if not follow:
+        return
 
     print("\n" + "=" * 60)
     print("Following all logs... (Ctrl+C to stop)")
@@ -157,50 +166,51 @@ def _show_last_lines(log_file: Path, n: int, prefix: str = "") -> None:
 
 def _follow_file(log_file: Path) -> None:
     """Follow a single log file (like tail -f)."""
-    with open(log_file, encoding="utf-8", errors="replace") as f:
-        # Seek to end
-        f.seek(0, 2)
+    position = log_file.stat().st_size
 
-        while True:
-            line = f.readline()
-            if line:
-                print(line.rstrip())
-            else:
-                time.sleep(0.1)
+    while True:
+        try:
+            current_size = log_file.stat().st_size
+            if current_size < position:
+                position = 0
+            if current_size > position:
+                with open(log_file, encoding="utf-8", errors="replace") as f:
+                    f.seek(position)
+                    for line in f:
+                        print(line.rstrip())
+                    position = f.tell()
+        except OSError:
+            pass
+        time.sleep(0.2)
 
 
 def _follow_multiple_files(log_files: dict[str, Path]) -> None:
     """Follow multiple log files simultaneously."""
-    file_handles = {}
-
-    # Open all files and seek to end
-    for prefix, log_file in log_files.items():
+    positions: dict[str, int] = {}
+    for prefix, log_file in list(log_files.items()):
         try:
-            f = open(log_file, encoding="utf-8", errors="replace")  # noqa: SIM115
-            f.seek(0, 2)  # Seek to end
-            file_handles[prefix] = f
+            positions[prefix] = log_file.stat().st_size
         except Exception as e:
             print(f"Error opening {log_file}: {e}")
 
-    try:
-        while True:
-            any_output = False
+    while True:
+        any_output = False
 
-            for prefix, f in file_handles.items():
-                try:
-                    line = f.readline()
-                    if line:
-                        print(f"{prefix} {line.rstrip()}")
-                        any_output = True
-                except Exception:
-                    pass
-
-            if not any_output:
-                time.sleep(0.1)
-    finally:
-        # Close all files
-        for f in file_handles.values():
+        for prefix, log_file in log_files.items():
             try:
-                f.close()
+                position = positions.get(prefix, 0)
+                current_size = log_file.stat().st_size
+                if current_size < position:
+                    position = 0
+                if current_size > position:
+                    with open(log_file, encoding="utf-8", errors="replace") as f:
+                        f.seek(position)
+                        for line in f:
+                            print(f"{prefix} {line.rstrip()}")
+                            any_output = True
+                        positions[prefix] = f.tell()
             except Exception:
                 pass
+
+        if not any_output:
+            time.sleep(0.2)

@@ -586,6 +586,7 @@ animaworks logs alice                  # Specific Anima logs
 animaworks logs --all                  # Server + all Anima logs
 animaworks logs alice --lines 100      # Show 100 lines
 animaworks logs alice --date 20260305  # Specific date
+animaworks logs --all --follow         # Stream new lines continuously
 ```
 
 | Argument | Type | Description |
@@ -597,6 +598,7 @@ animaworks logs alice --date 20260305  # Specific date
 | `--all` | flag | — | Show all logs |
 | `--lines` | int | 50 | Number of lines |
 | `--date` | string | null | Date (YYYYMMDD) |
+| `--follow` | flag | false | Continue streaming new log lines |
 
 ---
 

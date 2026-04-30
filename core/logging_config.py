@@ -20,7 +20,7 @@ Provides:
 from __future__ import annotations
 
 import logging
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import structlog
@@ -171,6 +171,58 @@ def setup_logging(
 # ── Anima-specific Logging ────────────────────────────────────────────
 
 
+class DailyAnimaFileHandler(logging.FileHandler):
+    """Write anima logs to YYYYMMDD.log without renaming open files.
+
+    TimedRotatingFileHandler performs rotation by renaming the active file.
+    On Windows that fails whenever another process is reading the log. This
+    handler switches to a new dated filename on emit, avoiding rename-based
+    rotation entirely.
+    """
+
+    def __init__(self, anima_log_dir: Path, encoding: str = "utf-8"):
+        self.anima_log_dir = anima_log_dir
+        self.current_link = anima_log_dir / "current.log"
+        self.current_date = now_local().strftime("%Y%m%d")
+        super().__init__(
+            filename=self._path_for_date(self.current_date),
+            mode="a",
+            encoding=encoding,
+            delay=True,
+        )
+        self._update_current_link()
+
+    def _path_for_date(self, date_key: str) -> str:
+        return str(self.anima_log_dir / f"{date_key}.log")
+
+    def _update_current_link(self) -> None:
+        target_name = f"{self.current_date}.log"
+        try:
+            if self.current_link.exists() or self.current_link.is_symlink():
+                self.current_link.unlink()
+            self.current_link.symlink_to(target_name)
+        except OSError:
+            try:
+                self.current_link.write_text(target_name, encoding="utf-8")
+            except OSError:
+                pass
+
+    def _roll_to_today_if_needed(self) -> None:
+        today = now_local().strftime("%Y%m%d")
+        if today == self.current_date:
+            return
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+        self.current_date = today
+        self.baseFilename = self._path_for_date(today)
+        self._update_current_link()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self._roll_to_today_if_needed()
+        super().emit(record)
+
+
 class AnimaNameFilter(logging.Filter):
     """Inject anima name into log records."""
 
@@ -225,15 +277,9 @@ def setup_anima_logging(
     # Create anima name filter
     anima_filter = AnimaNameFilter(anima_name)
 
-    # File handler with timed rotation
-    file_handler = TimedRotatingFileHandler(
-        filename=log_file,
-        when="midnight",
-        interval=1,
-        backupCount=30,  # Keep 30 days
-        encoding="utf-8",
-        utc=False,
-    )
+    # File handler with date-based rollover. It never renames the active log,
+    # which keeps Windows log viewers from blocking midnight rollover.
+    file_handler = DailyAnimaFileHandler(anima_log_dir)
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(
         logging.Formatter(
@@ -242,19 +288,7 @@ def setup_anima_logging(
         )
     )
     file_handler.addFilter(anima_filter)
-    file_handler.suffix = "%Y%m%d.log"  # Match filename format
     root.addHandler(file_handler)
-
-    # Create/update current.log symlink
-    current_link = anima_log_dir / "current.log"
-    if current_link.exists() or current_link.is_symlink():
-        current_link.unlink()
-    try:
-        current_link.symlink_to(log_file.name)
-    except OSError:
-        # On Windows, symlinks may require admin privileges
-        # Fall back to copying the path as a text file reference
-        current_link.write_text(str(log_file.name))
 
     # Optional console handler
     if also_to_console:

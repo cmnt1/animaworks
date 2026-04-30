@@ -6,16 +6,18 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 import structlog
 
 from core.logging_config import (
+    DailyAnimaFileHandler,
     get_request_id,
     set_request_id,
     setup_logging,
 )
-
 
 # ── Request ID contextvars ────────────────────────────────
 
@@ -143,3 +145,26 @@ class TestSetupLogging:
             assert data.get("request_id") == "test-req-42"
 
         structlog.contextvars.clear_contextvars()
+
+
+class TestDailyAnimaFileHandler:
+    def test_rollover_opens_new_dated_file_without_rename(self, tmp_path):
+        first_day = datetime(2026, 4, 30, 23, 59)
+        second_day = datetime(2026, 5, 1, 0, 1)
+
+        with patch("core.logging_config.now_local", return_value=first_day):
+            handler = DailyAnimaFileHandler(tmp_path)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+
+        try:
+            with patch("core.logging_config.now_local", return_value=first_day):
+                handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "before", (), None))
+            with patch("core.logging_config.now_local", return_value=second_day):
+                handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "after", (), None))
+        finally:
+            handler.close()
+
+        assert (tmp_path / "20260430.log").read_text(encoding="utf-8").strip() == "before"
+        assert (tmp_path / "20260501.log").read_text(encoding="utf-8").strip() == "after"
+        assert not (tmp_path / "20260430.log.20260430.log").exists()
+        assert (tmp_path / "current.log").exists()
