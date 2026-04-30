@@ -70,6 +70,19 @@ def _channel_tools() -> list[dict[str, Any]]:
                         "type": "integer",
                         "description": _t("schema.read_dm_history.limit"),
                     },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["sent", "received", "both"],
+                        "description": _t("schema.read_dm_history.direction"),
+                    },
+                    "hours": {
+                        "type": "integer",
+                        "description": _t("schema.read_dm_history.hours"),
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "description": _t("schema.read_dm_history.keyword"),
+                    },
                 },
                 "required": ["peer"],
             },
