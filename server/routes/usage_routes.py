@@ -345,10 +345,7 @@ def _relogin_claude() -> tuple[dict[str, Any], int]:
         return (
             {
                 "success": True,
-                "message": (
-                    f"Claude token is already fresh (expires in ~{mins} min). "
-                    "No login terminal was opened."
-                ),
+                "message": (f"Claude token is already fresh (expires in ~{mins} min). No login terminal was opened."),
                 "file": str(best_path),
                 "executable": executable,
                 "terminal_launched": False,

@@ -344,6 +344,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "Error: このrunで既に {to} にメッセージを送信済みです。追加の連絡はBoardを使用してください。",
         "en": ("Error: Message already sent to {to} in this run. Use Board for additional communication."),
     },
+    "handler.send_feedback_header": {
+        "ja": "[24h] {to}宛: {count}通",
+        "en": "[24h] To {to}: {count} messages",
+    },
     "handler.dm_intent_error": {
         "ja": (
             "Error: DMのintentは 'report', 'question' のみ許可されています。acknowledgment・感謝・FYIはBoardを使用してください（post_channel ツール）。"

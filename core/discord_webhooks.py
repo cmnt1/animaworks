@@ -62,7 +62,6 @@ def get_webhook_manager() -> DiscordWebhookManager:
 class DiscordWebhookManager:
     """Manages per-channel webhooks and thread-to-Anima mappings."""
 
-
     def __init__(self) -> None:
         self._webhooks: dict[str, dict[str, str]] = {}  # channel_id → {id, token}
         self._thread_map: dict[str, dict[str, Any]] = {}  # message_id → {anima, ts}

@@ -89,6 +89,9 @@ class MemoryBackend(ABC):
         scope: str,
         limit: int = 10,
         min_score: float = 0.0,
+        as_of_time: str | None = None,
+        time_start: str | None = None,
+        time_end: str | None = None,
     ) -> list[RetrievedMemory]:
         """Retrieve relevant memories for a query.
 
@@ -97,6 +100,9 @@ class MemoryBackend(ABC):
             scope: One of :data:`VALID_SCOPES` to restrict search.
             limit: Maximum number of results.
             min_score: Minimum relevance score threshold.
+            as_of_time: ISO datetime upper bound for fact validity ("as of"); backend default is now.
+            time_start: Optional ISO lower bound (episode vector search when supported).
+            time_end: Optional ISO upper bound (episode vector search when supported).
 
         Returns:
             Matching memories sorted by descending relevance.

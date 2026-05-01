@@ -285,6 +285,9 @@ class CommsToolsMixin:
                 sender_name=self._anima_name,
                 anima_name=self._anima_name,
             )
+            feedback = self._build_send_feedback(to)
+            if feedback:
+                return f"{result}\n{feedback}"
             return result
 
         # ── Internal messaging ──
@@ -315,7 +318,59 @@ class CommsToolsMixin:
             except Exception:
                 logger.exception("on_message_sent callback failed")
 
-        return f"Message sent to {internal_to} (id: {msg.id}, thread: {msg.thread_id})"
+        base = f"Message sent to {internal_to} (id: {msg.id}, thread: {msg.thread_id})"
+        feedback = self._build_send_feedback(internal_to)
+        if feedback:
+            return f"{base}\n{feedback}"
+        return base
+
+    def _build_send_feedback(self, to: str) -> str:
+        """Build behavioral feedback showing recent send history to the same recipient.
+
+        Returns a short summary of how many messages were sent to *to* in the
+        last 24 hours (rolling window) plus the most recent 3 summaries.
+        Returns empty string on any failure or when count is 0.
+        """
+        try:
+            from datetime import datetime, timedelta
+
+            from core.memory.activity import ActivityLogger
+            from core.time_utils import ensure_aware, now_local
+
+            activity = ActivityLogger(self._anima_dir)
+            entries = activity.recent(
+                days=2,
+                limit=500,
+                types=["message_sent"],
+                involving=to,
+            )
+            cutoff = now_local() - timedelta(hours=24)
+            sent_entries = []
+            for e in entries:
+                if (getattr(e, "to_person", None) or "") != to:
+                    continue
+                try:
+                    ts_dt = ensure_aware(datetime.fromisoformat(e.ts))
+                    if ts_dt >= cutoff:
+                        sent_entries.append(e)
+                except (ValueError, TypeError):
+                    continue
+            count = len(sent_entries)
+            if count == 0:
+                return ""
+
+            recent_summaries = sent_entries[-3:]
+            lines = [t("handler.send_feedback_header", to=to, count=count)]
+            for e in reversed(recent_summaries):
+                ts_short = e.ts[11:16] if len(e.ts) >= 16 else e.ts
+                preview = (e.summary or e.content or "")[:80]
+                if preview.startswith(f"→ {to}: "):
+                    preview = preview[len(f"→ {to}: ") :]
+                lines.append(f"  {ts_short} {preview}")
+            return "\n".join(lines)
+        except Exception:
+            logger.debug("Failed to build send feedback for %s", to, exc_info=True)
+            return ""
 
     # ── Channel tool handlers ────────────────────────────────
 
@@ -594,7 +649,16 @@ class CommsToolsMixin:
         if not peer:
             return _error_result("InvalidArguments", "peer is required")
         limit = args.get("limit", 20)
-        messages = self._messenger.read_dm_history(peer, limit=limit)
+        direction = args.get("direction", "both")
+        hours = args.get("hours")
+        keyword = args.get("keyword")
+        messages = self._messenger.read_dm_history(
+            peer,
+            limit=limit,
+            direction=direction,
+            hours=hours,
+            keyword=keyword,
+        )
         if not messages:
             return f"No DM history with {peer}"
         return _json.dumps(messages, ensure_ascii=False, indent=2)

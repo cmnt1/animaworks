@@ -38,11 +38,15 @@ def _known_anima_names() -> set[str]:
         from core.paths import get_animas_dir, get_data_dir
 
         animas_dir = get_animas_dir()
-        disk_names = {
-            anima_dir.name
-            for anima_dir in animas_dir.iterdir()
-            if anima_dir.is_dir() and (anima_dir / "status.json").is_file()
-        } if animas_dir.is_dir() else set()
+        disk_names = (
+            {
+                anima_dir.name
+                for anima_dir in animas_dir.iterdir()
+                if anima_dir.is_dir() and (anima_dir / "status.json").is_file()
+            }
+            if animas_dir.is_dir()
+            else set()
+        )
 
         config_path = get_data_dir() / "config.json"
         config_names: set[str] | None = None
@@ -64,10 +68,7 @@ def _is_governor_notification(subject: str, body: str) -> bool:
 def _notification_callsite() -> str:
     """Return a compact stack for tracing unexpected notification sources."""
     frames = traceback.extract_stack(limit=12)[:-2]
-    return " <- ".join(
-        f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}"
-        for frame in frames[-8:]
-    )
+    return " <- ".join(f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}" for frame in frames[-8:])
 
 
 def _should_report_unknown_governor(anima_name: str) -> bool:

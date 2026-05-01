@@ -545,15 +545,21 @@ class MemoryIndexer:
         """Chunk file based on memory type.
 
         Strategies:
-        - knowledge / common_knowledge / episodes: Markdown heading sections
+        - knowledge / common_knowledge: Markdown heading sections
+        - episodes: Time headings (``## HH:MM``) when present, else Markdown headings
         - procedures: Whole file (don't split procedures)
         - skills / common_skills: Whole file
         - shared_users: Whole file
         """
-        if memory_type in ("knowledge", "common_knowledge", "episodes"):
+        if memory_type in ("knowledge", "common_knowledge"):
             return self._chunk_by_markdown_headings(file_path, content, memory_type, origin=origin)
-        else:  # procedures, skills, shared_users
-            return self._chunk_whole_file(file_path, content, memory_type, origin=origin)
+        if memory_type == "episodes":
+            time_chunks = self._chunk_by_time_headings(file_path, content, memory_type, origin=origin)
+            if time_chunks:
+                return time_chunks
+            return self._chunk_by_markdown_headings(file_path, content, memory_type, origin=origin)
+        # procedures, skills, shared_users
+        return self._chunk_whole_file(file_path, content, memory_type, origin=origin)
 
     def _chunk_by_markdown_headings(
         self,
@@ -640,11 +646,19 @@ class MemoryIndexer:
         *,
         origin: str = "",
     ) -> list[MemoryChunk]:
-        """Split by time headings (## HH:MM format)."""
+        """Split by time headings (## HH:MM format) with ``valid_at`` metadata."""
         frontmatter = self._parse_frontmatter(content)
+        content = self._strip_frontmatter(content)
         chunks: list[MemoryChunk] = []
-        # Match headings like ## 09:30, ## 14:15 — タイトル
+
+        date_match = re.match(r"(\d{4}-\d{2}-\d{2})", file_path.stem)
+        base_date_str = date_match.group(1) if date_match else None
+
+        # Match headings like ## 09:30, ## 14:15 optional — title
         sections = re.split(r"\n(##\s+\d{1,2}:\d{2}.*)", content)
+
+        if len(sections) <= 1:
+            return []
 
         for i in range(1, len(sections), 2):
             if i + 1 < len(sections):
@@ -663,6 +677,20 @@ class MemoryIndexer:
                         frontmatter=frontmatter,
                         origin=origin,
                     )
+
+                    if base_date_str:
+                        time_match = re.match(r"##\s+(\d{1,2}):(\d{2})", heading)
+                        if time_match:
+                            try:
+                                hour = int(time_match.group(1))
+                                minute = int(time_match.group(2))
+                                dt = ensure_aware(
+                                    datetime.fromisoformat(f"{base_date_str}T{hour:02d}:{minute:02d}:00"),
+                                )
+                                metadata["valid_at"] = dt.timestamp()
+                            except (ValueError, TypeError):
+                                pass
+
                     chunks.append(
                         MemoryChunk(
                             id=chunk_id,
@@ -823,6 +851,17 @@ class MemoryIndexer:
         if "superseded_at" in fm and "valid_until" not in fm:
             fm["valid_until"] = fm.pop("superseded_at")
         metadata["valid_until"] = str(fm.get("valid_until", "") or "")
+
+        # valid_at: event timestamp (preferred over file timestamps for recency)
+        valid_at_str = str(fm.get("valid_from", "") or "")
+        if valid_at_str:
+            try:
+                vat = ensure_aware(datetime.fromisoformat(valid_at_str))
+                metadata["valid_at"] = vat.timestamp()
+            except (ValueError, TypeError):
+                pass
+        if "valid_at" not in metadata:
+            metadata["valid_at"] = float(stat.st_mtime)
 
         if fm.get("summary"):
             metadata["summary"] = str(fm["summary"])[:200]

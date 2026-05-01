@@ -812,9 +812,7 @@ class CodexSDKExecutor(BaseExecutor):
         "Use those Gmail send tools only when the human owner explicitly asks "
         "for that exact Gmail action in the current turn."
     )
-    _BLOCKED_CODEX_APPS_GMAIL_SEND_TOOLS = frozenset(
-        {"_send_email", "_send_draft", "_forward_emails"}
-    )
+    _BLOCKED_CODEX_APPS_GMAIL_SEND_TOOLS = frozenset({"_send_email", "_send_draft", "_forward_emails"})
 
     def _effective_codex_home(self) -> Path:
         """Return the actual CODEX_HOME directory that will be used."""

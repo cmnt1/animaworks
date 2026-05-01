@@ -434,6 +434,7 @@ class PrimingEngine:
             keywords,
             message=message,
             recent_human_messages=recent_human_messages,
+            get_memory_backend=self._get_memory_backend,
         )
 
     async def _collect_pending_human_notifications(self, *, channel: str = "") -> str:

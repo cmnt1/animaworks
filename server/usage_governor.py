@@ -240,9 +240,7 @@ class GovernorState:
             )
             for lvl in activity_map.values()
         )
-        return (
-            bool(self.suspended_animas) or bool(self.reason) or throttling
-        )
+        return bool(self.suspended_animas) or bool(self.reason) or throttling
 
 
 # ── Policy I/O ───────────────────────────────────────────────────────────────

@@ -397,6 +397,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "DM相手の名前",
         "en": "Name of the DM peer",
     },
+    "schema.read_dm_history.direction": {
+        "ja": "フィルタ方向: sent（送信のみ）, received（受信のみ）, both（両方、デフォルト）",
+        "en": "Filter direction: sent (outbound only), received (inbound only), both (default)",
+    },
+    "schema.read_dm_history.hours": {
+        "ja": "直近N時間以内に限定（省略時は全期間）",
+        "en": "Limit to last N hours (omit for all time)",
+    },
+    "schema.read_dm_history.keyword": {
+        "ja": "メッセージ内容に含まれるキーワードで絞り込み",
+        "en": "Filter messages containing this keyword in content",
+    },
     "schema.read_subordinate_state.desc": {
         "ja": (
             "配下のAnimaの現在のタスク状態を読み取る。current_state.md（進行中タスク）と pending.md（保留タスク）の内容を返す。直属部下だけでなく孫以下の配下も指定可能。"

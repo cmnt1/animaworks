@@ -20,6 +20,7 @@ from core.memory.ontology.default import (
     ExtractedFact,
     FactExtractionResult,
 )
+from core.time_utils import now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,7 @@ class FactExtractor:
             content=content,
             entities_json=entities_json,
             edge_types_list=edge_types_list,
+            reference_time=now_iso(),
         )
 
         try:
