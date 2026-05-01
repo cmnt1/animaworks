@@ -248,10 +248,11 @@ function _usageForecast(utilization, resetAt, windowSeconds) {
   const remain = Math.max(0, 100 - used);
   const timePct = Math.min((msToReset / windowMs) * 100, 100);
   const daysToReset = msToReset / 86400000;
+  const displayWindowSeconds = Math.max(windowSeconds, msToReset / 1000);
 
   if (elapsedMs <= 0) {
     return { runway: "", daysToReset, landing: `${remain.toFixed(1)}%`, label: "", noRunway: true,
-             remainPct: remain, timePct, runwayDays: null, daysToResetRaw: daysToReset, windowSeconds };
+             remainPct: remain, timePct, runwayDays: null, daysToResetRaw: daysToReset, windowSeconds, displayWindowSeconds };
   }
 
   const elapsedDays = elapsedMs / 86400000;
@@ -259,7 +260,7 @@ function _usageForecast(utilization, resetAt, windowSeconds) {
 
   if (burnPerDay <= 0) {
     return { runway: "\u221E", daysToReset, landing: `${remain.toFixed(1)}%`, label: "",
-             remainPct: remain, timePct, runwayDays: Infinity, daysToResetRaw: daysToReset, windowSeconds };
+             remainPct: remain, timePct, runwayDays: Infinity, daysToResetRaw: daysToReset, windowSeconds, displayWindowSeconds };
   }
 
   const runwayDays = remain / burnPerDay;
@@ -294,13 +295,14 @@ function _usageForecast(utilization, resetAt, windowSeconds) {
       : "var(--aw-color-text-secondary,#666)";
 
   return { runway: runwayStr, daysToReset: daysToResetStr, deltaLabel, landing: landingStr, landingColor,
-           remainPct: remain, timePct, runwayDays, daysToResetRaw: daysToReset, windowSeconds };
+           remainPct: remain, timePct, runwayDays, daysToResetRaw: daysToReset, windowSeconds, displayWindowSeconds };
 }
 
 function _fmtRemainLine(fc) {
   if (!fc) return "";
   const isHours = fc.windowSeconds <= 86400;
-  const windowUnits = isHours ? fc.windowSeconds / 3600 : fc.windowSeconds / 86400;
+  const displayWindowSeconds = fc.displayWindowSeconds ?? fc.windowSeconds;
+  const windowUnits = isHours ? displayWindowSeconds / 3600 : displayWindowSeconds / 86400;
   const unit = isHours ? "h" : "d";
   // 残り予算をウィンドウの時間比に直接変換（線形比例）
   const remainTime = fc.remainPct * windowUnits / 100;
