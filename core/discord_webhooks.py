@@ -13,12 +13,14 @@ Each channel gets a single webhook; per-message ``username`` and ``avatar_url``
 parameters make each Anima appear as a distinct identity.
 """
 
+import hashlib
 import json
 import logging
 import os
 import tempfile
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,8 @@ _DISCORD_THREAD_TYPES = {10, 11, 12}
 
 # Thread-to-Anima mapping TTL
 _THREAD_MAP_TTL_DAYS = 7
+_OUTBOUND_CONFIRM_TTL_SECONDS = 15 * 60
+_OUTBOUND_VERIFY_HISTORY_LIMIT = 10
 
 
 # ── Singleton ────────────────────────────────────────────────
@@ -58,22 +62,12 @@ def get_webhook_manager() -> DiscordWebhookManager:
 class DiscordWebhookManager:
     """Manages per-channel webhooks and thread-to-Anima mappings."""
 
-    # Dedup: block identical content to same channel within this window
-    _DEDUP_TTL_SEC = 60.0
-    # Cross-channel dedup: block the same anima from sending the same body
-    # to *any* channel within this window. Guards against the LLM
-    # broadcasting one reply across every thread in its inbox.
-    _CROSS_DEDUP_TTL_SEC = 300.0
 
     def __init__(self) -> None:
         self._webhooks: dict[str, dict[str, str]] = {}  # channel_id → {id, token}
         self._thread_map: dict[str, dict[str, Any]] = {}  # message_id → {anima, ts}
         self._lock = threading.Lock()
         self._client: DiscordClient | None = None
-        # Dedup: (channel_id, anima_name, content_hash) → timestamp
-        self._recent_sends: dict[tuple[str, str, str], float] = {}
-        # Cross-channel dedup: (anima_name, content_hash) → timestamp
-        self._recent_bodies: dict[tuple[str, str], float] = {}
         self._load_persisted()
 
     def _ensure_client(self) -> DiscordClient:
@@ -156,51 +150,10 @@ class DiscordWebhookManager:
             content: Message text.
             thread_id: If set, post inside this thread (the thread's snowflake ID).
 
-        Returns the sent message ID (snowflake string), or empty string if
-        blocked by dedup.
+        Returns the sent message ID (snowflake string). If a recent identical
+        delivery is already confirmed, returns that existing message ID.
         """
-        import hashlib
-
-        now = time.monotonic()
-        content_hash = hashlib.md5(content.encode("utf-8", errors="replace")).hexdigest()[:16]
-        dedup_key = (channel_id, anima_name, content_hash)
-        # Cross-channel key: same anima + same body, regardless of channel.
-        # Short bodies (acks, pointers like "Answered in #xxx") are exempt to
-        # avoid blocking legitimate brief references.
-        cross_key = (anima_name, content_hash)
-        cross_eligible = len(content.strip()) >= 80
-
-        with self._lock:
-            # Evict stale entries
-            stale = [k for k, ts in self._recent_sends.items() if now - ts > self._DEDUP_TTL_SEC]
-            for k in stale:
-                del self._recent_sends[k]
-            stale_cross = [k for k, ts in self._recent_bodies.items() if now - ts > self._CROSS_DEDUP_TTL_SEC]
-            for k in stale_cross:
-                del self._recent_bodies[k]
-            # Check duplicate (same channel)
-            if dedup_key in self._recent_sends:
-                logger.info(
-                    "Dedup: blocking duplicate send to %s by %s (within %ds)",
-                    channel_id,
-                    anima_name,
-                    int(self._DEDUP_TTL_SEC),
-                )
-                return ""
-            # Check cross-channel duplicate (same body to any channel)
-            if cross_eligible and cross_key in self._recent_bodies:
-                logger.warning(
-                    "Cross-channel dedup: blocking %s from broadcasting identical "
-                    "body to channel %s (already posted within %ds)",
-                    anima_name,
-                    channel_id,
-                    int(self._CROSS_DEDUP_TTL_SEC),
-                )
-                return ""
-            self._recent_sends[dedup_key] = now
-            if cross_eligible:
-                self._recent_bodies[cross_key] = now
-
+        content_hash = _content_hash(content)
         client = self._ensure_client()
 
         try:
@@ -220,12 +173,29 @@ class DiscordWebhookManager:
             channel_id = parent_id
             wh_id, wh_token = self._get_or_create_webhook(channel_id)
 
+        existing_msg_id = self._lookup_recent_confirmed_outbound(
+            channel_id,
+            anima_name,
+            content_hash,
+            thread_id=thread_id,
+        )
+        if existing_msg_id:
+            logger.info(
+                "Skipping confirmed duplicate Discord webhook send: anima=%s channel=%s thread=%s id=%s",
+                anima_name,
+                channel_id,
+                thread_id or "",
+                existing_msg_id,
+            )
+            return existing_msg_id
+
         avatar_url = resolve_anima_icon_url(anima_name)
 
         # Split long messages
         chunks = _split_message(content)
         last_msg_id = ""
         last_i = len(chunks) - 1
+        recorded_after_error: set[str] = set()
 
         for i, chunk in enumerate(chunks):
             comp = components if (i == last_i and components) else None
@@ -257,23 +227,76 @@ class DiscordWebhookManager:
                     )
                     last_msg_id = str(result.get("id", ""))
                 else:
+                    confirmed_msg_id = self._confirm_recent_webhook_delivery(
+                        client,
+                        channel_id,
+                        anima_name,
+                        chunk,
+                        thread_id=thread_id,
+                    )
+                    if confirmed_msg_id:
+                        self.record_thread_mapping(
+                            confirmed_msg_id,
+                            anima_name,
+                            channel_id=channel_id,
+                            thread_id=thread_id,
+                            content_hash=content_hash,
+                            delivery_status="confirmed_after_error",
+                        )
+                        logger.warning(
+                            "Discord webhook send reported an error, but recent history confirms delivery: "
+                            "anima=%s channel=%s thread=%s id=%s error=%s",
+                            anima_name,
+                            channel_id,
+                            thread_id or "",
+                            confirmed_msg_id,
+                            exc,
+                        )
+                        last_msg_id = confirmed_msg_id
+                        recorded_after_error.add(confirmed_msg_id)
+                        continue
                     raise
 
         # Record thread mapping for reply routing
-        if last_msg_id:
-            self.record_thread_mapping(last_msg_id, anima_name)
+        if last_msg_id and last_msg_id not in recorded_after_error:
+            self.record_thread_mapping(
+                last_msg_id,
+                anima_name,
+                channel_id=channel_id,
+                thread_id=thread_id,
+                content_hash=content_hash,
+                delivery_status="confirmed",
+            )
 
         return last_msg_id
 
     # ── Thread-to-Anima mapping ──────────────────────────────
 
-    def record_thread_mapping(self, message_id: str, anima_name: str) -> None:
+    def record_thread_mapping(
+        self,
+        message_id: str,
+        anima_name: str,
+        *,
+        channel_id: str | None = None,
+        thread_id: str | None = None,
+        content_hash: str | None = None,
+        delivery_status: str | None = None,
+    ) -> None:
         """Record that a message was sent by an Anima for reply routing."""
+        entry: dict[str, Any] = {
+            "anima": anima_name,
+            "ts": time.time(),
+        }
+        if channel_id:
+            entry["channel_id"] = channel_id
+        if thread_id:
+            entry["thread_id"] = thread_id
+        if content_hash:
+            entry["content_hash"] = content_hash
+        if delivery_status:
+            entry["delivery_status"] = delivery_status
         with self._lock:
-            self._thread_map[message_id] = {
-                "anima": anima_name,
-                "ts": time.time(),
-            }
+            self._thread_map[message_id] = entry
         self._persist_thread_map()
 
     def lookup_thread_anima(self, message_id: str) -> str | None:
@@ -290,6 +313,73 @@ class DiscordWebhookManager:
             return entry["anima"]
 
     # ── Persistence ──────────────────────────────────────────
+
+    def _lookup_recent_confirmed_outbound(
+        self,
+        channel_id: str,
+        anima_name: str,
+        content_hash: str,
+        *,
+        thread_id: str | None = None,
+    ) -> str | None:
+        """Return a recent confirmed duplicate message ID, if one is known."""
+        now = time.time()
+        expected_thread = thread_id or ""
+        best_msg_id = ""
+        best_ts = 0.0
+        with self._lock:
+            for msg_id, entry in self._thread_map.items():
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("anima") != anima_name:
+                    continue
+                if entry.get("channel_id") != channel_id:
+                    continue
+                if (entry.get("thread_id") or "") != expected_thread:
+                    continue
+                if entry.get("content_hash") != content_hash:
+                    continue
+                if entry.get("delivery_status") not in {"confirmed", "confirmed_after_error"}:
+                    continue
+                ts = float(entry.get("ts") or 0)
+                if now - ts > _OUTBOUND_CONFIRM_TTL_SECONDS:
+                    continue
+                if ts > best_ts:
+                    best_msg_id = str(msg_id)
+                    best_ts = ts
+        return best_msg_id or None
+
+    def _confirm_recent_webhook_delivery(
+        self,
+        client: DiscordClient,
+        channel_id: str,
+        anima_name: str,
+        content: str,
+        *,
+        thread_id: str | None = None,
+    ) -> str | None:
+        """Check recent Discord history after an ambiguous send failure."""
+        history_channel = thread_id or channel_id
+        expected_hash = _content_hash(content)
+        now = time.time()
+        try:
+            messages = client.channel_history(history_channel, limit=_OUTBOUND_VERIFY_HISTORY_LIMIT)
+        except Exception:
+            logger.debug("Failed to verify recent Discord webhook delivery", exc_info=True)
+            return None
+
+        for message in messages:
+            if _content_hash(str(message.get("content") or "")) != expected_hash:
+                continue
+            if not _message_matches_anima(message, anima_name):
+                continue
+            msg_ts = _discord_timestamp_to_epoch(message.get("timestamp"))
+            if msg_ts is not None and abs(now - msg_ts) > _OUTBOUND_CONFIRM_TTL_SECONDS:
+                continue
+            msg_id = message.get("id")
+            if msg_id:
+                return str(msg_id)
+        return None
 
     def _webhooks_path(self) -> Path:
         return get_data_dir() / "run" / "discord_webhooks.json"
@@ -362,6 +452,32 @@ def _atomic_write_json(path: Path, data: Any) -> None:
         except OSError:
             pass
         raise
+
+
+def _content_hash(content: str) -> str:
+    normalized = " ".join(str(content).split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _message_matches_anima(message: dict[str, Any], anima_name: str) -> bool:
+    author = message.get("author")
+    if not isinstance(author, dict):
+        return False
+    username = str(author.get("username") or "")
+    global_name = str(author.get("global_name") or "")
+    return username == anima_name or global_name == anima_name
+
+
+def _discord_timestamp_to_epoch(value: Any) -> float | None:
+    if not value:
+        return None
+    try:
+        text = str(value)
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        return datetime.fromisoformat(text).timestamp()
+    except (TypeError, ValueError):
+        return None
 
 
 def _split_message(content: str) -> list[str]:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import ANY, patch
 
@@ -151,3 +152,86 @@ class TestDiscordWebhookManager:
             thread_id="thread-ch",
             components=None,
         )
+
+    @patch("core.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.discord_webhooks.DiscordClient")
+    def test_send_as_anima_skips_recent_confirmed_duplicate(
+        self,
+        MockClient,
+        _mock_cred,
+        mgr: DiscordWebhookManager,
+    ):
+        mock_client = MockClient.return_value
+        mock_client.list_webhooks.return_value = [
+            {"name": "AnimaWorks", "id": "wh1", "token": "tok1"},
+        ]
+        mock_client.execute_webhook.return_value = {"id": "msg123"}
+
+        first_id = mgr.send_as_anima("ch1", "sakura", "hello")
+        second_id = mgr.send_as_anima("ch1", "sakura", "hello")
+
+        assert first_id == "msg123"
+        assert second_id == "msg123"
+        mock_client.execute_webhook.assert_called_once()
+        assert mgr._thread_map["msg123"]["delivery_status"] == "confirmed"
+        assert mgr._thread_map["msg123"]["channel_id"] == "ch1"
+        assert mgr._thread_map["msg123"]["content_hash"]
+
+    @patch("core.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.discord_webhooks.DiscordClient")
+    def test_send_as_anima_skips_thread_channel_duplicate_after_parent_resolution(
+        self,
+        MockClient,
+        _mock_cred,
+        mgr: DiscordWebhookManager,
+    ):
+        mock_client = MockClient.return_value
+        mock_client.list_webhooks.side_effect = [
+            DiscordAPIError(404, "Unknown Channel"),
+            [{"name": "AnimaWorks", "id": "wh-parent", "token": "tok-parent"}],
+            DiscordAPIError(404, "Unknown Channel"),
+        ]
+        mock_client.create_webhook.side_effect = DiscordAPIError(404, "Unknown Channel")
+        mock_client.get_channel.return_value = {
+            "id": "thread-ch",
+            "type": 11,
+            "parent_id": "parent-ch",
+        }
+        mock_client.execute_webhook.return_value = {"id": "msg-thread"}
+
+        first_id = mgr.send_as_anima("thread-ch", "hikaru", "hello")
+        second_id = mgr.send_as_anima("thread-ch", "hikaru", "hello")
+
+        assert first_id == "msg-thread"
+        assert second_id == "msg-thread"
+        mock_client.execute_webhook.assert_called_once()
+        assert mgr._thread_map["msg-thread"]["channel_id"] == "parent-ch"
+        assert mgr._thread_map["msg-thread"]["thread_id"] == "thread-ch"
+
+    @patch("core.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.discord_webhooks.DiscordClient")
+    def test_send_as_anima_confirms_delivery_after_ambiguous_error(
+        self,
+        MockClient,
+        _mock_cred,
+        mgr: DiscordWebhookManager,
+    ):
+        mock_client = MockClient.return_value
+        mock_client.list_webhooks.return_value = [
+            {"name": "AnimaWorks", "id": "wh1", "token": "tok1"},
+        ]
+        mock_client.execute_webhook.side_effect = DiscordAPIError(0, "Webhook timeout")
+        mock_client.channel_history.return_value = [
+            {
+                "id": "msg-recovered",
+                "content": "hello",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "author": {"username": "sakura"},
+            }
+        ]
+
+        msg_id = mgr.send_as_anima("ch1", "sakura", "hello")
+
+        assert msg_id == "msg-recovered"
+        mock_client.channel_history.assert_called_once_with("ch1", limit=10)
+        assert mgr._thread_map["msg-recovered"]["delivery_status"] == "confirmed_after_error"
