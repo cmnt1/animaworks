@@ -728,7 +728,7 @@
 
 .governor-row {
   display: grid;
-  grid-template-columns: 7.25rem minmax(0, 1fr);
+  grid-template-columns: 6.1rem minmax(0, 1fr);
   align-items: baseline;
   column-gap: 6px;
   row-gap: 2px;
