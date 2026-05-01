@@ -729,6 +729,7 @@ class TestResolveExecutionModeWildcard:
         assert resolve_execution_mode(config, "zai/zai-model") == "A"
         assert resolve_execution_mode(config, "minimax/some-model") == "A"
         assert resolve_execution_mode(config, "moonshot/kimi") == "A"
+        assert resolve_execution_mode(config, "opencode-go/glm-5.1") == "A"
 
     def test_openai_codex_provider_routes_to_c(self):
         config = AnimaWorksConfig()
