@@ -11,8 +11,6 @@ from typing import Any
 from uuid import uuid4
 
 from benchmarks.locomo.adapter import (
-    _build_episode_markdown,
-    _episode_stem_for_sample,
     _resolve_llm_kwargs,
     _session_indices,
 )
