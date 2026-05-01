@@ -79,7 +79,6 @@ DEFAULT_POLICY: dict[str, Any] = {
     "enabled": True,
     "check_interval_seconds": 120,
     "hard_floor_pct": 15,  # absolute minimum remaining % for any window
-    "background_fallback_below": 15,  # remaining% threshold for background_model fallback
     "providers": {
         "claude": {
             "five_hour": {
@@ -153,7 +152,6 @@ class GovernorState:
         self.governor_activity_level_by_provider: dict[str, int | None] = {}
         self.front_activity_level_by_provider: dict[str, int | None] = {}
         self.background_activity_level_by_provider: dict[str, int | None] = {}
-        self.background_fallback_providers: list[str] = []  # providers needing bg fallback
         self._relogin_timestamps: dict[str, list[float]] = {}
         self._relogin_cooldown_until: dict[str, float] = {}
         self._load()
@@ -210,7 +208,6 @@ class GovernorState:
                 }
             else:
                 self.background_activity_level_by_provider = dict(self.governor_activity_level_by_provider)
-            self.background_fallback_providers = data.get("background_fallback_providers", []) or []
         except Exception:
             logger.debug("Failed to load governor state", exc_info=True)
 
@@ -222,7 +219,6 @@ class GovernorState:
             "governor_activity_level_by_provider": self.governor_activity_level_by_provider,
             "front_activity_level_by_provider": self.front_activity_level_by_provider,
             "background_activity_level_by_provider": self.background_activity_level_by_provider,
-            "background_fallback_providers": self.background_fallback_providers,
         }
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -245,7 +241,7 @@ class GovernorState:
             for lvl in activity_map.values()
         )
         return (
-            bool(self.suspended_animas) or bool(self.reason) or throttling or bool(self.background_fallback_providers)
+            bool(self.suspended_animas) or bool(self.reason) or throttling
         )
 
 
@@ -328,31 +324,77 @@ def ensure_policy_file(data_dir: Path) -> None:
 # ── Credential resolution ───────────────────────────────────────────────────
 
 
-def _read_anima_credential(animas_dir: Path, name: str) -> str:
-    """Read the ``credential`` field from an anima's status.json."""
+def _model_to_provider(model_name: str | None) -> str | None:
+    """Map a model name to a policy provider key when credential is absent."""
+    if not model_name:
+        return None
+    if model_name.startswith("claude-") or model_name.startswith("anthropic/"):
+        return "claude"
+    if model_name.startswith("openai/") or model_name.startswith("codex/"):
+        return "openai"
+    if model_name.startswith("nanogpt/"):
+        return "nanogpt"
+    if model_name.startswith("opencode-go/"):
+        return "opencode_go"
+    return None
+
+
+def _read_anima_status(animas_dir: Path, name: str) -> dict[str, Any]:
+    """Read an anima's status.json."""
     status = animas_dir / name / "status.json"
     if not status.is_file():
-        return ""
+        return {}
     try:
-        data = json.loads(status.read_text("utf-8"))
-        return data.get("credential", "")
+        data = json.loads(status.read_text("utf-8-sig"))
+        return data if isinstance(data, dict) else {}
     except Exception:
-        return ""
+        return {}
+
+
+def _read_anima_credential(animas_dir: Path, name: str) -> str:
+    """Read the ``credential`` field from an anima's status.json."""
+    return str(_read_anima_status(animas_dir, name).get("credential", "") or "")
+
+
+def _providers_for_anima(animas_dir: Path, name: str) -> set[str]:
+    """Return provider keys used by either front or background model.
+
+    The process-level suspend switch cannot pause only FR or only BG work, so
+    an Anima belongs to both providers when they differ. If either provider
+    crosses suspend thresholds, the whole Anima is suspended.
+    """
+    data = _read_anima_status(animas_dir, name)
+    providers: set[str] = set()
+
+    front_provider = _CREDENTIAL_TO_PROVIDER.get(str(data.get("credential", "") or ""))
+    if front_provider:
+        providers.add(front_provider)
+
+    bg_provider = _CREDENTIAL_TO_PROVIDER.get(str(data.get("background_credential", "") or ""))
+    if bg_provider is None:
+        bg_provider = _model_to_provider(data.get("background_model"))
+    if bg_provider:
+        providers.add(bg_provider)
+
+    if not providers:
+        providers.add("local")
+    return providers
 
 
 def _classify_animas(
     animas_dir: Path,
     anima_names: list[str],
 ) -> dict[str, list[str]]:
-    """Group anima names by their policy provider key.
+    """Group anima names by the policy provider keys they use.
 
-    Returns e.g. ``{"claude": ["alice"], "openai": ["bob"], "local": ["eve"]}``.
+    An Anima may appear in two groups when its front and background providers
+    differ. This makes suspend thresholds process-wide: if either FR or BG
+    provider crosses a suspend threshold, the Anima is stopped.
     """
     groups: dict[str, list[str]] = {}
     for name in anima_names:
-        cred = _read_anima_credential(animas_dir, name)
-        provider = _CREDENTIAL_TO_PROVIDER.get(cred, "local")
-        groups.setdefault(provider, []).append(name)
+        for provider in sorted(_providers_for_anima(animas_dir, name)):
+            groups.setdefault(provider, []).append(name)
     return groups
 
 
@@ -703,10 +745,8 @@ class UsageGovernor:
         all_suspend: list[str] = []
         reasons: list[str] = []
         level_by_provider: dict[str, int | None] = {}
-        fallback_providers: list[str] = []
-        fallback_below = policy.get("background_fallback_below", 15)
-
-        # Evaluate all cloud providers (fallback works on any, even with no animas using it)
+        # Evaluate all cloud providers, including providers with no currently
+        # running animas so their activity level remains visible to readers.
         for provider_key in ("claude", "openai", "nanogpt", "opencode_go"):
             provider_animas = groups.get(provider_key, [])
 
@@ -732,10 +772,6 @@ class UsageGovernor:
             # Record this provider's activity level (throttles only animas
             # whose main credential matches this provider)
             level_by_provider[provider_key] = level
-
-            # Background model fallback: provider is tight but not yet suspend-critical
-            if remaining < fallback_below:
-                fallback_providers.append(provider_key)
 
             if provider_animas:
                 to_suspend = _animas_to_suspend(remaining, policy, provider_animas)
@@ -774,24 +810,12 @@ class UsageGovernor:
             )
             state_changed = True
 
-        # Apply background_model fallback (per-provider list)
-        prev_fallback = set(self._state.background_fallback_providers)
-        new_fallback = set(fallback_providers)
-        if prev_fallback != new_fallback:
-            self._state.background_fallback_providers = sorted(new_fallback)
-            logger.info(
-                "Governor: background_fallback %s → %s",
-                sorted(prev_fallback),
-                sorted(new_fallback),
-            )
-            state_changed = True
-
         if state_changed:
             await self._broadcast_reschedule()
 
         self._state.reason = " | ".join(reasons) if reasons else ""
         throttling = any(lvl is not None and lvl < 100 for lvl in level_by_provider.values())
-        active = throttling or bool(new_fallback)
+        active = throttling
         if all_suspend and not self._state.since:
             self._state.since = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         elif not all_suspend and not active:

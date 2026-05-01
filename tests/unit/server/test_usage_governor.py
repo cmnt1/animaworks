@@ -10,13 +10,22 @@ from server import usage_governor
 from server.usage_governor import DEFAULT_POLICY, UsageGovernor, _classify_animas, _evaluate_time_proportional
 
 
-def _write_status(animas_dir, name: str, credential: str) -> None:
+def _write_status(
+    animas_dir,
+    name: str,
+    credential: str,
+    *,
+    background_credential: str | None = None,
+    background_model: str | None = None,
+) -> None:
     anima_dir = animas_dir / name
     anima_dir.mkdir(parents=True, exist_ok=True)
-    (anima_dir / "status.json").write_text(
-        json.dumps({"credential": credential}),
-        encoding="utf-8",
-    )
+    data = {"credential": credential}
+    if background_credential is not None:
+        data["background_credential"] = background_credential
+    if background_model is not None:
+        data["background_model"] = background_model
+    (anima_dir / "status.json").write_text(json.dumps(data), encoding="utf-8")
 
 
 def test_time_proportional_room_uses_usage_remaining_over_time_remaining(monkeypatch):
@@ -153,6 +162,24 @@ def test_classify_animas_maps_opencode_go(tmp_path):
     assert groups == {"opencode_go": ["go-anima"]}
 
 
+def test_classify_animas_includes_front_and_background_providers(tmp_path):
+    animas_dir = tmp_path / "animas"
+    _write_status(
+        animas_dir,
+        "mixed-anima",
+        "anthropic",
+        background_credential="opencode-go",
+        background_model="opencode-go/deepseek-v4-flash",
+    )
+
+    groups = _classify_animas(animas_dir, ["mixed-anima"])
+
+    assert groups == {
+        "claude": ["mixed-anima"],
+        "opencode_go": ["mixed-anima"],
+    }
+
+
 @pytest.mark.asyncio
 async def test_tick_keeps_suspended_anima_when_usage_fetch_fails(tmp_path, monkeypatch):
     data_dir = tmp_path / "data"
@@ -188,6 +215,78 @@ async def test_tick_keeps_suspended_anima_when_usage_fetch_fails(tmp_path, monke
     assert "claude usage unavailable" in governor.state.reason
     supervisor.start_anima.assert_not_called()
     supervisor.stop_anima.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_tick_suspends_anima_when_background_provider_hits_threshold(tmp_path, monkeypatch):
+    data_dir = tmp_path / "data"
+    animas_dir = tmp_path / "animas"
+    _write_status(
+        animas_dir,
+        "alice",
+        "anthropic",
+        background_credential="opencode-go",
+        background_model="opencode-go/deepseek-v4-flash",
+    )
+
+    supervisor = SimpleNamespace(
+        processes={"alice": object()},
+        start_anima=AsyncMock(),
+        stop_anima=AsyncMock(),
+    )
+    app = SimpleNamespace(state=SimpleNamespace(supervisor=supervisor))
+    governor = UsageGovernor(app, data_dir, animas_dir)
+
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_claude_usage",
+        lambda **kwargs: {
+            "provider": "claude",
+            "five_hour": {
+                "remaining": 80,
+                "resets_at": 4102444800,
+                "window_seconds": 18000,
+            },
+            "seven_day": {
+                "remaining": 80,
+                "resets_at": 4102444800,
+                "window_seconds": 604800,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_openai_usage",
+        lambda **kwargs: {"provider": "openai"},
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_nanogpt_usage",
+        lambda **kwargs: {"provider": "nanogpt"},
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_opencode_go_usage",
+        lambda **kwargs: {
+            "provider": "opencode_go",
+            "5h": {
+                "remaining": 80,
+                "resets_at": 4102444800,
+                "window_seconds": 18000,
+            },
+            "Week": {
+                "remaining": 80,
+                "resets_at": 4102444800,
+                "window_seconds": 604800,
+            },
+            "Month": {
+                "remaining": 10,
+                "resets_at": 4102444800,
+                "window_seconds": 2592000,
+            },
+        },
+    )
+
+    await governor._tick(DEFAULT_POLICY)
+
+    assert governor.state.suspended_animas == ["alice"]
+    supervisor.stop_anima.assert_awaited_once_with("alice")
 
 
 @pytest.mark.asyncio

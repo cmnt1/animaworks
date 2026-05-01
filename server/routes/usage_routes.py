@@ -1044,7 +1044,6 @@ def create_usage_router() -> APIRouter:
                 "activity_level_by_provider": st.governor_activity_level_by_provider,
                 "front_activity_level_by_provider": st.front_activity_level_by_provider,
                 "background_activity_level_by_provider": st.background_activity_level_by_provider,
-                "background_fallback_providers": st.background_fallback_providers,
             }
         # Auth alerts from executor-detected failures
         try:

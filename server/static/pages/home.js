@@ -736,18 +736,6 @@ function _renderGovernor(gov) {
       </div>`;
   }
 
-  // Background model fallback
-  const fbProviders = gov.background_fallback_providers || [];
-  if (fbProviders.length > 0) {
-    const FB_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT", opencode_go: "OpenCode Go" };
-    const providerList = fbProviders.map((p) => FB_LABELS[p] || p).join(", ");
-    rowsHtml += `
-      <div class="governor-row">
-        <span class="governor-provider">BG Fallback:</span>
-        <span class="governor-row-reason">${escapeHtml(providerList)} 枯渇 → background_modelをcredentialの軽量モデルに切替中</span>
-      </div>`;
-  }
-
   el.style.display = "block";
   el.innerHTML = `
     <div class="governor-bar governor-bar--active">

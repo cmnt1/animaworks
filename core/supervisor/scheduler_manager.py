@@ -151,24 +151,6 @@ def _read_governor_background_activity_level(anima_dir: Path | None = None) -> i
     return _level_for_provider(_read_activity_map(data, "background_activity_level_by_provider"), provider)
 
 
-def _read_governor_fallback_providers() -> list[str]:
-    """Read ``background_fallback_providers`` from usage_governor_state.json.
-
-    Returns provider keys (``claude``/``openai``/``nanogpt``/``opencode_go``) whose background
-    models should be swapped to the Anima's credential fallback model.
-    """
-    from core.paths import get_data_dir
-
-    state_path = get_data_dir() / "usage_governor_state.json"
-    if not state_path.is_file():
-        return []
-    try:
-        data = json.loads(state_path.read_text("utf-8"))
-        return data.get("background_fallback_providers", []) or []
-    except Exception:
-        return []
-
-
 def _model_to_governor_provider(model_name: str | None) -> str | None:
     """Map a model name to the Governor provider key used by usage policy.
 
@@ -188,35 +170,6 @@ def _model_to_governor_provider(model_name: str | None) -> str | None:
     if model_name.startswith("opencode-go/"):
         return "opencode_go"
     return None
-
-
-# Per-credential lightweight fallback model used when the Anima's
-# background_model provider is depleted (Governor-driven).
-_CREDENTIAL_FALLBACK_BACKGROUND: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-6",
-    "openai": "openai/gpt-4.1-mini",
-    "nanogpt": "qwen/qwen3.5-9b",
-    "opencode-go": "opencode-go/deepseek-v4-flash",
-}
-
-
-def resolve_background_fallback_model(credential_name: str, config: Any | None = None) -> str | None:
-    """Return a background fallback model compatible with *credential_name*.
-
-    The ``openai`` credential may be a Codex login rather than an API key.
-    LiteLLM cannot use that login for ``openai/*`` models, so use a
-    ``codex/*`` model in that case.
-    """
-    if credential_name == "openai":
-        if config is None:
-            try:
-                config = load_config()
-            except Exception:
-                config = None
-        credential = getattr(config, "credentials", {}).get("openai") if config is not None else None
-        if getattr(credential, "type", "") == "codex_login":
-            return "codex/gpt-5.4-mini"
-    return _CREDENTIAL_FALLBACK_BACKGROUND.get(credential_name)
 
 
 def resolve_user_activity_level(config, anima_dir: Path) -> int:
