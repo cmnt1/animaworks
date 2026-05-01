@@ -304,7 +304,7 @@ function _fmtRemainLine(fc) {
   const unit = isHours ? "h" : "d";
   // 残り予算をウィンドウの時間比に直接変換（線形比例）
   const remainTime = fc.remainPct * windowUnits / 100;
-  const timeToReset = Math.min(fc.daysToResetRaw * (isHours ? 24 : 1), windowUnits);
+  const timeToReset = fc.daysToResetRaw * (isHours ? 24 : 1);
   const remainTimeStr = `${remainTime.toFixed(1)}${unit}`;
   const timeToResetStr = `${timeToReset.toFixed(1)}${unit}`;
   const remainTimePct = `${(fc.remainPct).toFixed(0)}%`;
