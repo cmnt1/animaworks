@@ -14,6 +14,7 @@ import structlog
 
 from core.logging_config import (
     DailyAnimaFileHandler,
+    WindowsSafeRotatingFileHandler,
     get_request_id,
     set_request_id,
     setup_logging,
@@ -68,7 +69,7 @@ class TestSetupLogging:
         assert len(root.handlers) == 2
         handler_types = [type(h).__name__ for h in root.handlers]
         assert "StreamHandler" in handler_types
-        assert "RotatingFileHandler" in handler_types
+        assert "WindowsSafeRotatingFileHandler" in handler_types
 
     def test_with_file_handler_plain(self, tmp_path):
         setup_logging(level="WARNING", log_dir=tmp_path, json_file=False)
@@ -168,3 +169,32 @@ class TestDailyAnimaFileHandler:
         assert (tmp_path / "20260501.log").read_text(encoding="utf-8").strip() == "after"
         assert not (tmp_path / "20260430.log.20260430.log").exists()
         assert (tmp_path / "current.log").exists()
+
+
+class TestWindowsSafeRotatingFileHandler:
+    def test_blocked_rollover_keeps_writing_to_active_log(self, tmp_path):
+        log_file = tmp_path / "animaworks.log"
+        log_file.write_text("existing\n", encoding="utf-8")
+
+        handler = WindowsSafeRotatingFileHandler(
+            log_file,
+            maxBytes=1,
+            backupCount=1,
+            encoding="utf-8",
+            rollover_retry_interval=60.0,
+        )
+        handler.setFormatter(logging.Formatter("%(message)s"))
+
+        try:
+            with patch.object(handler, "doRollover", side_effect=PermissionError("locked")) as rollover:
+                handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "first", (), None))
+                handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "second", (), None))
+        finally:
+            handler.close()
+
+        assert rollover.call_count == 1
+        assert log_file.read_text(encoding="utf-8").splitlines() == [
+            "existing",
+            "first",
+            "second",
+        ]

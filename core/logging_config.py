@@ -20,6 +20,7 @@ Provides:
 from __future__ import annotations
 
 import logging
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -58,6 +59,52 @@ def _build_shared_processors() -> list:
 
 
 # ── Main Setup ─────────────────────────────────────────────────
+
+
+class WindowsSafeRotatingFileHandler(RotatingFileHandler):
+    """RotatingFileHandler that keeps logging if Windows blocks rollover.
+
+    On Windows, renaming the active log file fails while another process is
+    reading it (for example, a log tailer or the web log stream). The standard
+    handler reports that as a logging error on every emit once the size limit is
+    reached. This handler backs off rollover retries and appends to the active
+    file until rotation can succeed.
+    """
+
+    def __init__(
+        self,
+        *args,
+        rollover_retry_interval: float = 60.0,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.rollover_retry_interval = rollover_retry_interval
+        self._rollover_blocked_until = 0.0
+
+    @staticmethod
+    def _is_windows_file_lock(exc: OSError) -> bool:
+        return isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 32
+
+    def _recover_after_blocked_rollover(self) -> None:
+        self._rollover_blocked_until = time.monotonic() + self.rollover_retry_interval
+        if self.stream is None:
+            self.stream = self._open()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if self.shouldRollover(record):
+                if time.monotonic() >= self._rollover_blocked_until:
+                    try:
+                        self.doRollover()
+                        self._rollover_blocked_until = 0.0
+                    except OSError as exc:
+                        if not self._is_windows_file_lock(exc):
+                            raise
+                        self._recover_after_blocked_rollover()
+
+            logging.FileHandler.emit(self, record)
+        except Exception:
+            self.handleError(record)
 
 
 def setup_logging(
@@ -151,7 +198,7 @@ def setup_logging(
                 foreign_pre_chain=foreign_pre_chain,
             )
 
-        file_handler = RotatingFileHandler(
+        file_handler = WindowsSafeRotatingFileHandler(
             log_path,
             maxBytes=10 * 1024 * 1024,  # 10 MB
             backupCount=5,
