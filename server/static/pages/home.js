@@ -229,7 +229,15 @@ function _calcTimePct(resetAt, windowSeconds) {
   return Math.min(pct, 100);
 }
 
-function _usageForecast(utilization, resetAt, windowSeconds) {
+function _currentJstMonthSeconds() {
+  const jstNow = new Date(Date.now() + 9 * 3600000);
+  const year = jstNow.getUTCFullYear();
+  const month = jstNow.getUTCMonth();
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return daysInMonth * 86400;
+}
+
+function _usageForecast(utilization, resetAt, windowSeconds, displayWindowSecondsOverride = null) {
   if (!resetAt || !windowSeconds) return null;
   const resetMs = (typeof resetAt === "number")
     ? (resetAt < 1e12 ? resetAt * 1000 : resetAt)
@@ -237,7 +245,8 @@ function _usageForecast(utilization, resetAt, windowSeconds) {
   if (isNaN(resetMs)) return null;
 
   const now = Date.now();
-  const windowMs = windowSeconds * 1000;
+  const displayWindowSeconds = displayWindowSecondsOverride ?? Math.max(windowSeconds, (resetMs - now) / 1000);
+  const windowMs = displayWindowSeconds * 1000;
   const windowStartMs = resetMs - windowMs;
   const elapsedMs = now - windowStartMs;
 
@@ -248,7 +257,6 @@ function _usageForecast(utilization, resetAt, windowSeconds) {
   const remain = Math.max(0, 100 - used);
   const timePct = Math.min((msToReset / windowMs) * 100, 100);
   const daysToReset = msToReset / 86400000;
-  const displayWindowSeconds = Math.max(windowSeconds, msToReset / 1000);
 
   if (elapsedMs <= 0) {
     return { runway: "", daysToReset, landing: `${remain.toFixed(1)}%`, label: "", noRunway: true,
@@ -323,7 +331,7 @@ function _fmtRemainLine(fc) {
     + `<b>${remainTimeStr}</b> (${remainTimePct}) / <b>${timeToResetStr}</b> (${timeToResetPct}) ${deltaStr}</span>`;
 }
 
-function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
+function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWindowSeconds = null) {
   const resetMs = resetAt
     ? (typeof resetAt === "number" ? (resetAt < 1e12 ? resetAt * 1000 : resetAt) : new Date(resetAt).getTime())
     : 0;
@@ -334,7 +342,7 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
   const resetStr = resetInPast ? "" : (resetAt ? _resetToJst(resetAt) : "");
 
   // Time-proportional marker — shown on ALL windows (5h and 7d)
-  const timePct = _calcTimePct(resetAt, windowSeconds);
+  const timePct = _calcTimePct(resetAt, displayWindowSeconds ?? windowSeconds);
   const color = _remainingColor(remaining, timePct);
   let markerHtml = "";
   if (timePct !== null && windowSeconds) {
@@ -353,7 +361,7 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
 
   // Forecast: Runway + 着地予測
   let forecastHtml = "";
-  const fc = resetInPast ? null : _usageForecast(utilization, resetAt, windowSeconds);
+  const fc = resetInPast ? null : _usageForecast(utilization, resetAt, windowSeconds, displayWindowSeconds);
   if (fc) {
     forecastHtml = `<div class="usage-forecast">`;
     // Line 1: 残り Xd (YY%) / Zd (AA%) ▲delta
@@ -606,7 +614,8 @@ function _renderOpencodeGoUsage(data) {
     if (!win || typeof win !== "object" || win.utilization === undefined) continue;
     const resetAt = win.resets_at ?? (typeof win.reset_in_sec === "number" ? (Date.now() / 1000) + win.reset_in_sec : null);
     const windowSeconds = win.window_seconds ?? windowSecondsByKey[key];
-    html += _renderUsageBar(key, win.utilization, resetAt, windowSeconds);
+    const displayWindowSeconds = key === "Month" ? _currentJstMonthSeconds() : null;
+    html += _renderUsageBar(key, win.utilization, resetAt, windowSeconds, displayWindowSeconds);
   }
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
