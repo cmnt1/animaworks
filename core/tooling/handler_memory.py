@@ -191,12 +191,21 @@ class MemoryToolsMixin:
         except Exception:
             return False
 
-    def _search_via_neo4j(self, query: str, scope: str, offset: int) -> str | None:
+    def _search_via_neo4j(
+        self,
+        query: str,
+        scope: str,
+        offset: int,
+        *,
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> str | None:
         """Execute search via Neo4j backend, returning formatted string or None on failure."""
         import asyncio
 
         neo4j_scope = self._NEO4J_SCOPE_MAP.get(scope, "all")
         limit = 10
+        as_of_time = time_end
 
         try:
             backend = self._memory.memory_backend
@@ -212,10 +221,26 @@ class MemoryToolsMixin:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                     memories = pool.submit(
                         asyncio.run,
-                        backend.retrieve(query, scope=neo4j_scope, limit=limit + offset),
+                        backend.retrieve(
+                            query,
+                            scope=neo4j_scope,
+                            limit=limit + offset,
+                            time_start=time_start,
+                            time_end=time_end,
+                            as_of_time=as_of_time,
+                        ),
                     ).result(timeout=30)
             else:
-                memories = asyncio.run(backend.retrieve(query, scope=neo4j_scope, limit=limit + offset))
+                memories = asyncio.run(
+                    backend.retrieve(
+                        query,
+                        scope=neo4j_scope,
+                        limit=limit + offset,
+                        time_start=time_start,
+                        time_end=time_end,
+                        as_of_time=as_of_time,
+                    )
+                )
 
             if offset:
                 memories = memories[offset:]
@@ -299,13 +324,28 @@ class MemoryToolsMixin:
         scope = args.get("scope", "all")
         query = args.get("query", "")
         offset = int(args.get("offset", 0))
+        time_range = args.get("time_range") or {}
+        if not isinstance(time_range, dict):
+            time_range = {}
+        time_start = time_range.get("after") if time_range else None
+        time_end = time_range.get("before") if time_range else None
+        if time_start is not None and not isinstance(time_start, str):
+            time_start = str(time_start)
+        if time_end is not None and not isinstance(time_end, str):
+            time_end = str(time_end)
 
         # If the query seems to be about a registered Anima, redirect immediately.
         anima_hint = self._anima_search_hint(query)
 
         # Neo4j backend: delegate to HybridSearch for eligible scopes
         if self._should_use_neo4j(scope):
-            neo4j_result = self._search_via_neo4j(query, scope, offset)
+            neo4j_result = self._search_via_neo4j(
+                query,
+                scope,
+                offset,
+                time_start=time_start,
+                time_end=time_end,
+            )
             if neo4j_result is not None:
                 if not neo4j_result and anima_hint:
                     return f"No results for '{query}'\n\n{anima_hint}"

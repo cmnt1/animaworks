@@ -43,7 +43,15 @@ FACT_USER = """## Text
 Choose the most appropriate type from the list below. Use "RELATES_TO" if none fits.
 {edge_types_list}
 
+## Reference time (reference_time)
+{reference_time}
+
 ## Instructions
+For each fact, estimate when that fact became valid in the real world (valid_at):
+- If the text states an explicit date or time, use it
+- Resolve relative phrases like "yesterday" or "last week" using reference_time as the anchor
+- If unclear, use reference_time unchanged (output as ISO 8601)
+
 Extract relationships (facts) between the entities above and return them in the following JSON format. Return an empty list if no relationships are found.
 
 ```json

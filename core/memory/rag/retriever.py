@@ -324,16 +324,26 @@ class MemoryRetriever:
 
         for result in results:
             # --- Temporal decay ---
-            updated_at_str = result.metadata.get("updated_at")
-            if not updated_at_str:
-                decay_factor = 0.5
-            else:
+            # Prefer valid_at (event time) over updated_at (file modification time)
+            valid_at_raw = result.metadata.get("valid_at")
+            if valid_at_raw is not None:
                 try:
-                    updated_at = ensure_aware(datetime.fromisoformat(str(updated_at_str)))
-                    age_days = (now - updated_at).total_seconds() / 86400.0
+                    valid_at_ts = float(valid_at_raw)
+                    age_days = (now.timestamp() - valid_at_ts) / 86400.0
                     decay_factor = 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
                 except (ValueError, TypeError):
                     decay_factor = 0.5
+            else:
+                updated_at_str = result.metadata.get("updated_at")
+                if not updated_at_str:
+                    decay_factor = 0.5
+                else:
+                    try:
+                        updated_at = ensure_aware(datetime.fromisoformat(str(updated_at_str)))
+                        age_days = (now - updated_at).total_seconds() / 86400.0
+                        decay_factor = 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
+                    except (ValueError, TypeError):
+                        decay_factor = 0.5
 
             recency_score = WEIGHT_RECENCY * decay_factor
             result.score = result.score + recency_score

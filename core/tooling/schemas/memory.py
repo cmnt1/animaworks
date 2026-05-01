@@ -44,6 +44,20 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
                     "type": "integer",
                     "description": "Pagination offset (0=first page, 10=second page, max 50)",
                 },
+                "time_range": {
+                    "type": "object",
+                    "properties": {
+                        "after": {
+                            "type": "string",
+                            "description": "Start date (ISO format, e.g. '2026-04-01'). Results after this date.",
+                        },
+                        "before": {
+                            "type": "string",
+                            "description": "End date (ISO format, e.g. '2026-04-30'). Results before this date.",
+                        },
+                    },
+                    "description": "Optional temporal filter. Restricts results to a date range.",
+                },
             },
             "required": ["query"],
         },

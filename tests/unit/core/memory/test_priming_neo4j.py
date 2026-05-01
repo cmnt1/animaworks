@@ -40,7 +40,15 @@ class _StubBackend(MemoryBackend):
         return 0
 
     async def retrieve(
-        self, query: str, *, scope: str, limit: int = 10, min_score: float = 0.0
+        self,
+        query: str,
+        *,
+        scope: str,
+        limit: int = 10,
+        min_score: float = 0.0,
+        as_of_time: str | None = None,
+        time_start: str | None = None,
+        time_end: str | None = None,
     ) -> list[RetrievedMemory]:
         return []
 

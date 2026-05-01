@@ -236,7 +236,7 @@ class CommsToolsMixin:
                 ts_short = e.ts[11:16] if len(e.ts) >= 16 else e.ts
                 preview = (e.summary or e.content or "")[:80]
                 if preview.startswith(f"→ {to}: "):
-                    preview = preview[len(f"→ {to}: "):]
+                    preview = preview[len(f"→ {to}: ") :]
                 lines.append(f"  {ts_short} {preview}")
             return "\n".join(lines)
         except Exception:

@@ -191,6 +191,7 @@ MATCH (s:Entity)-[r:RELATES_TO]->(t:Entity)
 WHERE r.group_id = $group_id
   AND (r.invalid_at IS NULL OR r.invalid_at > datetime($as_of_time))
   AND (r.expired_at IS NULL OR r.expired_at > datetime($as_of_time))
+  AND (r.valid_at IS NULL OR r.valid_at <= datetime($as_of_time))
 RETURN r.uuid AS uuid, r.fact AS fact,
        s.name AS source_name, t.name AS target_name,
        toString(r.valid_at) AS valid_at,
@@ -209,6 +210,7 @@ WHERE relationship.group_id = $group_id
   AND relationship.deleted_at IS NULL
   AND (relationship.invalid_at IS NULL OR relationship.invalid_at > datetime($as_of_time))
   AND (relationship.expired_at IS NULL OR relationship.expired_at > datetime($as_of_time))
+  AND (relationship.valid_at IS NULL OR relationship.valid_at <= datetime($as_of_time))
 WITH relationship AS r, score,
      startNode(relationship) AS s, endNode(relationship) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
@@ -229,6 +231,19 @@ CALL db.index.vector.queryNodes('episode_content_embedding', $top_k, $embedding)
 YIELD node, score
 WHERE node.group_id = $group_id
   AND node.deleted_at IS NULL
+  AND (node.valid_at IS NULL OR node.valid_at <= datetime($as_of_time))
+RETURN node.uuid AS uuid, node.content AS content, node.source AS source,
+       toString(node.valid_at) AS valid_at, score
+"""
+
+VECTOR_SEARCH_EPISODES_TEMPORAL = """
+CALL db.index.vector.queryNodes('episode_content_embedding', $top_k, $embedding)
+YIELD node, score
+WHERE node.group_id = $group_id
+  AND node.deleted_at IS NULL
+  AND (node.valid_at IS NULL OR node.valid_at <= datetime($as_of_time))
+  AND ($time_start IS NULL OR node.valid_at >= datetime($time_start))
+  AND ($time_end IS NULL OR node.valid_at <= datetime($time_end))
 RETURN node.uuid AS uuid, node.content AS content, node.source AS source,
        toString(node.valid_at) AS valid_at, score
 """
@@ -240,6 +255,7 @@ WHERE relationship.group_id = $group_id
   AND relationship.deleted_at IS NULL
   AND (relationship.invalid_at IS NULL OR relationship.invalid_at > datetime($as_of_time))
   AND (relationship.expired_at IS NULL OR relationship.expired_at > datetime($as_of_time))
+  AND (relationship.valid_at IS NULL OR relationship.valid_at <= datetime($as_of_time))
 WITH relationship AS r, score,
      startNode(relationship) AS s, endNode(relationship) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
@@ -264,6 +280,7 @@ WHERE r.group_id = $group_id
   AND r.deleted_at IS NULL
   AND (r.invalid_at IS NULL OR r.invalid_at > datetime($as_of_time))
   AND (r.expired_at IS NULL OR r.expired_at > datetime($as_of_time))
+  AND (r.valid_at IS NULL OR r.valid_at <= datetime($as_of_time))
 WITH r, startNode(r) AS s, endNode(r) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
        toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type
@@ -287,6 +304,7 @@ WHERE r.group_id = $group_id
   AND r.deleted_at IS NULL
   AND (r.invalid_at IS NULL OR r.invalid_at > datetime($as_of_time))
   AND (r.expired_at IS NULL OR r.expired_at > datetime($as_of_time))
+  AND (r.valid_at IS NULL OR r.valid_at <= datetime($as_of_time))
 WITH r, startNode(r) AS s, endNode(r) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
        toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type

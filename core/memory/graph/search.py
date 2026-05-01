@@ -47,6 +47,8 @@ class HybridSearch:
         scope: str = "fact",
         limit: int = 10,
         as_of_time: str | None = None,
+        time_start: str | None = None,
+        time_end: str | None = None,
         query_embedding: list[float] | None = None,
         edge_type_filter: str | None = None,
     ) -> list[dict]:
@@ -57,6 +59,8 @@ class HybridSearch:
             scope: "fact", "entity", or "episode".
             limit: Max results to return.
             as_of_time: ISO datetime for temporal filter (default: now).
+            time_start: Optional ISO lower ``valid_at`` bound for episode vector search.
+            time_end: Optional ISO upper ``valid_at`` bound for episode vector search.
             query_embedding: Pre-computed query embedding for vector search.
             edge_type_filter: If set, only return facts with this edge_type.
                 Only applies when scope is "fact" or "all".
@@ -71,9 +75,29 @@ class HybridSearch:
             as_of_time = datetime.now(tz=UTC).isoformat()
 
         results = await asyncio.gather(
-            self._vector_search(query, scope, as_of_time, query_embedding),
-            self._fulltext_search(query, scope, as_of_time),
-            self._bfs_search(query, scope, as_of_time, query_embedding),
+            self._vector_search(
+                query,
+                scope,
+                as_of_time,
+                query_embedding,
+                time_start=time_start,
+                time_end=time_end,
+            ),
+            self._fulltext_search(
+                query,
+                scope,
+                as_of_time,
+                time_start=time_start,
+                time_end=time_end,
+            ),
+            self._bfs_search(
+                query,
+                scope,
+                as_of_time,
+                query_embedding,
+                time_start=time_start,
+                time_end=time_end,
+            ),
             return_exceptions=True,
         )
 
@@ -117,6 +141,9 @@ class HybridSearch:
         scope: str,
         as_of_time: str,
         embedding: list[float] | None,
+        *,
+        time_start: str | None = None,
+        time_end: str | None = None,
     ) -> list[dict]:
         """Vector similarity search on fact/entity embeddings."""
         if not embedding:
@@ -144,13 +171,27 @@ class HybridSearch:
                 },
             )
         if scope == "episode":
-            from core.memory.graph.queries import VECTOR_SEARCH_EPISODES
+            from core.memory.graph.queries import VECTOR_SEARCH_EPISODES, VECTOR_SEARCH_EPISODES_TEMPORAL
 
+            use_temporal_window = time_start is not None or time_end is not None
+            if use_temporal_window:
+                return await self._driver.execute_query(
+                    VECTOR_SEARCH_EPISODES_TEMPORAL,
+                    {
+                        "embedding": embedding,
+                        "group_id": self._group_id,
+                        "as_of_time": as_of_time,
+                        "time_start": time_start,
+                        "time_end": time_end,
+                        "top_k": 20,
+                    },
+                )
             return await self._driver.execute_query(
                 VECTOR_SEARCH_EPISODES,
                 {
                     "embedding": embedding,
                     "group_id": self._group_id,
+                    "as_of_time": as_of_time,
                     "top_k": 20,
                 },
             )
@@ -161,8 +202,13 @@ class HybridSearch:
         query: str,
         scope: str,
         as_of_time: str,
+        *,
+        time_start: str | None = None,
+        time_end: str | None = None,
     ) -> list[dict]:
         """BM25 fulltext search."""
+        if time_start is not None or time_end is not None:
+            pass  # Episode ``valid_at`` window is applied in ``_vector_search`` only.
         from core.memory.graph.queries import FULLTEXT_SEARCH_ENTITIES, FULLTEXT_SEARCH_FACTS
 
         if scope in ("fact", "all"):
@@ -200,8 +246,13 @@ class HybridSearch:
         scope: str,
         as_of_time: str,
         embedding: list[float] | None,
+        *,
+        time_start: str | None = None,
+        time_end: str | None = None,
     ) -> list[dict]:
         """Graph BFS from seed entities."""
+        if time_start is not None or time_end is not None:
+            pass  # Episode ``valid_at`` window is applied in ``_vector_search`` only.
         if not embedding:
             return []
 
