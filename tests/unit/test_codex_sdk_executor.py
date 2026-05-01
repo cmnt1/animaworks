@@ -295,10 +295,12 @@ class TestHelpers:
         exec_ = _FakeExec()
         _patch_codex_exec_stream_limit(exec_)
 
-        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
-            with pytest.raises(CodexExecError, match="fatal stderr signal"):
-                stream = exec_.run(SimpleNamespace(input="hello"))
-                await stream.__anext__()
+        with (
+            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
+            pytest.raises(CodexExecError, match="fatal stderr signal"),
+        ):
+            stream = exec_.run(SimpleNamespace(input="hello"))
+            await stream.__anext__()
 
         assert proc.kill_calls == 1
 
@@ -427,6 +429,8 @@ class TestConfigWriting:
         assert 'approval_policy = "never"' in config_toml
         assert "[mcp_servers.aw]" in config_toml
         assert 'preferred_auth_method = "apikey"' in config_toml
+        assert "route them through RTK" in config_toml
+        assert "rtk proxy <command>" in config_toml
 
     def test_write_codex_config_prefers_chatgpt_for_codex_login(self, model_config, anima_dir):
         model_config.api_key = None

@@ -13,8 +13,10 @@ Covers:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -23,7 +25,7 @@ from core.tooling.handler import (
     _get_blocked_patterns,
     _get_injection_re,
 )
-
+from core.tooling.handler_files import _rewrite_command_with_rtk
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -52,6 +54,48 @@ def handler(anima_dir: Path, memory: MagicMock) -> ToolHandler:
         messenger=None,
         tool_registry=[],
     )
+
+
+class TestRtkRewrite:
+    """Mode A/B command execution should route known shell commands via RTK."""
+
+    def test_rewrite_command_with_rtk_uses_rewrite_output(self):
+        completed = SimpleNamespace(returncode=0, stdout="rtk git status\n")
+        with (
+            patch("core.tooling.handler_files._resolve_rtk_bin", return_value="/usr/bin/rtk"),
+            patch("core.tooling.handler_files.subprocess.run", return_value=completed) as run,
+        ):
+            rewritten, changed = _rewrite_command_with_rtk("git status")
+
+        assert changed is True
+        assert rewritten == "rtk git status"
+        run.assert_called_once()
+        assert run.call_args.args[0] == ["/usr/bin/rtk", "rewrite", "git status"]
+
+    def test_rewrite_command_with_rtk_passes_through_without_route(self):
+        completed = SimpleNamespace(returncode=1, stdout="")
+        with (
+            patch("core.tooling.handler_files._resolve_rtk_bin", return_value="/usr/bin/rtk"),
+            patch("core.tooling.handler_files.subprocess.run", return_value=completed),
+        ):
+            rewritten, changed = _rewrite_command_with_rtk("custom-tool --flag")
+
+        assert changed is False
+        assert rewritten == "custom-tool --flag"
+
+    def test_execute_command_runs_rewritten_command(self, handler: ToolHandler, memory: MagicMock):
+        memory.read_permissions.return_value = "## Commands\nGeneral commands are allowed"
+        completed = SimpleNamespace(returncode=0, stdout="compact status", stderr="")
+
+        with (
+            patch("core.tooling.handler_files._rewrite_command_with_rtk", return_value=("rtk git status", True)),
+            patch("core.tooling.handler_files.subprocess.run", return_value=completed) as run,
+        ):
+            result = handler.handle("execute_command", {"command": "git status"})
+
+        assert result == "compact status"
+        executed = run.call_args.args[0]
+        assert executed == "rtk git status" or executed == ["rtk", "git", "status"]
 
 
 # ── Newline injection detection ──────────────────────────────
@@ -253,10 +297,9 @@ class TestExecuteCommandIntegration:
         assert parsed["error_type"] == "PermissionDenied"
 
     def test_legitimate_pipe_still_works(self, handler: ToolHandler, memory: MagicMock):
-        memory.read_permissions.return_value = "## コマンド実行\n- echo: OK\n- grep: OK"
-        result = handler.handle(
-            "execute_command", {"command": "echo 'hello world' | grep hello"},
-        )
+        command = "echo hello world | findstr hello" if sys.platform == "win32" else "echo 'hello world' | grep hello"
+        memory.read_permissions.return_value = "## Commands\n- echo: OK\n- grep: OK\n- findstr: OK"
+        result = handler.handle("execute_command", {"command": command})
         assert "hello" in result
         assert "PermissionDenied" not in result
 

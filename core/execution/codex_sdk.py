@@ -799,7 +799,12 @@ class CodexSDKExecutor(BaseExecutor):
         "summarising what you did or responding to the user's message. "
         "Never end a turn with only tool operations and no text output. "
         "For conversational messages (greetings, questions, casual chat), "
-        "respond naturally in text before or after any tool use."
+        "respond naturally in text before or after any tool use. "
+        "When you run shell commands, route them through RTK: start command "
+        "strings with `rtk` when RTK supports the command, and use "
+        "`rtk proxy <command>` when you need raw unfiltered output or RTK "
+        "does not have a compact route. Prefer direct non-shell tools for "
+        "file reads and edits."
     )
 
     def _effective_codex_home(self) -> Path:

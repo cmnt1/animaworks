@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import threading
@@ -106,6 +108,56 @@ def _build_fuzzy_cjk_latin_pattern(old: str) -> re.Pattern[str] | None:
 
 _BG_CMD_TIMEOUT_DEFAULT = 1800  # 30 minutes
 _BG_CMD_OUTPUT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _resolve_rtk_bin() -> str | None:
+    """Return an RTK executable path when available."""
+    rtk_bin = shutil.which("rtk")
+    if rtk_bin:
+        return rtk_bin
+
+    for candidate in (
+        Path.home() / ".cargo" / "bin" / ("rtk.exe" if sys.platform == "win32" else "rtk"),
+        Path.home() / ".local" / "bin" / ("rtk.exe" if sys.platform == "win32" else "rtk"),
+    ):
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _rewrite_command_with_rtk(command: str) -> tuple[str, bool]:
+    """Rewrite a shell command through RTK when RTK has a known compact route.
+
+    This mirrors Claude/Codex instruction-mode RTK behavior for LiteLLM
+    executors: unsupported commands pass through unchanged, while known
+    commands become ``rtk <tool> ...`` before subprocess execution.
+    """
+    if not command.strip() or command.lstrip().startswith("rtk "):
+        return command, False
+
+    if os.environ.get("ANIMAWORKS_RTK_DISABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return command, False
+
+    rtk_bin = _resolve_rtk_bin()
+    if not rtk_bin:
+        return command, False
+
+    try:
+        result = subprocess.run(
+            [rtk_bin, "rewrite", command],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return command, False
+
+    rewritten = result.stdout.strip()
+    if result.returncode not in (0, 3) or not rewritten or rewritten == command:
+        return command, False
+    return rewritten, True
 
 
 class CommandRunner:
@@ -575,6 +627,8 @@ class FileToolsMixin:
         if err:
             return err
 
+        command, rtk_rewritten = _rewrite_command_with_rtk(command)
+
         background = args.get("background", False)
         if background:
             timeout = args.get("timeout", _BG_CMD_TIMEOUT_DEFAULT)
@@ -631,10 +685,11 @@ class FileToolsMixin:
             if proc.stderr:
                 output += f"\n[stderr]\n{proc.stderr}"
             logger.info(
-                "execute_command cmd=%s rc=%d shell=%s",
+                "execute_command cmd=%s rc=%d shell=%s rtk=%s",
                 command[:80],
                 proc.returncode,
                 use_shell,
+                rtk_rewritten,
             )
             if len(output.encode("utf-8", errors="replace")) > _CMD_TRUNCATE_BYTES:
                 encoded = output.encode("utf-8", errors="replace")
