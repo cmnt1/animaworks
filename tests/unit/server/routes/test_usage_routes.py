@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import time
 import urllib.error
 from pathlib import Path
 
@@ -161,6 +162,33 @@ def test_fetch_openai_usage_refreshes_after_401(monkeypatch):
     assert result["5h"]["remaining"] == 88
     assert result["Week"]["remaining"] == 66
     assert len(calls) == 2
+
+
+def test_relogin_claude_does_not_launch_terminal_when_token_is_fresh(monkeypatch):
+    launched: list[str] = []
+    expires_at = int(time.time() * 1000) + 10 * 60 * 1000
+
+    monkeypatch.setattr(usage_routes, "_CACHE", {"claude": ({"stale": True}, time.time())})
+    monkeypatch.setattr(usage_routes, "get_claude_executable", lambda: "C:\\Tools\\claude.exe")
+    monkeypatch.setattr(
+        usage_routes,
+        "_select_best_claude_credential",
+        lambda: (Path("credentials.json"), "access-token", "refresh-token", expires_at),
+    )
+    monkeypatch.setattr(
+        usage_routes,
+        "_launch_claude_login_terminal",
+        lambda executable: launched.append(executable) or True,
+    )
+
+    payload, status_code = usage_routes._relogin_claude()
+
+    assert status_code == 200
+    assert payload["success"] is True
+    assert payload["terminal_launched"] is False
+    assert "already fresh" in payload["message"]
+    assert launched == []
+    assert "claude" not in usage_routes._CACHE
 
 
 def test_parse_opencode_go_dashboard_window_handles_field_order():

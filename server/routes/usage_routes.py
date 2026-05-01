@@ -342,19 +342,16 @@ def _relogin_claude() -> tuple[dict[str, Any], int]:
     now_ms = int(time.time() * 1000)
     if best_expires > now_ms:
         mins = max(0, round((best_expires - now_ms) / 1000 / 60))
-        launched = _launch_claude_login_terminal(executable)
         return (
             {
                 "success": True,
                 "message": (
                     f"Claude token is already fresh (expires in ~{mins} min). "
-                    f"Opened a CMD window for '{login_cmd}' anyway so you can force re-auth manually."
-                    if launched
-                    else f"Claude token is already fresh (expires in ~{mins} min). If usage still fails, it is likely a provider-side rate limit rather than expired auth."
+                    "No login terminal was opened."
                 ),
                 "file": str(best_path),
                 "executable": executable,
-                "terminal_launched": launched,
+                "terminal_launched": False,
                 "manual_command": login_cmd,
             },
             200,
