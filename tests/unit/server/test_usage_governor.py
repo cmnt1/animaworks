@@ -28,6 +28,14 @@ def _write_status(
     (anima_dir / "status.json").write_text(json.dumps(data), encoding="utf-8")
 
 
+def _write_config(data_dir, anima_names: list[str]) -> None:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "config.json").write_text(
+        json.dumps({"animas": {name: {} for name in anima_names}}),
+        encoding="utf-8",
+    )
+
+
 def test_time_proportional_room_uses_usage_remaining_over_time_remaining(monkeypatch):
     monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
     window_data = {
@@ -180,6 +188,47 @@ def test_classify_animas_includes_front_and_background_providers(tmp_path):
     }
 
 
+def test_get_all_anima_names_ignores_names_outside_config_registry(tmp_path):
+    data_dir = tmp_path / "data"
+    animas_dir = tmp_path / "animas"
+    _write_config(data_dir, ["bob"])
+    _write_status(animas_dir, "alice", "anthropic")
+    _write_status(animas_dir, "bob", "anthropic")
+
+    supervisor = SimpleNamespace(processes={"alice": object(), "bob": object()})
+    app = SimpleNamespace(state=SimpleNamespace(supervisor=supervisor))
+    governor = UsageGovernor(app, data_dir, animas_dir)
+    governor.state.suspended_animas = ["alice", "bob"]
+
+    assert governor._get_all_anima_names() == ["bob"]
+
+
+@pytest.mark.asyncio
+async def test_apply_suspensions_prunes_unknown_anima_without_stopping_or_notifying(tmp_path):
+    data_dir = tmp_path / "data"
+    animas_dir = tmp_path / "animas"
+    _write_config(data_dir, ["bob"])
+    _write_status(animas_dir, "alice", "anthropic")
+    _write_status(animas_dir, "bob", "anthropic")
+
+    supervisor = SimpleNamespace(
+        processes={"alice": object()},
+        start_anima=AsyncMock(),
+        stop_anima=AsyncMock(),
+    )
+    app = SimpleNamespace(state=SimpleNamespace(supervisor=supervisor))
+    governor = UsageGovernor(app, data_dir, animas_dir)
+    governor.state.suspended_animas = ["alice"]
+    governor._notify_supervisor = AsyncMock()  # type: ignore[method-assign]
+
+    await governor._apply_suspensions({"alice"})
+
+    assert governor.state.suspended_animas == []
+    supervisor.start_anima.assert_not_called()
+    supervisor.stop_anima.assert_not_called()
+    governor._notify_supervisor.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_tick_keeps_suspended_anima_when_usage_fetch_fails(tmp_path, monkeypatch):
     data_dir = tmp_path / "data"
@@ -236,6 +285,7 @@ async def test_tick_suspends_anima_when_background_provider_hits_threshold(tmp_p
     )
     app = SimpleNamespace(state=SimpleNamespace(supervisor=supervisor))
     governor = UsageGovernor(app, data_dir, animas_dir)
+    governor._notify_supervisor = AsyncMock()  # type: ignore[method-assign]
 
     monkeypatch.setattr(
         "server.routes.usage_routes._fetch_claude_usage",
@@ -287,6 +337,7 @@ async def test_tick_suspends_anima_when_background_provider_hits_threshold(tmp_p
 
     assert governor.state.suspended_animas == ["alice"]
     supervisor.stop_anima.assert_awaited_once_with("alice")
+    governor._notify_supervisor.assert_awaited_once()
 
 
 @pytest.mark.asyncio

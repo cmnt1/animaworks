@@ -110,6 +110,46 @@ class TestHumanNotifier:
             assert ch.sent[0]["anima_name"] == "alice"
 
     @pytest.mark.asyncio
+    async def test_notify_replaces_unknown_governor_alert_with_diagnostic(
+        self, notifier_with_channels, monkeypatch,
+    ):
+        notifier, channels = notifier_with_channels
+        monkeypatch.setattr("core.notification.notifier._known_anima_names", lambda: {"bob"})
+        monkeypatch.setattr("core.notification.notifier._notification_callsite", lambda: "caller.py:10:fn")
+        monkeypatch.setattr("core.notification.notifier._should_report_unknown_governor", lambda _name: True)
+
+        results = await notifier.notify(
+            "Governor アラート",
+            "Governor: alice がクォータ超過で停止されました。理由:",
+            anima_name="alice",
+        )
+
+        assert results == ["mock: OK", "mock: OK"]
+        for ch in channels:
+            assert ch.sent[0]["subject"] == "AnimaWorks Governor通知を抑止"
+            assert "存在しないAnima名 `alice`" in ch.sent[0]["body"]
+            assert "caller.py:10:fn" in ch.sent[0]["body"]
+            assert ch.sent[0]["priority"] == "high"
+            assert ch.sent[0]["anima_name"] == ""
+
+    @pytest.mark.asyncio
+    async def test_notify_suppresses_repeated_unknown_governor_alert(
+        self, notifier_with_channels, monkeypatch,
+    ):
+        notifier, channels = notifier_with_channels
+        monkeypatch.setattr("core.notification.notifier._known_anima_names", lambda: {"bob"})
+        monkeypatch.setattr("core.notification.notifier._should_report_unknown_governor", lambda _name: False)
+
+        results = await notifier.notify(
+            "Governor アラート",
+            "Governor: alice がクォータ超過で停止されました。理由:",
+            anima_name="alice",
+        )
+
+        assert results == ["Suppressed governor notification for unknown Anima: alice"]
+        assert all(ch.sent == [] for ch in channels)
+
+    @pytest.mark.asyncio
     async def test_notify_invalid_priority_defaults_to_normal(
         self, notifier_with_channels,
     ):

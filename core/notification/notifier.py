@@ -11,9 +11,13 @@ sends a notification to all of them in parallel via ``asyncio.gather``.
 """
 
 import asyncio
+import json
 import logging
 import os
+import time
+import traceback
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
 from core.config.models import HumanNotificationConfig, NotificationChannelConfig
@@ -24,6 +28,55 @@ logger = logging.getLogger("animaworks.notification")
 # ── Priority mapping ────────────────────────────────────────
 
 PRIORITY_LEVELS = ("low", "normal", "high", "urgent")
+_UNKNOWN_GOVERNOR_NOTICE_COOLDOWN_SECONDS = 15 * 60
+_unknown_governor_notice_at: dict[str, float] = {}
+
+
+def _known_anima_names() -> set[str]:
+    """Return current registry names for notification safety checks."""
+    try:
+        from core.paths import get_animas_dir, get_data_dir
+
+        animas_dir = get_animas_dir()
+        disk_names = {
+            anima_dir.name
+            for anima_dir in animas_dir.iterdir()
+            if anima_dir.is_dir() and (anima_dir / "status.json").is_file()
+        } if animas_dir.is_dir() else set()
+
+        config_path = get_data_dir() / "config.json"
+        config_names: set[str] | None = None
+        if config_path.is_file():
+            data = json.loads(Path(config_path).read_text("utf-8-sig"))
+            animas = data.get("animas")
+            if isinstance(animas, dict):
+                config_names = {str(name) for name in animas}
+        return disk_names.intersection(config_names) if config_names else disk_names
+    except Exception:
+        logger.debug("Failed to read Anima registry for notification guard", exc_info=True)
+        return set()
+
+
+def _is_governor_notification(subject: str, body: str) -> bool:
+    return subject.startswith("Governor") and body.startswith("Governor:")
+
+
+def _notification_callsite() -> str:
+    """Return a compact stack for tracing unexpected notification sources."""
+    frames = traceback.extract_stack(limit=12)[:-2]
+    return " <- ".join(
+        f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}"
+        for frame in frames[-8:]
+    )
+
+
+def _should_report_unknown_governor(anima_name: str) -> bool:
+    now = time.time()
+    last = _unknown_governor_notice_at.get(anima_name, 0.0)
+    if now - last < _UNKNOWN_GOVERNOR_NOTICE_COOLDOWN_SECONDS:
+        return False
+    _unknown_governor_notice_at[anima_name] = now
+    return True
 
 
 # ── Abstract base ───────────────────────────────────────────
@@ -160,6 +213,34 @@ class HumanNotifier:
         """
         if not self._channels:
             return ["No notification channels configured"]
+
+        if _is_governor_notification(subject, body):
+            logger.warning(
+                "Governor human notification requested: anima=%s subject=%s callsite=%s",
+                anima_name,
+                subject[:80],
+                _notification_callsite(),
+            )
+
+        if anima_name and _is_governor_notification(subject, body):
+            known_names = _known_anima_names()
+            if known_names and anima_name not in known_names:
+                callsite = _notification_callsite()
+                logger.warning(
+                    "Suppressed governor human notification for unknown Anima: %s callsite=%s",
+                    anima_name,
+                    callsite,
+                )
+                if not _should_report_unknown_governor(anima_name):
+                    return [f"Suppressed governor notification for unknown Anima: {anima_name}"]
+                subject = "AnimaWorks Governor通知を抑止"
+                body = (
+                    f"存在しないAnima名 `{anima_name}` のGovernor通知を抑止しました。\n\n"
+                    f"元本文:\n{body[:800]}\n\n"
+                    f"callsite: `{callsite}`"
+                )
+                priority = "high"
+                anima_name = ""
 
         if priority not in PRIORITY_LEVELS:
             priority = "normal"

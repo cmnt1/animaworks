@@ -398,6 +398,37 @@ def _classify_animas(
     return groups
 
 
+def _anima_names_with_status(animas_dir: Path) -> set[str]:
+    """Return Anima names that have an on-disk status.json."""
+    if not animas_dir.is_dir():
+        return set()
+    try:
+        return {
+            anima_dir.name
+            for anima_dir in animas_dir.iterdir()
+            if anima_dir.is_dir() and (anima_dir / "status.json").is_file()
+        }
+    except OSError:
+        logger.debug("Failed to scan animas directory: %s", animas_dir, exc_info=True)
+        return set()
+
+
+def _configured_anima_names(data_dir: Path) -> set[str] | None:
+    """Return config.json Anima keys, or None when config is unavailable."""
+    config_path = data_dir / "config.json"
+    if not config_path.is_file():
+        return None
+    try:
+        data = json.loads(config_path.read_text("utf-8-sig"))
+    except Exception:
+        logger.warning("Governor: failed to read config.json while validating Anima registry", exc_info=True)
+        return None
+    animas = data.get("animas")
+    if not isinstance(animas, dict):
+        return None
+    return {str(name) for name in animas}
+
+
 # ── Timestamp helpers ────────────────────────────────────────────────────────
 
 
@@ -784,6 +815,10 @@ class UsageGovernor:
         if task is not None and task.cancelled():
             return
 
+        # Set the reason before notifications so escalation text carries the
+        # current quota explanation, not the previous tick's value.
+        self._state.reason = " | ".join(reasons) if reasons else ""
+
         # Apply suspensions (only cloud-provider animas; local ones untouched)
         await self._apply_suspensions(set(all_suspend))
 
@@ -813,7 +848,6 @@ class UsageGovernor:
         if state_changed:
             await self._broadcast_reschedule()
 
-        self._state.reason = " | ".join(reasons) if reasons else ""
         throttling = any(lvl is not None and lvl < 100 for lvl in level_by_provider.values())
         active = throttling
         if all_suspend and not self._state.since:
@@ -828,11 +862,23 @@ class UsageGovernor:
         supervisor = getattr(self._app.state, "supervisor", None)
         if not supervisor or not hasattr(supervisor, "send_request"):
             return
+        known_names = self._known_anima_names()
         for name in list(getattr(supervisor, "processes", {}).keys()):
+            if name not in known_names:
+                logger.warning("Governor: skipping reschedule for unknown Anima %s", name)
+                continue
             try:
                 await supervisor.send_request(name, "reschedule_heartbeat", {})
             except Exception:
                 logger.debug("Governor: failed to reschedule %s", name, exc_info=True)
+
+    def _known_anima_names(self) -> set[str]:
+        """Return names that belong to the current Anima registry."""
+        disk_names = _anima_names_with_status(self._animas_dir)
+        configured_names = _configured_anima_names(self._data_dir)
+        if configured_names:
+            return disk_names.intersection(configured_names)
+        return disk_names
 
     def _get_all_anima_names(self) -> list[str]:
         """Get all registered anima names (running + governor-suspended)."""
@@ -842,14 +888,37 @@ class UsageGovernor:
             names.update(supervisor.processes.keys())
         # Include animas we suspended (they won't be in processes)
         names.update(self._state.suspended_animas)
-        return sorted(names)
+        known_names = self._known_anima_names()
+        unknown = names - known_names
+        if unknown:
+            logger.warning(
+                "Governor: ignoring unknown Anima name(s) from process/state registry: %s",
+                ", ".join(sorted(unknown)),
+            )
+        return sorted(names.intersection(known_names))
 
     async def _apply_suspensions(self, target_suspended: set[str]) -> None:
         supervisor = getattr(self._app.state, "supervisor", None)
         if not supervisor:
             return
 
+        known_names = self._known_anima_names()
+        unknown_targets = target_suspended - known_names
+        if unknown_targets:
+            logger.warning(
+                "Governor: refusing to suspend unknown Anima name(s): %s",
+                ", ".join(sorted(unknown_targets)),
+            )
+            target_suspended = target_suspended.intersection(known_names)
+
         currently_suspended = set(self._state.suspended_animas)
+        unknown_current = currently_suspended - known_names
+        if unknown_current:
+            logger.warning(
+                "Governor: pruning unknown Anima name(s) from suspended state: %s",
+                ", ".join(sorted(unknown_current)),
+            )
+            currently_suspended = currently_suspended.intersection(known_names)
 
         # Resume animas that are no longer in the suspend list
         to_resume = currently_suspended - target_suspended
@@ -879,6 +948,10 @@ class UsageGovernor:
         """Notify the suspended anima's supervisor (or human if top-level)."""
         try:
             import json as _json
+
+            if anima_name not in self._known_anima_names():
+                logger.warning("Governor: suppressing notification for unknown Anima %s", anima_name)
+                return
 
             status_path = self._animas_dir / anima_name / "status.json"
             if not status_path.is_file():
