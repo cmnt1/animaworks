@@ -804,7 +804,16 @@ class CodexSDKExecutor(BaseExecutor):
         "strings with `rtk` when RTK supports the command, and use "
         "`rtk proxy <command>` when you need raw unfiltered output or RTK "
         "does not have a compact route. Prefer direct non-shell tools for "
-        "file reads and edits."
+        "file reads and edits. "
+        "For reports to supervisors or other Animas, the required channel is "
+        "the AnimaWorks DM tool send_message with intent=report. Codex Apps "
+        "Gmail send tools are not allowed for these reports: "
+        "mcp__codex_apps__gmail._send_email, _send_draft, and _forward_emails. "
+        "Use those Gmail send tools only when the human owner explicitly asks "
+        "for that exact Gmail action in the current turn."
+    )
+    _BLOCKED_CODEX_APPS_GMAIL_SEND_TOOLS = frozenset(
+        {"_send_email", "_send_draft", "_forward_emails"}
     )
 
     def _effective_codex_home(self) -> Path:
@@ -813,6 +822,46 @@ class CodexSDKExecutor(BaseExecutor):
             _sys = os.environ.get("CODEX_HOME")
             return Path(_sys) if _sys else Path.home() / ".codex"
         return self._codex_home
+
+    def _prune_codex_apps_gmail_send_tools(self, codex_home: Path) -> None:
+        """Remove cached Codex Apps Gmail send tools from this Anima's CODEX_HOME."""
+        cache_dir = codex_home / "cache" / "codex_apps_tools"
+        if not cache_dir.is_dir():
+            return
+
+        for cache_file in cache_dir.glob("*.json"):
+            try:
+                payload = json.loads(cache_file.read_text(encoding="utf-8"))
+            except Exception:
+                logger.debug("Failed to parse Codex Apps tool cache %s", cache_file, exc_info=True)
+                continue
+
+            tools = payload.get("tools")
+            if not isinstance(tools, list):
+                continue
+
+            pruned = [
+                tool
+                for tool in tools
+                if not (
+                    isinstance(tool, dict)
+                    and tool.get("tool_namespace") == "mcp__codex_apps__gmail"
+                    and tool.get("tool_name") in self._BLOCKED_CODEX_APPS_GMAIL_SEND_TOOLS
+                )
+            ]
+            if len(pruned) == len(tools):
+                continue
+
+            payload["tools"] = pruned
+            cache_file.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            logger.warning(
+                "Removed %d Codex Apps Gmail send tools from %s",
+                len(tools) - len(pruned),
+                cache_file,
+            )
 
     def _write_codex_config(self, system_prompt: str) -> None:
         """Write CODEX_HOME config.toml and model instructions file.
@@ -891,6 +940,7 @@ class CodexSDKExecutor(BaseExecutor):
             f"{mcp_env_lines}\n"
         )
         (config_home / "config.toml").write_text(config_toml, encoding="utf-8")
+        self._prune_codex_apps_gmail_send_tools(config_home)
 
     def _create_codex_client(self) -> Any:
         """Create a ``Codex`` SDK client instance.

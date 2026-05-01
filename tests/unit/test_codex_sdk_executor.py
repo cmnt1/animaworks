@@ -9,6 +9,7 @@ All tests use mocks — no Codex CLI binary or API key required.
 """
 
 import asyncio
+import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -431,6 +432,38 @@ class TestConfigWriting:
         assert 'preferred_auth_method = "apikey"' in config_toml
         assert "route them through RTK" in config_toml
         assert "rtk proxy <command>" in config_toml
+        assert "mcp__codex_apps__gmail._send_email" in config_toml
+        assert "the required channel is the AnimaWorks DM tool" in config_toml
+
+    def test_write_codex_config_prunes_gmail_send_tools_from_codex_apps_cache(self, executor, anima_dir):
+        cache_dir = anima_dir / ".codex_home" / "cache" / "codex_apps_tools"
+        cache_dir.mkdir(parents=True)
+        cache_file = cache_dir / "tools.json"
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "tools": [
+                        {"tool_namespace": "mcp__codex_apps__gmail", "tool_name": "_send_email"},
+                        {"tool_namespace": "mcp__codex_apps__gmail", "tool_name": "_send_draft"},
+                        {"tool_namespace": "mcp__codex_apps__gmail", "tool_name": "_forward_emails"},
+                        {"tool_namespace": "mcp__codex_apps__gmail", "tool_name": "_read_email"},
+                        {"tool_namespace": "mcp__codex_apps__github", "tool_name": "_add_comment_to_issue"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        executor._write_codex_config("My prompt")
+
+        tools = json.loads(cache_file.read_text(encoding="utf-8"))["tools"]
+        tool_names = {tool["tool_name"] for tool in tools}
+        assert "_send_email" not in tool_names
+        assert "_send_draft" not in tool_names
+        assert "_forward_emails" not in tool_names
+        assert "_read_email" in tool_names
+        assert "_add_comment_to_issue" in tool_names
 
     def test_write_codex_config_prefers_chatgpt_for_codex_login(self, model_config, anima_dir):
         model_config.api_key = None
