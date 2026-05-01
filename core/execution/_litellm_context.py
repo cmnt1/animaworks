@@ -75,6 +75,10 @@ class ContextMixin:
         # (nanoGPT is an OpenAI-compatible API aggregator)
         if _model_name.startswith("nanogpt/"):
             _model_name = "openai/" + _model_name[len("nanogpt/") :]
+        elif _model_name.startswith("opencode-go/"):
+            from core.config.opencode_go import OPENCODE_GO_API_BASE_URL, opencode_go_litellm_model
+
+            _model_name = opencode_go_litellm_model(_model_name)
         kwargs: dict[str, Any] = {
             "model": _model_name,
             "max_tokens": _eff_max,
@@ -84,7 +88,9 @@ class ContextMixin:
         api_key = self._resolve_api_key()
         if api_key:
             kwargs["api_key"] = api_key
-        if self._model_config.api_base_url:
+        if self._model_config.model.startswith("opencode-go/"):
+            kwargs["api_base"] = self._model_config.api_base_url or OPENCODE_GO_API_BASE_URL
+        elif self._model_config.api_base_url:
             kwargs["api_base"] = self._model_config.api_base_url
         self._apply_provider_kwargs(kwargs)
         # Extended thinking / reasoning control

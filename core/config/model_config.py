@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.config.model_mode import _match_models_json
+from core.config.opencode_go import OPENCODE_GO_API_KEY_ENV, OPENCODE_GO_PROVIDER
 from core.config.schemas import AnimaWorksConfig
 from core.i18n import t
 
@@ -29,6 +30,12 @@ logger = logging.getLogger("animaworks.config")
 # ---------------------------------------------------------------------------
 
 _SENTINEL = object()
+
+
+def _credential_api_key_env(credential_name: str) -> str:
+    if credential_name == OPENCODE_GO_PROVIDER:
+        return OPENCODE_GO_API_KEY_ENV
+    return f"{credential_name.upper()}_API_KEY"
 
 
 def load_model_config(anima_dir: Path) -> ModelConfig:
@@ -49,7 +56,7 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
     resolved, credential = resolve_anima_config(config, anima_name, anima_dir=anima_dir)
 
     cred_name = resolved.credential
-    api_key_env = f"{cred_name.upper()}_API_KEY"
+    api_key_env = _credential_api_key_env(cred_name)
     mode = resolve_execution_mode(
         config,
         resolved.model,
@@ -236,6 +243,7 @@ _FAMILY_CREDENTIAL_MAP: dict[str, str] = {
     "codex": "openai",
     "bedrock": "anthropic",
     "cursor": "anthropic",
+    "opencode-go": "opencode-go",
 }
 
 

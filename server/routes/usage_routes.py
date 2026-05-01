@@ -14,9 +14,11 @@ import base64
 import json
 import logging
 import os
+import re
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -90,7 +92,7 @@ def _merge_usage_snapshot(live_payload: dict[str, Any]) -> dict[str, Any]:
 
     used: list[str] = []
     merged = dict(live_payload)
-    for provider_key in ("claude", "openai", "nanogpt"):
+    for provider_key in ("claude", "openai", "nanogpt", "opencode_go"):
         if not _provider_has_error(merged, provider_key):
             continue
         snapshot_provider = snapshot.get(provider_key)
@@ -831,6 +833,187 @@ def _fetch_nanogpt_usage(skip_cache: bool = False) -> dict[str, Any]:
 # ── Route ────────────────────────────────────────────────────────────────────
 
 
+_OPENCODE_GO_DASHBOARD_PREFIX = "https://opencode.ai/workspace/"
+_OPENCODE_GO_DASHBOARD_SUFFIX = "/go"
+_OPENCODE_GO_WINDOW_SECONDS = {
+    "5h": 5 * 3600,
+    "Week": 7 * 24 * 3600,
+    "Month": 30 * 24 * 3600,
+}
+_OPENCODE_GO_WINDOW_PATTERNS = {
+    "5h": "rollingUsage",
+    "Week": "weeklyUsage",
+    "Month": "monthlyUsage",
+}
+_OPENCODE_GO_NUMBER_RE = r"(-?\d+(?:\.\d+)?)"
+
+
+def _read_env_style_secret(name: str) -> str | None:
+    try:
+        from core.tools._base import resolve_env_style_credential
+
+        value = resolve_env_style_credential(name)
+        if value:
+            return value
+    except Exception:
+        logger.debug("Failed to resolve %s via env-style credential cascade", name, exc_info=True)
+    return os.environ.get(name) or None
+
+
+def _opencode_go_config_paths() -> list[Path]:
+    paths: list[Path] = []
+    for root in (os.environ.get("APPDATA"), os.environ.get("LOCALAPPDATA")):
+        if root:
+            paths.append(Path(root) / "opencode" / "opencode-quota" / "opencode-go.json")
+    paths.append(Path.home() / ".config" / "opencode" / "opencode-quota" / "opencode-go.json")
+    try:
+        from core.paths import get_data_dir
+
+        paths.append(get_data_dir() / "shared" / "opencode-go.json")
+    except Exception:
+        pass
+    return paths
+
+
+def _read_opencode_go_dashboard_config() -> tuple[str | None, str | None, str, str | None]:
+    workspace_id = _read_env_style_secret("OPENCODE_GO_WORKSPACE_ID")
+    auth_cookie = _read_env_style_secret("OPENCODE_GO_AUTH_COOKIE")
+    if workspace_id or auth_cookie:
+        missing = None
+        if not workspace_id:
+            missing = "OPENCODE_GO_WORKSPACE_ID"
+        elif not auth_cookie:
+            missing = "OPENCODE_GO_AUTH_COOKIE"
+        return workspace_id, auth_cookie, "env", missing
+
+    for path in _opencode_go_config_paths():
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text("utf-8"))
+        except Exception as exc:
+            return None, None, str(path), f"invalid config: {exc}"
+        if not isinstance(data, dict):
+            return None, None, str(path), "invalid config: expected object"
+        workspace_id = str(data.get("workspaceId", "")).strip()
+        auth_cookie = str(data.get("authCookie", "")).strip()
+        missing = None
+        if not workspace_id:
+            missing = "workspaceId"
+        elif not auth_cookie:
+            missing = "authCookie"
+        return workspace_id or None, auth_cookie or None, str(path), missing
+
+    return None, None, "none", "OPENCODE_GO_WORKSPACE_ID and OPENCODE_GO_AUTH_COOKIE"
+
+
+def _parse_opencode_go_window(html: str, field: str) -> tuple[float, float] | None:
+    pct_first = re.compile(
+        rf"{re.escape(field)}:\$R\[\d+\]=\{{[^}}]*usagePercent:{_OPENCODE_GO_NUMBER_RE}"
+        rf"[^}}]*resetInSec:{_OPENCODE_GO_NUMBER_RE}[^}}]*\}}"
+    )
+    reset_first = re.compile(
+        rf"{re.escape(field)}:\$R\[\d+\]=\{{[^}}]*resetInSec:{_OPENCODE_GO_NUMBER_RE}"
+        rf"[^}}]*usagePercent:{_OPENCODE_GO_NUMBER_RE}[^}}]*\}}"
+    )
+    match = pct_first.search(html)
+    if match:
+        return float(match.group(1)), float(match.group(2))
+    match = reset_first.search(html)
+    if match:
+        return float(match.group(2)), float(match.group(1))
+    return None
+
+
+def _opencode_go_window_payload(label: str, usage_percent: float, reset_in_sec: float) -> dict[str, Any]:
+    utilization = max(0.0, usage_percent)
+    remaining = max(0.0, 100.0 - utilization)
+    reset_in_sec = max(0.0, reset_in_sec)
+    return {
+        "utilization": utilization,
+        "remaining": remaining,
+        "resets_at": time.time() + reset_in_sec,
+        "window_seconds": _OPENCODE_GO_WINDOW_SECONDS[label],
+        "reset_in_sec": reset_in_sec,
+    }
+
+
+def _fetch_opencode_go_usage(skip_cache: bool = False) -> dict[str, Any]:
+    if not skip_cache:
+        cached = _cached("opencode_go")
+        if cached is not None:
+            return cached
+
+    workspace_id, auth_cookie, source, missing = _read_opencode_go_dashboard_config()
+    if missing:
+        try:
+            from core.config.opencode_go import opencode_go_api_key
+
+            api_key_found = bool(opencode_go_api_key())
+        except Exception:
+            api_key_found = False
+        extra = " OpenCode Go API key is configured, but usage is only exposed through the dashboard."
+        result: dict[str, Any] = {
+            "error": "no_credentials",
+            "message": (
+                f"OpenCode Go usage needs OPENCODE_GO_WORKSPACE_ID and OPENCODE_GO_AUTH_COOKIE ({missing})."
+                + (extra if api_key_found else "")
+            ),
+            "provider": "opencode_go",
+            "config_source": source,
+        }
+        _set_cache("opencode_go", result)
+        return result
+
+    assert workspace_id is not None and auth_cookie is not None
+    url = f"{_OPENCODE_GO_DASHBOARD_PREFIX}{urllib.parse.quote(workspace_id)}{_OPENCODE_GO_DASHBOARD_SUFFIX}"
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "text/html",
+                "Cookie": f"auth={auth_cookie}",
+                "User-Agent": "Mozilla/5.0 animaworks/1.0",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", "replace")
+
+        result: dict[str, Any] = {"provider": "opencode_go", "config_source": source}
+        for label, field in _OPENCODE_GO_WINDOW_PATTERNS.items():
+            parsed = _parse_opencode_go_window(html, field)
+            if parsed is None:
+                continue
+            usage_percent, reset_in_sec = parsed
+            result[label] = _opencode_go_window_payload(label, usage_percent, reset_in_sec)
+
+        if len(result) <= 2:
+            result = {
+                "error": "unexpected_response",
+                "message": "Could not parse OpenCode Go dashboard usage windows",
+                "provider": "opencode_go",
+                "config_source": source,
+            }
+        _set_cache("opencode_go", result)
+        return result
+
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            result = {"error": "unauthorized", "message": "OpenCode Go dashboard auth cookie invalid or expired"}
+        elif e.code == 429:
+            result = {"error": "rate_limited", "message": "Rate limited - retry shortly"}
+        else:
+            result = {"error": "http_error", "message": f"HTTP {e.code}"}
+        result["provider"] = "opencode_go"
+        _set_cache("opencode_go", result)
+        return result
+    except Exception as e:
+        logger.warning("OpenCode Go usage fetch failed: %s", e)
+        result = {"error": "fetch_failed", "message": str(e)[:200], "provider": "opencode_go"}
+        _set_cache("opencode_go", result)
+        return result
+
+
 def create_usage_router() -> APIRouter:
     router = APIRouter()
 
@@ -876,6 +1059,7 @@ def create_usage_router() -> APIRouter:
             "claude": _fetch_claude_usage(skip_cache=skip_cache),
             "openai": _fetch_openai_usage(skip_cache=skip_cache),
             "nanogpt": _fetch_nanogpt_usage(skip_cache=skip_cache),
+            "opencode_go": _fetch_opencode_go_usage(skip_cache=skip_cache),
             "cached_at": time.time(),
             "governor": governor_info,
             "auth_alerts": auth_alerts,

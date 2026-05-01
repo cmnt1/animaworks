@@ -729,7 +729,7 @@ def create_system_router() -> APIRouter:
         Body may contain any of:
           - ``activity_level`` (int 10-400): global/default slider
           - ``activity_level_by_provider`` (dict): per-provider overrides.
-            Keys limited to ``claude``/``openai``/``nanogpt``/``default``.
+            Keys limited to ``claude``/``openai``/``nanogpt``/``opencode_go``/``default``.
             Values validated 10-400.  Pass ``{}`` to clear overrides.
         """
         try:
@@ -746,7 +746,7 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        valid_keys = {"claude", "openai", "nanogpt", "default"}
+        valid_keys = {"claude", "openai", "nanogpt", "opencode_go", "default"}
         if by_provider is not None:
             if not isinstance(by_provider, dict):
                 return JSONResponse(

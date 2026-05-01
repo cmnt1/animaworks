@@ -26,6 +26,9 @@ _ABCONFIG_KEY_MAP = {
     "SLACK_BOT_TOKEN": "slack_bot_token",
     "SLACK_APP_TOKEN": "slack_app_token",
     "DISCORD_BOT_TOKEN": "DISCORD_BOT_TOKEN",
+    "OPENCODE_API_KEY": "opencode_api",
+    "OPENCODE_GO_WORKSPACE_ID": "opencode_go_workspace_id",
+    "OPENCODE_GO_AUTH_COOKIE": "opencode_go_auth_cookie",
 }
 
 

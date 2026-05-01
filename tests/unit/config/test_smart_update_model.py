@@ -56,6 +56,7 @@ class TestModelFamily:
         assert _model_family("google/gemini-2.5-pro") == "google"
         assert _model_family("vertex_ai/claude-sonnet-4-6") == "vertex_ai"
         assert _model_family("codex/codex-mini-latest") == "codex"
+        assert _model_family("opencode-go/glm-5.1") == "opencode-go"
 
     def test_unknown_model(self):
         assert _model_family("some-custom-model") == "some-custom-model"
@@ -341,6 +342,7 @@ class TestFamilyCredentialMap:
         assert _FAMILY_CREDENTIAL_MAP["openai"] == "openai"
         assert _FAMILY_CREDENTIAL_MAP["ollama"] == "ollama"
         assert _FAMILY_CREDENTIAL_MAP["bedrock"] == "anthropic"
+        assert _FAMILY_CREDENTIAL_MAP["opencode-go"] == "opencode-go"
 
     def test_unknown_family_not_in_map(self):
         assert "xai" not in _FAMILY_CREDENTIAL_MAP

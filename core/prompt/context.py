@@ -67,6 +67,13 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "glm-4": 131_072,
     # Qwen 3.5 (GDN hybrid — native 262K but 64K practical for 9B)
     "qwen3.5": 64_000,
+    # OpenCode Go
+    "glm-5": 202_752,
+    "kimi-k2": 262_144,
+    "deepseek-v4": 131_072,
+    "qwen3.6": 262_144,
+    "mimo-v2": 131_072,
+    "minimax-m2": 131_072,
     # Meta Llama 4 (Bedrock cross-region inference profiles)
     "meta.llama4-maverick": 1_000_000,
     "meta.llama4-scout": 1_000_000,

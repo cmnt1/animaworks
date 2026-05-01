@@ -34,12 +34,16 @@ class TestAbconfigCredentials:
         from server.routes import config_routes
 
         cnct_env = tmp_path / "Cnct_Env.py"
-        cnct_env.write_text("openai_key = 'sk-local'\nopenai_id = 'org-local'\n", encoding="utf-8")
+        cnct_env.write_text(
+            "openai_key = 'sk-local'\nopenai_id = 'org-local'\nopencode_api = 'sk-oc'\n",
+            encoding="utf-8",
+        )
 
         with patch.object(config_routes, "ABCONFIG_ENV_FILE", cnct_env):
             assert config_routes._load_abconfig_credentials() == {
                 "openai_id": "org-local",
                 "openai_key": "sk-local",
+                "opencode_api": "sk-oc",
             }
 
     def test_missing_cnct_env_returns_empty(self, tmp_path):
@@ -363,6 +367,69 @@ class TestOpenAIAuthSettings:
         assert result["source"] == "api"
         assert result["dynamic"] is True
         list_models.assert_called_once_with("sk-abconfig", organization="org-test")
+
+    async def test_available_models_include_opencode_go_from_abconfig(self):
+        config = AnimaWorksConfig(credentials={})
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch(
+                "server.routes.config_routes._load_abconfig_credentials",
+                return_value={"opencode_api": "sk-opencode"},
+            ),
+            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/system/available-models")
+
+        assert resp.status_code == 200
+        models = resp.json()["models"]
+        ids = {item["id"] for item in models}
+        opencode = next(item for item in models if item["id"] == "opencode-go/glm-5.1")
+        assert "opencode-go/kimi-k2.6" in ids
+        assert opencode["credential"] == "opencode-go"
+        assert opencode["label"] == "OpenCode Go: glm-5.1"
+
+    async def test_refresh_available_models_updates_opencode_go_cache(self, tmp_path):
+        config = AnimaWorksConfig(
+            credentials={
+                "opencode-go": CredentialConfig(type="api_key", api_key="sk-test"),
+            }
+        )
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
+            patch(
+                "server.routes.config_routes._list_opencode_go_models",
+                return_value=["opencode-go/glm-5.2"],
+            ),
+            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
+            patch("server.routes.config_routes._load_abconfig_credentials", return_value={}),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/system/available-models/refresh",
+                    json={"providers": ["opencode_go"]},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        ids = {item["id"] for item in data["models"]}
+        assert data["providers"][0]["status"] == "ok"
+        assert data["providers"][0]["source"] == "api"
+        assert data["providers"][0]["dynamic"] is True
+        assert "opencode-go/glm-5.2" in ids
+        assert "opencode-go/glm-5.1" in ids
+
+        cache = json.loads((tmp_path / "model_catalog_cache.json").read_text(encoding="utf-8"))
+        assert "opencode-go/glm-5.2" in cache["providers"]["opencode_go"]["models"]
 
 
 class TestLocalLLMSettings:

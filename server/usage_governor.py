@@ -46,6 +46,7 @@ _CREDENTIAL_TO_PROVIDER: dict[str, str] = {
     "anthropic": "claude",
     "openai": "openai",
     "nanogpt": "nanogpt",
+    "opencode-go": "opencode_go",
 }
 
 # ── Policy schema ────────────────────────────────────────────────────────────
@@ -102,6 +103,20 @@ DEFAULT_POLICY: dict[str, Any] = {
         },
         "nanogpt": {
             "Week": {
+                "mode": "time_proportional",
+                "throttle_rules": _default_throttle_rules(),
+            },
+        },
+        "opencode_go": {
+            "5h": {
+                "mode": "time_proportional",
+                "throttle_rules": _default_throttle_rules(),
+            },
+            "Week": {
+                "mode": "time_proportional",
+                "throttle_rules": _default_throttle_rules(),
+            },
+            "Month": {
                 "mode": "time_proportional",
                 "throttle_rules": _default_throttle_rules(),
             },
@@ -179,6 +194,7 @@ class GovernorState:
                         "claude": legacy,
                         "openai": legacy,
                         "nanogpt": legacy,
+                        "opencode_go": legacy,
                     }
             self.background_fallback_providers = data.get("background_fallback_providers", []) or []
         except Exception:
@@ -620,6 +636,7 @@ class UsageGovernor:
             _fetch_claude_usage,
             _fetch_nanogpt_usage,
             _fetch_openai_usage,
+            _fetch_opencode_go_usage,
             _relogin_claude,
         )
 
@@ -627,6 +644,7 @@ class UsageGovernor:
             "claude": _fetch_claude_usage(),
             "openai": _fetch_openai_usage(),
             "nanogpt": _fetch_nanogpt_usage(),
+            "opencode_go": _fetch_opencode_go_usage(),
         }
 
         # Auto-recovery: if Claude fetch failed with recoverable error,
@@ -664,8 +682,8 @@ class UsageGovernor:
         fallback_providers: list[str] = []
         fallback_below = policy.get("background_fallback_below", 15)
 
-        # Evaluate all three providers (fallback works on any, even with no animas using it)
-        for provider_key in ("claude", "openai", "nanogpt"):
+        # Evaluate all cloud providers (fallback works on any, even with no animas using it)
+        for provider_key in ("claude", "openai", "nanogpt", "opencode_go"):
             provider_animas = groups.get(provider_key, [])
 
             if _provider_usage_fetch_failed(usage_data, provider_key):

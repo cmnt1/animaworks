@@ -46,6 +46,7 @@ DEFAULT_MODEL_MODE_PATTERNS: dict[str, str] = {
     "azure/*": "A",
     "bedrock/*": "A",
     "google/*": "A",
+    "opencode-go/*": "A",
     "vertex_ai/*": "A",
     "mistral/*": "A",
     "xai/*": "A",
@@ -115,6 +116,11 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "google/gemini-2.5-pro", "mode": "A", "note": "最高性能"},
     {"name": "google/gemini-2.5-flash", "mode": "A", "note": "高速バランス"},
     {"name": "google/gemini-2.5-flash-lite", "mode": "A", "note": "軽量・高スループット"},
+    # ── OpenCode Go (Mode A) ────────────────────────────────────────────────
+    {"name": "opencode-go/glm-5.1", "mode": "A", "note": "OpenCode Go・高性能"},
+    {"name": "opencode-go/kimi-k2.6", "mode": "A", "note": "OpenCode Go・コーディング"},
+    {"name": "opencode-go/deepseek-v4-pro", "mode": "A", "note": "OpenCode Go・高性能"},
+    {"name": "opencode-go/qwen3.6-plus", "mode": "A", "note": "OpenCode Go・高速"},
     # ── Vertex AI (Mode A) ────────────────────────────────────────────────────
     {"name": "vertex_ai/gemini-2.5-flash", "mode": "A", "note": "Vertex AI Flash"},
     {"name": "vertex_ai/gemini-2.5-pro", "mode": "A", "note": "Vertex AI Pro"},
@@ -166,6 +172,7 @@ DEFAULT_TOOL_USE_CAPABILITY_PATTERNS: dict[str, str] = {
     "azure/gpt-4.1*": "high",
     "azure/*": "high",
     "google/*": "high",
+    "opencode-go/*": "high",
     "vertex_ai/*": "high",
     "xai/*": "high",
     "mistral/*": "high",

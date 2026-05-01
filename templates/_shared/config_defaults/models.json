@@ -27,6 +27,16 @@
   "google/*":                { "mode": "A", "context_window": 1000000 },
   "vertex_ai/*":             { "mode": "A", "context_window": 1000000 },
 
+  "opencode-go/glm-5.1":            { "mode": "A", "context_window": 202752 },
+  "opencode-go/glm-5":              { "mode": "A", "context_window": 202752 },
+  "opencode-go/kimi-k2.6":          { "mode": "A", "context_window": 262144 },
+  "opencode-go/kimi-k2.5":          { "mode": "A", "context_window": 262144 },
+  "opencode-go/deepseek-v4-pro":    { "mode": "A", "context_window": 131072 },
+  "opencode-go/deepseek-v4-flash":  { "mode": "A", "context_window": 131072 },
+  "opencode-go/qwen3.6-plus":       { "mode": "A", "context_window": 262144 },
+  "opencode-go/qwen3.5-plus":       { "mode": "A", "context_window": 262144 },
+  "opencode-go/*":                  { "mode": "A", "context_window": 131072 },
+
   "mistral/*":               { "mode": "A", "context_window": 256000 },
   "xai/*":                   { "mode": "A", "context_window": 256000 },
 

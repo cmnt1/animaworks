@@ -559,6 +559,10 @@ class BaseExecutor(ABC):
 
     def _resolve_api_key(self) -> str | None:
         """Resolve the actual API key (direct value from config, then env var)."""
+        if self._model_config.model.startswith("opencode-go/") or self._model_config.api_key_env == "OPENCODE_API_KEY":
+            from core.config.opencode_go import opencode_go_api_key
+
+            return opencode_go_api_key(self._model_config.api_key)
         if self._model_config.api_key:
             return self._model_config.api_key
         return os.environ.get(self._model_config.api_key_env)

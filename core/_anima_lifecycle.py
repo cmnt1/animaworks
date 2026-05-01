@@ -16,6 +16,7 @@ import os
 import time
 from typing import Any
 
+from core.config.opencode_go import OPENCODE_GO_API_KEY_ENV, OPENCODE_GO_PROVIDER, with_opencode_go_defaults
 from core.execution._sanitize import ORIGIN_SYSTEM
 from core.i18n import t
 from core.paths import load_prompt
@@ -55,6 +56,7 @@ _PROVIDER_ENV_MAP: dict[str, str] = {
     "google": "GEMINI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
+    OPENCODE_GO_PROVIDER: OPENCODE_GO_API_KEY_ENV,
 }
 
 
@@ -72,6 +74,10 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
     api_base_url = (cred.base_url if cred else None) or None
     credential_type = (cred.type if cred else None) or "api_key"
     api_key_env = _PROVIDER_ENV_MAP.get(provider, "ANTHROPIC_API_KEY")
+    if provider == OPENCODE_GO_PROVIDER:
+        defaults = with_opencode_go_defaults(cred)
+        api_key = defaults["api_key"] or None
+        api_base_url = defaults["base_url"]
     extra_keys: dict[str, str] = {}
     if cred and hasattr(cred, "keys") and cred.keys:
         extra_keys = dict(cred.keys)

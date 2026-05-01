@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from core.config.local_llm import is_local_llm_default, resolve_local_llm_role_model
+from core.config.opencode_go import OPENCODE_GO_PROVIDER, with_opencode_go_defaults
 from core.config.schemas import AnimaDefaults, AnimaModelConfig, AnimaWorksConfig, CredentialConfig
 
 logger = logging.getLogger("animaworks.config")
@@ -143,6 +144,17 @@ def resolve_anima_config(
     resolved_defaults = AnimaDefaults.model_validate(resolved)
 
     credential_name = resolved_defaults.credential
+    if credential_name == OPENCODE_GO_PROVIDER:
+        raw_credential = config.credentials.get(credential_name)
+        defaults = with_opencode_go_defaults(raw_credential)
+        credential = CredentialConfig(
+            type=(raw_credential.type if raw_credential else "api_key"),
+            api_key=defaults["api_key"] or "",
+            base_url=defaults["base_url"],
+            keys=dict(raw_credential.keys) if raw_credential else {},
+        )
+        return resolved_defaults, credential
+
     if credential_name not in config.credentials:
         raise KeyError(f"Credential '{credential_name}' (for anima '{anima_name}') not found in config.credentials")
 

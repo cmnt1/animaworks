@@ -51,6 +51,15 @@ export function render(container) {
           <div class="usage-loading">${t("common.loading")}</div>
         </div>
       </div>
+      <div class="usage-card usage-card--compact" id="usageCardOpencodeGo">
+        <div class="usage-card-header">
+          <span class="usage-provider-name">OpenCode Go</span>
+          <span class="usage-sub-type" id="usageOpencodeGoSub"></span>
+        </div>
+        <div class="usage-card-body" id="usageOpencodeGoBody">
+          <div class="usage-loading">${t("common.loading")}</div>
+        </div>
+      </div>
     </div>
     <div id="usageAuthAlerts" style="display:none;"></div>
     <div id="usageGovernorBar" style="display:none;"></div>
@@ -378,8 +387,40 @@ function _usageCanRelogin(errorCode) {
   return new Set(["rate_limited", "unauthorized", "no_credentials"]).has(errorCode);
 }
 
+function _renderCompactUsageBar(label, win) {
+  const utilization = win?.utilization ?? 0;
+  const resetAt = win?.resets_at;
+  const windowSeconds = win?.window_seconds;
+  const resetMs = resetAt
+    ? (typeof resetAt === "number" ? (resetAt < 1e12 ? resetAt * 1000 : resetAt) : new Date(resetAt).getTime())
+    : 0;
+  const resetInPast = resetMs > 0 && resetMs <= Date.now();
+  const effectiveUtil = resetInPast ? 0 : utilization;
+  const remaining = Math.max(0, 100 - effectiveUtil);
+  const timePct = _calcTimePct(resetAt, windowSeconds);
+  const color = _remainingColor(remaining, timePct);
+  const resetStr = resetInPast ? "" : (resetAt ? _resetToJst(resetAt) : "");
+  const markerHtml = timePct !== null && windowSeconds
+    ? `<div class="usage-bar-time-marker" style="left:${timePct}%" data-label="${timePct.toFixed(0)}%"></div>`
+    : "";
+
+  return `
+    <div class="usage-compact-row" title="${resetStr ? `${t("home.usage_reset")}: ${escapeHtml(resetStr)}` : ""}">
+      <div class="usage-compact-head">
+        <span class="usage-label">${escapeHtml(label)}</span>
+        <span class="usage-pct" style="color:${color}">${remaining.toFixed(0)}%</span>
+      </div>
+      <div class="usage-bar-track">
+        <div class="usage-bar-fill" style="width:${remaining}%;background:${color}"></div>
+        ${markerHtml}
+      </div>
+      <div class="usage-compact-reset">${resetStr ? escapeHtml(resetStr) : "&nbsp;"}</div>
+    </div>
+  `;
+}
+
 function _renderUsageError(provider, data, msg) {
-  const showButton = _usageCanRelogin(data.error);
+  const showButton = (provider === "claude" || provider === "openai") && _usageCanRelogin(data.error);
   const buttonLabel = provider === "claude" ? "Claude 再認証" : "Codex ログイン";
   return `
     <div class="usage-error">${escapeHtml(msg)}</div>
@@ -520,6 +561,28 @@ function _renderNanogptUsage(data) {
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
+function _renderOpencodeGoUsage(data) {
+  const el = document.getElementById("usageOpencodeGoBody");
+  if (!el) return;
+
+  if (data.error) {
+    const msg = data.error === "no_credentials"
+      ? data.message || t("home.usage_no_credentials")
+      : data.message || data.error;
+    el.innerHTML = _renderUsageError("opencode_go", data, msg);
+    return;
+  }
+
+  const order = ["5h", "Week", "Month"];
+  let html = "";
+  for (const key of order) {
+    const win = data[key];
+    if (!win || typeof win !== "object" || win.utilization === undefined) continue;
+    html += _renderCompactUsageBar(key, win);
+  }
+  el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
+}
+
 function _renderAuthAlerts(alerts) {
   const el = document.getElementById("usageAuthAlerts");
   if (!el) return;
@@ -528,7 +591,7 @@ function _renderAuthAlerts(alerts) {
     return;
   }
 
-  const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "nanoGPT" };
+  const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "nanoGPT", opencode_go: "OpenCode Go" };
   const RELOGIN_PATHS = {
     claude: "/api/usage/claude/relogin",
     openai: "/api/usage/openai/relogin",
@@ -580,7 +643,7 @@ function _renderGovernor(gov) {
   }
 
   // Parse combined reason string into per-provider buckets
-  const providerReasons = { claude: [], openai: [], nanogpt: [] };
+  const providerReasons = { claude: [], openai: [], nanogpt: [], opencode_go: [] };
   for (const seg of (gov.reason || "").split(" | ")) {
     for (const p of Object.keys(providerReasons)) {
       if (seg.startsWith(p + ".") || seg.startsWith(p + " ")) {
@@ -591,7 +654,7 @@ function _renderGovernor(gov) {
   }
 
   const perSuspended = gov.per_provider_suspended || {};
-  const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT" };
+  const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT", opencode_go: "OpenCode Go" };
   const _reloginPat = /rate_limited|unauthorized|no_credentials/;
 
   let rowsHtml = "";
@@ -626,7 +689,7 @@ function _renderGovernor(gov) {
   // Activity level throttle per provider (< 100 = actual throttle).
   // Each row applies only to Animas whose main credential matches the provider.
   const actByProv = gov.activity_level_by_provider || {};
-  const ACT_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT" };
+  const ACT_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT", opencode_go: "OpenCode Go" };
   for (const [prov, lvl] of Object.entries(actByProv)) {
     if (lvl === null || lvl === undefined || lvl >= 100) continue;
     const label = ACT_LABELS[prov] || prov;
@@ -640,7 +703,7 @@ function _renderGovernor(gov) {
   // Background model fallback
   const fbProviders = gov.background_fallback_providers || [];
   if (fbProviders.length > 0) {
-    const FB_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT" };
+    const FB_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT", opencode_go: "OpenCode Go" };
     const providerList = fbProviders.map((p) => FB_LABELS[p] || p).join(", ");
     rowsHtml += `
       <div class="governor-row">
@@ -707,6 +770,7 @@ async function _loadUsage(forceRefresh = false) {
     if (data.claude) _renderClaudeUsage(data.claude);
     if (data.openai) _renderOpenaiUsage(data.openai);
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
+    if (data.opencode_go) _renderOpencodeGoUsage(data.opencode_go);
     _renderAuthAlerts(data.auth_alerts);
     _renderGovernor(data.governor);
     const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;
@@ -715,10 +779,12 @@ async function _loadUsage(forceRefresh = false) {
     const claudeEl = document.getElementById("usageClaudeBody");
     const openaiEl = document.getElementById("usageOpenaiBody");
     const nanogptEl = document.getElementById("usageNanogptBody");
+    const opencodeGoEl = document.getElementById("usageOpencodeGoBody");
     const msg = `<div class="usage-error">${escapeHtml(err.message)}</div>`;
     if (claudeEl) claudeEl.innerHTML = msg;
     if (openaiEl) openaiEl.innerHTML = msg;
     if (nanogptEl) nanogptEl.innerHTML = msg;
+    if (opencodeGoEl) opencodeGoEl.innerHTML = msg;
   }
 }
 

@@ -15,9 +15,9 @@ import pytest
 
 pytestmark = pytest.mark.asyncio
 
+from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
-from core.memory.shortterm import ShortTermMemory
 from core.tooling.handler import ToolHandler
 from tests.helpers.mocks import (
     make_litellm_response,
@@ -190,6 +190,51 @@ class TestBuildLlmKwargs:
         )
         kwargs = ex._build_llm_kwargs()
         assert kwargs["api_base"] == "http://localhost:11434/v1"
+
+    def test_opencode_go_routes_as_openai_compatible(self, anima_dir: Path, memory: MagicMock):
+        cfg = ModelConfig(
+            model="opencode-go/glm-5.1",
+            api_key="sk-opencode",
+            max_tokens=1024,
+            max_turns=5,
+        )
+        th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
+        from core.execution.litellm_loop import LiteLLMExecutor
+
+        ex = LiteLLMExecutor(
+            model_config=cfg,
+            anima_dir=anima_dir,
+            tool_handler=th,
+            tool_registry=[],
+            memory=memory,
+        )
+
+        kwargs = ex._build_llm_kwargs()
+        assert kwargs["model"] == "openai/glm-5.1"
+        assert kwargs["api_base"] == "https://opencode.ai/zen/go/v1"
+        assert kwargs["api_key"] == "sk-opencode"
+
+    def test_opencode_go_minimax_routes_as_anthropic_compatible(self, anima_dir: Path, memory: MagicMock):
+        cfg = ModelConfig(
+            model="opencode-go/minimax-m2.7",
+            api_key="sk-opencode",
+            max_tokens=1024,
+            max_turns=5,
+        )
+        th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
+        from core.execution.litellm_loop import LiteLLMExecutor
+
+        ex = LiteLLMExecutor(
+            model_config=cfg,
+            anima_dir=anima_dir,
+            tool_handler=th,
+            tool_registry=[],
+            memory=memory,
+        )
+
+        kwargs = ex._build_llm_kwargs()
+        assert kwargs["model"] == "anthropic/minimax-m2.7"
+        assert kwargs["api_base"] == "https://opencode.ai/zen/go/v1"
 
 
 # ── execute() — simple response ──────────────────────────────

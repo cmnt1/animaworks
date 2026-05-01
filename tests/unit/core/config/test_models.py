@@ -13,12 +13,12 @@ from unittest.mock import patch
 import pytest
 
 from core.config.models import (
+    DEFAULT_LOCAL_LLM_MODEL,
     AnimaDefaults,
     AnimaModelConfig,
     AnimaWorksConfig,
     CommandsPermission,
     CredentialConfig,
-    DEFAULT_LOCAL_LLM_MODEL,
     ExternalToolsPermission,
     GatewaySystemConfig,
     ImageGenConfig,
@@ -546,6 +546,19 @@ class TestResolveAnimaConfig:
         with pytest.raises(KeyError, match="nonexistent"):
             resolve_anima_config(config, "alice", anima_dir=tmp_path)
 
+    def test_opencode_go_credential_is_synthesized_from_abconfig(self, tmp_path):
+        status = {"credential": "opencode-go", "model": "opencode-go/glm-5.1"}
+        (tmp_path / "status.json").write_text(json.dumps(status), encoding="utf-8")
+        config = AnimaWorksConfig(credentials={})
+        config.animas["alice"] = AnimaModelConfig()
+
+        with patch("core.config.opencode_go.opencode_go_api_key", return_value="sk-opencode"):
+            resolved, cred = resolve_anima_config(config, "alice", anima_dir=tmp_path)
+
+        assert resolved.credential == "opencode-go"
+        assert cred.api_key == "sk-opencode"
+        assert cred.base_url == "https://opencode.ai/zen/go/v1"
+
     def test_partial_overrides(self):
         config = AnimaWorksConfig()
         config.animas["bob"] = AnimaModelConfig(
@@ -843,6 +856,33 @@ class TestLoadModelConfig:
         mc = load_model_config(anima_dir)
         assert mc.api_key == "sk-openai"
         assert mc.api_base_url == "https://api.openai.com"
+
+    def test_opencode_go_uses_stable_env_and_base_url(self, data_dir):
+        import json as _json
+
+        config_data = {
+            "version": 1,
+            "credentials": {},
+            "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
+            "animas": {"go": {}},
+        }
+        (data_dir / "config.json").write_text(_json.dumps(config_data), encoding="utf-8")
+        invalidate_cache()
+
+        anima_dir = data_dir / "animas" / "go"
+        anima_dir.mkdir(parents=True, exist_ok=True)
+        (anima_dir / "status.json").write_text(
+            _json.dumps({"model": "opencode-go/glm-5.1", "credential": "opencode-go"}),
+            encoding="utf-8",
+        )
+
+        with patch("core.config.opencode_go.opencode_go_api_key", return_value="sk-opencode"):
+            mc = load_model_config(anima_dir)
+
+        assert mc.model == "opencode-go/glm-5.1"
+        assert mc.api_key == "sk-opencode"
+        assert mc.api_key_env == "OPENCODE_API_KEY"
+        assert mc.api_base_url == "https://opencode.ai/zen/go/v1"
 
 
 # ── read_anima_supervisor ────────────────────────────────

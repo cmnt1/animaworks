@@ -807,7 +807,7 @@ class AnimaWorksConfig(BaseModel):
         default_factory=dict,
         description=(
             "Per-provider activity level overrides (10-400%). Keys: "
-            "'claude', 'openai', 'nanogpt', 'default'. Empty dict or missing "
+            "'claude', 'openai', 'nanogpt', 'opencode_go', 'default'. Empty dict or missing "
             "key falls back to activity_level. Each Anima picks the entry "
             "matching its main credential's provider."
         ),

@@ -66,6 +66,7 @@ export function render(container) {
           ${_perProviderRow("claude", "Claude")}
           ${_perProviderRow("openai", "OpenAI")}
           ${_perProviderRow("nanogpt", "nanoGPT")}
+          ${_perProviderRow("opencode_go", "OpenCode Go")}
           ${_perProviderRow("default", t("settings.activity_level.per_provider.default_label"))}
         </details>
 
@@ -362,7 +363,7 @@ async function _setActivityLevel(level, container) {
 // ── Per-provider activity level ──────────────────────────────
 
 function _initPerProvider(container, byProvider, globalLevel) {
-  const providers = ["claude", "openai", "nanogpt", "default"];
+  const providers = ["claude", "openai", "nanogpt", "opencode_go", "default"];
   for (const prov of providers) {
     const cb = container.querySelector(`.activity-provider-enable[data-provider="${prov}"]`);
     const sl = container.querySelector(`.activity-provider-slider[data-provider="${prov}"]`);
@@ -397,7 +398,7 @@ function _initPerProvider(container, byProvider, globalLevel) {
 }
 
 async function _savePerProvider(container) {
-  const providers = ["claude", "openai", "nanogpt", "default"];
+  const providers = ["claude", "openai", "nanogpt", "opencode_go", "default"];
   const dict = {};
   for (const prov of providers) {
     const cb = container.querySelector(`.activity-provider-enable[data-provider="${prov}"]`);

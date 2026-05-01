@@ -15,6 +15,14 @@ import re
 import threading
 from typing import Any
 
+from core.config.opencode_go import (
+    OPENCODE_GO_API_BASE_URL,
+    OPENCODE_GO_API_KEY_ENV,
+    OPENCODE_GO_PROVIDER,
+    opencode_go_litellm_model,
+    with_opencode_go_defaults,
+)
+
 logger = logging.getLogger(__name__)
 
 _ANTHROPIC_MODEL_RE = re.compile(
@@ -30,6 +38,7 @@ _PROVIDER_ENV_MAP: dict[str, str] = {
     "google": "GEMINI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
+    OPENCODE_GO_PROVIDER: OPENCODE_GO_API_KEY_ENV,
 }
 
 _credentials_exported: bool = False
@@ -115,6 +124,14 @@ def get_llm_kwargs_for_model(model: str) -> dict[str, Any]:
 
     provider = _get_provider_for_model(resolved_model)
     cred = cfg.credentials.get(provider) if provider else None
+
+    if provider == OPENCODE_GO_PROVIDER:
+        defaults = with_opencode_go_defaults(cred)
+        kwargs["model"] = opencode_go_litellm_model(resolved_model)
+        kwargs["api_base"] = defaults["base_url"] or OPENCODE_GO_API_BASE_URL
+        if defaults["api_key"]:
+            kwargs["api_key"] = defaults["api_key"]
+        return kwargs
 
     if provider == "ollama":
         base_url = None

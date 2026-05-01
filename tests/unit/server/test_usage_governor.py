@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from server import usage_governor
-from server.usage_governor import DEFAULT_POLICY, UsageGovernor, _evaluate_time_proportional
+from server.usage_governor import DEFAULT_POLICY, UsageGovernor, _classify_animas, _evaluate_time_proportional
 
 
 def _write_status(animas_dir, name: str, credential: str) -> None:
@@ -123,6 +123,15 @@ def test_time_proportional_caps_activity_level_at_400(monkeypatch):
     assert "activity 400%" in reason
 
 
+def test_classify_animas_maps_opencode_go(tmp_path):
+    animas_dir = tmp_path / "animas"
+    _write_status(animas_dir, "go-anima", "opencode-go")
+
+    groups = _classify_animas(animas_dir, ["go-anima"])
+
+    assert groups == {"opencode_go": ["go-anima"]}
+
+
 @pytest.mark.asyncio
 async def test_tick_keeps_suspended_anima_when_usage_fetch_fails(tmp_path, monkeypatch):
     data_dir = tmp_path / "data"
@@ -146,6 +155,10 @@ async def test_tick_keeps_suspended_anima_when_usage_fetch_fails(tmp_path, monke
     monkeypatch.setattr(
         "server.routes.usage_routes._fetch_openai_usage",
         lambda **kwargs: {"provider": "openai"},
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_opencode_go_usage",
+        lambda **kwargs: {"provider": "opencode_go"},
     )
 
     await governor._tick(DEFAULT_POLICY)
@@ -191,6 +204,10 @@ async def test_tick_only_keeps_suspended_animas_for_provider_with_fetch_failure(
                 "window_seconds": 604800,
             },
         },
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_opencode_go_usage",
+        lambda **kwargs: {"provider": "opencode_go"},
     )
 
     await governor._tick(DEFAULT_POLICY)

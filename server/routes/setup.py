@@ -16,6 +16,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from core.config.opencode_go import (
+    OPENCODE_GO_API_BASE_URL,
+    OPENCODE_GO_FALLBACK_MODELS,
+    OPENCODE_GO_MODELS_URL,
+    OPENCODE_GO_PROVIDER,
+)
 from core.platform.codex import (
     get_codex_device_login,
     is_codex_cli_available,
@@ -46,6 +52,13 @@ AVAILABLE_PROVIDERS = [
         "name": "Google",
         "models": ["google/gemini-2.5-flash", "google/gemini-2.5-pro"],
         "env_key": "GOOGLE_API_KEY",
+    },
+    {
+        "id": OPENCODE_GO_PROVIDER,
+        "name": "OpenCode Go",
+        "models": list(OPENCODE_GO_FALLBACK_MODELS[:4]),
+        "env_key": "OPENCODE_API_KEY",
+        "base_url": OPENCODE_GO_API_BASE_URL,
     },
     {
         "id": "cursor_agent",
@@ -193,6 +206,8 @@ def create_setup_router() -> APIRouter:
             return await _validate_openai_key(api_key)
         elif provider == "google":
             return await _validate_google_key(api_key)
+        elif provider == OPENCODE_GO_PROVIDER:
+            return await _validate_opencode_go_key(api_key)
         elif provider == "ollama":
             return {"valid": True, "message": "Ollama does not require an API key"}
         elif provider == "cursor_agent":
@@ -511,6 +526,25 @@ async def _validate_google_key(api_key: str) -> dict[str, Any]:
         if resp.status_code == 200:
             return {"valid": True, "message": "API key is valid"}
         if resp.status_code in (400, 401, 403):
+            return {"valid": False, "message": "Invalid API key"}
+        return {"valid": False, "message": f"Unexpected status: {resp.status_code}"}
+    except Exception as exc:
+        return {"valid": False, "message": f"Connection error: {exc}"}
+
+
+async def _validate_opencode_go_key(api_key: str) -> dict[str, Any]:
+    """Validate an OpenCode Go API key by listing Go models."""
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                OPENCODE_GO_MODELS_URL,
+                headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+            )
+        if resp.status_code == 200:
+            return {"valid": True, "message": "API key is valid"}
+        if resp.status_code in (401, 403):
             return {"valid": False, "message": "Invalid API key"}
         return {"valid": False, "message": f"Unexpected status: {resp.status_code}"}
     except Exception as exc:

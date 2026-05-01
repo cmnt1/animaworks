@@ -31,6 +31,21 @@ class _FakeResponse:
         return False
 
 
+class _FakeTextResponse:
+    def __init__(self, text: str):
+        self.status = 200
+        self._body = text.encode("utf-8")
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 def test_refresh_codex_token_updates_auth_file(tmp_path: Path, monkeypatch):
     auth_path = tmp_path / "auth.json"
     auth_data = {
@@ -146,3 +161,39 @@ def test_fetch_openai_usage_refreshes_after_401(monkeypatch):
     assert result["5h"]["remaining"] == 88
     assert result["Week"]["remaining"] == 66
     assert len(calls) == 2
+
+
+def test_parse_opencode_go_dashboard_window_handles_field_order():
+    html = "rollingUsage:$R[7]={resetInSec:7200,usagePercent:30}"
+
+    assert usage_routes._parse_opencode_go_window(html, "rollingUsage") == (30.0, 7200.0)
+
+
+def test_fetch_opencode_go_usage_scrapes_dashboard_windows(monkeypatch):
+    html = (
+        "rollingUsage:$R[1]={usagePercent:7,resetInSec:18000}"
+        "weeklyUsage:$R[2]={usagePercent:22,resetInSec:540000}"
+        "monthlyUsage:$R[3]={resetInSec:2480000,usagePercent:64}"
+    )
+    calls: list[str] = []
+
+    def fake_urlopen(req, timeout=0):
+        calls.append(req.full_url)
+        assert req.headers["Cookie"] == "auth=cookie-abc"
+        return _FakeTextResponse(html)
+
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(
+        usage_routes,
+        "_read_opencode_go_dashboard_config",
+        lambda: ("ws-123", "cookie-abc", "env", None),
+    )
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", fake_urlopen)
+
+    result = usage_routes._fetch_opencode_go_usage(skip_cache=True)
+
+    assert calls == ["https://opencode.ai/workspace/ws-123/go"]
+    assert result["provider"] == "opencode_go"
+    assert result["5h"]["remaining"] == 93
+    assert result["Week"]["remaining"] == 78
+    assert result["Month"]["remaining"] == 36

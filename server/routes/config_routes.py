@@ -30,6 +30,14 @@ from core.config.models import (
     load_config,
     save_config,
 )
+from core.config.opencode_go import (
+    OPENCODE_GO_API_KEY_ENV,
+    OPENCODE_GO_FALLBACK_MODELS,
+    OPENCODE_GO_MODELS_URL,
+    OPENCODE_GO_PROVIDER,
+    opencode_go_api_key,
+    opencode_go_model_id,
+)
 from core.i18n import t
 from core.paths import get_animas_dir, get_data_dir
 from core.platform.claude_code import is_claude_code_available
@@ -38,9 +46,17 @@ from core.platform.codex import is_codex_cli_available, is_codex_login_available
 logger = logging.getLogger("animaworks.routes.config")
 
 ABCONFIG_ENV_FILE = Path(r"E:\OneDriveBiz\Tools\abconfig\Cnct_Env.py")
-ABCONFIG_KEYS = {"openai_id", "openai_key", "claude_token", "claude_api", "nanogpt_api", "gemini_api"}
+ABCONFIG_KEYS = {
+    "openai_id",
+    "openai_key",
+    "claude_token",
+    "claude_api",
+    "nanogpt_api",
+    "gemini_api",
+    "opencode_api",
+}
 MODEL_CATALOG_CACHE_FILE = "model_catalog_cache.json"
-MODEL_CATALOG_PROVIDERS = ("claude_code", "codex", "nanogpt", "google")
+MODEL_CATALOG_PROVIDERS = ("claude_code", "codex", "opencode_go", "nanogpt", "google")
 
 
 def _known_codex_models() -> list[str]:
@@ -69,6 +85,10 @@ def _known_google_models() -> list[str]:
         "google/gemini-2.0-flash",
         "google/gemini-2.0-flash-lite",
     ]
+
+
+def _known_opencode_go_models() -> list[str]:
+    return list(OPENCODE_GO_FALLBACK_MODELS)
 
 
 def _load_abconfig_credentials() -> dict[str, str]:
@@ -309,6 +329,23 @@ def _list_openai_models(api_key: str, organization: str = "") -> list[str]:
     return _unique_model_ids([f"codex/{model_id}" for model_id in sorted(ids) if model_id.startswith(("gpt-", "o"))])
 
 
+def _list_opencode_go_models(api_key: str = "") -> list[str]:
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    response = httpx.get(
+        OPENCODE_GO_MODELS_URL,
+        headers=headers,
+        timeout=httpx.Timeout(10.0, connect=5.0),
+    )
+    response.raise_for_status()
+    data = response.json()
+    models = [
+        opencode_go_model_id(str(item.get("id", "")).strip())
+        for item in data.get("data", [])
+        if isinstance(item, dict) and item.get("id")
+    ]
+    return _unique_model_ids(models)
+
+
 def _list_anthropic_models(api_key: str = "", auth_token: str = "") -> list[str]:
     headers = {"anthropic-version": "2023-06-01"}
     if api_key:
@@ -418,6 +455,40 @@ def _refresh_codex_models(config) -> dict[str, object]:
     return {"provider": "codex", "status": "ok", "source": "api", "dynamic": True, "count": len(models)}
 
 
+def _refresh_opencode_go_models(config) -> dict[str, object]:
+    credential = config.credentials.get(OPENCODE_GO_PROVIDER, CredentialConfig())
+    fallback = _known_opencode_go_models()
+    api_key = _first_secret(
+        credential.api_key,
+        os.environ.get(OPENCODE_GO_API_KEY_ENV),
+        _abconfig_value("opencode_api"),
+    )
+    try:
+        models = _list_opencode_go_models(api_key)
+    except Exception as exc:
+        cached = _cached_provider_models("opencode_go")
+        if cached:
+            return {
+                "provider": "opencode_go",
+                "status": "cached",
+                "source": "cache",
+                "dynamic": False,
+                "count": len(cached),
+                "message": str(exc),
+            }
+        _cache_provider_models("opencode_go", fallback, status="fallback", message=str(exc))
+        return {
+            "provider": "opencode_go",
+            "status": "fallback",
+            "source": "known",
+            "dynamic": False,
+            "count": len(fallback),
+            "message": str(exc),
+        }
+    _cache_provider_models("opencode_go", models, status="ok")
+    return {"provider": "opencode_go", "status": "ok", "source": "api", "dynamic": True, "count": len(models)}
+
+
 def _refresh_nanogpt_models(config) -> dict[str, object]:
     credential = config.credentials.get("nanogpt", CredentialConfig())
     api_key = _first_secret(credential.api_key, os.environ.get("NANOGPT_API_KEY"), _abconfig_value("nanogpt_api"))
@@ -492,7 +563,11 @@ def _available_models_payload(config) -> list[dict[str, str]]:
         seen.add(model_id)
 
     for provider, cred in config.credentials.items():
-        if not cred.api_key and cred.type not in ("claude_code_login", "codex_login"):
+        if (
+            provider != OPENCODE_GO_PROVIDER
+            and not cred.api_key
+            and cred.type not in ("claude_code_login", "codex_login")
+        ):
             continue
         if provider == "anthropic":
             for model_id in _models_for_provider("claude_code", _known_claude_code_models()):
@@ -519,6 +594,24 @@ def _available_models_payload(config) -> list[dict[str, str]]:
         elif provider in ("google", "gemini"):
             for model_id in _models_for_provider("google", _known_google_models()):
                 add(model_id, label=f"Google: {model_id.removeprefix('google/')}", credential="google")
+        elif provider == OPENCODE_GO_PROVIDER and (
+            cred.api_key or opencode_go_api_key() or _abconfig_value("opencode_api")
+        ):
+            fallback = _known_opencode_go_models()
+            for model_id in _models_for_provider("opencode_go", fallback):
+                add(
+                    model_id,
+                    label=f"OpenCode Go: {model_id.removeprefix(OPENCODE_GO_PROVIDER + '/')}",
+                    credential=OPENCODE_GO_PROVIDER,
+                )
+
+    if OPENCODE_GO_PROVIDER not in config.credentials and (opencode_go_api_key() or _abconfig_value("opencode_api")):
+        for model_id in _models_for_provider("opencode_go", _known_opencode_go_models()):
+            add(
+                model_id,
+                label=f"OpenCode Go: {model_id.removeprefix(OPENCODE_GO_PROVIDER + '/')}",
+                credential=OPENCODE_GO_PROVIDER,
+            )
 
     if is_codex_login_available():
         for model_id in _models_for_provider("codex", _known_codex_models()):
@@ -698,6 +791,8 @@ def create_config_router() -> APIRouter:
                 results.append(_refresh_claude_code_models(config))
             elif provider == "codex":
                 results.append(_refresh_codex_models(config))
+            elif provider == "opencode_go":
+                results.append(_refresh_opencode_go_models(config))
             elif provider == "nanogpt":
                 results.append(_refresh_nanogpt_models(config))
             elif provider == "google":

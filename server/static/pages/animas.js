@@ -17,6 +17,7 @@ function _shortModel(name) {
   if (name.startsWith("openai-codex/")) return "OpenAI: " + name;
   if (/^(gpt-|o3|o4-)/.test(name)) return "OpenAI: " + name;
   if (name.startsWith("google/")) return "Google: " + name.replace(/^google\//, "");
+  if (name.startsWith("opencode-go/")) return "OpenCode Go: " + name.replace(/^opencode-go\//, "");
   if (name.startsWith("nanogpt/")) return "nanoGPT: " + name.replace(/^nanogpt\//, "");
   return name;
 }
@@ -193,6 +194,7 @@ function _modelOptionsHtml(models, currentModel) {
 const MODEL_REFRESH_PROVIDER_LABELS = {
   claude_code: "Claude Code",
   codex: "Codex",
+  opencode_go: "OpenCode Go",
   nanogpt: "nanoGPT",
   google: "Google",
 };
@@ -258,7 +260,7 @@ function _bindModelRefreshButton({ buttonId, statusId, selectId = null, currentM
       const res = await api("/api/system/available-models/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providers: ["claude_code", "codex", "nanogpt", "google"] }),
+        body: JSON.stringify({ providers: ["claude_code", "codex", "opencode_go", "nanogpt", "google"] }),
       });
       _modelsCache = res.models || await _fetchModels(true);
       if (select) {

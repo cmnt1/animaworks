@@ -38,6 +38,7 @@ _CREDENTIAL_TO_GOVERNOR_PROVIDER: dict[str, str] = {
     "anthropic": "claude",
     "openai": "openai",
     "nanogpt": "nanogpt",
+    "opencode-go": "opencode_go",
 }
 
 
@@ -89,7 +90,7 @@ def _read_governor_activity_level(anima_dir: Path | None = None) -> int | None:
 def _read_governor_fallback_providers() -> list[str]:
     """Read ``background_fallback_providers`` from usage_governor_state.json.
 
-    Returns provider keys (``claude``/``openai``/``nanogpt``) whose background
+    Returns provider keys (``claude``/``openai``/``nanogpt``/``opencode_go``) whose background
     models should be swapped to the Anima's credential fallback model.
     """
     from core.paths import get_data_dir
@@ -120,6 +121,8 @@ def _model_to_governor_provider(model_name: str | None) -> str | None:
         return "openai"
     if model_name.startswith("nanogpt/"):
         return "nanogpt"
+    if model_name.startswith("opencode-go/"):
+        return "opencode_go"
     return None
 
 
@@ -129,6 +132,7 @@ _CREDENTIAL_FALLBACK_BACKGROUND: dict[str, str] = {
     "anthropic": "claude-sonnet-4-6",
     "openai": "openai/gpt-4.1-mini",
     "nanogpt": "qwen/qwen3.5-9b",
+    "opencode-go": "opencode-go/deepseek-v4-flash",
 }
 
 
