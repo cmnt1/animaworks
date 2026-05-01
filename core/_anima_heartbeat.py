@@ -521,14 +521,15 @@ class HeartbeatMixin:
             _hb_cfg = _cfg.heartbeat
             # Resolve user-configured level (per-provider override if set)
             from core.supervisor.scheduler_manager import (
-                _read_governor_activity_level,
+                _read_governor_background_activity_level,
                 resolve_user_activity_level,
             )
 
             _activity = resolve_user_activity_level(_cfg, self.agent.anima_dir)
             # Governor throttle: use the more restrictive level.
-            # Only the Anima's front-model provider is consulted.
-            _gov = _read_governor_activity_level(self.agent.anima_dir)
+            # Heartbeat is background/self-initiated work, so the background
+            # provider is consulted when configured.
+            _gov = _read_governor_background_activity_level(self.agent.anima_dir)
             if _gov is not None:
                 _activity = min(_activity, _gov)
             effective_max_turns = _calc_effective_max_turns(

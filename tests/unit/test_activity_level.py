@@ -302,7 +302,7 @@ class TestSchedulerActivityLevel:
         mgr.shutdown()
 
     @pytest.mark.asyncio
-    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=None)
+    @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=None)
     @patch("core.supervisor.scheduler_manager.load_config")
     async def test_low_activity_uses_polling(self, mock_load_config, _mock_gov, tmp_path):
         """Activity 10% with base 30min -> effective 300min (>60) -> polling mode."""
@@ -358,7 +358,7 @@ class TestGovernorAuthoritative:
         )
 
     @pytest.mark.asyncio
-    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=130)
+    @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=130)
     @patch("core.supervisor.scheduler_manager.load_config")
     async def test_governor_overrides_stale_config(self, mock_load_config, _mock_gov, tmp_path):
         """Config says 20 (stale) but governor says 130 -> use 130."""
@@ -373,7 +373,7 @@ class TestGovernorAuthoritative:
         mgr.shutdown()
 
     @pytest.mark.asyncio
-    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=None)
+    @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=None)
     @patch("core.supervisor.scheduler_manager.load_config")
     async def test_config_used_when_governor_absent(self, mock_load_config, _mock_gov, tmp_path):
         """Governor absent -> config value drives interval (polling path)."""
@@ -594,7 +594,7 @@ class TestHeartbeatPolling:
         assert mgr._hb_first_check_done is True
 
     @pytest.mark.asyncio
-    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=None)
+    @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=None)
     @patch("core.supervisor.scheduler_manager.load_config")
     async def test_setup_polling_mode_registers_job(self, mock_load_config, _mock_gov, tmp_path):
         """interval > 60 registers a CronTrigger(minute='*') polling job."""
@@ -616,7 +616,7 @@ class TestHeartbeatPolling:
         mgr.shutdown()
 
     @pytest.mark.asyncio
-    @patch("core.supervisor.scheduler_manager._read_governor_activity_level", return_value=None)
+    @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=None)
     @patch("core.supervisor.scheduler_manager.load_config")
     async def test_reschedule_preserves_polling_mode(self, mock_load_config, _mock_gov, tmp_path):
         """Rescheduling with interval > 60 stays in polling mode."""

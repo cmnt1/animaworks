@@ -518,6 +518,7 @@ class InboxMixin:
                     result: CycleResult | None = None
 
                     original_config = None
+                    front_max_turns_override: int | None = None
                     bg_config = self._resolve_background_config()
                     # Preemptive model routing (B-3a): when the background
                     # model has weak tool_use and the request looks like it
@@ -546,6 +547,19 @@ class InboxMixin:
                         )
                         routed_config = None  # force main model
                     else:
+                        try:
+                            from core.supervisor.scheduler_manager import (
+                                _read_governor_front_activity_level,
+                                scale_max_turns_for_activity,
+                            )
+
+                            _front_level = _read_governor_front_activity_level(self.anima_dir)
+                            front_max_turns_override = scale_max_turns_for_activity(
+                                self.agent.model_config.max_turns,
+                                _front_level,
+                            )
+                        except Exception:
+                            logger.debug("[%s] Failed to resolve front activity max_turns", self.name, exc_info=True)
                         routed_config = route_model_config(
                             main_config=self.agent.model_config,
                             bg_config=bg_config,
@@ -560,6 +574,7 @@ class InboxMixin:
                         async for chunk in self.agent.run_cycle_streaming(
                             prompt,
                             trigger=trigger,
+                            max_turns_override=front_max_turns_override,
                         ):
                             if chunk.get("type") == "text_delta":
                                 accumulated_text += chunk.get("text", "")

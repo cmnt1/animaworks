@@ -39,6 +39,20 @@ logger = logging.getLogger("animaworks.anima")
 class MessagingMixin:
     """Mixin: human chat processing, bootstrap, and greeting."""
 
+    def _front_max_turns_override(self) -> int | None:
+        """Return front-response max_turns override from Governor, if throttled."""
+        try:
+            from core.supervisor.scheduler_manager import (
+                _read_governor_front_activity_level,
+                scale_max_turns_for_activity,
+            )
+
+            level = _read_governor_front_activity_level(self.anima_dir)
+            return scale_max_turns_for_activity(self.agent.model_config.max_turns, level)
+        except Exception:
+            logger.debug("[%s] Failed to resolve front activity max_turns", self.name, exc_info=True)
+            return None
+
     def _log_human_conversation(
         self,
         content: str,
@@ -350,6 +364,7 @@ class MessagingMixin:
                         message_intent=intent,
                         images=images,
                         prior_messages=prior_messages,
+                        max_turns_override=self._front_max_turns_override(),
                         thread_id=thread_id,
                     )
                     self._last_activity = now_local()
@@ -614,6 +629,7 @@ class MessagingMixin:
                         message_intent=intent,
                         images=images,
                         prior_messages=prior_messages,
+                        max_turns_override=self._front_max_turns_override(),
                         thread_id=thread_id,
                     ):
                         if chunk.get("type") == "text_delta":

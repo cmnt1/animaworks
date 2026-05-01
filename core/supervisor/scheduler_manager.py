@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import zlib
 from collections.abc import Callable
@@ -44,47 +45,110 @@ _CREDENTIAL_TO_GOVERNOR_PROVIDER: dict[str, str] = {
 
 def _read_anima_credential(anima_dir: Path) -> str:
     """Read the ``credential`` field from an Anima's status.json."""
+    return _read_anima_status_field(anima_dir, "credential")
+
+
+def _read_anima_status_field(anima_dir: Path, key: str) -> str:
+    """Read a string field from an Anima's status.json."""
     status = anima_dir / "status.json"
     if not status.is_file():
         return ""
     try:
         data = json.loads(status.read_text("utf-8"))
-        return data.get("credential", "") or ""
+        value = data.get(key, "") or ""
+        return value if isinstance(value, str) else ""
     except Exception:
         return ""
 
 
-def _read_governor_activity_level(anima_dir: Path | None = None) -> int | None:
-    """Read the Governor-imposed activity level for an Anima's front-model provider.
-
-    Only the provider matching the Anima's main ``credential`` is consulted.
-    Returns None if no throttle is active for that provider, or if the
-    credential maps to an untracked provider (local models, etc.).
-    """
+def _read_governor_state() -> dict[str, Any]:
     from core.paths import get_data_dir
 
     state_path = get_data_dir() / "usage_governor_state.json"
     if not state_path.is_file():
-        return None
+        return {}
     try:
-        data = json.loads(state_path.read_text("utf-8"))
+        return json.loads(state_path.read_text("utf-8"))
     except Exception:
-        return None
+        return {}
 
+
+def _read_activity_map(data: dict[str, Any], key: str) -> dict[str, int | None]:
+    by_provider = data.get(key)
+    if isinstance(by_provider, dict) and by_provider:
+        return {k: v for k, v in by_provider.items() if v is None or isinstance(v, int)}
+
+    # Backward compat: the original single map was front-oriented, but it is
+    # still the best available provider pressure signal for both roles.
     by_provider = data.get("governor_activity_level_by_provider")
-    if not isinstance(by_provider, dict) or not by_provider:
-        # Backward compat: legacy single-value field
-        legacy = data.get("governor_activity_level")
-        return legacy if isinstance(legacy, int) else None
+    if isinstance(by_provider, dict) and by_provider:
+        return {k: v for k, v in by_provider.items() if v is None or isinstance(v, int)}
 
-    if anima_dir is None:
-        return None
-    credential = _read_anima_credential(anima_dir)
-    provider = _CREDENTIAL_TO_GOVERNOR_PROVIDER.get(credential)
+    legacy = data.get("governor_activity_level")
+    if isinstance(legacy, int):
+        return {
+            "claude": legacy,
+            "openai": legacy,
+            "nanogpt": legacy,
+            "opencode_go": legacy,
+        }
+    return {}
+
+
+def _level_for_provider(activity_map: dict[str, int | None], provider: str | None) -> int | None:
     if provider is None:
         return None
-    level = by_provider.get(provider)
+    level = activity_map.get(provider)
     return level if isinstance(level, int) else None
+
+
+def _provider_from_credential(credential: str) -> str | None:
+    return _CREDENTIAL_TO_GOVERNOR_PROVIDER.get(credential)
+
+
+def _read_governor_front_activity_level(anima_dir: Path | None = None) -> int | None:
+    """Read Governor activity for response/front-model work.
+
+    Front activity follows the Anima's main ``credential`` because it controls
+    chat/inbox/external-response depth.
+    """
+    data = _read_governor_state()
+    if not data or anima_dir is None:
+        return None
+
+    provider = _provider_from_credential(_read_anima_credential(anima_dir))
+    return _level_for_provider(_read_activity_map(data, "front_activity_level_by_provider"), provider)
+
+
+def _read_governor_activity_level(anima_dir: Path | None = None) -> int | None:
+    """Backward-compatible alias for front activity."""
+    return _read_governor_front_activity_level(anima_dir)
+
+
+def scale_max_turns_for_activity(base_max_turns: int, activity_level: int | None) -> int | None:
+    """Return a max_turns override for throttled activity, or None for normal."""
+    if activity_level is None or activity_level >= 100:
+        return None
+    return max(3, math.ceil(base_max_turns * activity_level / 100))
+
+
+def _read_governor_background_activity_level(anima_dir: Path | None = None) -> int | None:
+    """Read Governor activity for background/self-initiated work.
+
+    Background activity follows ``background_credential``/``background_model``.
+    If no background model is configured, it falls back to the front provider.
+    """
+    data = _read_governor_state()
+    if not data or anima_dir is None:
+        return None
+
+    bg_credential = _read_anima_status_field(anima_dir, "background_credential")
+    provider = _provider_from_credential(bg_credential)
+    if provider is None:
+        provider = _model_to_governor_provider(_read_anima_status_field(anima_dir, "background_model"))
+    if provider is None:
+        provider = _provider_from_credential(_read_anima_credential(anima_dir))
+    return _level_for_provider(_read_activity_map(data, "background_activity_level_by_provider"), provider)
 
 
 def _read_governor_fallback_providers() -> list[str]:
@@ -287,8 +351,9 @@ class SchedulerManager:
         # Governor is authoritative when present: it already accounts for
         # budget/time pressure.  Manual ``config.activity_level`` (resolved
         # per-provider) is only used as a fallback when no governor state
-        # is available.  Only the Anima's front-model provider is consulted.
-        governor_level = _read_governor_activity_level(self._anima_dir)
+        # is available.  Heartbeat is background/self-initiated work, so it
+        # follows the Anima's background provider when one is configured.
+        governor_level = _read_governor_background_activity_level(self._anima_dir)
         if governor_level is not None:
             activity_pct = max(10, min(400, governor_level))
             activity_source = "governor"

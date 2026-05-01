@@ -148,9 +148,11 @@ class GovernorState:
         self.since: str = ""
         self.last_check: float = 0.0
         self.last_usage: dict[str, Any] = {}
-        # Per-provider activity level (claude / openai / nanogpt → level or None).
-        # Each Anima picks its own provider's level based on its main credential.
+        # Legacy-compatible provider activity map.  New readers prefer the
+        # explicit front/background maps below.
         self.governor_activity_level_by_provider: dict[str, int | None] = {}
+        self.front_activity_level_by_provider: dict[str, int | None] = {}
+        self.background_activity_level_by_provider: dict[str, int | None] = {}
         self.background_fallback_providers: list[str] = []  # providers needing bg fallback
         self._relogin_timestamps: dict[str, list[float]] = {}
         self._relogin_cooldown_until: dict[str, float] = {}
@@ -180,22 +182,34 @@ class GovernorState:
             self.suspended_animas = data.get("suspended_animas", [])
             self.reason = data.get("reason", "")
             self.since = data.get("since", "")
-            # Prefer new per-provider map; fall back to legacy single-value field
-            by_provider = data.get("governor_activity_level_by_provider")
+            # Prefer role-specific maps; fall back to legacy per-provider map,
+            # then to legacy single-value field.
+            legacy_map = data.get("governor_activity_level_by_provider")
+            front_map = data.get("front_activity_level_by_provider")
+            bg_map = data.get("background_activity_level_by_provider")
+            by_provider = front_map if isinstance(front_map, dict) else legacy_map
             if isinstance(by_provider, dict):
                 self.governor_activity_level_by_provider = {
                     k: v for k, v in by_provider.items() if v is None or isinstance(v, int)
                 }
+                self.front_activity_level_by_provider = dict(self.governor_activity_level_by_provider)
             else:
                 legacy = data.get("governor_activity_level")
                 if legacy is not None:
-                    # Migration: apply legacy single value to all three providers
+                    # Migration: apply legacy single value to all tracked providers
                     self.governor_activity_level_by_provider = {
                         "claude": legacy,
                         "openai": legacy,
                         "nanogpt": legacy,
                         "opencode_go": legacy,
                     }
+                    self.front_activity_level_by_provider = dict(self.governor_activity_level_by_provider)
+            if isinstance(bg_map, dict):
+                self.background_activity_level_by_provider = {
+                    k: v for k, v in bg_map.items() if v is None or isinstance(v, int)
+                }
+            else:
+                self.background_activity_level_by_provider = dict(self.governor_activity_level_by_provider)
             self.background_fallback_providers = data.get("background_fallback_providers", []) or []
         except Exception:
             logger.debug("Failed to load governor state", exc_info=True)
@@ -206,6 +220,8 @@ class GovernorState:
             "reason": self.reason,
             "since": self.since,
             "governor_activity_level_by_provider": self.governor_activity_level_by_provider,
+            "front_activity_level_by_provider": self.front_activity_level_by_provider,
+            "background_activity_level_by_provider": self.background_activity_level_by_provider,
             "background_fallback_providers": self.background_fallback_providers,
         }
         try:
@@ -219,7 +235,15 @@ class GovernorState:
 
     @property
     def is_governing(self) -> bool:
-        throttling = any(lvl is not None and lvl < 100 for lvl in self.governor_activity_level_by_provider.values())
+        throttling = any(
+            lvl is not None and lvl < 100
+            for activity_map in (
+                self.front_activity_level_by_provider,
+                self.background_activity_level_by_provider,
+                self.governor_activity_level_by_provider,
+            )
+            for lvl in activity_map.values()
+        )
         return (
             bool(self.suspended_animas) or bool(self.reason) or throttling or bool(self.background_fallback_providers)
         )
@@ -727,15 +751,25 @@ class UsageGovernor:
         # Apply suspensions (only cloud-provider animas; local ones untouched)
         await self._apply_suspensions(set(all_suspend))
 
-        # Apply per-provider activity level throttling (each Anima reads the
-        # level matching its main credential's provider)
+        # Apply per-provider activity levels.  The numeric pressure signal is
+        # provider-based; readers decide whether to apply it as front-response
+        # depth or background/self-initiated cadence/depth.
         prev_by_provider = self._state.governor_activity_level_by_provider
+        prev_front_by_provider = self._state.front_activity_level_by_provider
+        prev_background_by_provider = self._state.background_activity_level_by_provider
         state_changed = False
-        if prev_by_provider != level_by_provider:
+        if (
+            prev_by_provider != level_by_provider
+            or prev_front_by_provider != level_by_provider
+            or prev_background_by_provider != level_by_provider
+        ):
             self._state.governor_activity_level_by_provider = level_by_provider
+            self._state.front_activity_level_by_provider = dict(level_by_provider)
+            self._state.background_activity_level_by_provider = dict(level_by_provider)
             logger.info(
-                "Governor: activity_level_by_provider %s → %s",
-                prev_by_provider,
+                "Governor: activity_level_by_provider front=%s background=%s → %s",
+                prev_front_by_provider or prev_by_provider,
+                prev_background_by_provider or prev_by_provider,
                 level_by_provider,
             )
             state_changed = True
