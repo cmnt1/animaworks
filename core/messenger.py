@@ -414,37 +414,66 @@ class Messenger:
         mentions = [m for m in all_msgs if mention_tag in m.get("text", "")]
         return mentions[-limit:]
 
-    def read_dm_history(self, peer: str, limit: int = 20) -> list[dict]:
+    def read_dm_history(
+        self,
+        peer: str,
+        limit: int = 20,
+        direction: str = "both",
+        hours: int | None = None,
+        keyword: str | None = None,
+    ) -> list[dict]:
         """Read DM history with a specific peer.
 
         Reads from unified activity log first, falls back to legacy dm_logs/.
+
+        Args:
+            peer: Name of the DM peer.
+            limit: Maximum entries to return.
+            direction: Filter by direction — "sent", "received", or "both".
+            hours: If given, only return entries from the last N hours.
+            keyword: If given, only return entries whose content contains this substring.
         """
         _validate_name(peer, "peer name")
         entries: list[dict] = []
+
+        if direction not in ("sent", "received", "both"):
+            direction = "both"
+
+        types_filter: list[str] | None = None
+        if direction == "sent":
+            types_filter = ["message_sent"]
+        elif direction == "received":
+            types_filter = ["message_received"]
+        else:
+            types_filter = ["message_sent", "message_received"]
+
+        scan_days = 30
+        scan_limit_multiplier = 4
+        if hours is not None and hours > 0:
+            scan_days = max(1, (hours // 24) + 1)
+            scan_limit_multiplier = 10
 
         # New source: unified activity log
         try:
             from core.memory.activity import ActivityLogger
 
-            # Determine anima_dir from shared_dir (shared_dir is {data}/shared,
-            # anima_dir is {data}/animas/{name})
             anima_dir = self.shared_dir.parent / "animas" / self.anima_name
             if anima_dir.exists():
                 activity = ActivityLogger(anima_dir)
                 recent = activity.recent(
-                    days=30,
-                    limit=limit * 2,
-                    types=["message_sent", "message_received"],
+                    days=scan_days,
+                    limit=limit * scan_limit_multiplier,
+                    types=types_filter,
                     involving=peer,
                 )
                 for e in recent:
-                    # Exclude chat message_received (from_type=human)
                     if e.type == "message_received" and e.meta.get("from_type") != "anima":
                         continue
                     entries.append(
                         {
                             "ts": e.ts,
                             "from": e.from_person or self.anima_name,
+                            "to": getattr(e, "to_person", None) or peer,
                             "text": e.content,
                             "source": "activity_log",
                         }
@@ -452,8 +481,8 @@ class Messenger:
         except Exception:
             logger.debug("Failed to read DM history from activity log", exc_info=True)
 
-        # Fallback: legacy dm_logs/
-        if len(entries) < limit:
+        # Fallback: legacy dm_logs/ (only for direction="both", no advanced filters)
+        if len(entries) < limit and direction == "both" and not hours and not keyword:
             filepath = self._get_dm_log_path(peer)
             if filepath.exists():
                 try:
@@ -470,6 +499,33 @@ class Messenger:
                         continue
                     if len(entries) >= limit * 2:
                         break
+
+        # Apply hours filter
+        if hours is not None and hours > 0:
+            from datetime import datetime, timedelta
+
+            from core.time_utils import now_local
+
+            cutoff = now_local() - timedelta(hours=hours)
+            filtered: list[dict] = []
+            for e in entries:
+                try:
+                    ts_str = e.get("ts", "")
+                    ts_dt = datetime.fromisoformat(ts_str)
+                    if ts_dt.tzinfo is None:
+                        from core.time_utils import get_app_timezone
+
+                        ts_dt = ts_dt.replace(tzinfo=get_app_timezone())
+                    if ts_dt >= cutoff:
+                        filtered.append(e)
+                except (ValueError, TypeError):
+                    logger.debug("Skipping entry with unparseable timestamp: %s", e.get("ts"))
+                    continue
+            entries = filtered
+
+        # Apply keyword filter
+        if keyword:
+            entries = [e for e in entries if keyword in (e.get("text") or "")]
 
         # Sort by timestamp and return most recent
         entries.sort(key=lambda e: e.get("ts", ""))

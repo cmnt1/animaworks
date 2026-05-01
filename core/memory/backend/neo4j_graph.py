@@ -526,6 +526,9 @@ class Neo4jGraphBackend(MemoryBackend):
         limit: int = 10,
         min_score: float = 0.0,
         edge_type_filter: str | None = None,
+        as_of_time: str | None = None,
+        time_start: str | None = None,
+        time_end: str | None = None,
     ) -> list[RetrievedMemory]:
         """Retrieve memories using hybrid search (BM25 + Vector + BFS + reranker)."""
         if scope == "community":
@@ -545,8 +548,11 @@ class Neo4jGraphBackend(MemoryBackend):
                 query,
                 scope=scope,
                 limit=limit,
+                as_of_time=as_of_time,
                 query_embedding=query_embedding,
                 edge_type_filter=edge_type_filter,
+                time_start=time_start,
+                time_end=time_end,
             )
         except ValueError:
             return []

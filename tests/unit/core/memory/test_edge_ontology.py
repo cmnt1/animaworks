@@ -17,7 +17,6 @@ from core.memory.ontology.default import (
     ExtractedFact,
 )
 
-
 # ── Ontology definition tests ─────────────────────────────────────
 
 
@@ -188,12 +187,14 @@ class TestPromptEdgeTypes:
         from core.memory.extraction.prompts import ja
 
         assert "{edge_types_list}" in ja.FACT_USER
+        assert "{reference_time}" in ja.FACT_USER
         assert "edge_type" in ja.FACT_USER
 
     def test_en_prompt_has_edge_types_placeholder(self) -> None:
         from core.memory.extraction.prompts import en
 
         assert "{edge_types_list}" in en.FACT_USER
+        assert "{reference_time}" in en.FACT_USER
         assert "edge_type" in en.FACT_USER
 
     def test_ja_prompt_formats_correctly(self) -> None:
@@ -204,6 +205,7 @@ class TestPromptEdgeTypes:
             content="test content",
             entities_json="[]",
             edge_types_list=edge_types_list,
+            reference_time="2026-05-01T12:00:00+09:00",
         )
         assert "WORKS_AT" in result
         assert "RELATES_TO" in result
@@ -216,6 +218,7 @@ class TestPromptEdgeTypes:
             content="test content",
             entities_json="[]",
             edge_types_list=edge_types_list,
+            reference_time="2026-05-01T12:00:00+09:00",
         )
         assert "WORKS_AT" in result
         assert "RELATES_TO" in result
@@ -428,9 +431,7 @@ class TestBackendEdgeType:
         await backend.ingest_text("Alice is a person", source="test")
 
         create_fact_calls = [
-            call
-            for call in mock_driver.execute_write.call_args_list
-            if call.args and "edge_type" in str(call.args[0])
+            call for call in mock_driver.execute_write.call_args_list if call.args and "edge_type" in str(call.args[0])
         ]
         assert len(create_fact_calls) >= 1
         params = create_fact_calls[0].args[1]

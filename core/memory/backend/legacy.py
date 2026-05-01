@@ -173,6 +173,9 @@ class LegacyRAGBackend(MemoryBackend):
         scope: str,
         limit: int = 10,
         min_score: float = 0.0,
+        as_of_time: str | None = None,
+        time_start: str | None = None,
+        time_end: str | None = None,
     ) -> list[RetrievedMemory]:
         """Retrieve memories, delegating to retriever or search_memory_text."""
         memory_type = _SCOPE_TO_MEMORY_TYPE.get(scope, "knowledge")
