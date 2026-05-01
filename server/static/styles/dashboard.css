@@ -727,23 +727,25 @@
 }
 
 .governor-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 7.25rem minmax(0, 1fr);
   align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
+  column-gap: 6px;
+  row-gap: 2px;
   padding-left: 1.4rem;
 }
 
 .governor-provider {
   font-weight: 600;
-  flex-shrink: 0;
-  min-width: 4.5rem;
 }
 
 .governor-row-reason {
-  flex: 1;
   font-size: 0.78rem;
   opacity: 0.85;
+}
+
+.governor-activity-level {
+  font-weight: 800;
 }
 
 .governor-suspended {

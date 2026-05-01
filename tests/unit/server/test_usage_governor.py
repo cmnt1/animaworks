@@ -123,6 +123,27 @@ def test_time_proportional_caps_activity_level_at_400(monkeypatch):
     assert "activity 400%" in reason
 
 
+def test_opencode_go_month_uses_time_proportional_policy(monkeypatch):
+    monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
+    window_data = {
+        "remaining": 7,
+        "resets_at": 1020.0,
+        "window_seconds": 100,
+    }
+
+    level, reason = _evaluate_time_proportional(
+        7,
+        window_data,
+        DEFAULT_POLICY["providers"]["opencode_go"]["Month"],
+        "opencode_go",
+        "Month",
+    )
+
+    assert level == 40
+    assert "opencode_go.Month remaining 7% vs time 20%" in reason
+    assert "activity 40%" in reason
+
+
 def test_classify_animas_maps_opencode_go(tmp_path):
     animas_dir = tmp_path / "animas"
     _write_status(animas_dir, "go-anima", "opencode-go")

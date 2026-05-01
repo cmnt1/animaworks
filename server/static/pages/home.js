@@ -240,20 +240,24 @@ function _usageForecast(utilization, resetAt, windowSeconds) {
   const windowMs = windowSeconds * 1000;
   const windowStartMs = resetMs - windowMs;
   const elapsedMs = now - windowStartMs;
-  if (elapsedMs <= 0) return null;
 
   const msToReset = resetMs - now;
   if (msToReset <= 0) return { runway: "-", landing: "-", label: "" };
 
   const used = utilization;
   const remain = Math.max(0, 100 - used);
-  const elapsedDays = elapsedMs / 86400000;
+  const timePct = Math.min((msToReset / windowMs) * 100, 100);
   const daysToReset = msToReset / 86400000;
+
+  if (elapsedMs <= 0) {
+    return { runway: "", daysToReset, landing: `${remain.toFixed(1)}%`, label: "", noRunway: true,
+             remainPct: remain, timePct, runwayDays: null, daysToResetRaw: daysToReset, windowSeconds };
+  }
+
+  const elapsedDays = elapsedMs / 86400000;
   const burnPerDay = used / elapsedDays;
 
-  const timePct = (msToReset / windowMs) * 100;
-
-  if (burnPerDay <= 0.01) {
+  if (burnPerDay <= 0) {
     return { runway: "\u221E", daysToReset, landing: `${remain.toFixed(1)}%`, label: "",
              remainPct: remain, timePct, runwayDays: Infinity, daysToResetRaw: daysToReset, windowSeconds };
   }
@@ -300,7 +304,7 @@ function _fmtRemainLine(fc) {
   const unit = isHours ? "h" : "d";
   // 残り予算をウィンドウの時間比に直接変換（線形比例）
   const remainTime = fc.remainPct * windowUnits / 100;
-  const timeToReset = fc.daysToResetRaw * (isHours ? 24 : 1);
+  const timeToReset = Math.min(fc.daysToResetRaw * (isHours ? 24 : 1), windowUnits);
   const remainTimeStr = `${remainTime.toFixed(1)}${unit}`;
   const timeToResetStr = `${timeToReset.toFixed(1)}${unit}`;
   const remainTimePct = `${(fc.remainPct).toFixed(0)}%`;
@@ -353,6 +357,7 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
     // Line 1: 残り Xd (YY%) / Zd (AA%) ▲delta
     forecastHtml += _fmtRemainLine(fc);
     // Line 2: Runway Xd     着地 ±Xd (runway - timeToReset)
+    if (fc.runway && !fc.noRunway) {
     const isHours = fc.windowSeconds <= 86400;
     const landingDelta = fc.runwayDays - fc.daysToResetRaw;
     const landingAbs = Math.abs(landingDelta);
@@ -364,6 +369,7 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
     forecastHtml += `<span class="usage-forecast-item"><span class="usage-forecast-label">Runway</span> ${fc.runway}`;
     forecastHtml += `<span style="margin-left:1.5em;"><span class="usage-forecast-label">着地</span> <span style="color:${landingClr}">${landingStr}</span></span>`;
     forecastHtml += `</span>`;
+    }
     forecastHtml += `</div>`;
   }
 
@@ -385,6 +391,23 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds) {
 
 function _usageCanRelogin(errorCode) {
   return new Set(["rate_limited", "unauthorized", "no_credentials"]).has(errorCode);
+}
+
+function _renderGovernorReason(reasonText) {
+  const raw = String(reasonText);
+  const activityMatch = raw.match(/activity\s+(\d+)%$/);
+  if (activityMatch && activityMatch.index > 0) {
+    const detail = raw
+      .slice(0, activityMatch.index)
+      .trim()
+      .replace(/\s*(?:\u2192|->|[^\w\s().%<]+)?\s*$/, "")
+      .trim();
+    return `activity <strong class="governor-activity-level">${escapeHtml(activityMatch[1])}%</strong> \u2190 ${escapeHtml(detail)}`;
+  }
+  return escapeHtml(raw).replace(
+    /\bactivity\s+(\d+)%/g,
+    'activity <strong class="governor-activity-level">$1%</strong>',
+  );
 }
 
 function _renderCompactUsageBar(label, win) {
@@ -574,11 +597,14 @@ function _renderOpencodeGoUsage(data) {
   }
 
   const order = ["5h", "Week", "Month"];
+  const windowSecondsByKey = { "5h": 5 * 3600, Week: 7 * 24 * 3600, Month: 30 * 24 * 3600 };
   let html = "";
   for (const key of order) {
     const win = data[key];
     if (!win || typeof win !== "object" || win.utilization === undefined) continue;
-    html += _renderCompactUsageBar(key, win);
+    const resetAt = win.resets_at ?? (typeof win.reset_in_sec === "number" ? (Date.now() / 1000) + win.reset_in_sec : null);
+    const windowSeconds = win.window_seconds ?? windowSecondsByKey[key];
+    html += _renderUsageBar(key, win.utilization, resetAt, windowSeconds);
   }
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
@@ -675,7 +701,7 @@ function _renderGovernor(gov) {
     rowsHtml += `
       <div class="governor-row">
         <span class="governor-provider">${escapeHtml(label)}:</span>
-        <span class="governor-row-reason">${escapeHtml(reasonText)}</span>
+        <span class="governor-row-reason">${_renderGovernorReason(reasonText)}</span>
         ${suspendedText}
         ${reloginBtn}
       </div>`;
@@ -686,9 +712,8 @@ function _renderGovernor(gov) {
     rowsHtml = `<div class="governor-row"><span class="governor-suspended">停止中: ${escapeHtml(gov.suspended_animas.join(", "))}</span></div>`;
   }
 
-  // Activity level throttle per provider (< 100 = actual throttle).
-  // Each row applies only to Animas whose main credential matches the provider.
-  const actByProv = gov.activity_level_by_provider || {};
+  // Activity levels are already included in provider reason rows.
+  const actByProv = {};
   const ACT_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT", opencode_go: "OpenCode Go" };
   for (const [prov, lvl] of Object.entries(actByProv)) {
     if (lvl === null || lvl === undefined || lvl >= 100) continue;
