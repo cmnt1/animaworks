@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
-
 
 # ── Helper ───────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ def _create_app(
     anima_names: list[str] | None = None,
     processes: dict | None = None,
     process_status: dict | None = None,
+    animas_dir: Path | None = None,
 ):
     """Build a minimal FastAPI app with the animas router and mocked supervisor.
 
@@ -35,7 +37,7 @@ def _create_app(
     from server.routes.animas import create_animas_router
 
     app = FastAPI()
-    app.state.animas_dir = Path("/tmp/fake/animas")
+    app.state.animas_dir = animas_dir or Path("/tmp/fake/animas")
     app.state.anima_names = anima_names or []
 
     supervisor = MagicMock()
@@ -51,6 +53,75 @@ def _create_app(
     router = create_animas_router()
     app.include_router(router, prefix="/api")
     return app
+
+
+# ── GET /api/animas ─────────────────────────────────────
+
+
+class TestListAnimas:
+    """Tests for the GET /api/animas endpoint."""
+
+    async def test_list_animas_includes_org_models_and_activity_levels(self, tmp_path: Path) -> None:
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (alice_dir / "status.json").write_text(
+            json.dumps(
+                {
+                    "role": "finance",
+                    "department": "Finance",
+                    "title": "アソシエイト",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        app = _create_app(
+            anima_names=["alice"],
+            animas_dir=animas_dir,
+            process_status={"status": "running", "pid": 12345, "uptime_sec": 60},
+        )
+
+        resolved = SimpleNamespace(
+            model="openai/gpt-5",
+            background_model="claude-sonnet-4-6",
+            supervisor=None,
+            speciality=None,
+        )
+
+        with (
+            patch("server.routes.animas.load_config", return_value=MagicMock()),
+            patch("server.routes.animas.resolve_anima_config", return_value=(resolved, None)),
+            patch("server.routes.animas._read_governor_front_activity_level", return_value=80),
+            patch("server.routes.animas._read_governor_background_activity_level", return_value=120),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/animas")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data == [
+            {
+                "name": "alice",
+                "status": "running",
+                "bootstrapping": False,
+                "pid": 12345,
+                "uptime_sec": 60,
+                "last_busy_since": None,
+                "appearance": None,
+                "supervisor": None,
+                "speciality": None,
+                "role": "finance",
+                "model": "openai/gpt-5",
+                "background_model": "claude-sonnet-4-6",
+                "fr_activity_level": 80,
+                "bg_activity_level": 120,
+                "department": "Finance",
+                "title": "アソシエイト",
+            }
+        ]
 
 
 # ── POST /api/animas/{name}/stop ─────────────────────────

@@ -8,6 +8,30 @@ let _selectedName = null;
 let _container = null;
 let _modelsCache = null;
 let _toolsCache = null;
+const ANIMAS_SORT_STORAGE_KEY = "animaworks-animas-sort";
+const DEFAULT_ANIMAS_SORT = "org";
+const DEPARTMENT_ORDER = ["全社", "Administration", "Property", "Finance", "Affiliate"];
+const TITLE_ORDER = ["COO", "グループリーダー", "アソシエイト"];
+let _listSortKey = _loadListSortKey();
+let _listFilterField = "";
+let _listFilterValue = "";
+
+function _loadListSortKey() {
+  try {
+    return localStorage.getItem(ANIMAS_SORT_STORAGE_KEY) || DEFAULT_ANIMAS_SORT;
+  } catch {
+    return DEFAULT_ANIMAS_SORT;
+  }
+}
+
+function _saveListSortKey(value) {
+  _listSortKey = value || DEFAULT_ANIMAS_SORT;
+  try {
+    localStorage.setItem(ANIMAS_SORT_STORAGE_KEY, _listSortKey);
+  } catch {
+    // Ignore unavailable storage; the current in-memory value still applies.
+  }
+}
 
 function _shortModel(name) {
   if (!name) return "--";
@@ -29,6 +53,141 @@ function _extractStatsCount(value) {
     if (typeof count === "number" && Number.isFinite(count)) return count;
   }
   return 0;
+}
+
+function _sortRank(value, order) {
+  const text = String(value || "").trim();
+  if (!text) return order.length + 1;
+  const exact = order.indexOf(text);
+  if (exact >= 0) return exact;
+  const lower = text.toLowerCase();
+  const lowerIdx = order.findIndex(item => item.toLowerCase() === lower);
+  return lowerIdx >= 0 ? lowerIdx : order.length;
+}
+
+function _compareText(a, b) {
+  return String(a || "").localeCompare(String(b || ""), "ja", { numeric: true, sensitivity: "base" });
+}
+
+function _compareNumber(a, b) {
+  const av = Number.isFinite(a) ? a : Number.POSITIVE_INFINITY;
+  const bv = Number.isFinite(b) ? b : Number.POSITIVE_INFINITY;
+  return av - bv;
+}
+
+function _displayRole(role) {
+  if (!role) return "--";
+  const key = `tb.role.${role}`;
+  const label = t(key);
+  return label === key ? role : label;
+}
+
+function _activityLevelLabel(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return `${value}%`;
+  return "--";
+}
+
+function _filterFieldValue(anima, field) {
+  switch (field) {
+    case "department":
+      return anima.department || "";
+    case "role":
+      return anima.role || "";
+    case "title":
+      return anima.title || "";
+    case "fr_model":
+      return anima.model || "";
+    case "bg_model":
+      return anima.background_model || "";
+    default:
+      return "";
+  }
+}
+
+function _filterDisplayValue(value, field) {
+  if (!value) return t("animas.not_set");
+  if (field === "role") return _displayRole(value);
+  if (field === "fr_model" || field === "bg_model") return _shortModel(value);
+  return value;
+}
+
+function _uniqueFilterValues(animas, field) {
+  if (!field) return [];
+  return [...new Set(animas.map(p => _filterFieldValue(p, field)).filter(Boolean))]
+    .sort((a, b) => {
+      if (field === "department") {
+        return _compareNumber(_sortRank(a, DEPARTMENT_ORDER), _sortRank(b, DEPARTMENT_ORDER)) || _compareText(a, b);
+      }
+      if (field === "title") {
+        return _compareNumber(_sortRank(a, TITLE_ORDER), _sortRank(b, TITLE_ORDER)) || _compareText(a, b);
+      }
+      return _compareText(_filterDisplayValue(a, field), _filterDisplayValue(b, field));
+    });
+}
+
+function _filterFieldOptionHtml(value, labelKey) {
+  const selected = _listFilterField === value ? " selected" : "";
+  return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(t(labelKey))}</option>`;
+}
+
+function _filterValueOptionsHtml(animas) {
+  const values = _uniqueFilterValues(animas, _listFilterField);
+  const allSelected = !_listFilterValue ? " selected" : "";
+  return `
+    <option value=""${allSelected}>${escapeHtml(t("animas.filter_value_all"))}</option>
+    ${values.map(value => {
+      const selected = _listFilterValue === value ? " selected" : "";
+      return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(_filterDisplayValue(value, _listFilterField))}</option>`;
+    }).join("")}
+  `;
+}
+
+function _filterAnimas(animas) {
+  if (!_listFilterField || !_listFilterValue) return animas;
+  return animas.filter(p => _filterFieldValue(p, _listFilterField) === _listFilterValue);
+}
+
+function _sortAnimas(animas) {
+  const rows = [...animas];
+  const byName = (a, b) => _compareText(a.name, b.name);
+  const byDepartment = (a, b) =>
+    _compareNumber(_sortRank(a.department, DEPARTMENT_ORDER), _sortRank(b.department, DEPARTMENT_ORDER)) ||
+    _compareText(a.department, b.department);
+  const byTitle = (a, b) =>
+    _compareNumber(_sortRank(a.title, TITLE_ORDER), _sortRank(b.title, TITLE_ORDER)) ||
+    _compareText(a.title, b.title);
+
+  rows.sort((a, b) => {
+    switch (_listSortKey) {
+      case "department":
+        return byDepartment(a, b) || byName(a, b);
+      case "role":
+        return _compareText(a.role, b.role) || byDepartment(a, b) || byTitle(a, b) || byName(a, b);
+      case "title":
+        return byTitle(a, b) || byDepartment(a, b) || byName(a, b);
+      case "name":
+        return byName(a, b);
+      case "fr_model":
+        return _compareText(a.model, b.model) || byName(a, b);
+      case "bg_model":
+        return _compareText(a.background_model, b.background_model) || byName(a, b);
+      case "status":
+        return _compareText(a.status, b.status) || byName(a, b);
+      case "pid":
+        return _compareNumber(a.pid, b.pid) || byName(a, b);
+      case "uptime":
+        return _compareNumber(a.uptime_sec, b.uptime_sec) || byName(a, b);
+      case "org":
+      default:
+        return byDepartment(a, b) || byTitle(a, b) || _compareText(a.role, b.role) || byName(a, b);
+    }
+  });
+  return rows;
+}
+
+function _sortOptionHtml(value, labelKey) {
+  const selected = _listSortKey === value ? " selected" : "";
+  return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(t(labelKey))}</option>`;
 }
 
 export function render(container, { subPath } = {}) {
@@ -83,29 +242,94 @@ async function _renderList() {
       return;
     }
 
+    if (
+      _listFilterField &&
+      _listFilterValue &&
+      !_uniqueFilterValues(animas, _listFilterField).includes(_listFilterValue)
+    ) {
+      _listFilterValue = "";
+    }
+
     content.innerHTML = `
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>${t("animas.table_name")}</th>
-            <th>${t("animas.table_status")}</th>
-            <th>${t("animas.table_model")}</th>
-            <th>${t("animas.table_bg_model")}</th>
-            <th>${t("animas.table_pid")}</th>
-            <th>${t("animas.table_uptime")}</th>
-            <th>${t("animas.table_actions")}</th>
-          </tr>
-        </thead>
-        <tbody id="animasTableBody"></tbody>
-      </table>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          <label for="animasFilterFieldSelect" style="font-size:0.85rem; color:var(--text-secondary,#666);">${t("animas.filter_label")}</label>
+          <select id="animasFilterFieldSelect" style="min-width:150px; padding:0.35rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; background:var(--bg-secondary,#fff); color:var(--text-primary,#333); font-size:0.85rem;">
+            ${_filterFieldOptionHtml("", "animas.filter_none")}
+            ${_filterFieldOptionHtml("department", "animas.table_department")}
+            ${_filterFieldOptionHtml("role", "animas.table_role")}
+            ${_filterFieldOptionHtml("title", "animas.table_title")}
+            ${_filterFieldOptionHtml("fr_model", "animas.table_fr_model")}
+            ${_filterFieldOptionHtml("bg_model", "animas.table_bg_model")}
+          </select>
+          <select id="animasFilterValueSelect" ${_listFilterField ? "" : "disabled"} style="min-width:220px; padding:0.35rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; background:var(--bg-secondary,#fff); color:var(--text-primary,#333); font-size:0.85rem;">
+            ${_filterValueOptionsHtml(animas)}
+          </select>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <label for="animasSortSelect" style="font-size:0.85rem; color:var(--text-secondary,#666);">${t("animas.sort_label")}</label>
+          <select id="animasSortSelect" style="min-width:220px; padding:0.35rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; background:var(--bg-secondary,#fff); color:var(--text-primary,#333); font-size:0.85rem;">
+            ${_sortOptionHtml("org", "animas.sort_org")}
+            ${_sortOptionHtml("department", "animas.table_department")}
+            ${_sortOptionHtml("role", "animas.table_role")}
+            ${_sortOptionHtml("title", "animas.table_title")}
+            ${_sortOptionHtml("name", "animas.table_name")}
+            ${_sortOptionHtml("fr_model", "animas.table_fr_model")}
+            ${_sortOptionHtml("bg_model", "animas.table_bg_model")}
+            ${_sortOptionHtml("status", "animas.table_status")}
+            ${_sortOptionHtml("pid", "animas.table_pid")}
+            ${_sortOptionHtml("uptime", "animas.table_uptime")}
+          </select>
+        </div>
+      </div>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>${t("animas.table_department")}</th>
+              <th>${t("animas.table_title")}</th>
+              <th>${t("animas.table_role")}</th>
+              <th>${t("animas.table_name")}</th>
+              <th>${t("animas.table_fr_model")}</th>
+              <th>${t("animas.table_fr_activity_level")}</th>
+              <th>${t("animas.table_bg_model")}</th>
+              <th>${t("animas.table_bg_activity_level")}</th>
+              <th>${t("animas.table_status")}</th>
+              <th>${t("animas.table_pid")}</th>
+              <th>${t("animas.table_uptime")}</th>
+              <th>${t("animas.table_actions")}</th>
+            </tr>
+          </thead>
+          <tbody id="animasTableBody"></tbody>
+        </table>
+      </div>
     `;
 
+    document.getElementById("animasSortSelect")?.addEventListener("change", (e) => {
+      _saveListSortKey(e.target.value);
+      _renderList();
+    });
+
+    document.getElementById("animasFilterFieldSelect")?.addEventListener("change", (e) => {
+      _listFilterField = e.target.value;
+      _listFilterValue = "";
+      _renderList();
+    });
+
+    document.getElementById("animasFilterValueSelect")?.addEventListener("change", (e) => {
+      _listFilterValue = e.target.value;
+      _renderList();
+    });
+
     const tbody = document.getElementById("animasTableBody");
-    for (const p of animas) {
+    for (const p of _sortAnimas(_filterAnimas(animas))) {
       const dotClass = statusClass(p.status);
       const statusLabel = p.status || "offline";
       const uptime = p.uptime_sec ? _formatUptime(p.uptime_sec) : "--";
       const pid = p.pid || "--";
+      const department = p.department || "--";
+      const role = _displayRole(p.role);
+      const title = p.title || "--";
 
       // Determine visual state class
       let stateClass = "";
@@ -122,13 +346,18 @@ async function _renderList() {
       tr.dataset.anima = p.name;
       tr.style.cursor = "pointer";
       tr.innerHTML = `
+        <td>${escapeHtml(department)}</td>
+        <td>${escapeHtml(title)}</td>
+        <td>${escapeHtml(role)}</td>
         <td style="font-weight:600;">${escapeHtml(p.name)}</td>
+        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.model))}</td>
+        <td>${escapeHtml(_activityLevelLabel(p.fr_activity_level))}</td>
+        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.background_model))}</td>
+        <td>${escapeHtml(_activityLevelLabel(p.bg_activity_level))}</td>
         <td>
           <span class="status-dot ${dotClass}" style="display:inline-block;"></span>
           ${escapeHtml(statusLabel)}
         </td>
-        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.model))}</td>
-        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.background_model))}</td>
         <td>${escapeHtml(String(pid))}</td>
         <td>${escapeHtml(uptime)}</td>
         <td>

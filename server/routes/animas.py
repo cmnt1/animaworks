@@ -12,6 +12,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from core.config.models import load_config, resolve_anima_config
+from core.supervisor.scheduler_manager import (
+    _read_governor_background_activity_level,
+    _read_governor_front_activity_level,
+    resolve_user_activity_level,
+)
 
 logger = logging.getLogger("animaworks.routes.animas")
 
@@ -82,6 +87,22 @@ def create_animas_router() -> APIRouter:
             except Exception:
                 logger.debug("Failed to resolve config for anima '%s'", name, exc_info=True)
 
+            try:
+                front_activity_level = _read_governor_front_activity_level(anima_dir)
+                if front_activity_level is None:
+                    front_activity_level = resolve_user_activity_level(config, anima_dir)
+            except Exception:
+                logger.debug("Failed to resolve front activity level for anima '%s'", name, exc_info=True)
+                front_activity_level = None
+
+            try:
+                background_activity_level = _read_governor_background_activity_level(anima_dir)
+                if background_activity_level is None:
+                    background_activity_level = resolve_user_activity_level(config, anima_dir)
+            except Exception:
+                logger.debug("Failed to resolve background activity level for anima '%s'", name, exc_info=True)
+                background_activity_level = None
+
             # Combine data
             data = {
                 "name": name,
@@ -96,6 +117,8 @@ def create_animas_router() -> APIRouter:
                 "role": role,
                 "model": model,
                 "background_model": background_model,
+                "fr_activity_level": front_activity_level,
+                "bg_activity_level": background_activity_level,
                 "department": department,
                 "title": title,
             }
