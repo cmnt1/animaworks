@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import traceback
 from abc import ABC, abstractmethod
@@ -30,6 +31,8 @@ logger = logging.getLogger("animaworks.notification")
 PRIORITY_LEVELS = ("low", "normal", "high", "urgent")
 _UNKNOWN_GOVERNOR_NOTICE_COOLDOWN_SECONDS = 15 * 60
 _unknown_governor_notice_at: dict[str, float] = {}
+_GOVERNOR_FROM_RE = re.compile(r"\(from\s+([^)]+)\)")
+_GOVERNOR_BODY_RE = re.compile(r"^Governor:\s*([^\s:：]+)")
 
 
 def _known_anima_names() -> set[str]:
@@ -63,6 +66,19 @@ def _known_anima_names() -> set[str]:
 
 def _is_governor_notification(subject: str, body: str) -> bool:
     return subject.startswith("Governor") and body.startswith("Governor:")
+
+
+def _governor_anima_name(subject: str, body: str, anima_name: str = "") -> str:
+    """Extract the Anima name carried by a Governor notification."""
+    if anima_name:
+        return anima_name
+    subject_match = _GOVERNOR_FROM_RE.search(subject)
+    if subject_match:
+        return subject_match.group(1).strip()
+    body_match = _GOVERNOR_BODY_RE.search(body)
+    if body_match:
+        return body_match.group(1).strip()
+    return ""
 
 
 def _notification_callsite() -> str:
@@ -215,28 +231,30 @@ class HumanNotifier:
         if not self._channels:
             return ["No notification channels configured"]
 
+        governor_name = _governor_anima_name(subject, body, anima_name)
+
         if _is_governor_notification(subject, body):
             logger.warning(
                 "Governor human notification requested: anima=%s subject=%s callsite=%s",
-                anima_name,
+                governor_name or anima_name,
                 subject[:80],
                 _notification_callsite(),
             )
 
-        if anima_name and _is_governor_notification(subject, body):
+        if governor_name and _is_governor_notification(subject, body):
             known_names = _known_anima_names()
-            if known_names and anima_name not in known_names:
+            if known_names and governor_name not in known_names:
                 callsite = _notification_callsite()
                 logger.warning(
                     "Suppressed governor human notification for unknown Anima: %s callsite=%s",
-                    anima_name,
+                    governor_name,
                     callsite,
                 )
-                if not _should_report_unknown_governor(anima_name):
-                    return [f"Suppressed governor notification for unknown Anima: {anima_name}"]
+                if not _should_report_unknown_governor(governor_name):
+                    return [f"Suppressed governor notification for unknown Anima: {governor_name}"]
                 subject = "AnimaWorks Governor通知を抑止"
                 body = (
-                    f"存在しないAnima名 `{anima_name}` のGovernor通知を抑止しました。\n\n"
+                    f"存在しないAnima名 `{governor_name}` のGovernor通知を抑止しました。\n\n"
                     f"元本文:\n{body[:800]}\n\n"
                     f"callsite: `{callsite}`"
                 )

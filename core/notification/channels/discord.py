@@ -66,6 +66,25 @@ class DiscordChannel(NotificationChannel):
         anima_name: str = "",
         interaction: InteractionRequest | None = None,
     ) -> str:
+        try:
+            from core.notification.notifier import (
+                _governor_anima_name,
+                _is_governor_notification,
+                _known_anima_names,
+            )
+
+            governor_name = _governor_anima_name(subject, body, anima_name)
+            if governor_name and _is_governor_notification(subject, body):
+                known_names = _known_anima_names()
+                if known_names and governor_name not in known_names:
+                    logger.warning(
+                        "Discord suppressed governor notification for unknown Anima: %s",
+                        governor_name,
+                    )
+                    return f"discord: suppressed governor notification for unknown Anima: {governor_name}"
+        except Exception:
+            logger.debug("Discord governor notification guard failed open", exc_info=True)
+
         bot_token = self._config.get("bot_token", "")
         if not bot_token:
             bot_token = self._resolve_env("bot_token_env")

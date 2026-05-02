@@ -240,6 +240,20 @@ class TestDiscordComponents:
             "msg-bot-dm",
         )
 
+    @pytest.mark.asyncio
+    async def test_suppresses_unknown_governor_alert_before_discord_delivery(self, monkeypatch):
+        channel = DiscordChannel({"bot_token": "bot-token", "user_id": "U-owner"})
+        monkeypatch.setattr("core.notification.notifier._known_anima_names", lambda: {"sakura"})
+
+        with patch("core.tools._discord_client.DiscordClient") as mock_discord_client:
+            result = await channel.send(
+                "Governor Alert (from alice)",
+                "Governor: alice suspended due to quota. Reason:",
+            )
+
+        assert result == "discord: suppressed governor notification for unknown Anima: alice"
+        mock_discord_client.assert_not_called()
+
 
 def _mock_config_with_web_base(web_base: str) -> AnimaWorksConfig:
     cfg = AnimaWorksConfig()

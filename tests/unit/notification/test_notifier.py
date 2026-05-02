@@ -133,6 +133,27 @@ class TestHumanNotifier:
             assert ch.sent[0]["anima_name"] == ""
 
     @pytest.mark.asyncio
+    async def test_notify_replaces_unknown_governor_alert_when_name_is_only_in_subject(
+        self, notifier_with_channels, monkeypatch,
+    ):
+        notifier, channels = notifier_with_channels
+        monkeypatch.setattr("core.notification.notifier._known_anima_names", lambda: {"bob"})
+        monkeypatch.setattr("core.notification.notifier._notification_callsite", lambda: "caller.py:10:fn")
+        monkeypatch.setattr("core.notification.notifier._should_report_unknown_governor", lambda _name: True)
+
+        results = await notifier.notify(
+            "Governor Alert (from alice)",
+            "Governor: alice suspended due to quota. Reason:",
+        )
+
+        assert results == ["mock: OK", "mock: OK"]
+        for ch in channels:
+            assert ch.sent[0]["subject"] == "AnimaWorks Governor通知を抑止"
+            assert "`alice`" in ch.sent[0]["body"]
+            assert ch.sent[0]["priority"] == "high"
+            assert ch.sent[0]["anima_name"] == ""
+
+    @pytest.mark.asyncio
     async def test_notify_suppresses_repeated_unknown_governor_alert(
         self, notifier_with_channels, monkeypatch,
     ):
