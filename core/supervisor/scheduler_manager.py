@@ -308,7 +308,7 @@ class SchedulerManager:
         # follows the Anima's background provider when one is configured.
         governor_level = _read_governor_background_activity_level(self._anima_dir)
         if governor_level is not None:
-            activity_pct = max(10, min(400, governor_level))
+            activity_pct = max(1, min(400, governor_level))
             activity_source = "governor"
         else:
             user_level = resolve_user_activity_level(app_config, self._anima_dir)

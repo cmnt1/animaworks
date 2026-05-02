@@ -373,6 +373,20 @@ class TestGovernorAuthoritative:
         mgr.shutdown()
 
     @pytest.mark.asyncio
+    @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=5)
+    @patch("core.supervisor.scheduler_manager.load_config")
+    async def test_governor_can_throttle_below_config_minimum(self, mock_load_config, _mock_gov, tmp_path):
+        """Governor hard-floor activity can use 5%, while manual config remains 10%+."""
+        config = AnimaWorksConfig(activity_level=100)
+        mock_load_config.return_value = config
+
+        mgr = self._make_mgr(tmp_path)
+        mgr.setup()
+
+        assert mgr._hb_effective_interval == 600
+        mgr.shutdown()
+
+    @pytest.mark.asyncio
     @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=None)
     @patch("core.supervisor.scheduler_manager.load_config")
     async def test_config_used_when_governor_absent(self, mock_load_config, _mock_gov, tmp_path):

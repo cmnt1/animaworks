@@ -79,6 +79,7 @@ DEFAULT_POLICY: dict[str, Any] = {
     "enabled": True,
     "check_interval_seconds": 120,
     "hard_floor_pct": 15,  # absolute minimum remaining % for any window
+    "hard_floor_activity_level": 5,
     "providers": {
         "claude": {
             "five_hour": {
@@ -481,7 +482,7 @@ def _evaluate_threshold(
 
 def _clamp_activity_level(level: Any) -> int:
     """Keep Governor policy output within the supported activity level range."""
-    return max(10, min(400, int(level)))
+    return max(1, min(400, int(level)))
 
 
 def _evaluate_time_proportional(
@@ -543,13 +544,18 @@ def _evaluate_time_proportional(
 def _evaluate_hard_floor(
     remaining: float,
     hard_floor: float,
+    hard_floor_activity_level: Any,
     provider_key: str,
     window_key: str,
 ) -> tuple[int | None, str]:
     """Absolute safety net: if remaining drops below hard floor, emergency throttle."""
     if remaining < hard_floor:
-        reason = f"{provider_key}.{window_key} remaining {remaining:.0f}% < hard floor {hard_floor:.0f}% → activity 10%"
-        return 10, reason
+        level = _clamp_activity_level(hard_floor_activity_level)
+        reason = (
+            f"{provider_key}.{window_key} remaining {remaining:.0f}% "
+            f"< hard floor {hard_floor:.0f}% → activity {level}%"
+        )
+        return level, reason
     return None, ""
 
 
@@ -568,6 +574,7 @@ def _evaluate_provider_remaining(
     windows_rules = providers_rules.get(provider_key, {})
     provider_data = usage_data.get(provider_key, {})
     hard_floor = policy.get("hard_floor_pct", 15)
+    hard_floor_activity_level = policy.get("hard_floor_activity_level", 10)
 
     if provider_data.get("error"):
         return 100.0, None, ""
@@ -629,6 +636,7 @@ def _evaluate_provider_remaining(
         level, reason = _evaluate_hard_floor(
             remaining,
             hard_floor,
+            hard_floor_activity_level,
             provider_key,
             window_key,
         )

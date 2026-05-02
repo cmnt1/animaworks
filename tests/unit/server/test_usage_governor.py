@@ -7,7 +7,13 @@ from unittest.mock import AsyncMock
 import pytest
 
 from server import usage_governor
-from server.usage_governor import DEFAULT_POLICY, UsageGovernor, _classify_animas, _evaluate_time_proportional
+from server.usage_governor import (
+    DEFAULT_POLICY,
+    UsageGovernor,
+    _classify_animas,
+    _evaluate_hard_floor,
+    _evaluate_time_proportional,
+)
 
 
 def _write_status(
@@ -138,6 +144,20 @@ def test_time_proportional_caps_activity_level_at_400(monkeypatch):
 
     assert level == 400
     assert "activity 400%" in reason
+
+
+def test_hard_floor_uses_policy_activity_level():
+    level, reason = _evaluate_hard_floor(
+        1,
+        5,
+        5,
+        "claude",
+        "seven_day",
+    )
+
+    assert level == 5
+    assert "hard floor 5%" in reason
+    assert "activity 5%" in reason
 
 
 def test_opencode_go_month_uses_time_proportional_policy(monkeypatch):
