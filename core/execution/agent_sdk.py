@@ -117,6 +117,7 @@ from core.execution._sdk_stream import (  # noqa: F401
     _summarise_tool_input,
     _tool_result_content_len,
     process_stream_messages,
+    synthesize_no_text_fallback,
 )
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord
 from core.memory.shortterm import ShortTermMemory
@@ -544,7 +545,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         all_tool_records = _finalize_pending_records(pending_records)
         replied_to = self._read_replied_to_file()
         return ExecutionResult(
-            text="\n".join(response_text) or "(no response)",
+            text="\n".join(response_text) or synthesize_no_text_fallback(all_tool_records),
             result_message=result_message,
             replied_to_from_transcript=replied_to,
             tool_call_records=all_tool_records,
@@ -750,7 +751,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                     pass
 
         all_tool_records = _finalize_pending_records(state.pending_records)
-        full_text = "\n".join(state.response_text) or "(no response)"
+        full_text = "\n".join(state.response_text) or synthesize_no_text_fallback(all_tool_records)
         replied_to = self._read_replied_to_file()
         yield {
             "type": "done",

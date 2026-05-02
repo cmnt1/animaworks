@@ -110,7 +110,7 @@ class MemoryManager:
         pending = self.state_dir / "pending.md"
         if not pending.exists():
             return
-        content = pending.read_text(encoding="utf-8").strip()
+        content = self._read(pending).strip()
         if content:
             current = self.read_current_state()
             merged = current.rstrip() + "\n\n## Migrated from pending.md\n\n" + content
@@ -241,6 +241,13 @@ class MemoryManager:
             return ""
         try:
             return path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            logger.warning("Invalid UTF-8 in %s; reading with replacement characters", path, exc_info=True)
+            try:
+                return path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                logger.warning("Failed to read %s after UTF-8 fallback", path, exc_info=True)
+                return ""
         except OSError:
             logger.warning("Failed to read %s", path, exc_info=True)
             return ""
@@ -295,11 +302,10 @@ class MemoryManager:
 
         lines: list[str] = []
         for f in sorted(history_dir.glob("*.jsonl"), reverse=True)[:3]:
-            try:
-                file_lines = f.read_text(encoding="utf-8").strip().splitlines()
-            except OSError:
-                logger.warning("Failed to read heartbeat history %s", f, exc_info=True)
+            text = self._read(f)
+            if not text:
                 continue
+            file_lines = text.strip().splitlines()
             lines = file_lines + lines
             if len(lines) >= limit:
                 break
@@ -430,10 +436,9 @@ class MemoryManager:
             d = today - timedelta(days=offset)
             path = self.episodes_dir / f"{d.isoformat()}.md"
             if path.exists():
-                try:
-                    parts.append(path.read_text(encoding="utf-8"))
-                except OSError:
-                    logger.warning("Failed to read episode %s", path, exc_info=True)
+                content = self._read(path)
+                if content:
+                    parts.append(content)
         return "\n\n".join(parts)
 
     # ── Backward-compatible RAG proxies ─────────────────

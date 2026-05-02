@@ -11,14 +11,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-
 from core.execution.agent_sdk import (
     _finalize_pending_records,
     _handle_tool_result_block,
     _handle_tool_use_block,
+    synthesize_no_text_fallback,
 )
 from core.execution.base import ToolCallRecord
-
 
 # ── Fake block types for testing ─────────────────────────────────
 
@@ -302,3 +301,18 @@ class TestFinalizePendingRecords:
         by_id = {r.tool_id: r for r in records}
         assert by_id["toolu_ok"].is_error is False
         assert by_id["toolu_no_result"].is_error is True
+
+
+class TestSynthesizeNoTextFallback:
+    def test_summarizes_tool_calls_without_no_response(self):
+        records = [
+            ToolCallRecord(tool_name="read_memory_file", tool_id="toolu_1", result_summary="status: idle"),
+            ToolCallRecord(tool_name="Bash", tool_id="toolu_2", result_summary="Exit code 2", is_error=True),
+        ]
+
+        text = synthesize_no_text_fallback(records)
+
+        assert "(no response)" not in text
+        assert "completed 2 tool call(s)" in text
+        assert "read_memory_file" in text
+        assert "errors=1" in text

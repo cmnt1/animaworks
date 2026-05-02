@@ -220,8 +220,16 @@ class PendingTaskExecutor:
             return
         for orphan in processing_dir.glob("*.json"):
             try:
-                orphan.rename(failed_dir / orphan.name)
-                logger.warning("Recovered orphaned processing task: %s", orphan.name)
+                target = failed_dir / orphan.name
+                if target.exists():
+                    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+                    target = failed_dir / f"{orphan.stem}.orphan-{stamp}{orphan.suffix}"
+                    counter = 1
+                    while target.exists():
+                        target = failed_dir / f"{orphan.stem}.orphan-{stamp}-{counter}{orphan.suffix}"
+                        counter += 1
+                orphan.rename(target)
+                logger.warning("Recovered orphaned processing task: %s -> %s", orphan.name, target.name)
             except OSError:
                 logger.exception("Failed to recover orphaned task: %s", orphan.name)
 

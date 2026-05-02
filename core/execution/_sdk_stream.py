@@ -255,6 +255,22 @@ def _finalize_pending_records(
     return records
 
 
+def synthesize_no_text_fallback(tool_records: list[ToolCallRecord]) -> str:
+    """Build a short final text when the SDK produced tools but no text."""
+    if not tool_records:
+        return "(no response)"
+    names = [r.tool_name for r in tool_records[:5]]
+    suffix = ", ..." if len(tool_records) > 5 else ""
+    errors = sum(1 for r in tool_records if r.is_error)
+    error_note = f"; errors={errors}" if errors else ""
+    logger.warning(
+        "Claude SDK produced no text output; synthesised fallback (tools=%d, errors=%d)",
+        len(tool_records),
+        errors,
+    )
+    return f"(completed {len(tool_records)} tool call(s): {', '.join(names)}{suffix}{error_note})"
+
+
 # ── Streaming message processing ─────────────────────────────
 
 

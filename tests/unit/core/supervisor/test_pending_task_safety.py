@@ -185,6 +185,23 @@ class TestRecoverProcessing:
         assert (failed_dir / "orphan1.json").exists()
         assert (failed_dir / "orphan2.json").exists()
 
+    def test_recovers_orphaned_file_when_failed_target_exists(self, tmp_path: Path) -> None:
+        processing_dir = tmp_path / "processing"
+        processing_dir.mkdir()
+        failed_dir = tmp_path / "failed"
+        failed_dir.mkdir()
+
+        (processing_dir / "orphan.json").write_text('{"task_id":"new"}')
+        (failed_dir / "orphan.json").write_text('{"task_id":"old"}')
+
+        PendingTaskExecutor._recover_processing(processing_dir, failed_dir)
+
+        assert not (processing_dir / "orphan.json").exists()
+        assert (failed_dir / "orphan.json").read_text() == '{"task_id":"old"}'
+        recovered = list(failed_dir.glob("orphan.orphan-*.json"))
+        assert len(recovered) == 1
+        assert recovered[0].read_text() == '{"task_id":"new"}'
+
     def test_no_op_when_processing_dir_missing(self, tmp_path: Path) -> None:
         processing_dir = tmp_path / "processing"
         failed_dir = tmp_path / "failed"

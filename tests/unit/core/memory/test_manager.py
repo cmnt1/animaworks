@@ -7,14 +7,13 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
-
-from core.time_utils import today_local
 from unittest.mock import patch
 
 import pytest
 
 from core.memory.manager import MemoryManager
 from core.schemas import ModelConfig
+from core.time_utils import today_local
 
 
 @pytest.fixture
@@ -55,6 +54,16 @@ class TestRead:
     def test_read_existing(self, mm, anima_dir):
         (anima_dir / "test.md").write_text("content", encoding="utf-8")
         assert mm._read(anima_dir / "test.md") == "content"
+
+    def test_read_invalid_utf8_uses_replacement(self, mm, anima_dir):
+        path = anima_dir / "state" / "current_state.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"status: \x8a\xae")
+
+        result = mm._read(path)
+
+        assert result.startswith("status: ")
+        assert "\ufffd" in result
 
 
 class TestReadIdentity:
