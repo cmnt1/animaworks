@@ -1060,6 +1060,7 @@ class CodexSDKExecutor(BaseExecutor):
         emitted_tool_starts: set[str] = set()
         thread_id = ""
         usage_dict: dict[str, int] | None = None
+        turn_failed_message = ""
 
         try:
             proc.stdin.write(prompt.encode("utf-8"))
@@ -1136,6 +1137,20 @@ class CodexSDKExecutor(BaseExecutor):
                     tracker.update(usage_dict, include_output_in_ratio=True)
                     continue
 
+                if ptype == "turn.failed":
+                    error = payload.get("error") or {}
+                    if isinstance(error, dict):
+                        turn_failed_message = str(error.get("message", "") or error)
+                    else:
+                        turn_failed_message = str(error)
+                    logger.error("Codex CLI exec turn failed: %s", turn_failed_message[:500])
+                    continue
+
+                if ptype == "error":
+                    turn_failed_message = str(payload.get("message", "") or payload)
+                    logger.error("Codex CLI exec error event: %s", turn_failed_message[:500])
+                    continue
+
             returncode = await proc.wait()
             await stderr_task
             stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
@@ -1149,7 +1164,8 @@ class CodexSDKExecutor(BaseExecutor):
                     f"Codex auth expired — run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
                 )
             if returncode != 0:
-                raise RuntimeError(stderr_text or f"codex exec exited with code {returncode}")
+                detail = turn_failed_message or stderr_text
+                raise RuntimeError(detail or f"codex exec exited with code {returncode}")
             # Auth expired with exit 0 but empty output (codex sometimes
             # exits cleanly despite auth errors in stderr).
             if not response_parts and stderr_text and _stderr_contains_auth_expired(stderr_text):
