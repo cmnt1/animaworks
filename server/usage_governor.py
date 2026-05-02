@@ -552,8 +552,7 @@ def _evaluate_hard_floor(
     if remaining < hard_floor:
         level = _clamp_activity_level(hard_floor_activity_level)
         reason = (
-            f"{provider_key}.{window_key} remaining {remaining:.0f}% "
-            f"< hard floor {hard_floor:.0f}% → activity {level}%"
+            f"{provider_key}.{window_key} remaining {remaining:.0f}% < hard floor {hard_floor:.0f}% → activity {level}%"
         )
         return level, reason
     return None, ""
