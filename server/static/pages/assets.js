@@ -2,6 +2,7 @@
 import { api } from "../modules/api.js";
 import { escapeHtml } from "../modules/state.js";
 import { t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 import { isRealisticMode } from "../modules/avatar-resolver.js";
 
 let _container = null;
@@ -985,7 +986,7 @@ async function _cancelRemake() {
   if (_selectedAnima && _previewBackupId) {
     const enc = encodeURIComponent(_selectedAnima);
     try {
-      await fetch(`/api/animas/${enc}/assets/remake-preview`, { method: "DELETE" });
+      await fetch(`${basePath}/api/animas/${enc}/assets/remake-preview`, { method: "DELETE" });
     } catch {
       // Ignore cleanup errors
     }

@@ -1,5 +1,7 @@
 /* ── Shared i18n Module ────────────────────── */
 
+import { basePath } from "/shared/base-path.js";
+
 let _translations = {};
 let _locale = 'ja';
 let _initPromise = null;
@@ -12,7 +14,7 @@ export async function initI18n() {
 
 async function _doInit() {
   try {
-    const res = await fetch('/api/system/config');
+    const res = await fetch(`${basePath}/api/system/config`);
     const data = await res.json();
     _locale = data.locale || 'ja';
   } catch {
@@ -27,12 +29,12 @@ export async function loadTranslations(locale) {
   _locale = locale;
   document.documentElement.lang = locale;
   try {
-    const res = await fetch(`/i18n/${locale}.json`, { cache: 'no-store' });
+    const res = await fetch(`${basePath}/i18n/${locale}.json`, { cache: 'no-store' });
     _translations = await res.json();
   } catch {
     if (locale !== 'ja') {
       try {
-        const res = await fetch('/i18n/ja.json', { cache: 'no-store' });
+        const res = await fetch(`${basePath}/i18n/ja.json`, { cache: 'no-store' });
         _translations = await res.json();
       } catch { /* use empty dict */ }
     }

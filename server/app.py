@@ -735,6 +735,10 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
     _app_version = str(int(time.time()))
     static_dir = Path(__file__).parent / "static"
 
+    # ── Base path for reverse-proxy sub-path deployments ───
+    # e.g. base_path="/app" when served at https://host/app/
+    _base_path = config.server.base_path.rstrip("/")
+
     # ── Serve index.html as template with version injection ─
     # Replace __AW_VERSION__ so all resource URLs (CSS, JS, import-map)
     # include the server-start timestamp.  This guarantees the browser
@@ -746,7 +750,9 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     async def _serve_index():
-        html = _index_raw.replace("__AW_VERSION__", _app_version)
+        html = _index_raw.replace("__AW_VERSION__", _app_version).replace(
+            "__AW_BASE__", _base_path
+        )
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     # ── Versioned static file route ───────────────────────
@@ -780,19 +786,47 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
         return FileResponse(str(file), media_type=media, headers={"Cache-Control": "no-store"})
 
     # ── Static files (fallback for non-versioned paths) ───
+    # Serve setup/workspace index.html with base-path + version injection
+    # (explicit routes take priority over StaticFiles mounts).
     setup_static_dir = static_dir / "setup"
+    workspace_static_dir = static_dir / "workspace"
+
+    def _inject_html(raw: str) -> str:
+        return raw.replace("__AW_VERSION__", _app_version).replace("__AW_BASE__", _base_path)
+
+    _setup_html_raw = ""
+    if (setup_static_dir / "index.html").exists():
+        _setup_html_raw = (setup_static_dir / "index.html").read_text(encoding="utf-8")
+
+    _workspace_html_raw = ""
+    if (workspace_static_dir / "index.html").exists():
+        _workspace_html_raw = (workspace_static_dir / "index.html").read_text(encoding="utf-8")
+
+    if _setup_html_raw:
+
+        @app.get("/setup", include_in_schema=False)
+        @app.get("/setup/", include_in_schema=False)
+        async def _serve_setup_index():
+            return HTMLResponse(_inject_html(_setup_html_raw), headers={"Cache-Control": "no-store"})
+
+    if _workspace_html_raw:
+
+        @app.get("/workspace", include_in_schema=False)
+        @app.get("/workspace/", include_in_schema=False)
+        async def _serve_workspace_index():
+            return HTMLResponse(_inject_html(_workspace_html_raw), headers={"Cache-Control": "no-store"})
+
     if setup_static_dir.exists():
         app.mount(
             "/setup",
-            StaticFiles(directory=str(setup_static_dir), html=True),
+            StaticFiles(directory=str(setup_static_dir), html=False),
             name="setup_static",
         )
 
-    workspace_static_dir = static_dir / "workspace"
     if workspace_static_dir.exists():
         app.mount(
             "/workspace",
-            StaticFiles(directory=str(workspace_static_dir), html=True),
+            StaticFiles(directory=str(workspace_static_dir), html=False),
             name="workspace_static",
         )
 

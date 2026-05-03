@@ -5,6 +5,7 @@
 
 import { parseConvSSE, getErrorMessage } from "./sse-parser.js";
 import { createLogger } from "./logger.js";
+import { basePath } from "/shared/base-path.js";
 
 const logger = createLogger("chat-stream");
 
@@ -16,7 +17,7 @@ const logger = createLogger("chat-stream");
  */
 export async function fetchActiveStream(animaName, threadId) {
   try {
-    let url = `/api/animas/${encodeURIComponent(animaName)}/stream/active`;
+    let url = `${basePath}/api/animas/${encodeURIComponent(animaName)}/stream/active`;
     if (threadId) url += `?thread_id=${encodeURIComponent(threadId)}`;
     const res = await fetch(url);
     if (!res.ok) return null;
@@ -36,7 +37,7 @@ export async function fetchActiveStream(animaName, threadId) {
 export async function fetchStreamProgress(animaName, responseId) {
   try {
     const res = await fetch(
-      `/api/animas/${encodeURIComponent(animaName)}/stream/${encodeURIComponent(responseId)}/progress`
+      `${basePath}/api/animas/${encodeURIComponent(animaName)}/stream/${encodeURIComponent(responseId)}/progress`
     );
     if (!res.ok) return null;
     return await res.json();
@@ -77,7 +78,7 @@ export async function fetchStreamProgress(animaName, responseId) {
  * @throws {Error} On HTTP error (non-ok response) or network failure
  */
 export async function streamChat(animaName, body, signal, callbacks) {
-  const url = `/api/animas/${encodeURIComponent(animaName)}/chat/stream`;
+  const url = `${basePath}/api/animas/${encodeURIComponent(animaName)}/chat/stream`;
   const start = performance.now();
   logger.info(`[SSE-FE] streamChat START anima=${animaName} url=${url}`);
 
@@ -138,7 +139,7 @@ export async function streamChat(animaName, body, signal, callbacks) {
  * @returns {Promise<void>}
  */
 export async function streamMeetingChat(roomId, body, signal, callbacks) {
-  const url = `/api/rooms/${encodeURIComponent(roomId)}/chat/stream`;
+  const url = `${basePath}/api/rooms/${encodeURIComponent(roomId)}/chat/stream`;
   const start = performance.now();
   logger.info(`[SSE-FE] streamMeetingChat START roomId=${roomId} url=${url}`);
 
@@ -373,7 +374,7 @@ async function _reconnectWithBackoff(animaName, responseId, lastEventId, origina
         last_event_id: lastEventId || "",
       });
 
-      const url = `/api/animas/${encodeURIComponent(animaName)}/chat/stream`;
+      const url = `${basePath}/api/animas/${encodeURIComponent(animaName)}/chat/stream`;
       logger.info(`[SSE-FE] reconnect fetch POST ${url} lastEventId=${lastEventId}`);
       const res = await fetch(url, {
         method: "POST",

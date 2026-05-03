@@ -2,6 +2,7 @@
 import { api } from "../modules/api.js";
 import { escapeHtml } from "../modules/state.js";
 import { getLocale, t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 
 function tl(key, ja, en) {
   const value = t(key);
@@ -291,7 +292,7 @@ async function _loadAuthSettings() {
 
         try {
           const curPwEl = document.getElementById("currentPassword");
-          const res = await fetch("/api/users/me/password", {
+          const res = await fetch(`${basePath}/api/users/me/password", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             credentials: "same-origin",
@@ -328,7 +329,7 @@ async function _loadAuthSettings() {
         if (!confirm(t("setup.user_delete_confirm", { username }))) return;
 
         try {
-          const res = await fetch(`/api/users/${username}`, {
+          const res = await fetch(`${basePath}/api/users/${username}`, {
             method: "DELETE",
             credentials: "same-origin",
           });
@@ -352,7 +353,7 @@ async function _loadAuthSettings() {
         const result = document.getElementById("addUserResult");
 
         try {
-          const res = await fetch("/api/users", {
+          const res = await fetch(`${basePath}/api/users", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "same-origin",
@@ -472,7 +473,7 @@ async function _loadAnthropicAuthSettings() {
       }
 
       try {
-        const saveRes = await fetch("/api/settings/anthropic-auth", {
+        const saveRes = await fetch(`${basePath}/api/settings/anthropic-auth", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
@@ -625,7 +626,7 @@ async function _loadOpenAIAuthSettings() {
 
       try {
         // Save directly (PUT endpoint validates internally)
-        const saveRes = await fetch("/api/settings/openai-auth", {
+        const saveRes = await fetch(`${basePath}/api/settings/openai-auth", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
@@ -749,7 +750,7 @@ async function _loadLocalLLMSettings() {
       };
 
       try {
-        const saveRes = await fetch("/api/settings/local-llm", {
+        const saveRes = await fetch(`${basePath}/api/settings/local-llm", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
@@ -780,7 +781,7 @@ async function _loadLocalLLMSettings() {
     applyButton?.addEventListener("click", async () => {
       const result = document.getElementById("localLlmResult");
       try {
-        const res = await fetch("/api/settings/local-llm/apply-role-presets", {
+        const res = await fetch(`${basePath}/api/settings/local-llm/apply-role-presets", {
           method: "POST",
           credentials: "same-origin",
         });

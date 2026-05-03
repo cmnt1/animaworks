@@ -1,5 +1,6 @@
 /* ── Step 4: Confirmation ──────────────────── */
 
+import { basePath } from "/shared/base-path.js";
 import { t, goToStep } from "../setup.js";
 
 let confirmPanel = null;
@@ -143,7 +144,7 @@ export async function completeSetup(data) {
   }
 
   try {
-    const res = await fetch("/api/setup/complete", {
+    const res = await fetch(`${basePath}/api/setup/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -174,7 +175,7 @@ export async function completeSetup(data) {
 
     // Redirect to dashboard after a short delay
     setTimeout(() => {
-      window.location.href = "/";
+      window.location.href = `${basePath}/`;
     }, 2000);
   } catch (e) {
     const errorDiv = confirmPanel.querySelector("#confirmError") || document.createElement("div");

@@ -1,5 +1,6 @@
 // ── Home Dashboard ──────────────────────────
 import { t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 import { api } from "../modules/api.js";
 import { escapeHtml, timeStr, statusClass } from "../modules/state.js";
 import { animaHashColor } from "../modules/animas.js";
@@ -349,7 +350,7 @@ function _renderUsageError(provider, data, msg) {
 }
 
 async function _runUsageRelogin(provider) {
-  const path = provider === "claude" ? "/api/usage/claude/relogin" : "/api/usage/openai/relogin";
+  const path = provider === "claude" ? `${basePath}/api/usage/claude/relogin` : `${basePath}/api/usage/openai/relogin`;
   try {
     const res = await fetch(path, {
       method: "POST",
@@ -505,7 +506,7 @@ async function _loadUsage(forceRefresh = false) {
     // then retry once before showing the error
     if (data.claude?.error === "rate_limited") {
       try {
-        const reloginRes = await fetch("/api/usage/claude/relogin", {
+        const reloginRes = await fetch(`${basePath}/api/usage/claude/relogin`, {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },

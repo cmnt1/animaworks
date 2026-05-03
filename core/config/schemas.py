@@ -406,6 +406,7 @@ class ServerConfig(BaseModel):
     )
     ollama_total_timeout: int = 0  # Hard upper bound (seconds) on a single Ollama generation call; 0 = unlimited
     media_proxy: MediaProxyConfig = MediaProxyConfig()
+    base_path: str = ""  # Reverse proxy sub-path (e.g. "/app"); empty = root deploy
 
     @model_validator(mode="after")
     def _validate_intervals(self) -> ServerConfig:
@@ -459,6 +460,14 @@ class MachineConfig(BaseModel):
     engine_priority: list[str] = Field(
         default_factory=list,
         description="Engine priority order. First = recommended. Empty = use default.",
+    )
+    default_models: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Per-engine default model override. When machine_run is called without "
+            "an explicit model, this value is used instead of the engine's own default. "
+            "e.g. {'cursor-agent': 'claude-4.6-opus-high-thinking'}"
+        ),
     )
 
 

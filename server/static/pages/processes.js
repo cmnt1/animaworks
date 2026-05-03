@@ -2,6 +2,7 @@
 import { api } from "../modules/api.js";
 import { escapeHtml, statusClass, timeStr } from "../modules/state.js";
 import { t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 
 let _refreshInterval = null;
 
@@ -239,7 +240,7 @@ async function _handleAction(btn, action, opts) {
   btn.textContent = opts.busyLabel;
 
   try {
-    await fetch(`/api/animas/${encodeURIComponent(name)}/${action}`, { method: "POST" });
+    await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/${action}`, { method: "POST" });
     btn.textContent = opts.doneLabel;
 
     if (opts.reload) {

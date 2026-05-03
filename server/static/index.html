@@ -3,39 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="aw-base-path" content="__AW_BASE__">
   <title>AnimaWorks — Dashboard</title>
-  <link rel="icon" type="image/svg+xml" href="/shared/favicon.svg">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/tokens.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/base.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/layout.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/sidebar-nav.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/dashboard.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/chat.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/sidebar.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/activity.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/memory.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/history.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/avatar.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/assets.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/board.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/responsive.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/voice.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/activity-report.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/settings.css">
-  <link rel="stylesheet" href="/_v/__AW_VERSION__/styles/team-builder.css">
+  <link rel="icon" type="image/svg+xml" href="__AW_BASE__/shared/favicon.svg">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/tokens.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/base.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/layout.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/sidebar-nav.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/dashboard.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/chat.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/sidebar.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/activity.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/memory.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/history.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/avatar.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/assets.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/board.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/responsive.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/voice.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/activity-report.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/settings.css">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/styles/team-builder.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.44/dist/katex.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.44/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/marked-katex-extension@5.1.7/lib/index.umd.js"></script>
   <!--
     Import Map: remap absolute "/shared/" imports to versioned URLs.
-    __AW_VERSION__ is replaced server-side with the server start timestamp
-    so that every restart forces the browser to re-fetch all JS modules.
+    __AW_VERSION__ / __AW_BASE__ are replaced server-side.
   -->
   <script type="importmap">
   {
     "imports": {
-      "/shared/": "/_v/__AW_VERSION__/shared/"
+      "/shared/": "__AW_BASE__/_v/__AW_VERSION__/shared/"
     }
   }
   </script>
@@ -137,7 +137,7 @@
           <i data-lucide="users-round" class="nav-lucide"></i>
           <span class="nav-label" data-i18n="nav.team_builder">Team Builder</span></a></li>
         <li class="nav-divider"></li>
-        <li><a href="/workspace/" class="nav-item nav-external" target="_blank">
+        <li><a href="__AW_BASE__/workspace/" class="nav-item nav-external" target="_blank">
           <span class="nav-emoji">&#x1F3AE;</span>
           <i data-lucide="building-2" class="nav-lucide"></i>
           <span class="nav-label" data-i18n="nav.workspace">Workspace</span></a></li>
@@ -155,20 +155,16 @@
     </div>
   </div>
 
-  <script src="/vendor/lucide/lucide.min.js"></script>
+  <script src="__AW_BASE__/vendor/lucide/lucide.min.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.lucide) lucide.createIcons();
     });
   </script>
   <script>
-    // Load app entry point from versioned path.
-    // __AW_VERSION__ is replaced server-side with the server start timestamp.
-    // All relative imports within modules resolve through /_v/VERSION/... too,
-    // so every JS file is re-fetched when the server restarts.
     const s = document.createElement('script');
     s.type = 'module';
-    s.src = '/_v/__AW_VERSION__/modules/app.js';
+    s.src = '__AW_BASE__/_v/__AW_VERSION__/modules/app.js';
     document.body.appendChild(s);
   </script>
 </body>

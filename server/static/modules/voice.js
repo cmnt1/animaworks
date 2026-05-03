@@ -3,6 +3,7 @@
  */
 import { VoicePlayback } from './voice-playback.js';
 import { VoiceVAD } from './voice-vad.js';
+import { basePath } from '/shared/base-path.js';
 
 export class VoiceManager {
   constructor() {
@@ -52,7 +53,7 @@ export class VoiceManager {
     const gen = ++this._connGen;
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${location.host}/ws/voice/${encodeURIComponent(animaName)}`;
+    const url = `${protocol}//${location.host}${basePath}/ws/voice/${encodeURIComponent(animaName)}`;
 
     return new Promise((resolve, reject) => {
       let settled = false;

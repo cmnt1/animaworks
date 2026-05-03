@@ -1,5 +1,6 @@
 /* ── Setup Wizard — Main Logic ─────────────── */
 
+import { basePath } from "/shared/base-path.js";
 import { initLanguageStep, getLanguageData } from "./steps/language.js";
 import { initEnvironmentStep, getEnvironmentData, validateEnvironment } from "./steps/environment.js";
 import { initUserInfoStep, getUserInfoData, validateUserInfo } from "./steps/userinfo.js";
@@ -19,7 +20,7 @@ const state = {
 
 async function loadTranslations(locale) {
   try {
-    const res = await fetch(`/setup/i18n/${locale}.json`);
+    const res = await fetch(`${basePath}/setup/i18n/${locale}.json`);
     if (!res.ok) throw new Error(`Failed to load ${locale} translations`);
     state.translations = await res.json();
     state.locale = locale;

@@ -3,6 +3,7 @@
 // Singleton EventTarget; manages anima:thread → ChatSession map.
 
 import { createHistoryState, applyHistoryData, mergePolledHistory } from "./history-loader.js";
+import { basePath } from "/shared/base-path.js";
 
 // ── ChatSession ──────────────────────
 
@@ -437,7 +438,7 @@ export class ChatSessionManager extends EventTarget {
         session._abortController.abort();
       }
     }
-    fetch(`/api/animas/${encodeURIComponent(anima)}/interrupt`, { method: "POST" }).catch(() => {});
+    fetch(`${basePath}/api/animas/${encodeURIComponent(anima)}/interrupt`, { method: "POST" }).catch(() => {});
   }
 
   /**

@@ -4,8 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AnimaWorks Setup</title>
-  <link rel="icon" type="image/svg+xml" href="/shared/favicon.svg">
-  <link rel="stylesheet" href="/setup/setup.css">
+  <meta name="aw-base-path" content="__AW_BASE__">
+  <link rel="icon" type="image/svg+xml" href="__AW_BASE__/shared/favicon.svg">
+  <link rel="stylesheet" href="__AW_BASE__/setup/setup.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "/shared/": "__AW_BASE__/_v/__AW_VERSION__/shared/"
+    }
+  }
+  </script>
 </head>
 <body>
   <div class="setup-container">
@@ -52,6 +60,6 @@
     </footer>
   </div>
 
-  <script type="module" src="/setup/setup.js"></script>
+  <script type="module" src="__AW_BASE__/setup/setup.js"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@ import { api } from "../modules/api.js";
 import { escapeHtml, renderMarkdown, smartTimestamp } from "../modules/state.js";
 import { createLogger } from "../shared/logger.js";
 import { t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 import { bustupCandidates, resolveCachedAvatar } from "../modules/avatar-resolver.js";
 import { preloadAvatars } from "../modules/image-cache.js";
 
@@ -517,7 +518,7 @@ async function _renderChannelMembers(channelName, metaEl) {
 
 async function _saveMembership(channelId, members) {
   try {
-    await fetch(`/api/discord/channel-members/${encodeURIComponent(channelId)}`, {
+    await fetch(`${basePath}/api/discord/channel-members/${encodeURIComponent(channelId)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ members }),
