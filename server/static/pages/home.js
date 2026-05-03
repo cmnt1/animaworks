@@ -247,6 +247,8 @@ function _usageForecast(utilization, resetAt, windowSeconds, displayWindowSecond
   const now = Date.now();
   const displayWindowSeconds = displayWindowSecondsOverride ?? Math.max(windowSeconds, (resetMs - now) / 1000);
   const windowMs = displayWindowSeconds * 1000;
+  const windowStartMs = resetMs - windowMs;
+  const elapsedMs = now - windowStartMs;
 
   const msToReset = resetMs - now;
   if (msToReset <= 0) return { runway: "-", landing: "-", label: "" };
@@ -256,9 +258,21 @@ function _usageForecast(utilization, resetAt, windowSeconds, displayWindowSecond
   const timePct = Math.min((msToReset / windowMs) * 100, 100);
   const daysToReset = msToReset / 86400000;
 
-  const displayWindowDays = displayWindowSeconds / 86400;
-  const runwayDays = remain * displayWindowDays / 100;
-  const projectedRemain = remain - timePct;
+  if (elapsedMs <= 0) {
+    return { runway: "", daysToReset, landing: `${remain.toFixed(1)}%`, label: "", noRunway: true,
+             remainPct: remain, timePct, runwayDays: null, daysToResetRaw: daysToReset, windowSeconds, displayWindowSeconds };
+  }
+
+  const elapsedDays = elapsedMs / 86400000;
+  const burnPerDay = used / elapsedDays;
+
+  if (burnPerDay <= 0) {
+    return { runway: "\u221E", daysToReset, landing: `${remain.toFixed(1)}%`, label: "",
+             remainPct: remain, timePct, runwayDays: Infinity, daysToResetRaw: daysToReset, windowSeconds, displayWindowSeconds };
+  }
+
+  const runwayDays = remain / burnPerDay;
+  const projectedRemain = remain - (burnPerDay * daysToReset);
 
   // Format runway
   let runwayStr, daysToResetStr;

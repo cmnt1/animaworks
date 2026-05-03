@@ -11,6 +11,7 @@ from server.usage_governor import (
     DEFAULT_POLICY,
     UsageGovernor,
     _classify_animas,
+    _evaluate_burn_rate_landing,
     _evaluate_hard_floor,
     _evaluate_time_proportional,
 )
@@ -160,7 +161,119 @@ def test_hard_floor_uses_policy_activity_level():
     assert "activity 5%" in reason
 
 
-def test_opencode_go_month_uses_time_proportional_policy(monkeypatch):
+def test_burn_rate_landing_keeps_activity_when_projected_landing_is_zero(monkeypatch):
+    monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
+    window_data = {
+        "remaining": 50,
+        "resets_at": 1500.0,
+        "window_seconds": 1000,
+    }
+    config = {
+        "mode": "burn_rate_landing",
+        "target_remaining_at_reset": 0,
+        "min_elapsed_pct": 1,
+        "min_used_pct": 1,
+    }
+
+    level, reason = _evaluate_burn_rate_landing(
+        50,
+        window_data,
+        config,
+        "claude",
+        "seven_day",
+    )
+
+    assert level == 100
+    assert "landing 0% target 0%" in reason
+    assert "activity 100%" in reason
+
+
+def test_burn_rate_landing_throttles_when_projected_landing_is_negative(monkeypatch):
+    monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
+    window_data = {
+        "remaining": 25,
+        "resets_at": 1500.0,
+        "window_seconds": 1000,
+    }
+    config = {
+        "mode": "burn_rate_landing",
+        "target_remaining_at_reset": 0,
+        "min_elapsed_pct": 1,
+        "min_used_pct": 1,
+    }
+
+    level, reason = _evaluate_burn_rate_landing(
+        25,
+        window_data,
+        config,
+        "claude",
+        "seven_day",
+    )
+
+    assert level == 33
+    assert "landing -50% target 0%" in reason
+    assert "activity 33%" in reason
+
+
+def test_burn_rate_landing_boosts_when_burn_is_below_target(monkeypatch):
+    monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
+    window_data = {
+        "remaining": 90,
+        "resets_at": 1500.0,
+        "window_seconds": 1000,
+    }
+    config = {
+        "mode": "burn_rate_landing",
+        "target_remaining_at_reset": 0,
+        "min_elapsed_pct": 1,
+        "min_used_pct": 1,
+        "max_activity_level": 400,
+    }
+
+    level, reason = _evaluate_burn_rate_landing(
+        90,
+        window_data,
+        config,
+        "openai",
+        "Week",
+    )
+
+    assert level == 400
+    assert "landing 80% target 0%" in reason
+    assert "activity 400%" in reason
+
+
+def test_default_policy_uses_burn_rate_landing_mode():
+    providers = DEFAULT_POLICY["providers"]
+    assert providers["claude"]["seven_day"]["mode"] == "burn_rate_landing"
+    assert providers["opencode_go"]["Month"]["target_remaining_at_reset"] == 0
+
+
+def test_ensure_policy_file_migrates_time_proportional_windows(tmp_path):
+    policy = {
+        "providers": {
+            "claude": {
+                "seven_day": {
+                    "mode": "time_proportional",
+                    "throttle_rules": [{"room_under": 1, "activity_level": 100}],
+                },
+            },
+        },
+    }
+    path = tmp_path / "usage_policy.json"
+    path.write_text(json.dumps(policy), encoding="utf-8")
+
+    usage_governor.ensure_policy_file(tmp_path)
+
+    migrated = json.loads(path.read_text("utf-8"))
+    window = migrated["providers"]["claude"]["seven_day"]
+    assert window["mode"] == "burn_rate_landing"
+    assert window["target_remaining_at_reset"] == 0
+    assert window["fallback_mode"] == "time_proportional"
+    assert window["throttle_rules"] == [{"room_under": 1, "activity_level": 100}]
+
+
+def test_opencode_go_month_keeps_time_proportional_fallback_rules(monkeypatch):
     monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
     window_data = {
         "remaining": 7,

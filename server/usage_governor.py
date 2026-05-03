@@ -26,6 +26,9 @@ Rule mode:
     headroom, and values below ``1.0`` mean over-consuming.
     ``throttle_rules`` with ``room_under`` thresholds fire when room drops
     below the specified value.
+  - **burn_rate_landing** estimates current burn rate and adjusts activity so
+    projected remaining usage at reset lands near ``target_remaining_at_reset``.
+    Early/low-signal windows fall back to ``time_proportional``.
   - **threshold** (list format, legacy) — fixed remaining-% cut-offs.
 """
 
@@ -75,6 +78,19 @@ def _default_throttle_rules() -> list[dict[str, int | float]]:
     ]
 
 
+def _default_window_policy() -> dict[str, Any]:
+    return {
+        "mode": "burn_rate_landing",
+        "target_remaining_at_reset": 0,
+        "min_elapsed_pct": 3,
+        "min_used_pct": 1,
+        "min_activity_level": 1,
+        "max_activity_level": 400,
+        "fallback_mode": "time_proportional",
+        "throttle_rules": _default_throttle_rules(),
+    }
+
+
 DEFAULT_POLICY: dict[str, Any] = {
     "enabled": True,
     "check_interval_seconds": 120,
@@ -82,44 +98,20 @@ DEFAULT_POLICY: dict[str, Any] = {
     "hard_floor_activity_level": 5,
     "providers": {
         "claude": {
-            "five_hour": {
-                "mode": "time_proportional",
-                "throttle_rules": _default_throttle_rules(),
-            },
-            "seven_day": {
-                "mode": "time_proportional",
-                "throttle_rules": _default_throttle_rules(),
-            },
+            "five_hour": _default_window_policy(),
+            "seven_day": _default_window_policy(),
         },
         "openai": {
-            "5h": {
-                "mode": "time_proportional",
-                "throttle_rules": _default_throttle_rules(),
-            },
-            "Week": {
-                "mode": "time_proportional",
-                "throttle_rules": _default_throttle_rules(),
-            },
+            "5h": _default_window_policy(),
+            "Week": _default_window_policy(),
         },
         "nanogpt": {
-            "Week": {
-                "mode": "time_proportional",
-                "throttle_rules": _default_throttle_rules(),
-            },
+            "Week": _default_window_policy(),
         },
         "opencode_go": {
-            "5h": {
-                "mode": "time_proportional",
-                "throttle_rules": _default_throttle_rules(),
-            },
-            "Week": {
-                "mode": "time_proportional",
-                "throttle_rules": _default_throttle_rules(),
-            },
-            "Month": {
-                "mode": "time_proportional",
-                "throttle_rules": _default_throttle_rules(),
-            },
+            "5h": _default_window_policy(),
+            "Week": _default_window_policy(),
+            "Month": _default_window_policy(),
         },
     },
     "suspend_thresholds": {
@@ -289,6 +281,21 @@ def _migrate_deficit_to_room(window_config: dict[str, Any]) -> bool:
     return True
 
 
+def _migrate_time_proportional_to_burn_rate(window_config: dict[str, Any]) -> bool:
+    """Move legacy default windows to burn-rate landing mode."""
+    if window_config.get("mode") != "time_proportional":
+        return False
+    window_config["mode"] = "burn_rate_landing"
+    window_config.setdefault("target_remaining_at_reset", 0)
+    window_config.setdefault("min_elapsed_pct", 3)
+    window_config.setdefault("min_used_pct", 1)
+    window_config.setdefault("min_activity_level", 1)
+    window_config.setdefault("max_activity_level", 400)
+    window_config.setdefault("fallback_mode", "time_proportional")
+    window_config.setdefault("throttle_rules", _default_throttle_rules())
+    return True
+
+
 def ensure_policy_file(data_dir: Path) -> None:
     """Create default policy file if it doesn't exist.
 
@@ -310,7 +317,11 @@ def ensure_policy_file(data_dir: Path) -> None:
             if not isinstance(prov_windows, dict):
                 continue
             for _win_key, win_config in prov_windows.items():
-                if isinstance(win_config, dict) and _migrate_deficit_to_room(win_config):
+                if not isinstance(win_config, dict):
+                    continue
+                if _migrate_deficit_to_room(win_config):
+                    changed = True
+                if _migrate_time_proportional_to_burn_rate(win_config):
                     changed = True
 
         if changed:
@@ -541,6 +552,63 @@ def _evaluate_time_proportional(
     return None, ""
 
 
+def _evaluate_burn_rate_landing(
+    remaining: float,
+    window_data: dict[str, Any],
+    config: dict[str, Any],
+    provider_key: str,
+    window_key: str,
+) -> tuple[int | None, str]:
+    """Throttle so the current burn rate lands near the target reset balance."""
+    resets_at = window_data.get("resets_at")
+    window_seconds = window_data.get("window_seconds")
+
+    resets_ts = _parse_resets_at(resets_at)
+    if resets_ts is None or not window_seconds:
+        return None, ""
+
+    now = time.time()
+    reset_in = resets_ts - now
+    if reset_in <= 0:
+        return None, ""
+
+    elapsed = max(0.0, float(window_seconds) - reset_in)
+    elapsed_pct = (elapsed / float(window_seconds)) * 100.0 if window_seconds else 0.0
+    used = max(0.0, 100.0 - remaining)
+
+    min_elapsed_pct = float(config.get("min_elapsed_pct", 3))
+    min_used_pct = float(config.get("min_used_pct", 1))
+    if elapsed_pct < min_elapsed_pct or used < min_used_pct:
+        fallback = config.get("fallback_mode", "time_proportional")
+        if fallback == "time_proportional":
+            return _evaluate_time_proportional(remaining, window_data, config, provider_key, window_key)
+        return None, ""
+
+    target_remaining = float(config.get("target_remaining_at_reset", 0))
+    burn_per_sec = used / elapsed if elapsed > 0 else 0.0
+    if burn_per_sec <= 0:
+        return None, ""
+
+    target_budget = max(0.0, remaining - target_remaining)
+    target_burn_per_sec = target_budget / reset_in
+    raw_level = (target_burn_per_sec / burn_per_sec) * 100.0
+
+    min_level = _clamp_activity_level(config.get("min_activity_level", 1))
+    max_level = _clamp_activity_level(config.get("max_activity_level", 400))
+    if min_level > max_level:
+        min_level, max_level = max_level, min_level
+    level = max(min_level, min(max_level, int(round(raw_level))))
+
+    projected_remaining = remaining - (burn_per_sec * reset_in)
+    reason = (
+        f"{provider_key}.{window_key} landing {projected_remaining:.0f}% "
+        f"target {target_remaining:.0f}% (burn {burn_per_sec * 86400:.1f}%/d, "
+        f"target {target_burn_per_sec * 86400:.1f}%/d) "
+        f"竊・activity {level}%"
+    )
+    return level, reason
+
+
 def _evaluate_hard_floor(
     remaining: float,
     hard_floor: float,
@@ -613,6 +681,15 @@ def _evaluate_provider_remaining(
             mode = window_config.get("mode", "threshold")
             if mode == "time_proportional":
                 level, reason = _evaluate_time_proportional(
+                    remaining,
+                    window,
+                    window_config,
+                    provider_key,
+                    window_key,
+                )
+                _update_worst(level, reason)
+            elif mode == "burn_rate_landing":
+                level, reason = _evaluate_burn_rate_landing(
                     remaining,
                     window,
                     window_config,
