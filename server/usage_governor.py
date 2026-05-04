@@ -706,6 +706,8 @@ def _update_calibration(
     elapsed_sec: float,
     window_seconds: float | None,
     config: dict[str, Any],
+    *,
+    window_key: str | None = None,
 ) -> dict[str, Any]:
     """EMA update of base_burn and norm_burn estimates.
 
@@ -724,6 +726,12 @@ def _update_calibration(
     initial_base_per_day = float(config.get("initial_base_burn_per_day_pct", 0))
 
     prev = calib or {}
+    # Reset calibration when the observation window has changed — the EMA
+    # values are in "%/sec of [window]'s quota" units, so values learned on
+    # a different window must not be reused.
+    prev_window = prev.get("window_key")
+    if window_key is not None and prev_window is not None and prev_window != window_key:
+        prev = {}
     base_burn_ema = float(prev.get("base_burn_ema", initial_base_per_day / 86400.0))
     norm_burn_ema = float(prev.get("norm_burn_ema", 0.0))
     samples = int(prev.get("samples", 0))
@@ -769,6 +777,7 @@ def _update_calibration(
         "last_prediction_error_per_sec": error,
         "last_elapsed_sec": elapsed_sec,
         "last_window_seconds": float(window_seconds) if window_seconds else None,
+        "window_key": window_key,
         "match_activity_level": match_level,
         "last_updated_ts": time.time(),
     }
@@ -906,6 +915,7 @@ def _evaluate_provider_remaining(
     calibration: dict[str, Any] | None = None,
     avg_activity_pct: float | None = None,
     calibration_enabled: bool = False,
+    calibration_window_key: str | None = None,
 ) -> tuple[float, int | None, str]:
     """Evaluate rules for a single provider.
 
@@ -965,17 +975,28 @@ def _evaluate_provider_remaining(
                 )
                 _update_worst(level, reason)
             elif mode == "burn_rate_landing":
-                level, reason = _evaluate_burn_rate_landing(
-                    remaining,
-                    window,
-                    window_config,
-                    provider_key,
-                    window_key,
-                    calibration=calibration,
-                    avg_activity_pct=avg_activity_pct,
-                    calibration_enabled=calibration_enabled,
-                )
-                _update_worst(level, reason)
+                # burn_rate_landing only fires on the calibration window
+                # (longest available).  Other windows would mix
+                # quota-percentage units with the per-provider calibration
+                # EMAs and produce nonsensical target_levels.  Hard-floor
+                # evaluation below still protects shorter windows.
+                if (
+                    calibration_window_key is not None
+                    and window_key != calibration_window_key
+                ):
+                    pass
+                else:
+                    level, reason = _evaluate_burn_rate_landing(
+                        remaining,
+                        window,
+                        window_config,
+                        provider_key,
+                        window_key,
+                        calibration=calibration,
+                        avg_activity_pct=avg_activity_pct,
+                        calibration_enabled=calibration_enabled,
+                    )
+                    _update_worst(level, reason)
             else:
                 # Dict with "rules" key treated as threshold
                 rules = window_config.get("rules", [])
@@ -1163,10 +1184,15 @@ class UsageGovernor:
                 continue
 
             # ── Compute observation window for calibration ──────────────────
-            # Use the shortest window with usable elapsed/used signal.
-            avg_activity_pct, observed_burn, observed_elapsed, observation_window = (
-                self._observation_for_provider(usage_data, policy, provider_key)
-            )
+            # Use the longest window so the signal is stable; per-second
+            # quantization on a 5h window can swing wildly per tick.
+            (
+                avg_activity_pct,
+                observed_burn,
+                observed_elapsed,
+                observation_window,
+                calibration_window_key,
+            ) = self._observation_for_provider(usage_data, policy, provider_key)
             calibration = self._state.calibration_by_provider.get(provider_key)
 
             # Update calibration EMAs from this tick's observation
@@ -1186,6 +1212,7 @@ class UsageGovernor:
                     observed_elapsed,
                     window_seconds,
                     calib_config,
+                    window_key=calibration_window_key,
                 )
                 self._state.calibration_by_provider[provider_key] = calibration
                 self._append_calibration_log(
@@ -1199,6 +1226,7 @@ class UsageGovernor:
                 calibration=calibration,
                 avg_activity_pct=avg_activity_pct,
                 calibration_enabled=calibration_enabled,
+                calibration_window_key=calibration_window_key,
             )
 
             # Record this provider's activity level (throttles only animas
@@ -1309,19 +1337,32 @@ class UsageGovernor:
         usage_data: dict[str, Any],
         policy: dict[str, Any],
         provider_key: str,
-    ) -> tuple[float | None, float | None, float | None, dict[str, Any] | None]:
-        """Pick the shortest usable window and compute (avg_activity, burn, elapsed, window).
+    ) -> tuple[
+        float | None,
+        float | None,
+        float | None,
+        dict[str, Any] | None,
+        str | None,
+    ]:
+        """Pick the longest usable window and compute observation tuple.
+
+        The longest window is chosen so calibration / throttle decisions are
+        based on a stable signal — short windows oscillate too aggressively
+        and quantize poorly (a single tool call can swing %/s wildly when
+        elapsed is small).  Hard-floor evaluation on shorter windows still
+        protects against acute exhaustion.
 
         Returns ``(avg_activity_pct, observed_burn_per_sec, observed_elapsed_sec,
-        window_data)`` or all ``None`` when no usable signal exists.
+        window_data, window_key)`` or all ``None`` when no usable signal exists.
         """
         provider_data = usage_data.get(provider_key, {})
         if not isinstance(provider_data, dict) or provider_data.get("error"):
-            return None, None, None, None
+            return None, None, None, None, None
 
         windows_rules = policy.get("providers", {}).get(provider_key, {})
 
-        best: tuple[float, dict[str, Any]] | None = None  # (window_sec, window_data)
+        # (window_sec, window_data, window_key) — pick the longest window.
+        best: tuple[float, dict[str, Any], str] | None = None
         for window_key in windows_rules:
             win = provider_data.get(window_key)
             if not isinstance(win, dict):
@@ -1329,17 +1370,17 @@ class UsageGovernor:
             ws = win.get("window_seconds")
             if not ws:
                 continue
-            if best is None or float(ws) < best[0]:
-                best = (float(ws), win)
+            if best is None or float(ws) > best[0]:
+                best = (float(ws), win, window_key)
 
         if best is None:
-            return None, None, None, None
+            return None, None, None, None, None
 
-        window_seconds, window = best
+        window_seconds, window, window_key = best
         resets_ts = _parse_resets_at(window.get("resets_at"))
         remaining = window.get("remaining")
         if resets_ts is None or remaining is None:
-            return None, None, None, window
+            return None, None, None, window, window_key
 
         now = time.time()
         reset_in = resets_ts - now
@@ -1350,7 +1391,7 @@ class UsageGovernor:
         avg_activity = self._history.avg_activity_pct(
             provider_key, now - elapsed, now
         )
-        return avg_activity, observed_burn, elapsed, window
+        return avg_activity, observed_burn, elapsed, window, window_key
 
     def _append_calibration_log(
         self,
