@@ -674,7 +674,11 @@ function _renderAuthAlerts(alerts) {
 function _renderGovernor(gov) {
   const el = document.getElementById("usageGovernorBar");
   if (!el) return;
-  if (!gov || !gov.active) {
+  const calibByProv = (gov && gov.calibration_by_provider) || {};
+  const hasCalibration = Object.values(calibByProv).some(
+    (c) => c && (c.samples || 0) > 0,
+  );
+  if (!gov || (!gov.active && !hasCalibration)) {
     el.style.display = "none";
     return;
   }
@@ -733,6 +737,37 @@ function _renderGovernor(gov) {
       <div class="governor-row">
         <span class="governor-provider">Activity (${escapeHtml(label)}):</span>
         <span class="governor-row-reason">${escapeHtml(label)}使用のAnimaのハートビート間隔・max_turnsを${lvl}%にスロットル中</span>
+      </div>`;
+  }
+
+  // Calibration diagnostics — show match_activity_level and observed/predicted
+  // burn so the user can decide whether to rebalance Anima model assignments.
+  const fmt = (v, digits = 1) =>
+    v === null || v === undefined || Number.isNaN(v)
+      ? "—"
+      : Number(v).toFixed(digits);
+  const CAL_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT", opencode_go: "OpenCode Go" };
+  for (const [prov, calib] of Object.entries(calibByProv)) {
+    if (!calib || (calib.samples || 0) <= 0) continue;
+    const label = CAL_LABELS[prov] || prov;
+    const matchLvl = calib.match_activity_level;
+    const matchBadge =
+      matchLvl !== null && matchLvl !== undefined
+        ? `Match <strong class="governor-activity-level">${fmt(matchLvl, 0)}%</strong>`
+        : "Match —";
+    const detail =
+      `base ${fmt(calib.base_burn_per_day_pct)}%/d, ` +
+      `scalable@100 ${fmt(calib.normalized_burn_at_100_per_day_pct)}%/d, ` +
+      `samples ${calib.samples}` +
+      (calib.last_avg_applied_pct !== null && calib.last_avg_applied_pct !== undefined
+        ? `, last applied ${fmt(calib.last_avg_applied_pct, 0)}% ` +
+          `(obs ${fmt(calib.last_observed_burn_per_day_pct)}/pred ${fmt(calib.last_predicted_burn_per_day_pct)}%/d, ` +
+          `err ${fmt(calib.last_prediction_error_per_day_pct)}%/d)`
+        : "");
+    rowsHtml += `
+      <div class="governor-row">
+        <span class="governor-provider">Calibration (${escapeHtml(label)}):</span>
+        <span class="governor-row-reason">${matchBadge} — ${escapeHtml(detail)}</span>
       </div>`;
   }
 

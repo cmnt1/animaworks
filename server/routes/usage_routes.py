@@ -1031,6 +1031,33 @@ def create_usage_router() -> APIRouter:
                 }
             except Exception:
                 logger.debug("per_provider_suspended classification failed", exc_info=True)
+            # Surface calibration EMAs in human-friendly per-day units so the
+            # dashboard can render them without re-doing the unit conversion.
+            calibration_view: dict[str, Any] = {}
+            try:
+                for prov, calib in (st.calibration_by_provider or {}).items():
+                    if not isinstance(calib, dict):
+                        continue
+                    calibration_view[prov] = {
+                        "base_burn_per_day_pct": float(calib.get("base_burn_ema", 0) or 0) * 86400.0,
+                        "normalized_burn_at_100_per_day_pct": float(calib.get("norm_burn_ema", 0) or 0) * 86400.0,
+                        "samples": int(calib.get("samples", 0) or 0),
+                        "last_avg_applied_pct": calib.get("last_avg_applied_pct"),
+                        "last_observed_burn_per_day_pct": float(
+                            calib.get("last_observed_burn_per_sec", 0) or 0
+                        ) * 86400.0,
+                        "last_predicted_burn_per_day_pct": float(
+                            calib.get("last_predicted_burn_per_sec", 0) or 0
+                        ) * 86400.0,
+                        "last_prediction_error_per_day_pct": float(
+                            calib.get("last_prediction_error_per_sec", 0) or 0
+                        ) * 86400.0,
+                        "match_activity_level": calib.get("match_activity_level"),
+                        "last_window_seconds": calib.get("last_window_seconds"),
+                        "last_updated_ts": calib.get("last_updated_ts"),
+                    }
+            except Exception:
+                logger.debug("calibration view build failed", exc_info=True)
             governor_info = {
                 "active": st.is_governing,
                 "suspended_animas": st.suspended_animas,
@@ -1041,6 +1068,7 @@ def create_usage_router() -> APIRouter:
                 "activity_level_by_provider": st.governor_activity_level_by_provider,
                 "front_activity_level_by_provider": st.front_activity_level_by_provider,
                 "background_activity_level_by_provider": st.background_activity_level_by_provider,
+                "calibration_by_provider": calibration_view,
             }
         # Auth alerts from executor-detected failures
         try:
