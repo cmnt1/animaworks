@@ -11,6 +11,7 @@ via ``GET /api/usage``.  Results are cached for 60 seconds.
 """
 
 import base64
+import calendar
 import json
 import logging
 import os
@@ -832,8 +833,32 @@ _OPENCODE_GO_DASHBOARD_SUFFIX = "/go"
 _OPENCODE_GO_WINDOW_SECONDS = {
     "5h": 5 * 3600,
     "Week": 7 * 24 * 3600,
-    "Month": 30 * 24 * 3600,
+    # "Month" is computed dynamically from the calendar — see
+    # _opencode_go_window_seconds() — because real months have 28-31 days.
+    "Month": 30 * 24 * 3600,  # fallback only
 }
+
+
+def _opencode_go_window_seconds(label: str, resets_at_ts: float | None = None) -> int:
+    """Return the actual length of the given OpenCode Go window in seconds.
+
+    For ``Month``, return ``days_in_month × 86400`` for the calendar month
+    that contains the window being observed (= the month immediately before
+    ``resets_at_ts``, since the reset marks the *end* of the current window).
+    Falls back to the static 30-day estimate when ``resets_at_ts`` is missing.
+    """
+    if label != "Month":
+        return _OPENCODE_GO_WINDOW_SECONDS[label]
+    try:
+        if resets_at_ts:
+            # reset_at marks the start of the next month; subtract 1 sec to
+            # land in the current (observed) month for monthrange lookup.
+            dt = datetime.fromtimestamp(float(resets_at_ts) - 1.0, tz=UTC)
+        else:
+            dt = datetime.now(UTC)
+        return calendar.monthrange(dt.year, dt.month)[1] * 86400
+    except Exception:
+        return _OPENCODE_GO_WINDOW_SECONDS["Month"]
 _OPENCODE_GO_WINDOW_PATTERNS = {
     "5h": "rollingUsage",
     "Week": "weeklyUsage",
@@ -923,11 +948,12 @@ def _opencode_go_window_payload(label: str, usage_percent: float, reset_in_sec: 
     utilization = max(0.0, usage_percent)
     remaining = max(0.0, 100.0 - utilization)
     reset_in_sec = max(0.0, reset_in_sec)
+    resets_at = time.time() + reset_in_sec
     return {
         "utilization": utilization,
         "remaining": remaining,
-        "resets_at": time.time() + reset_in_sec,
-        "window_seconds": _OPENCODE_GO_WINDOW_SECONDS[label],
+        "resets_at": resets_at,
+        "window_seconds": _opencode_go_window_seconds(label, resets_at),
         "reset_in_sec": reset_in_sec,
     }
 
@@ -1031,29 +1057,39 @@ def create_usage_router() -> APIRouter:
                 }
             except Exception:
                 logger.debug("per_provider_suspended classification failed", exc_info=True)
-            # Surface calibration EMAs in human-friendly per-day units so the
-            # dashboard can render them without re-doing the unit conversion.
+            # Surface calibration EMAs as "% of one day's worth of quota
+            # consumed per day" so values are comparable across providers
+            # regardless of window length.
+            #
+            # Internal storage: burn_per_sec = "% of window quota / second".
+            # Daily allocation = window_quota / (window_seconds / 86400).
+            # %-of-daily-allocation per day = burn_per_sec * window_seconds.
+            #
+            # 100 = exactly the natural refill pace; >100 = burning faster
+            # than the daily allocation.
             calibration_view: dict[str, Any] = {}
             try:
                 for prov, calib in (st.calibration_by_provider or {}).items():
                     if not isinstance(calib, dict):
                         continue
+                    window_seconds = calib.get("last_window_seconds") or 86400.0
+                    scale = float(window_seconds)
                     calibration_view[prov] = {
-                        "base_burn_per_day_pct": float(calib.get("base_burn_ema", 0) or 0) * 86400.0,
-                        "normalized_burn_at_100_per_day_pct": float(calib.get("norm_burn_ema", 0) or 0) * 86400.0,
+                        "base_burn_per_day_pct": float(calib.get("base_burn_ema", 0) or 0) * scale,
+                        "normalized_burn_at_100_per_day_pct": float(calib.get("norm_burn_ema", 0) or 0) * scale,
                         "samples": int(calib.get("samples", 0) or 0),
                         "last_avg_applied_pct": calib.get("last_avg_applied_pct"),
                         "last_observed_burn_per_day_pct": float(
                             calib.get("last_observed_burn_per_sec", 0) or 0
-                        ) * 86400.0,
+                        ) * scale,
                         "last_predicted_burn_per_day_pct": float(
                             calib.get("last_predicted_burn_per_sec", 0) or 0
-                        ) * 86400.0,
+                        ) * scale,
                         "last_prediction_error_per_day_pct": float(
                             calib.get("last_prediction_error_per_sec", 0) or 0
-                        ) * 86400.0,
+                        ) * scale,
                         "match_activity_level": calib.get("match_activity_level"),
-                        "last_window_seconds": calib.get("last_window_seconds"),
+                        "last_window_seconds": window_seconds,
                         "last_updated_ts": calib.get("last_updated_ts"),
                     }
             except Exception:

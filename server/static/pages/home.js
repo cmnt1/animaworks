@@ -801,6 +801,7 @@ function _renderGovernor(gov) {
 
   const legendHtml = `
     <div class="governor-legend">
+      <span><b>%/d</b>: 1日割り当てに対する％（100=自然回復ペース、>100=超過）</span>
       <span><b>Applied</b>: 現在適用中 (Front/BG)</span>
       <span><b>Match</b>: ウィンドウで100%消費するペースのactivity_level</span>
       <span><b>OBR</b>: Observed Burn Rate %/d（実測）</span>
