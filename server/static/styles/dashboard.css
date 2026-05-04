@@ -754,6 +754,67 @@
   white-space: nowrap;
 }
 
+.governor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-top: 4px;
+}
+
+.governor-table th,
+.governor-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.governor-table thead th {
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.governor-table th.num,
+.governor-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.governor-table tr:last-child td {
+  border-bottom: none;
+}
+
+.governor-cell-provider {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.governor-table .muted {
+  opacity: 0.4;
+}
+
+.governor-reason-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  opacity: 0.85;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.1);
+  margin-top: 4px;
+}
+
+.governor-reason-footer > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* ── Empty State ─────────────────────────────── */
 
 .empty-state {

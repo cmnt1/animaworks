@@ -683,8 +683,20 @@ function _renderGovernor(gov) {
     return;
   }
 
-  // Parse combined reason string into per-provider buckets
-  const providerReasons = { claude: [], openai: [], nanogpt: [], opencode_go: [] };
+  const PROVIDERS = [
+    ["claude", "Claude"],
+    ["openai", "OpenAI"],
+    ["nanogpt", "NanoGPT"],
+    ["opencode_go", "OpenCode Go"],
+  ];
+  const frontByProv = gov.front_activity_level_by_provider || gov.activity_level_by_provider || {};
+  const bgByProv = gov.background_activity_level_by_provider || {};
+  const perSuspended = gov.per_provider_suspended || {};
+
+  // Parse combined reason string into per-provider buckets (used for relogin detection
+  // and for the reason footer when the table can't capture the situation).
+  const providerReasons = {};
+  for (const [p] of PROVIDERS) providerReasons[p] = [];
   for (const seg of (gov.reason || "").split(" | ")) {
     for (const p of Object.keys(providerReasons)) {
       if (seg.startsWith(p + ".") || seg.startsWith(p + " ")) {
@@ -693,89 +705,114 @@ function _renderGovernor(gov) {
       }
     }
   }
-
-  const perSuspended = gov.per_provider_suspended || {};
-  const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT", opencode_go: "OpenCode Go" };
   const _reloginPat = /rate_limited|unauthorized|no_credentials/;
 
-  let rowsHtml = "";
-  for (const [prov, label] of Object.entries(LABELS)) {
-    const suspended = perSuspended[prov] || [];
-    const reasons  = providerReasons[prov];
-    if (suspended.length === 0 && reasons.length === 0) continue;
-
-    const reasonText   = reasons.join("; ");
-    const suspendedText = suspended.length > 0
-      ? `<span class="governor-suspended">停止中: ${escapeHtml(suspended.join(", "))}</span>`
-      : "";
-    const provNeedsRelogin = _reloginPat.test(reasons.join(" "));
-    const reloginBtn = (prov === "claude" && provNeedsRelogin)
-      ? `<button class="btn-secondary governor-relogin-btn" id="govReloginBtn" style="font-size:0.78rem;padding:2px 8px;">再認証</button>`
-      : "";
-
-    rowsHtml += `
-      <div class="governor-row">
-        <span class="governor-provider">${escapeHtml(label)}:</span>
-        <span class="governor-row-reason">${_renderGovernorReason(reasonText)}</span>
-        ${suspendedText}
-        ${reloginBtn}
-      </div>`;
-  }
-
-  // Fallback: if per_provider_suspended not available, show all suspended together
-  if (!rowsHtml && gov.suspended_animas?.length) {
-    rowsHtml = `<div class="governor-row"><span class="governor-suspended">停止中: ${escapeHtml(gov.suspended_animas.join(", "))}</span></div>`;
-  }
-
-  // Activity levels are already included in provider reason rows.
-  const actByProv = {};
-  const ACT_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT", opencode_go: "OpenCode Go" };
-  for (const [prov, lvl] of Object.entries(actByProv)) {
-    if (lvl === null || lvl === undefined || lvl >= 100) continue;
-    const label = ACT_LABELS[prov] || prov;
-    rowsHtml += `
-      <div class="governor-row">
-        <span class="governor-provider">Activity (${escapeHtml(label)}):</span>
-        <span class="governor-row-reason">${escapeHtml(label)}使用のAnimaのハートビート間隔・max_turnsを${lvl}%にスロットル中</span>
-      </div>`;
-  }
-
-  // Calibration diagnostics — show match_activity_level and observed/predicted
-  // burn so the user can decide whether to rebalance Anima model assignments.
+  // ── Number formatters ──────────────────────────────
   const fmt = (v, digits = 1) =>
     v === null || v === undefined || Number.isNaN(v)
       ? "—"
       : Number(v).toFixed(digits);
-  const CAL_LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "NanoGPT", opencode_go: "OpenCode Go" };
-  for (const [prov, calib] of Object.entries(calibByProv)) {
-    if (!calib || (calib.samples || 0) <= 0) continue;
-    const label = CAL_LABELS[prov] || prov;
-    const matchLvl = calib.match_activity_level;
-    const matchBadge =
-      matchLvl !== null && matchLvl !== undefined
-        ? `Match <strong class="governor-activity-level">${fmt(matchLvl, 0)}%</strong>`
-        : "Match —";
-    const detail =
-      `base ${fmt(calib.base_burn_per_day_pct)}%/d, ` +
-      `scalable@100 ${fmt(calib.normalized_burn_at_100_per_day_pct)}%/d, ` +
-      `samples ${calib.samples}` +
-      (calib.last_avg_applied_pct !== null && calib.last_avg_applied_pct !== undefined
-        ? `, last applied ${fmt(calib.last_avg_applied_pct, 0)}% ` +
-          `(obs ${fmt(calib.last_observed_burn_per_day_pct)}/pred ${fmt(calib.last_predicted_burn_per_day_pct)}%/d, ` +
-          `err ${fmt(calib.last_prediction_error_per_day_pct)}%/d)`
-        : "");
-    rowsHtml += `
-      <div class="governor-row">
-        <span class="governor-provider">Calibration (${escapeHtml(label)}):</span>
-        <span class="governor-row-reason">${matchBadge} — ${escapeHtml(detail)}</span>
-      </div>`;
+  const fmtInt = (v) =>
+    v === null || v === undefined || Number.isNaN(v) ? "—" : String(Math.round(Number(v)));
+  const fmtActivity = (front, bg) => {
+    const f = front === null || front === undefined ? null : Math.round(Number(front));
+    const b = bg === null || bg === undefined ? null : Math.round(Number(bg));
+    if (f === null && b === null) return "—";
+    if (f === b || b === null) return `${f}%`;
+    if (f === null) return `—/${b}%`;
+    return `${f}/${b}%`;
+  };
+
+  // ── Build per-provider rows ────────────────────────
+  let bodyRows = "";
+  let needsRelogin = false;
+  const reasonFooters = [];
+
+  for (const [prov, label] of PROVIDERS) {
+    const calib = calibByProv[prov] || {};
+    const suspended = perSuspended[prov] || [];
+    const reasons = providerReasons[prov] || [];
+    const front = frontByProv[prov];
+    const bg = bgByProv[prov];
+    const samples = calib.samples || 0;
+
+    // Skip providers with absolutely nothing to show
+    const hasAnything =
+      samples > 0 ||
+      suspended.length > 0 ||
+      reasons.length > 0 ||
+      (front !== null && front !== undefined && front < 100) ||
+      (bg !== null && bg !== undefined && bg < 100);
+    if (!hasAnything) continue;
+
+    if (prov === "claude" && _reloginPat.test(reasons.join(" "))) {
+      needsRelogin = true;
+    }
+
+    const suspendedCell = suspended.length > 0
+      ? `<span class="governor-suspended" title="${escapeHtml(suspended.join(", "))}">停止 ${suspended.length}</span>`
+      : `<span class="muted">—</span>`;
+
+    bodyRows += `
+      <tr>
+        <td class="governor-cell-provider">${escapeHtml(label)}</td>
+        <td class="num">${fmtActivity(front, bg)}</td>
+        <td class="num"><strong class="governor-activity-level">${fmtInt(calib.match_activity_level)}${calib.match_activity_level !== null && calib.match_activity_level !== undefined ? "%" : ""}</strong></td>
+        <td class="num">${fmt(calib.last_observed_burn_per_day_pct)}</td>
+        <td class="num">${fmt(calib.last_predicted_burn_per_day_pct)}</td>
+        <td class="num">${fmt(calib.last_prediction_error_per_day_pct)}</td>
+        <td class="num">${fmt(calib.base_burn_per_day_pct)}</td>
+        <td class="num">${fmt(calib.normalized_burn_at_100_per_day_pct)}</td>
+        <td class="num">${samples > 0 ? fmtInt(calib.last_avg_applied_pct) + "%" : "—"}</td>
+        <td class="num">${samples || "—"}</td>
+        <td>${suspendedCell}</td>
+      </tr>`;
+
+    // Collect the latest calibration reason as a tooltip-like footer line
+    if (reasons.length > 0) {
+      reasonFooters.push(`${label}: ${reasons.join("; ")}`);
+    }
   }
+
+  // Fallback when no per-provider rows but some animas are suspended
+  if (!bodyRows && gov.suspended_animas?.length) {
+    bodyRows = `<tr><td colspan="11"><span class="governor-suspended">停止中: ${escapeHtml(gov.suspended_animas.join(", "))}</span></td></tr>`;
+  }
+
+  const tableHtml = `
+    <table class="governor-table">
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th class="num" title="Front / Background applied activity_level">Applied</th>
+          <th class="num" title="Constant activity_level that would consume 100% over the window">Match</th>
+          <th class="num" title="Observed burn rate (%/d) last cycle">Obs</th>
+          <th class="num" title="Predicted burn at last applied level (%/d)">Pred</th>
+          <th class="num" title="Observed - Predicted (%/d). Closer to 0 means linear model holds.">Err</th>
+          <th class="num" title="Non-scalable base burn (%/d) — human chats, cron, external receipts">Base</th>
+          <th class="num" title="Normalized burn at activity_level=100% (%/d)">@100</th>
+          <th class="num" title="Average applied activity over last observation window">Avg</th>
+          <th class="num" title="Calibration sample count">N</th>
+          <th title="Suspended animas">Status</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+    </table>`;
+
+  const reloginBtn = needsRelogin
+    ? `<button class="btn-secondary governor-relogin-btn" id="govReloginBtn" style="font-size:0.78rem;padding:2px 8px;margin-left:0.5rem;">再認証</button>`
+    : "";
+
+  const footerHtml = reasonFooters.length > 0
+    ? `<div class="governor-reason-footer">${reasonFooters.map((r) => `<div>${_renderGovernorReason(escapeHtml(r))}</div>`).join("")}${reloginBtn}</div>`
+    : (reloginBtn ? `<div class="governor-reason-footer">${reloginBtn}</div>` : "");
 
   el.style.display = "block";
   el.innerHTML = `
     <div class="governor-bar governor-bar--active">
       <div class="governor-header"><span class="governor-icon">&#x26A0;</span><strong>Usage Governor</strong></div>
-      ${rowsHtml}
+      ${tableHtml}
+      ${footerHtml}
     </div>
   `;
 
