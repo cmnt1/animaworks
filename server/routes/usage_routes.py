@@ -842,35 +842,41 @@ _OPENCODE_GO_WINDOW_SECONDS = {
 def _opencode_go_window_seconds(label: str, resets_at_ts: float | None = None) -> int:
     """Return the actual length of the given OpenCode Go window in seconds.
 
-    For ``Month``: assume the billing cycle is calendar-month aligned (the
-    typical SaaS pattern), and return the day count of **the calendar month
-    in which the current cycle started**.  Concretely:
+    For ``Month``: OpenCode Go is **not** calendar-month aligned. The cycle
+    starts at the first token consumption after the previous reset and
+    runs for one calendar month — i.e., reset is set to the same
+    day-of-month and time-of-day in the next calendar month.
 
-      - ``resets_at_ts`` is the moment the next cycle begins (= end of the
-        current cycle, = start of the next calendar month).
-      - ``resets_at_ts - 1 second`` lands in the last second of the current
-        cycle, which is in the cycle-start calendar month.
-      - ``calendar.monthrange()`` on that month yields the cycle length.
+    So the cycle length is simply ``resets_at - (resets_at − 1 calendar month)``,
+    accounting for variable month lengths via day clamping (e.g., March 31
+    minus one month = Feb 28/29).
 
-    Examples (UTC):
-      - cycle May → reset Jun 1 00:00 → monthrange(2026, 5) = 31 days
-      - cycle Feb → reset Mar 1 00:00 → monthrange(2026, 2) = 28 days
-      - cycle Apr → reset May 1 00:00 → monthrange(2026, 4) = 30 days
+    Examples (any timezone, since UTC is used internally):
+      - reset Jun 1 10:38:20 → cycle May 1 10:38:20 → Jun 1 10:38:20 → 31 days
+      - reset May 30 10:00   → cycle Apr 30 10:00 → May 30 10:00     → 30 days
+      - reset Mar 28 10:00   → cycle Feb 28 10:00 → Mar 28 10:00     → 28 days
+      - reset Mar 31 10:00   → cycle Feb 28 10:00 → Mar 31 10:00     → 31 days
+                                                                    (day clamp)
 
     Falls back to the static 30-day estimate when ``resets_at_ts`` is missing.
-    Non-calendar-aligned cycles (e.g., billing on the 15th) would need cycle
-    start info from the API, which OpenCode Go does not currently expose.
     """
     if label != "Month":
         return _OPENCODE_GO_WINDOW_SECONDS[label]
+    if not resets_at_ts:
+        return _OPENCODE_GO_WINDOW_SECONDS["Month"]
     try:
-        if resets_at_ts:
-            # Subtract 1 sec so we land inside the current cycle, not the
-            # next one — for calendar-aligned cycles this is the start month.
-            dt = datetime.fromtimestamp(float(resets_at_ts) - 1.0, tz=UTC)
+        reset_dt = datetime.fromtimestamp(float(resets_at_ts), tz=UTC)
+        # Move back one calendar month, clamping day-of-month if it overflows.
+        if reset_dt.month == 1:
+            prev_year, prev_month = reset_dt.year - 1, 12
         else:
-            dt = datetime.now(UTC)
-        return calendar.monthrange(dt.year, dt.month)[1] * 86400
+            prev_year, prev_month = reset_dt.year, reset_dt.month - 1
+        prev_month_days = calendar.monthrange(prev_year, prev_month)[1]
+        cycle_start_day = min(reset_dt.day, prev_month_days)
+        cycle_start = reset_dt.replace(
+            year=prev_year, month=prev_month, day=cycle_start_day
+        )
+        return int((reset_dt - cycle_start).total_seconds())
     except Exception:
         return _OPENCODE_GO_WINDOW_SECONDS["Month"]
 _OPENCODE_GO_WINDOW_PATTERNS = {
