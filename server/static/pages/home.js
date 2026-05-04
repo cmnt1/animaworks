@@ -787,8 +787,8 @@ function _renderGovernor(gov) {
           <th class="num">Applied</th>
           <th class="num">Match</th>
           <th class="num">OBR</th>
-          <th class="num">PBR</th>
-          <th class="num">BRE</th>
+          <th class="num">PRED</th>
+          <th class="num">ERR</th>
           <th class="num">BBR</th>
           <th class="num">NBR</th>
           <th class="num">Avg</th>
@@ -804,8 +804,8 @@ function _renderGovernor(gov) {
       <span><b>Applied</b>: 現在適用中 (Front/BG)</span>
       <span><b>Match</b>: ウィンドウで100%消費するペースのactivity_level</span>
       <span><b>OBR</b>: Observed Burn Rate %/d（実測）</span>
-      <span><b>PBR</b>: Predicted Burn Rate %/d（モデル予測）</span>
-      <span><b>BRE</b>: Burn Rate Error = OBR − PBR</span>
+      <span><b>PRED</b>: Predicted Burn Rate %/d（モデル予測）</span>
+      <span><b>ERR</b>: Burn Rate Error = OBR − PRED</span>
       <span><b>BBR</b>: Base Burn Rate %/d（activity_levelに依らない分）</span>
       <span><b>NBR</b>: Normalized Burn Rate %/d @ activity=100%</span>
       <span><b>Avg</b>: 直近観測ウィンドウでの平均適用activity</span>
