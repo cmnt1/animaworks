@@ -784,34 +784,52 @@ function _renderGovernor(gov) {
       <thead>
         <tr>
           <th>Provider</th>
-          <th class="num" title="Front / Background applied activity_level">Applied</th>
-          <th class="num" title="Constant activity_level that would consume 100% over the window">Match</th>
-          <th class="num" title="Observed burn rate (%/d) last cycle">Obs</th>
-          <th class="num" title="Predicted burn at last applied level (%/d)">Pred</th>
-          <th class="num" title="Observed - Predicted (%/d). Closer to 0 means linear model holds.">Err</th>
-          <th class="num" title="Non-scalable base burn (%/d) — human chats, cron, external receipts">Base</th>
-          <th class="num" title="Normalized burn at activity_level=100% (%/d)">@100</th>
-          <th class="num" title="Average applied activity over last observation window">Avg</th>
-          <th class="num" title="Calibration sample count">N</th>
-          <th title="Suspended animas">Status</th>
+          <th class="num">Applied</th>
+          <th class="num">Match</th>
+          <th class="num">OBR</th>
+          <th class="num">PBR</th>
+          <th class="num">BRE</th>
+          <th class="num">BBR</th>
+          <th class="num">NBR</th>
+          <th class="num">Avg</th>
+          <th class="num">N</th>
+          <th>Status</th>
         </tr>
       </thead>
       <tbody>${bodyRows}</tbody>
     </table>`;
 
+  const legendHtml = `
+    <div class="governor-legend">
+      <span><b>Applied</b>: 現在適用中 (Front/BG)</span>
+      <span><b>Match</b>: ウィンドウで100%消費するペースのactivity_level</span>
+      <span><b>OBR</b>: Observed Burn Rate %/d（実測）</span>
+      <span><b>PBR</b>: Predicted Burn Rate %/d（モデル予測）</span>
+      <span><b>BRE</b>: Burn Rate Error = OBR − PBR</span>
+      <span><b>BBR</b>: Base Burn Rate %/d（activity_levelに依らない分）</span>
+      <span><b>NBR</b>: Normalized Burn Rate %/d @ activity=100%</span>
+      <span><b>Avg</b>: 直近観測ウィンドウでの平均適用activity</span>
+      <span><b>N</b>: 校正サンプル数</span>
+    </div>`;
+
   const reloginBtn = needsRelogin
     ? `<button class="btn-secondary governor-relogin-btn" id="govReloginBtn" style="font-size:0.78rem;padding:2px 8px;margin-left:0.5rem;">再認証</button>`
     : "";
 
-  const footerHtml = reasonFooters.length > 0
-    ? `<div class="governor-reason-footer">${reasonFooters.map((r) => `<div>${_renderGovernorReason(escapeHtml(r))}</div>`).join("")}${reloginBtn}</div>`
-    : (reloginBtn ? `<div class="governor-reason-footer">${reloginBtn}</div>` : "");
+  // Footer reason text: show verbatim (single-escape only), no per-row
+  // activity reformat — the table already exposes the activity number.
+  const footerHtml = reasonFooters.length > 0 || reloginBtn
+    ? `<div class="governor-reason-footer">${reasonFooters
+        .map((r) => `<div>${escapeHtml(r)}</div>`)
+        .join("")}${reloginBtn}</div>`
+    : "";
 
   el.style.display = "block";
   el.innerHTML = `
     <div class="governor-bar governor-bar--active">
       <div class="governor-header"><span class="governor-icon">&#x26A0;</span><strong>Usage Governor</strong></div>
       ${tableHtml}
+      ${legendHtml}
       ${footerHtml}
     </div>
   `;
