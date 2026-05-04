@@ -842,17 +842,31 @@ _OPENCODE_GO_WINDOW_SECONDS = {
 def _opencode_go_window_seconds(label: str, resets_at_ts: float | None = None) -> int:
     """Return the actual length of the given OpenCode Go window in seconds.
 
-    For ``Month``, return ``days_in_month × 86400`` for the calendar month
-    that contains the window being observed (= the month immediately before
-    ``resets_at_ts``, since the reset marks the *end* of the current window).
+    For ``Month``: assume the billing cycle is calendar-month aligned (the
+    typical SaaS pattern), and return the day count of **the calendar month
+    in which the current cycle started**.  Concretely:
+
+      - ``resets_at_ts`` is the moment the next cycle begins (= end of the
+        current cycle, = start of the next calendar month).
+      - ``resets_at_ts - 1 second`` lands in the last second of the current
+        cycle, which is in the cycle-start calendar month.
+      - ``calendar.monthrange()`` on that month yields the cycle length.
+
+    Examples (UTC):
+      - cycle May → reset Jun 1 00:00 → monthrange(2026, 5) = 31 days
+      - cycle Feb → reset Mar 1 00:00 → monthrange(2026, 2) = 28 days
+      - cycle Apr → reset May 1 00:00 → monthrange(2026, 4) = 30 days
+
     Falls back to the static 30-day estimate when ``resets_at_ts`` is missing.
+    Non-calendar-aligned cycles (e.g., billing on the 15th) would need cycle
+    start info from the API, which OpenCode Go does not currently expose.
     """
     if label != "Month":
         return _OPENCODE_GO_WINDOW_SECONDS[label]
     try:
         if resets_at_ts:
-            # reset_at marks the start of the next month; subtract 1 sec to
-            # land in the current (observed) month for monthrange lookup.
+            # Subtract 1 sec so we land inside the current cycle, not the
+            # next one — for calendar-aligned cycles this is the start month.
             dt = datetime.fromtimestamp(float(resets_at_ts) - 1.0, tz=UTC)
         else:
             dt = datetime.now(UTC)
