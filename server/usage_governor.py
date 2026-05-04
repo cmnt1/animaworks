@@ -120,7 +120,23 @@ DEFAULT_POLICY: dict[str, Any] = {
     },
     "coo_anima": "sakura",
     "essential_animas": ["sakura"],
+    "calibration": {
+        "enabled": True,
+        "min_observation_sec": 600,
+        "min_used_pct": 1,
+        "base_burn_ema_alpha": 0.1,
+        "norm_burn_ema_alpha": 0.2,
+        "low_activity_threshold_pct": 20,
+        "initial_base_burn_per_day_pct": 0,
+        "calibration_log_max_entries": 5000,
+    },
 }
+
+
+# Activity history retention — keep one week of (timestamp, applied level)
+# samples per provider so calibration can survive restarts and inspect
+# week-window observations.
+_HISTORY_RETENTION_SEC = 7 * 24 * 3600
 
 
 # ── Governor state ───────────────────────────────────────────────────────────
@@ -147,6 +163,9 @@ class GovernorState:
         self.background_activity_level_by_provider: dict[str, int | None] = {}
         self._relogin_timestamps: dict[str, list[float]] = {}
         self._relogin_cooldown_until: dict[str, float] = {}
+        # Per-provider calibration EMA snapshots.  Updated by _tick() and used
+        # by _evaluate_burn_rate_landing to predict burn at activity_level=100%.
+        self.calibration_by_provider: dict[str, dict[str, Any]] = {}
         self._load()
 
     def can_relogin(self, provider: str) -> bool:
@@ -201,6 +220,11 @@ class GovernorState:
                 }
             else:
                 self.background_activity_level_by_provider = dict(self.governor_activity_level_by_provider)
+            calib = data.get("calibration_by_provider")
+            if isinstance(calib, dict):
+                self.calibration_by_provider = {
+                    k: dict(v) for k, v in calib.items() if isinstance(v, dict)
+                }
         except Exception:
             logger.debug("Failed to load governor state", exc_info=True)
 
@@ -212,6 +236,7 @@ class GovernorState:
             "governor_activity_level_by_provider": self.governor_activity_level_by_provider,
             "front_activity_level_by_provider": self.front_activity_level_by_provider,
             "background_activity_level_by_provider": self.background_activity_level_by_provider,
+            "calibration_by_provider": self.calibration_by_provider,
         }
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -221,6 +246,14 @@ class GovernorState:
             )
         except Exception:
             logger.warning("Failed to save governor state", exc_info=True)
+
+    @property
+    def history_path(self) -> Path:
+        return self._path.parent / "usage_governor_history.json"
+
+    @property
+    def calibration_log_path(self) -> Path:
+        return self._path.parent / "usage_governor_calibration.jsonl"
 
     @property
     def is_governing(self) -> bool:
@@ -234,6 +267,120 @@ class GovernorState:
             for lvl in activity_map.values()
         )
         return bool(self.suspended_animas) or bool(self.reason) or throttling
+
+
+class GovernorHistory:
+    """Per-provider applied activity_level history persisted separately.
+
+    Stored as a step function: each entry is (timestamp, level) and the level
+    is assumed to remain in effect until the next sample.  Old samples beyond
+    ``_HISTORY_RETENTION_SEC`` (one week) are trimmed on every append.
+
+    Persisted to ``usage_governor_history.json`` to avoid bloating the main
+    state file with append-mostly time-series data.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        # provider_key -> list of [timestamp, level]
+        self.history_by_provider: dict[str, list[list[float]]] = {}
+        self._load()
+
+    def _load(self) -> None:
+        if not self._path.is_file():
+            return
+        try:
+            data = json.loads(self._path.read_text("utf-8"))
+            raw = data.get("history_by_provider", {})
+            if isinstance(raw, dict):
+                for prov, entries in raw.items():
+                    if not isinstance(entries, list):
+                        continue
+                    cleaned: list[list[float]] = []
+                    for entry in entries:
+                        if (
+                            isinstance(entry, list)
+                            and len(entry) == 2
+                            and isinstance(entry[0], (int, float))
+                            and isinstance(entry[1], (int, float))
+                        ):
+                            cleaned.append([float(entry[0]), float(entry[1])])
+                    if cleaned:
+                        self.history_by_provider[str(prov)] = cleaned
+        except Exception:
+            logger.debug("Failed to load governor history", exc_info=True)
+
+    def save(self) -> None:
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._path.write_text(
+                json.dumps(
+                    {"history_by_provider": self.history_by_provider},
+                    indent=2,
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            logger.warning("Failed to save governor history", exc_info=True)
+
+    def append(self, provider: str, ts: float, level: int | None) -> None:
+        """Append a sample, treating None as 100 (unconstrained)."""
+        effective = 100 if level is None else int(level)
+        entries = self.history_by_provider.setdefault(provider, [])
+        # Skip duplicate consecutive samples (keep file small)
+        if entries and int(entries[-1][1]) == effective and ts - entries[-1][0] < 60:
+            return
+        entries.append([float(ts), float(effective)])
+        # Trim old samples
+        cutoff = ts - _HISTORY_RETENTION_SEC
+        # Keep one anchor entry just before the cutoff so we can integrate
+        # right at the boundary.
+        while len(entries) >= 2 and entries[1][0] < cutoff:
+            entries.pop(0)
+
+    def avg_activity_pct(
+        self,
+        provider: str,
+        t_start: float,
+        t_end: float,
+    ) -> float | None:
+        """Time-weighted average of applied activity_level over [t_start, t_end].
+
+        Returns the average expressed as a fraction (e.g., 0.6 means 60%).
+        Returns None if history is empty for the provider.  Samples before
+        ``t_start`` are clamped to ``t_start``; the most recent sample is held
+        constant up to ``t_end``.
+        """
+        entries = self.history_by_provider.get(provider, [])
+        if not entries or t_end <= t_start:
+            return None
+
+        # Walk pairs: [(ts_i, level_i), (ts_{i+1}, level_{i+1}), ...]
+        # Each interval contributes level_i * dt where
+        # dt = clamp(ts_{i+1}, t_start, t_end) - clamp(ts_i, t_start, t_end).
+        # Last interval extends from last sample timestamp to t_end.
+        sentinel = [t_end, entries[-1][1]]
+        walk: list[list[float]] = entries + [sentinel]
+
+        total_dt = 0.0
+        weighted_sum = 0.0
+        for i in range(len(walk) - 1):
+            ts_i, level_i = walk[i]
+            ts_next = walk[i + 1][0]
+            seg_start = max(ts_i, t_start)
+            seg_end = min(ts_next, t_end)
+            if seg_end <= seg_start:
+                continue
+            dt = seg_end - seg_start
+            weighted_sum += level_i * dt
+            total_dt += dt
+
+        if total_dt <= 0:
+            # Fall back to most recent sample
+            return float(entries[-1][1]) / 100.0
+        return (weighted_sum / total_dt) / 100.0
 
 
 # ── Policy I/O ───────────────────────────────────────────────────────────────
@@ -552,14 +699,103 @@ def _evaluate_time_proportional(
     return None, ""
 
 
+def _update_calibration(
+    calib: dict[str, Any] | None,
+    observed_burn_per_sec: float,
+    avg_activity_pct: float,
+    elapsed_sec: float,
+    window_seconds: float | None,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """EMA update of base_burn and norm_burn estimates.
+
+    base_burn  — burn rate that does not scale with activity_level
+                 (human chats, cron, external receipts).  Updated only when
+                 ``avg_activity_pct`` is below ``low_activity_threshold_pct``.
+    norm_burn  — burn rate at activity_level=100% for the *scalable* portion.
+
+    Also computes ``match_activity_level``: the constant level that would have
+    consumed exactly the full window budget over its full duration
+    (= consumption pace matches time progression).
+    """
+    base_alpha = float(config.get("base_burn_ema_alpha", 0.1))
+    norm_alpha = float(config.get("norm_burn_ema_alpha", 0.2))
+    low_thresh_pct = float(config.get("low_activity_threshold_pct", 20))
+    initial_base_per_day = float(config.get("initial_base_burn_per_day_pct", 0))
+
+    prev = calib or {}
+    base_burn_ema = float(prev.get("base_burn_ema", initial_base_per_day / 86400.0))
+    norm_burn_ema = float(prev.get("norm_burn_ema", 0.0))
+    samples = int(prev.get("samples", 0))
+
+    # Update base_burn only when activity has been very low (signal dominated
+    # by non-scalable load).
+    if avg_activity_pct * 100.0 <= low_thresh_pct:
+        base_burn_ema = base_burn_ema + base_alpha * (observed_burn_per_sec - base_burn_ema)
+        if base_burn_ema < 0:
+            base_burn_ema = 0.0
+
+    # Update normalized scalable burn (always, when activity is meaningful).
+    scalable = max(0.0, observed_burn_per_sec - base_burn_ema)
+    if avg_activity_pct >= 0.05:  # at least 5% applied activity to be useful
+        norm_at_100 = scalable / avg_activity_pct
+        if norm_burn_ema <= 0:
+            norm_burn_ema = norm_at_100
+        else:
+            norm_burn_ema = norm_burn_ema + norm_alpha * (norm_at_100 - norm_burn_ema)
+
+    # Prediction error (predicted vs. observed burn at the avg_applied level)
+    predicted = base_burn_ema + norm_burn_ema * avg_activity_pct
+    error = observed_burn_per_sec - predicted
+
+    # match_activity_level: level X such that predicted burn over the window
+    # would exactly deplete 100% by reset.  i.e., target_burn = 100% / window_sec.
+    match_level: float | None = None
+    if window_seconds and norm_burn_ema > 0:
+        target_burn = 100.0 / float(window_seconds)
+        budget_for_scalable = target_burn - base_burn_ema
+        if budget_for_scalable > 0:
+            match_level = (budget_for_scalable / norm_burn_ema) * 100.0
+        else:
+            match_level = 0.0  # base burn alone already exceeds time-pace
+
+    return {
+        "base_burn_ema": base_burn_ema,
+        "norm_burn_ema": norm_burn_ema,
+        "samples": samples + 1,
+        "last_avg_applied_pct": avg_activity_pct * 100.0,
+        "last_observed_burn_per_sec": observed_burn_per_sec,
+        "last_predicted_burn_per_sec": predicted,
+        "last_prediction_error_per_sec": error,
+        "last_elapsed_sec": elapsed_sec,
+        "last_window_seconds": float(window_seconds) if window_seconds else None,
+        "match_activity_level": match_level,
+        "last_updated_ts": time.time(),
+    }
+
+
 def _evaluate_burn_rate_landing(
     remaining: float,
     window_data: dict[str, Any],
     config: dict[str, Any],
     provider_key: str,
     window_key: str,
+    *,
+    calibration: dict[str, Any] | None = None,
+    avg_activity_pct: float | None = None,
+    calibration_enabled: bool = False,
 ) -> tuple[int | None, str]:
-    """Throttle so the current burn rate lands near the target reset balance."""
+    """Throttle so the current burn rate lands near the target reset balance.
+
+    When ``calibration_enabled`` and ``calibration`` provides usable
+    ``norm_burn_ema``/``base_burn_ema`` values, the target activity_level is
+    derived from the linear model:
+
+        predicted_burn(level) = base_burn + norm_burn * level/100
+
+    Otherwise the legacy formula (``raw_level = target / observed * 100``)
+    is used, which implicitly assumes the observation was made at level=100%.
+    """
     resets_at = window_data.get("resets_at")
     window_seconds = window_data.get("window_seconds")
 
@@ -591,20 +827,56 @@ def _evaluate_burn_rate_landing(
 
     target_budget = max(0.0, remaining - target_remaining)
     target_burn_per_sec = target_budget / reset_in
-    raw_level = (target_burn_per_sec / burn_per_sec) * 100.0
 
     min_level = _clamp_activity_level(config.get("min_activity_level", 1))
     max_level = _clamp_activity_level(config.get("max_activity_level", 400))
     if min_level > max_level:
         min_level, max_level = max_level, min_level
+
+    # Prefer calibrated computation when enabled and we have usable EMAs.
+    used_calibration = False
+    if (
+        calibration_enabled
+        and calibration is not None
+        and avg_activity_pct is not None
+        and avg_activity_pct >= 0.05
+    ):
+        norm_burn = float(calibration.get("norm_burn_ema", 0) or 0)
+        base_burn = float(calibration.get("base_burn_ema", 0) or 0)
+        if norm_burn > 0:
+            scalable_target = target_burn_per_sec - base_burn
+            if scalable_target <= 0:
+                # Even at level=0, base burn alone exceeds the target.
+                # Fall to minimum and let suspension thresholds handle it.
+                raw_level = float(min_level)
+            else:
+                raw_level = (scalable_target / norm_burn) * 100.0
+            level = max(min_level, min(max_level, int(round(raw_level))))
+            projected_remaining = remaining - (
+                (base_burn + norm_burn * (level / 100.0)) * reset_in
+            )
+            reason = (
+                f"{provider_key}.{window_key} landing {projected_remaining:.0f}% "
+                f"target {target_remaining:.0f}% "
+                f"(obs {burn_per_sec * 86400:.1f}%/d @ avg {avg_activity_pct * 100:.0f}%, "
+                f"base {base_burn * 86400:.1f}%/d, norm@100 {norm_burn * 86400:.1f}%/d, "
+                f"target {target_burn_per_sec * 86400:.1f}%/d) "
+                f"-> activity {level}%"
+            )
+            used_calibration = True
+            return level, reason
+
+    # Legacy uncalibrated path (assumes observation was at activity_level=100%).
+    raw_level = (target_burn_per_sec / burn_per_sec) * 100.0
     level = max(min_level, min(max_level, int(round(raw_level))))
 
     projected_remaining = remaining - (burn_per_sec * reset_in)
+    suffix = " [uncalibrated]" if not used_calibration else ""
     reason = (
         f"{provider_key}.{window_key} landing {projected_remaining:.0f}% "
         f"target {target_remaining:.0f}% (burn {burn_per_sec * 86400:.1f}%/d, "
         f"target {target_burn_per_sec * 86400:.1f}%/d) "
-        f"竊・activity {level}%"
+        f"-> activity {level}%{suffix}"
     )
     return level, reason
 
@@ -630,6 +902,10 @@ def _evaluate_provider_remaining(
     usage_data: dict[str, Any],
     policy: dict[str, Any],
     provider_key: str,
+    *,
+    calibration: dict[str, Any] | None = None,
+    avg_activity_pct: float | None = None,
+    calibration_enabled: bool = False,
 ) -> tuple[float, int | None, str]:
     """Evaluate rules for a single provider.
 
@@ -695,6 +971,9 @@ def _evaluate_provider_remaining(
                     window_config,
                     provider_key,
                     window_key,
+                    calibration=calibration,
+                    avg_activity_pct=avg_activity_pct,
+                    calibration_enabled=calibration_enabled,
                 )
                 _update_worst(level, reason)
             else:
@@ -764,7 +1043,12 @@ class UsageGovernor:
         self._data_dir = data_dir
         self._animas_dir = animas_dir
         self._state = GovernorState(data_dir / "usage_governor_state.json")
+        self._history = GovernorHistory(data_dir / "usage_governor_history.json")
         self._task: asyncio.Task | None = None
+
+    @property
+    def history(self) -> GovernorHistory:
+        return self._history
 
     @property
     def state(self) -> GovernorState:
@@ -858,6 +1142,8 @@ class UsageGovernor:
         all_suspend: list[str] = []
         reasons: list[str] = []
         level_by_provider: dict[str, int | None] = {}
+        calib_config = policy.get("calibration", {}) or {}
+        calibration_enabled = bool(calib_config.get("enabled", True))
         # Evaluate all cloud providers, including providers with no currently
         # running animas so their activity level remains visible to readers.
         for provider_key in ("claude", "openai", "nanogpt", "opencode_go"):
@@ -876,10 +1162,43 @@ class UsageGovernor:
                         reasons.append(f"{provider_key} usage unavailable ({error_code})")
                 continue
 
+            # ── Compute observation window for calibration ──────────────────
+            # Use the shortest window with usable elapsed/used signal.
+            avg_activity_pct, observed_burn, observed_elapsed, observation_window = (
+                self._observation_for_provider(usage_data, policy, provider_key)
+            )
+            calibration = self._state.calibration_by_provider.get(provider_key)
+
+            # Update calibration EMAs from this tick's observation
+            if (
+                avg_activity_pct is not None
+                and observed_burn is not None
+                and observed_elapsed is not None
+                and observed_elapsed >= float(calib_config.get("min_observation_sec", 600))
+            ):
+                window_seconds = (
+                    observation_window.get("window_seconds") if observation_window else None
+                )
+                calibration = _update_calibration(
+                    calibration,
+                    observed_burn,
+                    avg_activity_pct,
+                    observed_elapsed,
+                    window_seconds,
+                    calib_config,
+                )
+                self._state.calibration_by_provider[provider_key] = calibration
+                self._append_calibration_log(
+                    provider_key, calibration, calib_config
+                )
+
             remaining, level, reason = _evaluate_provider_remaining(
                 usage_data,
                 policy,
                 provider_key,
+                calibration=calibration,
+                avg_activity_pct=avg_activity_pct,
+                calibration_enabled=calibration_enabled,
             )
 
             # Record this provider's activity level (throttles only animas
@@ -937,6 +1256,12 @@ class UsageGovernor:
         elif not all_suspend and not active:
             self._state.since = ""
 
+        # Append per-provider applied activity_level to rolling history.
+        now_ts = time.time()
+        for provider_key, level in level_by_provider.items():
+            self._history.append(provider_key, now_ts, level)
+        self._history.save()
+
         self._state.save()
 
     async def _broadcast_reschedule(self) -> None:
@@ -978,6 +1303,100 @@ class UsageGovernor:
                 ", ".join(sorted(unknown)),
             )
         return sorted(names.intersection(known_names))
+
+    def _observation_for_provider(
+        self,
+        usage_data: dict[str, Any],
+        policy: dict[str, Any],
+        provider_key: str,
+    ) -> tuple[float | None, float | None, float | None, dict[str, Any] | None]:
+        """Pick the shortest usable window and compute (avg_activity, burn, elapsed, window).
+
+        Returns ``(avg_activity_pct, observed_burn_per_sec, observed_elapsed_sec,
+        window_data)`` or all ``None`` when no usable signal exists.
+        """
+        provider_data = usage_data.get(provider_key, {})
+        if not isinstance(provider_data, dict) or provider_data.get("error"):
+            return None, None, None, None
+
+        windows_rules = policy.get("providers", {}).get(provider_key, {})
+
+        best: tuple[float, dict[str, Any]] | None = None  # (window_sec, window_data)
+        for window_key in windows_rules:
+            win = provider_data.get(window_key)
+            if not isinstance(win, dict):
+                continue
+            ws = win.get("window_seconds")
+            if not ws:
+                continue
+            if best is None or float(ws) < best[0]:
+                best = (float(ws), win)
+
+        if best is None:
+            return None, None, None, None
+
+        window_seconds, window = best
+        resets_ts = _parse_resets_at(window.get("resets_at"))
+        remaining = window.get("remaining")
+        if resets_ts is None or remaining is None:
+            return None, None, None, window
+
+        now = time.time()
+        reset_in = resets_ts - now
+        elapsed = max(0.0, window_seconds - reset_in)
+        used = max(0.0, 100.0 - float(remaining))
+        observed_burn = (used / elapsed) if elapsed > 0 else 0.0
+
+        avg_activity = self._history.avg_activity_pct(
+            provider_key, now - elapsed, now
+        )
+        return avg_activity, observed_burn, elapsed, window
+
+    def _append_calibration_log(
+        self,
+        provider_key: str,
+        calibration: dict[str, Any],
+        calib_config: dict[str, Any],
+    ) -> None:
+        """Append a calibration snapshot to the JSONL log, with size rotation."""
+        log_path = self._state.calibration_log_path
+        max_entries = int(calib_config.get("calibration_log_max_entries", 5000))
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            entry = {
+                "ts": time.time(),
+                "provider": provider_key,
+                "base_burn_per_day_pct": calibration.get("base_burn_ema", 0) * 86400.0,
+                "norm_burn_at_100_per_day_pct": calibration.get("norm_burn_ema", 0) * 86400.0,
+                "samples": calibration.get("samples", 0),
+                "last_avg_applied_pct": calibration.get("last_avg_applied_pct"),
+                "last_observed_burn_per_day_pct": (
+                    calibration.get("last_observed_burn_per_sec", 0) * 86400.0
+                ),
+                "last_predicted_burn_per_day_pct": (
+                    calibration.get("last_predicted_burn_per_sec", 0) * 86400.0
+                ),
+                "last_prediction_error_per_day_pct": (
+                    calibration.get("last_prediction_error_per_sec", 0) * 86400.0
+                ),
+                "match_activity_level": calibration.get("match_activity_level"),
+            }
+            with log_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            # Lightweight rotation: when file grows past 2x max_entries, keep
+            # the most recent max_entries lines.
+            if max_entries > 0:
+                try:
+                    line_count = sum(1 for _ in log_path.open("r", encoding="utf-8"))
+                except Exception:
+                    line_count = 0
+                if line_count > max_entries * 2:
+                    with log_path.open("r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    keep = lines[-max_entries:]
+                    log_path.write_text("".join(keep), encoding="utf-8")
+        except Exception:
+            logger.debug("Failed to append calibration log", exc_info=True)
 
     async def _apply_suspensions(self, target_suspended: set[str]) -> None:
         supervisor = getattr(self._app.state, "supervisor", None)
