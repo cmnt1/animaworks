@@ -336,6 +336,9 @@ class BoardSlackSync:
         if not slack_cfg.enabled:
             return None
 
+        if slack_cfg.board_outbound_sync and board_name not in slack_cfg.board_outbound_sync:
+            return None
+
         # Reverse lookup: board_name -> slack_channel_id
         channel_id = None
         for ch_id, bname in slack_cfg.board_mapping.items():
