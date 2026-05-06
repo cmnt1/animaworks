@@ -20,6 +20,15 @@ Task state is managed by files under `state/` and the task queue.
 `state/current_state.md` MUST always reflect the latest state.
 Update it whenever task state changes.
 
+### Project Management Source of Truth
+
+The project management source of truth is the **Obsidian Vault** (MUST). Do not use Notion by default.
+
+- Read and write project plans, progress, deliverables, pending confirmations, and decisions as Markdown under `E:\OneDriveBiz\Obsidian\`
+- Record deliverables and reports under `E:\OneDriveBiz\Obsidian\_products\` following `common_skills/obsidian-product/SKILL.md`
+- Anima-local `task_queue.jsonl` and `current_state.md` are execution tracking only; they do not replace the human-facing project ledger
+- Do not read/write Notion, use Notion databases as the progress source of truth, or submit deliverables to Notion
+
 ### Three-Path Execution Model
 
 In AnimaWorks, tasks are processed on three independent paths:

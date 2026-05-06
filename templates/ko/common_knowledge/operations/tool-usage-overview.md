@@ -75,6 +75,8 @@ Bash: animaworks-tool <도구> <서브커맨드> [인수]
 | 백그라운드 | `animaworks-tool bg check <task_id>`, `animaworks-tool bg list` |
 | 외부 도구 | `animaworks-tool slack send ...`, `animaworks-tool chatwork send ...` |
 
+Notion은 `permissions.json`의 `external_tools.deny`로 기본 거부합니다. 프로젝트 관리는 Obsidian Vault Markdown에서 읽고 쓰며, Notion DB를 진행 관리 기준으로 사용하지 않습니다.
+
 CLI 상세 사용법은 `read_memory_file(path="common_skills/machine-tool/SKILL.md")` 등으로 해당 스킬 파일을 읽어 확인할 수 있습니다.
 
 ## 신뢰 수준

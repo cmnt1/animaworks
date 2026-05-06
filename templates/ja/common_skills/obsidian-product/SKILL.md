@@ -11,6 +11,7 @@ tags: [productivity, obsidian, report, deliverable]
 
 成果物の提出先は **Obsidian Vault** に一本化された。Notion `T_Products` は廃止。
 本スキルは「レポートをどこに、どの命名で、どの frontmatter で書くか」の規約を示す。書き込み自体は通常の `Write` / `Edit` / `Bash` ツールで行う。
+プロジェクト管理の計画・進捗・決定事項・確認待ちも Obsidian Vault の Markdown を正本にする。Notion への読み書きや Notion DB への成果物提出は行わない。
 
 ## Vault パス（固定）
 

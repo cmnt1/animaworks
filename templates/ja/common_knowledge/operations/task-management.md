@@ -20,6 +20,15 @@ Digital Anima がタスクを受け取り、追跡し、完了させるための
 `state/current_state.md` は常に最新の状態を保たなければならない（MUST）。
 タスク状態が変わるたびに更新すること。
 
+### プロジェクト管理の正本
+
+プロジェクト管理の正本は **Obsidian Vault** に置く（MUST）。Notion は既定で使用しない。
+
+- プロジェクト計画、進捗、成果物、確認待ち、決定事項は `E:\OneDriveBiz\Obsidian\` 配下の Markdown に読み書きする
+- 成果物・報告書は `common_skills/obsidian-product/SKILL.md` の規約に従い、`E:\OneDriveBiz\Obsidian\_products\` に記録する
+- Anima 内部の `task_queue.jsonl` と `current_state.md` は実行管理用であり、人間が参照するプロジェクト台帳の代替ではない
+- Notion への読み書き、Notion DB を正本にした進捗管理、Notion への成果物提出は行わない
+
 ### 3パス実行モデル
 
 AnimaWorks ではタスクが3つの独立パスで処理される:

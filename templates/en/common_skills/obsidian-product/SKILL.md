@@ -11,6 +11,7 @@ tags: [productivity, obsidian, report, deliverable]
 
 Deliverables now go to the **Obsidian Vault** only. The Notion `T_Products` DB is retired.
 This skill specifies *where to write*, *how to name the file*, and *what frontmatter to include*. The write itself uses the usual `Write` / `Edit` / `Bash` tools.
+Project plans, progress, decisions, and pending confirmations also use Obsidian Vault Markdown as the source of truth. Do not read/write Notion or submit deliverables to a Notion database.
 
 ## Vault Paths (fixed)
 

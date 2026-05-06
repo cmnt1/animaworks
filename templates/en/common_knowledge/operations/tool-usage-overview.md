@@ -151,13 +151,13 @@ Load full skill and procedure text with **`read_memory_file`** using the relativ
 | **image_gen** | Image / 3D generation pipelines (prefer `submit` for long runs) |
 | **local_llm** | Local LLM calls |
 | **machine** | “Machine tool” that runs external agent CLIs in an isolated environment |
-| **notion** | Notion API |
+| **notion** | Notion API (denied by default via `permissions.json` `external_tools.deny`; do not use for project management) |
 | **slack** | Slack |
 | **transcribe** | Speech-to-text |
 | **web_search** | Web search |
 | **x_search** | X (Twitter) search |
 
-Allow/deny is driven by external tool settings in **`permissions.json`** (migratable from legacy `permissions.md`) via `core.config.models.load_permissions`.
+Allow/deny is driven by external tool settings in **`permissions.json`** (migratable from legacy `permissions.md`) via `core.config.models.load_permissions`. Project management belongs in Obsidian Vault Markdown; keep Notion denied by default.
 
 ## Via CLI (Bash + `animaworks-tool`)
 

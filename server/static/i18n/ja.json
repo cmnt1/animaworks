@@ -773,7 +773,7 @@
   "tb.role.sales_assist": "営業アシスト",
   "tb.role.sales_assist.desc": "リード追跡・提案書作成・フォロー自動化",
   "tb.role.secretary": "秘書",
-  "tb.role.secretary.desc": "Gmail・Calendar・Slack・Notionを横断管理",
+  "tb.role.secretary.desc": "Gmail・Calendar・Slackを横断管理",
   "tb.skip": "スキップ（後で設定）",
   "tb.step1.desc": "テンプレートを選んですぐにスタートできます",
   "tb.step1.title": "どんなチームを作りますか？",

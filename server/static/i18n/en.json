@@ -773,7 +773,7 @@
   "tb.role.sales_assist": "Sales Assistant",
   "tb.role.sales_assist.desc": "Lead tracking, proposals & follow-up automation",
   "tb.role.secretary": "Secretary",
-  "tb.role.secretary.desc": "Cross-manage Gmail, Calendar, Slack & Notion",
+  "tb.role.secretary.desc": "Cross-manage Gmail, Calendar, and Slack",
   "tb.skip": "Skip (set up later)",
   "tb.step1.desc": "Choose a template to get started quickly",
   "tb.step1.title": "What kind of team would you like?",

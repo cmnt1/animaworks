@@ -686,7 +686,7 @@
   "tb.role.sales_assist": "영업 어시스턴트",
   "tb.role.sales_assist.desc": "리드 추적·제안서 작성·후속 자동화",
   "tb.role.secretary": "비서",
-  "tb.role.secretary.desc": "Gmail·캘린더·Slack·Notion을 통합 관리",
+  "tb.role.secretary.desc": "Gmail·캘린더·Slack을 통합 관리",
   "tb.skip": "건너뛰기 (나중에 설정)",
   "tb.step1.desc": "템플릿을 선택하여 빠르게 시작할 수 있습니다",
   "tb.step1.title": "어떤 팀을 만들까요?",
