@@ -42,6 +42,11 @@ class TestExecutionProfile:
 
         assert EXECUTION_PROFILE["channel_update"]["background_eligible"] is False
 
+    def test_send_is_gated(self):
+        from core.tools.slack import EXECUTION_PROFILE
+
+        assert EXECUTION_PROFILE["send"]["gated"] is True
+
 
 # ── get_tool_schemas ────────────────────────────────────────
 
@@ -328,3 +333,15 @@ class TestGatingIntegration:
 
         permitted: set[str] = {"slack", "slack_channel_update"}
         assert is_action_gated("slack", "channel_update", permitted) is False
+
+    def test_send_blocked_without_permission(self):
+        from core.tooling.permissions import is_action_gated
+
+        permitted: set[str] = {"slack"}
+        assert is_action_gated("slack", "send", permitted) is True
+
+    def test_send_allowed_with_explicit_permission(self):
+        from core.tooling.permissions import is_action_gated
+
+        permitted: set[str] = {"slack", "slack_send"}
+        assert is_action_gated("slack", "send", permitted) is False
