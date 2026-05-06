@@ -16,6 +16,7 @@ this package.  ``claude_agent_sdk.types`` is imported at function scope
 because the SDK is an optional dependency.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -486,6 +487,52 @@ def _build_pre_tool_hook(
         SyncHookJSONOutput,
     )
 
+    if session_stats is not None and "aap_deny_count" not in session_stats:
+        session_stats["aap_deny_count"] = 0
+        session_stats["aap_shown_rules"] = set()
+        session_stats["aap_next_call_approved"] = {}
+
+    _AAP_OUTPUT_TOOLS: frozenset[str] = frozenset(
+        {
+            "call_human",
+            "send_message",
+            "post_channel",
+            "slack_post",
+            "chatwork_send",
+            "gmail_send",
+            "write_memory_file",
+            "mcp__aw__call_human",
+            "mcp__aw__send_message",
+            "mcp__aw__post_channel",
+        }
+    )
+
+    _aap_retriever_state: dict[str, Any] = {"retriever": None, "initialized": False}
+
+    def _get_aap_retriever() -> Any | None:
+        if _aap_retriever_state["initialized"]:
+            ret = _aap_retriever_state["retriever"]
+            return ret
+        _aap_retriever_state["initialized"] = True
+        knowledge_dir = anima_dir / "knowledge"
+        if not knowledge_dir.is_dir():
+            return None
+        try:
+            from core.memory.rag import MemoryRetriever
+            from core.memory.rag.indexer import MemoryIndexer
+            from core.memory.rag.singleton import get_vector_store
+
+            vector_store = get_vector_store(anima_dir.name)
+            if vector_store is None:
+                return None
+            indexer = MemoryIndexer(vector_store, anima_dir.name, anima_dir)
+            retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
+            _aap_retriever_state["retriever"] = retriever
+            return retriever
+        except Exception:
+            logger.debug("Action-Aware Priming: retriever init failed", exc_info=True)
+            return None
+
     # Cache subordinate and peer paths once at hook build time
     _sub_activity_dirs, _sub_mgmt_files, _peer_activity_dirs, _desc_read_files, _desc_read_dirs = (
         _cache_subordinate_paths(anima_dir)
@@ -504,13 +551,76 @@ def _build_pre_tool_hook(
         "WebSearch": "untrusted",
     }
 
+    async def _action_aware_priming_check(
+        tool_name: str,
+        tool_input: dict[str, Any],
+        tool_use_id: str | None,
+    ) -> SyncHookJSONOutput | None:
+        del tool_use_id  # Retry bypass uses per-tool approval dict only
+        if session_stats is None:
+            return None
+        try:
+            if tool_name not in _AAP_OUTPUT_TOOLS:
+                return None
+
+            if session_stats["aap_next_call_approved"].pop(tool_name, False):
+                return None
+
+            if session_stats["aap_deny_count"] >= 2:
+                return None
+
+            retriever = _get_aap_retriever()
+            if retriever is None:
+                return None
+
+            query = f"{tool_name} {json.dumps(tool_input, ensure_ascii=False)[:500]}"
+            anima_name = anima_dir.name
+            results = await asyncio.to_thread(
+                retriever.search_action_rules,
+                tool_name,
+                query,
+                anima_name,
+            )
+            if not results or results[0].score < 0.80:
+                return None
+
+            top_result = results[0]
+            rule_key = top_result.doc_id
+            if rule_key in session_stats["aap_shown_rules"]:
+                return None
+
+            session_stats["aap_shown_rules"].add(rule_key)
+            session_stats["aap_deny_count"] += 1
+            session_stats["aap_next_call_approved"][tool_name] = True
+
+            from core.i18n import t as _t
+
+            system_message = _t("action_rule.system_message", rule_content=top_result.content.strip())
+            return SyncHookJSONOutput(
+                systemMessage=system_message,
+                hookSpecificOutput=PreToolUseHookSpecificOutput(
+                    hookEventName="PreToolUse",
+                    permissionDecision="deny",
+                    permissionDecisionReason=_t("action_rule.deny_reason"),
+                ),
+            )
+        except Exception:
+            logger.debug("Action-Aware Priming check failed", exc_info=True)
+            return None
+
     async def _pre_tool_hook(
         input_data: HookInput,
         tool_use_id: str | None,
         context: HookContext,
     ) -> SyncHookJSONOutput:
         tool_name = input_data.get("tool_name", "")
-        tool_input = input_data.get("tool_input", {})
+        raw_inp = input_data.get("tool_input", {})
+        tool_input = raw_inp if isinstance(raw_inp, dict) else {}
+
+        # ── Action-Aware Priming ──────────
+        aap_result = await _action_aware_priming_check(tool_name, tool_input, tool_use_id)
+        if aap_result is not None:
+            return aap_result
 
         # ── Heartbeat soft timeout check ──
         if session_stats is not None and session_stats.get("trigger") == "heartbeat":

@@ -248,6 +248,64 @@ class MemoryRetriever:
         results.sort(key=lambda r: r.score, reverse=True)
         return results
 
+    # ── ActionRule Search ──────────
+
+    def search_action_rules(
+        self,
+        tool_name: str,
+        query: str,
+        anima_name: str,
+        top_k: int = 3,
+        min_score: float = 0.80,
+    ) -> list[RetrievalResult]:
+        """Search for action rules relevant to the given tool and query.
+
+        Args:
+            tool_name: The tool about to be executed (e.g. ``call_human``).
+            query: Search query (typically tool_name + tool_input summary).
+            anima_name: The anima performing the action.
+            top_k: Maximum results to return.
+            min_score: Minimum similarity score threshold.
+
+        Returns:
+            List of matching action rule chunks, filtered by ``trigger_tools``
+            and sorted by score descending.
+        """
+        collection_name = f"{anima_name}_knowledge"
+        filter_metadata: dict[str, str | int | float] = {"type": "action_rule"}
+        vector_rows = self._vector_search_collection(
+            query,
+            collection_name,
+            top_k * 2,
+            filter_metadata=filter_metadata,
+        )
+
+        tool_lower = tool_name.lower()
+        results: list[RetrievalResult] = []
+        for doc_id, content, score, metadata in vector_rows:
+            raw_triggers = metadata.get("trigger_tools")
+            if raw_triggers is None:
+                continue
+            trigger_parts = [
+                p.strip().lower() for p in str(raw_triggers).split(",") if p.strip()
+            ]
+            if tool_lower not in trigger_parts:
+                continue
+            if score < min_score:
+                continue
+            results.append(
+                RetrievalResult(
+                    doc_id=doc_id,
+                    content=content,
+                    score=score,
+                    metadata=metadata,
+                    source_scores={"vector": score},
+                )
+            )
+
+        results.sort(key=lambda r: r.score, reverse=True)
+        return results[:top_k]
+
     # ── Search methods ──────────────────────────────────────────────
 
     def _vector_search(
