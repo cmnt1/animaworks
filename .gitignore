@@ -133,3 +133,4 @@ swe/results/
 # Local Codex app metadata
 .codex/
 .claude/worktrees/
+vendor/
