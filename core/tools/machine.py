@@ -195,6 +195,18 @@ def _get_engine_priority() -> list[str]:
     return list(_DEFAULT_ENGINE_PRIORITY)
 
 
+def _get_default_model(engine: str) -> str | None:
+    """Return config-level default model for *engine*, or ``None``."""
+    try:
+        from core.config.models import load_config
+
+        config = load_config()
+        return config.machine.default_models.get(engine)
+    except Exception as exc:
+        logger.debug("Failed to load default model for engine %s: %s", engine, exc)
+    return None
+
+
 def _get_available_engines() -> list[str]:
     """Return engines whose CLI binary is found in PATH, ordered by priority.
 
@@ -328,16 +340,21 @@ def _build_command(
 
     The instruction is NOT included in the command — it is passed via stdin
     to avoid shell escaping issues and hangs with some CLIs.
+
+    When *model* is not provided, falls back to ``config.json``
+    ``machine.default_models[engine]`` so the engine's own default
+    (e.g. cursor-agent's cli-config.json) is never used implicitly.
     """
     base = list(_ENGINE_COMMANDS[engine])
 
     perm_flags = _ENGINE_PERMISSION_FLAGS.get(engine, [])
     base.extend(perm_flags)
 
-    if model:
+    effective_model = model or _get_default_model(engine)
+    if effective_model:
         flag = _ENGINE_MODEL_FLAGS.get(engine)
         if flag:
-            base.extend([flag, model])
+            base.extend([flag, effective_model])
 
     workdir_flags = _ENGINE_WORKDIR_FLAGS.get(engine, [])
     if workdir_flags:
