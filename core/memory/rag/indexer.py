@@ -831,6 +831,54 @@ class MemoryIndexer:
         else:
             metadata["importance"] = "normal"
 
+        # ── ActionRule ──────────
+        if "[ACTION-RULE]" in content:
+            lines = content.splitlines()
+            heading_idx = next((i for i, ln in enumerate(lines) if "[ACTION-RULE]" in ln), None)
+            if heading_idx is not None:
+                meta_lines: list[str] = []
+                sep_idx: int | None = None
+                for j in range(heading_idx + 1, len(lines)):
+                    if lines[j].strip() == "---":
+                        sep_idx = j
+                        break
+                if sep_idx is not None:
+                    meta_lines = lines[heading_idx + 1 : sep_idx]
+                else:
+                    for j in range(heading_idx + 1, len(lines)):
+                        ln = lines[j]
+                        if re.match(r"^\s*(trigger_tools|keywords)\s*:", ln, re.IGNORECASE):
+                            meta_lines.append(ln)
+                        elif not ln.strip():
+                            continue
+                        else:
+                            break
+                trigger_tools_re = re.compile(r"^\s*trigger_tools\s*:\s*(.*)$", re.IGNORECASE)
+                keywords_re = re.compile(r"^\s*keywords\s*:\s*(.*)$", re.IGNORECASE)
+                trigger_val: str | None = None
+                keywords_val: str | None = None
+                for mln in meta_lines:
+                    m = trigger_tools_re.match(mln)
+                    if m:
+                        parts = [p.strip() for p in m.group(1).split(",") if p.strip()]
+                        trigger_val = ",".join(parts) if parts else None
+                        continue
+                    m = keywords_re.match(mln)
+                    if m:
+                        parts = [p.strip() for p in m.group(1).split(",") if p.strip()]
+                        keywords_val = ",".join(parts) if parts else None
+                if trigger_val:
+                    metadata["type"] = "action_rule"
+                    metadata["trigger_tools"] = trigger_val
+                    if keywords_val:
+                        metadata["action_rule_keywords"] = keywords_val
+                else:
+                    logger.warning(
+                        "[ACTION-RULE] missing trigger_tools after heading in %s (chunk %s)",
+                        file_path,
+                        chunk_index,
+                    )
+
         # Tag extraction (simple pattern: #tag or [tag])
         tags = re.findall(r"#(\w+)|「(\w+)」", content)
         flattened_tags = [t for group in tags for t in group if t]
