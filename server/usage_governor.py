@@ -126,9 +126,13 @@ DEFAULT_POLICY: dict[str, Any] = {
         "min_used_pct": 1,
         "base_burn_ema_alpha": 0.1,
         "norm_burn_ema_alpha": 0.2,
-        "low_activity_threshold_pct": 20,
+        "low_activity_threshold_pct": 20,  # legacy gate, kept for compatibility
         "initial_base_burn_per_day_pct": 0,
         "calibration_log_max_entries": 5000,
+        # Per-tick activity_level change limit. The calibrated formula
+        # amplifies tiny target_burn jitter into ±400 swings when @100 is
+        # small; capping the delta dampens this bang-bang oscillation.
+        "max_level_delta_per_tick": 30,
     },
 }
 
@@ -722,7 +726,6 @@ def _update_calibration(
     """
     base_alpha = float(config.get("base_burn_ema_alpha", 0.1))
     norm_alpha = float(config.get("norm_burn_ema_alpha", 0.2))
-    low_thresh_pct = float(config.get("low_activity_threshold_pct", 20))
     initial_base_per_day = float(config.get("initial_base_burn_per_day_pct", 0))
 
     prev = calib or {}
@@ -736,14 +739,18 @@ def _update_calibration(
     norm_burn_ema = float(prev.get("norm_burn_ema", 0.0))
     samples = int(prev.get("samples", 0))
 
-    # Update base_burn only when activity has been very low (signal dominated
-    # by non-scalable load).
-    if avg_activity_pct * 100.0 <= low_thresh_pct:
-        base_burn_ema = base_burn_ema + base_alpha * (observed_burn_per_sec - base_burn_ema)
-        if base_burn_ema < 0:
-            base_burn_ema = 0.0
+    # ── Residual-based BASE update (always on) ──────────────────────────────
+    # Subtract the predicted scalable contribution (from current @100 EMA)
+    # from the observed burn — what's left should be the non-scalable load.
+    # This works at any activity level, not just when avg ≤ threshold.
+    predicted_scalable = norm_burn_ema * avg_activity_pct
+    residual = observed_burn_per_sec - predicted_scalable
+    base_burn_ema = base_burn_ema + base_alpha * (residual - base_burn_ema)
+    if base_burn_ema < 0:
+        base_burn_ema = 0.0
 
-    # Update normalized scalable burn (always, when activity is meaningful).
+    # Update normalized scalable burn (when activity is meaningful enough
+    # for the scalable signal to be detectable).
     scalable = max(0.0, observed_burn_per_sec - base_burn_ema)
     if avg_activity_pct >= 0.05:  # at least 5% applied activity to be useful
         norm_at_100 = scalable / avg_activity_pct
@@ -1250,6 +1257,22 @@ class UsageGovernor:
 
         # Apply suspensions (only cloud-provider animas; local ones untouched)
         await self._apply_suspensions(set(all_suspend))
+
+        # Damp per-tick APPLIED change to prevent bang-bang oscillation —
+        # when @100 is small the calibrated formula amplifies tiny jitter
+        # in (target_burn − BASE) into ±400 swings.  Capping the delta
+        # smooths the response without changing the steady-state target.
+        max_delta = int(calib_config.get("max_level_delta_per_tick", 30))
+        if max_delta > 0:
+            prev_levels = self._state.governor_activity_level_by_provider
+            for prov, new_level in list(level_by_provider.items()):
+                prev_level = prev_levels.get(prov)
+                if new_level is None or prev_level is None:
+                    continue
+                delta = new_level - prev_level
+                if abs(delta) > max_delta:
+                    damped = prev_level + (max_delta if delta > 0 else -max_delta)
+                    level_by_provider[prov] = max(1, min(400, damped))
 
         # Apply per-provider activity levels.  The numeric pressure signal is
         # provider-based; readers decide whether to apply it as front-response
