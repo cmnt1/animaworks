@@ -259,9 +259,26 @@ class ShortTermMemory:
                 legacy_archive.rmdir()
 
     def _archive_existing(self) -> None:
-        """Move existing session_state files to archive/."""
+        """Move existing session_state files to archive/.
+
+        The archive name uses microsecond precision and falls back to a
+        numeric suffix to avoid Windows ``FileExistsError`` ([WinError 183])
+        when ``clear()``/``save()`` are invoked multiple times within the
+        same second (e.g. burst inbox processing).  ``.json`` and ``.md``
+        for one session always share the same base timestamp so they stay
+        paired in the archive directory.
+        """
         self._archive_dir.mkdir(parents=True, exist_ok=True)
-        ts = now_local().strftime("%Y%m%d_%H%M%S")
+        base_ts = now_local().strftime("%Y%m%d_%H%M%S_%f")
+        ts = base_ts
+        counter = 1
+        # Pick a base name that does not collide with any existing
+        # archive entry for either suffix.  Microsecond precision makes
+        # this loop practically a no-op, but the counter guards against
+        # low-resolution clocks and any future precision regressions.
+        while any((self._archive_dir / f"{ts}{suffix}").exists() for suffix in (".json", ".md")):
+            ts = f"{base_ts}_{counter}"
+            counter += 1
         for suffix in (".json", ".md"):
             src = self.shortterm_dir / f"session_state{suffix}"
             if src.exists():

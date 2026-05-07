@@ -6,14 +6,15 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 import pytest
 
 from core.memory.shortterm import (
+    _MAX_RESPONSE_CHARS,
     SessionState,
     ShortTermMemory,
-    _MAX_RESPONSE_CHARS,
 )
 
 
@@ -70,9 +71,7 @@ class TestHasPending:
         assert stm.has_pending() is False
 
     def test_has_pending(self, stm, anima_dir):
-        (anima_dir / "shortterm" / "chat" / "session_state.json").write_text(
-            "{}", encoding="utf-8"
-        )
+        (anima_dir / "shortterm" / "chat" / "session_state.json").write_text("{}", encoding="utf-8")
         assert stm.has_pending() is True
 
 
@@ -114,9 +113,7 @@ class TestSave:
         archive_files = list((anima_dir / "shortterm" / "chat" / "archive").glob("*.json"))
         assert len(archive_files) >= 1
         # Current should be "second"
-        data = json.loads(
-            (anima_dir / "shortterm" / "chat" / "session_state.json").read_text(encoding="utf-8")
-        )
+        data = json.loads((anima_dir / "shortterm" / "chat" / "session_state.json").read_text(encoding="utf-8"))
         assert data["session_id"] == "second"
 
     def test_creates_dirs(self, tmp_path):
@@ -136,9 +133,7 @@ class TestSaveIfNotExists:
         assert result.exists()
 
     def test_skips_when_md_exists(self, stm, anima_dir):
-        (anima_dir / "shortterm" / "chat" / "session_state.md").write_text(
-            "Agent wrote this", encoding="utf-8"
-        )
+        (anima_dir / "shortterm" / "chat" / "session_state.md").write_text("Agent wrote this", encoding="utf-8")
         result = stm.save_if_not_exists(SessionState(session_id="fallback"))
         assert result is None
 
@@ -148,11 +143,13 @@ class TestSaveIfNotExists:
 
 class TestLoad:
     def test_load_existing(self, stm, anima_dir):
-        stm.save(SessionState(
-            session_id="sess-1",
-            trigger="test",
-            turn_count=5,
-        ))
+        stm.save(
+            SessionState(
+                session_id="sess-1",
+                trigger="test",
+                turn_count=5,
+            )
+        )
         loaded = stm.load()
         assert loaded is not None
         assert loaded.session_id == "sess-1"
@@ -162,9 +159,7 @@ class TestLoad:
         assert stm.load() is None
 
     def test_load_malformed(self, stm, anima_dir):
-        (anima_dir / "shortterm" / "chat" / "session_state.json").write_text(
-            "not json", encoding="utf-8"
-        )
+        (anima_dir / "shortterm" / "chat" / "session_state.json").write_text("not json", encoding="utf-8")
         assert stm.load() is None
 
 
@@ -208,6 +203,69 @@ class TestArchiveExisting:
         archive = anima_dir / "shortterm" / "chat" / "archive"
         assert len(list(archive.glob("*.json"))) == 1
         assert len(list(archive.glob("*.md"))) == 1
+
+    def test_archive_no_collision_within_same_microsecond(self, stm, anima_dir, monkeypatch):
+        """When now_local() returns the same instant on multiple calls
+        (low-resolution clock or rapid back-to-back calls), the archive
+        names must remain unique.  Regression test for Windows
+        FileExistsError ([WinError 183]) at 2026-05-06 10:32:30 JST.
+        """
+        from datetime import datetime
+
+        from core.memory import shortterm as stm_module
+
+        fixed = datetime(2026, 5, 6, 10, 32, 30, 123456, tzinfo=UTC)
+        monkeypatch.setattr(stm_module, "now_local", lambda: fixed)
+
+        chat_dir = anima_dir / "shortterm" / "chat"
+        archive = chat_dir / "archive"
+
+        # 3 successive archive cycles at the exact same timestamp.
+        for i in range(3):
+            (chat_dir / "session_state.json").write_text(f'{{"i": {i}}}', encoding="utf-8")
+            (chat_dir / "session_state.md").write_text(f"md{i}", encoding="utf-8")
+            stm._archive_existing()
+
+        # No exception raised, all three pairs landed in archive.
+        assert len(list(archive.glob("*.json"))) == 3
+        assert len(list(archive.glob("*.md"))) == 3
+        # Source files have been moved out.
+        assert not (chat_dir / "session_state.json").exists()
+        assert not (chat_dir / "session_state.md").exists()
+
+    def test_archive_pairs_share_base_when_counter_kicks_in(self, stm, anima_dir, monkeypatch):
+        """The numeric counter fallback must be applied symmetrically so
+        that the .json and .md from a single session stay paired (same
+        base name) in the archive directory.
+        """
+        from datetime import datetime
+
+        from core.memory import shortterm as stm_module
+
+        fixed = datetime(2026, 5, 6, 10, 32, 30, 123456, tzinfo=UTC)
+        monkeypatch.setattr(stm_module, "now_local", lambda: fixed)
+
+        chat_dir = anima_dir / "shortterm" / "chat"
+        archive = chat_dir / "archive"
+
+        # Pre-seed an archive entry that occupies only the .json slot at
+        # the base timestamp.  The next archive call must avoid colliding
+        # for either suffix and must keep the new pair sharing one base.
+        archive.mkdir(parents=True, exist_ok=True)
+        (archive / "20260506_103230_123456.json").write_text("{}", encoding="utf-8")
+
+        (chat_dir / "session_state.json").write_text("{}", encoding="utf-8")
+        (chat_dir / "session_state.md").write_text("md", encoding="utf-8")
+        stm._archive_existing()
+
+        json_files = sorted(archive.glob("*.json"))
+        md_files = sorted(archive.glob("*.md"))
+        # 2 json (pre-seeded + new) and 1 md.
+        assert len(json_files) == 2
+        assert len(md_files) == 1
+        # New pair shares one base, distinct from the pre-seeded entry.
+        new_json = [p for p in json_files if p.stem != "20260506_103230_123456"][0]
+        assert new_json.stem == md_files[0].stem
 
 
 # ── _prune_archive ────────────────────────────────────────
