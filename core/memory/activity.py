@@ -175,6 +175,15 @@ class ActivityLogger(
                 content[: self._MAX_CONTENT_CHARS]
                 + f"\n... (truncated {len(content):,} chars → {self._MAX_CONTENT_CHARS:,})"
             )
+        # ``summary`` historically had no length cap.  Long stderr / tool-error
+        # dumps written here have produced 40 KB+ JSONL lines that the reader
+        # then skips entirely (`Skipping oversized line` warning), losing the
+        # whole entry.  Cap at the same boundary as ``content``.
+        if summary and len(summary) > self._MAX_CONTENT_CHARS:
+            summary = (
+                summary[: self._MAX_CONTENT_CHARS]
+                + f"\n... (truncated {len(summary):,} chars → {self._MAX_CONTENT_CHARS:,})"
+            )
 
         entry = ActivityEntry(
             ts=now_iso(),
