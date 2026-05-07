@@ -826,12 +826,24 @@ function _renderGovernor(gov) {
         .join("")}${reloginBtn}</div>`
     : "";
 
+  const controlHtml = `
+    <div class="governor-control">
+      <label for="govRecentBurnWindow"><b>OBR 直近差分の窓 (秒):</b></label>
+      <input type="number" id="govRecentBurnWindow" min="60" max="86400" step="60"
+             placeholder="null=累積" style="width:7em;">
+      <button class="btn-secondary" id="govRecentBurnSave" style="font-size:0.78rem;padding:2px 8px;">保存</button>
+      <span id="govRecentBurnHint" style="font-size:0.72rem;opacity:0.7;">
+        空欄/null: サイクル累積平均 / 値: 直近◯秒の差分
+      </span>
+    </div>`;
+
   el.style.display = "block";
   el.innerHTML = `
     <div class="governor-bar governor-bar--active">
       <div class="governor-header"><span class="governor-icon">&#x26A0;</span><strong>Usage Governor</strong></div>
       ${tableHtml}
       ${legendHtml}
+      ${controlHtml}
       ${footerHtml}
     </div>
   `;
@@ -846,6 +858,55 @@ function _renderGovernor(gov) {
       btn.textContent = "再認証";
     });
   }
+
+  // Initialize and wire the recent-burn-window control
+  _initGovernorRecentBurnControl();
+}
+
+async function _initGovernorRecentBurnControl() {
+  const input = document.getElementById("govRecentBurnWindow");
+  const btn = document.getElementById("govRecentBurnSave");
+  const hint = document.getElementById("govRecentBurnHint");
+  if (!input || !btn) return;
+
+  // Load current value
+  try {
+    const resp = await fetch("/api/settings/recent-burn-window");
+    if (resp.ok) {
+      const data = await resp.json();
+      const v = data.recent_burn_window_sec;
+      input.value = v === null || v === undefined ? "" : String(v);
+    }
+  } catch (e) {
+    // Silent — the input will just be blank
+  }
+
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const prevText = btn.textContent;
+    btn.textContent = "...";
+    const raw = input.value.trim();
+    const payload = raw === "" ? { recent_burn_window_sec: null } : { recent_burn_window_sec: parseInt(raw, 10) };
+    try {
+      const resp = await fetch("/api/settings/recent-burn-window", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        hint.textContent = data.recent_burn_window_sec === null
+          ? "保存: サイクル累積平均にフォールバック"
+          : `保存: 直近 ${data.recent_burn_window_sec} 秒の差分`;
+      } else {
+        hint.textContent = `エラー: ${data.error || resp.status}`;
+      }
+    } catch (e) {
+      hint.textContent = `通信エラー: ${e}`;
+    }
+    btn.disabled = false;
+    btn.textContent = prevText;
+  });
 }
 
 async function _loadUsage(forceRefresh = false) {

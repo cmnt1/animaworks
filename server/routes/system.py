@@ -814,6 +814,63 @@ def create_system_router() -> APIRouter:
             "activity_level_by_provider": dict(config.activity_level_by_provider),
         }
 
+    # ── Governor: differential OBR window ─────────────────────
+
+    @router.get("/settings/recent-burn-window")
+    async def get_recent_burn_window():
+        """Return the current recent_burn_window_sec from usage_policy.json.
+
+        ``None`` means "use cycle-cumulative average instead of differential".
+        """
+        from core.paths import get_data_dir
+        from server.usage_governor import load_policy
+
+        policy = load_policy(get_data_dir())
+        calib = policy.get("calibration", {}) or {}
+        # Distinguish "key absent → use code default" from "explicit null".
+        if "recent_burn_window_sec" in calib:
+            value = calib["recent_burn_window_sec"]
+        else:
+            value = 3600
+        return {"recent_burn_window_sec": value}
+
+    @router.put("/settings/recent-burn-window")
+    async def set_recent_burn_window(request: Request):
+        """Update recent_burn_window_sec.
+
+        Body: ``{"recent_burn_window_sec": int|null}``
+        - ``null``: fall back to cycle-cumulative OBR
+        - ``int``: differential window length in seconds (60 - 86400)
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+        if "recent_burn_window_sec" not in body:
+            return JSONResponse(
+                {"error": "missing recent_burn_window_sec"},
+                status_code=400,
+            )
+        value = body["recent_burn_window_sec"]
+        if value is not None:
+            if not isinstance(value, int) or not (60 <= value <= 86400):
+                return JSONResponse(
+                    {"error": "recent_burn_window_sec must be int 60..86400 or null"},
+                    status_code=400,
+                )
+
+        from core.paths import get_data_dir
+        from server.usage_governor import load_policy, save_policy
+
+        data_dir = get_data_dir()
+        policy = load_policy(data_dir)
+        calib = policy.setdefault("calibration", {})
+        calib["recent_burn_window_sec"] = value
+        save_policy(data_dir, policy)
+        logger.info("Governor recent_burn_window_sec updated to %s", value)
+        return {"ok": True, "recent_burn_window_sec": value}
+
     @router.put("/settings/activity-schedule")
     async def set_activity_schedule(request: Request):
         """Update the time-based activity schedule (night mode).

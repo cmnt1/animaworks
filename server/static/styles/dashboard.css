@@ -835,6 +835,24 @@
   margin-right: 2px;
 }
 
+.governor-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  padding: 4px 0;
+  margin-top: 2px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
+}
+
+.governor-control input[type="number"] {
+  font-size: 0.78rem;
+  padding: 2px 4px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
 /* ── Empty State ─────────────────────────────── */
 
 .empty-state {

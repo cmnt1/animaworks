@@ -1498,14 +1498,17 @@ class UsageGovernor:
         # cumulative average drags early-cycle high consumption forward
         # for the entire window length, which is misleading for long
         # windows like OpenCode Go's 31-day cycle.  Fall back to
-        # cumulative when the recent sample buffer is too thin.
+        # cumulative when the recent sample buffer is too thin OR when
+        # ``recent_burn_window_sec`` is set to null (operator opts out).
         cfg = calib_config or {}
-        recent_window = float(cfg.get("recent_burn_window_sec", 3600.0))
+        recent_window_raw = cfg.get("recent_burn_window_sec", 3600.0)
         min_recent = float(cfg.get("min_recent_burn_window_sec", 600.0))
 
-        recent = self._history.recent_burn_per_sec(
-            provider_key, recent_window, now, used
-        )
+        recent = None
+        if recent_window_raw is not None:
+            recent = self._history.recent_burn_per_sec(
+                provider_key, float(recent_window_raw), now, used
+            )
         if recent is not None and recent[1] >= min_recent:
             observed_burn, observation_period = recent
         else:
