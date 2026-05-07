@@ -3,6 +3,7 @@
 
 import { escapeHtml } from "./utils.js";
 import { getIcon } from "../../shared/activity-types.js";
+import { basePath } from "/shared/base-path.js";
 import { createLogger } from "../../shared/logger.js";
 
 const logger = createLogger("ws-activity");
@@ -42,7 +43,7 @@ export async function loadActivityHistory() {
   _activityHistoryLoaded = true;
 
   try {
-    const res = await fetch("/api/activity/recent?hours=24&limit=50&offset=0");
+    const res = await fetch(`${basePath}/api/activity/recent?hours=24&limit=50&offset=0");
     if (!res.ok) return;
     const data = await res.json();
     const events = data.events || [];

@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from "../../shared/logger.js";
+import { basePath } from "/shared/base-path.js";
 
 const logger = createLogger("replay-engine");
 
@@ -139,7 +140,7 @@ export class ReplayEngine {
    */
   async load(hours = 12) {
     try {
-      const res = await fetch(`/api/activity/recent?hours=${hours}&limit=50000&replay=true`);
+      const res = await fetch(`${basePath}/api/activity/recent?hours=${hours}&limit=50000&replay=true`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const raw = data.events || [];

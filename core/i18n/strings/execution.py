@@ -128,4 +128,18 @@ STRINGS: dict[str, dict[str, str]] = {
             "Use these instead of Agent/Task."
         ),
     },
+    "action_rule.deny_reason": {
+        "ja": "アクションルールにより一時停止: 実行前に以下のルールを確認してください",
+        "en": "Paused by action rule: please review the following rule before proceeding",
+    },
+    "action_rule.system_message": {
+        "ja": (
+            "<action-rule>\n{rule_content}\n</action-rule>\n\n"
+            "上記ルールを確認した上で、必要な事前アクションを実行してから再試行してください。"
+        ),
+        "en": (
+            "<action-rule>\n{rule_content}\n</action-rule>\n\n"
+            "Please review the rule above, take any required pre-actions, then retry."
+        ),
+    },
 }

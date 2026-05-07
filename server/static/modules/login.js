@@ -3,6 +3,7 @@
 import { state, dom, escapeHtml } from "./state.js";
 import { api } from "./api.js";
 import { initI18n, t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 
 let _startDashboard = null;
 
@@ -33,7 +34,7 @@ export async function initLoginScreen() {
     errorEl.classList.add("hidden");
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(`${basePath}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
@@ -62,7 +63,7 @@ export async function initLoginScreen() {
 
 export async function checkAuth() {
   try {
-    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+    const res = await fetch(`${basePath}/api/auth/me`, { credentials: "same-origin" });
     if (res.ok) {
       const user = await res.json();
       state.currentUser = user.username;
@@ -76,7 +77,7 @@ export async function checkAuth() {
 
 export async function logout() {
   try {
-    await fetch("/api/auth/logout", {
+    await fetch(`${basePath}/api/auth/logout`, {
       method: "POST",
       credentials: "same-origin",
     });

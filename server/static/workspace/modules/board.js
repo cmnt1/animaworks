@@ -3,6 +3,7 @@
 
 import { escapeHtml, smartTimestamp } from "./utils.js";
 import { t } from "../../shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 import { getCurrentUser } from "./login.js";
 import { createLogger } from "../../shared/logger.js";
 
@@ -75,8 +76,8 @@ async function loadBoardChannelList() {
 
   try {
     const [chRes, dmRes] = await Promise.all([
-      fetch("/api/channels"),
-      fetch("/api/dm"),
+      fetch(`${basePath}/api/channels"),
+      fetch(`${basePath}/api/dm"),
     ]);
 
     _boardChannels = chRes.ok ? await chRes.json() : [];
@@ -127,9 +128,9 @@ async function loadBoardMessages() {
   try {
     let url;
     if (_boardSelectedType === "channel") {
-      url = `/api/channels/${encodeURIComponent(_boardSelectedChannel)}?limit=50&offset=0`;
+      url = `${basePath}/api/channels/${encodeURIComponent(_boardSelectedChannel)}?limit=50&offset=0`;
     } else {
-      url = `/api/dm/${encodeURIComponent(_boardSelectedChannel)}?limit=50`;
+      url = `${basePath}/api/dm/${encodeURIComponent(_boardSelectedChannel)}?limit=50`;
     }
 
     const res = await fetch(url);
@@ -189,7 +190,7 @@ async function sendBoardMessage() {
   input.value = "";
 
   try {
-    const res = await fetch(`/api/channels/${encodeURIComponent(_boardSelectedChannel)}`, {
+    const res = await fetch(`${basePath}/api/channels/${encodeURIComponent(_boardSelectedChannel)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, from_name: userName }),

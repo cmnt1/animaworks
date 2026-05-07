@@ -1,13 +1,19 @@
 /* ── API Helper ────────────────────────────── */
 
 import { createLogger } from "../shared/logger.js";
+import { basePath } from "/shared/base-path.js";
 
 const logger = createLogger("api");
+
+function _prefixed(path) {
+  if (basePath && path.startsWith("/")) return `${basePath}${path}`;
+  return path;
+}
 
 /**
  * Stream SSE response and invoke callbacks for each event type.
  *
- * @param {string} path - API path
+ * @param {string} path - API path (e.g. "/api/animas")
  * @param {Object} opts - fetch options (method, headers, body, signal)
  * @param {function(Object): void} [opts.onProgress] - Called for "progress" events with { phase }
  * @param {function(Object): void} [opts.onResult] - Called for "result" events with payload
@@ -18,7 +24,7 @@ export async function apiStream(path, opts = {}) {
   const { onProgress, onResult, onError, ...fetchOpts } = opts;
   fetchOpts.credentials = "same-origin";
 
-  const res = await fetch(path, fetchOpts);
+  const res = await fetch(_prefixed(path), fetchOpts);
 
   if (res.status === 401) {
     logger.warn("Unauthorized, redirecting to login", { url: path });
@@ -90,11 +96,9 @@ export async function apiStream(path, opts = {}) {
 
 export async function api(path, opts = {}) {
   try {
-    // Always include credentials for cookie-based auth
     opts.credentials = "same-origin";
-    // Prevent browser from caching API responses (stale metadata, etc.)
     if (!opts.cache) opts.cache = "no-store";
-    const res = await fetch(path, opts);
+    const res = await fetch(_prefixed(path), opts);
 
     if (res.status === 401) {
       // Redirect to login screen on auth failure

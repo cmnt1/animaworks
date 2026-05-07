@@ -837,6 +837,7 @@ _EXPECTED_FILES = [
     "communication/messaging-guide.md",
     "communication/reporting-guide.md",
     "communication/sending-limits.md",
+    "operations/action-rules-guide.md",
     "operations/background-tasks.md",
     "operations/completion-gate-guide.md",
     "operations/heartbeat-cron-guide.md",

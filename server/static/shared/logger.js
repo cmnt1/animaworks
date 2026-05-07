@@ -5,10 +5,12 @@
 //   const logger = createLogger('websocket');
 //   logger.info('Connected', { url });
 
+import { basePath } from "/shared/base-path.js";
+
 const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
 const FLUSH_INTERVAL = 5000;
 const MAX_BUFFER_SIZE = 100;
-const SERVER_ENDPOINT = '/api/system/frontend-logs';
+const SERVER_ENDPOINT = `${basePath}/api/system/frontend-logs`;
 
 // URL parameter override: ?log=debug (persists to localStorage)
 try {

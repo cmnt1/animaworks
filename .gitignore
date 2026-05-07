@@ -134,3 +134,4 @@ swe/results/
 .codex/
 .claude/worktrees/
 .claude/settings.local.json
+vendor/

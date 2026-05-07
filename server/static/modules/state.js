@@ -1,5 +1,7 @@
 /* ── State & DOM refs ──────────────────────── */
 
+import { basePath } from "/shared/base-path.js";
+
 export const state = {
   uiTheme: "default",
   currentUser: null,
@@ -102,11 +104,11 @@ function _resolveAnimaSrc(src) {
   if (!_mdAnimaCtx || !src) return src;
   if (src.startsWith("attachments/")) {
     const file = src.slice("attachments/".length);
-    return `/api/animas/${encodeURIComponent(_mdAnimaCtx)}/attachments/${encodeURIComponent(file)}`;
+    return `${basePath}/api/animas/${encodeURIComponent(_mdAnimaCtx)}/attachments/${encodeURIComponent(file)}`;
   }
   if (src.startsWith("assets/")) {
     const file = src.slice("assets/".length);
-    return `/api/animas/${encodeURIComponent(_mdAnimaCtx)}/assets/${encodeURIComponent(file)}`;
+    return `${basePath}/api/animas/${encodeURIComponent(_mdAnimaCtx)}/assets/${encodeURIComponent(file)}`;
   }
   return src;
 }

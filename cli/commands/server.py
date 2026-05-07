@@ -91,6 +91,12 @@ def _find_server_pid_by_process(
     excluded = {os.getpid(), os.getppid()}
     if extra_exclude_pids:
         excluded |= extra_exclude_pids
+    helper_pid_str = os.environ.get("_ANIMAWORKS_RESTART_HELPER_PID")
+    if helper_pid_str:
+        try:
+            excluded.add(int(helper_pid_str))
+        except ValueError:
+            pass
     return find_first_matching_pid(
         _SERVER_CMD_MARKERS,
         exclude_pids=excluded,
@@ -455,24 +461,39 @@ def _clear_pycache() -> int:
     return count
 
 
+def _get_restart_status_path() -> Path:
+    """Return path for the restart helper result file."""
+    from core.paths import get_data_dir
+
+    return get_data_dir() / "run" / "restart_helper_result.json"
+
+
 def _spawn_restart_helper(args: argparse.Namespace, old_pid: int | None) -> int:
     """Spawn a fully detached restart helper that survives caller death.
 
     The helper is a new Python process in its own session.  It waits for
     the old server to exit (if *old_pid* is given), then starts a fresh
-    daemon.  Because it runs in a separate session & process group, it
-    is immune to SIGTERM cascading through the caller's process tree —
-    which is critical when an Anima triggers ``animaworks restart`` from
-    inside the server.
+    daemon with retry logic.  Because it runs in a separate session &
+    process group, it is immune to SIGTERM cascading through the caller's
+    process tree — which is critical when an Anima triggers
+    ``animaworks restart`` from inside the server.
+
+    The helper writes its progress to ``restart-helper.log`` and a
+    machine-readable result to ``run/restart_helper_result.json``.
 
     Returns the helper PID.
     """
     host = getattr(args, "host", "0.0.0.0")
-    port = getattr(args, "port", 8000)
+    port = getattr(args, "port", 18500)
     project_root = str(Path(__file__).resolve().parent.parent.parent)
 
+    from core.paths import get_data_dir
+
+    data_dir = str(get_data_dir())
+
     helper_code = f"""
-import os, sys, time, subprocess
+import json, os, socket, sys, time, subprocess, traceback
+from datetime import datetime, timezone
 from pathlib import Path
 from core.platform.process import (
     find_first_matching_pid,
@@ -482,10 +503,41 @@ from core.platform.process import (
 )
 
 os.chdir({project_root!r})
+DATA_DIR = Path({data_dir!r})
+LOG_DIR = DATA_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "restart-helper.log"
+STATUS_FILE = DATA_DIR / "run" / "restart_helper_result.json"
+STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
 old_pid = {old_pid!r}
 host = {host!r}
 port = {port!r}
 _SERVER_CMD_MARKERS = {_SERVER_CMD_MARKERS!r}
+MAX_RETRIES = 3
+RETRY_DELAY = 5
+PORT_WAIT_TIMEOUT = 15
+
+def _log(msg):
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    line = f"[{{ts}}] [restart-helper] {{msg}}"
+    print(line, flush=True)
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line + "\\n")
+    except OSError:
+        pass
+
+def _write_status(success, detail=""):
+    try:
+        STATUS_FILE.write_text(json.dumps({{
+            "success": success,
+            "detail": detail,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "pid": os.getpid(),
+        }}), encoding="utf-8")
+    except OSError:
+        pass
 
 def _alive(pid):
     return is_process_alive(pid)
@@ -497,17 +549,31 @@ def _find_server_process():
         require_python=True,
     )
 
+def _is_port_listening(h, p):
+    try:
+        with socket.create_connection((h, p), timeout=1):
+            return True
+    except OSError:
+        return False
+
+_log(f"Started (pid={{os.getpid()}}, old_pid={{old_pid}})")
+
+# Phase 1: Wait for old server to exit
 if old_pid is not None:
+    _log(f"Waiting for old server (pid={{old_pid}}) to exit...")
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline and _alive(old_pid):
         time.sleep(0.3)
     if _alive(old_pid):
+        _log(f"Old server still alive after 30s, force-killing pid={{old_pid}}")
         try:
             terminate_pid(old_pid, force=True, include_children=True)
         except (OSError, ProcessLookupError):
             pass
         time.sleep(1)
+    _log("Old server exited")
 
+# Phase 2: Wait for any lingering server process to disappear
 scan_deadline = time.monotonic() + 15
 while time.monotonic() < scan_deadline:
     if _find_server_process() is None:
@@ -515,12 +581,57 @@ while time.monotonic() < scan_deadline:
     time.sleep(0.5)
 
 time.sleep(0.5)
+
+# Phase 3: Start new server with retries
+check_host = "127.0.0.1" if host == "0.0.0.0" else host
 cmd = [sys.executable, "-m", "cli", "start", "--host", host, "--port", str(port)]
-subprocess.Popen(cmd, cwd={project_root!r}, **subprocess_session_kwargs())
+os.environ["_ANIMAWORKS_RESTART_HELPER_PID"] = str(os.getpid())
+
+for attempt in range(1, MAX_RETRIES + 1):
+    _log(f"Starting server (attempt {{attempt}}/{{MAX_RETRIES}})...")
+    try:
+        proc = subprocess.Popen(cmd, cwd={project_root!r}, **subprocess_session_kwargs())
+        _log(f"Spawned server process pid={{proc.pid}}")
+    except Exception as e:
+        _log(f"Failed to spawn server: {{e}}")
+        if attempt < MAX_RETRIES:
+            time.sleep(RETRY_DELAY)
+            continue
+        _write_status(False, f"All {{MAX_RETRIES}} spawn attempts failed: {{e}}")
+        _log("FAILED: all spawn attempts exhausted")
+        sys.exit(1)
+
+    # Wait for port to become available
+    port_deadline = time.monotonic() + PORT_WAIT_TIMEOUT
+    started = False
+    while time.monotonic() < port_deadline:
+        if proc.poll() is not None:
+            _log(f"Server exited immediately (code={{proc.returncode}})")
+            break
+        if _is_port_listening(check_host, port):
+            started = True
+            break
+        time.sleep(0.5)
+
+    if started:
+        _write_status(True, f"Server started (pid={{proc.pid}}, attempt={{attempt}})")
+        _log(f"SUCCESS: Server listening on {{check_host}}:{{port}} (pid={{proc.pid}})")
+        sys.exit(0)
+
+    _log(f"Attempt {{attempt}} failed: port not listening after {{PORT_WAIT_TIMEOUT}}s")
+    if attempt < MAX_RETRIES:
+        _log(f"Retrying in {{RETRY_DELAY}}s...")
+        time.sleep(RETRY_DELAY)
+
+_write_status(False, f"Server did not start after {{MAX_RETRIES}} attempts")
+_log(f"FAILED: Server did not start after {{MAX_RETRIES}} attempts")
+sys.exit(1)
 """
 
-    log_path = _get_daemon_log_path()
-    log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
+    log_dir = Path(data_dir) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    helper_log = log_dir / "restart-helper.log"
+    log_file = open(helper_log, "a", encoding="utf-8")  # noqa: SIM115
 
     proc = subprocess.Popen(
         [sys.executable, "-c", helper_code],
@@ -550,6 +661,11 @@ def cmd_restart(args: argparse.Namespace) -> None:
     if old_pid is None:
         old_pid = _find_server_pid_by_process()
 
+    status_path = _get_restart_status_path()
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    if status_path.exists():
+        status_path.unlink()
+
     helper_pid = _spawn_restart_helper(args, old_pid)
     print(f"Restart helper spawned (pid={helper_pid}). Stopping server...")
 
@@ -563,15 +679,31 @@ def cmd_restart(args: argparse.Namespace) -> None:
     port = getattr(args, "port", 18500)
     host = getattr(args, "host", "0.0.0.0")
     check_host = "127.0.0.1" if host == "0.0.0.0" else host
-    log_path = _get_daemon_log_path()
+
+    from core.paths import get_data_dir
+
+    helper_log = get_data_dir() / "logs" / "restart-helper.log"
+    daemon_log = _get_daemon_log_path()
 
     print("Waiting for server to start...")
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + 30
     started = False
     while time.monotonic() < deadline:
         if _is_port_listening(check_host, port):
             started = True
             break
+        if status_path.exists():
+            import json
+
+            try:
+                result = json.loads(status_path.read_text(encoding="utf-8"))
+                if not result.get("success"):
+                    detail = result.get("detail", "unknown error")
+                    print(f"Error: Restart helper reported failure: {detail}")
+                    print(f"  Helper log: {helper_log}")
+                    sys.exit(1)
+            except (json.JSONDecodeError, OSError):
+                pass
         time.sleep(0.5)
 
     if started:
@@ -580,10 +712,11 @@ def cmd_restart(args: argparse.Namespace) -> None:
         display_host = "localhost" if host == "0.0.0.0" else host
         print(f"Server restarted successfully{pid_info}.")
         print(f"  Dashboard: http://{display_host}:{port}/")
-        print(f"  Logs:      {log_path}")
+        print(f"  Logs:      {daemon_log}")
     else:
-        print("Error: Server did not start within 20 seconds.")
-        print(f"  Check logs: {log_path}")
+        print("Error: Server did not start within 30 seconds.")
+        print(f"  Helper log: {helper_log}")
+        print(f"  Daemon log: {daemon_log}")
         sys.exit(1)
 
 

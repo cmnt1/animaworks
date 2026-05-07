@@ -2,6 +2,7 @@
 import { api } from "../modules/api.js";
 import { escapeHtml, statusClass, renderMarkdown } from "../modules/state.js";
 import { t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 
 let _viewMode = "list"; // "list" | "detail"
 let _selectedName = null;
@@ -382,7 +383,7 @@ async function _renderList() {
         btn.disabled = true;
         btn.textContent = t("animas.running");
         try {
-          await fetch(`/api/animas/${encodeURIComponent(name)}/trigger`, { method: "POST" });
+          await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/trigger`, { method: "POST" });
           btn.textContent = t("animas.success");
           setTimeout(() => { btn.textContent = "Heartbeat"; btn.disabled = false; }, 2000);
         } catch {
@@ -585,7 +586,7 @@ function _bindEditableCard({ id, name, field }) {
     saveBtn.textContent = t("animas.saving");
     status.textContent = "";
     try {
-      await fetch(`/api/animas/${encodeURIComponent(name)}/${field}`, {
+      await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/${field}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: editor.value }),
@@ -696,7 +697,7 @@ function _bindAliasesCard(name, initialAliases) {
     saveBtn.textContent = t("animas.saving");
     status.textContent = "";
     try {
-      await fetch(`/api/animas/${encodeURIComponent(name)}/aliases`, {
+      await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/aliases`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ aliases }),
@@ -784,7 +785,7 @@ function _bindDiscordChannelsCard(animaName, discordChannels) {
 
     try {
       const promises = Object.entries(updates).map(([chId, members]) =>
-        fetch(`/api/discord/channel-members/${encodeURIComponent(chId)}`, {
+        fetch(`${basePath}/api/discord/channel-members/${encodeURIComponent(chId)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ members }),
@@ -1077,7 +1078,7 @@ function _bindPermissionsCard(name, perm, availableTools) {
     status.textContent = "";
 
     try {
-      await fetch(`/api/animas/${encodeURIComponent(name)}/permissions`, {
+      await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/permissions`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updated),
@@ -1298,7 +1299,7 @@ async function _showDetail(name) {
       status.textContent = "";
 
       try {
-        await fetch(`/api/animas/${encodeURIComponent(name)}/model`, {
+        await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/model`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ model, credential }),
@@ -1352,7 +1353,7 @@ async function _showDetail(name) {
       btn.disabled = true;
       btn.textContent = t("animas.running");
       try {
-        await fetch(`/api/animas/${encodeURIComponent(name)}/trigger`, { method: "POST" });
+        await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/trigger`, { method: "POST" });
         btn.textContent = t("animas.success");
         setTimeout(() => { btn.textContent = t("animas.heartbeat_trigger"); btn.disabled = false; }, 2000);
       } catch {

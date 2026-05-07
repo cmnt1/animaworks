@@ -1,6 +1,7 @@
 /* ── WebSocket ─────────────────────────────── */
 
 import { t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 import { state, dom } from "./state.js";
 import { addActivity } from "./activity.js";
 import { renderAnimaDropdown, updateAnimaAvatar, refreshSelectedAnima } from "./animas.js";
@@ -27,7 +28,7 @@ export function connectWebSocket() {
   }
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${proto}//${location.host}/ws`;
+  const url = `${proto}//${location.host}${basePath}/ws`;
 
   logger.info("Connecting", { url, attempt: wsReconnectAttempt });
 

@@ -270,6 +270,31 @@ class TestBuildCommand:
         idx = cmd.index("-m")
         assert cmd[idx + 1] == "o3-mini"
 
+    def test_default_model_from_config(self):
+        with patch(
+            "core.tools.machine._get_default_model",
+            return_value="claude-4.6-opus-high-thinking",
+        ):
+            cmd = _build_command("cursor-agent", "/tmp/work")
+            assert "--model" in cmd
+            idx = cmd.index("--model")
+            assert cmd[idx + 1] == "claude-4.6-opus-high-thinking"
+
+    def test_explicit_model_overrides_config_default(self):
+        with patch(
+            "core.tools.machine._get_default_model",
+            return_value="claude-4.6-opus-high-thinking",
+        ):
+            cmd = _build_command("cursor-agent", "/tmp/work", model="sonnet-4")
+            assert "--model" in cmd
+            idx = cmd.index("--model")
+            assert cmd[idx + 1] == "sonnet-4"
+
+    def test_no_model_flag_when_no_config_default(self):
+        with patch("core.tools.machine._get_default_model", return_value=None):
+            cmd = _build_command("cursor-agent", "/tmp/work")
+            assert "--model" not in cmd
+
 
 # ── Working Directory Validation Tests ────────────────────
 

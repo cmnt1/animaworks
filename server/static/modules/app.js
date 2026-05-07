@@ -3,6 +3,7 @@
    ============================================ */
 
 import { initI18n, applyTranslations, t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 import { state } from "./state.js";
 import { connectWebSocket } from "./websocket.js";
 // state.authMode is set by login.js checkAuth()
@@ -82,7 +83,7 @@ async function initTheme() {
 
   let serverTheme = "default";
   try {
-    const resp = await fetch("/api/system/config");
+    const resp = await fetch(`${basePath}/api/system/config`);
     if (resp.ok) {
       const cfg = await resp.json();
       if (cfg?.ui?.theme) {
@@ -104,7 +105,7 @@ import { initRouter } from "./router.js";
 
 async function initDemoMode() {
   try {
-    const resp = await fetch("/api/system/config");
+    const resp = await fetch(`${basePath}/api/system/config`);
     if (resp.ok) {
       const cfg = await resp.json();
       state.demoMode = cfg?.ui?.demo_mode === true;

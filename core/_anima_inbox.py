@@ -51,6 +51,7 @@ _RE_FAST_SLACK_PROBE = re.compile(
 )
 _THREAD_CTX_BUDGET = 300
 _MSG_BODY_BUDGET = 2000
+_MAX_INBOX_RETRIES = 3
 
 
 def _truncate_with_thread_ctx(
@@ -378,13 +379,8 @@ class InboxResult:
     prompt_parts: list[str] = field(default_factory=list)
 
 
-_INBOX_EMPTY_RETRY_LIMIT = 3
-
-
 class InboxMixin:
     """Mixin: Anima-to-Anima inbox processing, filtering, dedup, archiving."""
-
-    _inbox_empty_retries: int = 0
 
     # ── Inbox MSG Immediate Processing ────────────────────────
 
@@ -667,26 +663,37 @@ class InboxMixin:
                     # Archive processed messages — but NOT when the LLM
                     # returned nothing (e.g. SDK empty response due to API
                     # outage / rate limit).  Keeping them lets the next
-                    # inbox cycle retry, up to _INBOX_EMPTY_RETRY_LIMIT.
+                    # inbox cycle retry — up to _MAX_INBOX_RETRIES.
                     # Terminal errors (action="error") are always archived
                     # to prevent infinite retry loops.
                     _is_terminal_error = result is not None and result.action == "error"
                     if accumulated_text.strip() or self.agent.replied_to or _is_terminal_error:
-                        self._inbox_empty_retries = 0
                         await self._archive_processed_messages(
                             inbox_result.inbox_items,
                             inbox_result.senders,
                             self.agent.replied_to,
                         )
                     else:
-                        self._inbox_empty_retries += 1
-                        if self._inbox_empty_retries >= _INBOX_EMPTY_RETRY_LIMIT:
-                            logger.error(
-                                "[%s] Empty LLM response for inbox — retry limit (%d) reached, archiving to stop loop",
+                        _rc_path = self.anima_dir / "state" / "inbox_read_counts.json"
+                        _rc: dict[str, int] = {}
+                        try:
+                            if _rc_path.exists():
+                                _rc = json.loads(_rc_path.read_text(encoding="utf-8"))
+                        except Exception:
+                            pass
+                        _all_exhausted = (
+                            all(_rc.get(item.path.name, 0) > _MAX_INBOX_RETRIES for item in inbox_result.inbox_items)
+                            if inbox_result.inbox_items
+                            else False
+                        )
+                        if _all_exhausted:
+                            logger.warning(
+                                "[%s] Empty LLM response for inbox — all %d messages exceeded "
+                                "%d retries, force-archiving to prevent infinite loop",
                                 self.name,
-                                _INBOX_EMPTY_RETRY_LIMIT,
+                                len(inbox_result.inbox_items),
+                                _MAX_INBOX_RETRIES,
                             )
-                            self._inbox_empty_retries = 0
                             await self._archive_processed_messages(
                                 inbox_result.inbox_items,
                                 inbox_result.senders,
@@ -694,10 +701,8 @@ class InboxMixin:
                             )
                         else:
                             logger.warning(
-                                "[%s] Empty LLM response for inbox — messages NOT archived (retry %d/%d)",
+                                "[%s] Empty LLM response for inbox — messages NOT archived (will retry)",
                                 self.name,
-                                self._inbox_empty_retries,
-                                _INBOX_EMPTY_RETRY_LIMIT,
                             )
 
                     self._activity.log(
@@ -923,6 +928,42 @@ class InboxMixin:
         # Prune entries for inbox files that no longer exist
         inbox_dir = self.anima_dir.parent.parent / "shared" / "inbox" / self.name
         _read_counts = {k: v for k, v in _read_counts.items() if (inbox_dir / k).exists()}
+
+        # ── Force-archive messages that exceeded retry limit ──
+        _stale_items: list[InboxItem] = []
+        _kept_items: list[InboxItem] = []
+        for item in inbox_items:
+            key = item.path.name
+            if _read_counts.get(key, 0) > _MAX_INBOX_RETRIES:
+                _stale_items.append(item)
+                _read_counts.pop(key, None)
+            else:
+                _kept_items.append(item)
+
+        if _stale_items:
+            try:
+                from core.memory.dedup import MessageDeduplicator
+
+                dedup_stale = MessageDeduplicator(self.anima_dir)
+                for item in _stale_items:
+                    dedup_stale._write_overflow_file(item.msg)
+                self.messenger.archive_paths(_stale_items)
+            except Exception:
+                logger.debug(
+                    "[%s] Failed to force-archive stale inbox messages",
+                    self.name,
+                    exc_info=True,
+                )
+            logger.warning(
+                "[%s] Force-archived %d inbox messages exceeding %d retries",
+                self.name,
+                len(_stale_items),
+                _MAX_INBOX_RETRIES,
+            )
+            inbox_items = _kept_items
+            messages = [item.msg for item in _kept_items]
+            unread_count = len(messages)
+            senders = {m.from_person for m in messages}
 
         try:
             _read_counts_path.write_text(

@@ -2,9 +2,10 @@
 // Thin fetch wrapper for all REST endpoints.
 
 import { createLogger } from "../../shared/logger.js";
+import { basePath } from "/shared/base-path.js";
 
 const logger = createLogger("ws-api");
-const BASE = "";
+const BASE = basePath;
 
 async function request(path, opts = {}) {
   try {
@@ -58,7 +59,7 @@ export function sendChat(name, message, userName) {
  * Start SSE chat stream. Returns the raw Response for manual reading.
  */
 export function sendChatStream(name, message, userName) {
-  return fetch(`/api/animas/${encodeURIComponent(name)}/chat/stream`, {
+  return fetch(`${BASE}/api/animas/${encodeURIComponent(name)}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message, from_person: userName || "human" }),
@@ -133,7 +134,7 @@ export function triggerHeartbeat(name) {
 // ── Assets ──────────────────────
 
 export function assetUrl(name, filename) {
-  return `/api/animas/${encodeURIComponent(name)}/assets/${encodeURIComponent(filename)}`;
+  return `${BASE}/api/animas/${encodeURIComponent(name)}/assets/${encodeURIComponent(filename)}`;
 }
 
 export function fetchAssets(name) {

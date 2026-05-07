@@ -3,6 +3,7 @@
 // Supports: Ctrl+V paste, drag & drop, file picker button.
 
 import { t } from "/shared/i18n.js";
+import { basePath } from "/shared/base-path.js";
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB per image
 const MAX_DIMENSION = 1568; // Max pixel dimension (Anthropic recommendation)
@@ -208,15 +209,15 @@ function _resolveArtifactSrc(img, animaName) {
   if (img.path && animaName) {
     if (img.path.startsWith("assets/")) {
       const filename = img.path.slice("assets/".length);
-      return `/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(filename)}`;
+      return `${basePath}/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(filename)}`;
     }
     if (img.path.startsWith("attachments/")) {
       const filename = img.path.slice("attachments/".length);
-      return `/api/animas/${encodeURIComponent(animaName)}/attachments/${encodeURIComponent(filename)}`;
+      return `${basePath}/api/animas/${encodeURIComponent(animaName)}/attachments/${encodeURIComponent(filename)}`;
     }
   }
   if (img.url) {
-    return `/api/media/proxy?url=${encodeURIComponent(img.url)}`;
+    return `${basePath}/api/media/proxy?url=${encodeURIComponent(img.url)}`;
   }
   return "";
 }

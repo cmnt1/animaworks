@@ -38,10 +38,10 @@ from core.tools._slack_markdown import (  # noqa: F401
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "channels": {"expected_seconds": 10, "background_eligible": False},
     "messages": {"expected_seconds": 30, "background_eligible": False},
-    "send": {"expected_seconds": 10, "background_eligible": False},
+    # gated: requires explicit "slack_send" / "slack_channel_post" in permissions.
+    "send": {"expected_seconds": 10, "background_eligible": False, "gated": True},
     "search": {"expected_seconds": 30, "background_eligible": False},
     "unreplied": {"expected_seconds": 30, "background_eligible": False},
-    # gated: requires explicit "slack_channel_post: yes" in permissions.md.
     "channel_post": {"expected_seconds": 10, "background_eligible": False, "gated": True},
     "channel_update": {"expected_seconds": 10, "background_eligible": False, "gated": True},
 }

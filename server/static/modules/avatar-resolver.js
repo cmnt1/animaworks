@@ -6,6 +6,7 @@
  */
 
 import { getCachedImage, invalidateCache } from "./image-cache.js";
+import { basePath } from "/shared/base-path.js";
 
 /** @type {Map<string, string|null>} animaName -> resolved URL (or null) */
 const _headProbeCache = new Map();
@@ -48,7 +49,7 @@ export function bustupExpressionCandidates(expression) {
  * Build the asset URL for a given anima name and filename.
  */
 export function assetUrl(animaName, filename) {
-  return `/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(filename)}`;
+  return `${basePath}/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(filename)}`;
 }
 
 /**

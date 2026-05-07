@@ -1,6 +1,8 @@
 // ── Shared Utilities ──────────────────────
 // Common helpers used across workspace modules.
 
+import { basePath } from "/shared/base-path.js";
+
 /**
  * Escape HTML special characters to prevent XSS.
  */
@@ -139,9 +141,9 @@ export function renderSimpleMarkdown(text, animaName) {
     let resolved = src;
     if (animaName) {
       if (src.startsWith("attachments/")) {
-        resolved = `/api/animas/${encodeURIComponent(animaName)}/attachments/${encodeURIComponent(src.slice("attachments/".length))}`;
+        resolved = `${basePath}/api/animas/${encodeURIComponent(animaName)}/attachments/${encodeURIComponent(src.slice("attachments/".length))}`;
       } else if (src.startsWith("assets/")) {
-        resolved = `/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(src.slice("assets/".length))}`;
+        resolved = `${basePath}/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(src.slice("assets/".length))}`;
       }
     }
     return `<img src="${resolved}" alt="${alt}" class="chat-attached-image" loading="lazy" onerror="this.onerror=null;this.classList.add('chat-attached-image-error');this.alt='Image unavailable';" />`;
