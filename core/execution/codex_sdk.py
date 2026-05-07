@@ -1062,13 +1062,37 @@ class CodexSDKExecutor(BaseExecutor):
         usage_dict: dict[str, int] | None = None
         turn_failed_message = ""
 
+        idle_timeout = _event_idle_timeout_seconds(trigger)
+
         try:
             proc.stdin.write(prompt.encode("utf-8"))
             await proc.stdin.drain()
             proc.stdin.close()
 
             while True:
-                line = await proc.stdout.readline()
+                try:
+                    line = await asyncio.wait_for(
+                        proc.stdout.readline(),
+                        timeout=idle_timeout,
+                    )
+                except TimeoutError as e:
+                    # No output for `idle_timeout` seconds — assume the
+                    # subprocess is hung.  Without this the inbox/heartbeat
+                    # cycle waits forever and `_heartbeat_running` leaks.
+                    if proc.returncode is None:
+                        try:
+                            proc.kill()
+                        except ProcessLookupError:
+                            pass
+                        try:
+                            await asyncio.wait_for(proc.wait(), timeout=5.0)
+                        except TimeoutError:
+                            pass
+                    raise StreamDisconnectedError(
+                        f"Codex CLI exec stream idle timeout after {idle_timeout:.0f}s",
+                        partial_text="".join(response_parts),
+                        immediate_retry=True,
+                    ) from e
                 if not line:
                     break
                 raw_line = line.decode("utf-8", errors="replace").rstrip("\n")
@@ -1185,7 +1209,12 @@ class CodexSDKExecutor(BaseExecutor):
                     proc.kill()
                 except ProcessLookupError:
                     pass
-                await proc.wait()
+                # Bound the wait so a non-cooperative subprocess can't keep
+                # the heartbeat lock leaking beyond its point of detection.
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5.0)
+                except TimeoutError:
+                    logger.warning("Codex CLI subprocess did not exit within 5s after kill")
             stderr_task.cancel()
             await asyncio.gather(stderr_task, return_exceptions=True)
 
