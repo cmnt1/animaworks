@@ -827,12 +827,12 @@ function _renderGovernor(gov) {
 
   const controlHtml = `
     <div class="governor-control">
-      <label for="govRecentBurnWindow"><b>OBR 直近差分の窓 (秒):</b></label>
-      <input type="number" id="govRecentBurnWindow" min="60" max="86400" step="60"
-             placeholder="null=累積" style="width:7em;">
+      <label for="govRecentBurnWindow"><b>OBR 直近差分の窓 (Hour):</b></label>
+      <input type="number" id="govRecentBurnWindow" min="0.1" max="24" step="0.1"
+             placeholder="null=累積" style="width:6em;">
       <button class="btn-secondary" id="govRecentBurnSave" style="font-size:0.78rem;padding:2px 8px;">保存</button>
       <span id="govRecentBurnHint" style="font-size:0.72rem;opacity:0.7;">
-        空欄/null: サイクル累積平均 / 値: 直近◯秒の差分
+        空欄/null: サイクル累積平均 / 値: 直近◯時間の差分
       </span>
     </div>`;
 
@@ -868,13 +868,19 @@ async function _initGovernorRecentBurnControl() {
   const hint = document.getElementById("govRecentBurnHint");
   if (!input || !btn) return;
 
-  // Load current value
+  // Load current value (API uses seconds; UI displays hours)
   try {
     const resp = await fetch("/api/settings/recent-burn-window");
     if (resp.ok) {
       const data = await resp.json();
       const v = data.recent_burn_window_sec;
-      input.value = v === null || v === undefined ? "" : String(v);
+      if (v === null || v === undefined) {
+        input.value = "";
+      } else {
+        // Trim trailing zeros for cleaner display (1 instead of 1.0)
+        const hours = Number(v) / 3600;
+        input.value = String(Number(hours.toFixed(3)));
+      }
     }
   } catch (e) {
     // Silent — the input will just be blank
@@ -885,7 +891,19 @@ async function _initGovernorRecentBurnControl() {
     const prevText = btn.textContent;
     btn.textContent = "...";
     const raw = input.value.trim();
-    const payload = raw === "" ? { recent_burn_window_sec: null } : { recent_burn_window_sec: parseInt(raw, 10) };
+    let payload;
+    if (raw === "") {
+      payload = { recent_burn_window_sec: null };
+    } else {
+      const hours = parseFloat(raw);
+      if (Number.isNaN(hours) || hours <= 0) {
+        hint.textContent = "エラー: 正の数値か空欄を入力";
+        btn.disabled = false;
+        btn.textContent = prevText;
+        return;
+      }
+      payload = { recent_burn_window_sec: Math.round(hours * 3600) };
+    }
     try {
       const resp = await fetch("/api/settings/recent-burn-window", {
         method: "PUT",
@@ -896,7 +914,7 @@ async function _initGovernorRecentBurnControl() {
       if (resp.ok) {
         hint.textContent = data.recent_burn_window_sec === null
           ? "保存: サイクル累積平均にフォールバック"
-          : `保存: 直近 ${data.recent_burn_window_sec} 秒の差分`;
+          : `保存: 直近 ${(data.recent_burn_window_sec / 3600).toFixed(2)} 時間の差分`;
       } else {
         hint.textContent = `エラー: ${data.error || resp.status}`;
       }
