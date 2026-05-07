@@ -133,6 +133,12 @@ DEFAULT_POLICY: dict[str, Any] = {
         # amplifies tiny target_burn jitter into ±400 swings when @100 is
         # small; capping the delta dampens this bang-bang oscillation.
         "max_level_delta_per_tick": 30,
+        # Differential OBR window (seconds).  The observed burn rate is
+        # computed from the change in used-% over this interval rather
+        # than the cycle-cumulative average — early-cycle spikes don't
+        # drag OBR forward for the entire window length.
+        "recent_burn_window_sec": 3600,        # 1 hour
+        "min_recent_burn_window_sec": 600,     # need 10 min of samples
     },
 }
 
@@ -288,6 +294,10 @@ class GovernorHistory:
         self._path = path
         # provider_key -> list of [timestamp, level]
         self.history_by_provider: dict[str, list[list[float]]] = {}
+        # provider_key -> list of [timestamp, used_pct]
+        # Used to compute differential burn rates so the OBR signal
+        # reflects RECENT consumption, not the cycle-cumulative average.
+        self.used_history_by_provider: dict[str, list[list[float]]] = {}
         self._load()
 
     def _load(self) -> None:
@@ -295,31 +305,40 @@ class GovernorHistory:
             return
         try:
             data = json.loads(self._path.read_text("utf-8"))
-            raw = data.get("history_by_provider", {})
-            if isinstance(raw, dict):
-                for prov, entries in raw.items():
-                    if not isinstance(entries, list):
-                        continue
-                    cleaned: list[list[float]] = []
-                    for entry in entries:
-                        if (
-                            isinstance(entry, list)
-                            and len(entry) == 2
-                            and isinstance(entry[0], (int, float))
-                            and isinstance(entry[1], (int, float))
-                        ):
-                            cleaned.append([float(entry[0]), float(entry[1])])
-                    if cleaned:
-                        self.history_by_provider[str(prov)] = cleaned
+            self._load_series(data, "history_by_provider", self.history_by_provider)
+            self._load_series(data, "used_history_by_provider", self.used_history_by_provider)
         except Exception:
             logger.debug("Failed to load governor history", exc_info=True)
+
+    @staticmethod
+    def _load_series(data: dict, key: str, target: dict[str, list[list[float]]]) -> None:
+        raw = data.get(key, {})
+        if not isinstance(raw, dict):
+            return
+        for prov, entries in raw.items():
+            if not isinstance(entries, list):
+                continue
+            cleaned: list[list[float]] = []
+            for entry in entries:
+                if (
+                    isinstance(entry, list)
+                    and len(entry) == 2
+                    and isinstance(entry[0], (int, float))
+                    and isinstance(entry[1], (int, float))
+                ):
+                    cleaned.append([float(entry[0]), float(entry[1])])
+            if cleaned:
+                target[str(prov)] = cleaned
 
     def save(self) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             self._path.write_text(
                 json.dumps(
-                    {"history_by_provider": self.history_by_provider},
+                    {
+                        "history_by_provider": self.history_by_provider,
+                        "used_history_by_provider": self.used_history_by_provider,
+                    },
                     indent=2,
                     ensure_ascii=False,
                 )
@@ -343,6 +362,65 @@ class GovernorHistory:
         # right at the boundary.
         while len(entries) >= 2 and entries[1][0] < cutoff:
             entries.pop(0)
+
+    def append_used(self, provider: str, ts: float, used_pct: float) -> None:
+        """Record the current used-% reading for a provider.
+
+        Stored as a time series so we can compute differential burn rates
+        (recent burn) instead of cycle-cumulative averages.
+        """
+        entries = self.used_history_by_provider.setdefault(provider, [])
+        # If used dropped (cycle reset), discard older samples — they no
+        # longer belong to the same billing cycle and would produce a
+        # negative differential.
+        if entries and float(used_pct) < float(entries[-1][1]) - 0.5:
+            entries.clear()
+        entries.append([float(ts), float(used_pct)])
+        cutoff = ts - _HISTORY_RETENTION_SEC
+        while len(entries) >= 2 and entries[1][0] < cutoff:
+            entries.pop(0)
+
+    def recent_burn_per_sec(
+        self,
+        provider: str,
+        target_window_sec: float,
+        now_ts: float,
+        current_used_pct: float,
+    ) -> tuple[float, float] | None:
+        """Compute recent burn rate from differential used-% over the
+        approximate target_window_sec.
+
+        Returns ``(burn_per_sec, actual_window_sec)`` or ``None`` if
+        insufficient history.  Picks the oldest sample within the target
+        window; if the only available samples are newer than that, falls
+        back to the oldest available.
+
+        burn_per_sec is in "%/sec of window quota" — same units as the
+        cycle-cumulative OBR.
+        """
+        entries = self.used_history_by_provider.get(provider, [])
+        if not entries:
+            return None
+        target_ts = now_ts - target_window_sec
+        # Walk newest-to-oldest, find the oldest sample at or before target_ts.
+        # If no sample is older than target, use the oldest available.
+        anchor: list[float] | None = None
+        for entry in entries:
+            if entry[0] <= target_ts:
+                anchor = entry
+            else:
+                break
+        if anchor is None:
+            anchor = entries[0]
+        prev_ts, prev_used = anchor
+        elapsed = now_ts - prev_ts
+        if elapsed <= 0:
+            return None
+        delta_used = float(current_used_pct) - float(prev_used)
+        if delta_used < 0:
+            # Quota reset between samples — not meaningful
+            return None
+        return (delta_used / elapsed, elapsed)
 
     def avg_activity_pct(
         self,
@@ -1199,7 +1277,9 @@ class UsageGovernor:
                 observed_elapsed,
                 observation_window,
                 calibration_window_key,
-            ) = self._observation_for_provider(usage_data, policy, provider_key)
+            ) = self._observation_for_provider(
+                usage_data, policy, provider_key, calib_config
+            )
             calibration = self._state.calibration_by_provider.get(provider_key)
 
             # Update calibration EMAs from this tick's observation
@@ -1360,6 +1440,7 @@ class UsageGovernor:
         usage_data: dict[str, Any],
         policy: dict[str, Any],
         provider_key: str,
+        calib_config: dict[str, Any] | None = None,
     ) -> tuple[
         float | None,
         float | None,
@@ -1409,12 +1490,32 @@ class UsageGovernor:
         reset_in = resets_ts - now
         elapsed = max(0.0, window_seconds - reset_in)
         used = max(0.0, 100.0 - float(remaining))
-        observed_burn = (used / elapsed) if elapsed > 0 else 0.0
+
+        # Record current used% so future ticks can compute differentials.
+        self._history.append_used(provider_key, now, used)
+
+        # Prefer differential (recent) burn over cycle-cumulative — the
+        # cumulative average drags early-cycle high consumption forward
+        # for the entire window length, which is misleading for long
+        # windows like OpenCode Go's 31-day cycle.  Fall back to
+        # cumulative when the recent sample buffer is too thin.
+        cfg = calib_config or {}
+        recent_window = float(cfg.get("recent_burn_window_sec", 3600.0))
+        min_recent = float(cfg.get("min_recent_burn_window_sec", 600.0))
+
+        recent = self._history.recent_burn_per_sec(
+            provider_key, recent_window, now, used
+        )
+        if recent is not None and recent[1] >= min_recent:
+            observed_burn, observation_period = recent
+        else:
+            observed_burn = (used / elapsed) if elapsed > 0 else 0.0
+            observation_period = elapsed
 
         avg_activity = self._history.avg_activity_pct(
-            provider_key, now - elapsed, now
+            provider_key, now - observation_period, now
         )
-        return avg_activity, observed_burn, elapsed, window, window_key
+        return avg_activity, observed_burn, observation_period, window, window_key
 
     def _append_calibration_log(
         self,
