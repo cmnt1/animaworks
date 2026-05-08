@@ -1060,28 +1060,30 @@ def _evaluate_provider_remaining(
                 )
                 _update_worst(level, reason)
             elif mode == "burn_rate_landing":
-                # burn_rate_landing only fires on the calibration window
-                # (longest available).  Other windows would mix
-                # quota-percentage units with the per-provider calibration
-                # EMAs and produce nonsensical target_levels.  Hard-floor
-                # evaluation below still protects shorter windows.
-                if (
-                    calibration_window_key is not None
-                    and window_key != calibration_window_key
-                ):
-                    pass
-                else:
-                    level, reason = _evaluate_burn_rate_landing(
-                        remaining,
-                        window,
-                        window_config,
-                        provider_key,
-                        window_key,
-                        calibration=calibration,
-                        avg_activity_pct=avg_activity_pct,
-                        calibration_enabled=calibration_enabled,
-                    )
-                    _update_worst(level, reason)
+                # The calibrated path (BASE / @100 EMA) is per-provider
+                # and tied to the longest window's quota units, so it
+                # only runs for the calibration window.  Shorter windows
+                # still get a burn_rate_landing evaluation via the legacy
+                # formula (target / observed × 100), which uses only the
+                # window's own units — no cross-window contamination.
+                # ``_update_worst`` keeps the most restrictive result, so
+                # an imminent short-window exhaustion overrides the long
+                # window's optimism.
+                is_cal_window = (
+                    calibration_window_key is None
+                    or window_key == calibration_window_key
+                )
+                level, reason = _evaluate_burn_rate_landing(
+                    remaining,
+                    window,
+                    window_config,
+                    provider_key,
+                    window_key,
+                    calibration=calibration if is_cal_window else None,
+                    avg_activity_pct=avg_activity_pct if is_cal_window else None,
+                    calibration_enabled=calibration_enabled and is_cal_window,
+                )
+                _update_worst(level, reason)
             else:
                 # Dict with "rules" key treated as threshold
                 rules = window_config.get("rules", [])
