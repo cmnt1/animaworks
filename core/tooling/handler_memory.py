@@ -418,6 +418,15 @@ class MemoryToolsMixin:
             result = f"{anima_hint}\n\n{result}"
         return result
 
+    @staticmethod
+    def _is_skill_path(rel: str) -> bool:
+        """Return True if *rel* points to a skill or procedure file."""
+        if rel.startswith("skills/") and "SKILL.md" in rel:
+            return True
+        if rel.startswith("common_skills/") and "SKILL.md" in rel:
+            return True
+        return rel.startswith("procedures/") and rel.endswith(".md")
+
     def _record_skill_view_if_applicable(self, rel: str) -> None:
         """Record a 'view' event if the path looks like a skill or procedure."""
         is_skill = rel.startswith("skills/") and "SKILL.md" in rel
@@ -527,6 +536,24 @@ class MemoryToolsMixin:
                         "For shared channels use read_channel/post_channel.",
                     )
         if path.exists() and path.is_file():
+            # Block loading of skills with blocked trust_level or dangerous scan verdict
+            if self._is_skill_path(rel):
+                try:
+                    from core.skills.loader import is_skill_blocked, load_skill_metadata
+
+                    skill_meta = load_skill_metadata(path)
+                    if is_skill_blocked(skill_meta):
+                        return _error_result(
+                            "SkillBlocked",
+                            f"Skill '{skill_meta.name}' is blocked "
+                            f"(trust_level={skill_meta.trust_level.value}). "
+                            "Contact your supervisor if you believe this is an error.",
+                        )
+                except ImportError:
+                    pass
+                except Exception:
+                    logger.debug("Failed to check skill block status for %s", rel, exc_info=True)
+
             logger.debug("read_memory_file path=%s", rel)
             self._read_paths.add(rel)
 
