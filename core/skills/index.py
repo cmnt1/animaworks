@@ -139,7 +139,15 @@ class SkillIndex:
 
         sorted_all = sorted(entries, key=self._sort_key)
 
-        # Merge usage stats from SkillUsageTracker if anima_dir is available
+        # Merge usage stats from SkillUsageTracker if anima_dir is available.
+        #
+        # Usage frequency policy: ``usage_count`` = view_count + use_count.
+        # Currently only ``view`` events are emitted (on read_memory_file).
+        # The ``use`` event type is reserved for future Skill-backed Cron
+        # (Issue 7) where a cron job explicitly invokes a skill.  Until then,
+        # ``view_count + success_count + failure_count`` serves as the
+        # effective "how often is this skill actively used?" metric for
+        # promotion decisions (Issue 4).
         if self._anima_dir is not None:
             try:
                 from core.skills.usage import SkillUsageTracker

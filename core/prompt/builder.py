@@ -329,11 +329,20 @@ def _format_trust_tag(meta: Any) -> str:
 
     Returns empty string for the default ``trusted`` level to keep the
     catalog compact; shows ``[level]`` only when non-default.
+
+    Accepts both ``SkillMetadata`` (with ``trust_level`` as enum) and
+    legacy ``SkillMeta`` (which lacks the field).
     """
+    from core.skills.models import SkillTrustLevel
+
     trust = getattr(meta, "trust_level", None)
     if trust is None:
         return ""
-    level_str = trust.value if hasattr(trust, "value") else str(trust)
+    if isinstance(trust, SkillTrustLevel):
+        if trust == SkillTrustLevel.trusted:
+            return ""
+        return f" [{trust.value}]"
+    level_str = str(trust)
     if level_str == "trusted":
         return ""
     return f" [{level_str}]"
@@ -345,8 +354,7 @@ def _build_group4(
     memory: MemoryManager,
     scale: float,
     execution_mode: str,
-    skill_metas: list[Any],
-    common_skill_metas: list[Any],
+    skill_index: Any,
     prompt_store: Any,
     is_heartbeat: bool,
     is_task: bool,
@@ -482,9 +490,9 @@ def _build_group4(
             _add(et, "external_tools", 2)
 
     # ── Skill catalog (Agent Skills standard) ───
+    # Uses SkillIndex which automatically excludes blocked/quarantine skills
+    # and supports nested common_skills directories.
     if not is_heartbeat:
-        from core.memory.skill_metadata import SkillMetadataService
-
         _DESC_LIMIT = 250
         catalog_lines: list[str] = [
             t("builder.skill_catalog_header"),
@@ -492,31 +500,18 @@ def _build_group4(
             "",
             "<available_skills>",
         ]
-        for meta in skill_metas:
-            desc = (meta.description[:_DESC_LIMIT] + "…") if len(meta.description) > _DESC_LIMIT else meta.description
-            trust_tag = _format_trust_tag(meta)
-            catalog_lines.append(f"- skills/{meta.name}/SKILL.md{trust_tag}: {desc}")
-
         common_label = t("skill.label_common")
-        for meta in common_skill_metas:
+        procedure_label = t("skill.label_procedure")
+
+        for meta in skill_index.all_skills:
             desc = (meta.description[:_DESC_LIMIT] + "…") if len(meta.description) > _DESC_LIMIT else meta.description
             trust_tag = _format_trust_tag(meta)
-            catalog_lines.append(f"- common_skills/{meta.name}/SKILL.md ({common_label}){trust_tag}: {desc}")
-
-        procedure_label = t("skill.label_procedure")
-        proc_dir = pd / "procedures"
-        if proc_dir.is_dir():
-            for f in sorted(proc_dir.glob("*.md")):
-                try:
-                    pmeta = SkillMetadataService.extract_skill_meta(f)
-                    desc = (
-                        (pmeta.description[:_DESC_LIMIT] + "…")
-                        if len(pmeta.description) > _DESC_LIMIT
-                        else pmeta.description
-                    )
-                    catalog_lines.append(f"- procedures/{pmeta.name}.md ({procedure_label}): {desc}")
-                except Exception:
-                    logger.debug("Failed to extract procedure meta from %s", f, exc_info=True)
+            if meta.is_procedure:
+                catalog_lines.append(f"- procedures/{meta.name}.md ({procedure_label}){trust_tag}: {desc}")
+            elif meta.is_common:
+                catalog_lines.append(f"- common_skills/{meta.name}/SKILL.md ({common_label}){trust_tag}: {desc}")
+            else:
+                catalog_lines.append(f"- skills/{meta.name}/SKILL.md{trust_tag}: {desc}")
 
         catalog_lines.append("</available_skills>")
         catalog_text = "\n".join(catalog_lines)
@@ -646,8 +641,16 @@ def build_system_prompt(
 
     prompt_store = get_prompt_store()
     other_animas = _discover_other_animas(pd)
-    skill_metas = memory.list_skill_metas()
-    common_skill_metas = memory.list_common_skill_metas()
+
+    from core.paths import get_common_skills_dir
+    from core.skills import SkillIndex
+
+    skill_index = SkillIndex(
+        skills_dir=pd / "skills",
+        common_skills_dir=get_common_skills_dir(),
+        procedures_dir=pd / "procedures",
+        anima_dir=pd,
+    )
     permissions = memory.read_permissions()
 
     # Assemble sections from all 6 groups
@@ -672,8 +675,7 @@ def build_system_prompt(
         memory,
         scale,
         execution_mode,
-        skill_metas,
-        common_skill_metas,
+        skill_index,
         prompt_store,
         is_heartbeat,
         is_task,

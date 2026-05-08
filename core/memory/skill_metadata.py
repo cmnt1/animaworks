@@ -286,10 +286,19 @@ class SkillMetadataService:
         return [self.extract_skill_meta(f, is_common=False) for f in sorted(self._skills_dir.glob("*/SKILL.md"))]
 
     def list_common_skill_metas(self) -> list[SkillMeta]:
-        """Return SkillMeta for each common skill."""
+        """Return SkillMeta for each common skill (including nested subdirectories)."""
         if not self._common_skills_dir.is_dir():
             return []
-        return [self.extract_skill_meta(f, is_common=True) for f in sorted(self._common_skills_dir.glob("*/SKILL.md"))]
+        seen: set[Path] = set()
+        results: list[SkillMeta] = []
+        for pattern in ("*/SKILL.md", "*/*/SKILL.md"):
+            for f in sorted(self._common_skills_dir.glob(pattern)):
+                resolved = f.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                results.append(self.extract_skill_meta(f, is_common=True))
+        return results
 
     def list_skill_summaries(self) -> list[tuple[str, str]]:
         """Return (name, description) for each personal skill."""
