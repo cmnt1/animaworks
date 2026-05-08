@@ -27,9 +27,13 @@ import pytest
 
 # ── Expected config defaults ─────────────────────────────────────
 
+from core.config import load_config as _load_config
+from core.config.schemas import DEFAULT_CONSOLIDATION_MODEL
 
-EXPECTED_CONSOLIDATION_MODEL = "claude-sonnet-4-6"
+_cfg = _load_config()
+EXPECTED_CONSOLIDATION_MODEL = _cfg.consolidation.llm_model
 EXPECTED_ANIMA_DEFAULT_MODEL = "claude-sonnet-4-6"
+_CODE_DEFAULT_CONSOLIDATION_MODEL = DEFAULT_CONSOLIDATION_MODEL
 
 
 # ── Fixtures ─────────────────────────────────────────────────────
@@ -399,11 +403,11 @@ class TestConfigDefaults:
     """Verify that config model defaults are the expected values."""
 
     def test_consolidation_config_llm_model(self):
-        """ConsolidationConfig().llm_model is the expected default."""
+        """ConsolidationConfig().llm_model is the expected code default."""
         from core.config.models import ConsolidationConfig
 
         cfg = ConsolidationConfig()
-        assert cfg.llm_model == EXPECTED_CONSOLIDATION_MODEL
+        assert cfg.llm_model == _CODE_DEFAULT_CONSOLIDATION_MODEL
 
     def test_anima_defaults_model(self):
         """AnimaDefaults().model is the expected default."""

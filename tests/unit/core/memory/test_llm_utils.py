@@ -162,7 +162,7 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
+    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
     @patch("core.memory._llm_utils._try_agent_sdk")
     @patch("core.memory._llm_utils._try_litellm")
     async def test_litellm_fails_sdk_success(
@@ -183,7 +183,7 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
+    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
     @patch("core.memory._llm_utils._try_agent_sdk")
     @patch("core.memory._llm_utils._try_litellm")
     async def test_both_fail_returns_none(

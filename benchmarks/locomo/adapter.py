@@ -95,6 +95,7 @@ def _resolve_llm_kwargs(model: str) -> dict[str, Any]:
     """Resolve api_base and extra kwargs from AnimaWorks credentials.
 
     Resolution order:
+      0. ``OPENAI_API_BASE`` / ``OPENAI_API_KEY`` env vars (explicit override)
       1. Anima status.json ``credential`` field (exact match in config credentials)
       2. Credential whose ``base_url`` is set AND name contains "vllm" or "macstudio"
     """
@@ -102,6 +103,14 @@ def _resolve_llm_kwargs(model: str) -> dict[str, Any]:
     model_lower = model.lower()
     if "qwen" in model_lower:
         kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+
+    env_base = os.environ.get("OPENAI_API_BASE") or os.environ.get("OPENAI_BASE_URL")
+    env_key = os.environ.get("OPENAI_API_KEY")
+    if env_base:
+        kwargs["api_base"] = env_base
+        kwargs["api_key"] = env_key or "dummy"
+        return kwargs
+
     try:
         cfg_path = Path("~/.animaworks/config.json").expanduser()
         if not cfg_path.is_file():
@@ -109,7 +118,6 @@ def _resolve_llm_kwargs(model: str) -> dict[str, Any]:
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         creds = cfg.get("credentials", {})
 
-        # Try matching credential by model path segments (e.g. "Qwen3.5" → "macstudio-qwen")
         matched_cred: dict[str, Any] | None = None
         for _name, cred in creds.items():
             base_url = cred.get("base_url")

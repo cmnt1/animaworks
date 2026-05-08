@@ -103,8 +103,16 @@ def _get_api_key_for_provider(cfg: Any, provider: str) -> str | None:
     return api_key
 
 
-def get_llm_kwargs_for_model(model: str) -> dict[str, Any]:
-    """Resolve LiteLLM kwargs for the requested model or the consolidation default."""
+def get_llm_kwargs_for_model(model: str, *, credential: str = "") -> dict[str, Any]:
+    """Resolve LiteLLM kwargs for the requested model or the consolidation default.
+
+    Args:
+        model: LiteLLM model identifier. Empty string falls back to
+            ``config.consolidation.llm_model``.
+        credential: Explicit credential name to use instead of provider-prefix
+            resolution. When empty and *model* is also empty, falls back to
+            ``config.consolidation.llm_credential`` if set.
+    """
     ensure_credentials_in_env()
 
     from core.config import load_config
@@ -113,8 +121,18 @@ def get_llm_kwargs_for_model(model: str) -> dict[str, Any]:
     resolved_model = model or cfg.consolidation.llm_model
     kwargs: dict[str, Any] = {"model": resolved_model}
 
+    explicit_cred = credential
+    if not explicit_cred and not model:
+        _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
+        explicit_cred = _llm_cred if isinstance(_llm_cred, str) and _llm_cred else ""
+
+    if explicit_cred:
+        cred = cfg.credentials.get(explicit_cred)
+    else:
+        provider = _get_provider_for_model(resolved_model)
+        cred = cfg.credentials.get(provider) if provider else None
+
     provider = _get_provider_for_model(resolved_model)
-    cred = cfg.credentials.get(provider) if provider else None
 
     if provider == "ollama":
         base_url = None
@@ -126,7 +144,10 @@ def get_llm_kwargs_for_model(model: str) -> dict[str, Any]:
             kwargs["api_base"] = base_url
         return kwargs
 
-    api_key = _get_api_key_for_provider(cfg, provider)
+    if explicit_cred:
+        api_key = cred.api_key if cred else None
+    else:
+        api_key = _get_api_key_for_provider(cfg, provider)
     if api_key:
         kwargs["api_key"] = api_key
     if cred and cred.base_url:

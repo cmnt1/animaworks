@@ -167,6 +167,146 @@ def _write_result_json(
 # ── Core ──────────
 
 
+def _run_qa_loop(
+    *,
+    adapter: Any,
+    samples: list[dict[str, Any]],
+    args: argparse.Namespace,
+    mode_label: str = "",
+) -> tuple[list[dict[str, Any]], int]:
+    """Run ingest → retrieve → answer → score loop for each sample/question.
+
+    Args:
+        adapter: An adapter with ``reset()``, ``ingest_conversation()``,
+            ``retrieve()``, and ``answer()`` methods.
+        samples: LoCoMo samples to process.
+        args: CLI namespace (``answer_model``, ``judge``, ``judge_model``,
+            ``exclude_cat5``).
+        mode_label: Display label for progress messages.
+
+    Returns:
+        ``(results, error_count)``
+    """
+    results: list[dict[str, Any]] = []
+    errors = 0
+    litellm_warned = False
+
+    def _warn_litellm(exc: Exception) -> None:
+        nonlocal litellm_warned
+        if litellm_warned:
+            return
+        litellm_warned = True
+        print(
+            f"\nWarning: LiteLLM/API call failed ({exc!r}). "
+            "Set API keys or provider credentials. "
+            "Continuing with empty predictions / F1-only.\n",
+            file=sys.stderr,
+        )
+
+    for i, sample in enumerate(samples):
+        sample_id = sample.get("sample_id", f"conv-{i}")
+        print(f"\n[{i + 1}/{len(samples)}] {mode_label} | {sample_id}")
+        t_conv0 = time.perf_counter()
+
+        try:
+            adapter.reset()
+            chunks = adapter.ingest_conversation(sample)
+        except Exception as exc:
+            errors += 1
+            logger.exception("ingest_conversation failed for %s: %s", sample_id, exc)
+            _warn_litellm(exc)
+            print(f"  Skipped sample after ingest error: {exc}", file=sys.stderr)
+            continue
+
+        print(f"  Ingested: {chunks} chunks")
+
+        qa_list = sample.get("qa", [])
+        if not isinstance(qa_list, list):
+            qa_list = []
+
+        for j, qa in enumerate(qa_list):
+            if not isinstance(qa, dict):
+                continue
+            if getattr(args, "exclude_cat5", False):
+                try:
+                    cat = int(qa.get("category", 0) or 0)
+                except (TypeError, ValueError):
+                    cat = 0
+                if cat == 5:
+                    continue
+            try:
+                question = str(qa.get("question", "") or "")
+                answer = str(qa.get("answer", "") or "")
+                try:
+                    category = int(qa.get("category", 0) or 0)
+                except (TypeError, ValueError):
+                    category = 0
+                if not question or not answer:
+                    continue
+
+                try:
+                    context = adapter.retrieve(question)
+                except Exception as exc:
+                    errors += 1
+                    logger.exception("retrieve failed: %s", exc)
+                    _warn_litellm(exc)
+                    context = []
+
+                prediction = ""
+                try:
+                    prediction = adapter.answer(
+                        question,
+                        context,
+                        model=str(args.answer_model),
+                    )
+                except Exception as exc:
+                    errors += 1
+                    logger.exception("answer failed: %s", exc)
+                    _warn_litellm(exc)
+
+                f1 = float(eval_by_category(prediction, answer, category))
+
+                judge_score: float | None = None
+                if bool(getattr(args, "judge", False)):
+                    try:
+                        judge_result = llm_judge_sync(
+                            question,
+                            answer,
+                            prediction,
+                            model=str(args.judge_model),
+                        )
+                        judge_score = float(judge_result["score"])
+                    except Exception as exc:
+                        errors += 1
+                        logger.exception("llm_judge failed: %s", exc)
+                        _warn_litellm(exc)
+                        judge_score = None
+
+                result: dict[str, Any] = {
+                    "sample_id": str(sample_id),
+                    "question_index": j,
+                    "category": category,
+                    "question": question,
+                    "reference": answer,
+                    "prediction": prediction,
+                    "f1": f1,
+                    "judge_score": judge_score,
+                    "context_count": len(context),
+                }
+                results.append(result)
+                if (j + 1) % 50 == 0:
+                    print(f"  Questions: {j + 1}/{len(qa_list)}")
+            except Exception as exc:
+                errors += 1
+                logger.exception("question loop error: %s", exc)
+                _warn_litellm(exc)
+
+        conv_elapsed = time.perf_counter() - t_conv0
+        print(f"  Done: {len(qa_list)} questions (elapsed: {conv_elapsed:.1f}s)")
+
+    return results, errors
+
+
 def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     """Run LoCoMo for one or all search modes, aggregate metrics, and write JSON.
 
@@ -209,20 +349,6 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 
     out_dir = _resolve_path(Path(args.output))
 
-    litellm_warned = False
-
-    def _warn_litellm(first_exc: Exception) -> None:
-        nonlocal litellm_warned
-        if litellm_warned:
-            return
-        litellm_warned = True
-        print(
-            f"\nWarning: LiteLLM/API call failed ({first_exc!r}). "
-            "Set API keys (e.g. OPENAI_API_KEY) or provider credentials. "
-            "Continuing with empty predictions / F1-only where applicable.\n",
-            file=sys.stderr,
-        )
-
     t_total0 = time.perf_counter()
     for mode in modes:
         print(f"\n{'=' * 60}")
@@ -241,107 +367,13 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         }
         try:
             with AnimaWorksLoCoMoAdapter(search_mode=mode, top_k=int(args.top_k)) as adapter:
-                for i, sample in enumerate(samples):
-                    sample_id = sample.get("sample_id", f"conv-{i}")
-                    print(f"\n[{i + 1}/{len(samples)}] {sample_id}")
-                    t_conv0 = time.perf_counter()
-
-                    try:
-                        adapter.reset()
-                        chunks = adapter.ingest_conversation(sample)
-                    except Exception as exc:
-                        error_count += 1
-                        logger.exception("ingest_conversation failed for %s: %s", sample_id, exc)
-                        _warn_litellm(exc)
-                        print(f"  Skipped sample after ingest error: {exc}", file=sys.stderr)
-                        continue
-
-                    print(f"  Ingested: {chunks} chunks")
-
-                    qa_list = sample.get("qa", [])
-                    if not isinstance(qa_list, list):
-                        qa_list = []
-
-                    for j, qa in enumerate(qa_list):
-                        if not isinstance(qa, dict):
-                            continue
-                        # Skip adversarial questions if --exclude-cat5
-                        if getattr(args, "exclude_cat5", False):
-                            try:
-                                cat = int(qa.get("category", 0) or 0)
-                            except (TypeError, ValueError):
-                                cat = 0
-                            if cat == 5:
-                                continue
-                        try:
-                            question = str(qa.get("question", "") or "")
-                            answer = str(qa.get("answer", "") or "")
-                            try:
-                                category = int(qa.get("category", 0) or 0)
-                            except (TypeError, ValueError):
-                                category = 0
-                            if not question or not answer:
-                                continue
-
-                            try:
-                                context = adapter.retrieve(question)
-                            except Exception as exc:
-                                error_count += 1
-                                logger.exception("retrieve failed: %s", exc)
-                                _warn_litellm(exc)
-                                context = []
-
-                            prediction = ""
-                            try:
-                                prediction = adapter.answer(
-                                    question,
-                                    context,
-                                    model=str(args.answer_model),
-                                )
-                            except Exception as exc:
-                                error_count += 1
-                                logger.exception("answer failed: %s", exc)
-                                _warn_litellm(exc)
-
-                            f1 = float(eval_by_category(prediction, answer, category))
-
-                            judge_score: float | None = None
-                            if bool(args.judge):
-                                try:
-                                    judge_result = llm_judge_sync(
-                                        question,
-                                        answer,
-                                        prediction,
-                                        model=str(args.judge_model),
-                                    )
-                                    judge_score = float(judge_result["score"])
-                                except Exception as exc:
-                                    error_count += 1
-                                    logger.exception("llm_judge failed: %s", exc)
-                                    _warn_litellm(exc)
-                                    judge_score = None
-
-                            result: dict[str, Any] = {
-                                "sample_id": str(sample_id),
-                                "question_index": j,
-                                "category": category,
-                                "question": question,
-                                "reference": answer,
-                                "prediction": prediction,
-                                "f1": f1,
-                                "judge_score": judge_score,
-                                "context_count": len(context),
-                            }
-                            mode_results.append(result)
-                            if (j + 1) % 50 == 0:
-                                print(f"  Questions: {j + 1}/{len(qa_list)}")
-                        except Exception as exc:
-                            error_count += 1
-                            logger.exception("question loop error: %s", exc)
-                            _warn_litellm(exc)
-
-                    conv_elapsed = time.perf_counter() - t_conv0
-                    print(f"  Done: {len(qa_list)} questions (elapsed: {conv_elapsed:.1f}s)")
+                mode_results, mode_errors = _run_qa_loop(
+                    adapter=adapter,
+                    samples=samples,
+                    args=args,
+                    mode_label=mode,
+                )
+                error_count += mode_errors
         except Exception as exc:
             error_count += 1
             logger.exception("Mode %s failed: %s", mode, exc)

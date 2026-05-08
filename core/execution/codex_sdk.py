@@ -516,9 +516,11 @@ def _patch_codex_exec_stream_limit(exec_: Any) -> None:
                     {line_task, fatal_stderr},
                     return_when=asyncio.FIRST_COMPLETED,
                 )
-                for pending_task in pending:
-                    pending_task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
+                # Only cancel line_task if it's still pending; never cancel
+                # fatal_stderr — it must survive across loop iterations.
+                if line_task in pending:
+                    line_task.cancel()
+                    await asyncio.gather(line_task, return_exceptions=True)
 
                 if fatal_stderr in done:
                     if proc.returncode is None:
@@ -529,9 +531,11 @@ def _patch_codex_exec_stream_limit(exec_: Any) -> None:
                         await proc.wait()
                     stderr_bytes = await stderr_task
                     stderr_text = stderr_bytes.decode("utf-8", errors="replace")
-                    raise CodexExecError(
-                        f"Codex Exec aborted after fatal stderr signal: {stderr_text or fatal_stderr.result()}"
-                    )
+                    try:
+                        fatal_detail = fatal_stderr.result()
+                    except (asyncio.CancelledError, asyncio.InvalidStateError):
+                        fatal_detail = "(unknown fatal signal)"
+                    raise CodexExecError(f"Codex Exec aborted after fatal stderr signal: {stderr_text or fatal_detail}")
 
                 line = line_task.result()
                 if not line:

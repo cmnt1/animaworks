@@ -64,10 +64,21 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
     Returns a dict with keys: api_key, api_base_url, api_key_env, extra_keys.
     These can be used to temporarily override ModelConfig credential fields so
     that consolidation LLM calls reach the correct provider endpoint.
+
+    Resolution order:
+      1. ``config.consolidation.llm_credential`` (explicit credential name)
+      2. Model name prefix (e.g. ``openai/...`` → ``openai`` credential)
     """
+    _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
+    explicit_cred = _llm_cred if isinstance(_llm_cred, str) and _llm_cred else ""
     parts = consolidation_model.split("/", 1)
     provider = parts[0].lower() if len(parts) > 1 else ""
-    cred = cfg.credentials.get(provider) if provider else None
+
+    if explicit_cred:
+        cred = cfg.credentials.get(explicit_cred)
+    else:
+        cred = cfg.credentials.get(provider) if provider else None
+
     api_key = cred.api_key if cred else None
     api_base_url = (cred.base_url if cred else None) or None
     api_key_env = _PROVIDER_ENV_MAP.get(provider, "ANTHROPIC_API_KEY")

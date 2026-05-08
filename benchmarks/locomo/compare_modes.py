@@ -288,9 +288,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="retrieval top-k (default: 5)",
     )
     p.add_argument(
-        "--answer-model", type=str, default="openai/qwen3.6-35b-a3b",
+        "--answer-model", type=str, default="openai/qwen3.6-27b",
         dest="answer_model",
-        help="answer generation model (default: openai/qwen3.6-35b-a3b)",
+        help="answer generation model (default: openai/qwen3.6-27b)",
     )
     p.add_argument(
         "--judge", action="store_true",
