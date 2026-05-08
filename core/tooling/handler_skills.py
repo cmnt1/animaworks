@@ -9,6 +9,7 @@ from __future__ import annotations
 import json as _json
 import logging
 import re
+from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -310,7 +311,58 @@ class SkillsToolsMixin:
             except Exception:
                 logger.debug("Failed to record skill create event", exc_info=True)
 
+        # Run security scan on the newly created skill
+        scan_summary = self._scan_created_skill(base_dir / skill_name, trust_level)
+        if scan_summary:
+            result += f"\n\n{scan_summary}"
+
         return result
+
+    def _scan_created_skill(self, skill_dir: Path, trust_level: str | None) -> str:
+        """Run security scan on a newly created skill and persist results."""
+        from datetime import datetime
+
+        import yaml
+
+        from core.memory.frontmatter import parse_frontmatter
+        from core.skills.guard import SCANNER_VERSION, SkillScanner
+        from core.skills.models import SkillScanVerdict
+
+        scanner = SkillScanner()
+        scan_result = scanner.scan_skill(skill_dir)
+
+        # Persist scan result into SKILL.md frontmatter
+        skill_md_path = skill_dir / "SKILL.md"
+        if skill_md_path.exists():
+            text = skill_md_path.read_text(encoding="utf-8")
+            meta, body = parse_frontmatter(text)
+            meta["security"] = {
+                "verdict": scan_result.verdict.value,
+                "scan_status": "scanned",
+                "findings": [f.model_dump() for f in scan_result.findings],
+                "scanned_at": datetime.now(UTC).isoformat(),
+                "scanner_version": SCANNER_VERSION,
+            }
+            frontmatter = yaml.dump(meta, allow_unicode=True, default_flow_style=False, sort_keys=False).strip()
+            skill_md_path.write_text(f"---\n{frontmatter}\n---\n\n{body}\n", encoding="utf-8")
+
+        # Build summary message
+        verdict = scan_result.verdict
+        if verdict == SkillScanVerdict.safe:
+            return t("handler.skill_scan_safe")
+        elif verdict == SkillScanVerdict.dangerous:
+            categories = sorted({f.category for f in scan_result.findings})
+            return t(
+                "handler.skill_scan_dangerous",
+                count=len(scan_result.findings),
+                categories=", ".join(categories),
+            )
+        else:
+            return t(
+                "handler.skill_scan_warning",
+                verdict=verdict.value,
+                count=len(scan_result.findings),
+            )
 
     # ── Task queue handlers ───────────────────────────────────
 

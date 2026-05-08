@@ -92,20 +92,43 @@ except ImportError:
 
 
 def _resolve_llm_kwargs(model: str) -> dict[str, Any]:
-    """Resolve api_base and extra kwargs from AnimaWorks credentials."""
+    """Resolve api_base and extra kwargs from AnimaWorks credentials.
+
+    Resolution order:
+      1. Anima status.json ``credential`` field (exact match in config credentials)
+      2. Credential whose ``base_url`` is set AND name contains "vllm" or "macstudio"
+    """
     kwargs: dict[str, Any] = {}
-    if "qwen" in model.lower():
+    model_lower = model.lower()
+    if "qwen" in model_lower:
         kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
     try:
         cfg_path = Path("~/.animaworks/config.json").expanduser()
-        if cfg_path.is_file():
-            creds = json.loads(cfg_path.read_text(encoding="utf-8")).get("credentials", {})
-            for _name, cred in creds.items():
-                base_url = cred.get("base_url")
-                if base_url and "vllm" in _name.lower():
-                    kwargs["api_base"] = base_url
-                    kwargs["api_key"] = cred.get("api_key") or "dummy"
+        if not cfg_path.is_file():
+            return kwargs
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        creds = cfg.get("credentials", {})
+
+        # Try matching credential by model path segments (e.g. "Qwen3.5" → "macstudio-qwen")
+        matched_cred: dict[str, Any] | None = None
+        for _name, cred in creds.items():
+            base_url = cred.get("base_url")
+            if not base_url:
+                continue
+            name_lower = _name.lower()
+            if "vllm" in name_lower or "macstudio" in name_lower:
+                if matched_cred is None:
+                    matched_cred = cred
+                if "qwen" in name_lower and "qwen" in model_lower:
+                    matched_cred = cred
                     break
+                if "glm" in name_lower and "glm" in model_lower:
+                    matched_cred = cred
+                    break
+
+        if matched_cred:
+            kwargs["api_base"] = matched_cred["base_url"]
+            kwargs["api_key"] = matched_cred.get("api_key") or "dummy"
     except Exception:
         pass
     return kwargs

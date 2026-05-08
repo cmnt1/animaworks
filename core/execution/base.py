@@ -90,17 +90,29 @@ def is_bedrock_kimi(model: str) -> bool:
 def supports_streaming_tool_use(model: str) -> bool:
     """Return True if *model* supports tool use in streaming mode.
 
-    Some Bedrock models (Llama 4, etc.) support tool use only via non-streaming
-    Converse API.  When streaming is requested with tools, Bedrock returns:
-    ``"This model doesn't support tool use in streaming mode."``
+    Checks two sources:
+    1. ``models.json`` ``tool_calling.stream`` — if explicitly ``false``,
+       streaming tool use is disabled for that model.
+    2. Hardcoded list — some Bedrock models (Llama 4, etc.) support tool use
+       only via non-streaming Converse API.
 
     For these models, callers should fall back to ``stream=False`` when tools
     are present in the request.
     """
+    try:
+        from core.config.model_mode import _match_models_json
+
+        entry = _match_models_json(model)
+        if entry:
+            tc_cfg = entry.get("tool_calling")
+            if isinstance(tc_cfg, dict) and tc_cfg.get("stream") is False:
+                return False
+    except Exception:
+        pass
+
     if not model.startswith("bedrock/"):
         return True
     bare = _bare_model_name(model).lower()
-    # Models known NOT to support streaming tool use on Bedrock:
     _no_streaming_tool_use = (
         "llama4",  # Meta Llama 4 Scout / Maverick
     )

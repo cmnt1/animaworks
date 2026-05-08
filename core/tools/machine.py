@@ -179,6 +179,26 @@ _DEFAULT_ENGINE_PRIORITY: list[str] = [
 
 _LIST_SENTINEL = "__list__"
 
+# ── PATH Resolution ────────────────────────────────────────
+
+
+def _expanded_path(base_path: str | None = None) -> str:
+    """Return PATH with ``~/.local/bin`` prepended if not already present.
+
+    AnimaWorks worker processes are typically launched without
+    ``~/.local/bin`` on PATH, but engine binaries (claude/codex/
+    cursor-agent/gemini) are installed there.  Both ``shutil.which()``
+    used to detect engines and the subprocess environment need the
+    directory available.
+    """
+    base = base_path if base_path is not None else os.environ.get("PATH", "")
+    local_bin = str(Path.home() / ".local" / "bin")
+    parts = base.split(os.pathsep) if base else []
+    if local_bin in parts:
+        return base
+    return os.pathsep.join([local_bin, *parts]) if parts else local_bin
+
+
 # ── Engine Availability ───────────────────────────────────
 
 
@@ -215,7 +235,8 @@ def _get_available_engines() -> list[str]:
     the priority table are appended alphabetically.
     """
     priority = _get_engine_priority()
-    available = {e for e in _VALID_ENGINES if shutil.which(_ENGINE_COMMANDS[e][0])}
+    search_path = _expanded_path()
+    available = {e for e in _VALID_ENGINES if shutil.which(_ENGINE_COMMANDS[e][0], path=search_path)}
     result = [e for e in priority if e in available]
     for e in sorted(available):
         if e not in result:
@@ -309,6 +330,11 @@ def _build_env(engine: str) -> dict[str, str]:
     for k, v in creds.items():
         if k not in env:
             env[k] = v
+
+    # Ensure ~/.local/bin is on PATH so engine binaries (claude/codex/
+    # cursor-agent/gemini) installed there are discoverable in the
+    # subprocess.  AnimaWorks worker processes are launched without it.
+    env["PATH"] = _expanded_path(env.get("PATH", ""))
 
     return env
 
@@ -468,7 +494,7 @@ def _execute(
     anima_dir: str | None = None,
 ) -> ToolResult:
     """Execute a machine tool synchronously."""
-    exe = shutil.which(_ENGINE_COMMANDS[engine][0])
+    exe = shutil.which(_ENGINE_COMMANDS[engine][0], path=_expanded_path())
     if exe is None:
         return ToolResult(
             success=False,

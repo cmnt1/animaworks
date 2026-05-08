@@ -288,6 +288,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "タスク更新: {summary} → {status}",
         "en": "Task updated: {summary} → {status}",
     },
+    "handler.skill_scan_safe": {
+        "ja": "🔒 セキュリティスキャン: 安全 (脅威なし)",
+        "en": "🔒 Security scan: safe (no threats detected)",
+    },
+    "handler.skill_scan_dangerous": {
+        "ja": "🚨 セキュリティスキャン: 危険 ({count}件の脅威検出, カテゴリ: {categories})。このスキルはブロックされます。",
+        "en": "🚨 Security scan: dangerous ({count} threat(s) detected, categories: {categories}). This skill is blocked.",
+    },
+    "handler.skill_scan_warning": {
+        "ja": "⚠️ セキュリティスキャン: {verdict} ({count}件の検出あり)",
+        "en": "⚠️ Security scan: {verdict} ({count} finding(s) detected)",
+    },
     "handler.tool_creation_denied": {
         "ja": "ツール作成が許可されていません。permissions.md に「ツール作成」セクションを追加してください。",
         "en": "Tool creation is not permitted. Add a tool creation section to permissions.md.",

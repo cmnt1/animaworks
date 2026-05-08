@@ -33,7 +33,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--data", type=Path, default=_DEFAULT_DATA)
     p.add_argument("--conversations", type=int, default=1)
     p.add_argument("--top-k", type=int, default=10, dest="top_k")
-    p.add_argument("--answer-model", type=str, default="openai/qwen3.6-35b-a3b", dest="answer_model")
+    p.add_argument("--answer-model", type=str, default="openai/mlx-community/Qwen3.5-397B-A17B-4bit", dest="answer_model")
     p.add_argument("--judge", action="store_true")
     p.add_argument("--judge-model", type=str, default="gpt-4o", dest="judge_model")
     p.add_argument("--exclude-cat5", action="store_true", dest="exclude_cat5")

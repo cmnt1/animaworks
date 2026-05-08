@@ -79,6 +79,15 @@ class SkillScanVerdict(str, Enum):  # noqa: UP042
     dangerous = "dangerous"
 
 
+# ── Constants ──────────────────────────────────────────────
+
+_SEVERITY_RANKS: dict[str, int] = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
+
 # ── Supporting models ───────────────────────────────────────
 
 
@@ -89,6 +98,44 @@ class SkillSource(BaseModel):
     identifier: str | None = None
     owner_anima: str | None = None
     origin: str | None = None
+
+
+class ThreatPattern(BaseModel):
+    """A single regex-based threat detection rule."""
+
+    name: str
+    pattern: str
+    severity: str  # "low", "medium", "high", "critical"
+    category: str
+
+    @property
+    def severity_rank(self) -> int:
+        return _SEVERITY_RANKS.get(self.severity, 0)
+
+
+class ScanFinding(BaseModel):
+    """A single finding from the security scanner."""
+
+    pattern_name: str
+    category: str
+    severity: str
+    line_number: int | None = None
+    file_path: str | None = None
+    matched_text: str = ""
+
+    @property
+    def severity_rank(self) -> int:
+        return _SEVERITY_RANKS.get(self.severity, 0)
+
+
+class ScanResult(BaseModel):
+    """Complete result of scanning a skill directory."""
+
+    verdict: SkillScanVerdict = SkillScanVerdict.safe
+    findings: list[ScanFinding] = Field(default_factory=list)
+    files_scanned: int = 0
+    files_skipped: int = 0
+    size_violations: list[str] = Field(default_factory=list)
 
 
 class SkillSecurityScan(BaseModel):

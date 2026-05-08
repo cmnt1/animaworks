@@ -109,7 +109,7 @@ class Neo4jLoCoMoAdapter:
         *,
         top_k: int = 10,
         ablation: AblationFlags | None = None,
-        answer_model: str = "openai/qwen3.6-35b-a3b",
+        answer_model: str = "openai/mlx-community/Qwen3.5-397B-A17B-4bit",
     ) -> None:
         self._top_k = top_k
         self._ablation = ablation or AblationFlags()
@@ -143,7 +143,7 @@ class Neo4jLoCoMoAdapter:
             status["extraction_api_key"] = llm_kwargs["api_key"]
         if llm_kwargs.get("extra_body"):
             status["extraction_extra_body"] = llm_kwargs["extra_body"]
-        status["extraction_timeout"] = 120
+        status["extraction_timeout"] = 600
         (self._tmp_anima_dir / "status.json").write_text(
             json.dumps(status), encoding="utf-8",
         )
@@ -163,7 +163,7 @@ class Neo4jLoCoMoAdapter:
     def _run(self, coro: Any) -> Any:
         """Run async coroutine on the persistent event loop."""
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return future.result(timeout=900)
+        return future.result(timeout=1800)
 
     def reset(self) -> None:
         """Clear all benchmark data from Neo4j for this group_id."""
@@ -217,10 +217,14 @@ class Neo4jLoCoMoAdapter:
                 if iso_when:
                     metadata["valid_at"] = iso_when
 
-            chunks = self._run(
-                self._backend.ingest_text(session_text, source=f"conv-{sample_id}_session_{n}", metadata=metadata)
-            )
-            total_chunks += chunks
+            try:
+                chunks = self._run(
+                    self._backend.ingest_text(session_text, source=f"conv-{sample_id}_session_{n}", metadata=metadata)
+                )
+                total_chunks += chunks
+            except Exception as e:
+                logger.warning("ingest_text failed for session %s: %s", n, e)
+                continue
 
         if hasattr(self._backend, "clear_resolver_cache"):
             self._backend.clear_resolver_cache()

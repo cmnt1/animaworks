@@ -126,6 +126,8 @@ def _resolve_session_type(trigger: str) -> str:
         return SESSION_TYPE_TASK
     if trigger.startswith("inbox:"):
         return SESSION_TYPE_INBOX
+    if trigger.startswith("consolidation:"):
+        return SESSION_TYPE_HEARTBEAT
     return SESSION_TYPE_CHAT
 
 

@@ -151,6 +151,26 @@ class ContextMixin:
             if _keep:
                 kwargs.setdefault("extra_body", {})
                 kwargs["extra_body"]["keep_alive"] = _keep
+        # ── models.json tool_calling.extra_params injection ──
+        from core.config.model_mode import _match_models_json
+
+        _mj_entry = _match_models_json(self._model_config.model)
+        if _mj_entry:
+            _tc_cfg = _mj_entry.get("tool_calling")
+            if isinstance(_tc_cfg, dict):
+                _extra = _tc_cfg.get("extra_params")
+                if isinstance(_extra, dict):
+                    for k, v in _extra.items():
+                        if k == "extra_body":
+                            kwargs.setdefault("extra_body", {}).update(v)
+                        elif k not in kwargs:
+                            kwargs[k] = v
+                    logger.debug(
+                        "Injected models.json tool_calling.extra_params for %s: %s",
+                        self._model_config.model,
+                        list(_extra.keys()),
+                    )
+
         # ── Repetition penalty parameters ──
         from core.config.models import resolve_penalties
 
