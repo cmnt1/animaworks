@@ -112,7 +112,7 @@ def create_chat_router() -> APIRouter:
                     "thread_id": body.thread_id,
                 },
                 timeout=float(
-                    __import__('core.config', fromlist=['load_config']).load_config().server.ipc_stream_timeout
+                    __import__("core.config", fromlist=["load_config"]).load_config().server.ipc_stream_timeout
                 ),
             )
 

@@ -685,7 +685,9 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 except Exception as e:
                     if isinstance(e, (asyncio.CancelledError, GeneratorExit)):
                         raise
-                    logger.warning("SDK resume failed with unexpected error (session_id=%s): %s", session_id_to_resume, e)
+                    logger.warning(
+                        "SDK resume failed with unexpected error (session_id=%s): %s", session_id_to_resume, e
+                    )
                     _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
                     fell_back = True
                 if fell_back:
