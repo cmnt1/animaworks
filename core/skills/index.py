@@ -7,6 +7,7 @@ from __future__ import annotations
 """Metadata index over personal skills, common skills, and procedures."""
 
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from core.skills.loader import load_skill_metadata
@@ -30,6 +31,8 @@ class SkillIndex:
         skills_dir: Path,
         common_skills_dir: Path,
         procedures_dir: Path | None = None,
+        *,
+        anima_dir: Path | None = None,
     ) -> None:
         """Initialize index roots.
 
@@ -37,10 +40,12 @@ class SkillIndex:
             skills_dir: Directory containing per-Anima skill folders with ``SKILL.md``.
             common_skills_dir: Directory containing shared skill folders (flat or nested).
             procedures_dir: Optional directory of procedure ``*.md`` files; ``None`` skips.
+            anima_dir: Optional anima directory for usage stats integration.
         """
         self._skills_dir = skills_dir
         self._common_skills_dir = common_skills_dir
         self._procedures_dir = procedures_dir
+        self._anima_dir = anima_dir
         self._cached_index: list[SkillMetadata] | None = None
         self._cached_all_entries: list[SkillMetadata] | None = None
 
@@ -133,6 +138,31 @@ class SkillIndex:
                     )
 
         sorted_all = sorted(entries, key=self._sort_key)
+
+        # Merge usage stats from SkillUsageTracker if anima_dir is available
+        if self._anima_dir is not None:
+            try:
+                from core.skills.usage import SkillUsageTracker
+
+                tracker = SkillUsageTracker(self._anima_dir)
+                all_stats = tracker.get_all_stats()
+                for i, meta in enumerate(sorted_all):
+                    stats = all_stats.get(meta.name)
+                    if stats:
+                        sorted_all[i] = meta.model_copy(
+                            update={
+                                "usage_count": stats.view_count + stats.use_count,
+                                "success_count": stats.success_count,
+                                "failure_count": stats.failure_count,
+                                "patch_count": stats.patch_count,
+                                "last_used_at": (
+                                    datetime.fromisoformat(stats.last_used_at) if stats.last_used_at else None
+                                ),
+                            }
+                        )
+            except Exception:
+                logger.debug("Failed to merge usage stats into index", exc_info=True)
+
         self._cached_all_entries = sorted_all
         filtered = [m for m in sorted_all if m.trust_level not in _EXCLUDED_TRUST_LEVELS]
         self._cached_index = filtered

@@ -99,10 +99,10 @@ class SkillsToolsMixin:
         logger.info("share_tool: copied %s → %s", src, dst)
         return f"Shared tool '{tool_name}' to common_tools/. All animas can now use it after refresh_tools."
 
-    # ── Procedure outcome tracking ────────────────────────────
+    # ── Procedure/Skill outcome tracking ─────────────────────
 
     def _handle_report_procedure_outcome(self, args: dict[str, Any]) -> str:
-        """Report success/failure of a procedure and update its metadata."""
+        """Report success/failure of a procedure or skill and update its metadata."""
         rel = args.get("path", "")
         success = args.get("success", True)
         notes = args.get("notes", "")
@@ -115,12 +115,41 @@ class SkillsToolsMixin:
             return _error_result(
                 "FileNotFound",
                 f"File not found: {rel}",
-                suggestion="Check the path (e.g. procedures/deploy.md)",
+                suggestion="Check the path (e.g. procedures/deploy.md or skills/my-skill/SKILL.md)",
             )
 
         if not target.resolve().is_relative_to(self._anima_dir.resolve()):
             return _error_result("PermissionDenied", "Path resolves outside anima directory")
 
+        is_skill = rel.startswith("skills/")
+
+        # Record event in SkillUsageTracker
+        from core.skills.models import SkillUsageEventType
+        from core.skills.usage import SkillUsageTracker
+
+        tracker = SkillUsageTracker(self._anima_dir)
+        skill_name = Path(rel).parent.name if is_skill else Path(rel).stem
+        event_type = SkillUsageEventType.success if success else SkillUsageEventType.failure
+        tracker.record(skill_name, event_type, is_common=False, notes=notes or None)
+
+        if is_skill:
+            # Skills use JSONL only — no frontmatter write
+            outcome_label = t("handler.outcome_success") if success else t("handler.outcome_failure")
+            stats = tracker.get_stats(skill_name)
+            logger.info(
+                "report_skill_outcome path=%s success=%s",
+                rel,
+                success,
+            )
+            result = (
+                f"Skill outcome recorded: {rel} -> {outcome_label}\n"
+                f"(success: {stats.success_count}, failure: {stats.failure_count})"
+            )
+            if notes:
+                result += f"\nnotes: {notes}"
+            return result
+
+        # Procedures — maintain existing frontmatter behaviour
         meta = self._memory.read_procedure_metadata(target)
 
         if success:
@@ -252,7 +281,7 @@ class SkillsToolsMixin:
         else:
             base_dir = self._anima_dir / "skills"
 
-        return create_skill_directory(
+        result = create_skill_directory(
             skill_name=skill_name,
             description=description,
             body=body,
@@ -265,6 +294,23 @@ class SkillsToolsMixin:
             source_owner_anima=self._anima_dir.name,
             category=category,
         )
+
+        # Record create event in usage tracker
+        if "Created skill" in result or "スキル作成" in result:
+            try:
+                from core.skills.models import SkillUsageEventType
+                from core.skills.usage import SkillUsageTracker
+
+                tracker = SkillUsageTracker(self._anima_dir)
+                tracker.record(
+                    skill_name,
+                    SkillUsageEventType.create,
+                    is_common=(location == "common"),
+                )
+            except Exception:
+                logger.debug("Failed to record skill create event", exc_info=True)
+
+        return result
 
     # ── Task queue handlers ───────────────────────────────────
 

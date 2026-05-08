@@ -16,6 +16,45 @@ from pydantic import BaseModel, ConfigDict, Field
 if TYPE_CHECKING:
     from core.schemas import SkillMeta
 
+
+# ── Usage Event Models ─────────────────────────────────────
+
+
+class SkillUsageEventType(str, Enum):  # noqa: UP042
+    """Classification of skill/procedure usage events."""
+
+    view = "view"
+    use = "use"
+    success = "success"
+    failure = "failure"
+    patch = "patch"
+    create = "create"
+
+
+class SkillUsageEvent(BaseModel):
+    """Single usage event appended to skill_usage.jsonl."""
+
+    ts: str
+    skill_name: str
+    event_type: SkillUsageEventType
+    is_common: bool = False
+    notes: str | None = None
+
+
+class SkillUsageStats(BaseModel):
+    """Aggregated statistics for a single skill, computed from event replay."""
+
+    skill_name: str
+    view_count: int = 0
+    use_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    patch_count: int = 0
+    create_count: int = 0
+    last_used_at: str | None = None
+    is_common: bool = False
+
+
 # ── Enumerations ────────────────────────────────────────────
 
 
