@@ -113,6 +113,25 @@ def load_skill_metadata(path: Path) -> SkillMetadata:
     return _skill_metadata_from_dict(path, meta, body)
 
 
+def is_skill_blocked(metadata: SkillMetadata) -> bool:
+    """Check if a skill should be blocked from loading.
+
+    A skill is blocked if its trust_level is ``blocked`` or its security
+    scan verdict is ``dangerous``.
+
+    Args:
+        metadata: Parsed skill metadata.
+
+    Returns:
+        True if the skill should not be loaded.
+    """
+    from core.skills.models import SkillScanVerdict, SkillTrustLevel
+
+    if metadata.trust_level == SkillTrustLevel.blocked:
+        return True
+    return metadata.security.verdict == SkillScanVerdict.dangerous
+
+
 def load_skill_body(path: Path) -> str:
     """Return the Markdown body of *path* with YAML frontmatter removed.
 

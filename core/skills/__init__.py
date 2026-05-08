@@ -12,23 +12,37 @@ Re-exports for convenience::
     from core.skills import load_skill_metadata, load_skill_document
 """
 
+from core.skills.guard import SkillScanner
 from core.skills.index import SkillIndex
-from core.skills.loader import load_skill_body, load_skill_document, load_skill_metadata
+from core.skills.loader import (
+    is_skill_blocked,
+    load_skill_body,
+    load_skill_document,
+    load_skill_metadata,
+)
 from core.skills.models import (
+    ScanFinding,
+    ScanResult,
     SkillMetadata,
     SkillScanVerdict,
     SkillSecurityScan,
     SkillSource,
     SkillTrustLevel,
+    ThreatPattern,
 )
 
 __all__ = [
+    "ScanFinding",
+    "ScanResult",
     "SkillIndex",
     "SkillMetadata",
     "SkillScanVerdict",
+    "SkillScanner",
     "SkillSecurityScan",
     "SkillSource",
     "SkillTrustLevel",
+    "ThreatPattern",
+    "is_skill_blocked",
     "load_skill_body",
     "load_skill_document",
     "load_skill_metadata",
