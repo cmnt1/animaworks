@@ -236,6 +236,9 @@ class SkillsToolsMixin:
         references = args.get("references")
         templates = args.get("templates")
         allowed_tools = args.get("allowed_tools")
+        trust_level = args.get("trust_level")
+        source_type = args.get("source_type")
+        category = args.get("category")
 
         if not skill_name:
             return t("handler.skill_name_required")
@@ -257,6 +260,10 @@ class SkillsToolsMixin:
             references=references,
             templates=templates,
             allowed_tools=allowed_tools,
+            trust_level=trust_level,
+            source_type=source_type,
+            source_owner_anima=self._anima_dir.name,
+            category=category,
         )
 
     # ── Task queue handlers ───────────────────────────────────

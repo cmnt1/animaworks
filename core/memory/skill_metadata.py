@@ -271,50 +271,15 @@ class SkillMetadataService:
     def extract_skill_meta(path: Path, *, is_common: bool = False) -> SkillMeta:
         """Extract SkillMeta from a skill file's YAML frontmatter.
 
-        Supports Claude Code format (name + description frontmatter only).
-        Falls back to path.parent.name for skills (name/SKILL.md), path.stem
-        for procedures (flat {name}.md files).
+        Delegates to ``core.skills.loader.load_skill_metadata`` and converts
+        via ``SkillMetadata.to_legacy()``.
         """
-        text = path.read_text(encoding="utf-8")
-        name = path.parent.name if path.name == "SKILL.md" else path.stem
-        description = ""
-        allowed_tools: list[str] = []
+        from core.skills.loader import load_skill_metadata
 
-        # Parse YAML frontmatter (line-based parser)
-        from core.memory.frontmatter import parse_frontmatter
-
-        fm, _ = parse_frontmatter(text)
-        if fm:
-            name = fm.get("name", name)
-            description = fm.get("description", "")
-            if description:
-                description = str(description).strip()
-            allowed_tools = fm.get("allowed_tools", [])
-            if not isinstance(allowed_tools, list):
-                allowed_tools = []
-
-        # Fallback: extract from ## 概要 section (legacy format)
-        if not description:
-            in_overview = False
-            for line in text.splitlines():
-                stripped = line.strip()
-                if stripped == "## \u6982\u8981":
-                    in_overview = True
-                    continue
-                if in_overview:
-                    if stripped.startswith("#"):
-                        break
-                    if stripped:
-                        description = stripped
-                        break
-
-        return SkillMeta(
-            name=name,
-            description=description,
-            path=path,
-            is_common=is_common,
-            allowed_tools=allowed_tools,
-        )
+        meta = load_skill_metadata(path)
+        legacy = meta.to_legacy()
+        legacy.is_common = is_common
+        return legacy
 
     def list_skill_metas(self) -> list[SkillMeta]:
         """Return SkillMeta for each personal skill."""

@@ -324,6 +324,21 @@ def _build_group3(
     return out
 
 
+def _format_trust_tag(meta: Any) -> str:
+    """Format a trust_level bracket tag for the skill catalog.
+
+    Returns empty string for the default ``trusted`` level to keep the
+    catalog compact; shows ``[level]`` only when non-default.
+    """
+    trust = getattr(meta, "trust_level", None)
+    if trust is None:
+        return ""
+    level_str = trust.value if hasattr(trust, "value") else str(trust)
+    if level_str == "trusted":
+        return ""
+    return f" [{level_str}]"
+
+
 def _build_group4(
     pd: Path,
     data_dir: Path,
@@ -479,12 +494,14 @@ def _build_group4(
         ]
         for meta in skill_metas:
             desc = (meta.description[:_DESC_LIMIT] + "…") if len(meta.description) > _DESC_LIMIT else meta.description
-            catalog_lines.append(f"- skills/{meta.name}/SKILL.md: {desc}")
+            trust_tag = _format_trust_tag(meta)
+            catalog_lines.append(f"- skills/{meta.name}/SKILL.md{trust_tag}: {desc}")
 
         common_label = t("skill.label_common")
         for meta in common_skill_metas:
             desc = (meta.description[:_DESC_LIMIT] + "…") if len(meta.description) > _DESC_LIMIT else meta.description
-            catalog_lines.append(f"- common_skills/{meta.name}/SKILL.md ({common_label}): {desc}")
+            trust_tag = _format_trust_tag(meta)
+            catalog_lines.append(f"- common_skills/{meta.name}/SKILL.md ({common_label}){trust_tag}: {desc}")
 
         procedure_label = t("skill.label_procedure")
         proc_dir = pd / "procedures"
