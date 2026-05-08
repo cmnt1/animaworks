@@ -20,7 +20,11 @@ from core.skills.models import (
     SkillSecurityScan,
     SkillSource,
     SkillTrustLevel,
+    SkillUsageEvent,
+    SkillUsageEventType,
+    SkillUsageStats,
 )
+from core.skills.usage import SkillUsageTracker
 
 __all__ = [
     "SkillIndex",
@@ -29,6 +33,10 @@ __all__ = [
     "SkillSecurityScan",
     "SkillSource",
     "SkillTrustLevel",
+    "SkillUsageEvent",
+    "SkillUsageEventType",
+    "SkillUsageStats",
+    "SkillUsageTracker",
     "load_skill_body",
     "load_skill_document",
     "load_skill_metadata",

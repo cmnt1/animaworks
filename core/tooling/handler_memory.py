@@ -418,6 +418,34 @@ class MemoryToolsMixin:
             result = f"{anima_hint}\n\n{result}"
         return result
 
+    def _record_skill_view_if_applicable(self, rel: str) -> None:
+        """Record a 'view' event if the path looks like a skill or procedure."""
+        is_skill = rel.startswith("skills/") and "SKILL.md" in rel
+        is_common_skill = rel.startswith("common_skills/") and "SKILL.md" in rel
+        is_procedure = rel.startswith("procedures/") and rel.endswith(".md")
+
+        if not (is_skill or is_common_skill or is_procedure):
+            return
+
+        try:
+            from core.skills.models import SkillUsageEventType
+            from core.skills.usage import SkillUsageTracker
+
+            tracker = SkillUsageTracker(self._anima_dir)
+            is_common = is_common_skill
+
+            if is_skill:
+                skill_name = Path(rel).parent.name
+            elif is_common_skill:
+                parts = rel.split("/")
+                skill_name = parts[-2] if len(parts) >= 3 else parts[-1].replace(".md", "")
+            else:
+                skill_name = Path(rel).stem
+
+            tracker.record(skill_name, SkillUsageEventType.view, is_common=is_common)
+        except Exception:
+            logger.debug("Failed to record skill view event for %s", rel, exc_info=True)
+
     def _handle_read_memory_file(self, args: dict[str, Any]) -> str:
         norm = _normalize_memory_path(args["path"], self._anima_dir)
         if norm.channel_redirect:
@@ -501,6 +529,10 @@ class MemoryToolsMixin:
         if path.exists() and path.is_file():
             logger.debug("read_memory_file path=%s", rel)
             self._read_paths.add(rel)
+
+            # Record skill view event
+            self._record_skill_view_if_applicable(rel)
+
             content = path.read_text(encoding="utf-8")
             lines = content.splitlines(keepends=True)
             MAX_LINES = 2000
