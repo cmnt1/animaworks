@@ -22,6 +22,7 @@ import os
 import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -187,6 +188,11 @@ class AnimaRunner:
             cleanup_tmp_files(self._anima_dir / "state")
             cleanup_tmp_files(self._anima_dir / "knowledge")
 
+            # Startup idle-compress: in-memory compaction timers are lost
+            # on process restart; run compress here so stale conversations
+            # don't block the next chat with a synchronous compress.
+            await self._startup_idle_compress()
+
             self._ready_event.set()
 
             # Start autonomous scheduler (heartbeat + cron)
@@ -260,10 +266,10 @@ class AnimaRunner:
                     recovery.trigger,
                 )
 
-                # task_exec/inbox have no conversation history — just confirm and log
-                if session_type in ("task_exec", "inbox"):
-                    StreamingJournal.confirm_recovery(self._anima_dir, session_type, thread_id=thread_id)
-                elif recovery.recovered_text and self.anima:
+                # Only chat sessions write to conversation.json;
+                # heartbeat/task_exec/inbox are background and must not
+                # pollute the human↔anima conversation history.
+                if session_type == "chat" and recovery.recovered_text and self.anima:
                     try:
                         from core.memory.conversation import ConversationMemory
 
@@ -372,6 +378,59 @@ class AnimaRunner:
                             thread_id,
                             exc_info=True,
                         )
+
+    # ── Startup idle compress ──────────────────────────────────
+
+    async def _startup_idle_compress(self) -> None:
+        """Compress idle conversation on process startup.
+
+        In-memory compaction timers (SessionCompactor) are lost on
+        process restart.  This checks whether the chat conversation
+        has been idle long enough and compresses it so the next chat
+        is not blocked by a synchronous compress.
+        """
+        if not self.anima:
+            return
+        try:
+            from core.memory.conversation import ConversationMemory
+            from core.memory.conversation_models import SESSION_GAP_MINUTES
+
+            conv = ConversationMemory(self._anima_dir, self.anima.model_config)
+            state = conv.load()
+            if not state.turns:
+                return
+
+            from core.time_utils import ensure_aware, now_local
+
+            last_ts = datetime.fromisoformat(state.turns[-1].timestamp)
+            idle_sec = (now_local() - ensure_aware(last_ts)).total_seconds()
+            if idle_sec < SESSION_GAP_MINUTES * 60:
+                return
+
+            if not conv.needs_compression():
+                return
+
+            logger.info(
+                "Startup idle-compress for %s (idle %.0fs, %d turns)",
+                self.anima_name,
+                idle_sec,
+                len(state.turns),
+            )
+            from core.memory.conversation_compression import compress_if_needed
+
+            await compress_if_needed(
+                state,
+                self.anima.model_config,
+                conv._load_context_window_overrides,
+                conv.save,
+                anima_name=conv.anima_name,
+            )
+        except Exception:
+            logger.debug(
+                "Startup idle-compress failed for %s",
+                self.anima_name,
+                exc_info=True,
+            )
 
     # ── Orphan Process Cleanup ───────────────────────────────────
 
