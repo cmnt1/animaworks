@@ -157,10 +157,12 @@ class TestDifferentialFinalizationE2E:
         assert len(resolutions) >= 1
         assert any("サーバー障害" in r["issue"] for r in resolutions)
 
-        # Verify last_finalized_turn_index updated
+        # Verify turns cleared and index reset after successful finalization
         conv._state = None
         loaded = conv.load()
-        assert loaded.last_finalized_turn_index == 4
+        assert loaded.turns == []
+        assert loaded.last_finalized_turn_index == 0
+        assert loaded.compressed_summary == "サーバー障害修正完了、デプロイ予定"
 
     @pytest.mark.asyncio
     async def test_no_duplicate_episodes_on_double_finalize(self, data_dir):
