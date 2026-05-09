@@ -11,6 +11,7 @@ from __future__ import annotations
 """Base class and result type for execution engines."""
 
 import asyncio
+import logging
 import os
 import re
 from abc import ABC, abstractmethod
@@ -26,6 +27,8 @@ from core.execution.reminder import SystemReminderQueue
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
+
+logger = logging.getLogger(__name__)
 
 # ── Per-task interrupt event ─────────────────────────────────
 # Each asyncio task (i.e. each concurrent HTTP request) gets its own
@@ -108,7 +111,11 @@ def supports_streaming_tool_use(model: str) -> bool:
             if isinstance(tc_cfg, dict) and tc_cfg.get("stream") is False:
                 return False
     except Exception:
-        pass
+        logger.debug(
+            "Failed to load models.json for streaming tool-use check: model=%s",
+            model,
+            exc_info=True,
+        )
 
     if not model.startswith("bedrock/"):
         return True
