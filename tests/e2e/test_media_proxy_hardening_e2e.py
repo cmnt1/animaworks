@@ -14,7 +14,6 @@ from httpx import ASGITransport, AsyncClient
 
 from core.config.models import MediaProxyConfig
 
-
 TEST_IMAGE_URLS = (
     "https://httpbin.org/image/png",
     "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?fm=png",
@@ -35,7 +34,7 @@ def _create_app(tmp_path: Path, media_proxy: MediaProxyConfig):
     ):
         cfg = MagicMock()
         cfg.setup_complete = True
-        cfg.server = SimpleNamespace(media_proxy=media_proxy)
+        cfg.server = SimpleNamespace(media_proxy=media_proxy, base_path="")
         mock_cfg.return_value = cfg
 
         auth_cfg = MagicMock()
