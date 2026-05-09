@@ -150,10 +150,12 @@ class TestFinalizeSession:
 
         assert result is True
 
-        # Verify index was updated
+        # Verify turns cleared and index reset after successful finalization
         conv_memory._state = None
         loaded = conv_memory.load()
-        assert loaded.last_finalized_turn_index == 6
+        assert loaded.turns == []
+        assert loaded.last_finalized_turn_index == 0
+        assert loaded.compressed_summary == "圧縮された要約"
 
         # Verify episode was written
         episode_file = anima_dir / "episodes" / f"{today_local().isoformat()}.md"
@@ -162,8 +164,8 @@ class TestFinalizeSession:
         assert "テスト会話" in content
 
     @pytest.mark.asyncio
-    async def test_finalize_session_updates_index(self, conv_memory):
-        """After finalization, last_finalized_turn_index equals len(turns)."""
+    async def test_finalize_session_clears_turns_and_resets_index(self, conv_memory):
+        """After finalization, turns are cleared and last_finalized_turn_index is 0."""
         state = conv_memory.load()
         state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(4)]
         state.last_finalized_turn_index = 0
@@ -179,7 +181,54 @@ class TestFinalizeSession:
 
         conv_memory._state = None
         loaded = conv_memory.load()
+        assert loaded.turns == []
+        assert loaded.last_finalized_turn_index == 0
+        assert loaded.compressed_summary == "圧縮"
+
+
+    @pytest.mark.asyncio
+    async def test_finalize_session_keeps_turns_on_compression_failure(self, conv_memory):
+        """When _call_compression_llm fails, turns are NOT cleared."""
+        state = conv_memory.load()
+        state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(4)]
+        state.last_finalized_turn_index = 0
+        conv_memory.save()
+
+        summary_resp = make_litellm_response(
+            content="## エピソード要約\n要約\n\n## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし\n### 現在の状態\nidle"
+        )
+        compress_resp = RuntimeError("LLM API error")
+
+        with patch_litellm(summary_resp, compress_resp):
+            result = await conv_memory.finalize_session(min_turns=3)
+
+        assert result is True
+
+        conv_memory._state = None
+        loaded = conv_memory.load()
+        assert len(loaded.turns) == 4
         assert loaded.last_finalized_turn_index == 4
+
+    @pytest.mark.asyncio
+    async def test_needs_compression_false_after_finalization(self, conv_memory, model_config):
+        """After finalization, needs_compression() returns False (no double-counting)."""
+        state = conv_memory.load()
+        state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(6)]
+        state.last_finalized_turn_index = 0
+        conv_memory.save()
+
+        summary_resp = make_litellm_response(
+            content="## エピソード要約\n要約\n\n## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし\n### 現在の状態\nidle"
+        )
+        compress_resp = make_litellm_response(content="圧縮された要約テキスト")
+
+        with patch_litellm(summary_resp, compress_resp):
+            await conv_memory.finalize_session(min_turns=3)
+
+        conv_memory._state = None
+        loaded = conv_memory.load()
+        assert loaded.turns == []
+        assert not conv_memory.needs_compression()
 
 
 # ── finalize_if_session_ended tests ───────────────────────────

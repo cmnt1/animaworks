@@ -229,10 +229,15 @@ async def finalize_session(
     try:
         compressed = await _call_compression_llm(old_summary, turn_text)
         state.compressed_summary = compressed
+        # Finalized turns are now in compressed_summary; clear to prevent
+        # double-counting in total_token_estimate and avoid stale turns
+        # triggering needs_compression() at the start of the next session.
+        state.turns = []
+        state.last_finalized_turn_index = 0
     except Exception:
         logger.warning("Compression failed during finalization; keeping raw turns")
+        state.last_finalized_turn_index = len(state.turns)
 
-    state.last_finalized_turn_index = len(state.turns)
     state.compressed_turn_count += len(new_turns)
     save_fn()
 
