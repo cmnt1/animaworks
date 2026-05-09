@@ -76,7 +76,7 @@ tags: [productivity, obsidian, report, deliverable]
 
 1. 対象ファイルを Read。
 2. frontmatter を Edit で書き換え、必ず `updated:` を現在日時（JST）に更新。
-3. 状態遷移（`未着手` → `進行中` → `完了`）や `confirmed` チェックもここで行う。
+3. 状態遷移（`未着手` → `進行中` → `監査待`）をここで行う。`完了` に変更できるのは sakura のみ。`confirmed` は人間確認用なので、Anima は新規作成・更新時に原則 `false` のままにし、`true` へ変更しない。
 4. `id` と `code` は**絶対に変更しない**。
 
 ### 4. list — 既存レポートの一覧
@@ -97,7 +97,7 @@ code: "P-00042"
 title: "アフィリエイト配信レシピ v2"
 category: Finance              # General | Finance | Affiliate | Property | Business
 product_type: 報告書            # 報告書 | 成果物 | デプロイ記録 | その他
-status: 完了                    # 未着手 | 進行中 | 完了
+status: 監査待                  # 未着手 | 進行中 | 監査待 | 完了（完了にできるのは sakura のみ）
 task_code: AFF-001             # 対応するタスクコードがあれば。無ければ空文字 ""
 assignee: 自分のAnima名          # 作成した Anima 名
 submitted: 2026-04-23
@@ -141,6 +141,11 @@ tags: [product-asset]
 
 - **Vault 一本化**: 成果物も下書きも `_products\<Category>\` に置く（下書きは `status: 未着手` で作成、完了時に `status: 完了` へ更新）。旧 `E:\OneDriveBiz\Downloads\` は廃止
 - **ID 不変・code で呼ぶ**: 作成後は `id`/`code` を変えない。会話では `P-00042` 形式で呼ぶ
+- **frontmatter はファイル先頭に1個だけ**: 先頭は必ず `---` → `type: product` を含む YAML → `---` → 本文の順にする。`--- confirmed: ... ---` のような小さい frontmatter を先頭に追加してはいけない
+- **保存は UTF-8 BOM なし**: Markdown は UTF-8 without BOM で保存する。PowerShell 5 の `Set-Content -Encoding UTF8` は BOM を付けやすいので避け、PowerShell 7 の `utf8NoBOM`、Python の `encoding="utf-8"`、または `.NET UTF8Encoding(false)` を使う
+- **`status: 完了` にできるのは sakura のみ**: sakura 以外の Anima は、報告書を書き終えて `_products\<Category>\` に格納したら `status: 監査待` にする。完了扱いへの変更は sakura の監査後に行う
+- **監査依頼を必ず出す**: sakura 以外の Anima は `status: 監査待` にした後、sakura 宛てに `P-<NNNNN>` とファイルパス、監査してほしい観点を添えて監査依頼を送る
+- **`confirmed` は人間側の確認フラグ**: Anima は新規レポートを `confirmed: false` で作る。人間が Obsidian 上で確認後に true へ変える。Anima が `confirmed: true` を先頭へ追記・上書きしてはいけない
 - **付随資料はサブフォルダを作らず同じフォルダに並べる**: ファイル名プレフィックスで親子関係を表現
 - **wikilink 推奨**: 内部リンクは `[[P-00042_xxx_yyy]]` 記法。パスを書かない（Obsidian が自動解決）
 - **`type: product` / `type: product_asset` の区別**: Base テーブルはメインだけを拾う。付随資料は wikilink 経由で辿れればよい
@@ -159,5 +164,7 @@ tags: [product-asset]
 
 1. タスク受領時に `status: 未着手` で骨組みだけ書き出し（後で埋める）
 2. 着手したら `status: 進行中` に Edit、`updated` 更新
-3. 完了したら `status: 完了`、`submitted` 日付を入れ、本文を仕上げる
-4. `requires_reply: true` にして人間確認待ちにする場合もある
+3. 報告書を書き上げたら sakura 以外は `status: 監査待`、`submitted` 日付を入れ、本文を仕上げる
+4. sakura に `P-<NNNNN>` とファイルパスを添えて監査依頼を送る
+5. sakura が監査後に必要なら修正し、問題なければ `status: 完了` にする
+6. `requires_reply: true` にして人間確認待ちにする場合もある
