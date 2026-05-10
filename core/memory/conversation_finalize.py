@@ -224,7 +224,11 @@ async def finalize_session(
             session_id=session_id,
         )
 
-    turn_text = _format_turns_for_compression(new_turns)
+    # If a previous finalization wrote an episode but compression failed, the
+    # already-finalized raw turns remain before last_finalized_turn_index.
+    # Include them in the next successful compression before clearing turns.
+    turns_to_compress = state.turns if state.last_finalized_turn_index > 0 else new_turns
+    turn_text = _format_turns_for_compression(turns_to_compress)
     old_summary = state.compressed_summary
     try:
         compressed = await _call_compression_llm(old_summary, turn_text)
@@ -234,11 +238,15 @@ async def finalize_session(
         # triggering needs_compression() at the start of the next session.
         state.turns = []
         state.last_finalized_turn_index = 0
+        state.compressed_turn_count += len(turns_to_compress)
     except Exception:
         logger.warning("Compression failed during finalization; keeping raw turns")
+        # The episode/state update has been written for these turns, so advance
+        # the finalization cursor to avoid duplicate episode entries. Do not
+        # increment compressed_turn_count: the raw turns are still present and
+        # will be folded into compressed_summary on the next successful run.
         state.last_finalized_turn_index = len(state.turns)
 
-    state.compressed_turn_count += len(new_turns)
     save_fn()
 
     new_status = parsed.current_status.strip() if parsed.current_status else "status: idle"
