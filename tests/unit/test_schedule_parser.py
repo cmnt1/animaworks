@@ -5,15 +5,14 @@
 
 from __future__ import annotations
 
+import pytest
 from apscheduler.triggers.cron import CronTrigger
 
-import pytest
-
 from core.schedule_parser import (
-    parse_heartbeat_config,
-    parse_cron_md,
-    parse_schedule,
     _posix_dow_to_apsched,
+    parse_cron_md,
+    parse_heartbeat_config,
+    parse_schedule,
 )
 
 
@@ -231,12 +230,15 @@ class TestPosixDowToApsched:
         # POSIX [1,3,5] → ISO [0,2,4]; no consecutive pairs → individual values
         assert result == "0,2,4"
 
-    @pytest.mark.parametrize("expr", [
-        "30 17 * * 0-4",   # sec's broken schedule — the main bug
-        "0 9 * * 0",       # Sunday only
-        "0 9 * * 0-6",     # All days via full POSIX range
-        "0 9 * * 5-7",     # Fri–Sun via POSIX 5-7
-    ])
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            "30 17 * * 0-4",  # sec's broken schedule — the main bug
+            "0 9 * * 0",  # Sunday only
+            "0 9 * * 0-6",  # All days via full POSIX range
+            "0 9 * * 5-7",  # Fri–Sun via POSIX 5-7
+        ],
+    )
     def test_parse_schedule_accepts_sunday_ranges(self, expr: str):
         """parse_schedule must return a valid CronTrigger for Sunday-containing ranges."""
         trigger = parse_schedule(expr)
