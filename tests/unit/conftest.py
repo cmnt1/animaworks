@@ -16,6 +16,18 @@ from core.paths import TEMPLATES_DIR
 
 
 @pytest.fixture(autouse=True)
+def _reset_config_caches_for_unit_tests() -> None:
+    """Clear runtime config singletons so data-dir monkeypatching is isolated."""
+    from core.config import invalidate_cache, invalidate_vault_cache
+
+    invalidate_cache()
+    invalidate_vault_cache()
+    yield
+    invalidate_cache()
+    invalidate_vault_cache()
+
+
+@pytest.fixture(autouse=True)
 def _global_permissions_for_unit_tests(tmp_path: Path) -> None:
     """Load ``permissions.global.json`` template so command block patterns match production.
 
