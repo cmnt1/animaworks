@@ -167,12 +167,24 @@ class ReconcileMixin:
                 if name in governor_suspended:
                     logger.info("Reconciliation: skipping %s (governor suspended)", name)
                     continue
+                # Cooldown after repeated start failures
+                _fail_time = self._start_failed_times.get(name)
+                if _fail_time is not None:
+                    _elapsed = time.monotonic() - _fail_time
+                    _fail_count = self._start_fail_counts.get(name, 0)
+                    _cooldown = min(300.0, 60.0 * (1 + _fail_count))
+                    if _elapsed < _cooldown:
+                        continue
                 logger.info("Reconciliation: starting anima %s", name)
                 try:
                     await self.start_anima(name)
+                    self._start_failed_times.pop(name, None)
+                    self._start_fail_counts.pop(name, None)
                     if self.on_anima_added:
                         self.on_anima_added(name)
                 except Exception:
+                    self._start_failed_times[name] = time.monotonic()
+                    self._start_fail_counts[name] = self._start_fail_counts.get(name, 0) + 1
                     logger.exception(
                         "Reconciliation: failed to start %s",
                         name,

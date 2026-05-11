@@ -96,6 +96,19 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
 class LifecycleMixin:
     """Mixin: heartbeat orchestration, memory consolidation, cron task execution."""
 
+    async def _keepalive_while_busy(self, interval: float = 60.0) -> None:
+        """Periodically update _last_progress_at to prevent busy-hang false positives.
+
+        Start this as a background task during long-running operations (heartbeat,
+        cron, etc.) that may not update progress through the normal streaming path.
+        """
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                self._last_progress_at = now_local()
+        except asyncio.CancelledError:
+            pass
+
     async def run_heartbeat(
         self,
         cascade_suppressed_senders: set[str] | None = None,
@@ -106,6 +119,7 @@ class LifecycleMixin:
         try:
             async with self._background_lock:
                 self._mark_busy_start()
+                _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._status_slots["background"] = "checking"
                 self._last_heartbeat = now_local()
 
@@ -147,6 +161,7 @@ class LifecycleMixin:
                         return self._handle_hard_timeout(_hard_timeout)
                     finally:
                         active_session_type.reset(_session_token)
+                        _keepalive.cancel()
 
                     return result
 
@@ -619,6 +634,7 @@ class LifecycleMixin:
         try:
             async with self._background_lock:
                 self._mark_busy_start()
+                _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
@@ -683,6 +699,7 @@ class LifecycleMixin:
                     )
                     raise
                 finally:
+                    _keepalive.cancel()
                     if original_config is not None:
                         self.agent.update_model_config(original_config)
                     active_session_type.reset(_session_token)
