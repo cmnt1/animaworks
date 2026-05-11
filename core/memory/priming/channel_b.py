@@ -73,7 +73,7 @@ async def channel_b_recent_activity(
     plus shared/channels/*.jsonl for cross-Anima visibility.
     Falls back to episodes/ if activity_log is empty (migration period).
 
-    When *channel* is ``"heartbeat"`` or starts with ``"cron:"``,
+    When *channel* is a non-chat automation channel,
     tool_use / tool_result / heartbeat lifecycle events are filtered
     out so that the limited priming budget contains only actionable
     communication events (messages, channel posts, errors, etc.).
@@ -83,7 +83,7 @@ async def channel_b_recent_activity(
     activity = ActivityLogger(anima_dir)
     entries = activity.recent(days=2, limit=100)
 
-    is_background = channel in ("heartbeat",) or channel.startswith("cron:")
+    is_background = channel in {"heartbeat", "cron", "inbox", "task"} or channel.startswith("cron:")
 
     if is_background and entries:
         entries = [e for e in entries if e.type not in _HEARTBEAT_NOISE_TYPES]

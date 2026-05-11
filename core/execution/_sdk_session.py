@@ -197,6 +197,11 @@ def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: st
         path.unlink(missing_ok=True)
 
 
+def clear_session_id_for_type(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:
+    """Clear a resolved SDK session ID namespace."""
+    _clear_session_id(anima_dir, session_type, thread_id)
+
+
 # ── SDK query input construction ─────────────────────────────
 
 

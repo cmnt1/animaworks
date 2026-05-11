@@ -15,16 +15,13 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock
 
-
 from core.execution.agent_sdk import StreamDisconnectedError
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.builder import BuildResult
-
 from tests.helpers.mocks import (
     MockResultMessage,
     patch_agent_sdk_streaming,
 )
-
 
 # ── Helper: mock executor factories ────────────────────────
 
@@ -406,7 +403,7 @@ class TestCheckpointClearedOnSuccess:
             events.append(chunk)
             # Check if checkpoint exists right after tool_end is yielded
             if chunk["type"] == "tool_end":
-                shortterm = ShortTermMemory(agent.anima_dir)
+                shortterm = ShortTermMemory(agent.anima_dir, session_type="task")
                 cp = shortterm.load_checkpoint()
                 if cp is not None:
                     checkpoint_existed_during_stream = True
@@ -417,7 +414,7 @@ class TestCheckpointClearedOnSuccess:
         )
 
         # But after completion, checkpoint should be cleared
-        shortterm = ShortTermMemory(agent.anima_dir)
+        shortterm = ShortTermMemory(agent.anima_dir, session_type="task")
         assert shortterm.load_checkpoint() is None, (
             "Checkpoint should be cleared after successful completion"
         )

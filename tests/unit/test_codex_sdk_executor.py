@@ -38,6 +38,7 @@ from core.execution.codex_sdk import (
     _should_prefer_cli_exec,
     _stderr_contains_fatal_signal,
     _usage_to_dict,
+    clear_codex_thread_id,
     clear_codex_thread_ids,
 )
 from core.prompt.context import ContextTracker
@@ -321,9 +322,22 @@ class TestSessionPersistence:
     def test_clear_all_thread_ids(self, anima_dir):
         _save_thread_id(anima_dir, "t1", "chat")
         _save_thread_id(anima_dir, "t2", "heartbeat")
+        _save_thread_id(anima_dir, "t3", "inbox")
+        _save_thread_id(anima_dir, "t4", "inbox", "inbox")
         clear_codex_thread_ids(anima_dir)
         assert _load_thread_id(anima_dir, "chat") is None
         assert _load_thread_id(anima_dir, "heartbeat") is None
+        assert _load_thread_id(anima_dir, "inbox") is None
+        assert _load_thread_id(anima_dir, "inbox", "inbox") == "t4"
+
+    def test_clear_single_thread_id_for_non_chat_thread(self, anima_dir):
+        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
+        _save_thread_id(anima_dir, "chat-thread", "chat")
+
+        clear_codex_thread_id(anima_dir, "inbox", "inbox")
+
+        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_thread_id(anima_dir, "chat") == "chat-thread"
 
 
 # ── Executor instantiation tests ─────────────────────────────
@@ -558,6 +572,7 @@ class TestBlockingExecution:
         mock_codex.start_thread.return_value = mock_thread
 
         _save_thread_id(anima_dir, "old-chat", "chat")
+        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
         with (
             patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
@@ -779,6 +794,58 @@ class TestStreamingExecution:
         assert [e["type"] for e in events] == ["text_delta", "done"]
         mock_fallback.assert_called_once()
         mock_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stream_inbox_trigger_clears_stale_thread_and_does_not_persist(self, executor, anima_dir):
+        msg_item = MagicMock(spec=["type", "id", "text"])
+        msg_item.type = "agent_message"
+        msg_item.id = "msg-inbox"
+        msg_item.text = "Inbox stream"
+
+        msg_event = MagicMock()
+        msg_event.type = "item.completed"
+        msg_event.item = msg_item
+
+        done_event = MagicMock()
+        done_event.type = "turn.completed"
+        done_event.usage = None
+
+        async def fake_events():
+            yield msg_event
+            yield done_event
+
+        mock_streamed = MagicMock()
+        mock_streamed.events = fake_events()
+
+        mock_thread = MagicMock()
+        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.id = "new-inbox-thread"
+
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        _save_thread_id(anima_dir, "old-chat", "chat")
+        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
+
+        events = []
+        with (
+            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch.object(executor, "_create_codex_client", return_value=mock_codex),
+        ):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="sys",
+                prompt="inbox",
+                tracker=tracker,
+                trigger="inbox:sakura",
+                thread_id="inbox",
+            ):
+                events.append(ev)
+
+        assert any(e["type"] == "done" for e in events)
+        mock_codex.resume_thread.assert_not_called()
+        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_thread_id(anima_dir, "chat") == "old-chat"
 
     @pytest.mark.asyncio
     async def test_stream_tool_events(self, executor, anima_dir):

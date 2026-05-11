@@ -527,6 +527,7 @@ def _build_group5(
     execution_mode: str,
     prompt_store: Any,
     is_background_auto: bool,
+    is_inbox: bool,
     is_task: bool,
     _ss: dict[str, str],
     _fs: dict[str, str],
@@ -550,7 +551,7 @@ def _build_group5(
         _add(oc, "org_context", 2)
 
     msg = _build_messaging_section(pd, other_animas, execution_mode)
-    if is_background_auto and len(msg) > 500:
+    if is_background_auto and not is_inbox and len(msg) > 500:
         msg = msg[:500] + "\n" + _fs.get("summary", "(summary)")
     _add(msg, "messaging", 2)
     try:
@@ -629,13 +630,23 @@ def build_system_prompt(
     _ss = _load_section_strings()
     _fs = _load_fallback_strings()
 
-    # Trigger flags — inbox is chat-equivalent (same sections as human chat)
-    is_heartbeat = trigger == "heartbeat"
-    is_cron = trigger.startswith("cron:")
-    is_task = trigger.startswith("task:")
+    from core.execution.session_types import (
+        SESSION_TYPE_CRON,
+        SESSION_TYPE_HEARTBEAT,
+        SESSION_TYPE_INBOX,
+        SESSION_TYPE_TASK,
+        resolve_runtime_session_type,
+        trigger_uses_chat_session,
+    )
+
+    session_type = resolve_runtime_session_type(trigger)
+    is_heartbeat = session_type == SESSION_TYPE_HEARTBEAT
+    is_cron = session_type == SESSION_TYPE_CRON
+    is_task = session_type == SESSION_TYPE_TASK
+    is_inbox = session_type == SESSION_TYPE_INBOX
     is_consolidation = trigger.startswith("consolidation:")
     is_background_auto = is_heartbeat or is_cron or is_consolidation
-    is_chat = not (is_background_auto or is_task)
+    is_chat = trigger_uses_chat_session(trigger)
 
     from core.tooling.prompt_db import get_prompt_store
 
@@ -692,6 +703,7 @@ def build_system_prompt(
         execution_mode,
         prompt_store,
         is_background_auto,
+        is_inbox,
         is_task,
         _ss,
         _fs,
