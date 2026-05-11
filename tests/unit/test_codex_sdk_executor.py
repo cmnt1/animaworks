@@ -10,6 +10,7 @@ All tests use mocks — no Codex CLI binary or API key required.
 
 import asyncio
 import os
+import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -411,6 +412,8 @@ class TestConfigWriting:
         assert "danger-full-access" in config_toml  # default file_roots=["/"]
         assert 'approval_policy = "never"' in config_toml
         assert "[mcp_servers.aw]" in config_toml
+        parsed = tomllib.loads(config_toml)
+        assert parsed["mcp_servers"]["aw"]["default_tools_approval_mode"] == "approve"
 
     def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir):
         """Restricted file_roots produces workspace-write with writable_roots."""

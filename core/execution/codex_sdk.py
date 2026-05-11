@@ -757,6 +757,7 @@ class CodexSDKExecutor(BaseExecutor):
             f"[mcp_servers.aw]\n"
             f'command = "{esc(sys.executable)}"\n'
             f'args = ["-m", "core.mcp.server"]\n'
+            f'default_tools_approval_mode = "approve"\n'
             f"\n"
             f"[mcp_servers.aw.env]\n"
             f"{mcp_env_lines}\n"
