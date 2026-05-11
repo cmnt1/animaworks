@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.execution.session_types import resolve_runtime_session_type
 from core.schemas import ImageData
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -118,17 +119,7 @@ def _resolve_session_type(trigger: str) -> str:
     Each trigger category gets its own session namespace to prevent
     cross-contamination of Claude CLI conversation histories.
     """
-    if trigger == "heartbeat":
-        return SESSION_TYPE_HEARTBEAT
-    if trigger.startswith("cron:"):
-        return SESSION_TYPE_CRON
-    if trigger.startswith("task:"):
-        return SESSION_TYPE_TASK
-    if trigger.startswith("inbox:"):
-        return SESSION_TYPE_INBOX
-    if trigger.startswith("consolidation:"):
-        return SESSION_TYPE_HEARTBEAT
-    return SESSION_TYPE_CHAT
+    return resolve_runtime_session_type(trigger)
 
 
 def _session_file(session_type: str, thread_id: str = "default") -> str:

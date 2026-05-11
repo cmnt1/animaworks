@@ -156,6 +156,51 @@ def get_llm_kwargs_for_model(model: str, *, credential: str = "") -> dict[str, A
     return kwargs
 
 
+def get_llm_kwargs_for_model_config(model_config: Any) -> dict[str, Any]:
+    """Resolve LiteLLM kwargs from the active per-Anima ModelConfig."""
+    ensure_credentials_in_env()
+
+    resolved_model = getattr(model_config, "model", "") or ""
+    kwargs = get_llm_kwargs_for_model(resolved_model)
+    kwargs["model"] = resolved_model
+
+    api_key = getattr(model_config, "api_key", None)
+    api_key_env = getattr(model_config, "api_key_env", "")
+    if not api_key and api_key_env:
+        api_key = os.environ.get(api_key_env) or None
+    if api_key:
+        kwargs["api_key"] = api_key
+
+    api_base_url = getattr(model_config, "api_base_url", None)
+    if api_base_url:
+        kwargs["api_base"] = api_base_url
+
+    extra = getattr(model_config, "extra_keys", None) or {}
+    model = kwargs["model"]
+    if model.startswith("azure/"):
+        api_version = extra.get("api_version") or os.environ.get("AZURE_API_VERSION")
+        if api_version:
+            kwargs["api_version"] = api_version
+    elif model.startswith("vertex_ai/"):
+        for key in ("vertex_project", "vertex_location", "vertex_credentials"):
+            val = extra.get(key) or os.environ.get(key.upper())
+            if val:
+                kwargs[key] = val
+    elif model.startswith("bedrock/"):
+        for key in (
+            "aws_access_key_id",
+            "aws_secret_access_key",
+            "aws_session_token",
+            "aws_region_name",
+            "aws_profile",
+        ):
+            val = extra.get(key) or os.environ.get(key.upper())
+            if val:
+                kwargs[key] = val
+
+    return kwargs
+
+
 # ── One-shot completion with fallback ─────────────────────────────────────────
 
 
@@ -447,5 +492,55 @@ async def one_shot_completion(
             )
         except Exception as e:
             logger.warning("Codex SDK one-shot fallback also failed: %s", e)
+
+    return None
+
+
+async def one_shot_completion_with_model_config(
+    prompt: str,
+    *,
+    system_prompt: str = "",
+    model_config: Any,
+    max_tokens: int = 2048,
+) -> str | None:
+    """Execute one-shot completion with the active Anima model configuration."""
+    llm_kwargs = get_llm_kwargs_for_model_config(model_config)
+    resolved_model = llm_kwargs["model"]
+
+    try:
+        result = await _try_litellm(
+            prompt,
+            system_prompt=system_prompt,
+            model=resolved_model,
+            max_tokens=max_tokens,
+            llm_kwargs=llm_kwargs,
+        )
+        if result:
+            return result
+    except Exception as e:
+        logger.warning("LiteLLM active-model one-shot failed (%s), trying SDK fallback", e)
+
+    if _is_anthropic_model(resolved_model):
+        try:
+            return await _try_agent_sdk(
+                prompt,
+                system_prompt=system_prompt,
+                model=resolved_model,
+                max_tokens=max_tokens,
+            )
+        except Exception as e:
+            logger.warning("Agent SDK active-model one-shot fallback also failed: %s", e)
+
+    if _is_codex_model(resolved_model):
+        try:
+            return await _try_codex_sdk(
+                prompt,
+                system_prompt=system_prompt,
+                model=resolved_model,
+                max_tokens=max_tokens,
+                llm_kwargs=llm_kwargs,
+            )
+        except Exception as e:
+            logger.warning("Codex SDK active-model one-shot fallback also failed: %s", e)
 
     return None

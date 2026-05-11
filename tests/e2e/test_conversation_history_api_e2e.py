@@ -12,6 +12,7 @@ Verifies that:
 6. The API endpoint returns the correct format
 7. /conversation/full is removed
 """
+
 from __future__ import annotations
 
 import json
@@ -22,7 +23,6 @@ from unittest.mock import patch
 import pytest
 
 from core.memory.activity import ActivityLogger
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -83,6 +83,53 @@ def test_basic_conversation_view(anima_dir: Path) -> None:
     assert msg1["to_person"] == "admin"
     assert msg1["source_key"] == "chat"
     assert msg1["tool_calls"] == []
+
+
+def test_default_conversation_view_excludes_inbox_entries(anima_dir: Path) -> None:
+    """Inbox entries are hidden from default chat history and available explicitly."""
+    al = ActivityLogger(anima_dir)
+    al.log("message_received", content="chat hello", from_person="admin", channel="chat")
+    al.log("response_sent", content="chat reply", to_person="admin", channel="chat")
+    al.log(
+        "message_received",
+        content="inbox hello",
+        from_person="sakura",
+        channel="inbox",
+        meta={"trigger": "inbox:sakura", "session_type": "inbox", "thread_id": "inbox"},
+    )
+    al.log(
+        "response_sent",
+        content="inbox reply",
+        to_person="sakura",
+        channel="inbox",
+        meta={"trigger": "inbox:sakura", "session_type": "inbox", "thread_id": "inbox"},
+    )
+    al.log(
+        "response_sent",
+        content="legacy inbox reply",
+        to_person="sakura",
+        channel="inbox",
+        meta={"trigger": "inbox:sakura"},
+    )
+
+    default_result = al.get_conversation_view(limit=50)
+    default_messages = [
+        msg["content"]
+        for session in default_result["sessions"]
+        for msg in session["messages"]
+    ]
+    assert "chat hello" in default_messages
+    assert "inbox hello" not in default_messages
+    assert "inbox reply" not in default_messages
+    assert "legacy inbox reply" not in default_messages
+
+    inbox_result = al.get_conversation_view(limit=50, thread_id="inbox")
+    inbox_messages = [
+        msg["content"]
+        for session in inbox_result["sessions"]
+        for msg in session["messages"]
+    ]
+    assert inbox_messages == ["inbox hello", "inbox reply", "legacy inbox reply"]
 
 
 # ── Test: Tool Call Pairing by tool_use_id ───────────────────

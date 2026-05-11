@@ -49,6 +49,18 @@ def _source_key_for_entry(entry: ActivityEntry) -> str:
     return entry.channel or "chat"
 
 
+def _is_inbox_raw_entry(raw: dict[str, Any]) -> bool:
+    meta = raw.get("meta", {})
+    trigger = meta.get("trigger", "") if isinstance(meta, dict) else ""
+    session_type = meta.get("session_type", "") if isinstance(meta, dict) else ""
+    return (
+        raw.get("channel") == "inbox"
+        or session_type == "inbox"
+        or trigger == "inbox"
+        or (isinstance(trigger, str) and trigger.startswith("inbox:"))
+    )
+
+
 def _truncate_tool_field(value: Any, limit: int) -> Any:
     """Truncate tool input/result for the conversation view API."""
     if isinstance(value, str):
@@ -191,6 +203,9 @@ class ConversationMixin:
                         continue
                     if raw.get("type") not in self._CONVERSATION_TYPES:
                         continue
+                    is_inbox_entry = _is_inbox_raw_entry(raw)
+                    if thread_id != "inbox" and is_inbox_entry:
+                        continue
                     ts = raw.get("ts", "")
                     if before and ts >= before:
                         continue
@@ -203,7 +218,8 @@ class ConversationMixin:
                             if meta.get("thread_id") != thread_id:
                                 continue
                         else:
-                            entry_tid = meta.get("thread_id", "default") if isinstance(meta, dict) else "default"
+                            default_tid = "inbox" if is_inbox_entry and thread_id == "inbox" else "default"
+                            entry_tid = meta.get("thread_id", default_tid) if isinstance(meta, dict) else default_tid
                             if entry_tid != thread_id:
                                 continue
                     if "from" in raw:

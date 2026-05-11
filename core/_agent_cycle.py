@@ -22,10 +22,11 @@ if TYPE_CHECKING:
     from core.execution.base import ExecutionResult
 
 from core._agent_prompt_log import _save_prompt_log, _save_prompt_log_end
+from core.execution.session_types import resolve_runtime_session_type, trigger_uses_chat_session
 from core.i18n import t
 from core.memory.shortterm import SessionState, ShortTermMemory
 from core.prompt.builder import build_system_prompt, inject_shortterm
-from core.prompt.context import ContextTracker
+from core.prompt.context import CHARS_PER_TOKEN, ContextTracker
 from core.schemas import CycleResult, ImageData
 from core.time_utils import now_iso
 
@@ -33,6 +34,15 @@ logger = logging.getLogger("animaworks.agent")
 
 
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+
+
+def _update_tracker_from_prompt_estimate(
+    tracker: ContextTracker,
+    system_prompt: str,
+    prompt: str,
+) -> None:
+    estimated_tokens = (len(system_prompt) + len(prompt)) // CHARS_PER_TOKEN
+    tracker.update({"input_tokens": estimated_tokens}, include_output_in_ratio=False)
 
 
 def _merge_stream_usage(acc: dict[str, int], chunk_usage: dict[str, int] | None) -> None:
@@ -154,7 +164,9 @@ class CycleMixin:
             prompt_tier=_prompt_tier,
         )
 
-        shortterm = ShortTermMemory(self.anima_dir, thread_id=thread_id)
+        session_type = resolve_runtime_session_type(trigger)
+        uses_chat_session = trigger_uses_chat_session(trigger)
+        shortterm = ShortTermMemory(self.anima_dir, session_type=session_type, thread_id=thread_id)
         tracker = ContextTracker(
             model=self.model_config.model,
             threshold=self.model_config.context_threshold,
@@ -188,15 +200,15 @@ class CycleMixin:
             pending_human_notifications=pending_human_notifications,
         )
 
-        if injected_procedures:
+        if injected_procedures and uses_chat_session:
             from core.memory.conversation import ConversationMemory as _CM
 
-            _cm = _CM(self.anima_dir, self.model_config)
+            _cm = _CM(self.anima_dir, self.model_config, thread_id=thread_id)
             _cm.store_injected_procedures(
                 injected_procedures,
                 session_id=self._tool_handler.session_id,
             )
-        if shortterm.has_pending() and not trigger.startswith("heartbeat"):
+        if uses_chat_session and shortterm.has_pending():
             system_prompt = inject_shortterm(system_prompt, shortterm)
             logger.info("Injected short-term memory into system prompt")
 
@@ -272,6 +284,7 @@ class CycleMixin:
 
         # ── Mode C: Codex SDK ─────────────────────────────
         if mode == "c":
+            _update_tracker_from_prompt_estimate(tracker, system_prompt, prompt)
             result = await self._executor.execute(
                 prompt=prompt,
                 system_prompt=system_prompt,
@@ -288,7 +301,27 @@ class CycleMixin:
                 session_id=self._tool_handler.session_id,
                 tool_call_count=len(result.tool_call_records),
             )
-            shortterm.clear()
+            if tracker.threshold_exceeded and uses_chat_session:
+                shortterm.clear()
+                shortterm.save(
+                    SessionState(
+                        session_id=result.result_message.session_id if result.result_message else "",
+                        timestamp=now_iso(),
+                        trigger=trigger,
+                        original_prompt=prompt,
+                        accumulated_response=result.text,
+                        context_usage_ratio=tracker.usage_ratio,
+                        turn_count=result.result_message.num_turns if result.result_message else 0,
+                    )
+                )
+                try:
+                    from core.execution.codex_sdk import clear_codex_thread_ids
+
+                    clear_codex_thread_ids(self.anima_dir, thread_id)
+                except Exception:
+                    logger.debug("Failed to clear Codex thread ID after Mode C threshold", exc_info=True)
+            elif uses_chat_session:
+                shortterm.clear()
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info(
                 "run_cycle END (c) trigger=%s duration_ms=%d response_len=%d",
@@ -335,7 +368,7 @@ class CycleMixin:
                 session_id=self._tool_handler.session_id,
                 tool_call_count=len(result.tool_call_records),
             )
-            if result.session_rotation_pending:
+            if result.session_rotation_pending and uses_chat_session:
                 from dataclasses import asdict as _d_asdict
 
                 shortterm.save(
@@ -349,7 +382,7 @@ class CycleMixin:
                     )
                 )
                 logger.info("Mode D rotation pending — saved shortterm for next turn")
-            else:
+            elif uses_chat_session:
                 shortterm.clear()
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info(
@@ -397,7 +430,8 @@ class CycleMixin:
                 session_id=self._tool_handler.session_id,
                 tool_call_count=len(result.tool_call_records),
             )
-            shortterm.clear()
+            if uses_chat_session:
+                shortterm.clear()
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info(
                 "run_cycle END (g) trigger=%s duration_ms=%d response_len=%d",
@@ -432,7 +466,7 @@ class CycleMixin:
                 prompt=prompt,
                 system_prompt=system_prompt,
                 tracker=tracker,
-                shortterm=shortterm,
+                shortterm=shortterm if uses_chat_session else None,
                 images=images,
                 prior_messages=prior_messages,
                 max_turns_override=max_turns_override,
@@ -443,7 +477,7 @@ class CycleMixin:
                 session_id=self._tool_handler.session_id,
                 tool_call_count=len(result.tool_call_records),
             )
-            if not tracker.threshold_exceeded:
+            if uses_chat_session and not tracker.threshold_exceeded:
                 shortterm.clear()
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info(
@@ -534,7 +568,7 @@ class CycleMixin:
         chain_count = 0
         accumulated_text = result.text
 
-        if tracker.threshold_exceeded:
+        if tracker.threshold_exceeded and uses_chat_session:
             # Save shortterm for the next message to pick up via inject_shortterm.
             # Do NOT chain here — chaining mid-response causes the LLM to produce
             # unnatural "session handoff" messages.
@@ -568,7 +602,7 @@ class CycleMixin:
                         _clear_session_id(self.anima_dir, _st, thread_id)
                 except Exception:
                     logger.debug("Failed to clear session ID for deferred chain", exc_info=True)
-        else:
+        elif uses_chat_session:
             shortterm.clear()
 
         _save_prompt_log_end(
@@ -675,7 +709,9 @@ class CycleMixin:
             prompt_tier=_prompt_tier_s,
         )
 
-        shortterm = ShortTermMemory(self.anima_dir, thread_id=thread_id)
+        session_type = resolve_runtime_session_type(trigger)
+        uses_chat_session = trigger_uses_chat_session(trigger)
+        shortterm = ShortTermMemory(self.anima_dir, session_type=session_type, thread_id=thread_id)
         tracker = ContextTracker(
             model=self.model_config.model,
             threshold=self.model_config.context_threshold,
@@ -707,15 +743,15 @@ class CycleMixin:
             pending_human_notifications=pending_human_notifications,
         )
 
-        if build_result.injected_procedures:
+        if build_result.injected_procedures and uses_chat_session:
             from core.memory.conversation import ConversationMemory as _CM
 
-            _cm = _CM(self.anima_dir, self.model_config)
+            _cm = _CM(self.anima_dir, self.model_config, thread_id=thread_id)
             _cm.store_injected_procedures(
                 build_result.injected_procedures,
                 session_id=self._tool_handler.session_id,
             )
-        if shortterm.has_pending() and not trigger.startswith("heartbeat"):
+        if uses_chat_session and shortterm.has_pending():
             system_prompt = inject_shortterm(system_prompt, shortterm)
 
         # Pre-flight size check for streaming path
@@ -750,6 +786,9 @@ class CycleMixin:
                 "cycle_result": cycle.model_dump(mode="json"),
             }
             return
+
+        if mode == "c":
+            _update_tracker_from_prompt_estimate(tracker, system_prompt, prompt)
 
         # ── Prompt log: save full payload for debugging ───
         from core.tooling.schemas import load_all_tool_schemas as _lats
@@ -906,11 +945,11 @@ class CycleMixin:
                 # リトライ1回目は必ずfresh session（壊れたセッションIDを持ち越さない）
                 if retry_count == 1:
                     try:
-                        if mode == "c":
+                        if mode == "c" and uses_chat_session:
                             from core.execution.codex_sdk import clear_codex_thread_ids
 
                             clear_codex_thread_ids(self.anima_dir, thread_id)
-                        else:
+                        elif mode != "c":
                             from core.execution._sdk_session import (
                                 _RESUMABLE_SESSION_TYPES,
                                 _clear_session_id,
@@ -979,7 +1018,7 @@ class CycleMixin:
             tracker.force_threshold()
             logger.info("Context auto-compact (stream): forcing threshold_exceeded")
 
-        if tracker.threshold_exceeded:
+        if tracker.threshold_exceeded and uses_chat_session:
             # Save shortterm for the next message to pick up via inject_shortterm.
             # Do NOT chain here — chaining mid-response causes the LLM to produce
             # unnatural "session handoff" messages.
@@ -1013,7 +1052,14 @@ class CycleMixin:
                         _clear_session_id(self.anima_dir, _st, thread_id)
                 except Exception:
                     logger.debug("Failed to clear session ID for deferred chain", exc_info=True)
-        else:
+            elif mode == "c":
+                try:
+                    from core.execution.codex_sdk import clear_codex_thread_ids
+
+                    clear_codex_thread_ids(self.anima_dir, thread_id)
+                except Exception:
+                    logger.debug("Failed to clear Codex thread ID for deferred chain", exc_info=True)
+        elif uses_chat_session:
             shortterm.clear()
 
         _save_prompt_log_end(

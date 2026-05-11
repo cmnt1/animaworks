@@ -16,10 +16,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.schemas import ModelConfig
 from core.execution.base import StreamDisconnectedError
 from core.prompt.builder import BuildResult
-
+from core.schemas import ModelConfig
 
 # ── Helpers ───────────────────────────────────────────────────
 
