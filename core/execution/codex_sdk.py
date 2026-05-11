@@ -1061,9 +1061,7 @@ class CodexSDKExecutor(BaseExecutor):
         session_type = _resolve_session_type(trigger)
         chat_thread_id = thread_id
         persist_thread = is_persistent_codex_session(trigger)
-        codex_thread_id = (
-            _load_thread_id(self._anima_dir, session_type, chat_thread_id) if persist_thread else None
-        )
+        codex_thread_id = _load_thread_id(self._anima_dir, session_type, chat_thread_id) if persist_thread else None
 
         prompt_bytes = len(system_prompt.encode("utf-8"))
         if codex_thread_id and prompt_bytes > _RESUME_PROMPT_SIZE_LIMIT:
@@ -1195,9 +1193,7 @@ class CodexSDKExecutor(BaseExecutor):
         session_type = _resolve_session_type(trigger)
         chat_thread_id = thread_id
         persist_thread = is_persistent_codex_session(trigger)
-        codex_thread_id = (
-            _load_thread_id(self._anima_dir, session_type, chat_thread_id) if persist_thread else None
-        )
+        codex_thread_id = _load_thread_id(self._anima_dir, session_type, chat_thread_id) if persist_thread else None
 
         prompt_bytes = len(system_prompt.encode("utf-8"))
         if codex_thread_id and prompt_bytes > _RESUME_PROMPT_SIZE_LIMIT:
