@@ -27,7 +27,7 @@ from core.i18n import t
 from core.memory.shortterm import SessionState, ShortTermMemory
 from core.prompt.builder import build_system_prompt, inject_shortterm
 from core.prompt.context import CHARS_PER_TOKEN, ContextTracker
-from core.schemas import CycleResult, ImageData
+from core.schemas import CycleResult, ImageData, ModelConfig
 from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.agent")
@@ -101,6 +101,7 @@ class CycleMixin:
         message_intent: str = "",
         max_turns_override: int | None = None,
         thread_id: str = "default",
+        model_config_override: ModelConfig | None = None,
     ) -> CycleResult:
         """Run one agent cycle with autonomous memory search.
 
@@ -123,6 +124,7 @@ class CycleMixin:
                 message_intent=message_intent,
                 max_turns_override=max_turns_override,
                 thread_id=thread_id,
+                model_config_override=model_config_override,
             )
 
     async def _run_cycle_inner(
@@ -134,9 +136,12 @@ class CycleMixin:
         message_intent: str = "",
         max_turns_override: int | None = None,
         thread_id: str = "default",
+        model_config_override: ModelConfig | None = None,
     ) -> CycleResult:
         start = time.monotonic()
-        mode = self._resolve_execution_mode()
+        active_model_config = model_config_override or self.model_config
+        active_executor = self._create_executor(active_model_config) if model_config_override is not None else self._executor
+        mode = self._resolve_execution_mode(active_model_config)
         logger.info(
             "run_cycle START trigger=%s prompt_len=%d mode=%s",
             trigger,
@@ -149,7 +154,7 @@ class CycleMixin:
         from core.prompt.context import resolve_context_window
 
         _ctx_window = resolve_context_window(
-            self.model_config.model,
+            active_model_config.model,
             overrides=self._load_context_window_overrides(),
         )
         _prompt_tier = resolve_prompt_tier(_ctx_window)
@@ -162,14 +167,15 @@ class CycleMixin:
             message_intent=message_intent,
             overflow_files=overflow_files,
             prompt_tier=_prompt_tier,
+            model_config=active_model_config,
         )
 
         session_type = resolve_runtime_session_type(trigger)
         uses_chat_session = trigger_uses_chat_session(trigger)
         shortterm = ShortTermMemory(self.anima_dir, session_type=session_type, thread_id=thread_id)
         tracker = ContextTracker(
-            model=self.model_config.model,
-            threshold=self.model_config.context_threshold,
+            model=active_model_config.model,
+            threshold=active_model_config.context_threshold,
             context_window_overrides=self._load_context_window_overrides(),
         )
 
@@ -203,7 +209,7 @@ class CycleMixin:
         if injected_procedures and uses_chat_session:
             from core.memory.conversation import ConversationMemory as _CM
 
-            _cm = _CM(self.anima_dir, self.model_config, thread_id=thread_id)
+            _cm = _CM(self.anima_dir, active_model_config, thread_id=thread_id)
             _cm.store_injected_procedures(
                 injected_procedures,
                 session_id=self._tool_handler.session_id,
@@ -223,7 +229,7 @@ class CycleMixin:
             self.anima_dir,
             trigger=trigger,
             sender=self._extract_sender(prompt, trigger),
-            model=self.model_config.model,
+            model=active_model_config.model,
             mode=mode,
             system_prompt=system_prompt,
             user_message=prompt,
@@ -242,7 +248,7 @@ class CycleMixin:
 
         # ── Mode B: text-based tool-call loop ─────────────
         if mode == "b":
-            result = await self._executor.execute(
+            result = await active_executor.execute(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 trigger=trigger,
@@ -265,7 +271,7 @@ class CycleMixin:
             _b_usage = result.usage.to_dict() if result.usage else None
             _log_session_token_usage(
                 self.anima_dir,
-                model=self.model_config.model,
+                model=active_model_config.model,
                 mode="b",
                 trigger=trigger,
                 usage=_b_usage,
@@ -285,7 +291,7 @@ class CycleMixin:
         # ── Mode C: Codex SDK ─────────────────────────────
         if mode == "c":
             _update_tracker_from_prompt_estimate(tracker, system_prompt, prompt)
-            result = await self._executor.execute(
+            result = await active_executor.execute(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 tracker=tracker,
@@ -332,7 +338,7 @@ class CycleMixin:
             _c_usage = result.usage.to_dict() if result.usage else None
             _log_session_token_usage(
                 self.anima_dir,
-                model=self.model_config.model,
+                model=active_model_config.model,
                 mode="c",
                 trigger=trigger,
                 usage=_c_usage,
@@ -352,7 +358,7 @@ class CycleMixin:
 
         # ── Mode D: Cursor Agent CLI ─────────────────────
         if mode == "d":
-            result = await self._executor.execute(
+            result = await active_executor.execute(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 tracker=tracker,
@@ -394,7 +400,7 @@ class CycleMixin:
             _d_usage = result.usage.to_dict() if result.usage else None
             _log_session_token_usage(
                 self.anima_dir,
-                model=self.model_config.model,
+                model=active_model_config.model,
                 mode="d",
                 trigger=trigger,
                 usage=_d_usage,
@@ -414,7 +420,7 @@ class CycleMixin:
 
         # ── Mode G: Gemini CLI ─────────────────────────────
         if mode == "g":
-            result = await self._executor.execute(
+            result = await active_executor.execute(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 tracker=tracker,
@@ -442,7 +448,7 @@ class CycleMixin:
             _g_usage = result.usage.to_dict() if result.usage else None
             _log_session_token_usage(
                 self.anima_dir,
-                model=self.model_config.model,
+                model=active_model_config.model,
                 mode="g",
                 trigger=trigger,
                 usage=_g_usage,
@@ -462,7 +468,7 @@ class CycleMixin:
 
         # ── Mode A: LiteLLM tool_use loop ─────────────────
         if mode == "a":
-            result = await self._executor.execute(
+            result = await active_executor.execute(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 tracker=tracker,
@@ -489,7 +495,7 @@ class CycleMixin:
             _a_usage = result.usage.to_dict() if result.usage else None
             _log_session_token_usage(
                 self.anima_dir,
-                model=self.model_config.model,
+                model=active_model_config.model,
                 mode="a",
                 trigger=trigger,
                 usage=_a_usage,
@@ -511,7 +517,7 @@ class CycleMixin:
         # Pre-flight: check prompt size to prevent Agent SDK buffer overflow
         from core.memory.conversation import ConversationMemory
 
-        conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
+        conv_memory = ConversationMemory(self.anima_dir, active_model_config, thread_id=thread_id)
         system_prompt, prompt, use_fallback = await self._preflight_size_check(
             system_prompt,
             prompt,
@@ -524,7 +530,7 @@ class CycleMixin:
             pending_human_notifications=pending_human_notifications,
         )
         if use_fallback:
-            executor = self._create_fallback_executor()
+            executor = self._create_fallback_executor(active_model_config)
             result = await executor.execute(
                 prompt=prompt,
                 system_prompt=system_prompt,
@@ -536,7 +542,7 @@ class CycleMixin:
                 thread_id=thread_id,
             )
         else:
-            result = await self._executor.execute(
+            result = await active_executor.execute(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 tracker=tracker,
@@ -622,7 +628,7 @@ class CycleMixin:
         _cycle_usage = result.usage.to_dict() if result.usage else None
         _log_session_token_usage(
             self.anima_dir,
-            model=self.model_config.model,
+            model=active_model_config.model,
             mode="s",
             trigger=trigger,
             usage=_cycle_usage,
@@ -655,6 +661,7 @@ class CycleMixin:
         message_intent: str = "",
         max_turns_override: int | None = None,
         thread_id: str = "default",
+        model_config_override: ModelConfig | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Streaming version of run_cycle.
 
@@ -662,7 +669,9 @@ class CycleMixin:
         Final event is ``{"type": "cycle_done", "cycle_result": {...}}``.
         """
         start = time.monotonic()
-        mode = self._resolve_execution_mode()
+        active_model_config = model_config_override or self.model_config
+        active_executor = self._create_executor(active_model_config) if model_config_override is not None else self._executor
+        mode = self._resolve_execution_mode(active_model_config)
         logger.info(
             "run_cycle_streaming START trigger=%s prompt_len=%d mode=%s",
             trigger,
@@ -671,7 +680,7 @@ class CycleMixin:
         )
 
         # Non-streaming executors: fall back to blocking execution
-        if not self._executor.supports_streaming:
+        if not active_executor.supports_streaming:
             async with self._get_agent_lock(thread_id):
                 cycle = await self._run_cycle_inner(
                     prompt,
@@ -681,6 +690,7 @@ class CycleMixin:
                     message_intent=message_intent,
                     max_turns_override=max_turns_override,
                     thread_id=thread_id,
+                    model_config_override=model_config_override,
                 )
             yield {"type": "text_delta", "text": cycle.summary}
             yield {
@@ -694,7 +704,7 @@ class CycleMixin:
         from core.prompt.context import resolve_context_window as _rcw
 
         _ctx_window_s = _rcw(
-            self.model_config.model,
+            active_model_config.model,
             overrides=self._load_context_window_overrides(),
         )
         _prompt_tier_s = _rpt(_ctx_window_s)
@@ -707,14 +717,15 @@ class CycleMixin:
             message_intent=message_intent,
             overflow_files=overflow_files,
             prompt_tier=_prompt_tier_s,
+            model_config=active_model_config,
         )
 
         session_type = resolve_runtime_session_type(trigger)
         uses_chat_session = trigger_uses_chat_session(trigger)
         shortterm = ShortTermMemory(self.anima_dir, session_type=session_type, thread_id=thread_id)
         tracker = ContextTracker(
-            model=self.model_config.model,
-            threshold=self.model_config.context_threshold,
+            model=active_model_config.model,
+            threshold=active_model_config.context_threshold,
             context_window_overrides=self._load_context_window_overrides(),
         )
 
@@ -746,7 +757,7 @@ class CycleMixin:
         if build_result.injected_procedures and uses_chat_session:
             from core.memory.conversation import ConversationMemory as _CM
 
-            _cm = _CM(self.anima_dir, self.model_config, thread_id=thread_id)
+            _cm = _CM(self.anima_dir, active_model_config, thread_id=thread_id)
             _cm.store_injected_procedures(
                 build_result.injected_procedures,
                 session_id=self._tool_handler.session_id,
@@ -757,7 +768,7 @@ class CycleMixin:
         # Pre-flight size check for streaming path
         from core.memory.conversation import ConversationMemory
 
-        conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
+        conv_memory = ConversationMemory(self.anima_dir, active_model_config, thread_id=thread_id)
         system_prompt, prompt, use_fallback = await self._preflight_size_check(
             system_prompt,
             prompt,
@@ -779,6 +790,7 @@ class CycleMixin:
                     images=images,
                     max_turns_override=max_turns_override,
                     thread_id=thread_id,
+                    model_config_override=model_config_override,
                 )
             yield {"type": "text_delta", "text": cycle.summary}
             yield {
@@ -801,7 +813,7 @@ class CycleMixin:
             self.anima_dir,
             trigger=trigger,
             sender=self._extract_sender(prompt, trigger),
-            model=self.model_config.model,
+            model=active_model_config.model,
             mode=mode,
             system_prompt=system_prompt,
             user_message=prompt,
@@ -841,7 +853,7 @@ class CycleMixin:
             stream_succeeded = False
 
             try:
-                async for chunk in self._executor.execute_streaming(
+                async for chunk in active_executor.execute_streaming(
                     current_system_prompt,
                     current_prompt,
                     tracker,
@@ -1085,7 +1097,7 @@ class CycleMixin:
         _final_usage = _stream_usage if any(_stream_usage.values()) else None
         _log_session_token_usage(
             self.anima_dir,
-            model=self.model_config.model,
+            model=active_model_config.model,
             mode=mode,
             trigger=trigger,
             usage=_final_usage,

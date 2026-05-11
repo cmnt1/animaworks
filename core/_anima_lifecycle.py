@@ -278,8 +278,9 @@ class LifecycleMixin:
 
         Weekly consolidation retains the existing single-phase flow.
 
-        Uses ``config.consolidation.llm_model`` instead of the Anima's main
-        model to control costs.
+        Daily Phase A uses ``config.consolidation.llm_model`` as an isolated
+        helper model for episode extraction. Phase B and weekly consolidation
+        run as the Anima and therefore use the per-Anima ``status.json`` model.
 
         Args:
             consolidation_type: "daily" or "weekly"
@@ -481,52 +482,20 @@ class LifecycleMixin:
             error_patterns_summary=error_patterns,
         )
 
+        base_model_config = self.memory.read_model_config()
         logger.info(
-            "[%s] Phase B: knowledge extraction with model=%s",
+            "[%s] Phase B: knowledge extraction with status model=%s",
             self.name,
-            consolidation_model,
+            base_model_config.model,
         )
 
-        # Temporarily override model, credential, AND executor to consolidation model
-        # for Phase B.  Animas that use a non-Anthropic executor (e.g. LiteLLMExecutor
-        # for qwen3) must swap to the executor that matches the consolidation model so
-        # that the call reaches the correct provider endpoint.  Without this, a Mode-A
-        # Anima would route "anthropic/claude-*" through LiteLLM without an API key
-        # and raise AuthenticationError (the system uses Max plan via Agent SDK, not
-        # direct Anthropic API).
-        from core.config.model_mode import resolve_execution_mode as _resolve_mode
-
-        _orig_model = self.model_config.model
-        _orig_api_key = self.model_config.api_key
-        _orig_api_base_url = self.model_config.api_base_url
-        _orig_api_key_env = self.model_config.api_key_env
-        _orig_extra_keys = self.model_config.extra_keys
-        _orig_resolved_mode = self.model_config.resolved_mode
-        _orig_executor = self.agent._executor
-        _cred_override = _resolve_consolidation_credential(consolidation_model, cfg)
-        _consolidation_mode = _resolve_mode(cfg, consolidation_model)
-        try:
-            self.model_config.model = consolidation_model
-            self.model_config.api_key = _cred_override["api_key"]
-            self.model_config.api_base_url = _cred_override["api_base_url"]
-            self.model_config.api_key_env = _cred_override["api_key_env"]
-            self.model_config.extra_keys = _cred_override["extra_keys"]
-            self.model_config.resolved_mode = _consolidation_mode
-            self.agent._executor = self.agent._create_executor()
-            result = await self.agent.run_cycle(
-                prompt,
-                trigger="consolidation:daily",
-                message_intent="request",
-                max_turns_override=max_turns,
-            )
-        finally:
-            self.model_config.model = _orig_model
-            self.model_config.api_key = _orig_api_key
-            self.model_config.api_base_url = _orig_api_base_url
-            self.model_config.api_key_env = _orig_api_key_env
-            self.model_config.extra_keys = _orig_extra_keys
-            self.model_config.resolved_mode = _orig_resolved_mode
-            self.agent._executor = _orig_executor
+        result = await self.agent.run_cycle(
+            prompt,
+            trigger="consolidation:daily",
+            message_intent="request",
+            max_turns_override=max_turns,
+            model_config_override=base_model_config,
+        )
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
@@ -542,13 +511,9 @@ class LifecycleMixin:
         *,
         max_turns: int = 30,
     ) -> CycleResult:
-        """Execute weekly consolidation (unchanged single-phase flow)."""
+        """Execute weekly consolidation with the Anima's status.json model."""
         import time as _time
 
-        from core.config import load_config
-
-        cfg = load_config()
-        consolidation_model = cfg.consolidation.llm_model
         start_mono = _time.monotonic()
 
         knowledge_files = engine._list_knowledge_files_with_meta()
@@ -569,41 +534,19 @@ class LifecycleMixin:
             total_knowledge_count=len(knowledge_files),
         )
 
-        # Temporarily override model, credential, AND executor (same rationale as daily
-        # consolidation — see that block's comment for the full explanation).
-        from core.config.model_mode import resolve_execution_mode as _resolve_mode
-
-        _orig_model = self.model_config.model
-        _orig_api_key = self.model_config.api_key
-        _orig_api_base_url = self.model_config.api_base_url
-        _orig_api_key_env = self.model_config.api_key_env
-        _orig_extra_keys = self.model_config.extra_keys
-        _orig_resolved_mode = self.model_config.resolved_mode
-        _orig_executor = self.agent._executor
-        _cred_override = _resolve_consolidation_credential(consolidation_model, cfg)
-        _consolidation_mode = _resolve_mode(cfg, consolidation_model)
-        try:
-            self.model_config.model = consolidation_model
-            self.model_config.api_key = _cred_override["api_key"]
-            self.model_config.api_base_url = _cred_override["api_base_url"]
-            self.model_config.api_key_env = _cred_override["api_key_env"]
-            self.model_config.extra_keys = _cred_override["extra_keys"]
-            self.model_config.resolved_mode = _consolidation_mode
-            self.agent._executor = self.agent._create_executor()
-            result = await self.agent.run_cycle(
-                prompt,
-                trigger="consolidation:weekly",
-                message_intent="request",
-                max_turns_override=max_turns,
-            )
-        finally:
-            self.model_config.model = _orig_model
-            self.model_config.api_key = _orig_api_key
-            self.model_config.api_base_url = _orig_api_base_url
-            self.model_config.api_key_env = _orig_api_key_env
-            self.model_config.extra_keys = _orig_extra_keys
-            self.model_config.resolved_mode = _orig_resolved_mode
-            self.agent._executor = _orig_executor
+        base_model_config = self.memory.read_model_config()
+        logger.info(
+            "[%s] Weekly consolidation: knowledge extraction with status model=%s",
+            self.name,
+            base_model_config.model,
+        )
+        result = await self.agent.run_cycle(
+            prompt,
+            trigger="consolidation:weekly",
+            message_intent="request",
+            max_turns_override=max_turns,
+            model_config_override=base_model_config,
+        )
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
