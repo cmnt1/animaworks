@@ -43,6 +43,7 @@ class PrimingMixin:
         message_intent: str = "",
         overflow_files: list[str] | None = None,
         prompt_tier: str = "full",
+        model_config=None,
     ) -> tuple[str, str]:
         """Run priming layer to automatically retrieve relevant memories.
 
@@ -99,7 +100,8 @@ class PrimingMixin:
             senders = trigger.split(":", 1)[1]
             sender_name = senders.split(",")[0].strip() or "human"
 
-        recent_human_messages = self._get_recent_human_messages(trigger)
+        active_model_config = model_config or self.model_config
+        recent_human_messages = self._get_recent_human_messages(trigger, model_config=active_model_config)
 
         try:
             if not hasattr(self, "_priming_engine"):
@@ -107,7 +109,7 @@ class PrimingMixin:
                 from core.prompt.context import resolve_context_window as _rcw_priming
 
                 ctx_window = _rcw_priming(
-                    self.model_config.model,
+                    active_model_config.model,
                     overrides=self._load_context_window_overrides(),
                 )
                 self._priming_engine = PrimingEngine(
@@ -189,7 +191,7 @@ class PrimingMixin:
 
         return "\n".join(content_lines) if content_lines else prompt
 
-    def _get_recent_human_messages(self, trigger: str) -> list[str]:
+    def _get_recent_human_messages(self, trigger: str, *, model_config=None) -> list[str]:
         """Get last 5 human messages from conversation memory for priming context.
 
         Returns newest-first list of human message contents.
@@ -202,7 +204,7 @@ class PrimingMixin:
         try:
             from core.memory.conversation import ConversationMemory
 
-            conv = ConversationMemory(self.anima_dir, self.model_config)
+            conv = ConversationMemory(self.anima_dir, model_config or self.model_config)
             state = conv.load()
             human_turns = [t for t in state.turns if t.role == "human"]
             recent = human_turns[-5:]
