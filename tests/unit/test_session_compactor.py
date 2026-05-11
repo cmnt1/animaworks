@@ -16,6 +16,7 @@ import pytest
 from core.config.models import HeartbeatConfig
 from core.execution._sdk_session import _load_session_id
 from core.execution.codex_sdk import CodexSDKExecutor
+from core.memory.conversation_compression import CompressionResult
 from core.schemas import ModelConfig
 from core.session_compactor import (
     SessionCompactor,
@@ -28,6 +29,16 @@ from core.session_compactor import (
 )
 
 # ── SessionCompactor ──────────────────────────────────────────────────────
+
+
+def _compression_result(performed: bool = False) -> CompressionResult:
+    return CompressionResult(
+        status="llm_primary" if performed else "skipped_no_compression_needed",
+        performed=performed,
+        raw_turns_before=60 if performed else 0,
+        raw_turns_after=20 if performed else 0,
+        compressed_turns=40 if performed else 0,
+    )
 
 
 class TestSessionCompactor:
@@ -365,7 +376,7 @@ class TestModeSpecificCompaction:
         """_compact_mode_a calls compress_if_needed and finalize_if_session_ended."""
         with patch("core.memory.conversation.ConversationMemory") as mock_conv_cls:
             mock_conv = MagicMock()
-            mock_conv.compress_if_needed = AsyncMock(return_value=True)
+            mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(True))
             mock_conv.finalize_if_session_ended = AsyncMock()
             mock_conv.load.return_value = MagicMock(compressed_summary="", turns=[])
             mock_conv_cls.return_value = mock_conv
@@ -376,9 +387,10 @@ class TestModeSpecificCompaction:
 
             result = await _compact_mode_a(anima, "default")
 
-            mock_conv.compress_if_needed.assert_awaited_once()
+            mock_conv.compress_if_needed_detailed.assert_awaited_once()
             mock_conv.finalize_if_session_ended.assert_awaited_once()
-            assert result is True
+            assert result["compression_performed"] is True
+            assert result["compression_status"] == "llm_primary"
 
     @pytest.mark.asyncio
     async def test_compact_mode_a_saves_shortterm_when_state_has_content(
@@ -394,7 +406,7 @@ class TestModeSpecificCompaction:
             patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
-            mock_conv.compress_if_needed = AsyncMock(return_value=False)
+            mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
             mock_conv.finalize_if_session_ended = AsyncMock()
             mock_conv.load.return_value = MagicMock(
                 compressed_summary="User asked about tasks. Assistant helped.",
@@ -428,7 +440,7 @@ class TestModeSpecificCompaction:
             patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
-            mock_conv.compress_if_needed = AsyncMock(return_value=False)
+            mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
             mock_conv.finalize_if_session_ended = AsyncMock()
             mock_conv.load.return_value = MagicMock(compressed_summary="", turns=[])
             mock_conv_cls.return_value = mock_conv
@@ -458,7 +470,7 @@ class TestModeSpecificCompaction:
             patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
-            mock_conv.compress_if_needed = AsyncMock(return_value=False)
+            mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
             mock_conv.finalize_if_session_ended = AsyncMock()
             mock_conv.load.return_value = MagicMock(compressed_summary="", turns=turns)
             mock_conv_cls.return_value = mock_conv
@@ -483,7 +495,7 @@ class TestModeSpecificCompaction:
     async def test_compact_mode_b_delegates_to_mode_a(self, anima_dir: Path, model_config: ModelConfig) -> None:
         """_compact_mode_b delegates to _compact_mode_a."""
         with patch("core.session_compactor._compact_mode_a", new_callable=AsyncMock) as mock_a:
-            mock_a.return_value = True
+            mock_a.return_value = {"compression_performed": False}
 
             anima = MagicMock()
             anima.anima_dir = anima_dir
@@ -492,7 +504,7 @@ class TestModeSpecificCompaction:
             result = await _compact_mode_b(anima, "default")
 
             mock_a.assert_awaited_once_with(anima, "default")
-            assert result is True
+            assert result == {"compression_performed": False}
 
     @pytest.mark.asyncio
     async def test_compact_mode_c_calls_compress_shortterm_clear_finalize(
@@ -505,9 +517,9 @@ class TestModeSpecificCompaction:
             patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
-            mock_conv.compress_if_needed = AsyncMock()
+            mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(True))
             mock_conv.load.return_value = MagicMock(
-                compressed_summary="",
+                compressed_summary="summary",
                 turns=[],
             )
             mock_conv.finalize_if_session_ended = AsyncMock()
@@ -522,11 +534,12 @@ class TestModeSpecificCompaction:
 
             result = await _compact_mode_c(anima, "default")
 
-            mock_conv.compress_if_needed.assert_awaited_once()
+            mock_conv.compress_if_needed_detailed.assert_awaited_once()
             mock_stm.save.assert_called_once()
             mock_clear.assert_called_once_with(anima_dir, "chat", "default")
             mock_conv.finalize_if_session_ended.assert_awaited_once()
-            assert result is True
+            assert result["compression_performed"] is True
+            assert result["codex_thread_cleared"] is True
 
     @pytest.mark.asyncio
     async def test_compact_mode_s_saves_shortterm_and_clears_session(self, anima_dir: Path) -> None:
@@ -715,6 +728,46 @@ class TestExtractRecentChatContext:
         assert "From another anima" not in result["accumulated_response"]
         assert "From human" in result["accumulated_response"]
 
+    def test_skips_inbox_entries_even_with_default_thread(self, anima_dir: Path) -> None:
+        """Inbox activity never seeds default chat short-term memory."""
+        entries = [
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Inbox question",
+                "channel": "inbox",
+                "meta": {"from_type": "human", "trigger": "inbox:sakura"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Inbox answer",
+                "channel": "inbox",
+                "meta": {"trigger": "inbox:sakura"},
+            },
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "message_received",
+                "content": "Chat question",
+                "channel": "chat",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:30+09:00",
+                "type": "response_sent",
+                "content": "Chat answer",
+                "channel": "chat",
+                "meta": {"thread_id": "default"},
+            },
+        ]
+        self._write_log(anima_dir, entries)
+
+        result = _extract_recent_chat_context(anima_dir)
+
+        assert "Inbox question" not in result["accumulated_response"]
+        assert "Inbox answer" not in result["accumulated_response"]
+        assert "Chat question" in result["accumulated_response"]
+
     def test_skips_heartbeat_entries(self, anima_dir: Path) -> None:
         """Heartbeat/cron entries are excluded from extraction."""
         entries = [
@@ -828,6 +881,7 @@ class TestRunIdleCompaction:
             "core.session_compactor._compact_mode_a",
             new_callable=AsyncMock,
         ) as mock_compact:
+            mock_compact.return_value = {"compression_performed": False}
             with patch("core.memory.activity.ActivityLogger"):
                 await run_idle_compaction(anima, "thread-1")
 
@@ -857,6 +911,7 @@ class TestRunIdleCompaction:
                 new_callable=AsyncMock,
             ) as mock_a,
         ):
+            mock_a.return_value = {"compression_performed": False}
             with patch("core.memory.activity.ActivityLogger"):
                 await run_idle_compaction(anima, "thread-1")
 

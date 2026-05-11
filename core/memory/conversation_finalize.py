@@ -18,9 +18,9 @@ from typing import Any
 
 from core.i18n import t
 from core.memory.conversation_compression import (
-    _call_compression_llm,
     _call_llm,
     _format_turns_for_compression,
+    _generate_compression_summary,
 )
 from core.memory.conversation_models import (
     SESSION_GAP_MINUTES,
@@ -231,7 +231,12 @@ async def finalize_session(
     turn_text = _format_turns_for_compression(turns_to_compress)
     old_summary = state.compressed_summary
     try:
-        compressed = await _call_compression_llm(old_summary, turn_text)
+        compressed, status, fallback_used, error = await _generate_compression_summary(
+            old_summary,
+            turn_text,
+            turns_to_compress,
+            model_config,
+        )
         state.compressed_summary = compressed
         # Finalized turns are now in compressed_summary; clear to prevent
         # double-counting in total_token_estimate and avoid stale turns
@@ -239,6 +244,15 @@ async def finalize_session(
         state.turns = []
         state.last_finalized_turn_index = 0
         state.compressed_turn_count += len(turns_to_compress)
+        logger.info(
+            "Finalized conversation compressed: %d turns -> summary (%d chars), status=%s fallback=%s",
+            len(turns_to_compress),
+            len(compressed),
+            status,
+            fallback_used or "none",
+        )
+        if error:
+            logger.warning("Finalization compression fallback details: %s", error)
     except Exception:
         logger.warning("Compression failed during finalization; keeping raw turns")
         # The episode/state update has been written for these turns, so advance
@@ -266,7 +280,7 @@ async def finalize_if_session_ended(
     load_fn: Callable[[], ConversationState],
     save_fn: Callable[[], None],
     needs_compression_fn: Callable[[], bool],
-    compress_fn: Callable[[], Awaitable[None]],
+    compress_fn: Callable[[], Awaitable[Any]],
     finalize_session_fn: Callable[..., Awaitable[bool]],
     load_pending_fn: Callable[[], tuple[list[Path], str]],
     anima_name: str = "",

@@ -29,6 +29,9 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from core.i18n import t
 from core.memory._io import atomic_write_text
 from core.memory.conversation_compression import (
+    CompressionResult,
+)
+from core.memory.conversation_compression import (
     _call_compression_llm as _call_compression_llm_fn,
 )
 from core.memory.conversation_compression import (
@@ -39,6 +42,9 @@ from core.memory.conversation_compression import (
 )
 from core.memory.conversation_compression import (
     compress_if_needed as _compress_if_needed,
+)
+from core.memory.conversation_compression import (
+    compress_if_needed_detailed as _compress_if_needed_detailed,
 )
 from core.memory.conversation_compression import (
     needs_compression as _needs_compression,
@@ -390,8 +396,8 @@ class ConversationMemory:
     async def _call_compression_llm(self, old_summary: str, new_turns: str) -> str:
         return await _call_compression_llm_fn(old_summary, new_turns)
 
-    async def _compress(self) -> None:
-        await _compress_fn(self.load(), self.model_config, self.save, self.anima_name)
+    async def _compress(self) -> CompressionResult:
+        return await _compress_fn(self.load(), self.model_config, self.save, self.anima_name)
 
     def needs_compression(self) -> bool:
         state = self.load()
@@ -399,6 +405,15 @@ class ConversationMemory:
 
     async def compress_if_needed(self) -> bool:
         return await _compress_if_needed(
+            self.load(),
+            self.model_config,
+            self._load_context_window_overrides,
+            self.save,
+            self.anima_name,
+        )
+
+    async def compress_if_needed_detailed(self) -> CompressionResult:
+        return await _compress_if_needed_detailed(
             self.load(),
             self.model_config,
             self._load_context_window_overrides,
@@ -423,10 +438,10 @@ class ConversationMemory:
         )
 
     async def finalize_if_session_ended(self) -> bool:
-        async def _compress_inner() -> None:
+        async def _compress_inner() -> CompressionResult:
             from core.memory.conversation_compression import _compress
 
-            await _compress(self.load(), self.model_config, self.save, self.anima_name)
+            return await _compress(self.load(), self.model_config, self.save, self.anima_name)
 
         async def _finalize_inner(procedures: list[Path] | None, sid: str) -> bool:
             return await _finalize_session(

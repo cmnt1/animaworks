@@ -184,6 +184,14 @@ def _extract_recent_chat_context(
         if etype not in _CHAT_ENTRY_TYPES:
             continue
         meta = entry.get("meta") or {}
+        trigger = meta.get("trigger", "") if isinstance(meta, dict) else ""
+        if (
+            entry.get("channel") == "inbox"
+            or meta.get("session_type") == "inbox"
+            or trigger == "inbox"
+            or (isinstance(trigger, str) and trigger.startswith("inbox:"))
+        ):
+            continue
         entry_thread = meta.get("thread_id", "default")
         if entry_thread != thread_id:
             continue
@@ -320,7 +328,7 @@ async def _compact_mode_s(anima: DigitalAnima, thread_id: str) -> bool:
     return True
 
 
-async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> bool:
+async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
     """Mode A: conversation compress + shortterm save + finalize."""
     from core.memory.conversation import ConversationMemory
     from core.memory.shortterm import SessionState, ShortTermMemory
@@ -328,7 +336,7 @@ async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> bool:
 
     logger.debug("_compact_mode_a: entry (anima=%s, thread=%s)", anima.name, thread_id)
     conv = ConversationMemory(anima.anima_dir, anima.agent.model_config, thread_id=thread_id)
-    compressed = await conv.compress_if_needed()
+    compression = await conv.compress_if_needed_detailed()
 
     state = conv.load()
     summary_parts: list[str] = []
@@ -338,7 +346,8 @@ async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> bool:
         for turn in state.turns[-3:]:
             summary_parts.append(f"{turn.role}: {turn.content[:200]}")
 
-    if summary_parts:
+    shortterm_saved = bool(summary_parts)
+    if shortterm_saved:
         shortterm = ShortTermMemory(anima.anima_dir, session_type="chat", thread_id=thread_id)
         shortterm.save(
             SessionState(
@@ -349,17 +358,27 @@ async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> bool:
             )
         )
 
-    await conv.finalize_if_session_ended()
-    logger.debug("_compact_mode_a: exit (compressed=%s)", compressed)
-    return compressed
+    finalized = await conv.finalize_if_session_ended()
+    logger.debug("_compact_mode_a: exit (compressed=%s)", compression.performed)
+    return {
+        "compression_status": compression.status,
+        "compression_performed": compression.performed,
+        "compression_fallback": compression.fallback_used,
+        "raw_turns_before": compression.raw_turns_before,
+        "raw_turns_after": compression.raw_turns_after,
+        "compressed_turns": compression.compressed_turns,
+        "compression_error": compression.error,
+        "shortterm_saved": shortterm_saved,
+        "finalized": finalized,
+    }
 
 
-async def _compact_mode_b(anima: DigitalAnima, thread_id: str) -> bool:
+async def _compact_mode_b(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
     """Mode B: same as Mode A."""
     return await _compact_mode_a(anima, thread_id)
 
 
-async def _compact_mode_c(anima: DigitalAnima, thread_id: str) -> bool:
+async def _compact_mode_c(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
     """Mode C: conversation compress + shortterm save + codex thread discard."""
     from core.execution.codex_sdk import _clear_thread_id
     from core.memory.conversation import ConversationMemory
@@ -368,7 +387,7 @@ async def _compact_mode_c(anima: DigitalAnima, thread_id: str) -> bool:
 
     logger.debug("_compact_mode_c: entry (anima=%s, thread=%s)", anima.name, thread_id)
     conv = ConversationMemory(anima.anima_dir, anima.agent.model_config, thread_id=thread_id)
-    await conv.compress_if_needed()
+    compression = await conv.compress_if_needed_detailed()
 
     state = conv.load()
     summary_parts: list[str] = []
@@ -378,20 +397,33 @@ async def _compact_mode_c(anima: DigitalAnima, thread_id: str) -> bool:
         for turn in state.turns[-3:]:
             summary_parts.append(f"{turn.role}: {turn.content[:200]}")
 
-    shortterm = ShortTermMemory(anima.anima_dir, session_type="chat", thread_id=thread_id)
-    shortterm.save(
-        SessionState(
-            accumulated_response="\n".join(summary_parts)[:4000],
-            timestamp=now_local().isoformat(),
-            trigger="idle_compaction",
-            notes="Auto-saved before Codex thread discard",
+    shortterm_saved = bool(summary_parts)
+    if shortterm_saved:
+        shortterm = ShortTermMemory(anima.anima_dir, session_type="chat", thread_id=thread_id)
+        shortterm.save(
+            SessionState(
+                accumulated_response="\n".join(summary_parts)[:4000],
+                timestamp=now_local().isoformat(),
+                trigger="idle_compaction",
+                notes="Auto-saved before Codex thread discard",
+            )
         )
-    )
 
     _clear_thread_id(anima.anima_dir, "chat", thread_id)
-    await conv.finalize_if_session_ended()
+    finalized = await conv.finalize_if_session_ended()
     logger.debug("_compact_mode_c: exit (success)")
-    return True
+    return {
+        "compression_status": compression.status,
+        "compression_performed": compression.performed,
+        "compression_fallback": compression.fallback_used,
+        "raw_turns_before": compression.raw_turns_before,
+        "raw_turns_after": compression.raw_turns_after,
+        "compressed_turns": compression.compressed_turns,
+        "compression_error": compression.error,
+        "shortterm_saved": shortterm_saved,
+        "codex_thread_cleared": True,
+        "finalized": finalized,
+    }
 
 
 # ── Public API ────────────────────────────────────────────────
@@ -424,23 +456,36 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> None:
         return
 
     try:
+        compaction_meta: dict[str, Any] = {
+            "mode": mode,
+            "thread_id": thread_id,
+            "session_type": "chat",
+        }
+
+        def _record_result(result: Any) -> None:
+            if isinstance(result, dict):
+                compaction_meta.update(result)
+            else:
+                compaction_meta["compaction_result"] = bool(result)
+
         if mode == "s":
             ok = await _compact_mode_s(anima, thread_id)
+            compaction_meta["mode_s_ok"] = ok
             if not ok:
                 logger.info(
                     "Mode S compaction returned False for %s/%s; falling back to Mode A",
                     anima.name,
                     thread_id,
                 )
-                await _compact_mode_a(anima, thread_id)
+                _record_result(await _compact_mode_a(anima, thread_id))
         elif mode == "a":
-            await _compact_mode_a(anima, thread_id)
+            _record_result(await _compact_mode_a(anima, thread_id))
         elif mode == "c":
-            await _compact_mode_c(anima, thread_id)
+            _record_result(await _compact_mode_c(anima, thread_id))
         elif mode == "b":
-            await _compact_mode_b(anima, thread_id)
+            _record_result(await _compact_mode_b(anima, thread_id))
         else:
-            await _compact_mode_a(anima, thread_id)
+            _record_result(await _compact_mode_a(anima, thread_id))
     except Exception:
         logger.exception("Idle compaction failed for %s/%s", anima.name, thread_id)
         return
@@ -460,7 +505,7 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> None:
         activity.log(
             "idle_compaction",
             summary=f"Idle compaction completed (mode={mode}, thread={thread_id})",
-            meta={"mode": mode, "thread_id": thread_id},
+            meta=compaction_meta,
         )
     except Exception:
         logger.warning("Failed to log idle_compaction activity", exc_info=True)

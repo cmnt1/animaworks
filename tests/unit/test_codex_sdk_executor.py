@@ -292,10 +292,12 @@ class TestHelpers:
         exec_ = _FakeExec()
         _patch_codex_exec_stream_limit(exec_)
 
-        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
-            with pytest.raises(CodexExecError, match="fatal stderr signal"):
-                stream = exec_.run(SimpleNamespace(input="hello"))
-                await stream.__anext__()
+        with (
+            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
+            pytest.raises(CodexExecError, match="fatal stderr signal"),
+        ):
+            stream = exec_.run(SimpleNamespace(input="hello"))
+            await stream.__anext__()
 
         assert proc.kill_calls == 1
 
@@ -515,7 +517,7 @@ class TestBlockingExecution:
         assert _load_thread_id(anima_dir, "chat") == "tid-saved"
 
     @pytest.mark.asyncio
-    async def test_execute_heartbeat_trigger(self, executor, anima_dir):
+    async def test_execute_heartbeat_trigger_does_not_persist_thread(self, executor, anima_dir):
         mock_turn = MagicMock()
         mock_turn.final_response = "Heartbeat response"
         mock_turn.items = []
@@ -538,8 +540,38 @@ class TestBlockingExecution:
             )
 
         assert result.text == "Heartbeat response"
-        assert _load_thread_id(anima_dir, "heartbeat") == "tid-hb"
+        assert _load_thread_id(anima_dir, "heartbeat") is None
         assert _load_thread_id(anima_dir, "chat") is None
+
+    @pytest.mark.asyncio
+    async def test_execute_inbox_trigger_does_not_resume_or_persist_thread(self, executor, anima_dir):
+        mock_turn = MagicMock()
+        mock_turn.final_response = "Inbox response"
+        mock_turn.items = []
+        mock_turn.usage = None
+
+        mock_thread = MagicMock()
+        mock_thread.run = AsyncMock(return_value=mock_turn)
+        mock_thread.id = "tid-inbox"
+
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        _save_thread_id(anima_dir, "old-chat", "chat")
+        with (
+            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch.object(executor, "_create_codex_client", return_value=mock_codex),
+        ):
+            result = await executor.execute(
+                prompt="inbox check",
+                trigger="inbox:sakura",
+                thread_id="inbox",
+            )
+
+        assert result.text == "Inbox response"
+        mock_codex.resume_thread.assert_not_called()
+        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_thread_id(anima_dir, "chat") == "old-chat"
 
     @pytest.mark.asyncio
     async def test_execute_interrupted_before_run(self, model_config, anima_dir):
@@ -677,7 +709,8 @@ class TestStreamingExecution:
         assert "done" in types
         done_ev = next(e for e in events if e["type"] == "done")
         assert "Streamed text" in done_ev["full_text"]
-        assert tracker.usage_ratio > 0.0, "tracker must be updated from usage"
+        assert done_ev["result_message"].num_turns == 1
+        assert tracker.usage_ratio == 0.0
 
     @pytest.mark.asyncio
     async def test_stream_falls_back_to_cli_exec_on_fatal_sdk_error(self, executor):

@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from core.i18n import t
@@ -24,6 +25,23 @@ from core.memory.conversation_models import (
 from core.paths import load_prompt
 
 logger = logging.getLogger("animaworks.conversation_memory")
+
+_DETERMINISTIC_SUMMARY_MAX_CHARS = 12_000
+_DETERMINISTIC_TURN_EXCERPT_CHARS = 500
+
+
+@dataclass(frozen=True)
+class CompressionResult:
+    """Detailed outcome of a conversation compression attempt."""
+
+    status: str
+    performed: bool
+    fallback_used: str = ""
+    raw_turns_before: int = 0
+    raw_turns_after: int = 0
+    compressed_turns: int = 0
+    summary_chars: int = 0
+    error: str = ""
 
 
 def _apply_provider_kwargs(model: str, model_config: Any, kwargs: dict[str, Any]) -> None:
@@ -95,6 +113,95 @@ async def _call_compression_llm(
     return await _call_llm(system, user_content, max_tokens=2000)
 
 
+def _truncate_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + " ...[truncated]"
+
+
+def _build_deterministic_summary(
+    old_summary: str,
+    turns: list[ConversationTurn],
+) -> str:
+    """Build a bounded extractive summary when all LLM compression paths fail."""
+    lines: list[str] = []
+    if old_summary.strip():
+        lines.extend(
+            [
+                "## Previous summary",
+                _truncate_text(old_summary.strip(), _DETERMINISTIC_SUMMARY_MAX_CHARS // 2),
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Deterministic compression fallback",
+            f"Compressed {len(turns)} older turns because LLM compression was unavailable.",
+            "",
+        ]
+    )
+
+    for turn in turns:
+        role = turn.role or "unknown"
+        content = " ".join((turn.content or "").split())
+        excerpt = _truncate_text(content, _DETERMINISTIC_TURN_EXCERPT_CHARS)
+        lines.append(f"- [{turn.timestamp}] {role}: {excerpt}")
+        if turn.tool_records:
+            tools = ", ".join(tr.tool_name for tr in turn.tool_records[:5])
+            lines.append(f"  Tools: {tools}")
+
+    summary = "\n".join(lines).strip()
+    return _truncate_text(summary, _DETERMINISTIC_SUMMARY_MAX_CHARS)
+
+
+async def _generate_compression_summary(
+    old_summary: str,
+    turn_text: str,
+    turns: list[ConversationTurn],
+    model_config: Any,
+) -> tuple[str, str, str, str]:
+    """Generate compressed summary via primary, active-model, then deterministic fallback."""
+    errors: list[str] = []
+
+    try:
+        summary = await _call_compression_llm(old_summary, turn_text)
+        if summary and summary.strip():
+            return summary, "llm_primary", "", ""
+        errors.append("primary returned empty summary")
+    except Exception as e:
+        errors.append(f"primary failed: {type(e).__name__}: {e}")
+
+    try:
+        from core.memory._llm_utils import one_shot_completion_with_model_config
+
+        system = load_prompt("memory/conversation_compression")
+        user_content = ""
+        if old_summary:
+            user_content += f"{t('conversation.existing_summary_header')}\n\n{old_summary}\n\n---\n\n"
+        user_content += f"{t('conversation.new_turns_header')}\n\n{turn_text}\n\n"
+        user_content += t("conversation.integrate_instruction")
+
+        active_summary = await one_shot_completion_with_model_config(
+            user_content,
+            system_prompt=system,
+            model_config=model_config,
+            max_tokens=2000,
+        )
+        if active_summary and active_summary.strip():
+            return active_summary, "llm_active_model", "active_model", "; ".join(errors)
+        errors.append("active model returned empty summary")
+    except Exception as e:
+        errors.append(f"active model failed: {type(e).__name__}: {e}")
+
+    return (
+        _build_deterministic_summary(old_summary, turns),
+        "deterministic_fallback",
+        "deterministic",
+        "; ".join(errors),
+    )
+
+
 def needs_compression(
     state: ConversationState,
     model_config: Any,
@@ -135,10 +242,33 @@ async def compress_if_needed(
 
     Returns True if compression was performed.
     """
+    result = await compress_if_needed_detailed(
+        state,
+        model_config,
+        load_context_window_overrides_fn,
+        save_fn,
+        anima_name,
+    )
+    return result.performed
+
+
+async def compress_if_needed_detailed(
+    state: ConversationState,
+    model_config: Any,
+    load_context_window_overrides_fn: Callable[[], dict[str, int] | None],
+    save_fn: Callable[[], None],
+    anima_name: str = "",
+) -> CompressionResult:
+    """Compress older turns if needed and return a detailed outcome."""
     if not needs_compression(state, model_config, load_context_window_overrides_fn):
-        return False
-    await _compress(state, model_config, save_fn, anima_name)
-    return True
+        raw_turns = len(state.turns)
+        return CompressionResult(
+            status="skipped_no_compression_needed",
+            performed=False,
+            raw_turns_before=raw_turns,
+            raw_turns_after=raw_turns,
+        )
+    return await _compress(state, model_config, save_fn, anima_name)
 
 
 async def _compress(
@@ -146,10 +276,16 @@ async def _compress(
     model_config: Any,
     save_fn: Callable[[], None],
     anima_name: str = "",
-) -> None:
+) -> CompressionResult:
     """Perform LLM-based compression of older conversation turns."""
+    raw_turns_before = len(state.turns)
     if len(state.turns) < 4:
-        return
+        return CompressionResult(
+            status="skipped_too_few_turns",
+            performed=False,
+            raw_turns_before=raw_turns_before,
+            raw_turns_after=raw_turns_before,
+        )
 
     # Keep a fixed number of recent turns (matches _MAX_DISPLAY_TURNS)
     keep_count = min(_MAX_DISPLAY_TURNS, len(state.turns) - 1)
@@ -159,11 +295,12 @@ async def _compress(
     old_summary = state.compressed_summary
     turn_text = _format_turns_for_compression(to_compress)
 
-    try:
-        summary = await _call_compression_llm(old_summary, turn_text)
-    except Exception:
-        logger.exception("Conversation compression failed; keeping raw turns")
-        return
+    summary, status, fallback_used, error = await _generate_compression_summary(
+        old_summary,
+        turn_text,
+        to_compress,
+        model_config,
+    )
 
     removed_count = len(to_compress)
     state.turns = to_keep
@@ -180,9 +317,28 @@ async def _compress(
     save_fn()
 
     logger.info(
-        "Conversation compressed for %s: %d turns -> summary (%d chars), keeping %d recent turns",
+        (
+            "Conversation compressed for %s: %d turns -> summary (%d chars), "
+            "keeping %d recent turns, status=%s fallback=%s"
+        ),
         anima_name,
         len(to_compress),
         len(summary),
         len(to_keep),
+        status,
+        fallback_used or "none",
+    )
+
+    if error:
+        logger.warning("Conversation compression fallback details for %s: %s", anima_name, error)
+
+    return CompressionResult(
+        status=status,
+        performed=True,
+        fallback_used=fallback_used,
+        raw_turns_before=raw_turns_before,
+        raw_turns_after=len(state.turns),
+        compressed_turns=removed_count,
+        summary_chars=len(summary),
+        error=error,
     )
