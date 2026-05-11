@@ -1,8 +1,7 @@
-"""Unit tests for inbox-as-chat-equivalent behavior in builder.py.
+"""Unit tests for inbox prompt isolation in builder.py.
 
-Verifies that inbox trigger receives the same system prompt sections as chat,
-including specialty, full current_state, emotion, a_reflection, and
-human_notification_guidance.
+Verifies that inbox keeps communication-capable operational sections without
+being treated as chat-continuity context.
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -15,7 +14,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from core.prompt.builder import build_system_prompt
-
 
 _MOCK_SECTIONS = (
     "[group1_header]: # 1. 動作環境と行動ルール\n"
@@ -92,8 +90,8 @@ def _apply_patches(stack: ExitStack, tmp_path: Path) -> None:
     stack.enter_context(patch("core.prompt.builder._discover_other_animas", return_value=[]))
 
 
-class TestInboxChatEquivalent:
-    """Inbox trigger must receive the same prompt sections as chat."""
+class TestInboxPromptIsolation:
+    """Inbox trigger is communication-capable but not chat-equivalent."""
 
     def test_inbox_includes_specialty(self, tmp_path):
         memory = _mock_memory(tmp_path, specialty="## Specialty\nI specialize in DevOps.")
@@ -139,7 +137,7 @@ class TestInboxChatEquivalent:
         acount = result.system_prompt.count("A")
         assert acount > 500
 
-    def test_inbox_includes_emotion(self, tmp_path):
+    def test_inbox_excludes_chat_emotion_section(self, tmp_path):
         memory = _mock_memory(tmp_path)
 
         with ExitStack() as stack:
@@ -150,7 +148,7 @@ class TestInboxChatEquivalent:
                 trigger="inbox:alice",
                 context_window=200_000,
             )
-        assert "6. メタ設定" in result.system_prompt
+        assert '<section name="emotion_instruction">' not in result.system_prompt
 
     def test_inbox_includes_a_reflection(self, tmp_path):
         memory = _mock_memory(tmp_path)
@@ -183,6 +181,35 @@ class TestInboxChatEquivalent:
                 context_window=200_000,
             )
         assert "I specialize in DevOps" in result.system_prompt
+        assert '<section name="emotion_instruction">' in result.system_prompt
+
+    def test_inbox_excludes_pending_human_notifications(self, tmp_path):
+        memory = _mock_memory(tmp_path)
+
+        with ExitStack() as stack:
+            _apply_patches(stack, tmp_path)
+            result = build_system_prompt(
+                memory,
+                execution_mode="a",
+                trigger="inbox:alice",
+                context_window=200_000,
+                pending_human_notifications="notify human now",
+            )
+        assert "notify human now" not in result.system_prompt
+
+    def test_chat_includes_pending_human_notifications(self, tmp_path):
+        memory = _mock_memory(tmp_path)
+
+        with ExitStack() as stack:
+            _apply_patches(stack, tmp_path)
+            result = build_system_prompt(
+                memory,
+                execution_mode="a",
+                trigger="message:alice",
+                context_window=200_000,
+                pending_human_notifications="notify human now",
+            )
+        assert "notify human now" in result.system_prompt
 
     def test_task_includes_specialty(self, tmp_path):
         """Task trigger now includes specialty (full-context TaskExec)."""

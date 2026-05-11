@@ -19,9 +19,7 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 from core.tooling.handler import active_session_type
-
 
 # ── Lock Structure ──────────────────────────────────────────
 
@@ -90,10 +88,9 @@ class TestThreeLockStructure:
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
 
-            async with dp._background_lock:
-                async with dp._inbox_lock:
-                    assert dp._background_lock.locked()
-                    assert dp._inbox_lock.locked()
+            async with dp._background_lock, dp._inbox_lock:
+                assert dp._background_lock.locked()
+                assert dp._inbox_lock.locked()
 
 
 # ── Prompt Template Loading ─────────────────────────────────
@@ -218,14 +215,13 @@ class TestTriggerBasedPromptFiltering:
         cron_prompt = self._build("cron:test", anima_dir)
         assert "表情メタデータ" not in cron_prompt
 
-    def test_inbox_trigger_includes_emotion_metadata(self, data_dir, make_anima):
-        """Inbox is chat-equivalent; emotion metadata should be included."""
+    def test_inbox_trigger_excludes_chat_emotion_metadata(self, data_dir, make_anima):
+        """Inbox is not chat-continuity context; emotion metadata is chat-only."""
         anima_dir = make_anima("filter_inbox_emo")
         inbox_prompt = self._build("inbox:peer", anima_dir)
         chat_prompt = self._build("", anima_dir)
-        has_emotion_chat = "表情メタデータ" in chat_prompt
-        has_emotion_inbox = "表情メタデータ" in inbox_prompt
-        assert has_emotion_chat == has_emotion_inbox
+        assert "表情メタデータ" in chat_prompt
+        assert "表情メタデータ" not in inbox_prompt
 
     def test_cron_and_task_comparable_length(self, data_dir, make_anima):
         """Task and cron should have comparable context (both full-context)."""
@@ -657,8 +653,8 @@ class TestStateFileLock:
             )
 
     def test_is_state_file_detection(self, data_dir, make_anima):
-        from core.tooling.handler import ToolHandler
         from core.memory.manager import MemoryManager
+        from core.tooling.handler import ToolHandler
         anima_dir = make_anima("state_detect")
         mm = MemoryManager(anima_dir)
         handler = ToolHandler(anima_dir=anima_dir, memory=mm)

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from core.execution.base import ExecutionResult
 
 from core._agent_prompt_log import _save_prompt_log, _save_prompt_log_end
-from core.execution.session_types import resolve_runtime_session_type, trigger_uses_chat_session
+from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
 from core.i18n import t
 from core.memory.shortterm import SessionState, ShortTermMemory
 from core.prompt.builder import build_system_prompt, inject_shortterm
@@ -89,6 +89,37 @@ def _log_session_token_usage(
 
 class CycleMixin:
     """Mixin: blocking and streaming execution cycles + session chaining."""
+
+    def _prepare_clean_start_session(
+        self,
+        *,
+        trigger: str,
+        session_type: str,
+        thread_id: str,
+        shortterm: ShortTermMemory,
+    ) -> None:
+        """Clear stale runtime state for non-chat sessions before execution."""
+        if not is_clean_start_session(trigger):
+            return
+
+        try:
+            shortterm.clear_for_clean_start()
+        except Exception:
+            logger.debug("Failed to clear non-chat shortterm state", exc_info=True)
+
+        try:
+            from core.execution._sdk_session import clear_session_id_for_type
+
+            clear_session_id_for_type(self.anima_dir, session_type, thread_id)
+        except Exception:
+            logger.debug("Failed to clear non-chat SDK session ID", exc_info=True)
+
+        try:
+            from core.execution.codex_sdk import clear_codex_thread_id
+
+            clear_codex_thread_id(self.anima_dir, session_type, thread_id)
+        except Exception:
+            logger.debug("Failed to clear non-chat Codex thread ID", exc_info=True)
 
     # ── Public API ─────────────────────────────────────────
 
@@ -167,6 +198,12 @@ class CycleMixin:
         session_type = resolve_runtime_session_type(trigger)
         uses_chat_session = trigger_uses_chat_session(trigger)
         shortterm = ShortTermMemory(self.anima_dir, session_type=session_type, thread_id=thread_id)
+        self._prepare_clean_start_session(
+            trigger=trigger,
+            session_type=session_type,
+            thread_id=thread_id,
+            shortterm=shortterm,
+        )
         tracker = ContextTracker(
             model=self.model_config.model,
             threshold=self.model_config.context_threshold,
@@ -509,9 +546,11 @@ class CycleMixin:
 
         # ── Mode S: Claude Agent SDK ──────────────────────
         # Pre-flight: check prompt size to prevent Agent SDK buffer overflow
-        from core.memory.conversation import ConversationMemory
+        conv_memory = None
+        if uses_chat_session:
+            from core.memory.conversation import ConversationMemory
 
-        conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
+            conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
         system_prompt, prompt, use_fallback = await self._preflight_size_check(
             system_prompt,
             prompt,
@@ -712,6 +751,12 @@ class CycleMixin:
         session_type = resolve_runtime_session_type(trigger)
         uses_chat_session = trigger_uses_chat_session(trigger)
         shortterm = ShortTermMemory(self.anima_dir, session_type=session_type, thread_id=thread_id)
+        self._prepare_clean_start_session(
+            trigger=trigger,
+            session_type=session_type,
+            thread_id=thread_id,
+            shortterm=shortterm,
+        )
         tracker = ContextTracker(
             model=self.model_config.model,
             threshold=self.model_config.context_threshold,
@@ -755,9 +800,11 @@ class CycleMixin:
             system_prompt = inject_shortterm(system_prompt, shortterm)
 
         # Pre-flight size check for streaming path
-        from core.memory.conversation import ConversationMemory
+        conv_memory = None
+        if uses_chat_session:
+            from core.memory.conversation import ConversationMemory
 
-        conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
+            conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
         system_prompt, prompt, use_fallback = await self._preflight_size_check(
             system_prompt,
             prompt,
@@ -1008,6 +1055,9 @@ class CycleMixin:
                 # Clear checkpoint on success
                 shortterm.clear_checkpoint()
                 break
+
+        if not uses_chat_session:
+            shortterm.clear_checkpoint()
 
         session_chained = False
         total_turns = result_message.num_turns if result_message else 0

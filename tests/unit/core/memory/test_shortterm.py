@@ -11,9 +11,10 @@ from pathlib import Path
 import pytest
 
 from core.memory.shortterm import (
+    _MAX_RESPONSE_CHARS,
     SessionState,
     ShortTermMemory,
-    _MAX_RESPONSE_CHARS,
+    StreamCheckpoint,
 )
 
 
@@ -193,6 +194,27 @@ class TestClear:
 
     def test_clear_empty(self, stm):
         stm.clear()  # should not raise
+
+    def test_clear_for_clean_start_archives_state_and_deletes_checkpoint(self, anima_dir):
+        stm = ShortTermMemory(anima_dir, session_type="inbox", thread_id="inbox")
+        stm.save(SessionState(session_id="stale", trigger="inbox:sakura"))
+        checkpoint_path = stm.save_checkpoint(
+            StreamCheckpoint(
+                trigger="inbox:sakura",
+                original_prompt="old prompt",
+                completed_tools=[{"tool_name": "old", "tool_id": "1", "summary": "old"}],
+            )
+        )
+
+        assert stm.has_pending()
+        assert checkpoint_path.exists()
+
+        stm.clear_for_clean_start()
+
+        assert not stm.has_pending()
+        assert not checkpoint_path.exists()
+        archive_files = list((anima_dir / "shortterm" / "inbox" / "inbox" / "archive").glob("*.json"))
+        assert len(archive_files) >= 1
 
 
 # ── _archive_existing ─────────────────────────────────────

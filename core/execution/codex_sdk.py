@@ -48,7 +48,7 @@ from core.schemas import ImageData, ModelConfig
 
 logger = logging.getLogger("animaworks.execution.codex_sdk")
 
-__all__ = ["CodexSDKExecutor", "clear_codex_thread_ids", "is_codex_sdk_available"]
+__all__ = ["CodexSDKExecutor", "clear_codex_thread_id", "clear_codex_thread_ids", "is_codex_sdk_available"]
 
 RESUME_TIMEOUT_SEC = 15.0
 _BACKGROUND_EVENT_IDLE_TIMEOUT_SEC = 45.0
@@ -163,9 +163,14 @@ def _clear_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "
     p.unlink(missing_ok=True)
 
 
+def clear_codex_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
+    """Clear one resolved Codex thread ID namespace."""
+    _clear_thread_id(anima_dir, session_type, chat_thread_id)
+
+
 def clear_codex_thread_ids(anima_dir: Path, chat_thread_id: str = "default") -> None:
-    """Clear all persisted Codex thread IDs (both chat and heartbeat)."""
-    for st in ("chat", "heartbeat"):
+    """Clear persisted Codex thread IDs for all known runtime session types."""
+    for st in ("chat", "heartbeat", "cron", "task", "inbox"):
         _clear_thread_id(anima_dir, st, chat_thread_id)
 
 
@@ -1061,9 +1066,11 @@ class CodexSDKExecutor(BaseExecutor):
         session_type = _resolve_session_type(trigger)
         chat_thread_id = thread_id
         persist_thread = is_persistent_codex_session(trigger)
-        codex_thread_id = (
-            _load_thread_id(self._anima_dir, session_type, chat_thread_id) if persist_thread else None
-        )
+        if persist_thread:
+            codex_thread_id = _load_thread_id(self._anima_dir, session_type, chat_thread_id)
+        else:
+            clear_codex_thread_id(self._anima_dir, session_type, chat_thread_id)
+            codex_thread_id = None
 
         prompt_bytes = len(system_prompt.encode("utf-8"))
         if codex_thread_id and prompt_bytes > _RESUME_PROMPT_SIZE_LIMIT:
@@ -1195,9 +1202,11 @@ class CodexSDKExecutor(BaseExecutor):
         session_type = _resolve_session_type(trigger)
         chat_thread_id = thread_id
         persist_thread = is_persistent_codex_session(trigger)
-        codex_thread_id = (
-            _load_thread_id(self._anima_dir, session_type, chat_thread_id) if persist_thread else None
-        )
+        if persist_thread:
+            codex_thread_id = _load_thread_id(self._anima_dir, session_type, chat_thread_id)
+        else:
+            clear_codex_thread_id(self._anima_dir, session_type, chat_thread_id)
+            codex_thread_id = None
 
         prompt_bytes = len(system_prompt.encode("utf-8"))
         if codex_thread_id and prompt_bytes > _RESUME_PROMPT_SIZE_LIMIT:
