@@ -142,7 +142,7 @@ class TestFinalizeSession:
             "**トピック**: テスト\n**要点**:\n- テスト\n\n"
             "## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし\n### 現在の状態\nidle"
         )
-        # 2. _call_compression_llm
+        # 2. _generate_compression_summary
         compress_resp = make_litellm_response(content="圧縮された要約")
 
         with patch_litellm(summary_resp, compress_resp):
@@ -187,7 +187,7 @@ class TestFinalizeSession:
 
     @pytest.mark.asyncio
     async def test_finalize_session_keeps_turns_on_compression_failure(self, conv_memory):
-        """When _call_compression_llm fails, turns are NOT cleared."""
+        """When _generate_compression_summary fails, turns are NOT cleared."""
         state = conv_memory.load()
         state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(4)]
         state.last_finalized_turn_index = 0
@@ -200,7 +200,7 @@ class TestFinalizeSession:
         with (
             patch_litellm(summary_resp),
             patch(
-                "core.memory.conversation_finalize._call_compression_llm",
+                "core.memory.conversation_finalize._generate_compression_summary",
                 side_effect=RuntimeError("LLM API error"),
             ),
         ):
@@ -235,13 +235,13 @@ class TestFinalizeSession:
         )
         captured: dict[str, str] = {}
 
-        async def fake_compress(old_summary: str, turn_text: str) -> str:
+        async def fake_compress(old_summary: str, turn_text: str, turns, model_config=None) -> tuple:
             captured["turn_text"] = turn_text
-            return "全turn圧縮"
+            return ("全turn圧縮", "llm_primary", "", "")
 
         with (
             patch_litellm(summary_resp),
-            patch("core.memory.conversation_finalize._call_compression_llm", side_effect=fake_compress),
+            patch("core.memory.conversation_finalize._generate_compression_summary", side_effect=fake_compress),
         ):
             result = await conv_memory.finalize_session(min_turns=3)
 
