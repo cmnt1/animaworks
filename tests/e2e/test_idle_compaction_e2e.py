@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.lifecycle import LifecycleManager
+from core.memory.conversation_compression import CompressionResult
 from core.schemas import CycleResult
 from core.session_compactor import SessionCompactor, run_idle_compaction
 from core.tooling.handler import active_session_type
@@ -75,16 +76,19 @@ async def test_timer_scheduled_after_process_message_and_fires_compaction(anima,
     )
     anima.agent.run_cycle = AsyncMock(return_value=cycle_result)
 
-    # Mock ConversationMemory.compress_if_needed to avoid LLM calls.
+    # Mock ConversationMemory.compress_if_needed_detailed to avoid LLM calls.
     # Patch must extend through timer fire (run_idle_compaction uses it).
     compress_called = asyncio.Event()
 
     async def mock_compress():
         compress_called.set()
-        return False
+        return CompressionResult(
+            status="skipped_no_compression_needed",
+            performed=False,
+        )
 
     mock_conv = MagicMock()
-    mock_conv.compress_if_needed = AsyncMock(side_effect=mock_compress)
+    mock_conv.compress_if_needed_detailed = AsyncMock(side_effect=mock_compress)
     mock_conv.build_structured_messages = MagicMock(return_value=[])
     mock_conv.append_turn = MagicMock()
     mock_conv.save = MagicMock()
@@ -111,7 +115,7 @@ async def test_timer_scheduled_after_process_message_and_fires_compaction(anima,
         # Timer callback creates task for run_idle_compaction; give it time
         await asyncio.sleep(0.5)
 
-        # Verify compaction ran (compress_if_needed was called by run_idle_compaction)
+        # Verify compaction ran (compress_if_needed_detailed was called by run_idle_compaction)
         assert compress_called.is_set()
 
 

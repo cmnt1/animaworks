@@ -19,6 +19,7 @@ import asyncio
 import json
 import sys
 from contextlib import contextmanager
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -26,8 +27,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.schemas import ModelConfig
-from datetime import UTC
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -209,7 +208,7 @@ class TestSessionTypeConstants:
         assert _resolve_session_type("inbox:alice") == SESSION_TYPE_INBOX
         assert _resolve_session_type("chat") == SESSION_TYPE_CHAT
         assert _resolve_session_type("") == SESSION_TYPE_CHAT
-        assert _resolve_session_type("unknown") == SESSION_TYPE_CHAT
+        assert _resolve_session_type("unknown") == SESSION_TYPE_TASK
 
     def test_clear_session_id_for_chat(self, anima_dir: Path) -> None:
         from core.execution._sdk_session import (
@@ -223,6 +222,19 @@ class TestSessionTypeConstants:
 
         _clear_session_id(anima_dir, "chat")
         assert not chat_path.exists()
+
+    def test_clear_session_id_for_type_clears_non_chat_thread(self, anima_dir: Path) -> None:
+        from core.execution._sdk_session import (
+            _load_session_id,
+            _save_session_id,
+            clear_session_id_for_type,
+        )
+
+        _save_session_id(anima_dir, "sess-inbox", "inbox", thread_id="inbox")
+        assert _load_session_id(anima_dir, "inbox", thread_id="inbox") == "sess-inbox"
+
+        clear_session_id_for_type(anima_dir, "inbox", thread_id="inbox")
+        assert _load_session_id(anima_dir, "inbox", thread_id="inbox") is None
 
 
 class TestResumeTimeoutConstant:
@@ -239,6 +251,76 @@ class TestResumeTimeoutConstant:
         assert RESUME_TIMEOUT_SEC > 0
 
 
+class TestNonChatSessionCleanup:
+    @pytest.mark.asyncio
+    async def test_blocking_inbox_clears_stale_session_and_does_not_save(
+        self, model_config: ModelConfig, anima_dir: Path
+    ) -> None:
+        from core.execution._sdk_session import _load_session_id, _save_session_id
+        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.prompt.context import ContextTracker
+        from tests.helpers.mocks import patch_agent_sdk
+
+        _save_session_id(anima_dir, "stale-inbox-session", "inbox", thread_id="inbox")
+        _save_session_id(anima_dir, "chat-session", "chat")
+
+        with patch_agent_sdk(response_text="inbox done"):
+            executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+            tracker = ContextTracker(model="claude-sonnet-4-6")
+            result = await executor.execute(
+                prompt="check inbox",
+                system_prompt="sys",
+                tracker=tracker,
+                trigger="inbox:sakura",
+                thread_id="inbox",
+            )
+
+        assert result.text == "inbox done"
+        assert _load_session_id(anima_dir, "inbox", thread_id="inbox") is None
+        assert _load_session_id(anima_dir, "chat") == "chat-session"
+
+    @pytest.mark.asyncio
+    async def test_streaming_inbox_clears_stale_session_and_does_not_save(
+        self, model_config: ModelConfig, anima_dir: Path
+    ) -> None:
+        from core.execution._sdk_session import _load_session_id, _save_session_id
+        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.prompt.context import ContextTracker
+        from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
+
+        _save_session_id(anima_dir, "stale-inbox-session", "inbox", thread_id="inbox")
+        _save_session_id(anima_dir, "chat-session", "chat")
+
+        messages = [
+            MockStreamEvent(
+                {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": "inbox stream"},
+                    "index": 0,
+                }
+            ),
+            MockAssistantMessage([MockTextBlock("inbox stream")]),
+            MockResultMessage(session_id="new-inbox-session"),
+        ]
+
+        with _patch_sdk_for_streaming(messages):
+            executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+            tracker = ContextTracker(model="claude-sonnet-4-6")
+            events = []
+            async for event in executor.execute_streaming(
+                system_prompt="sys",
+                prompt="check inbox",
+                tracker=tracker,
+                trigger="inbox:sakura",
+                thread_id="inbox",
+            ):
+                events.append(event)
+
+        assert any(e["type"] == "done" for e in events)
+        assert _load_session_id(anima_dir, "inbox", thread_id="inbox") is None
+        assert _load_session_id(anima_dir, "chat") == "chat-session"
+
+
 # ── Resume timeout guard in execute_streaming ─────────────────
 
 
@@ -250,10 +332,10 @@ def _patch_sdk_for_streaming(messages: list[Any]):
         MockClaudeSDKClient,
         MockResultMessage,
         MockStreamEvent,
+        MockSystemMessage,
         MockTextBlock,
         MockToolResultBlock,
         MockUserMessage,
-        MockSystemMessage,
     )
 
     def _client_factory(**kwargs: Any) -> MockClaudeSDKClient:
@@ -305,7 +387,7 @@ class TestResumeTimeoutGuard:
     ) -> None:
         """When a session_id is present, asyncio.wait_for wraps first-event receive."""
         from core.execution.agent_sdk import _save_session_id
-        from tests.helpers.mocks import MockResultMessage, MockStreamEvent, MockAssistantMessage, MockTextBlock
+        from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
 
         # Persist a session ID so execute_streaming takes the resume path
         _save_session_id(anima_dir, "stale-session-001", "chat")
@@ -356,7 +438,7 @@ class TestResumeTimeoutGuard:
     @pytest.mark.asyncio
     async def test_no_wait_for_when_no_session_to_resume(self, model_config: ModelConfig, anima_dir: Path) -> None:
         """When no session ID exists, asyncio.wait_for is NOT called for resume guard."""
-        from tests.helpers.mocks import MockResultMessage, MockStreamEvent, MockAssistantMessage, MockTextBlock
+        from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
 
         # No session file → fresh session path (no resume)
         messages = [
@@ -407,7 +489,7 @@ class TestResumeTimeoutGuard:
         """When resume times out, _clear_session_id is called and falls back to
         fresh session."""
         from core.execution.agent_sdk import _save_session_id
-        from tests.helpers.mocks import MockResultMessage, MockStreamEvent, MockAssistantMessage, MockTextBlock
+        from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
 
         _save_session_id(anima_dir, "stale-session-for-timeout", "chat")
 

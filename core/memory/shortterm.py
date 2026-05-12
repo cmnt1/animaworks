@@ -178,6 +178,17 @@ class ShortTermMemory:
         self._archive_existing()
         logger.info("Short-term memory cleared")
 
+    def clear_for_clean_start(self) -> None:
+        """Archive session state and remove retry checkpoint before a clean run."""
+        if self.shortterm_dir.exists():
+            self._archive_existing()
+        self.clear_checkpoint()
+        logger.info(
+            "Short-term clean-start state cleared (session_type=%s, thread_id=%s)",
+            self._session_type,
+            self._thread_id,
+        )
+
     # ── Stream checkpoint ─────────────────────────────────
 
     _CHECKPOINT_FILE = "stream_checkpoint.json"

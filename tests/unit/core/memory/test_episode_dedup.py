@@ -11,20 +11,20 @@ Issue: 20260218_episode-dedup-state-autoupdate-resolution-propagation
 
 import json
 from datetime import timedelta
-from core.time_utils import now_jst, today_local
+from unittest.mock import patch
 
 import pytest
 
 from core.memory.conversation import (
+    SESSION_GAP_MINUTES,
     ConversationMemory,
     ConversationTurn,
     ParsedSessionSummary,
-    SESSION_GAP_MINUTES,
 )
 from core.schemas import ModelConfig
+from core.time_utils import now_jst, today_local
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
 from tests.helpers.mocks import make_litellm_response, patch_litellm
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -142,7 +142,7 @@ class TestFinalizeSession:
             "**トピック**: テスト\n**要点**:\n- テスト\n\n"
             "## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし\n### 現在の状態\nidle"
         )
-        # 2. _call_compression_llm
+        # 2. _generate_compression_summary
         compress_resp = make_litellm_response(content="圧縮された要約")
 
         with patch_litellm(summary_resp, compress_resp):
@@ -150,10 +150,12 @@ class TestFinalizeSession:
 
         assert result is True
 
-        # Verify index was updated
+        # Verify turns cleared and index reset after successful finalization
         conv_memory._state = None
         loaded = conv_memory.load()
-        assert loaded.last_finalized_turn_index == 6
+        assert loaded.turns == []
+        assert loaded.last_finalized_turn_index == 0
+        assert loaded.compressed_summary == "圧縮された要約"
 
         # Verify episode was written
         episode_file = anima_dir / "episodes" / f"{today_local().isoformat()}.md"
@@ -162,8 +164,8 @@ class TestFinalizeSession:
         assert "テスト会話" in content
 
     @pytest.mark.asyncio
-    async def test_finalize_session_updates_index(self, conv_memory):
-        """After finalization, last_finalized_turn_index equals len(turns)."""
+    async def test_finalize_session_clears_turns_and_resets_index(self, conv_memory):
+        """After finalization, turns are cleared and last_finalized_turn_index is 0."""
         state = conv_memory.load()
         state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(4)]
         state.last_finalized_turn_index = 0
@@ -179,7 +181,101 @@ class TestFinalizeSession:
 
         conv_memory._state = None
         loaded = conv_memory.load()
+        assert loaded.turns == []
+        assert loaded.last_finalized_turn_index == 0
+        assert loaded.compressed_summary == "圧縮"
+
+    @pytest.mark.asyncio
+    async def test_finalize_session_keeps_turns_on_compression_failure(self, conv_memory):
+        """When _generate_compression_summary fails, turns are NOT cleared."""
+        state = conv_memory.load()
+        state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(4)]
+        state.last_finalized_turn_index = 0
+        conv_memory.save()
+
+        summary_resp = make_litellm_response(
+            content="## エピソード要約\n要約\n\n## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし\n### 現在の状態\nidle"
+        )
+
+        with (
+            patch_litellm(summary_resp),
+            patch(
+                "core.memory.conversation_finalize._generate_compression_summary",
+                side_effect=RuntimeError("LLM API error"),
+            ),
+        ):
+            result = await conv_memory.finalize_session(min_turns=3)
+
+        assert result is True
+
+        conv_memory._state = None
+        loaded = conv_memory.load()
+        assert len(loaded.turns) == 4
         assert loaded.last_finalized_turn_index == 4
+        assert loaded.compressed_turn_count == 0
+
+    @pytest.mark.asyncio
+    async def test_finalize_session_compresses_retained_turns_after_previous_failure(self, conv_memory):
+        """A later successful finalization includes retained raw turns before clearing them."""
+        state = conv_memory.load()
+        state.turns = [
+            ConversationTurn(role="human", content="old msg 1"),
+            ConversationTurn(role="assistant", content="old response 1"),
+            ConversationTurn(role="human", content="old msg 2"),
+            ConversationTurn(role="assistant", content="old response 2"),
+            ConversationTurn(role="human", content="new msg"),
+            ConversationTurn(role="assistant", content="new response"),
+            ConversationTurn(role="human", content="new follow-up"),
+        ]
+        state.last_finalized_turn_index = 4
+        conv_memory.save()
+
+        summary_resp = make_litellm_response(
+            content="## エピソード要約\n要約\n\n## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし\n### 現在の状態\nidle"
+        )
+        captured: dict[str, str] = {}
+
+        async def fake_compress(old_summary: str, turn_text: str, turns, model_config=None) -> tuple:
+            captured["turn_text"] = turn_text
+            return ("全turn圧縮", "llm_primary", "", "")
+
+        with (
+            patch_litellm(summary_resp),
+            patch("core.memory.conversation_finalize._generate_compression_summary", side_effect=fake_compress),
+        ):
+            result = await conv_memory.finalize_session(min_turns=3)
+
+        assert result is True
+        assert "old msg 1" in captured["turn_text"]
+        assert "new follow-up" in captured["turn_text"]
+
+        conv_memory._state = None
+        loaded = conv_memory.load()
+        assert loaded.turns == []
+        assert loaded.last_finalized_turn_index == 0
+        assert loaded.compressed_summary == "全turn圧縮"
+        assert loaded.compressed_turn_count == 7
+
+    @pytest.mark.asyncio
+    async def test_needs_compression_false_after_finalization(self, conv_memory, model_config):
+        """After finalization, needs_compression() returns False (no double-counting)."""
+        state = conv_memory.load()
+        state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(6)]
+        state.last_finalized_turn_index = 0
+        conv_memory.save()
+
+        summary_resp = make_litellm_response(
+            content="## エピソード要約\n要約\n\n## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし\n### 現在の状態\nidle"
+        )
+        compress_resp = make_litellm_response(content="圧縮された要約テキスト")
+
+        with patch_litellm(summary_resp, compress_resp):
+            await conv_memory.finalize_session(min_turns=3)
+
+        conv_memory._state = None
+        loaded = conv_memory.load()
+        assert loaded.turns == []
+        assert not conv_memory.needs_compression()
 
 
 # ── finalize_if_session_ended tests ───────────────────────────
@@ -464,8 +560,8 @@ class TestResolutions:
 
     def test_record_resolutions_writes_activity(self, conv_memory, anima_dir, data_dir):
         """_record_resolutions logs issue_resolved events."""
-        from core.memory.manager import MemoryManager
         from core.memory.activity import ActivityLogger
+        from core.memory.manager import MemoryManager
 
         mm = MemoryManager(anima_dir)
         conv_memory._record_resolutions(mm, ["バグ修正完了"])

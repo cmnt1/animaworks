@@ -36,6 +36,7 @@ def _set_pipe_output(mock_proc: MagicMock, stdout_text: str, stderr_text: str = 
     mock_proc.stdout = io.StringIO(stdout_text)
     mock_proc.stderr = io.StringIO(stderr_text)
 
+
 # ── Schema Tests ──────────────────────────────────────────
 
 
@@ -98,7 +99,7 @@ class TestEngineAvailability:
             assert available == []
 
     def test_partial_engines_available(self):
-        def selective_which(name):
+        def selective_which(name, path=None):
             return "/usr/bin/fake" if name in ("claude", "cursor-agent") else None
 
         with patch("core.tools.machine.shutil.which", side_effect=selective_which):
@@ -112,7 +113,7 @@ class TestEngineAvailability:
             assert schemas == []
 
     def test_schemas_description_shows_recommended(self):
-        def selective_which(name):
+        def selective_which(name, path=None):
             return "/usr/bin/fake" if name == "cursor-agent" else None
 
         with patch("core.tools.machine.shutil.which", side_effect=selective_which):
@@ -122,7 +123,7 @@ class TestEngineAvailability:
             assert "cursor-agent" in desc
 
     def test_schema_description_reflects_available_engines(self):
-        def selective_which(name):
+        def selective_which(name, path=None):
             return "/usr/bin/fake" if name in ("codex", "gemini") else None
 
         with patch("core.tools.machine.shutil.which", side_effect=selective_which):
@@ -133,7 +134,7 @@ class TestEngineAvailability:
             assert "__list__" in desc
 
     def test_engine_description_reflects_available(self):
-        def selective_which(name):
+        def selective_which(name, path=None):
             return "/usr/bin/fake" if name == "claude" else None
 
         with patch("core.tools.machine.shutil.which", side_effect=selective_which):
@@ -589,29 +590,29 @@ class TestDispatch:
             mock_proc.stdin = MagicMock()
             mock_proc.pid = 12345
             mock_proc.returncode = -1
-            mock_proc.wait = MagicMock(
-                side_effect=subprocess.TimeoutExpired(cmd=["claude"], timeout=10)
-            )
-            with patch("core.tools.machine.subprocess.Popen", return_value=mock_proc):
-                with patch("core.tools.machine.terminate_subprocess") as mock_terminate:
-                    result = json.loads(
-                        dispatch(
-                            "machine_run",
-                            {
-                                "engine": "claude",
-                                "instruction": "long task",
-                                "working_directory": str(wd),
-                                "anima_dir": str(anima_dir),
-                                "timeout": 10,
-                            },
-                        )
+            mock_proc.wait = MagicMock(side_effect=subprocess.TimeoutExpired(cmd=["claude"], timeout=10))
+            with (
+                patch("core.tools.machine.subprocess.Popen", return_value=mock_proc),
+                patch("core.tools.machine.terminate_subprocess") as mock_terminate,
+            ):
+                result = json.loads(
+                    dispatch(
+                        "machine_run",
+                        {
+                            "engine": "claude",
+                            "instruction": "long task",
+                            "working_directory": str(wd),
+                            "anima_dir": str(anima_dir),
+                            "timeout": 10,
+                        },
                     )
-                    assert result["success"] is False
-                    assert result.get("timed_out") is True
-                    assert mock_terminate.call_args_list[0].args == (mock_proc,)
-                    assert mock_terminate.call_args_list[0].kwargs == {"force": False}
-                    assert mock_terminate.call_args_list[1].args == (mock_proc,)
-                    assert mock_terminate.call_args_list[1].kwargs == {"force": True}
+                )
+                assert result["success"] is False
+                assert result.get("timed_out") is True
+                assert mock_terminate.call_args_list[0].args == (mock_proc,)
+                assert mock_terminate.call_args_list[0].kwargs == {"force": False}
+                assert mock_terminate.call_args_list[1].args == (mock_proc,)
+                assert mock_terminate.call_args_list[1].kwargs == {"force": True}
 
     def test_unknown_action(self):
         result = json.loads(dispatch("unknown_action", {}))
@@ -629,24 +630,26 @@ class TestDispatch:
             mock_proc.returncode = 0
             mock_proc.pid = 99999
             mock_proc.wait = MagicMock(return_value=None)
-            with patch("core.tools.machine.subprocess.Popen", return_value=mock_proc) as mock_popen:
-                with patch.dict(
+            with (
+                patch("core.tools.machine.subprocess.Popen", return_value=mock_proc) as mock_popen,
+                patch.dict(
                     os.environ,
                     {"ANIMAWORKS_HOME": "/secret", "PATH": "/usr/bin"},
-                ):
-                    dispatch(
-                        "machine_run",
-                        {
-                            "engine": "claude",
-                            "instruction": "test",
-                            "working_directory": str(wd),
-                            "anima_dir": str(anima_dir),
-                        },
-                    )
-                    call_kwargs = mock_popen.call_args
-                    assert call_kwargs is not None
-                    env = call_kwargs.kwargs.get("env") or call_kwargs[1].get("env")
-                    assert "ANIMAWORKS_HOME" not in env
+                ),
+            ):
+                dispatch(
+                    "machine_run",
+                    {
+                        "engine": "claude",
+                        "instruction": "test",
+                        "working_directory": str(wd),
+                        "anima_dir": str(anima_dir),
+                    },
+                )
+                call_kwargs = mock_popen.call_args
+                assert call_kwargs is not None
+                env = call_kwargs.kwargs.get("env") or call_kwargs[1].get("env")
+                assert "ANIMAWORKS_HOME" not in env
 
     def test_subprocess_runs_in_working_directory(self, tmp_path):
         wd = tmp_path / "workspace"
@@ -783,7 +786,10 @@ class TestCliMain:
                 cli_main(["run", "--background", "test bg", "-d", str(tmp_path)])
                 mock_exec.assert_called_once()
                 call_kwargs = mock_exec.call_args
-                assert call_kwargs.kwargs.get("timeout") == _DEFAULT_TIMEOUT_ASYNC or call_kwargs[1].get("timeout") == _DEFAULT_TIMEOUT_ASYNC
+                assert (
+                    call_kwargs.kwargs.get("timeout") == _DEFAULT_TIMEOUT_ASYNC
+                    or call_kwargs[1].get("timeout") == _DEFAULT_TIMEOUT_ASYNC
+                )
 
     def test_run_background_appears_in_help(self, capsys):
         from core.tools.machine import cli_main
@@ -849,7 +855,7 @@ class TestEnginePriority:
             assert sum(_session_call_counts.values()) == 0
 
     def test_single_engine_no_list_mention(self):
-        def selective_which(name):
+        def selective_which(name, path=None):
             return "/usr/bin/fake" if name == "claude" else None
 
         with patch("core.tools.machine.shutil.which", side_effect=selective_which):

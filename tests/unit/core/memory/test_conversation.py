@@ -7,22 +7,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
-from core.time_utils import today_local
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from core.memory.conversation import (
+    _CHARS_PER_TOKEN,
+    _MAX_DISPLAY_TURNS,
+    _MAX_RESPONSE_CHARS_IN_HISTORY,
     ConversationMemory,
     ConversationState,
     ConversationTurn,
     ToolRecord,
-    _CHARS_PER_TOKEN,
-    _MAX_DISPLAY_TURNS,
-    _MAX_RESPONSE_CHARS_IN_HISTORY,
 )
 from core.schemas import ModelConfig
+from core.time_utils import today_local
 
 
 @pytest.fixture
@@ -330,6 +329,7 @@ class TestBuildChatPrompt:
             mock_load.return_value = "prompt text"
             result = conv.build_chat_prompt("Hello", from_person="human")
             mock_load.assert_called_once_with("chat_message", from_person="human", content="Hello")
+            assert result == "prompt text"
 
     def test_with_history(self, conv, anima_dir):
         conv.append_turn("human", "Previous question")
@@ -341,6 +341,7 @@ class TestBuildChatPrompt:
             mock_load.assert_called_once()
             call_args = mock_load.call_args
             assert call_args[0][0] == "chat_message_with_history"
+            assert result == "prompt with history"
 
 
 class TestFormatHistory:
@@ -430,19 +431,48 @@ class TestCompressIfNeeded:
             assert state.compressed_summary == "Compressed summary"
             assert state.compressed_turn_count > 0
 
-    async def test_compression_failure_keeps_turns(self, conv):
+    async def test_primary_failure_uses_active_model_fallback(self, conv):
         # Add enough turns to trigger compression (same reasoning as above).
         for _i in range(45):
             conv.append_turn("human", "x" * 8000)
             conv.append_turn("assistant", "y" * 8000)
 
-        original_count = len(conv.load().turns)
-        with patch("core.memory.conversation_compression._call_compression_llm", new_callable=AsyncMock) as mock_llm:
+        with (
+            patch("core.memory.conversation_compression._call_compression_llm", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "core.memory._llm_utils.one_shot_completion_with_model_config", new_callable=AsyncMock
+            ) as mock_active,
+        ):
             mock_llm.side_effect = RuntimeError("API error")
-            result = await conv.compress_if_needed()
-            assert result is True  # compression was attempted
-            # Turns should be preserved on failure
-            assert len(conv.load().turns) == original_count
+            mock_active.return_value = "Active model summary"
+            result = await conv.compress_if_needed_detailed()
+            assert result.performed is True
+            assert result.status == "llm_active_model"
+            assert result.fallback_used == "active_model"
+            assert conv.load().compressed_summary == "Active model summary"
+
+    async def test_all_llm_failures_use_deterministic_fallback(self, conv):
+        # Add enough turns to trigger compression (same reasoning as above).
+        for _i in range(45):
+            conv.append_turn("human", f"user {_i} " + "x" * 8000)
+            conv.append_turn("assistant", f"assistant {_i} " + "y" * 8000)
+
+        original_count = len(conv.load().turns)
+        with (
+            patch("core.memory.conversation_compression._call_compression_llm", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "core.memory._llm_utils.one_shot_completion_with_model_config", new_callable=AsyncMock
+            ) as mock_active,
+        ):
+            mock_llm.side_effect = RuntimeError("API error")
+            mock_active.return_value = None
+            result = await conv.compress_if_needed_detailed()
+            assert result.performed is True
+            assert result.status == "deterministic_fallback"
+            assert result.fallback_used == "deterministic"
+            assert len(conv.load().turns) < original_count
+            assert len(conv.load().turns) == _MAX_DISPLAY_TURNS
+            assert "Deterministic compression fallback" in conv.load().compressed_summary
 
 
 class TestFormatTurnsForCompression:

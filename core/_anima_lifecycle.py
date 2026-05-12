@@ -66,10 +66,21 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
     Returns a dict with keys: api_key, api_base_url, api_key_env, extra_keys.
     These can be used to temporarily override ModelConfig credential fields so
     that consolidation LLM calls reach the correct provider endpoint.
+
+    Resolution order:
+      1. ``config.consolidation.llm_credential`` (explicit credential name)
+      2. Model name prefix (e.g. ``openai/...`` → ``openai`` credential)
     """
+    _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
+    explicit_cred = _llm_cred if isinstance(_llm_cred, str) and _llm_cred else ""
     parts = consolidation_model.split("/", 1)
     provider = parts[0].lower() if len(parts) > 1 else ""
-    cred = cfg.credentials.get(provider) if provider else None
+
+    if explicit_cred:
+        cred = cfg.credentials.get(explicit_cred)
+    else:
+        cred = cfg.credentials.get(provider) if provider else None
+
     api_key = cred.api_key if cred else None
     api_base_url = (cred.base_url if cred else None) or None
     credential_type = (cred.type if cred else None) or "api_key"
@@ -93,6 +104,19 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
 class LifecycleMixin:
     """Mixin: heartbeat orchestration, memory consolidation, cron task execution."""
 
+    async def _keepalive_while_busy(self, interval: float = 60.0) -> None:
+        """Periodically update _last_progress_at to prevent busy-hang false positives.
+
+        Start this as a background task during long-running operations (heartbeat,
+        cron, etc.) that may not update progress through the normal streaming path.
+        """
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                self._last_progress_at = now_local()
+        except asyncio.CancelledError:
+            pass
+
     async def run_heartbeat(
         self,
         cascade_suppressed_senders: set[str] | None = None,
@@ -103,6 +127,7 @@ class LifecycleMixin:
         try:
             async with self._background_lock:
                 self._mark_busy_start()
+                _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._status_slots["background"] = "checking"
                 self._last_heartbeat = now_local()
 
@@ -144,6 +169,7 @@ class LifecycleMixin:
                         return self._handle_hard_timeout(_hard_timeout)
                     finally:
                         active_session_type.reset(_session_token)
+                        _keepalive.cancel()
 
                     return result
 
@@ -260,8 +286,9 @@ class LifecycleMixin:
 
         Weekly consolidation retains the existing single-phase flow.
 
-        Uses ``config.consolidation.llm_model`` instead of the Anima's main
-        model to control costs.
+        Daily Phase A uses ``config.consolidation.llm_model`` as an isolated
+        helper model for episode extraction. Phase B and weekly consolidation
+        run as the Anima and therefore use the per-Anima ``status.json`` model.
 
         Args:
             consolidation_type: "daily" or "weekly"
@@ -463,55 +490,20 @@ class LifecycleMixin:
             error_patterns_summary=error_patterns,
         )
 
+        base_model_config = self.memory.read_model_config()
         logger.info(
-            "[%s] Phase B: knowledge extraction with model=%s",
+            "[%s] Phase B: knowledge extraction with status model=%s",
             self.name,
-            consolidation_model,
+            base_model_config.model,
         )
 
-        # Temporarily override model, credential, AND executor to consolidation model
-        # for Phase B.  Animas that use a non-Anthropic executor (e.g. LiteLLMExecutor
-        # for qwen3) must swap to the executor that matches the consolidation model so
-        # that the call reaches the correct provider endpoint.  Without this, a Mode-A
-        # Anima would route "anthropic/claude-*" through LiteLLM without an API key
-        # and raise AuthenticationError (the system uses Max plan via Agent SDK, not
-        # direct Anthropic API).
-        from core.config.model_mode import resolve_execution_mode as _resolve_mode
-
-        _orig_model = self.model_config.model
-        _orig_api_key = self.model_config.api_key
-        _orig_api_base_url = self.model_config.api_base_url
-        _orig_credential_type = self.model_config.credential_type
-        _orig_api_key_env = self.model_config.api_key_env
-        _orig_extra_keys = self.model_config.extra_keys
-        _orig_resolved_mode = self.model_config.resolved_mode
-        _orig_executor = self.agent._executor
-        _cred_override = _resolve_consolidation_credential(consolidation_model, cfg)
-        _consolidation_mode = _resolve_mode(cfg, consolidation_model)
-        try:
-            self.model_config.model = consolidation_model
-            self.model_config.api_key = _cred_override["api_key"]
-            self.model_config.api_base_url = _cred_override["api_base_url"]
-            self.model_config.credential_type = _cred_override["credential_type"]
-            self.model_config.api_key_env = _cred_override["api_key_env"]
-            self.model_config.extra_keys = _cred_override["extra_keys"]
-            self.model_config.resolved_mode = _consolidation_mode
-            self.agent._executor = self.agent._create_executor()
-            result = await self.agent.run_cycle(
-                prompt,
-                trigger="consolidation:daily",
-                message_intent="request",
-                max_turns_override=max_turns,
-            )
-        finally:
-            self.model_config.model = _orig_model
-            self.model_config.api_key = _orig_api_key
-            self.model_config.api_base_url = _orig_api_base_url
-            self.model_config.credential_type = _orig_credential_type
-            self.model_config.api_key_env = _orig_api_key_env
-            self.model_config.extra_keys = _orig_extra_keys
-            self.model_config.resolved_mode = _orig_resolved_mode
-            self.agent._executor = _orig_executor
+        result = await self.agent.run_cycle(
+            prompt,
+            trigger="consolidation:daily",
+            message_intent="request",
+            max_turns_override=max_turns,
+            model_config_override=base_model_config,
+        )
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
@@ -527,13 +519,9 @@ class LifecycleMixin:
         *,
         max_turns: int = 30,
     ) -> CycleResult:
-        """Execute weekly consolidation (unchanged single-phase flow)."""
+        """Execute weekly consolidation with the Anima's status.json model."""
         import time as _time
 
-        from core.config import load_config
-
-        cfg = load_config()
-        consolidation_model = cfg.consolidation.llm_model
         start_mono = _time.monotonic()
 
         knowledge_files = engine._list_knowledge_files_with_meta()
@@ -554,41 +542,19 @@ class LifecycleMixin:
             total_knowledge_count=len(knowledge_files),
         )
 
-        # Temporarily override model, credential, AND executor (same rationale as daily
-        # consolidation — see that block's comment for the full explanation).
-        from core.config.model_mode import resolve_execution_mode as _resolve_mode
-
-        _orig_model = self.model_config.model
-        _orig_api_key = self.model_config.api_key
-        _orig_api_base_url = self.model_config.api_base_url
-        _orig_api_key_env = self.model_config.api_key_env
-        _orig_extra_keys = self.model_config.extra_keys
-        _orig_resolved_mode = self.model_config.resolved_mode
-        _orig_executor = self.agent._executor
-        _cred_override = _resolve_consolidation_credential(consolidation_model, cfg)
-        _consolidation_mode = _resolve_mode(cfg, consolidation_model)
-        try:
-            self.model_config.model = consolidation_model
-            self.model_config.api_key = _cred_override["api_key"]
-            self.model_config.api_base_url = _cred_override["api_base_url"]
-            self.model_config.api_key_env = _cred_override["api_key_env"]
-            self.model_config.extra_keys = _cred_override["extra_keys"]
-            self.model_config.resolved_mode = _consolidation_mode
-            self.agent._executor = self.agent._create_executor()
-            result = await self.agent.run_cycle(
-                prompt,
-                trigger="consolidation:weekly",
-                message_intent="request",
-                max_turns_override=max_turns,
-            )
-        finally:
-            self.model_config.model = _orig_model
-            self.model_config.api_key = _orig_api_key
-            self.model_config.api_base_url = _orig_api_base_url
-            self.model_config.api_key_env = _orig_api_key_env
-            self.model_config.extra_keys = _orig_extra_keys
-            self.model_config.resolved_mode = _orig_resolved_mode
-            self.agent._executor = _orig_executor
+        base_model_config = self.memory.read_model_config()
+        logger.info(
+            "[%s] Weekly consolidation: knowledge extraction with status model=%s",
+            self.name,
+            base_model_config.model,
+        )
+        result = await self.agent.run_cycle(
+            prompt,
+            trigger="consolidation:weekly",
+            message_intent="request",
+            max_turns_override=max_turns,
+            model_config_override=base_model_config,
+        )
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
@@ -619,6 +585,7 @@ class LifecycleMixin:
         try:
             async with self._background_lock:
                 self._mark_busy_start()
+                _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
@@ -683,6 +650,7 @@ class LifecycleMixin:
                     )
                     raise
                 finally:
+                    _keepalive.cancel()
                     if original_config is not None:
                         self.agent.update_model_config(original_config)
                     active_session_type.reset(_session_token)

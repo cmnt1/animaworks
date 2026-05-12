@@ -50,7 +50,7 @@ class ExecutorFactoryMixin:
             logger.debug("Personal tools discovery skipped", exc_info=True)
             return {}
 
-    def _create_executor(self):
+    def _create_executor(self, model_config=None):
         """Factory: create the appropriate executor for the resolved mode.
 
         For mode S (Agent SDK), falls back gracefully:
@@ -65,7 +65,8 @@ class ExecutorFactoryMixin:
             LiteLLMExecutor,
         )
 
-        mode = self._resolve_execution_mode()
+        active_config = model_config or self.model_config
+        mode = self._resolve_execution_mode(active_config)
 
         if mode == "s":
             # ── Try Agent SDK first ──────────────────────────
@@ -73,7 +74,7 @@ class ExecutorFactoryMixin:
                 from core.execution.agent_sdk import AgentSDKExecutor
 
                 return AgentSDKExecutor(
-                    model_config=self.model_config,
+                    model_config=active_config,
                     anima_dir=self.anima_dir,
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
@@ -90,7 +91,7 @@ class ExecutorFactoryMixin:
 
                 logger.info("Using AnthropicFallbackExecutor for Claude model")
                 return AnthropicFallbackExecutor(
-                    model_config=self.model_config,
+                    model_config=active_config,
                     anima_dir=self.anima_dir,
                     tool_handler=self._tool_handler,
                     tool_registry=self._tool_registry,
@@ -106,7 +107,7 @@ class ExecutorFactoryMixin:
 
             # ── Last resort: LiteLLM with anthropic provider ─
             return LiteLLMExecutor(
-                model_config=self.model_config,
+                model_config=active_config,
                 anima_dir=self.anima_dir,
                 tool_handler=self._tool_handler,
                 tool_registry=self._tool_registry,
@@ -125,7 +126,7 @@ class ExecutorFactoryMixin:
                 if not is_codex_sdk_available():
                     raise ImportError("openai_codex_sdk not installed")
                 return CodexSDKExecutor(
-                    model_config=self.model_config,
+                    model_config=active_config,
                     anima_dir=self.anima_dir,
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
@@ -135,7 +136,7 @@ class ExecutorFactoryMixin:
                 logger.warning(
                     "CodexSDKExecutor unavailable (openai-codex-sdk not installed), falling back to LiteLLM (Mode A)"
                 )
-                fallback_model_config = self.model_config.model_copy(deep=True)
+                fallback_model_config = active_config.model_copy(deep=True)
                 fallback_model: str | None = fallback_model_config.fallback_model
 
                 # If fallback_model is not explicitly configured, pick a safe
@@ -156,7 +157,7 @@ class ExecutorFactoryMixin:
                     fallback_model_config.model = fallback_model
                     logger.warning(
                         "Mode C fallback remapped model: %s -> %s",
-                        self.model_config.model,
+                        active_config.model,
                         fallback_model_config.model,
                     )
                 return LiteLLMExecutor(
@@ -179,7 +180,7 @@ class ExecutorFactoryMixin:
                 if not is_cursor_agent_available():
                     raise ImportError("cursor-agent CLI not found")
                 return CursorAgentExecutor(
-                    model_config=self.model_config,
+                    model_config=active_config,
                     anima_dir=self.anima_dir,
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
@@ -190,7 +191,7 @@ class ExecutorFactoryMixin:
                     "CursorAgentExecutor unavailable (cursor-agent not installed), falling back to LiteLLM (Mode A)"
                 )
                 return LiteLLMExecutor(
-                    model_config=self.model_config,
+                    model_config=active_config,
                     anima_dir=self.anima_dir,
                     tool_handler=self._tool_handler,
                     tool_registry=self._tool_registry,
@@ -209,7 +210,7 @@ class ExecutorFactoryMixin:
                 if not is_gemini_cli_available():
                     raise ImportError("gemini CLI not found")
                 return GeminiCLIExecutor(
-                    model_config=self.model_config,
+                    model_config=active_config,
                     anima_dir=self.anima_dir,
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
@@ -219,7 +220,7 @@ class ExecutorFactoryMixin:
                 logger.warning(
                     "GeminiCLIExecutor unavailable (gemini CLI not installed), falling back to LiteLLM (Mode A)"
                 )
-                fallback_model_config = self.model_config.model_copy(deep=True)
+                fallback_model_config = active_config.model_copy(deep=True)
                 model_name = fallback_model_config.model
                 if model_name.startswith("gemini/"):
                     bare = model_name.split("/", 1)[1]
@@ -229,7 +230,7 @@ class ExecutorFactoryMixin:
                         fallback_model_config.model = f"google/gemini-{bare}"
                     logger.warning(
                         "Mode G fallback remapped model: %s -> %s",
-                        self.model_config.model,
+                        active_config.model,
                         fallback_model_config.model,
                     )
                 return LiteLLMExecutor(
@@ -244,7 +245,7 @@ class ExecutorFactoryMixin:
 
         if mode == "a":
             return LiteLLMExecutor(
-                model_config=self.model_config,
+                model_config=active_config,
                 anima_dir=self.anima_dir,
                 tool_handler=self._tool_handler,
                 tool_registry=self._tool_registry,
@@ -255,7 +256,7 @@ class ExecutorFactoryMixin:
 
         # mode == "b" (basic)
         return AssistedExecutor(
-            model_config=self.model_config,
+            model_config=active_config,
             anima_dir=self.anima_dir,
             tool_handler=self._tool_handler,
             memory=self.memory,
@@ -284,13 +285,14 @@ class ExecutorFactoryMixin:
             return None
         return getattr(engine, "_retriever", None)
 
-    def _create_fallback_executor(self):
+    def _create_fallback_executor(self, model_config=None):
         """Create an AnthropicFallbackExecutor for when S mode SDK can't handle the prompt."""
         from core.execution import AnthropicFallbackExecutor
 
+        active_config = model_config or self.model_config
         logger.info("Creating AnthropicFallbackExecutor for oversized prompt")
         return AnthropicFallbackExecutor(
-            model_config=self.model_config,
+            model_config=active_config,
             anima_dir=self.anima_dir,
             tool_handler=self._tool_handler,
             tool_registry=self._tool_registry,

@@ -43,6 +43,7 @@ class PrimingMixin:
         message_intent: str = "",
         overflow_files: list[str] | None = None,
         prompt_tier: str = "full",
+        model_config=None,
     ) -> tuple[str, str]:
         """Run priming layer to automatically retrieve relevant memories.
 
@@ -58,6 +59,14 @@ class PrimingMixin:
         Returns:
             Tuple of (priming_section, pending_human_notifications).
         """
+        from core.execution.session_types import (
+            SESSION_TYPE_CHAT,
+            SESSION_TYPE_CRON,
+            SESSION_TYPE_HEARTBEAT,
+            SESSION_TYPE_INBOX,
+            SESSION_TYPE_TASK,
+            resolve_runtime_session_type,
+        )
         from core.memory.priming import PrimingEngine, format_priming_section
         from core.prompt.builder import TIER_LIGHT, TIER_MICRO, TIER_MINIMAL, TIER_STANDARD
 
@@ -65,12 +74,19 @@ class PrimingMixin:
             logger.debug("Priming: skipped (tier=%s)", prompt_tier)
             return ("", "")
 
-        if trigger == "heartbeat" or trigger.startswith("consolidation:"):
+        session_type = resolve_runtime_session_type(trigger)
+        if session_type == SESSION_TYPE_HEARTBEAT:
             channel = "heartbeat"
-        elif trigger.startswith("cron"):
+        elif session_type == SESSION_TYPE_CRON:
             channel = "cron"
-        else:
+        elif session_type == SESSION_TYPE_INBOX:
+            channel = "inbox"
+        elif session_type == SESSION_TYPE_TASK:
+            channel = "task"
+        elif session_type == SESSION_TYPE_CHAT:
             channel = "chat"
+        else:
+            channel = session_type
 
         if channel == "heartbeat":
             message = self._get_recent_reflections_text()
@@ -84,7 +100,8 @@ class PrimingMixin:
             senders = trigger.split(":", 1)[1]
             sender_name = senders.split(",")[0].strip() or "human"
 
-        recent_human_messages = self._get_recent_human_messages(trigger)
+        active_model_config = model_config or self.model_config
+        recent_human_messages = self._get_recent_human_messages(trigger, model_config=active_model_config)
 
         try:
             if not hasattr(self, "_priming_engine"):
@@ -92,7 +109,7 @@ class PrimingMixin:
                 from core.prompt.context import resolve_context_window as _rcw_priming
 
                 ctx_window = _rcw_priming(
-                    self.model_config.model,
+                    active_model_config.model,
                     overrides=self._load_context_window_overrides(),
                 )
                 self._priming_engine = PrimingEngine(
@@ -174,18 +191,20 @@ class PrimingMixin:
 
         return "\n".join(content_lines) if content_lines else prompt
 
-    def _get_recent_human_messages(self, trigger: str) -> list[str]:
+    def _get_recent_human_messages(self, trigger: str, *, model_config=None) -> list[str]:
         """Get last 5 human messages from conversation memory for priming context.
 
         Returns newest-first list of human message contents.
-        Active for chat triggers (message:*) and inbox triggers (inbox:*).
+        Active for human chat triggers only.
         """
-        if not trigger.startswith("message:") and not trigger.startswith("inbox:"):
+        from core.execution.session_types import trigger_uses_chat_session
+
+        if not trigger.startswith("message:") or not trigger_uses_chat_session(trigger):
             return []
         try:
             from core.memory.conversation import ConversationMemory
 
-            conv = ConversationMemory(self.anima_dir, self.model_config)
+            conv = ConversationMemory(self.anima_dir, model_config or self.model_config)
             state = conv.load()
             human_turns = [t for t in state.turns if t.role == "human"]
             recent = human_turns[-5:]
@@ -390,13 +409,13 @@ class PrimingMixin:
         if total <= _PROMPT_SOFT_LIMIT_BYTES:
             return system_prompt, prompt, False
 
-        # ── Stage 1: Force conversation compression ──────────
-        logger.warning(
-            "Prompt size %d exceeds soft limit %d; forcing conversation compression",
-            total,
-            _PROMPT_SOFT_LIMIT_BYTES,
-        )
+        # ── Stage 1: Force conversation compression for chat only ──────────
         if conv_memory is not None:
+            logger.warning(
+                "Prompt size %d exceeds soft limit %d; forcing conversation compression",
+                total,
+                _PROMPT_SOFT_LIMIT_BYTES,
+            )
             try:
                 await conv_memory._compress()
                 prompt = conv_memory.build_chat_prompt(message, "human")
@@ -414,6 +433,13 @@ class PrimingMixin:
                 ).system_prompt
             except Exception:
                 logger.exception("Forced compression failed")
+        else:
+            logger.warning(
+                "Prompt size %d exceeds soft limit %d; skipping conversation compression for non-chat trigger=%s",
+                total,
+                _PROMPT_SOFT_LIMIT_BYTES,
+                trigger,
+            )
 
         total = len(system_prompt.encode("utf-8")) + len(prompt.encode("utf-8"))
         logger.info("Post-compression prompt size: %d bytes", total)

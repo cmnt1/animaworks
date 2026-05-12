@@ -202,6 +202,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _active_hour_spec(active_start: int | None, active_end: int | None) -> str:
+    """Return a CronTrigger hour spec for heartbeat active hours."""
+    if active_start is None or active_end is None or active_start == active_end:
+        return "*"
+    if active_start < active_end:
+        return f"{active_start}-{active_end - 1}"
+    if active_end == 0:
+        return f"{active_start}-23"
+    return f"{active_start}-23,0-{active_end - 1}"
+
+
 class SchedulerManager:
     """APScheduler management: heartbeat/cron registration, execution, reload."""
 
@@ -339,15 +350,13 @@ class SchedulerManager:
             log_active = f"active {active_start}:00-{active_end}:00"
         else:
             log_active = "24h"
+        hour_spec = _active_hour_spec(active_start, active_end)
 
         # CronTrigger minute-slot approach only works when interval divides
         # evenly into 60; otherwise cross-hour gaps become shorter than the
         # intended interval (e.g. interval=43 → slots "9,52" → 43min then
         # 17min gap).  Fall through to polling for non-divisor intervals.
         if interval <= 60 and 60 % interval == 0:
-            hour_spec = (
-                f"{active_start}-{active_end - 1}" if active_start is not None and active_end is not None else "*"
-            )
             slots = []
             m = offset
             while m < 60:
@@ -388,7 +397,7 @@ class SchedulerManager:
 
             self.scheduler.add_job(
                 self._heartbeat_check,
-                CronTrigger(minute="*"),
+                CronTrigger(minute="*", hour=hour_spec),
                 id=f"{self._anima_name}_heartbeat",
                 name=f"{self._anima_name} heartbeat",
                 replace_existing=True,

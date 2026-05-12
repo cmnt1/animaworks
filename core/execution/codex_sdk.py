@@ -40,6 +40,7 @@ from core.execution.base import (
     ToolCallRecord,
     _truncate_for_record,
 )
+from core.execution.session_types import is_persistent_codex_session, resolve_runtime_session_type
 from core.memory.shortterm import ShortTermMemory
 from core.platform.codex import default_home_dir, get_codex_executable, is_codex_login_available
 from core.prompt.context import ContextTracker
@@ -47,7 +48,7 @@ from core.schemas import ImageData, ModelConfig
 
 logger = logging.getLogger("animaworks.execution.codex_sdk")
 
-__all__ = ["CodexSDKExecutor", "clear_codex_thread_ids", "is_codex_sdk_available"]
+__all__ = ["CodexSDKExecutor", "clear_codex_thread_id", "clear_codex_thread_ids", "is_codex_sdk_available"]
 
 RESUME_TIMEOUT_SEC = 15.0
 _BACKGROUND_EVENT_IDLE_TIMEOUT_SEC = 45.0
@@ -171,9 +172,14 @@ def _clear_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "
     p.unlink(missing_ok=True)
 
 
+def clear_codex_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
+    """Clear one resolved Codex thread ID namespace."""
+    _clear_thread_id(anima_dir, session_type, chat_thread_id)
+
+
 def clear_codex_thread_ids(anima_dir: Path, chat_thread_id: str = "default") -> None:
-    """Clear all persisted Codex thread IDs (both chat and heartbeat)."""
-    for st in ("chat", "heartbeat"):
+    """Clear persisted Codex thread IDs for all known runtime session types."""
+    for st in ("chat", "heartbeat", "cron", "task", "inbox"):
         _clear_thread_id(anima_dir, st, chat_thread_id)
 
 
@@ -190,9 +196,7 @@ def _get_thread_id(thread: Any) -> str | None:
 
 
 def _resolve_session_type(trigger: str) -> str:
-    if trigger in ("heartbeat",) or (trigger and trigger.startswith("cron:")):
-        return "heartbeat"
-    return "chat"
+    return resolve_runtime_session_type(trigger)
 
 
 def _event_idle_timeout_seconds(trigger: str) -> float:
@@ -490,11 +494,19 @@ class CodexResultMessage:
 def _wrap_result_message(
     turn: Any,
     thread: Any | None = None,
+    completed_turns: int = 0,
 ) -> CodexResultMessage:
     """Wrap a Codex turn/event into a ``CodexResultMessage``."""
     usage_raw = getattr(turn, "usage", None)
     usage = _usage_to_dict(usage_raw) if usage_raw else None
-    num_turns = getattr(turn, "num_turns", 0) or 0
+    raw_num_turns = getattr(turn, "num_turns", 0)
+    try:
+        num_turns = int(raw_num_turns or 0)
+    except (TypeError, ValueError):
+        num_turns = 0
+    num_turns = num_turns or completed_turns
+    if num_turns <= 0 and turn is not None:
+        num_turns = 1
     session_id = ""
     if thread:
         session_id = _get_thread_id(thread) or ""
@@ -574,9 +586,11 @@ def _patch_codex_exec_stream_limit(exec_: Any) -> None:
                     {line_task, fatal_stderr},
                     return_when=asyncio.FIRST_COMPLETED,
                 )
-                for pending_task in pending:
-                    pending_task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
+                # Only cancel line_task if it's still pending; never cancel
+                # fatal_stderr — it must survive across loop iterations.
+                if line_task in pending:
+                    line_task.cancel()
+                    await asyncio.gather(line_task, return_exceptions=True)
 
                 if fatal_stderr in done:
                     if proc.returncode is None:
@@ -587,9 +601,11 @@ def _patch_codex_exec_stream_limit(exec_: Any) -> None:
                         await proc.wait()
                     stderr_bytes = await stderr_task
                     stderr_text = stderr_bytes.decode("utf-8", errors="replace")
-                    raise CodexExecError(
-                        f"Codex Exec aborted after fatal stderr signal: {stderr_text or fatal_stderr.result()}"
-                    )
+                    try:
+                        fatal_detail = fatal_stderr.result()
+                    except (asyncio.CancelledError, asyncio.InvalidStateError):
+                        fatal_detail = "(unknown fatal signal)"
+                    raise CodexExecError(f"Codex Exec aborted after fatal stderr signal: {stderr_text or fatal_detail}")
 
                 line = line_task.result()
                 if not line:
@@ -933,6 +949,7 @@ class CodexSDKExecutor(BaseExecutor):
             f"[mcp_servers.aw]\n"
             f'command = "{esc(sys.executable)}"\n'
             f'args = ["-m", "core.mcp.server"]\n'
+            f'default_tools_approval_mode = "approve"\n'
             f"\n"
             f"[mcp_servers.aw.env]\n"
             f"{mcp_env_lines}\n"
@@ -1158,7 +1175,6 @@ class CodexSDKExecutor(BaseExecutor):
                         input_tokens=usage_dict.get("input_tokens", 0) or usage_dict.get("prompt_tokens", 0) or 0,
                         output_tokens=usage_dict.get("output_tokens", 0) or usage_dict.get("completion_tokens", 0) or 0,
                     )
-                    tracker.update(usage_dict, include_output_in_ratio=True)
                     continue
 
                 if ptype == "turn.failed":
@@ -1270,6 +1286,8 @@ class CodexSDKExecutor(BaseExecutor):
         codex: Any,
         thread_id: str | None,
         session_type: str,
+        chat_thread_id: str = "default",
+        persist_thread: bool = True,
     ) -> Any:
         """Start a new thread or attempt to resume an existing one."""
         if thread_id:
@@ -1283,7 +1301,8 @@ class CodexSDKExecutor(BaseExecutor):
                     thread_id,
                     e,
                 )
-                _clear_thread_id(self._anima_dir, session_type)
+                if persist_thread:
+                    _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
         thread = codex.start_thread(
             {
                 "working_directory": str(self._task_cwd or self._anima_dir),
@@ -1330,34 +1349,47 @@ class CodexSDKExecutor(BaseExecutor):
             return await self._execute_via_cli_exec(prompt, system_prompt, tracker, trigger=trigger)
 
         session_type = _resolve_session_type(trigger)
-        thread_id = _load_thread_id(self._anima_dir, session_type)
+        chat_thread_id = thread_id
+        persist_thread = is_persistent_codex_session(trigger)
+        if persist_thread:
+            codex_thread_id = _load_thread_id(self._anima_dir, session_type, chat_thread_id)
+        else:
+            clear_codex_thread_id(self._anima_dir, session_type, chat_thread_id)
+            codex_thread_id = None
 
         prompt_bytes = len(system_prompt.encode("utf-8"))
-        if thread_id and prompt_bytes > _RESUME_PROMPT_SIZE_LIMIT:
+        if codex_thread_id and prompt_bytes > _RESUME_PROMPT_SIZE_LIMIT:
             logger.info(
                 "Skipping Codex resume (prompt=%d bytes > %d limit) to avoid LimitOverrunError; using fresh thread",
                 prompt_bytes,
                 _RESUME_PROMPT_SIZE_LIMIT,
             )
-            thread_id = None
+            codex_thread_id = None
 
         self._write_codex_config(system_prompt)
         codex = self._create_codex_client()
-        thread = self._start_or_resume_thread(codex, thread_id, session_type)
+        thread = self._start_or_resume_thread(
+            codex,
+            codex_thread_id,
+            session_type,
+            chat_thread_id,
+            persist_thread,
+        )
 
         try:
             turn = await thread.run(prompt)
         except Exception as e:
-            if thread_id:
+            if codex_thread_id:
                 logger.warning(
                     "Codex execute failed with resume (thread=%s): %s. Retrying with fresh thread.",
-                    thread_id,
+                    codex_thread_id,
                     e,
                 )
-                _clear_thread_id(self._anima_dir, session_type)
+                if persist_thread:
+                    _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
                 thread = codex.start_thread(
                     {
-                        "working_directory": str(self._anima_dir),
+                        "working_directory": str(self._task_cwd or self._anima_dir),
                         "skip_git_repo_check": True,
                     }
                 )
@@ -1383,8 +1415,8 @@ class CodexSDKExecutor(BaseExecutor):
             return ExecutionResult(text="[Session interrupted by user]")
 
         tid = _get_thread_id(thread)
-        if tid:
-            _save_thread_id(self._anima_dir, tid, session_type)
+        if tid and persist_thread:
+            _save_thread_id(self._anima_dir, tid, session_type, chat_thread_id)
 
         response_text = getattr(turn, "final_response", "") or ""
         items = getattr(turn, "items", []) or []
@@ -1401,13 +1433,11 @@ class CodexSDKExecutor(BaseExecutor):
                 input_tokens=ud.get("input_tokens", 0) or ud.get("prompt_tokens", 0) or 0,
                 output_tokens=ud.get("output_tokens", 0) or ud.get("completion_tokens", 0) or 0,
             )
-            if tracker:
-                tracker.update(ud, include_output_in_ratio=True)
 
         replied_to = self._read_replied_to_file()
         return ExecutionResult(
             text=response_text,
-            result_message=_wrap_result_message(turn, thread),
+            result_message=_wrap_result_message(turn, thread, completed_turns=1),
             replied_to_from_transcript=replied_to,
             tool_call_records=tool_records,
             usage=usage_acc,
@@ -1455,16 +1485,22 @@ class CodexSDKExecutor(BaseExecutor):
             return
 
         session_type = _resolve_session_type(trigger)
-        thread_id = _load_thread_id(self._anima_dir, session_type)
+        chat_thread_id = thread_id
+        persist_thread = is_persistent_codex_session(trigger)
+        if persist_thread:
+            codex_thread_id = _load_thread_id(self._anima_dir, session_type, chat_thread_id)
+        else:
+            clear_codex_thread_id(self._anima_dir, session_type, chat_thread_id)
+            codex_thread_id = None
 
         prompt_bytes = len(system_prompt.encode("utf-8"))
-        if thread_id and prompt_bytes > _RESUME_PROMPT_SIZE_LIMIT:
+        if codex_thread_id and prompt_bytes > _RESUME_PROMPT_SIZE_LIMIT:
             logger.info(
                 "Skipping Codex resume (prompt=%d bytes > %d limit) to avoid LimitOverrunError; using fresh thread",
                 prompt_bytes,
                 _RESUME_PROMPT_SIZE_LIMIT,
             )
-            thread_id = None
+            codex_thread_id = None
 
         self._write_codex_config(system_prompt)
         codex = self._create_codex_client()
@@ -1474,10 +1510,17 @@ class CodexSDKExecutor(BaseExecutor):
         turn_result: Any = None
         active_thread: Any = None
         usage_acc = TokenUsage()
+        completed_turn_count = 0
 
         async def _stream_turn(tid: str | None) -> AsyncGenerator[dict[str, Any], None]:
-            nonlocal turn_result, active_thread
-            thread = self._start_or_resume_thread(codex, tid, session_type)
+            nonlocal completed_turn_count, turn_result, active_thread
+            thread = self._start_or_resume_thread(
+                codex,
+                tid,
+                session_type,
+                chat_thread_id,
+                persist_thread,
+            )
             active_thread = thread
             streamed = await thread.run_streamed(prompt)
             event_iter = streamed.events.__aiter__()
@@ -1638,23 +1681,16 @@ class CodexSDKExecutor(BaseExecutor):
 
                 # ── turn.completed: usage + thread persistence ──
                 elif etype == "turn.completed":
-                    turn_result = _wrap_result_message(event, thread)
+                    completed_turn_count += 1
+                    turn_result = _wrap_result_message(event, thread, completed_turns=completed_turn_count)
                     raw_usage = getattr(event, "usage", None)
                     if raw_usage:
                         ud = _usage_to_dict(raw_usage)
                         usage_acc.input_tokens = ud.get("input_tokens", 0) or ud.get("prompt_tokens", 0) or 0
                         usage_acc.output_tokens = ud.get("output_tokens", 0) or ud.get("completion_tokens", 0) or 0
-                        tracker.update(ud, include_output_in_ratio=True)
-                        yield {
-                            "type": "context_update",
-                            "context_usage_ratio": tracker.usage_ratio,
-                            "input_tokens": tracker._input_tokens,
-                            "context_window": tracker.context_window,
-                            "threshold": tracker.threshold,
-                        }
                     saved_tid = _get_thread_id(thread)
-                    if saved_tid:
-                        _save_thread_id(self._anima_dir, saved_tid, session_type)
+                    if saved_tid and persist_thread:
+                        _save_thread_id(self._anima_dir, saved_tid, session_type, chat_thread_id)
 
                 # ── Error events ──
                 elif etype == "turn.failed":
@@ -1682,9 +1718,9 @@ class CodexSDKExecutor(BaseExecutor):
 
         # Try resume first, fallback to fresh thread
         fell_back = False
-        if thread_id:
+        if codex_thread_id:
             try:
-                gen = _stream_turn(thread_id)
+                gen = _stream_turn(codex_thread_id)
                 first_event: dict[str, Any] | None = None
                 try:
                     first_event = await asyncio.wait_for(
@@ -1694,18 +1730,20 @@ class CodexSDKExecutor(BaseExecutor):
                 except (TimeoutError, StopAsyncIteration):
                     logger.warning(
                         "Codex resume timed out or empty (thread=%s), falling back to fresh thread.",
-                        thread_id,
+                        codex_thread_id,
                     )
-                    _clear_thread_id(self._anima_dir, session_type)
+                    if persist_thread:
+                        _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
                     fell_back = True
                     await gen.aclose()
                 except Exception as e:
                     logger.warning(
                         "Codex resume stream failed (thread=%s): %s",
-                        thread_id,
+                        codex_thread_id,
                         e,
                     )
-                    _clear_thread_id(self._anima_dir, session_type)
+                    if persist_thread:
+                        _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
                     fell_back = True
                     await gen.aclose()
                 else:
@@ -1718,7 +1756,8 @@ class CodexSDKExecutor(BaseExecutor):
                     "Codex stream resume error: %s. Fresh thread.",
                     e,
                 )
-                _clear_thread_id(self._anima_dir, session_type)
+                if persist_thread:
+                    _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
                 fell_back = True
         else:
             fell_back = True
@@ -1747,6 +1786,12 @@ class CodexSDKExecutor(BaseExecutor):
         full_text = "\n".join(response_text_parts)
         if not full_text and all_tool_records:
             full_text = _synthesise_fallback(all_tool_records)
+        if turn_result is None and (full_text or all_tool_records):
+            turn_result = CodexResultMessage(
+                num_turns=max(1, completed_turn_count),
+                session_id=_get_thread_id(active_thread) or "",
+                usage=usage_acc.to_dict(),
+            )
 
         replied_to = self._read_replied_to_file()
         yield {

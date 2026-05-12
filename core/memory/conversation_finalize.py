@@ -18,9 +18,9 @@ from typing import Any
 
 from core.i18n import t
 from core.memory.conversation_compression import (
-    _call_compression_llm,
     _call_llm,
     _format_turns_for_compression,
+    _generate_compression_summary,
 )
 from core.memory.conversation_models import (
     SESSION_GAP_MINUTES,
@@ -224,16 +224,43 @@ async def finalize_session(
             session_id=session_id,
         )
 
-    turn_text = _format_turns_for_compression(new_turns)
+    # If a previous finalization wrote an episode but compression failed, the
+    # already-finalized raw turns remain before last_finalized_turn_index.
+    # Include them in the next successful compression before clearing turns.
+    turns_to_compress = state.turns if state.last_finalized_turn_index > 0 else new_turns
+    turn_text = _format_turns_for_compression(turns_to_compress)
     old_summary = state.compressed_summary
     try:
-        compressed = await _call_compression_llm(old_summary, turn_text)
+        compressed, status, fallback_used, error = await _generate_compression_summary(
+            old_summary,
+            turn_text,
+            turns_to_compress,
+            model_config,
+        )
         state.compressed_summary = compressed
+        # Finalized turns are now in compressed_summary; clear to prevent
+        # double-counting in total_token_estimate and avoid stale turns
+        # triggering needs_compression() at the start of the next session.
+        state.turns = []
+        state.last_finalized_turn_index = 0
+        state.compressed_turn_count += len(turns_to_compress)
+        logger.info(
+            "Finalized conversation compressed: %d turns -> summary (%d chars), status=%s fallback=%s",
+            len(turns_to_compress),
+            len(compressed),
+            status,
+            fallback_used or "none",
+        )
+        if error:
+            logger.warning("Finalization compression fallback details: %s", error)
     except Exception:
         logger.warning("Compression failed during finalization; keeping raw turns")
+        # The episode/state update has been written for these turns, so advance
+        # the finalization cursor to avoid duplicate episode entries. Do not
+        # increment compressed_turn_count: the raw turns are still present and
+        # will be folded into compressed_summary on the next successful run.
+        state.last_finalized_turn_index = len(state.turns)
 
-    state.last_finalized_turn_index = len(state.turns)
-    state.compressed_turn_count += len(new_turns)
     save_fn()
 
     new_status = parsed.current_status.strip() if parsed.current_status else "status: idle"
@@ -253,7 +280,7 @@ async def finalize_if_session_ended(
     load_fn: Callable[[], ConversationState],
     save_fn: Callable[[], None],
     needs_compression_fn: Callable[[], bool],
-    compress_fn: Callable[[], Awaitable[None]],
+    compress_fn: Callable[[], Awaitable[Any]],
     finalize_session_fn: Callable[..., Awaitable[bool]],
     load_pending_fn: Callable[[], tuple[list[Path], str]],
     anima_name: str = "",

@@ -300,9 +300,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--answer-model",
         type=str,
-        default="openai/qwen3.6-35b-a3b",
+        default="openai/qwen3.6-27b",
         dest="answer_model",
-        help="answer generation model (default: openai/qwen3.6-35b-a3b)",
+        help="answer generation model (default: openai/qwen3.6-27b)",
     )
     p.add_argument(
         "--judge",

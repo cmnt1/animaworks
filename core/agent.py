@@ -276,9 +276,10 @@ class AgentCore(
 
     # ── Model / mode helpers ───────────────────────────────
 
-    def _is_claude_model(self) -> bool:
+    def _is_claude_model(self, model_config: ModelConfig | None = None) -> bool:
         """True if the configured model is a Claude model usable with Agent SDK."""
-        m = self.model_config.model
+        cfg = model_config or self.model_config
+        m = cfg.model
         return m.startswith("claude-") or m.startswith("anthropic/")
 
     @property
@@ -286,19 +287,20 @@ class AgentCore(
         """Public access to the resolved execution mode."""
         return self._resolve_execution_mode()
 
-    def _resolve_execution_mode(self) -> str:
+    def _resolve_execution_mode(self, model_config: ModelConfig | None = None) -> str:
         """Determine the effective execution mode: ``s``, ``c``, ``a``, or ``b``.
 
         Uses ``resolved_mode`` from config when available.
         Falls back to auto-detection for legacy config.md paths.
         """
-        rm = self.model_config.resolved_mode
+        cfg = model_config or self.model_config
+        rm = cfg.resolved_mode
         if rm:
             mode = rm.lower()  # "S" → "s"
             return mode
 
         # Fallback (resolved_mode absent = legacy config.md path)
-        if self._is_claude_model() and self._sdk_available:
+        if self._is_claude_model(cfg) and self._sdk_available:
             return "s"
         return "a"
 

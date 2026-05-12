@@ -103,6 +103,7 @@ from core.execution._sdk_session import (  # noqa: F401
     _resolve_session_type,
     _save_session_id,
     _session_file,
+    clear_session_id_for_type,
     compact_sdk_session,
 )
 from core.execution._sdk_stream import (  # noqa: F401
@@ -414,11 +415,11 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         session_stats = self._init_session_stats(system_prompt, prompt, trigger)
         _cleanup_gate_marker(self._anima_dir)
         session_type = _resolve_session_type(trigger)
-        session_id_to_resume = (
-            _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
-            if session_type in _RESUMABLE_SESSION_TYPES
-            else None
-        )
+        if session_type in _RESUMABLE_SESSION_TYPES:
+            session_id_to_resume = _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
+        else:
+            _sdk_session.clear_session_id_for_type(self._anima_dir, session_type, thread_id=thread_id)
+            session_id_to_resume = None
 
         options, _temp_files = self._build_sdk_options(
             system_prompt,
@@ -574,11 +575,11 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         session_stats = self._init_session_stats(system_prompt, prompt, trigger)
         _cleanup_gate_marker(self._anima_dir)
         session_type = _resolve_session_type(trigger)
-        session_id_to_resume = (
-            _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
-            if session_type in _RESUMABLE_SESSION_TYPES
-            else None
-        )
+        if session_type in _RESUMABLE_SESSION_TYPES:
+            session_id_to_resume = _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
+        else:
+            _sdk_session.clear_session_id_for_type(self._anima_dir, session_type, thread_id=thread_id)
+            session_id_to_resume = None
 
         options, _temp_files = self._build_sdk_options(
             system_prompt,
@@ -691,6 +692,14 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                     fell_back = True
                 except (ProcessError, ClaudeSDKError) as e:
                     logger.warning("SDK resume failed (session_id=%s): %s", session_id_to_resume, e)
+                    _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
+                    fell_back = True
+                except Exception as e:
+                    if isinstance(e, (asyncio.CancelledError, GeneratorExit)):
+                        raise
+                    logger.warning(
+                        "SDK resume failed with unexpected error (session_id=%s): %s", session_id_to_resume, e
+                    )
                     _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
                     fell_back = True
                 if fell_back:

@@ -145,6 +145,20 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
                         "items": {"type": "string"},
                         "description": _t("schema.create_skill.allowed_tools"),
                     },
+                    "trust_level": {
+                        "type": "string",
+                        "enum": ["builtin", "official", "trusted", "community", "untrusted"],
+                        "description": "Trust level for the skill (default: trusted)",
+                    },
+                    "source_type": {
+                        "type": "string",
+                        "enum": ["local", "anima", "hub", "url"],
+                        "description": "Source type indicating where the skill came from (default: anima)",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Category tag for skill classification (e.g. software-development, communication)",
+                    },
                 },
                 "required": ["skill_name", "description", "body"],
             },

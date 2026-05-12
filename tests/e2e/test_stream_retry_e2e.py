@@ -15,16 +15,13 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock
 
-
 from core.execution.agent_sdk import StreamDisconnectedError
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.builder import BuildResult
-
 from tests.helpers.mocks import (
     MockResultMessage,
     patch_agent_sdk_streaming,
 )
-
 
 # ── Helper: mock executor factories ────────────────────────
 
@@ -173,14 +170,10 @@ class TestStreamRetryFullFlow:
         event_types = [e["type"] for e in events]
 
         # Must have a retry_start event (the first call disconnected)
-        assert "retry_start" in event_types, (
-            f"Expected retry_start in events, got: {event_types}"
-        )
+        assert "retry_start" in event_types, f"Expected retry_start in events, got: {event_types}"
 
         # Must have cycle_done at the end (retry succeeded)
-        assert "cycle_done" in event_types, (
-            f"Expected cycle_done in events, got: {event_types}"
-        )
+        assert "cycle_done" in event_types, f"Expected cycle_done in events, got: {event_types}"
 
         # The retry_start should indicate retry=1
         retry_events = [e for e in events if e["type"] == "retry_start"]
@@ -194,9 +187,7 @@ class TestStreamRetryFullFlow:
 
         # Checkpoint file should be cleared after success
         shortterm = ShortTermMemory(agent.anima_dir)
-        assert shortterm.load_checkpoint() is None, (
-            "Checkpoint should be cleared after successful retry"
-        )
+        assert shortterm.load_checkpoint() is None, "Checkpoint should be cleared after successful retry"
 
 
 class TestStreamRetryMaxExceeded:
@@ -250,14 +241,10 @@ class TestStreamRetryMaxExceeded:
 
         # Should have retry_start events for each retry attempt
         retry_events = [e for e in events if e["type"] == "retry_start"]
-        assert len(retry_events) == 2, (
-            f"Expected 2 retry_start events, got {len(retry_events)}"
-        )
+        assert len(retry_events) == 2, f"Expected 2 retry_start events, got {len(retry_events)}"
 
         # Should have an error event after exhausting retries
-        assert "error" in event_types, (
-            f"Expected error event after max retries, got: {event_types}"
-        )
+        assert "error" in event_types, f"Expected error event after max retries, got: {event_types}"
 
         error_events = [e for e in events if e["type"] == "error"]
         assert len(error_events) == 1
@@ -269,9 +256,7 @@ class TestStreamRetryMaxExceeded:
         )
 
         # cycle_done should still be yielded (with whatever was accumulated)
-        assert "cycle_done" in event_types, (
-            "cycle_done should be yielded even after retry exhaustion"
-        )
+        assert "cycle_done" in event_types, "cycle_done should be yielded even after retry exhaustion"
 
 
 class TestCheckpointClearedOnSuccess:
@@ -317,9 +302,7 @@ class TestCheckpointClearedOnSuccess:
         event_types = [e["type"] for e in events]
 
         # No retry events should be emitted
-        assert "retry_start" not in event_types, (
-            "No retries expected on clean execution"
-        )
+        assert "retry_start" not in event_types, "No retries expected on clean execution"
 
         # cycle_done must be present
         assert "cycle_done" in event_types
@@ -327,13 +310,10 @@ class TestCheckpointClearedOnSuccess:
         # The checkpoint file must not exist
         checkpoint_path = agent.anima_dir / "shortterm" / "stream_checkpoint.json"
         assert not checkpoint_path.exists(), (
-            f"stream_checkpoint.json should not exist after success, "
-            f"but found at {checkpoint_path}"
+            f"stream_checkpoint.json should not exist after success, but found at {checkpoint_path}"
         )
 
-    async def test_checkpoint_saved_during_tool_end_events(
-        self, make_agent_core, monkeypatch
-    ):
+    async def test_checkpoint_saved_during_tool_end_events(self, make_agent_core, monkeypatch):
         """Verify checkpoint is persisted when tool_end events are emitted,
         then cleared on successful completion."""
 
@@ -406,18 +386,14 @@ class TestCheckpointClearedOnSuccess:
             events.append(chunk)
             # Check if checkpoint exists right after tool_end is yielded
             if chunk["type"] == "tool_end":
-                shortterm = ShortTermMemory(agent.anima_dir)
+                shortterm = ShortTermMemory(agent.anima_dir, session_type="task")
                 cp = shortterm.load_checkpoint()
                 if cp is not None:
                     checkpoint_existed_during_stream = True
 
         # Checkpoint should have been saved during the tool_end event
-        assert checkpoint_existed_during_stream, (
-            "Checkpoint should be saved after tool_end events"
-        )
+        assert checkpoint_existed_during_stream, "Checkpoint should be saved after tool_end events"
 
         # But after completion, checkpoint should be cleared
-        shortterm = ShortTermMemory(agent.anima_dir)
-        assert shortterm.load_checkpoint() is None, (
-            "Checkpoint should be cleared after successful completion"
-        )
+        shortterm = ShortTermMemory(agent.anima_dir, session_type="task")
+        assert shortterm.load_checkpoint() is None, "Checkpoint should be cleared after successful completion"

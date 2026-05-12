@@ -16,10 +16,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.schemas import ModelConfig
 from core.execution.base import StreamDisconnectedError
 from core.prompt.builder import BuildResult
-
+from core.schemas import ModelConfig
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -48,6 +47,7 @@ def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-6"):
         mock_executor = MagicMock()
         mock_create.return_value = mock_executor
         from core.agent import AgentCore
+
         agent = AgentCore(anima_dir, memory, mc, messenger)
         agent._executor = mock_executor
     return agent
@@ -85,9 +85,7 @@ class TestRetryFreshSession:
     """On retry_count == 1, _clear_session_id('chat') is called exactly once."""
 
     @pytest.mark.asyncio
-    async def test_clear_session_id_called_on_first_retry(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_clear_session_id_called_on_first_retry(self, tmp_path: Path) -> None:
         """retry_count == 1: _clear_session_id('chat') is called."""
         agent = _make_agent(tmp_path)
 
@@ -104,9 +102,7 @@ class TestRetryFreshSession:
         async def _executor_stream(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
-                raise StreamDisconnectedError(
-                    "first attempt failed", partial_text=""
-                )
+                raise StreamDisconnectedError("first attempt failed", partial_text="")
             # Second call succeeds
             yield {
                 "type": "done",
@@ -126,7 +122,7 @@ class TestRetryFreshSession:
             patch("core.agent.AgentCore._resolve_execution_mode", return_value="s"),
             patch("core.agent.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-                patch("core._agent_cycle._save_prompt_log"),
+            patch("core._agent_cycle._save_prompt_log"),
             patch("core.execution._sdk_session._clear_session_id", side_effect=_spy_clear),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
             patch("core.agent.AgentCore._compute_overflow_files", return_value=[]),
@@ -149,8 +145,7 @@ class TestRetryFreshSession:
         # _clear_session_id should have been called with "chat"
         chat_clears = [st for _, st in clear_calls if st == "chat"]
         assert len(chat_clears) >= 1, (
-            "Expected _clear_session_id('chat') to be called on retry_count==1, "
-            f"but clear_calls = {clear_calls}"
+            f"Expected _clear_session_id('chat') to be called on retry_count==1, but clear_calls = {clear_calls}"
         )
 
     @pytest.mark.asyncio
@@ -182,7 +177,7 @@ class TestRetryFreshSession:
             patch("core.agent.AgentCore._resolve_execution_mode", return_value="s"),
             patch("core.agent.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-                patch("core._agent_cycle._save_prompt_log"),
+            patch("core._agent_cycle._save_prompt_log"),
             patch("core.execution._sdk_session._clear_session_id"),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
             patch("core.agent.AgentCore._compute_overflow_files", return_value=[]),
@@ -203,15 +198,11 @@ class TestRetryFreshSession:
                 events.append(event)
 
         retry_events = [e for e in events if e.get("type") == "retry_start"]
-        assert len(retry_events) >= 1, (
-            f"Expected retry_start event, got event types: {[e.get('type') for e in events]}"
-        )
+        assert len(retry_events) >= 1, f"Expected retry_start event, got event types: {[e.get('type') for e in events]}"
         assert retry_events[0]["retry"] == 1
 
     @pytest.mark.asyncio
-    async def test_no_clear_session_id_on_second_retry(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_no_clear_session_id_on_second_retry(self, tmp_path: Path) -> None:
         """retry_count == 2 does NOT call _clear_session_id again."""
         agent = _make_agent(tmp_path)
 
@@ -225,9 +216,7 @@ class TestRetryFreshSession:
         async def _executor_stream(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] <= 2:
-                raise StreamDisconnectedError(
-                    f"failure #{call_count[0]}", partial_text=""
-                )
+                raise StreamDisconnectedError(f"failure #{call_count[0]}", partial_text="")
             # Third call (retry 2) succeeds
             yield {
                 "type": "done",
@@ -247,7 +236,7 @@ class TestRetryFreshSession:
             patch("core.agent.AgentCore._resolve_execution_mode", return_value="s"),
             patch("core.agent.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-                patch("core._agent_cycle._save_prompt_log"),
+            patch("core._agent_cycle._save_prompt_log"),
             patch("core.execution._sdk_session._clear_session_id", side_effect=_spy_clear),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
             patch("core.agent.AgentCore._compute_overflow_files", return_value=[]),
@@ -299,7 +288,7 @@ class TestRetryExhausted:
             patch("core.agent.AgentCore._resolve_execution_mode", return_value="s"),
             patch("core.agent.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-                patch("core._agent_cycle._save_prompt_log"),
+            patch("core._agent_cycle._save_prompt_log"),
             patch("core.execution._sdk_session._clear_session_id"),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
             patch("core.agent.AgentCore._compute_overflow_files", return_value=[]),

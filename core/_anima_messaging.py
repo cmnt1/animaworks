@@ -300,12 +300,16 @@ class MessagingMixin:
                     _meeting_token = meeting_mode.set(True)
                 self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
 
+                # Human-facing chat must use the per-Anima status.json model,
+                # independent of any background/helper model in flight.
+                base_model_config = self.memory.read_model_config()
+
                 # Build history-aware prompt via conversation memory
-                conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
+                conv_memory = ConversationMemory(self.anima_dir, base_model_config, thread_id=thread_id)
                 await conv_memory.compress_if_needed()
 
                 # Determine prompt and history strategy per execution mode
-                mode = self.agent.execution_mode
+                mode = self.agent._resolve_execution_mode(base_model_config)
                 prior_messages = None
                 if mode == "s":
                     prompt = content
@@ -366,6 +370,7 @@ class MessagingMixin:
                         prior_messages=prior_messages,
                         max_turns_override=self._front_max_turns_override(),
                         thread_id=thread_id,
+                        model_config_override=base_model_config,
                     )
                     self._last_activity = now_local()
                     result.summary = normalize_user_facing_response_text(result.summary)
@@ -552,15 +557,19 @@ class MessagingMixin:
                     _meeting_token = meeting_mode.set(True)
                 self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
 
+                # Human-facing chat must use the per-Anima status.json model,
+                # independent of any background/helper model in flight.
+                base_model_config = self.memory.read_model_config()
+
                 # Build history-aware prompt via conversation memory
-                conv_memory = ConversationMemory(self.anima_dir, self.model_config, thread_id=thread_id)
+                conv_memory = ConversationMemory(self.anima_dir, base_model_config, thread_id=thread_id)
                 if conv_memory.needs_compression():
                     yield {"type": "compression_start"}
                     await conv_memory.compress_if_needed()
                     yield {"type": "compression_end"}
 
                 # Determine prompt and history strategy per execution mode
-                mode = self.agent.execution_mode
+                mode = self.agent._resolve_execution_mode(base_model_config)
                 prior_messages = None
                 if mode == "s":
                     prompt = content
@@ -631,6 +640,7 @@ class MessagingMixin:
                         prior_messages=prior_messages,
                         max_turns_override=self._front_max_turns_override(),
                         thread_id=thread_id,
+                        model_config_override=base_model_config,
                     ):
                         if chunk.get("type") == "text_delta":
                             delta_text = chunk.get("text", "")

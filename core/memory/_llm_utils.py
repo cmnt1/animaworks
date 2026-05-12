@@ -112,8 +112,16 @@ def _get_api_key_for_provider(cfg: Any, provider: str) -> str | None:
     return api_key
 
 
-def get_llm_kwargs_for_model(model: str) -> dict[str, Any]:
-    """Resolve LiteLLM kwargs for the requested model or the consolidation default."""
+def get_llm_kwargs_for_model(model: str, *, credential: str = "") -> dict[str, Any]:
+    """Resolve LiteLLM kwargs for the requested model or the consolidation default.
+
+    Args:
+        model: LiteLLM model identifier. Empty string falls back to
+            ``config.consolidation.llm_model``.
+        credential: Explicit credential name to use instead of provider-prefix
+            resolution. When empty and *model* is also empty, falls back to
+            ``config.consolidation.llm_credential`` if set.
+    """
     ensure_credentials_in_env()
 
     from core.config import load_config
@@ -122,8 +130,18 @@ def get_llm_kwargs_for_model(model: str) -> dict[str, Any]:
     resolved_model = model or cfg.consolidation.llm_model
     kwargs: dict[str, Any] = {"model": resolved_model}
 
+    explicit_cred = credential
+    if not explicit_cred and not model:
+        _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
+        explicit_cred = _llm_cred if isinstance(_llm_cred, str) and _llm_cred else ""
+
+    if explicit_cred:
+        cred = cfg.credentials.get(explicit_cred)
+    else:
+        provider = _get_provider_for_model(resolved_model)
+        cred = cfg.credentials.get(provider) if provider else None
+
     provider = _get_provider_for_model(resolved_model)
-    cred = cfg.credentials.get(provider) if provider else None
 
     if provider == OPENCODE_GO_PROVIDER:
         defaults = with_opencode_go_defaults(cred)
@@ -143,11 +161,59 @@ def get_llm_kwargs_for_model(model: str) -> dict[str, Any]:
             kwargs["api_base"] = base_url
         return kwargs
 
-    api_key = _get_api_key_for_provider(cfg, provider)
+    if explicit_cred:
+        api_key = cred.api_key if cred else None
+    else:
+        api_key = _get_api_key_for_provider(cfg, provider)
     if api_key:
         kwargs["api_key"] = api_key
     if cred and cred.base_url:
         kwargs["api_base"] = cred.base_url
+
+    return kwargs
+
+
+def get_llm_kwargs_for_model_config(model_config: Any) -> dict[str, Any]:
+    """Resolve LiteLLM kwargs from the active per-Anima ModelConfig."""
+    ensure_credentials_in_env()
+
+    resolved_model = getattr(model_config, "model", "") or ""
+    kwargs = get_llm_kwargs_for_model(resolved_model)
+    kwargs["model"] = resolved_model
+
+    api_key = getattr(model_config, "api_key", None)
+    api_key_env = getattr(model_config, "api_key_env", "")
+    if not api_key and api_key_env:
+        api_key = os.environ.get(api_key_env) or None
+    if api_key:
+        kwargs["api_key"] = api_key
+
+    api_base_url = getattr(model_config, "api_base_url", None)
+    if api_base_url:
+        kwargs["api_base"] = api_base_url
+
+    extra = getattr(model_config, "extra_keys", None) or {}
+    model = kwargs["model"]
+    if model.startswith("azure/"):
+        api_version = extra.get("api_version") or os.environ.get("AZURE_API_VERSION")
+        if api_version:
+            kwargs["api_version"] = api_version
+    elif model.startswith("vertex_ai/"):
+        for key in ("vertex_project", "vertex_location", "vertex_credentials"):
+            val = extra.get(key) or os.environ.get(key.upper())
+            if val:
+                kwargs[key] = val
+    elif model.startswith("bedrock/"):
+        for key in (
+            "aws_access_key_id",
+            "aws_secret_access_key",
+            "aws_session_token",
+            "aws_region_name",
+            "aws_profile",
+        ):
+            val = extra.get(key) or os.environ.get(key.upper())
+            if val:
+                kwargs[key] = val
 
     return kwargs
 
@@ -443,5 +509,55 @@ async def one_shot_completion(
             )
         except Exception as e:
             logger.warning("Codex SDK one-shot fallback also failed: %s", e)
+
+    return None
+
+
+async def one_shot_completion_with_model_config(
+    prompt: str,
+    *,
+    system_prompt: str = "",
+    model_config: Any,
+    max_tokens: int = 2048,
+) -> str | None:
+    """Execute one-shot completion with the active Anima model configuration."""
+    llm_kwargs = get_llm_kwargs_for_model_config(model_config)
+    resolved_model = llm_kwargs["model"]
+
+    try:
+        result = await _try_litellm(
+            prompt,
+            system_prompt=system_prompt,
+            model=resolved_model,
+            max_tokens=max_tokens,
+            llm_kwargs=llm_kwargs,
+        )
+        if result:
+            return result
+    except Exception as e:
+        logger.warning("LiteLLM active-model one-shot failed (%s), trying SDK fallback", e)
+
+    if _is_anthropic_model(resolved_model):
+        try:
+            return await _try_agent_sdk(
+                prompt,
+                system_prompt=system_prompt,
+                model=resolved_model,
+                max_tokens=max_tokens,
+            )
+        except Exception as e:
+            logger.warning("Agent SDK active-model one-shot fallback also failed: %s", e)
+
+    if _is_codex_model(resolved_model):
+        try:
+            return await _try_codex_sdk(
+                prompt,
+                system_prompt=system_prompt,
+                model=resolved_model,
+                max_tokens=max_tokens,
+                llm_kwargs=llm_kwargs,
+            )
+        except Exception as e:
+            logger.warning("Codex SDK active-model one-shot fallback also failed: %s", e)
 
     return None

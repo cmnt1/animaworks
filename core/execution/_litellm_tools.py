@@ -117,6 +117,14 @@ def _convert_litellm_tool_calls(
 
     result: list[dict[str, Any]] = []
     for tc in tool_calls:
+        fn_name = tc.function.name
+        if not fn_name:
+            logger.warning(
+                "Skipping tool call with empty/None function name (id=%s, args=%.100s)",
+                getattr(tc, "id", "?"),
+                getattr(tc.function, "arguments", ""),
+            )
+            continue
         try:
             args = _json.loads(tc.function.arguments)
         except (_json.JSONDecodeError, TypeError):
@@ -124,13 +132,13 @@ def _convert_litellm_tool_calls(
             if args is None:
                 logger.warning(
                     "Unrepairable tool-call arguments for %s: %.200s",
-                    tc.function.name,
+                    fn_name,
                     tc.function.arguments,
                 )
         result.append(
             {
                 "id": tc.id,
-                "name": tc.function.name,
+                "name": fn_name,
                 "arguments": args,
                 "raw_arguments": tc.function.arguments if args is None else None,
             }

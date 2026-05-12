@@ -346,7 +346,29 @@ class LiteLLMExecutor(
                 ", ".join(tc.function.name or "unknown" for tc in tool_calls),
             )
 
-            parsed_calls = _convert_litellm_tool_calls(tool_calls)
+            try:
+                parsed_calls = _convert_litellm_tool_calls(tool_calls)
+            except (ValueError, KeyError, AttributeError) as exc:
+                logger.warning(
+                    "Tool call conversion failed (model=%s, iteration=%d): %s — treating as text response",
+                    self._model_config.model,
+                    iteration,
+                    exc,
+                )
+                if _content:
+                    _, _content = strip_thinking_tags(_content)
+                    all_response_text.append(_content)
+                continue
+
+            if not parsed_calls:
+                logger.info(
+                    "All tool calls filtered (empty names) at iteration=%d — treating as text response",
+                    iteration,
+                )
+                if _content:
+                    _, _content = strip_thinking_tags(_content)
+                    all_response_text.append(_content)
+                continue
 
             # Reconstruct assistant message with repaired arguments.
             # model_dump() would preserve malformed JSON that some models

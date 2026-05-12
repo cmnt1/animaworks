@@ -11,6 +11,7 @@ All tests use mocks — no Codex CLI binary or API key required.
 import asyncio
 import json
 import os
+import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -38,6 +39,7 @@ from core.execution.codex_sdk import (
     _should_prefer_cli_exec,
     _stderr_contains_fatal_signal,
     _usage_to_dict,
+    clear_codex_thread_id,
     clear_codex_thread_ids,
 )
 from core.prompt.context import ContextTracker
@@ -229,7 +231,9 @@ class TestHelpers:
         monkeypatch.setattr("core.execution.codex_sdk.sys.platform", "win32")
         monkeypatch.setattr(
             "core.execution.codex_sdk.get_codex_executable",
-            lambda: r"C:\Users\cmnt\.antigravity\extensions\openai.chatgpt-26.313.41514-win32-x64\bin\windows-x86_64\codex.exe",
+            lambda: (
+                r"C:\Users\cmnt\.antigravity\extensions\openai.chatgpt-26.313.41514-win32-x64\bin\windows-x86_64\codex.exe"
+            ),
         )
         assert _should_prefer_cli_exec("inbox")
         assert _should_prefer_cli_exec("task:demo")
@@ -325,9 +329,22 @@ class TestSessionPersistence:
     def test_clear_all_thread_ids(self, anima_dir):
         _save_thread_id(anima_dir, "t1", "chat")
         _save_thread_id(anima_dir, "t2", "heartbeat")
+        _save_thread_id(anima_dir, "t3", "inbox")
+        _save_thread_id(anima_dir, "t4", "inbox", "inbox")
         clear_codex_thread_ids(anima_dir)
         assert _load_thread_id(anima_dir, "chat") is None
         assert _load_thread_id(anima_dir, "heartbeat") is None
+        assert _load_thread_id(anima_dir, "inbox") is None
+        assert _load_thread_id(anima_dir, "inbox", "inbox") == "t4"
+
+    def test_clear_single_thread_id_for_non_chat_thread(self, anima_dir):
+        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
+        _save_thread_id(anima_dir, "chat-thread", "chat")
+
+        clear_codex_thread_id(anima_dir, "inbox", "inbox")
+
+        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_thread_id(anima_dir, "chat") == "chat-thread"
 
 
 # ── Executor instantiation tests ─────────────────────────────
@@ -434,6 +451,8 @@ class TestConfigWriting:
         assert "rtk proxy <command>" in config_toml
         assert "mcp__codex_apps__gmail._send_email" in config_toml
         assert "the required channel is the AnimaWorks DM tool" in config_toml
+        parsed = tomllib.loads(config_toml)
+        assert parsed["mcp_servers"]["aw"]["default_tools_approval_mode"] == "approve"
 
     def test_write_codex_config_prunes_gmail_send_tools_from_codex_apps_cache(self, executor, anima_dir):
         cache_dir = anima_dir / ".codex_home" / "cache" / "codex_apps_tools"
@@ -496,7 +515,14 @@ class TestConfigWriting:
     def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir):
         """Restricted file_roots produces workspace-write with writable_roots (non-Windows)."""
         import json
-        perms = {"version": 1, "file_roots": [str(anima_dir)], "commands": {"allow_all": True, "allow": [], "deny": []}, "external_tools": {"allow_all": True, "allow": [], "deny": []}, "tool_creation": {"personal": True, "shared": False}}
+
+        perms = {
+            "version": 1,
+            "file_roots": [str(anima_dir)],
+            "commands": {"allow_all": True, "allow": [], "deny": []},
+            "external_tools": {"allow_all": True, "allow": [], "deny": []},
+            "tool_creation": {"personal": True, "shared": False},
+        }
         (anima_dir / "permissions.json").write_text(json.dumps(perms), encoding="utf-8")
         exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
         exc._write_codex_config("prompt")
@@ -594,7 +620,7 @@ class TestBlockingExecution:
         assert _load_thread_id(anima_dir, "chat") == "tid-saved"
 
     @pytest.mark.asyncio
-    async def test_execute_heartbeat_trigger(self, executor, anima_dir):
+    async def test_execute_heartbeat_trigger_does_not_persist_thread(self, executor, anima_dir):
         mock_turn = MagicMock()
         mock_turn.final_response = "Heartbeat response"
         mock_turn.items = []
@@ -617,8 +643,39 @@ class TestBlockingExecution:
             )
 
         assert result.text == "Heartbeat response"
-        assert _load_thread_id(anima_dir, "heartbeat") == "tid-hb"
+        assert _load_thread_id(anima_dir, "heartbeat") is None
         assert _load_thread_id(anima_dir, "chat") is None
+
+    @pytest.mark.asyncio
+    async def test_execute_inbox_trigger_does_not_resume_or_persist_thread(self, executor, anima_dir):
+        mock_turn = MagicMock()
+        mock_turn.final_response = "Inbox response"
+        mock_turn.items = []
+        mock_turn.usage = None
+
+        mock_thread = MagicMock()
+        mock_thread.run = AsyncMock(return_value=mock_turn)
+        mock_thread.id = "tid-inbox"
+
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        _save_thread_id(anima_dir, "old-chat", "chat")
+        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
+        with (
+            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch.object(executor, "_create_codex_client", return_value=mock_codex),
+        ):
+            result = await executor.execute(
+                prompt="inbox check",
+                trigger="inbox:sakura",
+                thread_id="inbox",
+            )
+
+        assert result.text == "Inbox response"
+        mock_codex.resume_thread.assert_not_called()
+        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_thread_id(anima_dir, "chat") == "old-chat"
 
     @pytest.mark.asyncio
     async def test_execute_interrupted_before_run(self, model_config, anima_dir):
@@ -756,7 +813,8 @@ class TestStreamingExecution:
         assert "done" in types
         done_ev = next(e for e in events if e["type"] == "done")
         assert "Streamed text" in done_ev["full_text"]
-        assert tracker.usage_ratio > 0.0, "tracker must be updated from usage"
+        assert done_ev["result_message"].num_turns == 1
+        assert tracker.usage_ratio == 0.0
 
     @pytest.mark.asyncio
     async def test_stream_falls_back_to_cli_exec_on_fatal_sdk_error(self, executor):
@@ -825,6 +883,58 @@ class TestStreamingExecution:
         assert [e["type"] for e in events] == ["text_delta", "done"]
         mock_fallback.assert_called_once()
         mock_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stream_inbox_trigger_clears_stale_thread_and_does_not_persist(self, executor, anima_dir):
+        msg_item = MagicMock(spec=["type", "id", "text"])
+        msg_item.type = "agent_message"
+        msg_item.id = "msg-inbox"
+        msg_item.text = "Inbox stream"
+
+        msg_event = MagicMock()
+        msg_event.type = "item.completed"
+        msg_event.item = msg_item
+
+        done_event = MagicMock()
+        done_event.type = "turn.completed"
+        done_event.usage = None
+
+        async def fake_events():
+            yield msg_event
+            yield done_event
+
+        mock_streamed = MagicMock()
+        mock_streamed.events = fake_events()
+
+        mock_thread = MagicMock()
+        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.id = "new-inbox-thread"
+
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        _save_thread_id(anima_dir, "old-chat", "chat")
+        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
+
+        events = []
+        with (
+            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch.object(executor, "_create_codex_client", return_value=mock_codex),
+        ):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="sys",
+                prompt="inbox",
+                tracker=tracker,
+                trigger="inbox:sakura",
+                thread_id="inbox",
+            ):
+                events.append(ev)
+
+        assert any(e["type"] == "done" for e in events)
+        mock_codex.resume_thread.assert_not_called()
+        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_thread_id(anima_dir, "chat") == "old-chat"
 
     @pytest.mark.asyncio
     async def test_stream_tool_events(self, executor, anima_dir):

@@ -34,6 +34,10 @@ def create_skill_directory(
     references: list[dict[str, str]] | None = None,
     templates: list[dict[str, str]] | None = None,
     allowed_tools: list[str] | None = None,
+    trust_level: str | None = None,
+    source_type: str | None = None,
+    source_owner_anima: str | None = None,
+    category: str | None = None,
 ) -> str:
     """Create skill directory structure with SKILL.md and optional sub-files."""
     if "/" in skill_name or "\\" in skill_name or ".." in skill_name:
@@ -43,6 +47,15 @@ def create_skill_directory(
     skill_dir.mkdir(parents=True, exist_ok=True)
 
     fm: dict[str, Any] = {"name": skill_name, "description": description}
+    if category:
+        fm["category"] = category
+    fm["trust_level"] = trust_level or "trusted"
+    source: dict[str, str] = {"type": source_type or "anima"}
+    if source_owner_anima:
+        source["owner_anima"] = source_owner_anima
+    source["origin"] = "manual"
+    fm["source"] = source
+    fm["version"] = 1
     if allowed_tools:
         fm["allowed_tools"] = allowed_tools
     frontmatter = yaml.dump(fm, allow_unicode=True, default_flow_style=False, sort_keys=False).strip()

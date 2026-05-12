@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from core.prompt.builder import (
@@ -18,7 +17,6 @@ from core.prompt.builder import (
     build_system_prompt,
     inject_shortterm,
 )
-from core.schemas import SkillMeta
 
 _MOCK_SECTIONS = (
     "[group1_header]: 1. 動作環境と行動ルール\n"
@@ -318,6 +316,18 @@ class TestBuildSystemPrompt:
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text("I am Alice", encoding="utf-8")
 
+        # Create actual skill files for SkillIndex to discover
+        skills_dir = anima_dir / "skills" / "coding"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text(
+            "---\nname: coding\ndescription: Write code\n---\n# Coding\n", encoding="utf-8"
+        )
+        common_skills_dir = data_dir / "common_skills" / "deploy"
+        common_skills_dir.mkdir(parents=True, exist_ok=True)
+        (common_skills_dir / "SKILL.md").write_text(
+            "---\nname: deploy\ndescription: Deploy apps\n---\n# Deploy\n", encoding="utf-8"
+        )
+
         memory = MagicMock()
         memory.anima_dir = anima_dir
         memory.read_company_vision.return_value = ""
@@ -333,21 +343,18 @@ class TestBuildSystemPrompt:
         memory.list_procedure_files.return_value = ["proc-x"]
         memory.list_skill_summaries.return_value = [("coding", "Write code")]
         memory.list_common_skill_summaries.return_value = [("deploy", "Deploy apps")]
-        memory.list_skill_metas.return_value = [
-            SkillMeta(name="coding", description="Write code", path=Path("/tmp/test/skills/coding.md"), is_common=False)
-        ]
-        memory.list_common_skill_metas.return_value = [
-            SkillMeta(
-                name="deploy", description="Deploy apps", path=Path("/tmp/test/common_skills/deploy.md"), is_common=True
-            )
-        ]
+        memory.list_skill_metas.return_value = []
+        memory.list_common_skill_metas.return_value = []
         memory.list_procedure_metas.return_value = []
         memory.collect_distilled_knowledge_separated.return_value = ([], [])
         memory.common_skills_dir = data_dir / "common_skills"
         memory.list_shared_users.return_value = []
         memory.collect_distilled_knowledge_separated.return_value = ([], [])
 
-        with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
+        with (
+            patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()),
+            patch("core.paths.get_common_skills_dir", return_value=data_dir / "common_skills"),
+        ):
             result = build_system_prompt(memory)
             prompt = result.system_prompt
             assert "スキルと手順書" not in prompt

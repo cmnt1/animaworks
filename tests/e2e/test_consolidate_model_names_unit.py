@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -24,12 +25,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── Expected config defaults ─────────────────────────────────────
+from core.config import load_config as _load_config
+from core.config.schemas import DEFAULT_CONSOLIDATION_MODEL
 
-
-EXPECTED_CONSOLIDATION_MODEL = "claude-sonnet-4-6"
+_cfg = _load_config()
+EXPECTED_CONSOLIDATION_MODEL = _cfg.consolidation.llm_model
 EXPECTED_ANIMA_DEFAULT_MODEL = "claude-sonnet-4-6"
+_CODE_DEFAULT_CONSOLIDATION_MODEL = DEFAULT_CONSOLIDATION_MODEL
 
 
 # ── Fixtures ─────────────────────────────────────────────────────
@@ -40,8 +43,12 @@ def temp_anima_dir(tmp_path: Path) -> Path:
     """Create a minimal anima directory structure for unit tests."""
     anima_dir = tmp_path / "test_anima"
     for subdir in (
-        "episodes", "knowledge", "procedures",
-        "activity_log", "state", "shortterm",
+        "episodes",
+        "knowledge",
+        "procedures",
+        "activity_log",
+        "state",
+        "shortterm",
     ):
         (anima_dir / subdir).mkdir(parents=True)
     return anima_dir
@@ -62,9 +69,7 @@ def _assert_model_in_acompletion(mock_llm: AsyncMock, expected_model: str) -> No
     """Assert that the *first* call to acompletion used ``expected_model``."""
     assert mock_llm.await_count >= 1, "litellm.acompletion was never called"
     call_kwargs = mock_llm.call_args_list[0].kwargs
-    assert call_kwargs["model"] == expected_model, (
-        f"Expected model={expected_model!r}, got {call_kwargs['model']!r}"
-    )
+    assert call_kwargs["model"] == expected_model, f"Expected model={expected_model!r}, got {call_kwargs['model']!r}"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -88,8 +93,10 @@ class TestProceduralDistillerModelDefault:
     @pytest.fixture
     def distiller(self, temp_anima_dir: Path):
         from core.memory.distillation import ProceduralDistiller
+
         return ProceduralDistiller(
-            anima_dir=temp_anima_dir, anima_name="test_anima",
+            anima_dir=temp_anima_dir,
+            anima_name="test_anima",
         )
 
     # ── classify_and_distill ─────────────────────────────────
@@ -97,20 +104,16 @@ class TestProceduralDistillerModelDefault:
     @pytest.mark.asyncio
     async def test_classify_and_distill_default_model(self, distiller):
         """classify_and_distill(model='') resolves to get_consolidation_llm_kwargs()['model']."""
-        mock_resp = _make_mock_llm_response(
-            "## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n"
-        )
+        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
-            result = await distiller.classify_and_distill("some episodes")
+            await distiller.classify_and_distill("some episodes")
             _assert_model_in_acompletion(mock_llm, EXPECTED_CONSOLIDATION_MODEL)
 
     @pytest.mark.asyncio
     async def test_classify_and_distill_explicit_model(self, distiller):
         """classify_and_distill(model='custom/m') uses that model."""
-        mock_resp = _make_mock_llm_response(
-            "## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n"
-        )
+        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
             await distiller.classify_and_distill("some episodes", model="custom/m")
@@ -121,21 +124,17 @@ class TestProceduralDistillerModelDefault:
     @pytest.mark.asyncio
     async def test_distill_procedures_default_model(self, distiller):
         """distill_procedures(model='') resolves to get_consolidation_llm_kwargs()['model']."""
-        mock_resp = _make_mock_llm_response(
-            "## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n"
-        )
+        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
-            result = await distiller.distill_procedures("episodes text")
+            await distiller.distill_procedures("episodes text")
             # distill_procedures calls classify_and_distill internally
             _assert_model_in_acompletion(mock_llm, EXPECTED_CONSOLIDATION_MODEL)
 
     @pytest.mark.asyncio
     async def test_distill_procedures_explicit_model(self, distiller):
         """distill_procedures(model='x') uses that model."""
-        mock_resp = _make_mock_llm_response(
-            "## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n"
-        )
+        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
             await distiller.distill_procedures("episodes text", model="openai/gpt-4o")
@@ -169,12 +168,16 @@ class TestReconsolidationEngineModelDefault:
 
         mm = MagicMock()
         mm.read_procedure_metadata.return_value = {
-            "failure_count": 3, "confidence": 0.3, "version": 1,
+            "failure_count": 3,
+            "confidence": 0.3,
+            "version": 1,
             "description": "test",
         }
         mm.read_procedure_content.return_value = "test content"
         mm.read_knowledge_metadata.return_value = {
-            "failure_count": 3, "confidence": 0.3, "version": 1,
+            "failure_count": 3,
+            "confidence": 0.3,
+            "version": 1,
         }
         mm.read_knowledge_content.return_value = "knowledge content"
 
@@ -197,7 +200,9 @@ class TestReconsolidationEngineModelDefault:
 
     @pytest.mark.asyncio
     async def test_apply_reconsolidation_explicit_model(
-        self, recon_engine, temp_anima_dir,
+        self,
+        recon_engine,
+        temp_anima_dir,
     ):
         """apply_reconsolidation(targets, model='x') uses that model."""
         proc_dir = temp_anima_dir / "procedures"
@@ -207,8 +212,9 @@ class TestReconsolidationEngineModelDefault:
         mock_resp = _make_mock_llm_response("revised procedure content")
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
-            result = await recon_engine.apply_reconsolidation(
-                [proc_file], model="google/gemini-2.5-pro",
+            await recon_engine.apply_reconsolidation(
+                [proc_file],
+                model="google/gemini-2.5-pro",
             )
             _assert_model_in_acompletion(mock_llm, "google/gemini-2.5-pro")
 
@@ -236,8 +242,10 @@ class TestContradictionDetectorModelDefault:
     @pytest.fixture
     def detector(self, temp_anima_dir: Path):
         from core.memory.contradiction import ContradictionDetector
+
         return ContradictionDetector(
-            anima_dir=temp_anima_dir, anima_name="test_anima",
+            anima_dir=temp_anima_dir,
+            anima_name="test_anima",
         )
 
     # ── scan_contradictions ──────────────────────────────────
@@ -246,7 +254,9 @@ class TestContradictionDetectorModelDefault:
     async def test_scan_contradictions_default_model(self, detector):
         """scan_contradictions(model='') resolves to get_consolidation_llm_kwargs()['model']."""
         with patch.object(
-            detector, "_find_candidate_pairs", return_value=[],
+            detector,
+            "_find_candidate_pairs",
+            return_value=[],
         ):
             result = await detector.scan_contradictions()
             assert result == []
@@ -255,7 +265,9 @@ class TestContradictionDetectorModelDefault:
     async def test_scan_contradictions_explicit_model(self, detector):
         """scan_contradictions(model='x') uses that model."""
         with patch.object(
-            detector, "_find_candidate_pairs", return_value=[],
+            detector,
+            "_find_candidate_pairs",
+            return_value=[],
         ):
             result = await detector.scan_contradictions(model="explicit/contra")
             assert result == []
@@ -272,7 +284,8 @@ class TestContradictionDetectorModelDefault:
     async def test_resolve_contradictions_explicit_model(self, detector):
         """resolve_contradictions([], model='x') uses that model."""
         result = await detector.resolve_contradictions(
-            [], model="explicit/resolve",
+            [],
+            model="explicit/resolve",
         )
         assert result == {"superseded": 0, "merged": 0, "coexisted": 0, "errors": 0}
 
@@ -286,17 +299,25 @@ class TestForgettingEngineModelDefault:
     @pytest.fixture
     def forgetter(self, temp_anima_dir: Path):
         from core.memory.forgetting import ForgettingEngine
+
         return ForgettingEngine(
-            anima_dir=temp_anima_dir, anima_name="test_anima",
+            anima_dir=temp_anima_dir,
+            anima_name="test_anima",
         )
 
     @pytest.mark.asyncio
     async def test_neurogenesis_reorganize_default_model(self, forgetter):
         """neurogenesis_reorganize(model='') resolves to get_consolidation_llm_kwargs()['model']."""
-        with patch.object(
-            forgetter, "_get_vector_store",
-        ) as mock_store, patch.object(
-            forgetter, "_get_all_chunks", return_value=[],
+        with (
+            patch.object(
+                forgetter,
+                "_get_vector_store",
+            ),
+            patch.object(
+                forgetter,
+                "_get_all_chunks",
+                return_value=[],
+            ),
         ):
             result = await forgetter.neurogenesis_reorganize()
             assert result["merged_count"] == 0
@@ -304,10 +325,16 @@ class TestForgettingEngineModelDefault:
     @pytest.mark.asyncio
     async def test_neurogenesis_reorganize_explicit_model(self, forgetter):
         """neurogenesis_reorganize(model='x') uses that model."""
-        with patch.object(
-            forgetter, "_get_vector_store",
-        ), patch.object(
-            forgetter, "_get_all_chunks", return_value=[],
+        with (
+            patch.object(
+                forgetter,
+                "_get_vector_store",
+            ),
+            patch.object(
+                forgetter,
+                "_get_all_chunks",
+                return_value=[],
+            ),
         ):
             result = await forgetter.neurogenesis_reorganize(model="explicit/neuro")
             assert result["merged_count"] == 0
@@ -347,7 +374,9 @@ class TestKnowledgeValidatorModelDefault:
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
             result = await validator.validate(
-                items, "source episodes", model="custom/validator",
+                items,
+                "source episodes",
+                model="custom/validator",
             )
             _assert_model_in_acompletion(mock_llm, "custom/validator")
             assert len(result) == 1
@@ -399,11 +428,11 @@ class TestConfigDefaults:
     """Verify that config model defaults are the expected values."""
 
     def test_consolidation_config_llm_model(self):
-        """ConsolidationConfig().llm_model is the expected default."""
+        """ConsolidationConfig().llm_model is the expected code default."""
         from core.config.models import ConsolidationConfig
 
         cfg = ConsolidationConfig()
-        assert cfg.llm_model == EXPECTED_CONSOLIDATION_MODEL
+        assert cfg.llm_model == _CODE_DEFAULT_CONSOLIDATION_MODEL
 
     def test_anima_defaults_model(self):
         """AnimaDefaults().model is the expected default."""
@@ -433,6 +462,4 @@ class TestConfigDefaults:
         from core.config.models import AnimaDefaults
 
         defaults = AnimaDefaults()
-        assert "/" not in defaults.model, (
-            "AnimaDefaults.model should not include a provider prefix"
-        )
+        assert "/" not in defaults.model, "AnimaDefaults.model should not include a provider prefix"

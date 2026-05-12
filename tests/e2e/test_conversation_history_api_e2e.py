@@ -12,6 +12,7 @@ Verifies that:
 6. The API endpoint returns the correct format
 7. /conversation/full is removed
 """
+
 from __future__ import annotations
 
 import json
@@ -22,7 +23,6 @@ from unittest.mock import patch
 import pytest
 
 from core.memory.activity import ActivityLogger
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -85,6 +85,45 @@ def test_basic_conversation_view(anima_dir: Path) -> None:
     assert msg1["tool_calls"] == []
 
 
+def test_default_conversation_view_excludes_inbox_entries(anima_dir: Path) -> None:
+    """Inbox entries are hidden from default chat history and available explicitly."""
+    al = ActivityLogger(anima_dir)
+    al.log("message_received", content="chat hello", from_person="admin", channel="chat")
+    al.log("response_sent", content="chat reply", to_person="admin", channel="chat")
+    al.log(
+        "message_received",
+        content="inbox hello",
+        from_person="sakura",
+        channel="inbox",
+        meta={"trigger": "inbox:sakura", "session_type": "inbox", "thread_id": "inbox"},
+    )
+    al.log(
+        "response_sent",
+        content="inbox reply",
+        to_person="sakura",
+        channel="inbox",
+        meta={"trigger": "inbox:sakura", "session_type": "inbox", "thread_id": "inbox"},
+    )
+    al.log(
+        "response_sent",
+        content="legacy inbox reply",
+        to_person="sakura",
+        channel="inbox",
+        meta={"trigger": "inbox:sakura"},
+    )
+
+    default_result = al.get_conversation_view(limit=50)
+    default_messages = [msg["content"] for session in default_result["sessions"] for msg in session["messages"]]
+    assert "chat hello" in default_messages
+    assert "inbox hello" not in default_messages
+    assert "inbox reply" not in default_messages
+    assert "legacy inbox reply" not in default_messages
+
+    inbox_result = al.get_conversation_view(limit=50, thread_id="inbox")
+    inbox_messages = [msg["content"] for session in inbox_result["sessions"] for msg in session["messages"]]
+    assert inbox_messages == ["inbox hello", "inbox reply", "legacy inbox reply"]
+
+
 # ── Test: Tool Call Pairing by tool_use_id ───────────────────
 
 
@@ -93,10 +132,18 @@ def test_tool_call_pairing_by_id(anima_dir: Path) -> None:
     al = ActivityLogger(anima_dir)
 
     al.log("message_received", content="天気を調べて", from_person="user", channel="chat")
-    al.log("tool_use", tool="web_search", content="query: 東京 天気",
-           meta={"tool_use_id": "tu_001", "args": {"query": "東京 天気"}})
-    al.log("tool_result", tool="web_search", content="東京は晴れ、気温20度",
-           meta={"tool_use_id": "tu_001", "is_error": False})
+    al.log(
+        "tool_use",
+        tool="web_search",
+        content="query: 東京 天気",
+        meta={"tool_use_id": "tu_001", "args": {"query": "東京 天気"}},
+    )
+    al.log(
+        "tool_result",
+        tool="web_search",
+        content="東京は晴れ、気温20度",
+        meta={"tool_use_id": "tu_001", "is_error": False},
+    )
     al.log("response_sent", content="東京は晴れで気温20度です。", to_person="user", channel="chat")
 
     result = al.get_conversation_view(limit=50)
@@ -118,29 +165,35 @@ def test_tool_call_pairing_by_id(anima_dir: Path) -> None:
 
 def test_assistant_images_restored_from_response_meta(anima_dir: Path) -> None:
     """response_sent.meta.images should be restored into assistant message payload."""
-    _write_entry(anima_dir, {
-        "ts": _ts(2),
-        "type": "message_received",
-        "content": "画像を見せて",
-        "from": "user",
-        "channel": "chat",
-    })
-    _write_entry(anima_dir, {
-        "ts": _ts(1),
-        "type": "response_sent",
-        "content": "こちらです",
-        "to": "user",
-        "channel": "chat",
-        "meta": {
-            "images": [
-                {
-                    "type": "image",
-                    "source": "generated",
-                    "path": "assets/avatar_fullbody.png",
-                }
-            ]
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(2),
+            "type": "message_received",
+            "content": "画像を見せて",
+            "from": "user",
+            "channel": "chat",
         },
-    })
+    )
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(1),
+            "type": "response_sent",
+            "content": "こちらです",
+            "to": "user",
+            "channel": "chat",
+            "meta": {
+                "images": [
+                    {
+                        "type": "image",
+                        "source": "generated",
+                        "path": "assets/avatar_fullbody.png",
+                    }
+                ]
+            },
+        },
+    )
 
     al = ActivityLogger(anima_dir)
     result = al.get_conversation_view(limit=50)
@@ -175,9 +228,17 @@ def test_blocked_tool_call(anima_dir: Path) -> None:
     al = ActivityLogger(anima_dir)
 
     al.log("message_received", content="rm -rf /", from_person="user", channel="chat")
-    al.log("tool_use", tool="Bash", content="rm -rf /",
-           meta={"tool_use_id": "tu_blocked", "args": {"command": "rm -rf /"},
-                  "blocked": True, "reason": "dangerous command"})
+    al.log(
+        "tool_use",
+        tool="Bash",
+        content="rm -rf /",
+        meta={
+            "tool_use_id": "tu_blocked",
+            "args": {"command": "rm -rf /"},
+            "blocked": True,
+            "reason": "dangerous command",
+        },
+    )
     al.log("response_sent", content="実行できません", to_person="user", channel="chat")
 
     result = al.get_conversation_view(limit=50)
@@ -192,23 +253,47 @@ def test_blocked_tool_call(anima_dir: Path) -> None:
 def test_session_boundary_by_gap(anima_dir: Path) -> None:
     """Messages separated by >10 minutes create separate sessions."""
     # Session 1: 20 minutes ago
-    _write_entry(anima_dir, {
-        "ts": _ts(20), "type": "message_received",
-        "content": "Session 1 msg", "from": "user", "channel": "chat",
-    })
-    _write_entry(anima_dir, {
-        "ts": _ts(19), "type": "response_sent",
-        "content": "Session 1 reply", "to": "user", "channel": "chat",
-    })
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(20),
+            "type": "message_received",
+            "content": "Session 1 msg",
+            "from": "user",
+            "channel": "chat",
+        },
+    )
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(19),
+            "type": "response_sent",
+            "content": "Session 1 reply",
+            "to": "user",
+            "channel": "chat",
+        },
+    )
     # Session 2: 5 minutes ago (>10 min gap from session 1)
-    _write_entry(anima_dir, {
-        "ts": _ts(5), "type": "message_received",
-        "content": "Session 2 msg", "from": "user", "channel": "chat",
-    })
-    _write_entry(anima_dir, {
-        "ts": _ts(4), "type": "response_sent",
-        "content": "Session 2 reply", "to": "user", "channel": "chat",
-    })
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(5),
+            "type": "message_received",
+            "content": "Session 2 msg",
+            "from": "user",
+            "channel": "chat",
+        },
+    )
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(4),
+            "type": "response_sent",
+            "content": "Session 2 reply",
+            "to": "user",
+            "channel": "chat",
+        },
+    )
 
     al = ActivityLogger(anima_dir)
     result = al.get_conversation_view(limit=50)
@@ -220,18 +305,36 @@ def test_session_boundary_by_gap(anima_dir: Path) -> None:
 
 def test_no_session_boundary_within_gap(anima_dir: Path) -> None:
     """Messages within 10 minutes stay in the same session."""
-    _write_entry(anima_dir, {
-        "ts": _ts(12), "type": "message_received",
-        "content": "msg1", "from": "user", "channel": "chat",
-    })
-    _write_entry(anima_dir, {
-        "ts": _ts(10), "type": "response_sent",
-        "content": "reply1", "to": "user", "channel": "chat",
-    })
-    _write_entry(anima_dir, {
-        "ts": _ts(5), "type": "message_received",
-        "content": "msg2", "from": "user", "channel": "chat",
-    })
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(12),
+            "type": "message_received",
+            "content": "msg1",
+            "from": "user",
+            "channel": "chat",
+        },
+    )
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(10),
+            "type": "response_sent",
+            "content": "reply1",
+            "to": "user",
+            "channel": "chat",
+        },
+    )
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(5),
+            "type": "message_received",
+            "content": "msg2",
+            "from": "user",
+            "channel": "chat",
+        },
+    )
 
     al = ActivityLogger(anima_dir)
     result = al.get_conversation_view(limit=50)
@@ -264,8 +367,7 @@ def test_cron_in_timeline(anima_dir: Path) -> None:
     """Cron events appear as system messages with correct trigger."""
     al = ActivityLogger(anima_dir)
 
-    al.log("cron_executed", summary="日次レポート生成完了",
-           meta={"task_name": "daily_report", "exit_code": 0})
+    al.log("cron_executed", summary="日次レポート生成完了", meta={"task_name": "daily_report", "exit_code": 0})
 
     result = al.get_conversation_view(limit=50)
 
@@ -283,13 +385,17 @@ def test_cursor_pagination(anima_dir: Path) -> None:
     # Create 10 messages (5 turns)
     for i in range(10, 0, -1):
         etype = "message_received" if i % 2 == 0 else "response_sent"
-        _write_entry(anima_dir, {
-            "ts": _ts(i), "type": etype,
-            "content": f"Message {i}",
-            "from": "user" if etype == "message_received" else "",
-            "to": "user" if etype == "response_sent" else "",
-            "channel": "chat",
-        })
+        _write_entry(
+            anima_dir,
+            {
+                "ts": _ts(i),
+                "type": etype,
+                "content": f"Message {i}",
+                "from": "user" if etype == "message_received" else "",
+                "to": "user" if etype == "response_sent" else "",
+                "channel": "chat",
+            },
+        )
 
     al = ActivityLogger(anima_dir)
 
@@ -359,14 +465,10 @@ def test_multiple_tool_calls_in_one_turn(anima_dir: Path) -> None:
     al = ActivityLogger(anima_dir)
 
     al.log("message_received", content="2つ調べて", from_person="user", channel="chat")
-    al.log("tool_use", tool="web_search", content="query1",
-           meta={"tool_use_id": "tu_a", "args": {"query": "topic1"}})
-    al.log("tool_result", tool="web_search", content="Result for topic1",
-           meta={"tool_use_id": "tu_a"})
-    al.log("tool_use", tool="web_search", content="query2",
-           meta={"tool_use_id": "tu_b", "args": {"query": "topic2"}})
-    al.log("tool_result", tool="web_search", content="Result for topic2",
-           meta={"tool_use_id": "tu_b"})
+    al.log("tool_use", tool="web_search", content="query1", meta={"tool_use_id": "tu_a", "args": {"query": "topic1"}})
+    al.log("tool_result", tool="web_search", content="Result for topic1", meta={"tool_use_id": "tu_a"})
+    al.log("tool_use", tool="web_search", content="query2", meta={"tool_use_id": "tu_b", "args": {"query": "topic2"}})
+    al.log("tool_result", tool="web_search", content="Result for topic2", meta={"tool_use_id": "tu_b"})
     al.log("response_sent", content="2つの結果をまとめました", to_person="user", channel="chat")
 
     result = al.get_conversation_view(limit=50)
@@ -389,7 +491,7 @@ def _create_test_app(tmp_path: Path, anima_names: list[str] | None = None):
     shared_dir = tmp_path / "shared"
     shared_dir.mkdir(parents=True, exist_ok=True)
 
-    for name in (anima_names or []):
+    for name in anima_names or []:
         d = animas_dir / name
         for subdir in ("activity_log", "state", "episodes"):
             (d / subdir).mkdir(parents=True, exist_ok=True)
@@ -420,10 +522,12 @@ def _create_test_app(tmp_path: Path, anima_names: list[str] | None = None):
         mock_ws_cls.return_value = ws_manager
 
         from server.app import create_app
+
         app = create_app(animas_dir, shared_dir)
 
     # Persist auth mock so middleware returns local_trust
     import server.app as _sa
+
     _auth = MagicMock()
     _auth.auth_mode = "local_trust"
     _sa.load_auth = lambda: _auth

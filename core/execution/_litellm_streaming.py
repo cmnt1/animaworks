@@ -609,7 +609,26 @@ class StreamingMixin:
                     return
 
                 # ── Process tool calls ──
-                parsed_calls = parse_accumulated_tool_calls(tool_calls_acc)
+                try:
+                    parsed_calls = parse_accumulated_tool_calls(tool_calls_acc)
+                except (ValueError, KeyError) as exc:
+                    logger.warning(
+                        "Tool call parse failed (model=%s, iteration=%d): %s — treating as text response",
+                        self._model_config.model,
+                        iteration,
+                        exc,
+                    )
+                    continue
+
+                # Filter out entries with empty function names (qwen3_coder bug)
+                parsed_calls = [tc for tc in parsed_calls if tc.get("name")]
+                if not parsed_calls:
+                    logger.info(
+                        "A stream: all tool calls filtered (empty names) at iteration=%d — treating as text response",
+                        iteration,
+                    )
+                    continue
+
                 logger.info(
                     "A stream tool calls at iteration=%d: %s",
                     iteration,
@@ -1018,7 +1037,24 @@ class StreamingMixin:
                         ", ".join(tc.function.name or "unknown" for tc in tool_calls),
                     )
 
-                parsed_calls = _convert_litellm_tool_calls(tool_calls)
+                try:
+                    parsed_calls = _convert_litellm_tool_calls(tool_calls)
+                except (ValueError, KeyError, AttributeError) as exc:
+                    logger.warning(
+                        "Tool call conversion failed (model=%s, iteration=%d): %s — treating as text response",
+                        self._model_config.model,
+                        iteration,
+                        exc,
+                    )
+                    continue
+
+                if not parsed_calls:
+                    logger.info(
+                        "A ollama stream: all tool calls filtered (empty names) at "
+                        "iteration=%d — treating as text response",
+                        iteration,
+                    )
+                    continue
 
                 async for event in self._process_streaming_tool_calls(
                     parsed_calls,

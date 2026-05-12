@@ -9,6 +9,7 @@ from __future__ import annotations
 import json as _json
 import logging
 import re
+from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -99,10 +100,10 @@ class SkillsToolsMixin:
         logger.info("share_tool: copied %s → %s", src, dst)
         return f"Shared tool '{tool_name}' to common_tools/. All animas can now use it after refresh_tools."
 
-    # ── Procedure outcome tracking ────────────────────────────
+    # ── Procedure/Skill outcome tracking ─────────────────────
 
     def _handle_report_procedure_outcome(self, args: dict[str, Any]) -> str:
-        """Report success/failure of a procedure and update its metadata."""
+        """Report success/failure of a procedure or skill and update its metadata."""
         rel = args.get("path", "")
         success = args.get("success", True)
         notes = args.get("notes", "")
@@ -115,12 +116,41 @@ class SkillsToolsMixin:
             return _error_result(
                 "FileNotFound",
                 f"File not found: {rel}",
-                suggestion="Check the path (e.g. procedures/deploy.md)",
+                suggestion="Check the path (e.g. procedures/deploy.md or skills/my-skill/SKILL.md)",
             )
 
         if not target.resolve().is_relative_to(self._anima_dir.resolve()):
             return _error_result("PermissionDenied", "Path resolves outside anima directory")
 
+        is_skill = rel.startswith("skills/")
+
+        # Record event in SkillUsageTracker
+        from core.skills.models import SkillUsageEventType
+        from core.skills.usage import SkillUsageTracker
+
+        tracker = SkillUsageTracker(self._anima_dir)
+        skill_name = Path(rel).parent.name if is_skill else Path(rel).stem
+        event_type = SkillUsageEventType.success if success else SkillUsageEventType.failure
+        tracker.record(skill_name, event_type, is_common=False, notes=notes or None)
+
+        if is_skill:
+            # Skills use JSONL only — no frontmatter write
+            outcome_label = t("handler.outcome_success") if success else t("handler.outcome_failure")
+            stats = tracker.get_stats(skill_name)
+            logger.info(
+                "report_skill_outcome path=%s success=%s",
+                rel,
+                success,
+            )
+            result = (
+                f"Skill outcome recorded: {rel} -> {outcome_label}\n"
+                f"(success: {stats.success_count}, failure: {stats.failure_count})"
+            )
+            if notes:
+                result += f"\nnotes: {notes}"
+            return result
+
+        # Procedures — maintain existing frontmatter behaviour
         meta = self._memory.read_procedure_metadata(target)
 
         if success:
@@ -236,6 +266,9 @@ class SkillsToolsMixin:
         references = args.get("references")
         templates = args.get("templates")
         allowed_tools = args.get("allowed_tools")
+        trust_level = args.get("trust_level")
+        source_type = args.get("source_type")
+        category = args.get("category")
 
         if not skill_name:
             return t("handler.skill_name_required")
@@ -249,7 +282,7 @@ class SkillsToolsMixin:
         else:
             base_dir = self._anima_dir / "skills"
 
-        return create_skill_directory(
+        result = create_skill_directory(
             skill_name=skill_name,
             description=description,
             body=body,
@@ -257,7 +290,79 @@ class SkillsToolsMixin:
             references=references,
             templates=templates,
             allowed_tools=allowed_tools,
+            trust_level=trust_level,
+            source_type=source_type,
+            source_owner_anima=self._anima_dir.name,
+            category=category,
         )
+
+        # Record create event in usage tracker
+        if "Created skill" in result or "スキル作成" in result:
+            try:
+                from core.skills.models import SkillUsageEventType
+                from core.skills.usage import SkillUsageTracker
+
+                tracker = SkillUsageTracker(self._anima_dir)
+                tracker.record(
+                    skill_name,
+                    SkillUsageEventType.create,
+                    is_common=(location == "common"),
+                )
+            except Exception:
+                logger.debug("Failed to record skill create event", exc_info=True)
+
+        # Run security scan on the newly created skill
+        scan_summary = self._scan_created_skill(base_dir / skill_name, trust_level)
+        if scan_summary:
+            result += f"\n\n{scan_summary}"
+
+        return result
+
+    def _scan_created_skill(self, skill_dir: Path, trust_level: str | None) -> str:
+        """Run security scan on a newly created skill and persist results."""
+        from datetime import datetime
+
+        import yaml
+
+        from core.memory.frontmatter import parse_frontmatter
+        from core.skills.guard import SCANNER_VERSION, SkillScanner
+        from core.skills.models import SkillScanVerdict
+
+        scanner = SkillScanner()
+        scan_result = scanner.scan_skill(skill_dir)
+
+        # Persist scan result into SKILL.md frontmatter
+        skill_md_path = skill_dir / "SKILL.md"
+        if skill_md_path.exists():
+            text = skill_md_path.read_text(encoding="utf-8")
+            meta, body = parse_frontmatter(text)
+            meta["security"] = {
+                "verdict": scan_result.verdict.value,
+                "scan_status": "scanned",
+                "findings": [f.model_dump() for f in scan_result.findings],
+                "scanned_at": datetime.now(UTC).isoformat(),
+                "scanner_version": SCANNER_VERSION,
+            }
+            frontmatter = yaml.dump(meta, allow_unicode=True, default_flow_style=False, sort_keys=False).strip()
+            skill_md_path.write_text(f"---\n{frontmatter}\n---\n\n{body}\n", encoding="utf-8")
+
+        # Build summary message
+        verdict = scan_result.verdict
+        if verdict == SkillScanVerdict.safe:
+            return t("handler.skill_scan_safe")
+        elif verdict == SkillScanVerdict.dangerous:
+            categories = sorted({f.category for f in scan_result.findings})
+            return t(
+                "handler.skill_scan_dangerous",
+                count=len(scan_result.findings),
+                categories=", ".join(categories),
+            )
+        else:
+            return t(
+                "handler.skill_scan_warning",
+                verdict=verdict.value,
+                count=len(scan_result.findings),
+            )
 
     # ── Task queue handlers ───────────────────────────────────
 

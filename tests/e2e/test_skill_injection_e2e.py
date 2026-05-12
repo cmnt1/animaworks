@@ -12,7 +12,6 @@ from core.prompt.builder import build_system_prompt
 from core.schemas import SkillMeta
 from core.tooling.schemas import build_tool_list
 
-
 # ── Helpers ──────────────────────────────────────────────
 
 
@@ -57,34 +56,31 @@ class TestSkillCatalogE2E:
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
 
-        personal_meta = SkillMeta(
-            name="cron-management",
-            description="cron.mdの読み書き・更新スキル",
-            path=tmp_path / "skills" / "cron-management.md",
-            is_common=False,
+        # Create actual SKILL.md files so SkillIndex discovers them from disk
+        personal_skill_dir = anima_dir / "skills" / "cron-management"
+        personal_skill_dir.mkdir(parents=True)
+        (personal_skill_dir / "SKILL.md").write_text(
+            "---\nname: cron-management\ndescription: cron.mdの読み書き・更新スキル\n---\n\nBody",
+            encoding="utf-8",
         )
-        common_meta = SkillMeta(
-            name="animaworks-guide",
-            description="AnimaWorksフレームワークの仕組みガイド",
-            path=tmp_path / "common_skills" / "animaworks-guide.md",
-            is_common=True,
+
+        common_skills_dir = tmp_path / "common_skills"
+        common_skill_dir = common_skills_dir / "animaworks-guide"
+        common_skill_dir.mkdir(parents=True)
+        (common_skill_dir / "SKILL.md").write_text(
+            "---\nname: animaworks-guide\ndescription: AnimaWorksフレームワークの仕組みガイド\n---\n\nBody",
+            encoding="utf-8",
         )
 
         memory = _make_mock_memory(anima_dir, tmp_path)
-        memory.list_skill_metas.return_value = [personal_meta]
-        memory.list_common_skill_metas.return_value = [common_meta]
 
         with (
-            patch("core.memory.skill_metadata.SkillMetadataService") as mock_svc_class,
+            patch("core.paths.get_common_skills_dir", return_value=common_skills_dir),
             patch("core.prompt.builder.load_prompt", side_effect=_fake_load_prompt),
             patch("core.prompt.builder._build_org_context", return_value=""),
             patch("core.prompt.builder._discover_other_animas", return_value=[]),
             patch("core.prompt.builder._build_messaging_section", return_value=""),
         ):
-            svc_inst = MagicMock()
-            svc_inst.list_common_skill_metas.return_value = [common_meta]
-            mock_svc_class.return_value = svc_inst
-
             result = build_system_prompt(memory, message="cron設定をして")
 
         prompt = result.system_prompt

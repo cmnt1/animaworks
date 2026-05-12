@@ -4,6 +4,7 @@
 Usage:
     python -m benchmarks.locomo.run_neo4j [--conversations N] [--answer-model MODEL] [--top-k K] [--judge] [--exclude-cat5]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.locomo.adapter import load_dataset
-from benchmarks.locomo.metrics import CATEGORY_NAMES, compute_summary, eval_by_category, llm_judge_sync
+from benchmarks.locomo.metrics import compute_summary, eval_by_category, llm_judge_sync
 from benchmarks.locomo.neo4j_adapter import AblationFlags, Neo4jLoCoMoAdapter
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--data", type=Path, default=_DEFAULT_DATA)
     p.add_argument("--conversations", type=int, default=1)
     p.add_argument("--top-k", type=int, default=10, dest="top_k")
-    p.add_argument("--answer-model", type=str, default="openai/qwen3.6-35b-a3b", dest="answer_model")
+    p.add_argument(
+        "--answer-model", type=str, default="openai/mlx-community/Qwen3.5-397B-A17B-4bit", dest="answer_model"
+    )
     p.add_argument("--judge", action="store_true")
     p.add_argument("--judge-model", type=str, default="gpt-4o", dest="judge_model")
     p.add_argument("--exclude-cat5", action="store_true", dest="exclude_cat5")
@@ -65,7 +68,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'=' * 60}")
-    print(f"  LoCoMo Neo4j Benchmark")
+    print("  LoCoMo Neo4j Benchmark")
     print(f"  Conversations: {len(samples)}, top_k: {args.top_k}")
     print(f"  Answer model: {args.answer_model}")
     print(f"  Exclude cat5: {args.exclude_cat5}")
@@ -160,17 +163,19 @@ def main() -> None:
                             errors += 1
                             logger.exception("Judge failed: %s", exc)
 
-                    results.append({
-                        "sample_id": str(sample_id),
-                        "question_index": j,
-                        "category": category,
-                        "question": question,
-                        "reference": answer,
-                        "prediction": prediction,
-                        "f1": f1,
-                        "judge_score": judge_score,
-                        "context_count": len(context),
-                    })
+                    results.append(
+                        {
+                            "sample_id": str(sample_id),
+                            "question_index": j,
+                            "category": category,
+                            "question": question,
+                            "reference": answer,
+                            "prediction": prediction,
+                            "f1": f1,
+                            "judge_score": judge_score,
+                            "context_count": len(context),
+                        }
+                    )
 
                     if (j + 1) % 50 == 0:
                         print(f"  Questions: {j + 1}/{len(qa_list)}")

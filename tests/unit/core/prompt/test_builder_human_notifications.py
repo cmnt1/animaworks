@@ -9,9 +9,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 from core.prompt.builder import build_system_prompt
-
 
 _MOCK_SECTIONS = (
     "[group1_header]: # 1. 動作環境と行動ルール\n"
@@ -136,10 +134,10 @@ class TestPendingHumanNotificationsInjection:
             )
         assert "Pending Human Notifications" not in result.system_prompt
 
-    def test_inbox_includes_notifications(self, tmp_path):
-        """Inbox is chat-equivalent; notifications should be included."""
+    def test_inbox_excludes_notifications(self, tmp_path):
+        """Inbox is isolated from chat pending-human notification context."""
         memory = _mock_memory(tmp_path)
-        notifications = "## Pending Human Notifications (last 24h)\n\nShould appear for inbox"
+        notifications = "## Pending Human Notifications (last 24h)\n\nShould not appear for inbox"
 
         with ExitStack() as stack:
             _apply_patches(stack, tmp_path)
@@ -150,7 +148,7 @@ class TestPendingHumanNotificationsInjection:
                 context_window=200_000,
                 pending_human_notifications=notifications,
             )
-        assert "Pending Human Notifications" in result.system_prompt
+        assert "Pending Human Notifications" not in result.system_prompt
 
     def test_task_excludes_notifications(self, tmp_path):
         memory = _mock_memory(tmp_path)

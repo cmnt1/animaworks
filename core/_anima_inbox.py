@@ -52,6 +52,7 @@ _RE_FAST_SLACK_PROBE = re.compile(
 _THREAD_CTX_BUDGET = 300
 _MSG_BODY_BUDGET = 2000
 _MAX_INBOX_RETRIES = 3
+_INBOX_THREAD_ID = "inbox"
 
 
 def _truncate_with_thread_ctx(
@@ -352,7 +353,15 @@ def _handle_delegation_dms(anima_mixin: Any, delegation_items: list[InboxItem]) 
             summary=f"[delegation DM - framework handled, state={state}] {msg.content[:150]}",
             from_person=msg.from_person,
             to_person=anima_mixin.name,
-            meta={"from_type": msg.source, "delegation_state": state, "task_id": task_id},
+            channel="inbox",
+            meta={
+                "from_type": msg.source,
+                "delegation_state": state,
+                "task_id": task_id,
+                "trigger": "inbox:delegation",
+                "session_type": "inbox",
+                "thread_id": _INBOX_THREAD_ID,
+            },
             origin=ORIGIN_ANIMA,
             origin_chain=msg.origin_chain if msg.origin_chain else [ORIGIN_ANIMA],
         )
@@ -407,7 +416,11 @@ class InboxMixin:
                 self._mark_busy_start()
                 self._status_slots["inbox"] = "processing"
 
-                self._activity.log("inbox_processing_start", summary=t("anima.inbox_start"))
+                self._activity.log(
+                    "inbox_processing_start",
+                    summary=t("anima.inbox_start"),
+                    meta={"session_type": "inbox", "thread_id": _INBOX_THREAD_ID},
+                )
 
                 inbox_result: InboxResult | None = None
                 try:
@@ -571,6 +584,7 @@ class InboxMixin:
                             prompt,
                             trigger=trigger,
                             max_turns_override=front_max_turns_override,
+                            thread_id=_INBOX_THREAD_ID,
                         ):
                             if chunk.get("type") == "text_delta":
                                 accumulated_text += chunk.get("text", "")
@@ -607,8 +621,7 @@ class InboxMixin:
 
                     self._last_activity = now_local()
 
-                    # Record inbox response as response_sent so it appears
-                    # in the conversation view alongside message_received.
+                    # Record inbox response separately from the default chat thread.
                     if accumulated_text.strip():
                         self._activity.log(
                             "response_sent",
@@ -616,7 +629,11 @@ class InboxMixin:
                             to_person=senders_str,
                             channel="inbox",
                             summary=accumulated_text[:200] if accumulated_text else "",
-                            meta={"trigger": "inbox"},
+                            meta={
+                                "trigger": trigger,
+                                "session_type": "inbox",
+                                "thread_id": _INBOX_THREAD_ID,
+                            },
                         )
 
                     # ── Slack auto-response (disabled – Discord migration) ──
@@ -680,7 +697,11 @@ class InboxMixin:
                             if _rc_path.exists():
                                 _rc = json.loads(_rc_path.read_text(encoding="utf-8"))
                         except Exception:
-                            pass
+                            logger.debug(
+                                "[%s] Failed to read inbox_read_counts.json",
+                                self.name,
+                                exc_info=True,
+                            )
                         _all_exhausted = (
                             all(_rc.get(item.path.name, 0) > _MAX_INBOX_RETRIES for item in inbox_result.inbox_items)
                             if inbox_result.inbox_items
@@ -708,7 +729,13 @@ class InboxMixin:
                     self._activity.log(
                         "inbox_processing_end",
                         summary=result.summary[:200],
-                        meta={"senders": list(inbox_result.senders), "count": inbox_result.unread_count},
+                        meta={
+                            "senders": list(inbox_result.senders),
+                            "count": inbox_result.unread_count,
+                            "trigger": trigger,
+                            "session_type": "inbox",
+                            "thread_id": _INBOX_THREAD_ID,
+                        },
                     )
 
                     logger.info(
@@ -734,7 +761,12 @@ class InboxMixin:
                     self._activity.log(
                         "error",
                         summary=t("anima.inbox_error", exc=type(exc).__name__),
-                        meta={"phase": "process_inbox_message", "error": str(exc)[:200]},
+                        meta={
+                            "phase": "process_inbox_message",
+                            "error": str(exc)[:200],
+                            "session_type": "inbox",
+                            "thread_id": _INBOX_THREAD_ID,
+                        },
                         safe=True,
                     )
                     raise
@@ -799,12 +831,22 @@ class InboxMixin:
             to_person=msg.from_person,
             channel="inbox",
             summary=reply_text,
-            meta={"trigger": "inbox_fast_probe"},
+            meta={
+                "trigger": "inbox_fast_probe",
+                "session_type": "inbox",
+                "thread_id": _INBOX_THREAD_ID,
+            },
         )
         self._activity.log(
             "inbox_processing_end",
             summary=reply_text,
-            meta={"senders": list(inbox_result.senders), "count": inbox_result.unread_count},
+            meta={
+                "senders": list(inbox_result.senders),
+                "count": inbox_result.unread_count,
+                "trigger": "inbox_fast_probe",
+                "session_type": "inbox",
+                "thread_id": _INBOX_THREAD_ID,
+            },
         )
         self.messenger.archive_paths(inbox_result.inbox_items)
         duration_ms = max(1, int((now_local() - started_at).total_seconds() * 1000))
@@ -1041,12 +1083,16 @@ class InboxMixin:
                 _recv_meta["external_channel_id"] = _m.external_channel_id
             if getattr(_m, "external_thread_ts", ""):
                 _recv_meta["external_thread_ts"] = _m.external_thread_ts
+            _recv_meta["trigger"] = f"inbox:{_m.from_person}"
+            _recv_meta["session_type"] = "inbox"
+            _recv_meta["thread_id"] = _INBOX_THREAD_ID
             self._activity.log(
                 "message_received",
                 content=_m.content,
                 summary=_m.content[:200],
                 from_person=_m.from_person,
                 to_person=self.name,
+                channel="inbox",
                 meta=_recv_meta,
                 origin=_msg_origin,
                 origin_chain=_msg_origin_chain,
