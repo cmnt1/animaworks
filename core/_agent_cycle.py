@@ -171,7 +171,9 @@ class CycleMixin:
     ) -> CycleResult:
         start = time.monotonic()
         active_model_config = model_config_override or self.model_config
-        active_executor = self._create_executor(active_model_config) if model_config_override is not None else self._executor
+        active_executor = (
+            self._create_executor(active_model_config) if model_config_override is not None else self._executor
+        )
         mode = self._resolve_execution_mode(active_model_config)
         logger.info(
             "run_cycle START trigger=%s prompt_len=%d mode=%s",
@@ -709,7 +711,9 @@ class CycleMixin:
         """
         start = time.monotonic()
         active_model_config = model_config_override or self.model_config
-        active_executor = self._create_executor(active_model_config) if model_config_override is not None else self._executor
+        active_executor = (
+            self._create_executor(active_model_config) if model_config_override is not None else self._executor
+        )
         mode = self._resolve_execution_mode(active_model_config)
         logger.info(
             "run_cycle_streaming START trigger=%s prompt_len=%d mode=%s",
