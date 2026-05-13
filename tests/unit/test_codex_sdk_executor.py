@@ -29,6 +29,7 @@ from core.execution.codex_sdk import (
     _extract_item_text,
     _extract_tool_records,
     _get_thread_id,
+    _is_codex_stdout_noise_line,
     _is_desktop_extension_codex,
     _item_to_tool_record,
     _load_thread_id,
@@ -239,6 +240,18 @@ class TestHelpers:
         assert _should_prefer_cli_exec("task:demo")
         assert not _should_prefer_cli_exec("manual")
 
+    def test_codex_stdout_noise_line_detects_windows_taskkill_success(self):
+        line = "SUCCESS: The process with PID 15052 (child process of PID 80976) has been terminated."
+        assert _is_codex_stdout_noise_line(line)
+        assert not _is_codex_stdout_noise_line('{"type":"turn.started"}')
+
+    def test_should_cli_exec_fallback_for_jsonl_parse_error(self):
+        exc = RuntimeError(
+            "Failed to parse JSONL event line: "
+            "'SUCCESS: The process with PID 15052 (child process of PID 80976) has been terminated.'"
+        )
+        assert _should_cli_exec_fallback(exc)
+
     @pytest.mark.asyncio
     async def test_patch_codex_exec_stream_limit_fails_fast_on_fatal_stderr(self):
         from openai_codex_sdk.errors import CodexExecError
@@ -309,9 +322,72 @@ class TestHelpers:
 
         assert proc.kill_calls == 1
 
+    @pytest.mark.asyncio
+    async def test_patch_codex_exec_stream_limit_skips_taskkill_stdout_noise(self):
+        class _FakeStdin:
+            def write(self, _data):
+                return None
+
+            async def drain(self):
+                return None
+
+            def close(self):
+                return None
+
+        class _NoisyStdout:
+            def __init__(self):
+                self._lines = [
+                    b"SUCCESS: The process with PID 15052 (child process of PID 80976) has been terminated.\r\n",
+                    b'{"type":"turn.started"}\n',
+                    b"",
+                ]
+
+            async def readline(self):
+                await asyncio.sleep(0)
+                return self._lines.pop(0)
+
+        class _EmptyStderr:
+            async def read(self, _size):
+                await asyncio.sleep(0)
+                return b""
+
+        class _FakeProc:
+            def __init__(self):
+                self.stdin = _FakeStdin()
+                self.stdout = _NoisyStdout()
+                self.stderr = _EmptyStderr()
+                self.returncode = None
+                self.kill_calls = 0
+
+            def kill(self):
+                self.kill_calls += 1
+                self.returncode = 1
+
+            async def wait(self):
+                self.returncode = 0
+                return 0
+
+        class _FakeExec:
+            executable_path = "codex"
+
+            def _build_command_args(self, _args):
+                return []
+
+            def _build_env(self, _args):
+                return {}
+
+        proc = _FakeProc()
+        exec_ = _FakeExec()
+        _patch_codex_exec_stream_limit(exec_)
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            lines = [line async for line in exec_.run(SimpleNamespace(input="hello"))]
+
+        assert lines == ['{"type":"turn.started"}']
+        assert proc.kill_calls == 0
+
 
 # ── Session persistence tests ────────────────────────────────
-
 
 class TestSessionPersistence:
     def test_save_and_load_thread_id(self, anima_dir):

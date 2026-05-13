@@ -25,6 +25,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 from collections.abc import AsyncGenerator
@@ -74,6 +75,9 @@ _AUTH_EXPIRED_PATTERNS = (
 # lines exceeding 64 KB on stdout (e.g., thread resume with full context echo).
 # 16 MB provides ample headroom for realistic prompt sizes.
 _SUBPROCESS_STREAM_LIMIT = 16 * 1024 * 1024  # 16 MB
+_WINDOWS_TASKKILL_SUCCESS_RE = re.compile(
+    r"^SUCCESS:\s+The process with PID \d+(?: \(child process of PID \d+\))? has been terminated\.\s*$"
+)
 
 
 # ── Model name helpers ───────────────────────────────────────
@@ -399,6 +403,14 @@ def _stderr_contains_fatal_signal(text: str) -> bool:
     return any(pattern in lowered for pattern in _FATAL_STDERR_PATTERNS)
 
 
+def _is_codex_stdout_noise_line(line: str) -> bool:
+    """Return True for known non-JSON diagnostics that leak onto Codex stdout."""
+    stripped = line.strip()
+    if not stripped:
+        return True
+    return bool(_WINDOWS_TASKKILL_SUCCESS_RE.match(stripped))
+
+
 def _stderr_contains_auth_expired(text: str) -> bool:
     """Return True when stderr indicates Codex auth token has expired."""
     lowered = text.lower()
@@ -458,6 +470,8 @@ def _should_cli_exec_fallback(exc: BaseException) -> bool:
         if "stream idle timeout" in lowered:
             return True
         if "reading prompt from stdin" in lowered:
+            return True
+        if "failed to parse jsonl event line" in lowered:
             return True
         cur = cur.__cause__ or cur.__context__
         if cur is exc:
@@ -610,7 +624,11 @@ def _patch_codex_exec_stream_limit(exec_: Any) -> None:
                 line = line_task.result()
                 if not line:
                     break
-                yield line.decode("utf-8").rstrip("\n")
+                decoded_line = line.decode("utf-8", errors="replace").rstrip("\n")
+                if _is_codex_stdout_noise_line(decoded_line):
+                    logger.debug("Ignoring non-JSON Codex stdout noise: %s", decoded_line[:200])
+                    continue
+                yield decoded_line
 
             returncode = await proc.wait()
             stderr_bytes = await stderr_task
