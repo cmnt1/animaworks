@@ -188,12 +188,17 @@ class AnimaRunner:
             cleanup_tmp_files(self._anima_dir / "state")
             cleanup_tmp_files(self._anima_dir / "knowledge")
 
+            self._ready_event.set()
+
             # Startup idle-compress: in-memory compaction timers are lost
             # on process restart; run compress here so stale conversations
             # don't block the next chat with a synchronous compress.
-            await self._startup_idle_compress()
-
-            self._ready_event.set()
+            # Runs as a background task so a slow/hanging LLM call cannot
+            # block readiness and cause repeated startup timeouts.
+            asyncio.create_task(
+                self._startup_idle_compress(),
+                name=f"startup-idle-compress-{self.anima_name}",
+            )
 
             # Start autonomous scheduler (heartbeat + cron)
             self._scheduler_mgr.setup()
@@ -381,6 +386,8 @@ class AnimaRunner:
 
     # ── Startup idle compress ──────────────────────────────────
 
+    _STARTUP_COMPRESS_TIMEOUT_SEC = 90
+
     async def _startup_idle_compress(self) -> None:
         """Compress idle conversation on process startup.
 
@@ -388,6 +395,9 @@ class AnimaRunner:
         process restart.  This checks whether the chat conversation
         has been idle long enough and compresses it so the next chat
         is not blocked by a synchronous compress.
+
+        Applies a timeout so a slow/hanging LLM backend cannot block
+        the process indefinitely.
         """
         if not self.anima:
             return
@@ -418,12 +428,21 @@ class AnimaRunner:
             )
             from core.memory.conversation_compression import compress_if_needed
 
-            await compress_if_needed(
-                state,
-                self.anima.model_config,
-                conv._load_context_window_overrides,
-                conv.save,
-                anima_name=conv.anima_name,
+            await asyncio.wait_for(
+                compress_if_needed(
+                    state,
+                    self.anima.model_config,
+                    conv._load_context_window_overrides,
+                    conv.save,
+                    anima_name=conv.anima_name,
+                ),
+                timeout=self._STARTUP_COMPRESS_TIMEOUT_SEC,
+            )
+        except TimeoutError:
+            logger.warning(
+                "Startup idle-compress timed out for %s after %ds — skipping",
+                self.anima_name,
+                self._STARTUP_COMPRESS_TIMEOUT_SEC,
             )
         except Exception:
             logger.debug(
