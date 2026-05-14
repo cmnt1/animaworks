@@ -1032,6 +1032,16 @@ async function _generatePreview() {
 
   const genModelSelect = document.getElementById("assetsGenModel");
   const genModel = genModelSelect ? genModelSelect.value : DEFAULT_GENERATION_MODEL;
+  if (genModel?.startsWith("openai:") && faceRefUrl) {
+    if (previewContainer) {
+      previewContainer.innerHTML = `<div class="assets-error">gpt-image-2 cannot reliably use Face Reference through the Codex subscription path. Choose a reference-capable model such as Diffusers or NanoGPT.</div>`;
+      previewContainer.className = "assets-modal-preview-placeholder";
+    }
+    if (generateBtn) { generateBtn.disabled = false; generateBtn.textContent = "Generate Preview"; }
+    if (retryBtn) { retryBtn.disabled = false; }
+    if (acceptBtn) { acceptBtn.disabled = false; }
+    return;
+  }
 
   const requestBody = {
     generation_model: genModel,

@@ -565,6 +565,7 @@ class TestImageGenPipeline:
             lambda refresh=False: codex_home,
         )
         monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", fake_popen)
+        monkeypatch.setenv("ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES", "1")
 
         img = OpenAIImageClient(model="gpt-image-2").generate_fullbody(
             prompt="portrait",
@@ -627,12 +628,41 @@ class TestImageGenPipeline:
             "server.routes.usage_routes.get_openai_subscription_codex_home",
             lambda refresh=False: codex_home,
         )
+        monkeypatch.setenv("ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES", "1")
 
         with pytest.raises(RuntimeError, match="face reference image could not be decoded"):
             OpenAIImageClient(model="gpt-image-2").generate_fullbody(
                 prompt="portrait",
                 face_reference_image=b"<html>not an image</html>",
             )
+
+    def test_openai_image_client_rejects_references_without_experimental_opt_in(self, tmp_path: Path, monkeypatch):
+        from core.tools.image.openai import OpenAIImageClient
+
+        codex_home = tmp_path / "codex-home"
+        codex_home.mkdir()
+        popen_called = False
+
+        def fake_popen(cmd, **kwargs):
+            nonlocal popen_called
+            popen_called = True
+            raise AssertionError("Codex should not be launched for unsupported references")
+
+        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
+        monkeypatch.setattr(
+            "server.routes.usage_routes.get_openai_subscription_codex_home",
+            lambda refresh=False: codex_home,
+        )
+        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", fake_popen)
+        monkeypatch.delenv("ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES", raising=False)
+
+        with pytest.raises(RuntimeError, match="cannot reliably use reference images"):
+            OpenAIImageClient(model="gpt-image-2").generate_fullbody(
+                prompt="portrait",
+                face_reference_image=_sample_image_bytes("JPEG"),
+            )
+
+        assert popen_called is False
 
     def test_openai_image_client_retries_transient_stream_disconnect(self, tmp_path: Path, monkeypatch):
         from core.tools.image.openai import OpenAIImageClient
@@ -672,48 +702,6 @@ class TestImageGenPipeline:
         assert img == b"PNG-DATA"
         assert len(attempts) == 2
         assert sleeps == [0.0]
-
-    def test_openai_image_client_falls_back_without_references_after_stream_disconnect(
-        self, tmp_path: Path, monkeypatch
-    ):
-        from core.tools.image.openai import OpenAIImageClient
-
-        codex_home = tmp_path / "codex-home"
-        codex_home.mkdir()
-        reference_counts: list[int] = []
-
-        class FakePopen:
-            pid = 12345
-
-            def __init__(self, cmd, **kwargs):
-                self.cmd = cmd
-                reference_counts.append(cmd.count("--image"))
-                self.returncode = 1 if cmd.count("--image") else 0
-
-            def communicate(self, input=None, timeout=None):
-                if self.returncode:
-                    return "", "ERROR: stream disconnected before completion: You can retry your request."
-                marker = "Save or copy the final generated image to this exact path:\n"
-                output_path = Path(input.split(marker, 1)[1].split("\n", 1)[0])
-                output_path.write_bytes(b"PNG-DATA")
-                return str(output_path), ""
-
-        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
-        monkeypatch.setattr(
-            "server.routes.usage_routes.get_openai_subscription_codex_home",
-            lambda refresh=False: codex_home,
-        )
-        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", FakePopen)
-        monkeypatch.setattr("core.tools.image.openai.time.sleep", lambda _wait: None)
-        monkeypatch.setenv("ANIMAWORKS_CODEX_IMAGE_RETRIES", "0")
-
-        img = OpenAIImageClient(model="gpt-image-2").generate_fullbody(
-            prompt="portrait",
-            face_reference_image=_sample_image_bytes("JPEG"),
-        )
-
-        assert img == b"PNG-DATA"
-        assert reference_counts == [1, 0]
 
     def test_openai_image_client_kills_process_tree_on_timeout(self, tmp_path: Path, monkeypatch):
         from core.tools.image.openai import OpenAIImageClient

@@ -25,6 +25,11 @@ from core.tools._base import logger
 OPENAI_IMAGE_MODELS = ("gpt-image-2",)
 OPENAI_IMG2IMG_MODELS = frozenset(OPENAI_IMAGE_MODELS)
 _MAX_CODEX_PROMPT_CHARS = 1800
+_REFERENCE_UNSUPPORTED_MESSAGE = (
+    "gpt-image-2 via Codex subscription auth cannot reliably use reference images in this environment. "
+    "Choose a reference-capable backend such as Diffusers or NanoGPT, or set "
+    "ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES=1 to force an experimental Codex reference attempt."
+)
 
 _TRANSIENT_CODEX_ERROR_MARKERS = (
     "stream disconnected",
@@ -58,6 +63,13 @@ def _read_env_float(name: str, default: float) -> float:
     except ValueError:
         return default
     return max(0.0, value)
+
+
+def _env_enabled(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _openai_size(width: int, height: int) -> str:
@@ -322,17 +334,21 @@ class OpenAIImageClient:
         """Generate a character portrait via Codex built-in image_gen."""
         del seed, steps, scale, sampler, vibe_strength, vibe_info_extracted, step_callback
 
+        has_reference = vibe_image is not None or face_reference_image is not None
+        if has_reference and not _env_enabled("ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES"):
+            raise RuntimeError(_REFERENCE_UNSUPPORTED_MESSAGE)
+
         size = _openai_size(width, height)
 
-        def _call(*, include_references: bool = True) -> bytes:
+        def _call() -> bytes:
             with tempfile.TemporaryDirectory(prefix="animaworks-codex-image-") as tmp:
                 tmp_dir = Path(tmp)
                 references: list[Path] = []
-                if include_references and vibe_image is not None:
+                if vibe_image is not None:
                     path = tmp_dir / "style_reference.png"
                     _write_reference_png(vibe_image, path, "style")
                     references.append(path)
-                if include_references and face_reference_image is not None:
+                if face_reference_image is not None:
                     path = tmp_dir / "face_reference.png"
                     _write_reference_png(face_reference_image, path, "face")
                     references.append(path)
@@ -349,20 +365,12 @@ class OpenAIImageClient:
 
         max_retries = _read_env_int("ANIMAWORKS_CODEX_IMAGE_RETRIES", 2)
         retry_delay = _read_env_float("ANIMAWORKS_CODEX_IMAGE_RETRY_DELAY_SEC", 15.0)
-        allow_reference_fallback = _read_env_int("ANIMAWORKS_CODEX_IMAGE_REFERENCE_FALLBACK", 1) != 0
         for attempt in range(max_retries + 1):
             try:
                 image = _call()
                 break
             except _TransientCodexImageError as exc:
                 if attempt >= max_retries:
-                    if allow_reference_fallback and (vibe_image is not None or face_reference_image is not None):
-                        logger.warning(
-                            "Codex image_gen failed with references after %d attempts; retrying once without references",
-                            attempt + 1,
-                        )
-                        image = _call(include_references=False)
-                        break
                     raise RuntimeError(
                         f"Codex image_gen failed after {attempt + 1} attempts due to transient stream errors: {exc}"
                     ) from exc
