@@ -575,6 +575,10 @@ class TestImageGenPipeline:
         assert img == b"PNG-DATA"
         assert seen["cmd"][:2] == ["codex", "exec"]
         assert seen["cmd"][-1] == "-"
+        assert "--ephemeral" in seen["cmd"]
+        assert "--ignore-rules" in seen["cmd"]
+        assert "--ignore-user-config" in seen["cmd"]
+        assert "--skip-git-repo-check" in seen["cmd"]
         assert seen["cmd"][seen["cmd"].index("--cd") + 1] != str(Path.cwd())
         assert seen["env"]["CODEX_HOME"] == str(codex_home)
         assert seen["input"] == seen["instruction"]
@@ -668,6 +672,48 @@ class TestImageGenPipeline:
         assert img == b"PNG-DATA"
         assert len(attempts) == 2
         assert sleeps == [0.0]
+
+    def test_openai_image_client_falls_back_without_references_after_stream_disconnect(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from core.tools.image.openai import OpenAIImageClient
+
+        codex_home = tmp_path / "codex-home"
+        codex_home.mkdir()
+        reference_counts: list[int] = []
+
+        class FakePopen:
+            pid = 12345
+
+            def __init__(self, cmd, **kwargs):
+                self.cmd = cmd
+                reference_counts.append(cmd.count("--image"))
+                self.returncode = 1 if cmd.count("--image") else 0
+
+            def communicate(self, input=None, timeout=None):
+                if self.returncode:
+                    return "", "ERROR: stream disconnected before completion: You can retry your request."
+                marker = "Save or copy the final generated image to this exact path:\n"
+                output_path = Path(input.split(marker, 1)[1].split("\n", 1)[0])
+                output_path.write_bytes(b"PNG-DATA")
+                return str(output_path), ""
+
+        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
+        monkeypatch.setattr(
+            "server.routes.usage_routes.get_openai_subscription_codex_home",
+            lambda refresh=False: codex_home,
+        )
+        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", FakePopen)
+        monkeypatch.setattr("core.tools.image.openai.time.sleep", lambda _wait: None)
+        monkeypatch.setenv("ANIMAWORKS_CODEX_IMAGE_RETRIES", "0")
+
+        img = OpenAIImageClient(model="gpt-image-2").generate_fullbody(
+            prompt="portrait",
+            face_reference_image=_sample_image_bytes("JPEG"),
+        )
+
+        assert img == b"PNG-DATA"
+        assert reference_counts == [1, 0]
 
     def test_openai_image_client_kills_process_tree_on_timeout(self, tmp_path: Path, monkeypatch):
         from core.tools.image.openai import OpenAIImageClient

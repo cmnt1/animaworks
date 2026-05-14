@@ -240,9 +240,16 @@ class OpenAIImageClient:
             codex,
             "exec",
             "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--ignore-rules",
+            "--ignore-user-config",
+            "--skip-git-repo-check",
             "--cd",
             str(output_path.parent),
         ]
+        agent_model = os.environ.get("ANIMAWORKS_CODEX_IMAGE_AGENT_MODEL", "").strip()
+        if agent_model:
+            cmd.extend(["--model", agent_model])
         for reference in references:
             cmd.extend(["--image", str(reference)])
         cmd.append("-")
@@ -317,15 +324,15 @@ class OpenAIImageClient:
 
         size = _openai_size(width, height)
 
-        def _call() -> bytes:
+        def _call(*, include_references: bool = True) -> bytes:
             with tempfile.TemporaryDirectory(prefix="animaworks-codex-image-") as tmp:
                 tmp_dir = Path(tmp)
                 references: list[Path] = []
-                if vibe_image is not None:
+                if include_references and vibe_image is not None:
                     path = tmp_dir / "style_reference.png"
                     _write_reference_png(vibe_image, path, "style")
                     references.append(path)
-                if face_reference_image is not None:
+                if include_references and face_reference_image is not None:
                     path = tmp_dir / "face_reference.png"
                     _write_reference_png(face_reference_image, path, "face")
                     references.append(path)
@@ -342,12 +349,20 @@ class OpenAIImageClient:
 
         max_retries = _read_env_int("ANIMAWORKS_CODEX_IMAGE_RETRIES", 2)
         retry_delay = _read_env_float("ANIMAWORKS_CODEX_IMAGE_RETRY_DELAY_SEC", 15.0)
+        allow_reference_fallback = _read_env_int("ANIMAWORKS_CODEX_IMAGE_REFERENCE_FALLBACK", 1) != 0
         for attempt in range(max_retries + 1):
             try:
                 image = _call()
                 break
             except _TransientCodexImageError as exc:
                 if attempt >= max_retries:
+                    if allow_reference_fallback and (vibe_image is not None or face_reference_image is not None):
+                        logger.warning(
+                            "Codex image_gen failed with references after %d attempts; retrying once without references",
+                            attempt + 1,
+                        )
+                        image = _call(include_references=False)
+                        break
                     raise RuntimeError(
                         f"Codex image_gen failed after {attempt + 1} attempts due to transient stream errors: {exc}"
                     ) from exc
