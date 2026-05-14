@@ -640,6 +640,7 @@ class PendingTaskExecutor:
         failed: set[str] = set()
         attention_suppressed: set[str] = set()
         remaining = list(order)
+        task_ids_in_batch = {td["task_id"] for td in order}
 
         for td in list(remaining):
             decision = self._attention_decision_for_task_desc(td)
@@ -657,6 +658,16 @@ class PendingTaskExecutor:
                 task_id,
                 decision.reason,
             )
+
+        for td in order:
+            for dep in td.get("depends_on", []):
+                if dep in task_ids_in_batch or dep in failed:
+                    continue
+                decision = self._attention_decision_for_task_desc({"task_id": dep})
+                if not decision.executable:
+                    failed.add(dep)
+                    attention_suppressed.add(dep)
+                    self._cancel_queue_for_attention(dep, decision.reason)
 
         while remaining:
             ready = [td for td in remaining if _deps_satisfied(td, completed, failed)]

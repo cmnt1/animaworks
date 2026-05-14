@@ -216,3 +216,34 @@ async def test_batch_dependency_suppressed_fails_dependent(tmp_path: Path) -> No
     assert parent.summary == "archived by TaskBoard"
     assert child.status == "failed"
     assert child.summary == "FAILED: dependency_suppressed"
+
+
+@pytest.mark.asyncio
+async def test_batch_dependency_suppressed_before_grouping_still_fails_dependent(tmp_path: Path) -> None:
+    executor = _make_executor(tmp_path)
+    _queue_task(executor, "parent1234")
+    _queue_task(executor, "child1234")
+    _store_for(executor).upsert_metadata(
+        anima_name="sakura",
+        task_id="parent1234",
+        visibility=AttentionVisibility.ARCHIVED,
+    )
+
+    with patch.object(executor, "_run_llm_task", new_callable=AsyncMock) as run_llm_task:
+        await executor._dispatch_batch(
+            "batch-1",
+            [
+                {"task_id": "child1234", "task_type": "llm", "parallel": False, "depends_on": ["parent1234"]},
+            ],
+        )
+
+    assert not run_llm_task.called
+    queue = TaskQueueManager(executor._anima_dir)
+    parent = queue.get_task_by_id("parent1234")
+    child = queue.get_task_by_id("child1234")
+    assert parent is not None
+    assert child is not None
+    assert parent.status == "cancelled"
+    assert parent.summary == "archived by TaskBoard"
+    assert child.status == "failed"
+    assert child.summary == "FAILED: dependency_suppressed"
