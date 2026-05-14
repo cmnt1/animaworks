@@ -10,6 +10,14 @@ from core.memory.ontology.default import (
     ExtractedEntity,
     ExtractedFact,
     FactExtractionResult,
+    allowed_edge_types,
+    canonicalize_edge_type,
+    default_edge_type_descriptions,
+    format_edge_types_for_prompt,
+    is_valid_edge_type_name,
+    merge_edge_type_descriptions,
+    normalize_edge_type_name,
+    resolve_edge_type_descriptions,
 )
 
 __all__ = [
@@ -20,4 +28,12 @@ __all__ = [
     "ExtractedFact",
     "EntityExtractionResult",
     "FactExtractionResult",
+    "allowed_edge_types",
+    "canonicalize_edge_type",
+    "default_edge_type_descriptions",
+    "format_edge_types_for_prompt",
+    "is_valid_edge_type_name",
+    "merge_edge_type_descriptions",
+    "normalize_edge_type_name",
+    "resolve_edge_type_descriptions",
 ]

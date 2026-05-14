@@ -11,7 +11,7 @@ Covers:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, call, patch
 
 import pytest
 
@@ -110,6 +110,26 @@ class TestNeo4jScopeMap:
         from core.tooling.handler_memory import MemoryToolsMixin
 
         assert MemoryToolsMixin._NEO4J_SCOPE_MAP["all"] == "all"
+
+
+class TestScopePolicy:
+    def test_scope_policy_defines_neo4j_and_legacy_boundaries(self) -> None:
+        from core.memory.scope_policy import (
+            LEGACY_ONLY_SCOPES_FOR_ALL,
+            is_legacy_only_scope,
+            is_neo4j_backed_scope,
+            neo4j_scope_for,
+            title_for_legacy_scope,
+        )
+
+        assert is_neo4j_backed_scope("knowledge") is True
+        assert is_neo4j_backed_scope("all") is True
+        assert is_legacy_only_scope("common_knowledge") is True
+        assert is_legacy_only_scope("skills") is True
+        assert is_legacy_only_scope("activity_log") is True
+        assert LEGACY_ONLY_SCOPES_FOR_ALL == ("common_knowledge", "skills", "activity_log")
+        assert neo4j_scope_for("episodes") == "episode"
+        assert title_for_legacy_scope("common_knowledge") == "Common Knowledge"
 
 
 # ── TestCreateNeo4jBackend ────────────────────────────────
@@ -280,3 +300,108 @@ class TestHandleSearchMemoryIntegration:
 
         handler._handle_search_memory({"query": "test", "scope": "all"})
         mock_memory.search_memory_text.assert_called_once()
+
+    def test_all_scope_returns_graph_plus_legacy_only_sections(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="graph result", score=0.9, source="fact:1"),
+            ]
+        )
+
+        def legacy_side_effect(_query, scope="all", **_kwargs):
+            return {
+                "common_knowledge": [
+                    {
+                        "content": "common result",
+                        "source_file": "common_knowledge/policy.md",
+                        "score": 0.7,
+                        "search_method": "vector",
+                    }
+                ],
+                "skills": [
+                    {
+                        "content": "skill result",
+                        "source_file": "common_skills/skill/SKILL.md",
+                        "score": 0.6,
+                        "search_method": "vector",
+                    }
+                ],
+                "activity_log": [
+                    {
+                        "content": "activity result",
+                        "source_file": "activity/log.jsonl",
+                        "score": 0.5,
+                        "search_method": "bm25",
+                    }
+                ],
+            }.get(scope, [])
+
+        mock_memory.search_memory_text.side_effect = legacy_side_effect
+
+        result = handler._handle_search_memory({"query": "test", "scope": "all"})
+
+        assert "hybrid, all" in result
+        assert "## Graph Memory" in result
+        assert "graph result" in result
+        assert "## Common Knowledge" in result
+        assert "common result" in result
+        assert "## Skills" in result
+        assert "skill result" in result
+        assert "## Activity Log" in result
+        assert "activity result" in result
+        assert mock_backend.retrieve.await_args.kwargs["scope"] == "all"
+        mock_memory.search_memory_text.assert_has_calls(
+            [
+                call("test", scope="common_knowledge", offset=0, context_window=128_000),
+                call("test", scope="skills", offset=0, context_window=128_000),
+                call("test", scope="activity_log", offset=0, context_window=128_000),
+            ]
+        )
+
+    def test_all_scope_offset_applies_after_section_assembly(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="graph result", score=0.9, source="fact:1"),
+            ]
+        )
+
+        def legacy_side_effect(_query, scope="all", **_kwargs):
+            if scope != "common_knowledge":
+                return []
+            return [
+                {
+                    "content": "common result",
+                    "source_file": "common_knowledge/policy.md",
+                    "score": 0.7,
+                    "search_method": "vector",
+                }
+            ]
+
+        mock_memory.search_memory_text.side_effect = legacy_side_effect
+
+        result = handler._handle_search_memory({"query": "test", "scope": "all", "offset": 1})
+
+        assert "graph result" not in result
+        assert "## Graph Memory" not in result
+        assert "## Common Knowledge" in result
+        assert "common result" in result
+        assert "[2]" in result
+
+    def test_all_scope_falls_back_to_legacy_all_on_neo4j_failure(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(side_effect=RuntimeError("crash"))
+        mock_memory.search_memory_text.return_value = [
+            {"content": "fallback", "source_file": "kb.md", "score": 0.5, "search_method": "vector"}
+        ]
+
+        result = handler._handle_search_memory({"query": "test", "scope": "all"})
+
+        assert "fallback" in result
+        mock_memory.search_memory_text.assert_called_once_with(
+            "test",
+            scope="all",
+            offset=0,
+            context_window=128_000,
+        )
