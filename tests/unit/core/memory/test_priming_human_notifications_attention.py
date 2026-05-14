@@ -54,6 +54,39 @@ async def test_human_notify_suppresses_same_notification_key_for_24h(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_human_notify_suppresses_subject_body_key_from_activity_meta(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "rin"
+    (anima_dir / "activity_log").mkdir(parents=True)
+    subject = "Deploy check"
+    body = "Please check deployment."
+    key = notification_key_for(subject, body)
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="rin",
+        task_id="task123456",
+        notification_key=key,
+        last_notified_at=(now_local() - timedelta(hours=1)).isoformat(),
+    )
+    _write_activity(
+        anima_dir,
+        [
+            {
+                "ts": now_iso(),
+                "type": "human_notify",
+                "content": body,
+                "via": "configured_channels",
+                "meta": {"subject": subject, "notification_key": key},
+            }
+        ],
+    )
+
+    result = await PrimingEngine(anima_dir)._collect_pending_human_notifications(channel="chat")
+
+    assert result == ""
+
+
+@pytest.mark.asyncio
 async def test_human_notify_allows_new_body(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "rin"

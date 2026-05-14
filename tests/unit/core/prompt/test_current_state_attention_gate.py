@@ -72,6 +72,22 @@ def test_fresh_current_state_removes_suppressed_task_refs(tmp_path: Path) -> Non
     assert "keep this live note" in current_state
 
 
+def test_fresh_current_state_removes_shortened_suppressed_task_refs(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "sakura"
+    (anima_dir / "state").mkdir(parents=True)
+    state = "status: working\nremove shortened abcdef12\nkeep this live note"
+    (anima_dir / "state" / "current_state.md").write_text(state, encoding="utf-8")
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    store.upsert_metadata(anima_name="sakura", task_id="abcdef123456", visibility="archived")
+
+    entries = _current_state_entries(anima_dir, state)
+    current_state = next(entry.content for entry in entries if entry.id == "current_state")
+
+    assert "abcdef12" not in current_state
+    assert "keep this live note" in current_state
+
+
 def test_current_state_gate_fails_open_when_taskboard_db_is_corrupt(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"

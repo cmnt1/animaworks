@@ -151,12 +151,12 @@ class AttentionResolver:
             logger.debug("TaskBoard metadata unavailable for current_state gate", exc_info=True)
             return state
 
-        suppressed_refs: set[tuple[str, str]] = set()
+        suppressed_refs: dict[str, set[str]] = {}
         suppressed_task_ids_for_anima: set[str] = set()
         for metadata in metadata_rows:
             if not self._metadata_hidden_in_current_state(metadata, resolved_now):
                 continue
-            suppressed_refs.add((metadata.anima_name, metadata.task_id))
+            suppressed_refs.setdefault(metadata.anima_name, set()).add(metadata.task_id)
             if metadata.anima_name == anima_name:
                 suppressed_task_ids_for_anima.add(metadata.task_id)
 
@@ -265,14 +265,21 @@ def _parse_datetime(value: str | None) -> datetime | None:
 def _line_references_suppressed_task(
     line: str,
     anima_name: str,
-    suppressed_refs: set[tuple[str, str]],
+    suppressed_refs: dict[str, set[str]],
     suppressed_task_ids_for_anima: set[str],
 ) -> bool:
     for ref_anima, ref_task_id in _AW_TASK_REF_RE.findall(line):
-        if (ref_anima, ref_task_id) in suppressed_refs:
+        if _token_matches_any_task_id(ref_task_id, suppressed_refs.get(ref_anima, set())):
             return True
 
     for token in _TASK_REF_RE.findall(line):
-        if token in suppressed_task_ids_for_anima or (anima_name, token) in suppressed_refs:
+        if _token_matches_any_task_id(token, suppressed_task_ids_for_anima) or _token_matches_any_task_id(
+            token,
+            suppressed_refs.get(anima_name, set()),
+        ):
             return True
     return False
+
+
+def _token_matches_any_task_id(token: str, task_ids: set[str]) -> bool:
+    return any(token == task_id or token in task_id or task_id in token for task_id in task_ids)

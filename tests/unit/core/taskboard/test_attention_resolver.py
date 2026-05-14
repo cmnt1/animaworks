@@ -202,3 +202,26 @@ def test_current_state_freshness_and_suppressed_refs(tmp_path: Path) -> None:
     old = (NOW - timedelta(hours=25)).timestamp()
     os.utime(state_path, (old, old))
     assert resolver.should_inject_current_state(anima_dir, NOW) is False
+
+
+def test_current_state_filters_short_task_id_substrings(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "sakura"
+    (anima_dir / "state").mkdir(parents=True)
+    state = "\n".join(
+        [
+            "status: working",
+            "remove shortened abcdef12",
+            "remove aw ref aw://task/sakura/abcdef12",
+            "keep live note",
+        ]
+    )
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    store.upsert_metadata(anima_name="sakura", task_id="abcdef123456", visibility="archived")
+    resolver = resolver_for_anima_dir(anima_dir)
+
+    filtered = resolver.filter_current_state(anima_dir, state, NOW)
+
+    assert "abcdef12" not in filtered
+    assert "aw://task" not in filtered
+    assert "keep live note" in filtered
