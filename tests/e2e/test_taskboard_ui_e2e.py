@@ -112,6 +112,7 @@ async def test_taskboard_route_static_assets_and_api_smoke(tmp_path: Path) -> No
     assert "document.visibilityState" in page_resp.text
     assert "escapeAttr" in page_resp.text
     assert "_renderToken" in page_resp.text
+    assert "if (!_container || token !== _renderToken) return;" in page_resp.text
     assert 'method: "PATCH"' in page_resp.text
     assert "position: (index + 1) * 1000" in page_resp.text
     assert 'reasonRequired: action === "expire" || action === "tombstone"' in page_resp.text

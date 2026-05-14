@@ -171,6 +171,7 @@ async function _loadBoard({ quiet = false, token = _renderToken } = {}) {
     _renderBoard();
     _setFeedback(_summaryText(data), "ok");
   } catch (err) {
+    if (!_container || token !== _renderToken) return;
     _setFeedback(`${t("taskboard.load_failed")}: ${err.message || err}`, "error");
     if (!_tasks.length) _renderBoard();
   } finally {
