@@ -145,6 +145,10 @@ class TestReplayEngineStructure:
         assert "evt.kind" in self.src
         assert "isVisibleReplayEvent" in self.src
 
+    def test_replay_engine_exposes_narrative_hook(self):
+        assert "onNarrativeUpdate" in self.src
+        assert "_buildNarrativeState" in self.src
+
 
 # ── ReplayUI Structure ──────────────────────────────────────────
 

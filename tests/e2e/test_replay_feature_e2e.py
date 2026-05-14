@@ -15,6 +15,7 @@ from httpx import ASGITransport, AsyncClient
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REPLAY_ENGINE_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "replay-engine.js"
+REPLAY_UI_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "replay-ui.js"
 ORG_DASHBOARD_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "org-dashboard.js"
 APP_WS_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app-websocket.js"
 
@@ -242,6 +243,18 @@ class TestReplaySeekStateReconstruction:
         streams, _, _ = self.seek_rebuild(events, virtual_ms)
         assert len(streams["bob"]) <= self.MAX_STREAM_ENTRIES, (
             "stream must be clipped to MAX_STREAM_ENTRIES"
+        )
+
+
+# ── Replay Narrative Smoke ──────────────────────────────────────
+
+
+class TestReplayNarrativeSmoke:
+    def test_workspace_replay_narrative_source_contract(self):
+        assert "_buildNarrativeState" in REPLAY_ENGINE_JS.read_text(encoding="utf-8")
+        assert "orgReplayNarrative" in REPLAY_UI_JS.read_text(encoding="utf-8")
+        assert "onNarrativeUpdate: _handleNarrativeUpdate" in ORG_DASHBOARD_JS.read_text(
+            encoding="utf-8"
         )
 
 

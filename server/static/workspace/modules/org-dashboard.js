@@ -1381,6 +1381,7 @@ export async function startReplay(hours = 24) {
     onSeekRebuild: _handleSeekRebuild,
     onComplete: _handleReplayComplete,
     onTimeUpdate: (ms, progress) => _replayUI?.updateTime(ms, progress),
+    onNarrativeUpdate: _handleNarrativeUpdate,
   });
 
   _replayUI = new ReplayUI({
@@ -1415,6 +1416,7 @@ async function _loadReplayData(hours) {
   _replayUI.clearError();
   _replayUI.setLoading(true);
   _replayUI.show();
+  _replayUI.updateNarrative({});
   _clearAllCardStreams();
 
   try {
@@ -1493,6 +1495,13 @@ function _handleReplayEvent(evt, speed) {
     updateCardSemanticActivity(name, evt);
   }
   _showSemanticReplayLine(evt, speed);
+}
+
+function _handleNarrativeUpdate(state) {
+  _replayUI?.updateNarrative(state);
+  if (!state?.currentEvent || _replayEngine?.isPlaying()) return;
+  if (_msgLinesGroup) _msgLinesGroup.innerHTML = "";
+  _showSemanticReplayLine(state.currentEvent, _replayEngine?.getSpeed?.() || 0);
 }
 
 function _handleSeekRebuild({ cardStreams, cardStatus, kpiCounts }) {
