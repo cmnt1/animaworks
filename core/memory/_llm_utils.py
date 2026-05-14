@@ -156,6 +156,30 @@ def get_llm_kwargs_for_model(model: str, *, credential: str = "") -> dict[str, A
     return kwargs
 
 
+def get_memory_llm_kwargs_for_model(
+    model: str,
+    llm_extra: dict[str, object] | None = None,
+    *,
+    credential: str = "",
+) -> dict[str, Any]:
+    """Resolve LiteLLM kwargs for memory LLM calls.
+
+    Memory extraction can be configured per Anima with an OpenAI-compatible
+    custom endpoint. LiteLLM still requires a provider prefix for bare model
+    ids in that case, so ``deepseek-v4-flash`` + ``api_base`` is normalized to
+    ``openai/deepseek-v4-flash``. Existing provider-prefixed ids are preserved.
+    """
+    kwargs = get_llm_kwargs_for_model(model, credential=credential)
+    if llm_extra:
+        kwargs.update(llm_extra)
+
+    resolved_model = str(kwargs.get("model") or model or "")
+    if resolved_model and "/" not in resolved_model and kwargs.get("api_base"):
+        kwargs["model"] = f"openai/{resolved_model}"
+
+    return kwargs
+
+
 def get_llm_kwargs_for_model_config(model_config: Any) -> dict[str, Any]:
     """Resolve LiteLLM kwargs from the active per-Anima ModelConfig."""
     ensure_credentials_in_env()

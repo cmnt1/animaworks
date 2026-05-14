@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ class CrossEncoderReranker:
         query: str,
         items: list[dict],
         *,
-        text_field: str = "fact",
+        text_field: str | Callable[[dict], str] = "fact",
         top_k: int = 10,
     ) -> list[dict]:
         """Rerank items by cross-encoder score.
@@ -72,7 +73,8 @@ class CrossEncoderReranker:
         Args:
             query: Search query.
             items: Candidate items with text_field.
-            text_field: Key containing text to score against query.
+            text_field: Key containing text to score against query, or a
+                callable that resolves text per item.
             top_k: Max results to return.
 
         Returns:
@@ -82,7 +84,10 @@ class CrossEncoderReranker:
         if not items:
             return []
 
-        texts = [str(item.get(text_field, "")) for item in items]
+        if callable(text_field):
+            texts = [str(text_field(item)) for item in items]
+        else:
+            texts = [str(item.get(text_field, "")) for item in items]
 
         scores = await asyncio.to_thread(self._score_sync, query, texts)
 
