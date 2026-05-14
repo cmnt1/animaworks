@@ -295,8 +295,14 @@ class TestSemanticDilutionRegression:
 
         assert mock_retriever.search.call_count == 2, "Dual query should issue 2 searches"
         medium_text, _ = result
-        assert "マレーシア" in medium_text, f"Malaysia content should be in results: {medium_text}"
-        assert "デバッグ" in medium_text, f"Debug content should also be in results: {medium_text}"
+        assert 'read_memory_file(path="knowledge/malaysia-travel.md")' in medium_text, (
+            f"Malaysia pointer should be in results: {medium_text}"
+        )
+        assert 'read_memory_file(path="knowledge/debugging-guide.md")' in medium_text, (
+            f"Debug pointer should also be in results: {medium_text}"
+        )
+        assert "マレーシア旅行の計画" not in medium_text
+        assert "デバッグ手順" not in medium_text
 
     @pytest.mark.asyncio
     async def test_single_topic_still_works(self, anima_dir) -> None:
@@ -321,4 +327,5 @@ class TestSemanticDilutionRegression:
 
         assert mock_retriever.search.call_count == 2
         medium_text, _ = result
-        assert "relevant content" in medium_text
+        assert 'read_memory_file(path="knowledge/test.md")' in medium_text
+        assert "relevant content" not in medium_text

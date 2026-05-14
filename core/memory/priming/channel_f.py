@@ -9,6 +9,7 @@ from __future__ import annotations
 
 """Channel F: Episode memory search (vector search)."""
 
+import json
 import logging
 from collections.abc import Callable
 from datetime import timedelta
@@ -19,6 +20,59 @@ from core.memory.priming.utils import build_queries, search_and_merge
 from core.time_utils import now_local
 
 logger = logging.getLogger(__name__)
+
+
+def _single_line(text: str, limit: int = 160) -> str:
+    """Collapse prompt cue text to one bounded line."""
+    collapsed = " ".join(str(text or "").split())
+    return collapsed[:limit]
+
+
+def _quote_path(path: str) -> str:
+    """Return a JSON string literal for read_memory_file path examples."""
+    return json.dumps(path, ensure_ascii=False)
+
+
+def to_episode_memory_path(source: str) -> str:
+    """Normalize retriever/backend source to a read_memory_file episode path."""
+    if not source:
+        return ""
+    source_path = str(source).split("#", 1)[0]
+    marker = "episodes/"
+    if marker in source_path:
+        return marker + source_path.split(marker, 1)[1]
+    if source_path.endswith(".md"):
+        return f"episodes/{Path(source_path).name}"
+    return ""
+
+
+def extract_episode_summary(content: str, source: str) -> str:
+    """Return a short cue for an episode without injecting the full episode body."""
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            return _single_line(stripped.lstrip("#").strip(), 120)
+    path = to_episode_memory_path(source)
+    if path:
+        return _single_line(Path(path).stem.replace("-", " ").replace("_", " "))
+    return "Related episode memory"
+
+
+def format_episode_pointer(
+    *,
+    index: int,
+    score: float,
+    source: str,
+    content: str,
+    path: str,
+) -> str:
+    """Format an episode result as a pointer cue instead of raw payload."""
+    summary = extract_episode_summary(content, source)
+    return (
+        f"--- Episode {index} (score: {score:.3f}, source: {_single_line(source, 120)}) ---\n"
+        f"{summary}\n"
+        f"  -> read_memory_file(path={_quote_path(path)})\n"
+    )
 
 
 async def channel_f_episodes(
@@ -79,24 +133,36 @@ async def channel_f_episodes(
                     merged = sorted(best.values(), key=lambda m: m.score, reverse=True)[:5]
                     if not merged:
                         return ""
-                    try:
-                        await backend.record_access(merged)
-                    except Exception:
-                        logger.debug("Channel F: record_access skipped", exc_info=True)
-
                     parts: list[str] = []
-                    for i, mem in enumerate(merged):
+                    accessed_memories = []
+                    for mem in merged:
                         meta = mem.metadata if isinstance(mem.metadata, dict) else {}
-                        source = meta.get("source_file", mem.source)
+                        source = meta.get("source_file") or meta.get("source") or mem.source
+                        path = to_episode_memory_path(source)
+                        if not path:
+                            logger.debug("Channel F: skipping Neo4j episode without readable path: %s", mem.source)
+                            continue
+                        accessed_memories.append(mem)
                         parts.append(
-                            f"--- Episode {i + 1} (score: {mem.score:.3f}, source: {source}) ---\n{mem.content}\n",
+                            format_episode_pointer(
+                                index=len(parts) + 1,
+                                score=mem.score,
+                                source=source,
+                                content=mem.content,
+                                path=path,
+                            ),
                         )
+                    if accessed_memories:
+                        try:
+                            await backend.record_access(accessed_memories)
+                        except Exception:
+                            logger.debug("Channel F: record_access skipped", exc_info=True)
 
                     logger.debug(
                         "Channel F: Neo4j episode search returned %d results",
                         len(merged),
                     )
-                    return "\n".join(parts)
+                    return "\n".join(parts) if parts else ""
 
         if not episodes_dir.is_dir():
             return ""
@@ -117,18 +183,32 @@ async def channel_f_episodes(
         if not results:
             return ""
 
-        retriever.record_access(results, anima_name)
-
         parts = []
-        for i, result in enumerate(results):
-            source = result.metadata.get("source_file", result.doc_id)
-            parts.append(f"--- Episode {i + 1} (score: {result.score:.3f}, source: {source}) ---\n{result.content}\n")
+        accessed_results = []
+        for result in results:
+            source = result.metadata.get("source_file") or result.doc_id
+            path = to_episode_memory_path(source)
+            if not path:
+                logger.debug("Channel F: skipping episode without readable path: %s", result.doc_id)
+                continue
+            accessed_results.append(result)
+            parts.append(
+                format_episode_pointer(
+                    index=len(parts) + 1,
+                    score=result.score,
+                    source=source,
+                    content=result.content,
+                    path=path,
+                )
+            )
+        if accessed_results:
+            retriever.record_access(accessed_results, anima_name)
 
         logger.debug(
             "Channel F: Episode search returned %d results",
             len(results),
         )
-        return "\n".join(parts)
+        return "\n".join(parts) if parts else ""
 
     except Exception as e:
         logger.warning("Channel F: Episode search failed: %s", e)
