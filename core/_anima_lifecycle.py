@@ -142,7 +142,7 @@ class LifecycleMixin:
                     from core.config.models import load_config as _load_cfg
                     from core.tooling.handler import active_session_type
 
-                    _session_token = self.agent._tool_handler.set_active_session_type("background")
+                    _session_token = self.agent._tool_handler.set_active_session_type("heartbeat")
                     self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
                     heartbeat_text = "\n\n".join(parts)
                     prior_msgs = self._build_prior_messages(heartbeat_text)
@@ -300,7 +300,7 @@ class LifecycleMixin:
                 _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._status_slots["background"] = "consolidating"
                 self._task_slots["background"] = f"Memory consolidation ({consolidation_type})"
-                _session_token = self.agent._tool_handler.set_active_session_type("background")
+                _session_token = self.agent._tool_handler.set_active_session_type("heartbeat")
                 self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 _consolidation_flag = self.anima_dir / "state" / ".consolidation_mode"
@@ -583,7 +583,7 @@ class LifecycleMixin:
                 self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
-                _session_token = self.agent._tool_handler.set_active_session_type("background")
+                _session_token = self.agent._tool_handler.set_active_session_type("cron")
                 self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 prompt = self._build_cron_prompt(
@@ -688,7 +688,15 @@ class LifecycleMixin:
                 self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
-                _session_token = self.agent._tool_handler.set_active_session_type("background")
+                from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+
+                _runtime_ctx = RuntimeSessionContext.create(
+                    session_type="cron",
+                    thread_id="default",
+                    trigger=f"cron:{task_name}",
+                )
+                self.agent._tool_handler.bind_runtime_session(_runtime_ctx)
+                _session_token = self.agent._tool_handler.set_active_session_type("cron")
                 self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 proc = None
@@ -761,7 +769,8 @@ class LifecycleMixin:
                     elif tool:
                         # Execute internal tool via ToolHandler
                         logger.debug("[%s] Executing tool: %s", self.name, tool)
-                        result = self.agent._tool_handler.handle(tool, args or {})
+                        with runtime_session_scope(_runtime_ctx):
+                            result = self.agent._tool_handler.handle(tool, args or {})
                         stdout = str(result)
                         exit_code = 0
 

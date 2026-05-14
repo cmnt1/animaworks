@@ -24,6 +24,7 @@ from core.exceptions import (
     ToolError,
 )
 from core.execution._sanitize import ORIGIN_HUMAN, ORIGIN_SYSTEM
+from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
 from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 from core.memory.conversation import ConversationMemory, ToolRecord
@@ -34,6 +35,31 @@ from core.schemas import EXTERNAL_PLATFORM_SOURCES, VALID_EMOTIONS, CycleResult,
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.anima")
+
+
+def _chat_cycle_isolated(
+    cycle_result: CycleResult | dict[str, Any],
+    *,
+    expected_trigger: str,
+    thread_id: str,
+) -> tuple[bool, dict[str, Any]]:
+    data = cycle_result.model_dump(mode="json") if isinstance(cycle_result, CycleResult) else cycle_result
+    actual_trigger = str(data.get("trigger") or "")
+    actual_session_type = str(data.get("session_type") or resolve_runtime_session_type(actual_trigger))
+    actual_thread_id = str(data.get("thread_id") or thread_id)
+    meta = {
+        "expected_trigger": expected_trigger,
+        "actual_trigger": actual_trigger,
+        "actual_session_type": actual_session_type,
+        "expected_thread_id": thread_id,
+        "actual_thread_id": actual_thread_id,
+        "request_id": str(data.get("request_id") or ""),
+        "tool_session_id": str(data.get("tool_session_id") or ""),
+    }
+    return (
+        actual_trigger == expected_trigger and actual_session_type == "chat" and actual_thread_id == thread_id,
+        meta,
+    )
 
 
 class MessagingMixin:
@@ -371,7 +397,33 @@ class MessagingMixin:
                     response_artifacts = extract_image_artifacts_from_tool_records(result.tool_call_records)
                     remaining = max(0, 5 - len(response_artifacts))
                     response_artifacts.extend(local_artifacts[:remaining])
+                    guard_ok, guard_meta = _chat_cycle_isolated(
+                        result,
+                        expected_trigger=f"message:{from_person}",
+                        thread_id=thread_id,
+                    )
+                    if not guard_ok:
+                        logger.error(
+                            "[%s] session guard blocked non-chat cycle from conversation storage: %s",
+                            self.name,
+                            guard_meta,
+                        )
+                        self._activity.log(
+                            "session_guard_violation",
+                            summary="Blocked non-chat cycle result from chat conversation storage",
+                            channel="chat",
+                            meta=guard_meta,
+                            safe=True,
+                        )
+                        result.summary = ""
+                        if include_cycle_result:
+                            return result.model_dump(mode="json")
+                        return ""
                     resp_meta: dict[str, Any] = {"thread_id": thread_id}
+                    for _field in ("session_type", "request_id", "tool_session_id"):
+                        _value = getattr(result, _field, "")
+                        if _value:
+                            resp_meta[_field] = _value
                     if external_chat_recipient is not None:
                         display_summary, delivery_meta = self._send_chat_reply_via_resolved(
                             external_chat_recipient,
@@ -646,7 +698,31 @@ class MessagingMixin:
                             cycle_done = True
                             self._last_activity = now_local()
                             # Record assistant response with tool records
-                            cycle_result = chunk.get("cycle_result", {})
+                            raw_cycle_result = chunk.get("cycle_result", {})
+                            cycle_result = raw_cycle_result if isinstance(raw_cycle_result, dict) else {}
+                            chunk["cycle_result"] = cycle_result
+                            guard_ok, guard_meta = _chat_cycle_isolated(
+                                cycle_result,
+                                expected_trigger=f"message:{from_person}",
+                                thread_id=thread_id,
+                            )
+                            if not guard_ok:
+                                logger.error(
+                                    "[%s] session guard blocked non-chat stream result from conversation storage: %s",
+                                    self.name,
+                                    guard_meta,
+                                )
+                                self._activity.log(
+                                    "session_guard_violation",
+                                    summary="Blocked non-chat stream result from chat conversation storage",
+                                    channel="chat",
+                                    meta=guard_meta,
+                                    safe=True,
+                                )
+                                cycle_result["summary"] = ""
+                                journal.finalize(summary="session guard violation")
+                                yield chunk
+                                continue
                             summary = normalize_user_facing_response_text(cycle_result.get("summary", ""))
 
                             # Resolve local absolute/file:// image paths → attachments/
@@ -665,6 +741,10 @@ class MessagingMixin:
                                 cycle_result["images"] = response_artifacts
                             display_summary = summary
                             resp_meta: dict[str, Any] = {"thread_id": thread_id}
+                            for _field in ("session_type", "request_id", "tool_session_id"):
+                                _value = cycle_result.get(_field)
+                                if _value:
+                                    resp_meta[_field] = _value
                             if external_chat_recipient is not None:
                                 display_summary, delivery_meta = self._send_chat_reply_via_resolved(
                                     external_chat_recipient,

@@ -747,10 +747,10 @@ class PendingTaskExecutor:
             prompt += "\n\n" + t("pending_executor.machine_directive")
 
         trigger = f"task:{task_id}"
-        journal = StreamingJournal(self._anima_dir, session_type="task_exec")
+        journal = StreamingJournal(self._anima_dir, session_type="task")
         journal.open(trigger=trigger)
 
-        self._anima.agent.reset_reply_tracking(session_type="background")
+        self._anima.agent.reset_reply_tracking(session_type="task")
         self._anima.agent.reset_read_paths()
         accumulated_text = ""
         result_summary = ""

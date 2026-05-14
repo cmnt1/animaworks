@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from core.execution.base import ExecutionResult
 
 from core._agent_prompt_log import _save_prompt_log, _save_prompt_log_end
+from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
 from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
 from core.i18n import t
 from core.memory.shortterm import SessionState, ShortTermMemory
@@ -159,6 +160,50 @@ class CycleMixin:
             )
 
     async def _run_cycle_inner(
+        self,
+        prompt: str,
+        trigger: str,
+        images: list[ImageData] | None = None,
+        prior_messages: list[dict[str, Any]] | None = None,
+        message_intent: str = "",
+        max_turns_override: int | None = None,
+        thread_id: str = "default",
+        model_config_override: ModelConfig | None = None,
+    ) -> CycleResult:
+        session_type = resolve_runtime_session_type(trigger)
+        ctx = RuntimeSessionContext.create(
+            session_type=session_type,
+            thread_id=thread_id,
+            trigger=trigger,
+        )
+        with runtime_session_scope(ctx):
+            self._tool_handler.bind_runtime_session(ctx)
+            token = self._tool_handler.set_active_session_type(session_type)
+            try:
+                result = await self._run_cycle_inner_scoped(
+                    prompt,
+                    trigger,
+                    images=images,
+                    prior_messages=prior_messages,
+                    message_intent=message_intent,
+                    max_turns_override=max_turns_override,
+                    thread_id=thread_id,
+                    model_config_override=model_config_override,
+                )
+                result.session_type = ctx.session_type
+                result.thread_id = ctx.thread_id
+                result.request_id = ctx.request_id
+                result.tool_session_id = ctx.tool_session_id
+                return result
+            finally:
+                from core.tooling.handler import active_session_type
+
+                try:
+                    active_session_type.reset(token)
+                except (TypeError, ValueError):
+                    pass
+
+    async def _run_cycle_inner_scoped(
         self,
         prompt: str,
         trigger: str,
@@ -709,6 +754,57 @@ class CycleMixin:
         Yields stream chunks. Session chaining is handled seamlessly.
         Final event is ``{"type": "cycle_done", "cycle_result": {...}}``.
         """
+        session_type = resolve_runtime_session_type(trigger)
+        ctx = RuntimeSessionContext.create(
+            session_type=session_type,
+            thread_id=thread_id,
+            trigger=trigger,
+        )
+        async with self._get_agent_lock(thread_id):
+            with runtime_session_scope(ctx):
+                self._tool_handler.bind_runtime_session(ctx)
+                token = self._tool_handler.set_active_session_type(session_type)
+                try:
+                    async for chunk in self._run_cycle_streaming_inner(
+                        prompt,
+                        trigger,
+                        images=images,
+                        prior_messages=prior_messages,
+                        message_intent=message_intent,
+                        max_turns_override=max_turns_override,
+                        thread_id=thread_id,
+                        model_config_override=model_config_override,
+                    ):
+                        if chunk.get("type") == "cycle_done":
+                            cycle_result = chunk.get("cycle_result")
+                            if isinstance(cycle_result, dict):
+                                cycle_result["session_type"] = cycle_result.get("session_type") or ctx.session_type
+                                cycle_result["thread_id"] = cycle_result.get("thread_id") or ctx.thread_id
+                                cycle_result["request_id"] = cycle_result.get("request_id") or ctx.request_id
+                                cycle_result["tool_session_id"] = (
+                                    cycle_result.get("tool_session_id") or ctx.tool_session_id
+                                )
+                        yield chunk
+                finally:
+                    from core.tooling.handler import active_session_type
+
+                    try:
+                        active_session_type.reset(token)
+                    except (TypeError, ValueError):
+                        pass
+
+    async def _run_cycle_streaming_inner(
+        self,
+        prompt: str,
+        trigger: str = "manual",
+        images: list[ImageData] | None = None,
+        prior_messages: list[dict[str, Any]] | None = None,
+        message_intent: str = "",
+        max_turns_override: int | None = None,
+        thread_id: str = "default",
+        model_config_override: ModelConfig | None = None,
+    ) -> AsyncGenerator[dict, None]:
+        """Streaming implementation scoped by ``run_cycle_streaming``."""
         start = time.monotonic()
         active_model_config = model_config_override or self.model_config
         active_executor = (
@@ -724,17 +820,16 @@ class CycleMixin:
 
         # Non-streaming executors: fall back to blocking execution
         if not active_executor.supports_streaming:
-            async with self._get_agent_lock(thread_id):
-                cycle = await self._run_cycle_inner(
-                    prompt,
-                    trigger,
-                    images=images,
-                    prior_messages=prior_messages,
-                    message_intent=message_intent,
-                    max_turns_override=max_turns_override,
-                    thread_id=thread_id,
-                    model_config_override=model_config_override,
-                )
+            cycle = await self._run_cycle_inner_scoped(
+                prompt,
+                trigger,
+                images=images,
+                prior_messages=prior_messages,
+                message_intent=message_intent,
+                max_turns_override=max_turns_override,
+                thread_id=thread_id,
+                model_config_override=model_config_override,
+            )
             yield {"type": "text_delta", "text": cycle.summary}
             yield {
                 "type": "cycle_done",
@@ -833,16 +928,15 @@ class CycleMixin:
         )
         if use_fallback:
             logger.warning("Streaming fallback: using blocking S Fallback for oversized prompt")
-            async with self._get_agent_lock(thread_id):
-                cycle = await self._run_cycle_inner(
-                    prompt,
-                    trigger,
-                    message_intent=message_intent,
-                    images=images,
-                    max_turns_override=max_turns_override,
-                    thread_id=thread_id,
-                    model_config_override=model_config_override,
-                )
+            cycle = await self._run_cycle_inner_scoped(
+                prompt,
+                trigger,
+                message_intent=message_intent,
+                images=images,
+                max_turns_override=max_turns_override,
+                thread_id=thread_id,
+                model_config_override=model_config_override,
+            )
             yield {"type": "text_delta", "text": cycle.summary}
             yield {
                 "type": "cycle_done",
