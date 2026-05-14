@@ -15,6 +15,7 @@ import logging
 import re
 import time
 from collections.abc import AsyncGenerator
+from hashlib import sha256
 from typing import Any
 
 from core.exceptions import (
@@ -463,7 +464,13 @@ class MessagingMixin:
                         meta=resp_meta,
                     )
 
-                    self._maybe_neo4j_realtime_ingest(from_person, display_summary)
+                    self._maybe_neo4j_realtime_ingest(
+                        from_person,
+                        content,
+                        display_summary,
+                        thread_id=thread_id,
+                        request_id=resp_meta.get("request_id"),
+                    )
 
                     logger.info(
                         "[%s] process_message END duration_ms=%d",
@@ -784,7 +791,13 @@ class MessagingMixin:
                                 meta=resp_meta,
                             )
 
-                            self._maybe_neo4j_realtime_ingest(from_person, display_summary)
+                            self._maybe_neo4j_realtime_ingest(
+                                from_person,
+                                content,
+                                display_summary,
+                                thread_id=thread_id,
+                                request_id=resp_meta.get("request_id"),
+                            )
 
                             # Finalize streaming journal (deletes the file)
                             journal.finalize(summary=display_summary[:500])
@@ -985,11 +998,23 @@ class MessagingMixin:
 
     # ── Neo4j realtime ingest ────────────────────────────────
 
-    def _maybe_neo4j_realtime_ingest(self, from_person: str, response_text: str) -> None:
+    def _maybe_neo4j_realtime_ingest(
+        self,
+        from_person: str,
+        user_text: str,
+        response_text: str,
+        *,
+        thread_id: str = "default",
+        request_id: str | None = None,
+    ) -> None:
         """Fire-and-forget Neo4j ingest of the latest conversation turn."""
         import asyncio
 
         try:
+            response_text = str(response_text or "")
+            if not response_text.strip():
+                return
+
             from core.memory.backend.registry import resolve_backend_type
 
             if resolve_backend_type(self.memory.anima_dir) != "neo4j":
@@ -1001,7 +1026,23 @@ class MessagingMixin:
             if not mem_cfg or not getattr(mem_cfg, "neo4j_realtime_ingest", False):
                 return
 
-            text = f"[{from_person} → {self.name}]\n{response_text}"
+            from_person = str(from_person or "")
+            user_text = str(user_text or "")
+            thread_id = str(thread_id or "default")
+            request_key = str(request_id or "").strip()
+            if not request_key:
+                digest_input = "\n".join([from_person, thread_id, user_text, response_text])
+                request_key = sha256(digest_input.encode("utf-8")).hexdigest()
+
+            source = f"chat:{self.name}:{thread_id}"
+            metadata = {
+                "stable_key": f"{source}:{request_key}",
+                "description": f"chat turn {thread_id}",
+                "thread_id": thread_id,
+            }
+            if str(request_id or "").strip():
+                metadata["request_id"] = request_key
+            text = f"{from_person}: {user_text}\n{self.name}: {response_text}"
 
             try:
                 loop = asyncio.get_running_loop()
@@ -1009,13 +1050,19 @@ class MessagingMixin:
                 loop = None
 
             if loop and loop.is_running():
-                loop.create_task(self._neo4j_ingest_turn(text))
+                loop.create_task(self._neo4j_ingest_turn(text, source=source, metadata=metadata))
             else:
-                asyncio.run(self._neo4j_ingest_turn(text))
+                asyncio.run(self._neo4j_ingest_turn(text, source=source, metadata=metadata))
         except Exception:
             logger.debug("[%s] Neo4j realtime ingest check failed", self.name, exc_info=True)
 
-    async def _neo4j_ingest_turn(self, text: str) -> None:
+    async def _neo4j_ingest_turn(
+        self,
+        text: str,
+        *,
+        source: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
         """Ingest a single conversation turn into Neo4j."""
         try:
             backend = self.memory.memory_backend
@@ -1023,7 +1070,7 @@ class MessagingMixin:
             has_ingest = hasattr(backend, "ingest_text") and hasattr(backend, "_group_id")
             if cls_name == "LegacyRAGBackend" or (cls_name != "Neo4jGraphBackend" and not has_ingest):
                 return
-            await backend.ingest_text(text, source=f"chat:{self.name}")
+            await backend.ingest_text(text, source=source or f"chat:{self.name}", metadata=metadata)
             logger.debug("[%s] Realtime Neo4j ingest complete", self.name)
         except Exception:
             logger.debug("[%s] Realtime Neo4j ingest failed", self.name, exc_info=True)
