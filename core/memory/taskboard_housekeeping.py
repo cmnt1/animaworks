@@ -417,7 +417,9 @@ def _archive_current_state_for_housekeeping(
         episodes_dir = anima_dir / "episodes"
         episodes_dir.mkdir(parents=True, exist_ok=True)
         episode_path = episodes_dir / f"{today_local().isoformat()}.md"
-        existing = episode_path.read_text(encoding="utf-8") if episode_path.exists() else f"# {today_local().isoformat()}\n"
+        existing = (
+            episode_path.read_text(encoding="utf-8") if episode_path.exists() else f"# {today_local().isoformat()}\n"
+        )
         entry = f"\n## Working notes archived by TaskBoard housekeeping\n\n{content.rstrip()}\n"
         atomic_write_text(episode_path, existing.rstrip() + "\n\n" + entry.lstrip())
         atomic_write_text(state_path, "status: idle\n")
