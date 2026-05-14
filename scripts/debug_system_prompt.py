@@ -475,6 +475,21 @@ def main() -> None:
             print(f"  - graph_context    : {len(priming_result.graph_context)} chars")
         if pending_human_notifications:
             print(f"Pending human notifications: {len(pending_human_notifications)} chars")
+        gate_plan = getattr(priming_result, "gate_plan", None)
+        if gate_plan is not None:
+            print(
+                "Priming gate   : "
+                f"evidence_mode={gate_plan.evidence_mode}, "
+                f"require_search={gate_plan.require_search_before_action}, "
+                f"risk_tags={','.join(sorted(gate_plan.risk_tags)) or '-'}",
+            )
+            for decision in gate_plan.channel_decisions.values():
+                visibility = "show" if decision.visible else "hide"
+                print(
+                    "  - gate "
+                    f"{decision.channel}: {visibility}/{decision.render_mode.value} "
+                    f"p{decision.priority} ({decision.reason})",
+                )
     except Exception as e:
         print(f"WARN: Priming failed (using empty section): {e}")
         priming_section = ""

@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -55,56 +54,15 @@ from core.memory.priming.constants import (
     _CHARS_PER_TOKEN,
     _DEFAULT_MAX_PRIMING_TOKENS,
 )
+from core.memory.priming.gate import (
+    apply_priming_plan,
+    build_candidates_from_result,
+    build_priming_plan,
+)
+from core.memory.priming.result import PrimingResult
 from core.memory.priming.utils import RetrieverCache, extract_keywords, truncate_head, truncate_tail
 
 logger = logging.getLogger("animaworks.priming")
-
-
-@dataclass
-class PrimingResult:
-    """Result of priming memory retrieval."""
-
-    sender_profile: str = ""
-    recent_activity: str = ""
-    related_knowledge: str = ""
-    related_knowledge_untrusted: str = ""
-    pending_tasks: str = ""
-    recent_outbound: str = ""
-    episodes: str = ""
-    pending_human_notifications: str = ""
-    graph_context: str = ""
-
-    def is_empty(self) -> bool:
-        """Return True if no memories were primed."""
-        return (
-            not self.sender_profile
-            and not self.recent_activity
-            and not self.related_knowledge
-            and not self.related_knowledge_untrusted
-            and not self.pending_tasks
-            and not self.recent_outbound
-            and not self.episodes
-            and not self.pending_human_notifications
-            and not self.graph_context
-        )
-
-    def total_chars(self) -> int:
-        """Estimate total character count."""
-        return (
-            len(self.sender_profile)
-            + len(self.recent_activity)
-            + len(self.related_knowledge)
-            + len(self.related_knowledge_untrusted)
-            + len(self.pending_tasks)
-            + len(self.recent_outbound)
-            + len(self.episodes)
-            + len(self.pending_human_notifications)
-            + len(self.graph_context)
-        )
-
-    def estimated_tokens(self) -> int:
-        """Estimate token count."""
-        return self.total_chars() // _CHARS_PER_TOKEN
 
 
 class PrimingEngine:
@@ -323,6 +281,26 @@ class PrimingEngine:
             if isinstance(r, Exception):
                 logger.warning("Priming channel %d failed: %s", i, r)
 
+        raw_result = PrimingResult(
+            sender_profile=sender_profile,
+            recent_activity=recent_activity,
+            related_knowledge=related_knowledge,
+            related_knowledge_untrusted=related_knowledge_untrusted,
+            pending_tasks=pending_tasks,
+            recent_outbound=recent_outbound,
+            episodes=episodes,
+            pending_human_notifications=pending_human_notifications,
+            graph_context=graph_context,
+        )
+        gate_plan = build_priming_plan(
+            effective_message,
+            channel,
+            intent,
+            build_candidates_from_result(raw_result),
+            recent_human_messages=recent_human_messages,
+        )
+        gated_result = apply_priming_plan(raw_result, gate_plan)
+
         budget_ratio = token_budget / _DEFAULT_MAX_PRIMING_TOKENS
         budget_profile = int(_BUDGET_SENDER_PROFILE * budget_ratio)
         budget_activity = max(400, int(_BUDGET_RECENT_ACTIVITY * budget_ratio))
@@ -330,11 +308,11 @@ class PrimingEngine:
         budget_tasks = int(_BUDGET_PENDING_TASKS * budget_ratio)
         budget_episodes = int(_BUDGET_RELATED_EPISODES * budget_ratio)
 
-        truncated_knowledge = truncate_head(related_knowledge, budget_knowledge)
+        truncated_knowledge = truncate_head(gated_result.related_knowledge, budget_knowledge)
         knowledge_used_tokens = len(truncated_knowledge) // _CHARS_PER_TOKEN
         remaining_knowledge_budget = max(0, budget_knowledge - knowledge_used_tokens)
         truncated_untrusted = (
-            truncate_head(related_knowledge_untrusted, remaining_knowledge_budget)
+            truncate_head(gated_result.related_knowledge_untrusted, remaining_knowledge_budget)
             if remaining_knowledge_budget > 0
             else ""
         )
@@ -342,15 +320,16 @@ class PrimingEngine:
         budget_graph = int(_BUDGET_GRAPH_CONTEXT * budget_ratio)
 
         result = PrimingResult(
-            sender_profile=truncate_head(sender_profile, budget_profile),
-            recent_activity=truncate_tail(recent_activity, budget_activity),
+            sender_profile=truncate_head(gated_result.sender_profile, budget_profile),
+            recent_activity=truncate_tail(gated_result.recent_activity, budget_activity),
             related_knowledge=truncated_knowledge,
             related_knowledge_untrusted=truncated_untrusted,
-            pending_tasks=truncate_head(pending_tasks, budget_tasks),
-            recent_outbound=recent_outbound,
-            episodes=truncate_tail(episodes, budget_episodes),
-            pending_human_notifications=pending_human_notifications,
-            graph_context=truncate_tail(graph_context, budget_graph),
+            pending_tasks=truncate_head(gated_result.pending_tasks, budget_tasks),
+            recent_outbound=gated_result.recent_outbound,
+            episodes=truncate_tail(gated_result.episodes, budget_episodes),
+            pending_human_notifications=gated_result.pending_human_notifications,
+            graph_context=truncate_tail(gated_result.graph_context, budget_graph),
+            gate_plan=gate_plan,
         )
 
         logger.info(
