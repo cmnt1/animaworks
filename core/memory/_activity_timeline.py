@@ -158,6 +158,8 @@ class TimelineMixin:
                     result_entry = find_tool_result_fallback(entries, e)
                 if result_entry:
                     e._tool_result_data = {
+                        "id": result_entry.to_api_dict().get("id", ""),
+                        "type": result_entry.type,
                         "content": result_entry.content or result_entry.summary,
                         "is_error": result_entry.meta.get("is_error", False),
                     }

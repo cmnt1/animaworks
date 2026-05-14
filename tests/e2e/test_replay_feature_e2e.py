@@ -354,7 +354,6 @@ class TestReplayAPIDataFlow:
         assert data["total"] == 500
         assert data["has_more"] is True
 
-
 # ── Speed Behavior (JS source analysis) ──────────────────────────
 
 

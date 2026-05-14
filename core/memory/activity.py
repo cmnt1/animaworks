@@ -72,6 +72,10 @@ from core.memory._activity_models import (
     time_diff as _time_diff,  # noqa: F401
 )
 from core.memory._activity_priming import PrimingMixin
+from core.memory._activity_replay import (  # noqa: F401
+    build_semantic_replay_events,
+    resolve_semantic_group_id,
+)
 from core.memory._activity_rotation import RotationMixin
 from core.memory._activity_timeline import TimelineMixin
 from core.paths import get_data_dir

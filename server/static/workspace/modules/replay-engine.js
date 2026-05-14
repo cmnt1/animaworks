@@ -26,12 +26,67 @@ const MAX_REPLAY_EVENTS = 200000;
  * @returns {string[]}
  */
 function eventAnimas(evt) {
+  const semanticNames = semanticEventCardNames(evt);
+  if (semanticNames) return semanticNames;
   if (evt.anima) return [evt.anima];
   if (Array.isArray(evt.animas) && evt.animas.length) return evt.animas;
   return [];
 }
 
 // ── Card stream entry builder ───────────────────────────────────────────────
+
+function cleanEndpointName(value) {
+  return String(value || "").trim().replace(/^#/, "");
+}
+
+function semanticEventCardNames(evt) {
+  if (!evt?.kind) return null;
+  const out = [];
+  const actor = cleanEndpointName(evt.actor);
+  const target = cleanEndpointName(evt.target);
+  if (actor) out.push(actor);
+  if (target && !String(evt.target || "").trim().startsWith("#") && target !== actor) {
+    out.push(target);
+  }
+  return out;
+}
+
+function isVisibleReplayEvent(evt) {
+  if (!evt?.kind) return true;
+  return Number(evt.importance || 0) >= 2;
+}
+
+function semanticStreamType(evt, cardName) {
+  const kind = String(evt.kind || "").toLowerCase();
+  const actor = cleanEndpointName(evt.actor);
+  const target = cleanEndpointName(evt.target);
+  if (kind === "message" || kind === "response") {
+    return target && target === cardName && actor !== cardName ? "msg_in" : "msg_out";
+  }
+  if (kind === "delegation" || kind === "task") return "task";
+  if (kind === "channel" || kind === "external") return "board";
+  if (kind === "heartbeat") return "heartbeat";
+  if (kind === "cron") return "cron";
+  if (kind === "memory") return "memory";
+  if (kind === "error") return "error";
+  return "tool";
+}
+
+function summarizeSemanticEvent(evt) {
+  const label = String(evt.label || evt.kind || "activity").trim();
+  const summary = String(evt.summary || "").trim();
+  return (summary ? `${label}: ${summary}` : label).slice(0, 80);
+}
+
+function semanticEventToStreamEntry(evt, cardName) {
+  return {
+    id: evt.id || String(Date.now() + Math.random()),
+    type: semanticStreamType(evt, cardName),
+    text: summarizeSemanticEvent(evt),
+    status: evt.status === "failed" ? "error" : "done",
+    ts: eventTimeMs(evt) || Date.now(),
+  };
+}
 
 function mapEventType(type) {
   if (!type) return "tool";
@@ -53,7 +108,8 @@ function summarizeEvent(ev) {
   return type.slice(0, 60) || "activity";
 }
 
-function eventToStreamEntry(evt) {
+function eventToStreamEntry(evt, cardName = "") {
+  if (evt.kind) return semanticEventToStreamEntry(evt, cardName);
   return {
     id: evt.id || String(Date.now() + Math.random()),
     type: mapEventType(evt.type || evt.name),
@@ -71,6 +127,13 @@ function statusFromEventType(type) {
   if (t === "heartbeat_start") return "working";
   if (t === "heartbeat_end" || t === "cron_executed" || t === "response_sent" || t === "message_sent") return "idle";
   return "idle";
+}
+
+function statusFromEvent(evt) {
+  if (evt?.kind) {
+    return evt.status === "started" || evt.status === "progress" ? "working" : "idle";
+  }
+  return statusFromEventType(evt?.type || evt?.name);
 }
 
 // ── ReplayEngine ─────────────────────────────────────────────────────────────
@@ -121,13 +184,15 @@ export class ReplayEngine {
           limit: String(REPLAY_PAGE_LIMIT),
           offset: String(offset),
           replay: "true",
+          grouped: "true",
+          semantic: "true",
         });
         const res = await fetch(`${basePath}/api/activity/recent?${params.toString()}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
         const pageEvents = data.events || [];
-        const total = Number(data.total || 0);
+        const total = Number(data.raw_total || data.total || 0);
         if (total > MAX_REPLAY_EVENTS || raw.length + pageEvents.length > MAX_REPLAY_EVENTS) {
           throw new Error(`Replay range too large (${total || raw.length + pageEvents.length} events). Choose a shorter range.`);
         }
@@ -207,13 +272,14 @@ export class ReplayEngine {
       const evt = this._events[i];
       const ts = eventTimeMs(evt);
       if (ts > this._virtualTimeMs) break;
+      if (!isVisibleReplayEvent(evt)) continue;
 
       const animas = eventAnimas(evt);
-      const status = statusFromEventType(evt.type || evt.name);
+      const status = statusFromEvent(evt);
       for (const name of animas) {
         if (!name) continue;
         let entries = cardStreams.get(name) || [];
-        entries.push(eventToStreamEntry(evt));
+        entries.push(eventToStreamEntry(evt, name));
         if (entries.length > MAX_STREAM_ENTRIES) entries = entries.slice(-MAX_STREAM_ENTRIES);
         cardStreams.set(name, entries);
         cardStatus.set(name, status);
@@ -325,7 +391,7 @@ export class ReplayEngine {
       const evt = this._events[this._cursor];
       const ts = eventTimeMs(evt);
       if (ts > nextVirtual) break;
-      this._onEvent(evt, this._speed);
+      if (isVisibleReplayEvent(evt)) this._onEvent(evt, this._speed);
       this._cursor++;
     }
 

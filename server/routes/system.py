@@ -397,6 +397,7 @@ def create_system_router() -> APIRouter:
         event_type: str | None = None,
         group_type: str | None = None,
         grouped: bool = False,
+        semantic: bool = False,
         group_limit: int = 50,
         group_offset: int = 0,
     ):
@@ -413,7 +414,7 @@ def create_system_router() -> APIRouter:
         filters groups by trigger type: chat, dm, cron, heartbeat, inbox,
         task_exec, task, single.
         """
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity import ActivityLogger, build_semantic_replay_events
 
         animas_dir = request.app.state.animas_dir
         anima_names = request.app.state.anima_names
@@ -431,6 +432,16 @@ def create_system_router() -> APIRouter:
         target_names = [anima] if anima and anima in anima_names else list(anima_names)
 
         replay = request.query_params.get("replay") == "true"
+        if semantic and not grouped:
+            return JSONResponse(
+                {"error": "semantic replay requires grouped=true"},
+                status_code=400,
+            )
+        if semantic and not replay:
+            return JSONResponse(
+                {"error": "semantic replay requires replay=true"},
+                status_code=400,
+            )
 
         if replay:
             limit = max(1, min(limit, 50_000))
@@ -477,14 +488,31 @@ def create_system_router() -> APIRouter:
 
         if grouped:
             chrono = list(reversed(all_entries))
-            all_groups = ActivityLogger.group_by_trigger(chrono)
-            all_groups.reverse()
+            all_groups_chrono = ActivityLogger.group_by_trigger(chrono)
 
             if group_types:
-                all_groups = [g for g in all_groups if g.get("type") in group_types]
+                all_groups_chrono = [g for g in all_groups_chrono if g.get("type") in group_types]
 
-            total_groups = len(all_groups)
+            total_groups = len(all_groups_chrono)
             total_events = len(all_entries)
+
+            if semantic:
+                semantic_events = build_semantic_replay_events(all_groups_chrono)
+                semantic_events.sort(key=lambda e: e["ts"], reverse=True)
+                total_semantic_events = len(semantic_events)
+                page_events = semantic_events[offset : offset + limit]
+
+                return {
+                    "events": page_events,
+                    "total": total_semantic_events,
+                    "total_groups": total_groups,
+                    "raw_total": total_events,
+                    "offset": offset,
+                    "limit": limit,
+                    "has_more": (offset + limit) < total_semantic_events or any_capped,
+                }
+
+            all_groups = list(reversed(all_groups_chrono))
             page_groups = all_groups[group_offset : group_offset + group_limit]
 
             return {
