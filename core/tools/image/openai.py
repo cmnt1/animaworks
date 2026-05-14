@@ -24,6 +24,7 @@ from core.tools._base import logger
 
 OPENAI_IMAGE_MODELS = ("gpt-image-2",)
 OPENAI_IMG2IMG_MODELS = frozenset(OPENAI_IMAGE_MODELS)
+_MAX_CODEX_PROMPT_CHARS = 1800
 
 _TRANSIENT_CODEX_ERROR_MARKERS = (
     "stream disconnected",
@@ -66,6 +67,13 @@ def _openai_size(width: int, height: int) -> str:
     if width > height:
         return "1536x1024"
     return "1024x1024"
+
+
+def _compact_prompt(prompt: str) -> str:
+    text = " ".join(prompt.split())
+    if len(text) <= _MAX_CODEX_PROMPT_CHARS:
+        return text
+    return text[: _MAX_CODEX_PROMPT_CHARS - 3].rstrip() + "..."
 
 
 def _codex_generated_image_roots(codex_home: Path | None) -> list[Path]:
@@ -139,7 +147,7 @@ def _write_reference_png(image_bytes: bytes, path: Path, label: str) -> None:
     except Exception as exc:
         raise RuntimeError("Pillow is required to prepare reference images for gpt-image-2") from exc
 
-    max_side = _read_env_int("ANIMAWORKS_CODEX_REFERENCE_MAX_SIDE", 768) or 768
+    max_side = _read_env_int("ANIMAWORKS_CODEX_REFERENCE_MAX_SIDE", 256) or 256
     try:
         with Image.open(BytesIO(image_bytes)) as img:
             img = ImageOps.exif_transpose(img)
@@ -194,29 +202,19 @@ class OpenAIImageClient:
         env = os.environ.copy()
         env["CODEX_HOME"] = str(codex_home)
 
-        reference_guidance = ""
         if references:
-            references_text = "\n".join(f"- {path}" for path in references)
-            reference_guidance = (
-                "The reference image files are mandatory visual inputs. "
-                "Inspect the local reference image files before generating and translate their visible traits into the image request. "
-                "If face_reference.png is listed, use it as the primary face and identity reference: "
-                "match facial proportions, age, hairstyle, glasses, expression style, and overall person identity as closely as possible. "
-                "Use style_reference.png only for outfit, pose, palette, and composition guidance.\n"
-            )
+            references_text = "\n".join(f"- {path.name}: {path}" for path in references)
         else:
             references_text = "- None"
 
         avoid_text = negative_prompt.strip() or "text, watermark, logo, extra limbs, duplicate body, cropped body"
+        compact_prompt = _compact_prompt(prompt)
         instruction = (
-            "Use Codex's built-in image generation tool with gpt-image-2 to create exactly one PNG image.\n"
-            "Do not use the OpenAI API directly, do not use an API key, and do not write a script that calls an image API.\n"
-            "This pipeline slot is named fullbody, but for this OpenAI backend generate a bust-up head-and-shoulders human character portrait. "
-            "Prioritize face identity and upper-torso character design over full-body composition. "
-            "If the result is not clearly a single human person, retry before finishing.\n"
-            "Use the listed reference images as visual references when present, especially for face/identity and style.\n"
-            f"{reference_guidance}\n"
-            f"Prompt:\n{prompt.strip()}\n\n"
+            "Use the built-in image generation tool with gpt-image-2 to create one PNG.\n"
+            "Generate a single human bust-up, head-and-shoulders character portrait.\n"
+            "If face_reference.png is provided, use it as the face and identity reference. "
+            "If style_reference.png is provided, use it only for style, palette, outfit, or composition.\n"
+            f"Prompt:\n{compact_prompt}\n\n"
             f"Reference images:\n{references_text}\n\n"
             f"Canvas size: {size}\n"
             f"Avoid: {avoid_text}\n"
@@ -225,11 +223,12 @@ class OpenAIImageClient:
         )
 
         logger.info(
-            "Codex image request model=%s size=%s references=%d prompt=%.500s",
+            "Codex image request model=%s size=%s references=%d prompt_chars=%d prompt=%.500s",
             self._model,
             size,
             len(references),
-            prompt.strip().replace("\n", " "),
+            len(prompt),
+            _compact_prompt(prompt),
         )
 
         since_ts = time.time()

@@ -582,11 +582,9 @@ class TestImageGenPipeline:
         assert all(data.startswith(b"\x89PNG\r\n\x1a\n") for data in seen["reference_bytes"])
         assert "style_reference.png" in seen["instruction"]
         assert "face_reference.png" in seen["instruction"]
-        assert "mandatory visual inputs" in seen["instruction"]
-        assert "primary face and identity reference" in seen["instruction"]
-        assert "bust-up head-and-shoulders human character portrait" in seen["instruction"]
-        assert "Prioritize face identity" in seen["instruction"]
-        assert "Do not use the OpenAI API directly" in seen["instruction"]
+        assert "use it as the face and identity reference" in seen["instruction"]
+        assert "bust-up, head-and-shoulders character portrait" in seen["instruction"]
+        assert "Use the built-in image generation tool with gpt-image-2" in seen["instruction"]
 
     def test_openai_image_client_reports_codex_failure(self, tmp_path: Path, monkeypatch):
         from core.tools.image.openai import OpenAIImageClient
