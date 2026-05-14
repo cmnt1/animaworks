@@ -789,6 +789,8 @@ def cmd_anima_set_memory_backend(args: argparse.Namespace) -> None:
                 sys.exit(1)
             update_status_model(anima_dir, memory_backend=args.backend)
             print(f"Memory backend set to '{args.backend}' for '{args.anima}'")
+            if args.backend == "neo4j":
+                print("  WARNING: Neo4j memory backend is experimental/opt-in. legacy remains the stable default.")
 
         if pid_file.exists():
             print("  Server is running. Restart the anima to apply (animaworks anima restart <name>).")

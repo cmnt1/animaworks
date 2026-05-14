@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 from pathlib import Path
@@ -27,6 +28,11 @@ def register_memory_command(subparsers: argparse._SubParsersAction) -> None:
     grp.add_argument("--anima", type=str, dest="migrate_anima")
     p_migrate.add_argument("--dry-run", action="store_true")
     p_migrate.add_argument("--resume", action="store_true")
+    p_migrate.add_argument(
+        "--activate-global",
+        action="store_true",
+        help="After migration, set global memory.backend to neo4j. Neo4j is experimental; default is migration only.",
+    )
 
     # memory rollback
     p_rollback = sub.add_parser("rollback", help="Rollback to backup")
@@ -92,7 +98,8 @@ def _cmd_status() -> None:
     backend = getattr(getattr(cfg, "memory", None), "backend", "legacy")
     data_dir = get_data_dir()
 
-    print(f"Memory Backend: {backend}")
+    print(f"Memory Backend: {_backend_policy_label(str(backend))}")
+    print("Policy: legacy is stable/default; neo4j is experimental opt-in.")
     print(f"Data Directory: {data_dir}")
 
     # Count animas
@@ -100,6 +107,13 @@ def _cmd_status() -> None:
     if animas_dir.is_dir():
         anima_count = sum(1 for d in animas_dir.iterdir() if d.is_dir() and not d.name.startswith("."))
         print(f"Anima Count: {anima_count}")
+        overrides = _collect_per_anima_backend_overrides(animas_dir)
+        if overrides:
+            print("\nPer-Anima Memory Backend Overrides:")
+            for name, value in overrides:
+                print(f"  {name}: {_backend_policy_label(value)}")
+        else:
+            print("\nPer-Anima Memory Backend Overrides: None")
 
     # List backups
     from core.memory.migration.backup import BackupManager
@@ -119,6 +133,34 @@ def _cmd_status() -> None:
         if neo4j_cfg:
             print(f"\nNeo4j URI: {neo4j_cfg.uri}")
             print(f"Neo4j Database: {neo4j_cfg.database}")
+
+
+def _backend_policy_label(backend: str) -> str:
+    """Return backend name plus stability policy for CLI display."""
+    if backend == "legacy":
+        return "legacy (stable/default)"
+    if backend == "neo4j":
+        return "neo4j (experimental/opt-in)"
+    return backend
+
+
+def _collect_per_anima_backend_overrides(animas_dir: Path) -> list[tuple[str, str]]:
+    """Read per-anima memory_backend overrides from status.json files."""
+    overrides: list[tuple[str, str]] = []
+    for anima_dir in sorted(animas_dir.iterdir(), key=lambda p: p.name):
+        if not anima_dir.is_dir() or anima_dir.name.startswith("."):
+            continue
+        status_path = anima_dir / "status.json"
+        if not status_path.is_file():
+            continue
+        try:
+            data = json.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        backend = data.get("memory_backend")
+        if isinstance(backend, str) and backend:
+            overrides.append((anima_dir.name, backend))
+    return overrides
 
 
 def _cmd_migrate(args: argparse.Namespace) -> None:
@@ -203,9 +245,17 @@ def _cmd_migrate(args: argparse.Namespace) -> None:
             from core.config.models import load_config, save_config
 
             cfg = load_config()
-            cfg.memory.backend = "neo4j"
-            save_config(cfg)
-            print("\n  Config updated: memory.backend = neo4j")
+            if getattr(args, "activate_global", False):
+                cfg.memory.backend = "neo4j"
+                save_config(cfg)
+                print("\n  Config updated: memory.backend = neo4j")
+                print("  WARNING: Neo4j memory backend is experimental/opt-in.")
+            else:
+                current = getattr(getattr(cfg, "memory", None), "backend", "legacy")
+                print("\n  Global config unchanged: memory.backend = " + str(current))
+                print("  Neo4j migration completed as data preparation only.")
+                print("  To use Neo4j globally, re-run with --activate-global.")
+                print("  To opt in one anima, use: animaworks anima set-memory-backend <name> neo4j")
         else:
             print("\n  WARNING: Errors occurred. Config NOT updated.")
             print("  Fix errors and re-run with --resume")

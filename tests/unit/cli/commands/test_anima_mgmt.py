@@ -313,3 +313,48 @@ class TestUnregisterAnimaFromConfig:
         from core.config.models import unregister_anima_from_config
         result = unregister_anima_from_config(tmp_path, "alice")
         assert result is False
+
+
+class TestCmdAnimaSetMemoryBackend:
+    """Tests for cmd_anima_set_memory_backend."""
+
+    @patch("core.paths.get_data_dir")
+    def test_set_neo4j_prints_experimental_warning(self, mock_data_dir, tmp_path, capsys):
+        from cli.commands.anima_mgmt import cmd_anima_set_memory_backend
+
+        data_dir = tmp_path / ".animaworks"
+        anima_dir = data_dir / "animas" / "sakura"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        mock_data_dir.return_value = data_dir
+
+        args = argparse.Namespace(anima="sakura", backend="neo4j", clear=False)
+        cmd_anima_set_memory_backend(args)
+
+        captured = capsys.readouterr()
+        assert "Memory backend set to 'neo4j' for 'sakura'" in captured.out
+        assert "experimental/opt-in" in captured.out
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["memory_backend"] == "neo4j"
+
+    @patch("core.paths.get_data_dir")
+    def test_set_legacy_does_not_print_experimental_warning(self, mock_data_dir, tmp_path, capsys):
+        from cli.commands.anima_mgmt import cmd_anima_set_memory_backend
+
+        data_dir = tmp_path / ".animaworks"
+        anima_dir = data_dir / "animas" / "sakura"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text(
+            json.dumps({"enabled": True, "memory_backend": "neo4j"}),
+            encoding="utf-8",
+        )
+        mock_data_dir.return_value = data_dir
+
+        args = argparse.Namespace(anima="sakura", backend="legacy", clear=False)
+        cmd_anima_set_memory_backend(args)
+
+        captured = capsys.readouterr()
+        assert "Memory backend set to 'legacy' for 'sakura'" in captured.out
+        assert "experimental/opt-in" not in captured.out
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["memory_backend"] == "legacy"
