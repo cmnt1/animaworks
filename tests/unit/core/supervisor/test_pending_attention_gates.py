@@ -248,6 +248,40 @@ async def test_batch_dependency_suppressed_fails_dependent(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_batch_snoozed_task_is_deferred_not_cancelled(tmp_path: Path) -> None:
+    executor = _make_executor(tmp_path)
+    _queue_task(executor, "snoozed1234")
+    _queue_task(executor, "child1234")
+    _store_for(executor).upsert_metadata(
+        anima_name="sakura",
+        task_id="snoozed1234",
+        visibility=AttentionVisibility.SNOOZED,
+        snoozed_until=(datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+    )
+
+    with patch.object(executor, "_run_llm_task", new_callable=AsyncMock) as run_llm_task:
+        await executor._dispatch_batch(
+            "batch-1",
+            [
+                {"task_id": "snoozed1234", "task_type": "llm", "parallel": False},
+                {"task_id": "child1234", "task_type": "llm", "parallel": False, "depends_on": ["snoozed1234"]},
+            ],
+        )
+
+    assert not run_llm_task.called
+    queue = TaskQueueManager(executor._anima_dir)
+    snoozed = queue.get_task_by_id("snoozed1234")
+    child = queue.get_task_by_id("child1234")
+    assert snoozed is not None
+    assert child is not None
+    assert snoozed.status == "pending"
+    assert snoozed.summary == "snoozed by TaskBoard"
+    assert (executor._anima_dir / "state" / "pending" / "deferred" / "snoozed1234.json").exists()
+    assert child.status == "failed"
+    assert child.summary == "FAILED: failed_dependency"
+
+
+@pytest.mark.asyncio
 async def test_batch_dependency_suppressed_before_grouping_still_fails_dependent(tmp_path: Path) -> None:
     executor = _make_executor(tmp_path)
     _queue_task(executor, "parent1234")

@@ -662,6 +662,15 @@ class PendingTaskExecutor:
             task_id = td["task_id"]
             remaining.remove(td)
             failed.add(task_id)
+            if decision.reason == "snoozed":
+                self._write_deferred_task_json(td)
+                self._sync_task_queue(task_id, "pending", summary="snoozed by TaskBoard")
+                logger.info(
+                    "[%s] Deferred snoozed batch task before dispatch: id=%s",
+                    self._anima_name,
+                    task_id,
+                )
+                continue
             attention_suppressed.add(task_id)
             self._cancel_queue_for_attention(task_id, decision.reason)
             self._save_task_result(task_id, _SENTINEL_CANCELLED)
@@ -679,8 +688,9 @@ class PendingTaskExecutor:
                 decision = self._attention_decision_for_task_desc({"task_id": dep})
                 if not decision.executable:
                     failed.add(dep)
-                    attention_suppressed.add(dep)
-                    self._cancel_queue_for_attention(dep, decision.reason)
+                    if decision.reason != "snoozed":
+                        attention_suppressed.add(dep)
+                        self._cancel_queue_for_attention(dep, decision.reason)
 
         while remaining:
             ready = [td for td in remaining if _deps_satisfied(td, completed, failed)]
