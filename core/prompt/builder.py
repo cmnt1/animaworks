@@ -278,6 +278,18 @@ def _build_group3(
     state = memory.read_current_state()
     state_content = ""
     if state and state.strip() != "status: idle":
+        try:
+            from core.taskboard.attention_resolver import resolver_for_anima_dir
+
+            resolver = resolver_for_anima_dir(pd)
+            now = now_local()
+            if not resolver.should_inject_current_state(pd, now):
+                state = ""
+            else:
+                state = resolver.filter_current_state(pd, state, now)
+        except Exception:
+            logger.debug("TaskBoard current_state gate failed; using current_state as-is", exc_info=True)
+    if state and state.strip() != "status: idle":
         if len(state) > _state_max:
             truncated = state[-_state_max:]
             first_nl = truncated.find("\n")

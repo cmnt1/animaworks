@@ -20,7 +20,7 @@ QUEUE_STATUS_TO_COLUMN: dict[str, BoardColumn] = {
     "cancelled": BoardColumn.DONE,
 }
 
-TERMINAL_QUEUE_STATUSES = {"done", "cancelled", "failed"}
+ARCHIVED_QUEUE_STATUSES = {"done", "cancelled"}
 
 _COLUMN_ORDER = {column: index for index, column in enumerate(BoardColumn)}
 
@@ -116,7 +116,7 @@ def _project_queue_task(
 ) -> BoardTask:
     default_column = QUEUE_STATUS_TO_COLUMN.get(task.status, BoardColumn.TODO)
     default_visibility = (
-        AttentionVisibility.ARCHIVED if task.status in TERMINAL_QUEUE_STATUSES else AttentionVisibility.ACTIVE
+        AttentionVisibility.ARCHIVED if task.status in ARCHIVED_QUEUE_STATUSES else AttentionVisibility.ACTIVE
     )
     visibility = metadata.visibility if metadata is not None else default_visibility
     column = metadata.column if metadata is not None and metadata.column is not None else default_column

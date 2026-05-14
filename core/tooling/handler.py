@@ -663,8 +663,17 @@ class ToolHandler(
                     meta=meta or None,
                 )
             elif name == "call_human":
+                from core.taskboard.attention_resolver import notification_key_for
+
+                body = args.get("body", "")
+                subject = args.get("subject", "")
+                meta["subject"] = subject
+                meta["notification_key"] = notification_key_for(subject, body)
                 self._activity.log(
-                    activity_type, content=args.get("body", "")[:1000], via="configured_channels", meta=meta or None
+                    activity_type,
+                    content=body[:1000],
+                    via="configured_channels",
+                    meta=meta or None,
                 )
         except Exception as e:
             logger.warning("Activity logging failed for tool '%s': %s", name, e)

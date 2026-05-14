@@ -16,9 +16,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-
 from core.memory.activity import ActivityLogger
-
+from core.taskboard.attention_resolver import notification_key_for
 
 # ── DigitalAnima activity logging ────────────────────────────
 
@@ -75,7 +74,9 @@ class TestAnimaActivityLogging:
         anima = self._make_anima(anima_dir)
 
         anima._activity.log(
-            "message_received", content="hello", from_person="user",
+            "message_received",
+            content="hello",
+            from_person="user",
         )
 
         log_dir = anima_dir / "activity_log"
@@ -229,7 +230,8 @@ class TestToolHandlerActivityLogging:
         handler = self._make_handler(anima_dir)
 
         handler._log_tool_activity(
-            "post_channel", {"text": "Hello team!", "channel": "general"},
+            "post_channel",
+            {"text": "Hello team!", "channel": "general"},
         )
 
         log_dir = anima_dir / "activity_log"
@@ -262,7 +264,8 @@ class TestToolHandlerActivityLogging:
         handler = self._make_handler(anima_dir)
 
         handler._log_tool_activity(
-            "call_human", {"body": "Urgent: server down"},
+            "call_human",
+            {"subject": "Server down", "body": "Urgent: server down"},
         )
 
         log_dir = anima_dir / "activity_log"
@@ -272,6 +275,8 @@ class TestToolHandlerActivityLogging:
         assert entry["type"] == "human_notify"
         assert "Urgent: server down" in entry["content"]
         assert entry["via"] == "configured_channels"
+        assert entry["meta"]["subject"] == "Server down"
+        assert entry["meta"]["notification_key"] == notification_key_for("Server down", "Urgent: server down")
 
     def test_shared_activity_instance_across_calls(self, tmp_path):
         """The same ActivityLogger instance is reused across tool calls."""
