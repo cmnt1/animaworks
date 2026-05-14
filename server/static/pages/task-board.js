@@ -101,7 +101,6 @@ export async function render(container) {
   }, REFRESH_MS);
   _refreshIcons();
 }
-
 export function destroy() {
   _renderToken += 1;
   if (_pollTimer) clearInterval(_pollTimer);
@@ -112,7 +111,6 @@ export function destroy() {
   _animaNames = [];
   _drag = null;
 }
-
 function _bindEvents() {
   _container.querySelector("#taskboardRefresh")?.addEventListener("click", () => _loadBoard());
   _container.querySelector("#taskboardAssignee")?.addEventListener("change", () => _loadBoard());
@@ -146,7 +144,6 @@ function _bindEvents() {
   _container.addEventListener("drop", _onDrop);
   _container.addEventListener("dragend", _onDragEnd);
 }
-
 async function _loadAnimas() {
   try {
     const data = await api("/api/animas");
@@ -478,8 +475,12 @@ function _setActiveColumn(column) {
   _container.querySelectorAll(".taskboard-mobile-tab").forEach((el) => el.classList.toggle("is-active", el.dataset.mobileColumn === column));
 }
 
-function _ensureActiveColumnHasView() { if (!COLUMNS.includes(_activeColumn)) _activeColumn = "todo"; }
-
+function _ensureActiveColumnHasView() {
+  if (!COLUMNS.includes(_activeColumn)) _activeColumn = "todo";
+  const hasVisibleTask = (column) => _tasks.some((task) => (task.column || "todo") === column);
+  if (hasVisibleTask(_activeColumn)) return;
+  _activeColumn = COLUMNS.find(hasVisibleTask) || "todo";
+}
 function _findTask(key) { return _tasks.find((task) => taskKey(task) === key) || _allTasks.find((task) => taskKey(task) === key); }
 
 function _summaryText(data) {

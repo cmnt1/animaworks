@@ -14,7 +14,7 @@ from core.auth.manager import hash_password, save_auth
 from core.auth.models import AuthConfig, AuthUser
 
 
-def _create_test_app(data_dir: Path):
+def _create_test_app(data_dir: Path, *, base_path: str = ""):
     import json
     from server.app import create_app
 
@@ -30,6 +30,7 @@ def _create_test_app(data_dir: Path):
     else:
         config_data = {}
     config_data["setup_complete"] = True
+    config_data.setdefault("server", {})["base_path"] = base_path
     config_path.write_text(json.dumps(config_data), encoding="utf-8")
 
     from core.config import invalidate_cache
@@ -64,6 +65,18 @@ class TestAuthGuardMiddleware:
         app = _create_test_app(data_dir)
         client = TestClient(app)
         resp = client.get("/api/animas")
+        assert resp.status_code == 401
+
+    def test_password_mode_blocks_prefixed_api_without_cookie(self, data_dir):
+        config = AuthConfig(
+            auth_mode="password",
+            owner=AuthUser(username="admin", password_hash=hash_password("pw"), role="owner"),
+        )
+        save_auth(config)
+
+        app = _create_test_app(data_dir, base_path="/app")
+        client = TestClient(app)
+        resp = client.get("/app/api/animas")
         assert resp.status_code == 401
 
     def test_password_mode_allows_login_without_cookie(self, data_dir):

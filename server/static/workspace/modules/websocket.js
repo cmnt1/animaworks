@@ -3,6 +3,7 @@
 
 import { setState } from "./state.js";
 import { createLogger } from "../../shared/logger.js";
+import { basePath } from "/shared/base-path.js";
 
 const logger = createLogger("ws-workspace");
 
@@ -18,7 +19,7 @@ const eventHandlers = new Map(); // type -> Set<callback>
 
 function getWsUrl() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws`;
+  return `${proto}//${location.host}${basePath}/ws`;
 }
 
 export function connect() {
