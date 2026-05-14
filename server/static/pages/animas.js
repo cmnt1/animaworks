@@ -13,6 +13,7 @@ const ANIMAS_SORT_STORAGE_KEY = "animaworks-animas-sort";
 const DEFAULT_ANIMAS_SORT = "org";
 const DEPARTMENT_ORDER = ["全社", "Administration", "Property", "Finance", "Affiliate"];
 const TITLE_ORDER = ["COO", "グループリーダー", "アソシエイト"];
+const EXECUTION_ROUTE_ORDER = ["S", "A", "C", "D", "G", "B"];
 let _listSortKey = _loadListSortKey();
 let _listFilterField = "";
 let _listFilterValue = "";
@@ -36,15 +37,134 @@ function _saveListSortKey(value) {
 
 function _shortModel(name) {
   if (!name) return "--";
-  if (name.startsWith("claude-")) return "Anthropic: " + name.replace(/^claude-/, "");
-  if (name.startsWith("codex/")) return "OpenAI: " + name;
-  if (name.startsWith("openai/")) return "OpenAI: " + name;
-  if (name.startsWith("openai-codex/")) return "OpenAI: " + name;
-  if (/^(gpt-|o3|o4-)/.test(name)) return "OpenAI: " + name;
-  if (name.startsWith("google/")) return "Google: " + name.replace(/^google\//, "");
-  if (name.startsWith("opencode-go/")) return "OpenCode Go: " + name.replace(/^opencode-go\//, "");
-  if (name.startsWith("nanogpt/")) return "nanoGPT: " + name.replace(/^nanogpt\//, "");
-  return name;
+  const meta = _modelMetaFromId(name);
+  return `${meta.route}: ${meta.provider}/${meta.modelName}`;
+}
+
+function _modelMetaFromId(modelId, option = {}) {
+  const id = String(modelId || option.id || "");
+  const explicitRoute = String(option.route || option.execution_mode || "").toUpperCase();
+  const explicitProvider = option.provider || "";
+  const explicitModelName = option.model_name || "";
+
+  if (explicitRoute && explicitProvider && explicitModelName) {
+    return { route: explicitRoute, provider: explicitProvider, modelName: explicitModelName };
+  }
+  if (id.startsWith("claude-")) {
+    return { route: explicitRoute || "S", provider: explicitProvider || "Anthropic", modelName: explicitModelName || id };
+  }
+  if (id.startsWith("anthropic/claude-")) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "Anthropic", modelName: explicitModelName || id.replace(/^anthropic\//, "") };
+  }
+  if (id.startsWith("codex/") || id.startsWith("openai-codex/")) {
+    return { route: explicitRoute || "C", provider: explicitProvider || "OpenAI", modelName: explicitModelName || id.replace(/^openai-codex\//, "") };
+  }
+  if (id.startsWith("openai/")) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "OpenAI", modelName: explicitModelName || id.replace(/^openai\//, "") };
+  }
+  if (/^(gpt-|o3|o4-)/.test(id)) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "OpenAI", modelName: explicitModelName || id };
+  }
+  if (id.startsWith("google/")) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "Google", modelName: explicitModelName || id.replace(/^google\//, "") };
+  }
+  if (id.startsWith("opencode-go/")) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "OpenCode Go", modelName: explicitModelName || id.replace(/^opencode-go\//, "") };
+  }
+  if (id.startsWith("nanogpt/")) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "nanoGPT", modelName: explicitModelName || id.replace(/^nanogpt\//, "") };
+  }
+  if (id.startsWith("ollama/")) {
+    return { route: explicitRoute || "B", provider: explicitProvider || "Ollama", modelName: explicitModelName || id.replace(/^ollama\//, "") };
+  }
+  return { route: explicitRoute || "A", provider: explicitProvider || "Custom", modelName: explicitModelName || id };
+}
+
+function _normaliseModelOption(option) {
+  const meta = _modelMetaFromId(option.id, option);
+  return {
+    ...option,
+    route: meta.route,
+    provider: meta.provider,
+    model_name: meta.modelName,
+    label: option.label || `${meta.route}: ${meta.provider}/${meta.modelName}`,
+  };
+}
+
+function _modelsWithCurrent(models, currentModel) {
+  const normalised = (models || []).map(_normaliseModelOption);
+  if (currentModel && !normalised.find(m => m.id === currentModel)) {
+    const meta = _modelMetaFromId(currentModel);
+    normalised.push({
+      id: currentModel,
+      label: `${meta.route}: ${meta.provider}/${meta.modelName} (current)`,
+      credential: "",
+      route: meta.route,
+      provider: meta.provider,
+      model_name: meta.modelName,
+    });
+  }
+  return normalised;
+}
+
+function _uniqueSorted(values) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => _compareText(a, b));
+}
+
+function _uniqueRoutes(values) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => {
+    const ar = EXECUTION_ROUTE_ORDER.indexOf(a);
+    const br = EXECUTION_ROUTE_ORDER.indexOf(b);
+    return _compareNumber(ar >= 0 ? ar : EXECUTION_ROUTE_ORDER.length, br >= 0 ? br : EXECUTION_ROUTE_ORDER.length)
+      || _compareText(a, b);
+  });
+}
+
+function _selectOptionsHtml(values, selectedValue, placeholder = "") {
+  const placeholderHtml = placeholder
+    ? `<option value=""${selectedValue ? "" : " selected"}>${escapeHtml(placeholder)}</option>`
+    : "";
+  return `
+    ${placeholderHtml}
+    ${values.map(value => {
+      const selected = value === selectedValue ? " selected" : "";
+      return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
+    }).join("")}
+  `;
+}
+
+function _modelPickerSelection(models, currentModel) {
+  const list = _modelsWithCurrent(models, currentModel);
+  const selected = list.find(m => m.id === currentModel) || list[0] || null;
+  return { list, selected };
+}
+
+function _modelPickerHtml({ prefix, models, currentModel, allowNone = false }) {
+  const { list, selected } = _modelPickerSelection(models, currentModel);
+  const effectiveSelected = allowNone && !currentModel ? null : selected;
+  const selectedRoute = effectiveSelected?.route || "";
+  const selectedProvider = effectiveSelected?.provider || "";
+  const routes = _uniqueRoutes(list.map(m => m.route));
+  const providers = _uniqueSorted(list.filter(m => m.route === selectedRoute).map(m => m.provider));
+  const modelOptions = list.filter(m => m.route === selectedRoute && m.provider === selectedProvider);
+  const routePlaceholder = allowNone ? t("animas.background_model_none") : t("animas.model_route");
+
+  return `
+    <div class="model-picker" data-prefix="${escapeHtml(prefix)}" style="flex:1; min-width:0; display:grid; grid-template-columns:minmax(110px,0.7fr) minmax(135px,0.8fr) minmax(220px,1.5fr); gap:0.5rem;">
+      <select id="${prefix}RouteSelect" style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+        ${_selectOptionsHtml(routes, selectedRoute, routePlaceholder)}
+      </select>
+      <select id="${prefix}ProviderSelect" ${allowNone && !selectedRoute ? "disabled" : ""} style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+        ${_selectOptionsHtml(providers, selectedProvider, t("animas.model_provider"))}
+      </select>
+      <select id="${prefix}ModelSelect" ${allowNone && !selectedRoute ? "disabled" : ""} style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+        ${modelOptions.map(m => {
+          const selectedAttr = m.id === effectiveSelected?.id ? " selected" : "";
+          return `<option value="${escapeHtml(m.id)}" data-credential="${escapeHtml(m.credential || "")}"${selectedAttr}>${escapeHtml(m.model_name)}</option>`;
+        }).join("")}
+      </select>
+    </div>
+  `;
 }
 
 function _extractStatsCount(value) {
@@ -419,6 +539,65 @@ function _modelOptionsHtml(models, currentModel) {
     }).join("")}
     ${currentModel && !models.find(m => m.id === currentModel) ? `<option value="${escapeHtml(currentModel)}" selected>${escapeHtml(currentModel)} (current)</option>` : ""}
   `;
+}
+
+function _bindModelPicker({ prefix, models, currentModel, allowNone = false }) {
+  const routeSelect = document.getElementById(`${prefix}RouteSelect`);
+  const providerSelect = document.getElementById(`${prefix}ProviderSelect`);
+  const modelSelect = document.getElementById(`${prefix}ModelSelect`);
+  if (!routeSelect || !providerSelect || !modelSelect) return;
+
+  const list = _modelsWithCurrent(models, currentModel);
+
+  const setOptions = (select, options, selectedValue, placeholder = "") => {
+    select.innerHTML = _selectOptionsHtml(options, selectedValue, placeholder);
+  };
+
+  const setModelOptions = (route, provider, selectedModel = "") => {
+    const options = list.filter(m => m.route === route && m.provider === provider);
+    modelSelect.innerHTML = options.map(m => {
+      const selected = m.id === selectedModel ? " selected" : "";
+      return `<option value="${escapeHtml(m.id)}" data-credential="${escapeHtml(m.credential || "")}"${selected}>${escapeHtml(m.model_name)}</option>`;
+    }).join("");
+    modelSelect.disabled = allowNone && !route;
+  };
+
+  const refreshProviders = (selectedProvider = "", selectedModel = "") => {
+    const route = routeSelect.value;
+    const providers = _uniqueSorted(list.filter(m => m.route === route).map(m => m.provider));
+    const provider = providers.includes(selectedProvider) ? selectedProvider : (providers[0] || "");
+    setOptions(providerSelect, providers, provider, t("animas.model_provider"));
+    providerSelect.disabled = allowNone && !route;
+    setModelOptions(route, provider, selectedModel);
+  };
+
+  routeSelect.addEventListener("change", () => {
+    if (allowNone && !routeSelect.value) {
+      providerSelect.innerHTML = _selectOptionsHtml([], "", t("animas.model_provider"));
+      modelSelect.innerHTML = "";
+      providerSelect.disabled = true;
+      modelSelect.disabled = true;
+      return;
+    }
+    refreshProviders();
+  });
+
+  providerSelect.addEventListener("change", () => {
+    setModelOptions(routeSelect.value, providerSelect.value);
+  });
+}
+
+function _selectedModelPickerValue(prefix) {
+  const routeSelect = document.getElementById(`${prefix}RouteSelect`);
+  const modelSelect = document.getElementById(`${prefix}ModelSelect`);
+  if (!routeSelect?.value || !modelSelect?.value) {
+    return { model: "", credential: "" };
+  }
+  const selectedOption = modelSelect.options[modelSelect.selectedIndex];
+  return {
+    model: modelSelect.value,
+    credential: selectedOption?.dataset?.credential || "",
+  };
 }
 
 const MODEL_REFRESH_PROVIDER_LABELS = {
@@ -1223,22 +1402,13 @@ async function _showDetail(name) {
         <div class="card-body">
           <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
             <label style="font-weight:600; font-size:0.9rem; min-width:160px; flex-shrink:0;">${t("animas.model_select")}:</label>
-            <select id="modelSelect" style="flex:1; min-width:200px; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
-              ${_modelOptionsHtml(models, currentModel)}
-            </select>
+            ${_modelPickerHtml({ prefix: "model", models, currentModel })}
             <button class="btn-primary" id="modelChangeBtn" style="font-size:0.85rem; padding:0.4rem 0.75rem;">${t("animas.model_change")}</button>
             <span id="modelChangeStatus" style="font-size:0.75rem; color:var(--text-secondary,#888);"></span>
           </div>
           <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
             <label style="font-weight:600; font-size:0.9rem; min-width:160px; flex-shrink:0;">${t("animas.background_model_select")}:</label>
-            <select id="bgModelSelect" style="flex:1; min-width:200px; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
-              <option value="">${t("animas.background_model_none")}</option>
-              ${models.map(m => {
-                const selected = m.id === currentBgModel ? " selected" : "";
-                return `<option value="${escapeHtml(m.id)}" data-credential="${escapeHtml(m.credential)}"${selected}>${escapeHtml(m.label)}</option>`;
-              }).join("")}
-              ${currentBgModel && !models.find(m => m.id === currentBgModel) ? `<option value="${escapeHtml(currentBgModel)}" selected>${escapeHtml(currentBgModel)} (current)</option>` : ""}
-            </select>
+            ${_modelPickerHtml({ prefix: "bgModel", models, currentModel: currentBgModel, allowNone: true })}
             <button class="btn-primary" id="bgModelChangeBtn" style="font-size:0.85rem; padding:0.4rem 0.75rem;">${t("animas.model_change")}</button>
             <span id="bgModelChangeStatus" style="font-size:0.75rem; color:var(--text-secondary,#888);"></span>
           </div>
@@ -1282,17 +1452,17 @@ async function _showDetail(name) {
 
     // Bind permissions card
     _bindPermissionsCard(name, permissions, availableTools);
+    _bindModelPicker({ prefix: "model", models, currentModel });
+    _bindModelPicker({ prefix: "bgModel", models, currentModel: currentBgModel, allowNone: true });
 
     // Bind model change button
     document.getElementById("modelChangeBtn")?.addEventListener("click", async () => {
-      const select = document.getElementById("modelSelect");
       const btn = document.getElementById("modelChangeBtn");
       const status = document.getElementById("modelChangeStatus");
-      if (!select || !btn) return;
+      if (!btn) return;
 
-      const selectedOption = select.options[select.selectedIndex];
-      const model = select.value;
-      const credential = selectedOption?.dataset?.credential || "";
+      const { model, credential } = _selectedModelPickerValue("model");
+      if (!model) return;
 
       btn.disabled = true;
       btn.textContent = t("animas.saving");
@@ -1317,21 +1487,18 @@ async function _showDetail(name) {
 
     // Bind background model change button
     document.getElementById("bgModelChangeBtn")?.addEventListener("click", async () => {
-      const select = document.getElementById("bgModelSelect");
       const btn = document.getElementById("bgModelChangeBtn");
       const status = document.getElementById("bgModelChangeStatus");
-      if (!select || !btn) return;
+      if (!btn) return;
 
-      const selectedOption = select.options[select.selectedIndex];
-      const model = select.value;
-      const credential = model ? (selectedOption?.dataset?.credential || "") : "";
+      const { model, credential } = _selectedModelPickerValue("bgModel");
 
       btn.disabled = true;
       btn.textContent = t("animas.saving");
       status.textContent = "";
 
       try {
-        await fetch(`/api/animas/${encodeURIComponent(name)}/background-model`, {
+        await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/background-model`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ model, credential }),

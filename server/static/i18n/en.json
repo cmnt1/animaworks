@@ -96,6 +96,8 @@
   "animas.saved": "Saved",
   "animas.save_failed": "Save failed",
   "animas.model_select": "Front model",
+  "animas.model_route": "Route",
+  "animas.model_provider": "Provider",
   "animas.model_change": "Change",
   "animas.model_changed": "Model changed (restart server to apply)",
   "animas.model_change_failed": "Model change failed",

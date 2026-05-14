@@ -96,6 +96,8 @@
   "animas.saved": "保存しました",
   "animas.save_failed": "保存失敗",
   "animas.model_select": "フロントモデル",
+  "animas.model_route": "実行経路",
+  "animas.model_provider": "プロバイダ",
   "animas.model_change": "変更",
   "animas.model_changed": "モデルを変更しました（再起動後に反映）",
   "animas.model_change_failed": "モデル変更失敗",

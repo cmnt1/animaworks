@@ -235,6 +235,7 @@ def _model_family(model: str) -> str:
 
 _FAMILY_CREDENTIAL_MAP: dict[str, str] = {
     "claude": "anthropic",
+    "anthropic": "anthropic",
     "openai": "openai",
     "ollama": "ollama",
     "google": "google",

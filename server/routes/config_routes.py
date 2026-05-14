@@ -552,14 +552,49 @@ def _refresh_google_models(config) -> dict[str, object]:
     return {"provider": "google", "status": "ok", "source": "api", "dynamic": True, "count": len(models)}
 
 
+def _display_model_name(model_id: str, provider_label: str) -> str:
+    lower_provider = provider_label.casefold()
+    if lower_provider == "anthropic":
+        return model_id.removeprefix("anthropic/")
+    if lower_provider == "openai":
+        return model_id.removeprefix("openai/").removeprefix("openai-codex/")
+    if lower_provider == "google":
+        return model_id.removeprefix("google/")
+    if lower_provider == "opencode go":
+        return model_id.removeprefix(OPENCODE_GO_PROVIDER + "/")
+    if lower_provider == "nanogpt":
+        return model_id.removeprefix("nanogpt/")
+    if lower_provider == "ollama":
+        return model_id.removeprefix("ollama/")
+    return model_id
+
+
 def _available_models_payload(config) -> list[dict[str, str]]:
     models: list[dict[str, str]] = []
     seen: set[str] = set()
 
-    def add(model_id: str, *, label: str, credential: str) -> None:
+    def add(
+        model_id: str,
+        *,
+        route: str,
+        provider_label: str,
+        credential: str,
+        model_name: str | None = None,
+    ) -> None:
         if model_id in seen:
             return
-        models.append({"id": model_id, "label": label, "credential": credential})
+        display_name = model_name or _display_model_name(model_id, provider_label)
+        label = f"{route}: {provider_label}/{display_name}"
+        models.append(
+            {
+                "id": model_id,
+                "label": label,
+                "credential": credential,
+                "route": route,
+                "provider": provider_label,
+                "model_name": display_name,
+            }
+        )
         seen.add(model_id)
 
     for provider, cred in config.credentials.items():
@@ -571,7 +606,15 @@ def _available_models_payload(config) -> list[dict[str, str]]:
             continue
         if provider == "anthropic":
             for model_id in _models_for_provider("claude_code", _known_claude_code_models()):
-                add(model_id, label=f"Anthropic: {model_id}", credential="anthropic")
+                add(model_id, route="S", provider_label="Anthropic", credential="anthropic")
+                if cred.api_key:
+                    add(
+                        f"anthropic/{model_id}",
+                        route="A",
+                        provider_label="Anthropic",
+                        credential="anthropic",
+                        model_name=model_id,
+                    )
         elif provider == "openai":
             if cred.api_key:
                 for model_id in (
@@ -587,13 +630,13 @@ def _available_models_payload(config) -> list[dict[str, str]]:
                     "o3",
                     "o4-mini",
                 ):
-                    add(model_id, label=f"OpenAI: {model_id}", credential="openai")
+                    add(model_id, route="A", provider_label="OpenAI", credential="openai")
             if cred.type == "codex_login" or cred.api_key:
                 for model_id in _models_for_provider("codex", _known_codex_models()):
-                    add(model_id, label=f"OpenAI: {model_id}", credential="openai")
+                    add(model_id, route="C", provider_label="OpenAI", credential="openai")
         elif provider in ("google", "gemini"):
             for model_id in _models_for_provider("google", _known_google_models()):
-                add(model_id, label=f"Google: {model_id.removeprefix('google/')}", credential="google")
+                add(model_id, route="A", provider_label="Google", credential="google")
         elif provider == OPENCODE_GO_PROVIDER and (
             cred.api_key or opencode_go_api_key() or _abconfig_value("opencode_api")
         ):
@@ -601,7 +644,8 @@ def _available_models_payload(config) -> list[dict[str, str]]:
             for model_id in _models_for_provider("opencode_go", fallback):
                 add(
                     model_id,
-                    label=f"OpenCode Go: {model_id.removeprefix(OPENCODE_GO_PROVIDER + '/')}",
+                    route="A",
+                    provider_label="OpenCode Go",
                     credential=OPENCODE_GO_PROVIDER,
                 )
 
@@ -609,13 +653,14 @@ def _available_models_payload(config) -> list[dict[str, str]]:
         for model_id in _models_for_provider("opencode_go", _known_opencode_go_models()):
             add(
                 model_id,
-                label=f"OpenCode Go: {model_id.removeprefix(OPENCODE_GO_PROVIDER + '/')}",
+                route="A",
+                provider_label="OpenCode Go",
                 credential=OPENCODE_GO_PROVIDER,
             )
 
     if is_codex_login_available():
         for model_id in _models_for_provider("codex", _known_codex_models()):
-            add(model_id, label=f"OpenAI: {model_id}", credential="codex")
+            add(model_id, route="C", provider_label="OpenAI", credential="codex")
 
     nanogpt_cred = config.credentials.get("nanogpt")
     if nanogpt_cred and nanogpt_cred.api_key:
@@ -627,15 +672,17 @@ def _available_models_payload(config) -> list[dict[str, str]]:
             except Exception:
                 nanogpt_models = []
         for model_id in nanogpt_models:
-            add(model_id, label=f"nanoGPT: {model_id.removeprefix('nanogpt/')}", credential="nanogpt")
+            add(model_id, route="A", provider_label="nanoGPT", credential="nanogpt")
 
     try:
+        from core.config.models import resolve_execution_mode
+
         local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
         base_url = normalize_ollama_base_url(local_llm.base_url)
         for model in _list_ollama_models(base_url):
             model_id = f"ollama/{model}" if not model.startswith("ollama/") else model
-            label = model.removeprefix("ollama/") if model.startswith("ollama/") else model
-            add(model_id, label=label, credential="ollama")
+            route = resolve_execution_mode(config, model_id)
+            add(model_id, route=route, provider_label="Ollama", credential="ollama")
     except Exception:
         pass
 

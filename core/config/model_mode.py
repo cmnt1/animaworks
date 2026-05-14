@@ -43,6 +43,7 @@ DEFAULT_MODEL_MODE_PATTERNS: dict[str, str] = {
     "gemini/*": "G",
     # ── A: Cloud API providers (LiteLLM + tool_use) ──────
     "openai/*": "A",
+    "anthropic/claude-*": "A",
     "azure/*": "A",
     "bedrock/*": "A",
     "google/*": "A",
