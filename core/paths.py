@@ -153,6 +153,25 @@ def resolve_template_path(
     shared = TEMPLATES_DIR / "_shared" / category / filename
     if shared.exists():
         return shared
+
+    # Runtime prompt fallback.
+    # Some deployed/background worker environments may set ANIMAWORKS_TEMPLATES_DIR
+    # to the runtime data directory (e.g. ~/.animaworks) or to ~/.animaworks/prompts.
+    # Runtime prompts are stored without locale directories:
+    #   ~/.animaworks/prompts/builder/task_in_progress.md
+    # Keep the locale-first packaged-template behavior above, but accept this
+    # runtime layout as a compatibility fallback so heartbeat/cron prompt
+    # construction does not fail when the file exists in the runtime prompt tree.
+    runtime_candidates = [
+        get_data_dir() / category / filename,
+        TEMPLATES_DIR / category / filename,
+    ]
+    if category == "prompts":
+        runtime_candidates.append(get_data_dir() / "prompts" / filename)
+        runtime_candidates.append(TEMPLATES_DIR / filename)
+    for path in runtime_candidates:
+        if path.exists():
+            return path
     raise FileNotFoundError(f"Template not found: {category}/{filename} (tried locales: {loc}, en, ja and _shared)")
 
 
