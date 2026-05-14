@@ -97,7 +97,7 @@ class TestInjectionOverThreshold:
         result = build_system_prompt(memory, trigger="chat")
 
         assert "6000" in result.system_prompt
-        assert "5000" in result.system_prompt
+        assert "2000" in result.system_prompt
 
 
 # ── Custom threshold from config ────────────────────────────────────────────

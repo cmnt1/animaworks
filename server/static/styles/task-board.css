@@ -324,9 +324,13 @@
 }
 
 .taskboard-actions button:hover,
+.taskboard-actions button:active,
 .taskboard-icon-btn:hover,
+.taskboard-icon-btn:active,
 .taskboard-mobile-tab:hover,
-.taskboard-segment:hover {
+.taskboard-mobile-tab:active,
+.taskboard-segment:hover,
+.taskboard-segment:active {
   background: var(--aw-color-bg-hover);
 }
 
