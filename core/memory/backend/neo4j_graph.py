@@ -301,6 +301,9 @@ class Neo4jGraphBackend(MemoryBackend):
                 f_emb = fact_embeddings[idx] if idx < len(fact_embeddings) else []
                 try:
                     fact_uuid = str(uuid4())
+                    raw_edge_type = getattr(fact, "raw_edge_type", None)
+                    if not isinstance(raw_edge_type, str) or not raw_edge_type.strip():
+                        raw_edge_type = None
                     await driver.execute_write(
                         CREATE_FACT,
                         {
@@ -310,6 +313,7 @@ class Neo4jGraphBackend(MemoryBackend):
                             "fact": fact.fact,
                             "fact_embedding": f_emb,
                             "edge_type": getattr(fact, "edge_type", "RELATES_TO") or "RELATES_TO",
+                            "raw_edge_type": raw_edge_type,
                             "group_id": self._group_id,
                             "created_at": now_str,
                             "valid_at": fact.valid_at or now_str,
@@ -446,7 +450,12 @@ class Neo4jGraphBackend(MemoryBackend):
             locale = self._resolve_locale()
             from core.memory.extraction.extractor import FactExtractor
 
-            self._extractor = FactExtractor(model=model, locale=locale, llm_extra=llm_extra)
+            self._extractor = FactExtractor(
+                model=model,
+                locale=locale,
+                llm_extra=llm_extra,
+                anima_dir=self._anima_dir,
+            )
         return self._extractor
 
     def _resolve_extraction_config(self) -> tuple[str, dict[str, str]]:

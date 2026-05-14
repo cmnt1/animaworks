@@ -122,6 +122,119 @@ async def test_neo4j_backend_all_scope_retrieves_and_formats_mixed_results(tmp_p
     assert any(memory.content == "Sakura: An Anima using Neo4j memory" for memory in memories)
 
 
+@pytest.mark.asyncio
+@pytest.mark.e2e
+async def test_per_anima_neo4j_edge_ontology_drives_extraction_e2e(tmp_path) -> None:
+    """status.json edge ontology should appear in prompts and canonicalize LLM facts."""
+    from core.memory.extraction.extractor import FactExtractor
+    from core.memory.ontology.default import ExtractedEntity
+
+    anima_dir = tmp_path / "sakura"
+    anima_dir.mkdir()
+    (anima_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "neo4j_edge_types": [
+                    {"name": "mentors", "description": "Mentorship relationship"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = MagicMock()
+    cfg.memory.neo4j_edge_types = [
+        {"name": "advises", "description": "Advice relationship"},
+    ]
+    extractor = FactExtractor(model="test-model", max_retries=1, anima_dir=anima_dir)
+    captured_prompts: list[str] = []
+
+    async def _mock_llm(_system: str, user: str) -> str:
+        captured_prompts.append(user)
+        return json.dumps(
+            {
+                "facts": [
+                    {
+                        "source_entity": "Alice",
+                        "target_entity": "Bob",
+                        "fact": "Alice mentors Bob",
+                        "edge_type": "mentors",
+                    }
+                ]
+            }
+        )
+
+    with (
+        patch("core.config.models.load_config", return_value=cfg),
+        patch.object(extractor, "_call_llm", side_effect=_mock_llm),
+    ):
+        facts = await extractor.extract_facts(
+            "Alice mentors Bob",
+            [
+                ExtractedEntity(name="Alice", entity_type="Person"),
+                ExtractedEntity(name="Bob", entity_type="Person"),
+            ],
+        )
+
+    assert "`ADVISES`" in captured_prompts[0]
+    assert "`MENTORS`" in captured_prompts[0]
+    assert facts[0].edge_type == "MENTORS"
+    assert facts[0].raw_edge_type is None
+
+
+@pytest.mark.e2e
+def test_search_memory_all_scope_combines_graph_and_legacy_only_scopes_e2e(tmp_path) -> None:
+    """search_memory(scope='all') should combine graph memory with legacy-only sections."""
+    from core.memory.backend.base import RetrievedMemory
+    from core.tooling.handler_memory import MemoryToolsMixin
+
+    mock_backend = MagicMock()
+    mock_backend.retrieve = AsyncMock(
+        return_value=[
+            RetrievedMemory(content="graph memory", score=0.9, source="fact:1"),
+        ]
+    )
+    mock_backend.close = AsyncMock()
+
+    class FakeMemory:
+        @property
+        def memory_backend(self):
+            return mock_backend
+
+        def search_memory_text(self, _query, scope="all", **_kwargs):
+            if scope == "common_knowledge":
+                return [{"content": "shared policy", "source_file": "common_knowledge/policy.md", "score": 0.7}]
+            if scope == "skills":
+                return [{"content": "shared skill", "source_file": "common_skills/ops/SKILL.md", "score": 0.6}]
+            if scope == "activity_log":
+                return [{"content": "activity entry", "source_file": "activity/log.jsonl", "score": 0.5}]
+            return []
+
+    class FakeHandler(MemoryToolsMixin):
+        def _anima_search_hint(self, _query):
+            return None
+
+    handler = FakeHandler.__new__(FakeHandler)
+    handler._anima_name = "sakura"
+    handler._anima_dir = tmp_path
+    handler._context_window = 128_000
+    handler._memory = FakeMemory()
+    handler._read_paths = set()
+    handler._create_neo4j_backend = MagicMock(return_value=mock_backend)
+
+    with patch("core.memory.backend.registry.resolve_backend_type", return_value="neo4j"):
+        result = handler._handle_search_memory({"query": "policy", "scope": "all"})
+
+    assert "## Graph Memory" in result
+    assert "graph memory" in result
+    assert "## Common Knowledge" in result
+    assert "shared policy" in result
+    assert "## Skills" in result
+    assert "shared skill" in result
+    assert "## Activity Log" in result
+    assert "activity entry" in result
+
+
 @pytest.mark.e2e
 def test_realtime_neo4j_ingest_records_user_and_assistant_turn(tmp_path) -> None:
     """Realtime chat ingest should store the full turn body with stable metadata."""

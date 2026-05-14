@@ -74,6 +74,7 @@ CREATE (s)-[r:RELATES_TO {
   fact: $fact,
   fact_embedding: $fact_embedding,
   edge_type: $edge_type,
+  raw_edge_type: $raw_edge_type,
   group_id: $group_id,
   created_at: datetime($created_at),
   valid_at: datetime($valid_at),
@@ -137,6 +138,7 @@ MATCH (new_entity:Entity {uuid: $new_uuid})
 CREATE (new_entity)-[r:RELATES_TO {
   uuid: old.uuid, fact: old.fact, fact_embedding: old.fact_embedding,
   edge_type: coalesce(old.edge_type, 'RELATES_TO'),
+  raw_edge_type: old.raw_edge_type,
   group_id: old.group_id, created_at: old.created_at, valid_at: old.valid_at,
   invalid_at: old.invalid_at, expired_at: old.expired_at,
   source_episode_uuids: old.source_episode_uuids
@@ -150,6 +152,7 @@ MATCH (new_entity:Entity {uuid: $new_uuid})
 CREATE (source)-[r:RELATES_TO {
   uuid: old.uuid, fact: old.fact, fact_embedding: old.fact_embedding,
   edge_type: coalesce(old.edge_type, 'RELATES_TO'),
+  raw_edge_type: old.raw_edge_type,
   group_id: old.group_id, created_at: old.created_at, valid_at: old.valid_at,
   invalid_at: old.invalid_at, expired_at: old.expired_at,
   source_episode_uuids: old.source_episode_uuids
