@@ -565,12 +565,11 @@ class TestImageGenPipeline:
             lambda refresh=False: codex_home,
         )
         monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", fake_popen)
-        monkeypatch.setenv("ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES", "1")
 
         img = OpenAIImageClient(model="gpt-image-2").generate_fullbody(
             prompt="portrait",
-            vibe_image=_sample_image_bytes("PNG"),
-            face_reference_image=_sample_image_bytes("JPEG"),
+            vibe_image=_sample_image_bytes("PNG", size=(160, 160)),
+            face_reference_image=_sample_image_bytes("JPEG", size=(160, 160)),
         )
 
         assert img == b"PNG-DATA"
@@ -628,7 +627,6 @@ class TestImageGenPipeline:
             "server.routes.usage_routes.get_openai_subscription_codex_home",
             lambda refresh=False: codex_home,
         )
-        monkeypatch.setenv("ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES", "1")
 
         with pytest.raises(RuntimeError, match="face reference image could not be decoded"):
             OpenAIImageClient(model="gpt-image-2").generate_fullbody(
@@ -636,7 +634,7 @@ class TestImageGenPipeline:
                 face_reference_image=b"<html>not an image</html>",
             )
 
-    def test_openai_image_client_rejects_references_without_experimental_opt_in(self, tmp_path: Path, monkeypatch):
+    def test_openai_image_client_rejects_too_small_reference_before_codex(self, tmp_path: Path, monkeypatch):
         from core.tools.image.openai import OpenAIImageClient
 
         codex_home = tmp_path / "codex-home"
@@ -654,12 +652,11 @@ class TestImageGenPipeline:
             lambda refresh=False: codex_home,
         )
         monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", fake_popen)
-        monkeypatch.delenv("ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES", raising=False)
 
-        with pytest.raises(RuntimeError, match="cannot reliably use reference images"):
+        with pytest.raises(RuntimeError, match="image is too small"):
             OpenAIImageClient(model="gpt-image-2").generate_fullbody(
                 prompt="portrait",
-                face_reference_image=_sample_image_bytes("JPEG"),
+                face_reference_image=_sample_image_bytes("JPEG", size=(64, 64)),
             )
 
         assert popen_called is False

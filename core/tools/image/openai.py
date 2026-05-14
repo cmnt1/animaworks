@@ -25,11 +25,8 @@ from core.tools._base import logger
 OPENAI_IMAGE_MODELS = ("gpt-image-2",)
 OPENAI_IMG2IMG_MODELS = frozenset(OPENAI_IMAGE_MODELS)
 _MAX_CODEX_PROMPT_CHARS = 1800
-_REFERENCE_UNSUPPORTED_MESSAGE = (
-    "gpt-image-2 via Codex subscription auth cannot reliably use reference images in this environment. "
-    "Choose a reference-capable backend such as Diffusers or NanoGPT, or set "
-    "ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES=1 to force an experimental Codex reference attempt."
-)
+_REFERENCE_MIN_SIDE = 96
+_REFERENCE_MAX_ASPECT_RATIO = 4.0
 
 _TRANSIENT_CODEX_ERROR_MARKERS = (
     "stream disconnected",
@@ -63,13 +60,6 @@ def _read_env_float(name: str, default: float) -> float:
     except ValueError:
         return default
     return max(0.0, value)
-
-
-def _env_enabled(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _openai_size(width: int, height: int) -> str:
@@ -155,27 +145,55 @@ def _terminate_process_tree(pid: int) -> None:
 def _write_reference_png(image_bytes: bytes, path: Path, label: str) -> None:
     """Decode a user/reference image and write a small, valid PNG for Codex."""
     try:
-        from PIL import Image, ImageOps
+        from PIL import Image, ImageOps, UnidentifiedImageError
     except Exception as exc:
         raise RuntimeError("Pillow is required to prepare reference images for gpt-image-2") from exc
 
     max_side = _read_env_int("ANIMAWORKS_CODEX_REFERENCE_MAX_SIDE", 256) or 256
     try:
         with Image.open(BytesIO(image_bytes)) as img:
+            original_format = img.format or "unknown"
             img = ImageOps.exif_transpose(img)
+            original_width, original_height = img.size
+            if original_width <= 0 or original_height <= 0:
+                raise ValueError("image has invalid dimensions")
+            min_side = min(original_width, original_height)
+            aspect_ratio = max(original_width, original_height) / min_side
+            if min_side < _REFERENCE_MIN_SIDE:
+                raise ValueError(
+                    f"image is too small for a reliable {label} reference "
+                    f"({original_width}x{original_height}; minimum short side is {_REFERENCE_MIN_SIDE}px)"
+                )
+            if aspect_ratio > _REFERENCE_MAX_ASPECT_RATIO:
+                raise ValueError(
+                    f"image aspect ratio is too extreme for a reliable {label} reference "
+                    f"({original_width}x{original_height})"
+                )
             if max(img.size) > max_side:
                 img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
             if img.mode not in {"RGB", "RGBA"}:
                 img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+            normalized_width, normalized_height = img.size
             img.save(path, format="PNG", optimize=True)
-    except Exception as exc:
+            normalized_bytes = path.stat().st_size
+    except UnidentifiedImageError as exc:
         raise RuntimeError(f"{label} reference image could not be decoded as an image") from exc
+    except Exception as exc:
+        raise RuntimeError(f"{label} reference image failed preflight: {exc}") from exc
 
     logger.info(
-        "Prepared %s reference image for Codex: %s (%d bytes)",
+        (
+            "Prepared %s reference image for Codex: %s "
+            "(source=%s %dx%d, normalized=%dx%d, %d bytes)"
+        ),
         label,
         path.name,
-        path.stat().st_size,
+        original_format,
+        original_width,
+        original_height,
+        normalized_width,
+        normalized_height,
+        normalized_bytes,
     )
 
 
@@ -333,10 +351,6 @@ class OpenAIImageClient:
     ) -> bytes:
         """Generate a character portrait via Codex built-in image_gen."""
         del seed, steps, scale, sampler, vibe_strength, vibe_info_extracted, step_callback
-
-        has_reference = vibe_image is not None or face_reference_image is not None
-        if has_reference and not _env_enabled("ANIMAWORKS_CODEX_IMAGE_ALLOW_REFERENCES"):
-            raise RuntimeError(_REFERENCE_UNSUPPORTED_MESSAGE)
 
         size = _openai_size(width, height)
 

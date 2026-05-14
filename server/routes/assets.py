@@ -1246,6 +1246,26 @@ def create_assets_router() -> APIRouter:
             # IP-Adapter produce non-human faces.
 
         # Resolve prompt (style-aware) — try cached first, then LLM synthesis, then fallback
+            generation_model_for_reference = body.generation_model or DEFAULT_IMAGE_GENERATION_MODEL
+            if generation_model_for_reference.startswith("openai:"):
+                try:
+                    import tempfile as _tempfile
+                    from pathlib import Path as _Path
+
+                    from core.tools.image.openai import _write_reference_png
+
+                    with _tempfile.TemporaryDirectory(prefix="animaworks-ref-preflight-") as _tmp:
+                        _write_reference_png(
+                            face_reference_bytes,
+                            _Path(_tmp) / "face_reference.png",
+                            "face",
+                        )
+                except RuntimeError as exc:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Face reference preflight failed: {exc}",
+                    ) from exc
+
         prompt = body.prompt
         if not prompt:
             from core.asset_reconciler import _extract_prompt, _resolve_prompt
