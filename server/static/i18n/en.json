@@ -820,6 +820,7 @@
   "taskboard.queue_missing": "missing",
   "taskboard.reactivated": "Task reactivated.",
   "taskboard.reason": "Reason",
+  "taskboard.reason_required": "Reason is required.",
   "taskboard.refresh": "Refresh",
   "taskboard.reorder_failed": "Reorder failed",
   "taskboard.reordered": "Order saved.",

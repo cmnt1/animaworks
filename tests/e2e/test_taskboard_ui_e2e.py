@@ -110,9 +110,12 @@ async def test_taskboard_route_static_assets_and_api_smoke(tmp_path: Path) -> No
     assert "/api/task-board" in page_resp.text
     assert "REFRESH_MS = 30000" in page_resp.text
     assert "document.visibilityState" in page_resp.text
+    assert "escapeAttr" in page_resp.text
+    assert "_renderToken" in page_resp.text
     assert 'method: "PATCH"' in page_resp.text
     assert "position: (index + 1) * 1000" in page_resp.text
     assert 'reasonRequired: action === "expire" || action === "tombstone"' in page_resp.text
+    assert 'setCustomValidity(t("taskboard.reason_required"))' in page_resp.text
     assert 'confirmRequired: action === "tombstone"' in page_resp.text
     assert "taskboard.mark_done" not in page_resp.text
     assert "/api/channels" not in page_resp.text
@@ -121,6 +124,8 @@ async def test_taskboard_route_static_assets_and_api_smoke(tmp_path: Path) -> No
     assert utils_resp.status_code == 200
     assert 'if (action === "archive") return "archived";' in utils_resp.text
     assert 'if (action === "tombstone") return "tombstoned";' in utils_resp.text
+    assert "toISOString().slice(0, 16)" not in utils_resp.text
+    assert "getHours()" in utils_resp.text
     assert css_resp.status_code == 200
     assert "@media (max-width: 720px)" in css_resp.text
     assert ".taskboard-mobile-tabs" in css_resp.text

@@ -820,6 +820,7 @@
   "taskboard.queue_missing": "missing",
   "taskboard.reactivated": "タスクを再有効化しました。",
   "taskboard.reason": "理由",
+  "taskboard.reason_required": "理由を入力してください。",
   "taskboard.refresh": "更新",
   "taskboard.reorder_failed": "並び替えに失敗しました",
   "taskboard.reordered": "並び順を保存しました。",

@@ -1,6 +1,6 @@
 // ── TaskBoard Page (Kanban) ─────────────────
 import { api } from "../modules/api.js";
-import { escapeHtml } from "../modules/state.js";
+import { escapeAttr, escapeHtml } from "../modules/state.js";
 import { t } from "/shared/i18n.js";
 import {
   COLUMNS,
@@ -10,6 +10,7 @@ import {
   defaultLocalDateTime,
   isOverdue,
   shortId,
+  statusClassSuffix,
   taskKey,
   visibilityLabel,
   visibilityPayload,
@@ -25,15 +26,15 @@ let _allTasks = [];
 let _animaNames = [];
 let _activeColumn = "todo";
 let _drag = null;
-let _searchTimer = null;
+let _searchTimer = null; let _renderToken = 0;
 
 export async function render(container) {
+  const token = ++_renderToken;
   _container = container;
   _tasks = [];
   _allTasks = [];
   _animaNames = [];
-  _activeColumn = "todo";
-  _drag = null;
+  _activeColumn = "todo"; _drag = null; _refreshing = false;
 
   container.innerHTML = `
     <div class="taskboard-page" data-testid="taskboard-page">
@@ -92,7 +93,9 @@ export async function render(container) {
 
   _bindEvents();
   await _loadAnimas();
-  await _loadBoard();
+  if (_container !== container || _renderToken !== token) return;
+  await _loadBoard({ token });
+  if (_container !== container || _renderToken !== token) return;
   _pollTimer = setInterval(() => {
     if (document.visibilityState === "visible") _loadBoard({ quiet: true });
   }, REFRESH_MS);
@@ -100,11 +103,10 @@ export async function render(container) {
 }
 
 export function destroy() {
+  _renderToken += 1;
   if (_pollTimer) clearInterval(_pollTimer);
   if (_searchTimer) clearTimeout(_searchTimer);
-  _pollTimer = null;
-  _searchTimer = null;
-  _container = null;
+  _pollTimer = null; _searchTimer = null; _container = null; _refreshing = false;
   _tasks = [];
   _allTasks = [];
   _animaNames = [];
@@ -155,12 +157,13 @@ async function _loadAnimas() {
   }
 }
 
-async function _loadBoard({ quiet = false } = {}) {
+async function _loadBoard({ quiet = false, token = _renderToken } = {}) {
   if (_refreshing) return;
   _refreshing = true;
   if (!quiet) _setFeedback(t("taskboard.loading"), "loading");
   try {
     const data = await api(`/api/task-board?${_queryParams().toString()}`);
+    if (!_container || token !== _renderToken) return;
     _allTasks = data.tasks || [];
     _tasks = _filterClientVisibility(_allTasks);
     _syncAssigneeOptionsFromTasks();
@@ -221,7 +224,7 @@ function _renderAssigneeOptions() {
   const current = select.value;
   const options = [`<option value="">${t("taskboard.assignee_all")}</option>`];
   for (const name of _animaNames) {
-    options.push(`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`);
+    options.push(`<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`);
   }
   select.innerHTML = options.join("");
   if (_animaNames.includes(current)) select.value = current;
@@ -256,7 +259,7 @@ function _columnHtml(column) {
       <header class="taskboard-column-header">
         <div>
           <h3>${t(`taskboard.column_${column}`)}</h3>
-          <span>${_columnHint(column)}</span>
+          <span>${t(`taskboard.column_${column}_hint`)}</span>
         </div>
         <strong>${tasks.length}</strong>
       </header>
@@ -284,14 +287,14 @@ function _cardHtml(task) {
   const column = task.column || "todo";
   const overdue = isOverdue(task.deadline);
   return `
-    <article class="taskboard-card" draggable="true" data-task-key="${escapeHtml(key)}" data-column="${escapeHtml(column)}">
+    <article class="taskboard-card" draggable="true" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
       <div class="taskboard-card-topline">
         <span class="taskboard-anima">${escapeHtml(task.anima_name || task.assignee || "-")}</span>
         <code>${escapeHtml(shortId(task.task_id))}</code>
       </div>
       <h4>${escapeHtml(task.summary || task.original_instruction || t("taskboard.untitled"))}</h4>
       <div class="taskboard-meta-row">
-        <span class="taskboard-badge taskboard-badge--${escapeHtml(task.queue_status || "missing")}">
+        <span class="taskboard-badge taskboard-badge--${statusClassSuffix(task.queue_status)}">
           ${escapeHtml(task.queue_status || t("taskboard.queue_missing"))}
         </span>
         <span class="taskboard-visibility">${escapeHtml(visibilityLabel(task.visibility))}</span>
@@ -310,7 +313,7 @@ function _cardHtml(task) {
 }
 
 function _actionButtons(task, key) {
-  const attrs = `data-task-key="${escapeHtml(key)}"`;
+  const attrs = `data-task-key="${escapeAttr(key)}"`;
   if (task.visibility === "active") {
     return `
       <button type="button" data-task-action="snooze" ${attrs}><i data-lucide="alarm-clock"></i>${t("taskboard.action_snooze")}</button>
@@ -394,10 +397,18 @@ function _openActionModal({ mode, datetime = false, reasonRequired = false, conf
       event.preventDefault();
       if (!form.reportValidity()) return;
       const fd = new FormData(form);
+      const reason = String(fd.get("reason") || "").trim();
+      if (reasonRequired && !reason) {
+        form.elements.reason.setCustomValidity(t("taskboard.reason_required"));
+        form.elements.reason.reportValidity();
+        form.elements.reason.addEventListener("input", () => form.elements.reason.setCustomValidity(""), { once: true });
+        return;
+      }
+      form.elements.reason.setCustomValidity("");
       overlay.remove();
       resolve({
         datetime: fd.get("datetime") || "",
-        reason: String(fd.get("reason") || "").trim(),
+        reason,
       });
     });
   });
@@ -466,18 +477,9 @@ function _setActiveColumn(column) {
   _container.querySelectorAll(".taskboard-mobile-tab").forEach((el) => el.classList.toggle("is-active", el.dataset.mobileColumn === column));
 }
 
-function _ensureActiveColumnHasView() {
-  if (COLUMNS.includes(_activeColumn)) return;
-  _activeColumn = "todo";
-}
+function _ensureActiveColumnHasView() { if (!COLUMNS.includes(_activeColumn)) _activeColumn = "todo"; }
 
-function _findTask(key) {
-  return _tasks.find((task) => taskKey(task) === key) || _allTasks.find((task) => taskKey(task) === key);
-}
-
-function _columnHint(column) {
-  return t(`taskboard.column_${column}_hint`);
-}
+function _findTask(key) { return _tasks.find((task) => taskKey(task) === key) || _allTasks.find((task) => taskKey(task) === key); }
 
 function _summaryText(data) {
   const warnings = data?.meta?.warnings?.corrupt_task_queue_lines || 0;
@@ -492,6 +494,4 @@ function _setFeedback(message, tone) {
   el.dataset.tone = tone || "";
 }
 
-function _refreshIcons() {
-  if (window.lucide && _container) window.lucide.createIcons({ nodes: [_container] });
-}
+function _refreshIcons() { if (window.lucide && _container) window.lucide.createIcons({ nodes: [_container] }); }

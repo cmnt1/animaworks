@@ -22,6 +22,10 @@ export function visibilityPayload(action) {
   return action;
 }
 
+export function statusClassSuffix(status) {
+  return String(status || "missing").replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
 export function deadlineText(deadline) {
   if (!deadline) return t("taskboard.no_deadline");
   const date = new Date(deadline);
@@ -49,5 +53,6 @@ export function isOverdue(deadline) {
 export function defaultLocalDateTime() {
   const date = new Date(Date.now() + 60 * 60 * 1000);
   date.setMinutes(Math.ceil(date.getMinutes() / 5) * 5, 0, 0);
-  return date.toISOString().slice(0, 16);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
