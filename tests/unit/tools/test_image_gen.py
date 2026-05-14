@@ -27,6 +27,14 @@ from core.tools.image_gen import (
     get_tool_schemas,
 )
 
+
+def _sample_image_bytes(fmt: str = "PNG", size: tuple[int, int] = (32, 24)) -> bytes:
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", size, (96, 128, 160)).save(buf, format=fmt)
+    return buf.getvalue()
+
 # ── _image_to_data_uri ───────────────────────────────────────────
 
 
@@ -536,6 +544,8 @@ class TestImageGenPipeline:
                 self.returncode = 0
 
             def communicate(self, input=None, timeout=None):
+                image_paths = [Path(seen["cmd"][index + 1]) for index, item in enumerate(seen["cmd"]) if item == "--image"]
+                seen["reference_bytes"] = [path.read_bytes() for path in image_paths]
                 instruction = input
                 marker = "Save or copy the final generated image to this exact path:\n"
                 output_path = Path(instruction.split(marker, 1)[1].split("\n", 1)[0])
@@ -558,8 +568,8 @@ class TestImageGenPipeline:
 
         img = OpenAIImageClient(model="gpt-image-2").generate_fullbody(
             prompt="portrait",
-            vibe_image=b"STYLE",
-            face_reference_image=b"FACE",
+            vibe_image=_sample_image_bytes("PNG"),
+            face_reference_image=_sample_image_bytes("JPEG"),
         )
 
         assert img == b"PNG-DATA"
@@ -569,6 +579,7 @@ class TestImageGenPipeline:
         assert seen["env"]["CODEX_HOME"] == str(codex_home)
         assert seen["input"] == seen["instruction"]
         assert seen["cmd"].count("--image") == 2
+        assert all(data.startswith(b"\x89PNG\r\n\x1a\n") for data in seen["reference_bytes"])
         assert "style_reference.png" in seen["instruction"]
         assert "face_reference.png" in seen["instruction"]
         assert "mandatory visual inputs" in seen["instruction"]
@@ -602,6 +613,24 @@ class TestImageGenPipeline:
 
         with pytest.raises(RuntimeError, match="Codex image_gen failed"):
             OpenAIImageClient(model="gpt-image-2").generate_fullbody(prompt="portrait")
+
+    def test_openai_image_client_rejects_invalid_reference_image(self, tmp_path: Path, monkeypatch):
+        from core.tools.image.openai import OpenAIImageClient
+
+        codex_home = tmp_path / "codex-home"
+        codex_home.mkdir()
+
+        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
+        monkeypatch.setattr(
+            "server.routes.usage_routes.get_openai_subscription_codex_home",
+            lambda refresh=False: codex_home,
+        )
+
+        with pytest.raises(RuntimeError, match="face reference image could not be decoded"):
+            OpenAIImageClient(model="gpt-image-2").generate_fullbody(
+                prompt="portrait",
+                face_reference_image=b"<html>not an image</html>",
+            )
 
     def test_openai_image_client_retries_transient_stream_disconnect(self, tmp_path: Path, monkeypatch):
         from core.tools.image.openai import OpenAIImageClient

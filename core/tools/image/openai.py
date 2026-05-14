@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
 
 from core.platform.codex import default_home_dir, get_codex_executable
@@ -129,6 +130,33 @@ def _terminate_process_tree(pid: int) -> None:
         return
     except Exception:
         logger.debug("Failed to terminate Codex process group pid=%s", pid, exc_info=True)
+
+
+def _write_reference_png(image_bytes: bytes, path: Path, label: str) -> None:
+    """Decode a user/reference image and write a small, valid PNG for Codex."""
+    try:
+        from PIL import Image, ImageOps
+    except Exception as exc:
+        raise RuntimeError("Pillow is required to prepare reference images for gpt-image-2") from exc
+
+    max_side = _read_env_int("ANIMAWORKS_CODEX_REFERENCE_MAX_SIDE", 768) or 768
+    try:
+        with Image.open(BytesIO(image_bytes)) as img:
+            img = ImageOps.exif_transpose(img)
+            if max(img.size) > max_side:
+                img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+            if img.mode not in {"RGB", "RGBA"}:
+                img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+            img.save(path, format="PNG", optimize=True)
+    except Exception as exc:
+        raise RuntimeError(f"{label} reference image could not be decoded as an image") from exc
+
+    logger.info(
+        "Prepared %s reference image for Codex: %s (%d bytes)",
+        label,
+        path.name,
+        path.stat().st_size,
+    )
 
 
 class OpenAIImageClient:
@@ -296,11 +324,11 @@ class OpenAIImageClient:
                 references: list[Path] = []
                 if vibe_image is not None:
                     path = tmp_dir / "style_reference.png"
-                    path.write_bytes(vibe_image)
+                    _write_reference_png(vibe_image, path, "style")
                     references.append(path)
                 if face_reference_image is not None:
                     path = tmp_dir / "face_reference.png"
-                    path.write_bytes(face_reference_image)
+                    _write_reference_png(face_reference_image, path, "face")
                     references.append(path)
 
                 output_path = tmp_dir / "generated.png"
