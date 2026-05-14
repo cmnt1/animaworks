@@ -10,11 +10,13 @@ Extracted from ``core.anima.DigitalAnima`` as a Mixin.  All ``self``
 references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
+import asyncio
 import json
 import logging
 import re
 import time
 from collections.abc import AsyncGenerator
+from contextlib import nullcontext
 from hashlib import sha256
 from typing import Any
 
@@ -36,6 +38,13 @@ from core.schemas import EXTERNAL_PLATFORM_SOURCES, VALID_EMOTIONS, CycleResult,
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.anima")
+
+
+def _agent_session_context(owner: Any):
+    lock = getattr(owner, "_agent_session_lock", None)
+    if isinstance(lock, asyncio.Lock):
+        return lock
+    return nullcontext()
 
 
 def _chat_cycle_isolated(
@@ -215,7 +224,6 @@ class MessagingMixin:
                 self._status_slots["conversation:default"] = "bootstrapping"
                 self._task_slots["conversation:default"] = "Initial bootstrap"
                 _session_token = self.agent._tool_handler.set_active_session_type("chat")
-                self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 conv_memory = ConversationMemory(self.anima_dir, self.model_config)
                 prompt = conv_memory.build_chat_prompt(
@@ -224,7 +232,11 @@ class MessagingMixin:
                 )
 
                 try:
-                    result = await self.agent.run_cycle(prompt, trigger="bootstrap")
+                    async with _agent_session_context(self):
+                        self._get_interrupt_event("default").clear()
+                        self.agent.set_interrupt_event(self._get_interrupt_event("default"))
+                        self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
+                        result = await self.agent.run_cycle(prompt, trigger="bootstrap")
                     self._last_activity = now_local()
 
                     # Safety net: if bootstrap.md still exists after the cycle,
@@ -296,7 +308,6 @@ class MessagingMixin:
                 self._mark_busy_start()
                 # Clear interrupt event for OUR session (after lock acquired)
                 self._get_interrupt_event(thread_id).clear()
-                self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
                 logger.info(
                     "[%s] process_message START (lock acquired) from=%s",
                     self.name,
@@ -311,7 +322,6 @@ class MessagingMixin:
                     from core.tooling.handler_base import meeting_mode
 
                     _meeting_token = meeting_mode.set(True)
-                self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
@@ -375,15 +385,18 @@ class MessagingMixin:
 
                 try:
                     external_chat_recipient = self._resolve_chat_external_recipient(from_person, source)
-                    result = await self.agent.run_cycle(
-                        prompt,
-                        trigger=f"message:{from_person}",
-                        message_intent=intent,
-                        images=images,
-                        prior_messages=prior_messages,
-                        thread_id=thread_id,
-                        model_config_override=base_model_config,
-                    )
+                    async with _agent_session_context(self):
+                        self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
+                        self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
+                        result = await self.agent.run_cycle(
+                            prompt,
+                            trigger=f"message:{from_person}",
+                            message_intent=intent,
+                            images=images,
+                            prior_messages=prior_messages,
+                            thread_id=thread_id,
+                            model_config_override=base_model_config,
+                        )
                     self._last_activity = now_local()
                     result.summary = normalize_user_facing_response_text(result.summary)
 
@@ -584,7 +597,6 @@ class MessagingMixin:
                 self._mark_busy_start()
                 # Clear interrupt event for OUR session (after lock acquired)
                 self._get_interrupt_event(thread_id).clear()
-                self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
                 logger.info(
                     "[%s] process_message_stream START (lock acquired) from=%s",
                     self.name,
@@ -599,7 +611,6 @@ class MessagingMixin:
                     from core.tooling.handler_base import meeting_mode
 
                     _meeting_token = meeting_mode.set(True)
-                self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
@@ -674,8 +685,15 @@ class MessagingMixin:
 
                 partial_response = ""
                 cycle_done = False
+                agent_session_acquired = False
 
                 try:
+                    agent_session_lock = getattr(self, "_agent_session_lock", None)
+                    if isinstance(agent_session_lock, asyncio.Lock):
+                        await agent_session_lock.acquire()
+                        agent_session_acquired = True
+                    self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
+                    self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
                     async for chunk in self.agent.run_cycle_streaming(
                         prompt,
                         trigger=f"message:{from_person}",
@@ -859,6 +877,8 @@ class MessagingMixin:
                         "message": "Internal error",
                     }
                 finally:
+                    if agent_session_acquired:
+                        agent_session_lock.release()
                     if not cycle_done:
                         logger.warning(
                             "[%s] process_message_stream END (cycle_done not received)",
@@ -944,10 +964,14 @@ class MessagingMixin:
             conv_memory.save()
 
             try:
-                result = await self.agent.run_cycle(
-                    prompt,
-                    trigger="greet:user",
-                )
+                async with _agent_session_context(self):
+                    self._get_interrupt_event("default").clear()
+                    self.agent.set_interrupt_event(self._get_interrupt_event("default"))
+                    self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
+                    result = await self.agent.run_cycle(
+                        prompt,
+                        trigger="greet:user",
+                    )
                 self._last_activity = now_local()
 
                 # Extract emotion from response

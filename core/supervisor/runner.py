@@ -81,6 +81,58 @@ class AnimaRunner:
         self._pending_executor: PendingTaskExecutor | None = None
         self._streaming_handler: StreamingIPCHandler | None = None
 
+    @staticmethod
+    def _conversation_contains_recovery(conv_memory: Any, recovered_text: str, saved_text: str) -> bool:
+        """Return True when the recovered assistant text is already stored."""
+        if not recovered_text:
+            return False
+        try:
+            state = conv_memory.load()
+            marker = t("anima.response_interrupted")
+            for turn in getattr(state, "turns", []):
+                if getattr(turn, "role", "") != "assistant":
+                    continue
+                content = getattr(turn, "content", "") or ""
+                if content == saved_text:
+                    return True
+                if recovered_text in content and marker in content:
+                    return True
+        except Exception:
+            logger.debug("Failed to inspect conversation recovery state", exc_info=True)
+        return False
+
+    @staticmethod
+    def _activity_contains_recovery(
+        activity: Any,
+        *,
+        session_type: str,
+        thread_id: str,
+        recovered_chars: int,
+        trigger: str | None,
+        started_at: str | None,
+        last_event_at: str | None,
+    ) -> bool:
+        """Return True when this journal recovery was already logged."""
+        try:
+            for entry in activity.recent(days=14, limit=1000, types=["error"]):
+                meta = getattr(entry, "meta", {}) or {}
+                if meta.get("session_type") != session_type:
+                    continue
+                if meta.get("thread_id") != thread_id:
+                    continue
+                if meta.get("recovered_chars") != recovered_chars:
+                    continue
+                if meta.get("trigger") != trigger:
+                    continue
+                if meta.get("started_at") != started_at:
+                    continue
+                if meta.get("last_event_at") != last_event_at:
+                    continue
+                return True
+        except Exception:
+            logger.debug("Failed to inspect activity recovery state", exc_info=True)
+        return False
+
     def _acquire_process_lock(self) -> None:
         """Acquire an exclusive flock to prevent duplicate processes.
 
@@ -284,8 +336,16 @@ class AnimaRunner:
                             thread_id=thread_id,
                         )
                         saved_text = recovery.recovered_text + "\n" + t("anima.response_interrupted")
-                        conv_memory.append_turn("assistant", saved_text)
-                        conv_memory.save()
+                        if self._conversation_contains_recovery(conv_memory, recovery.recovered_text, saved_text):
+                            logger.info(
+                                "Streaming journal recovery already present in conversation memory for %s [%s] thread=%s",
+                                self.anima_name,
+                                session_type,
+                                thread_id,
+                            )
+                        else:
+                            conv_memory.append_turn("assistant", saved_text)
+                            conv_memory.save()
                         StreamingJournal.confirm_recovery(self._anima_dir, session_type, thread_id=thread_id)
                         logger.info(
                             "Recovered %d chars into conversation memory for %s [%s] thread=%s",
@@ -327,10 +387,20 @@ class AnimaRunner:
                         )
 
                 # Record crash event in activity log
+                recovery_already_logged = False
                 try:
                     from core.memory.activity import ActivityLogger
 
                     activity = ActivityLogger(self._anima_dir)
+                    recovery_already_logged = self._activity_contains_recovery(
+                        activity,
+                        session_type=session_type,
+                        thread_id=thread_id,
+                        recovered_chars=len(recovery.recovered_text),
+                        trigger=recovery.trigger,
+                        started_at=recovery.started_at,
+                        last_event_at=recovery.last_event_at,
+                    )
                     recovery_summary = t(
                         "runner.recovery_text",
                         session_type=session_type,
@@ -338,21 +408,29 @@ class AnimaRunner:
                     recovery_content = recovery_summary
                     if recovery.recovered_text:
                         recovery_content = f"{recovery.recovered_text}\n\n{recovery_summary}"
-                    activity.log(
-                        "error",
-                        content=recovery_content,
-                        summary=recovery_summary,
-                        meta={
-                            "recovered_chars": len(recovery.recovered_text),
-                            "trigger": recovery.trigger,
-                            "tool_calls": len(recovery.tool_calls),
-                            "from_person": recovery.from_person,
-                            "started_at": recovery.started_at,
-                            "last_event_at": recovery.last_event_at,
-                            "session_type": session_type,
-                            "thread_id": thread_id,
-                        },
-                    )
+                    if recovery_already_logged:
+                        logger.info(
+                            "Streaming journal recovery activity already logged for %s [%s] thread=%s",
+                            self.anima_name,
+                            session_type,
+                            thread_id,
+                        )
+                    else:
+                        activity.log(
+                            "error",
+                            content=recovery_content,
+                            summary=recovery_summary,
+                            meta={
+                                "recovered_chars": len(recovery.recovered_text),
+                                "trigger": recovery.trigger,
+                                "tool_calls": len(recovery.tool_calls),
+                                "from_person": recovery.from_person,
+                                "started_at": recovery.started_at,
+                                "last_event_at": recovery.last_event_at,
+                                "session_type": session_type,
+                                "thread_id": thread_id,
+                            },
+                        )
                 except Exception:
                     logger.debug(
                         "Failed to log crash recovery to activity log: %s [%s] thread=%s",
@@ -363,7 +441,7 @@ class AnimaRunner:
                     )
 
                 # Record tool_use events in activity log
-                if recovery.tool_calls:
+                if recovery.tool_calls and not recovery_already_logged:
                     try:
                         from core.memory.activity import ActivityLogger as _AL
 

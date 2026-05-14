@@ -110,6 +110,10 @@ class DigitalAnima(
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self._inbox_lock = asyncio.Lock()
         self._background_lock = asyncio.Lock()
+        # Shared AgentCore mutable state (interrupt event, session origin,
+        # temporary model swaps) must be prepared and used by only one
+        # DigitalAnima session at a time.
+        self._agent_session_lock = asyncio.Lock()
         self._cron_idle = asyncio.Event()
         self._cron_idle.set()  # initially idle (no cron running)
         self._state_file_lock = threading.Lock()  # protects current_state.md / pending.md
