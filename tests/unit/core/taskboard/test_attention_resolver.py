@@ -101,6 +101,34 @@ def test_snooze_elapsed_becomes_visible_and_active(tmp_path: Path) -> None:
     assert store.get_metadata("sakura", "task123456").visibility == AttentionVisibility.ACTIVE
 
 
+def test_should_execute_runtime_decisions(tmp_path: Path) -> None:
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    resolver = AttentionResolver(store)
+
+    store.upsert_metadata(anima_name="sakura", task_id="archived1234", visibility="archived")
+    assert resolver.should_execute("sakura", "archived1234", queue_status="pending", now=NOW).executable is False
+    assert resolver.should_execute("sakura", "archived1234", queue_status="pending", now=NOW).reason == "archived"
+
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id="snoozed1234",
+        visibility="snoozed",
+        snoozed_until=(NOW + timedelta(hours=1)).isoformat(),
+    )
+    assert resolver.should_execute("sakura", "snoozed1234", queue_status="pending", now=NOW).reason == "snoozed"
+
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id="elapsed1234",
+        visibility="snoozed",
+        snoozed_until=(NOW - timedelta(minutes=1)).isoformat(),
+    )
+    assert resolver.should_execute("sakura", "elapsed1234", queue_status="pending", now=NOW).executable is True
+    assert store.get_metadata("sakura", "elapsed1234").visibility == AttentionVisibility.ACTIVE
+
+    assert resolver.should_execute("sakura", "done1234", queue_status="done", now=NOW).reason == "terminal"
+
+
 def test_terminal_and_missing_tasks_are_hidden() -> None:
     resolver = AttentionResolver()
 

@@ -76,6 +76,31 @@ def test_update_status_failed_is_valid(tmp_path: Path) -> None:
     assert result.task_id == entry.task_id
 
 
+def test_update_meta_is_durable_and_preserves_status(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True, exist_ok=True)
+    tqm = TaskQueueManager(anima_dir)
+    entry = tqm.add_task(
+        source="human",
+        original_instruction="retry task",
+        assignee="anima",
+        summary="retry task",
+        meta={"task_desc": {"title": "retry"}},
+    )
+
+    updated = tqm.update_meta(entry.task_id, {"retry_count": 2})
+
+    assert updated is not None
+    assert updated.status == "pending"
+    assert updated.meta["task_desc"] == {"title": "retry"}
+    assert updated.meta["retry_count"] == 2
+
+    reloaded = TaskQueueManager(anima_dir).get_task_by_id(entry.task_id)
+    assert reloaded is not None
+    assert reloaded.status == "pending"
+    assert reloaded.meta["retry_count"] == 2
+
+
 # ── Test 3: _TERMINAL_STATUSES and compact() ────────────────────────────
 
 

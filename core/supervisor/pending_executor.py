@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Any
 
 from core.exceptions import ToolExecutionError
 from core.i18n import t
+from core.taskboard.attention_resolver import resolver_for_anima_dir
+from core.taskboard.models import AttentionDecision
 
 if TYPE_CHECKING:
     from core.anima import DigitalAnima
@@ -38,6 +40,10 @@ _TASK_RESULT_MAX_CHARS = 2000
 
 _SENTINEL_CANCELLED = "(cancelled)"
 _SENTINEL_EXPIRED = "(expired)"
+
+_QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
+_QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
+_TASKBOARD_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
 
 
 def _detect_task_auth_failure(result: str) -> str | None:
@@ -126,6 +132,12 @@ def _deps_satisfied(
     return True
 
 
+def _dependency_failure_reason(task: dict[str, Any], attention_suppressed: set[str]) -> str:
+    if any(dep in attention_suppressed for dep in task.get("depends_on", [])):
+        return "dependency_suppressed"
+    return "failed_dependency"
+
+
 class PendingTaskExecutor:
     """Watch pending/ directory and execute submitted tasks."""
 
@@ -201,6 +213,9 @@ class PendingTaskExecutor:
             from core.memory.task_queue import TaskQueueManager
 
             manager = TaskQueueManager(self._anima_dir)
+            entry = manager.get_task_by_id(task_id)
+            if entry and status == "cancelled" and entry.status in _QUEUE_TERMINAL_STATUSES:
+                return
             manager.update_status(task_id, status, summary=summary)
         except Exception:
             logger.warning(
@@ -210,6 +225,195 @@ class PendingTaskExecutor:
                 status,
                 exc_info=True,
             )
+
+    def _get_task_queue_entry(self, task_id: str) -> Any | None:
+        if not task_id:
+            return None
+        try:
+            from core.memory.task_queue import TaskQueueManager
+
+            return TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
+        except Exception:
+            logger.debug(
+                "Could not check task_queue for task: %s",
+                task_id,
+                exc_info=True,
+            )
+            return None
+
+    def _pending_json_age_hours(
+        self,
+        task_desc: dict[str, Any],
+        source_path: Path | None,
+        now_utc: datetime,
+    ) -> float | None:
+        submitted_at = task_desc.get("submitted_at")
+        if submitted_at:
+            try:
+                submitted = datetime.fromisoformat(str(submitted_at))
+                if submitted.tzinfo is None:
+                    submitted = submitted.replace(tzinfo=UTC)
+                return (now_utc - submitted.astimezone(UTC)).total_seconds() / 3600
+            except (ValueError, TypeError):
+                pass
+
+        if source_path is not None:
+            try:
+                modified_at = datetime.fromtimestamp(source_path.stat().st_mtime, tz=UTC)
+                return (now_utc - modified_at).total_seconds() / 3600
+            except OSError:
+                return None
+        return None
+
+    def _attention_decision_for_task_desc(
+        self,
+        task_desc: dict[str, Any],
+        *,
+        source_path: Path | None = None,
+        now: datetime | None = None,
+    ) -> AttentionDecision:
+        task_id = task_desc.get("task_id", "")
+        if not task_id:
+            return AttentionDecision(reason="active")
+
+        entry = self._get_task_queue_entry(task_id)
+        queue_status = entry.status if entry is not None else None
+        try:
+            decision = resolver_for_anima_dir(self._anima_dir).should_execute(
+                self._anima_name,
+                task_id,
+                queue_status=queue_status,
+                now=now,
+            )
+        except Exception:
+            logger.warning(
+                "[%s] TaskBoard execution gate unavailable for task %s; failing open",
+                self._anima_name,
+                task_id,
+                exc_info=True,
+            )
+            if queue_status in _QUEUE_TERMINAL_STATUSES:
+                return AttentionDecision(
+                    visible_in_prompt=False, executable=False, notify_allowed=False, reason="terminal"
+                )
+            return AttentionDecision(reason="active")
+
+        if decision.executable and entry is None:
+            resolved_now = (now or datetime.now(UTC)).astimezone(UTC)
+            age_hours = self._pending_json_age_hours(task_desc, source_path, resolved_now)
+            if age_hours is not None and age_hours > _LLM_TASK_TTL_HOURS:
+                return AttentionDecision(
+                    visible_in_prompt=False,
+                    executable=False,
+                    notify_allowed=False,
+                    reason="queue_missing_stale",
+                )
+
+        return decision
+
+    def _cancel_queue_for_attention(self, task_id: str, reason: str) -> None:
+        if reason not in _TASKBOARD_QUEUE_CANCEL_REASONS:
+            return
+        entry = self._get_task_queue_entry(task_id)
+        if entry and entry.status in _QUEUE_ACTIVE_STATUSES:
+            self._sync_task_queue(task_id, "cancelled", summary=f"{reason} by TaskBoard")
+
+    def _move_attention_gated_file(
+        self,
+        path: Path,
+        target_dir: Path,
+        failed_dir: Path,
+        *,
+        task_id: str,
+        reason: str,
+    ) -> bool:
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / path.name
+            if target.exists():
+                target.unlink()
+            path.rename(target)
+            logger.info(
+                "[%s] Moved attention-gated pending task %s to %s (reason=%s)",
+                self._anima_name,
+                task_id,
+                target_dir.name,
+                reason,
+            )
+            return True
+        except OSError:
+            logger.exception(
+                "[%s] Failed to move attention-gated task %s to %s",
+                self._anima_name,
+                task_id,
+                target_dir,
+            )
+            try:
+                failed_dir.mkdir(parents=True, exist_ok=True)
+                failed = failed_dir / path.name
+                if failed.exists():
+                    failed.unlink()
+                path.rename(failed)
+            except OSError:
+                logger.exception(
+                    "[%s] Failed to move attention-gated task %s to failed/",
+                    self._anima_name,
+                    task_id,
+                )
+            self._sync_task_queue(task_id, "failed", summary="FAILED: attention_move_failed")
+            return False
+
+    def _handle_llm_attention_gate(
+        self,
+        path: Path,
+        task_desc: dict[str, Any],
+        *,
+        deferred_dir: Path,
+        suppressed_dir: Path,
+        failed_dir: Path,
+    ) -> bool:
+        task_id = task_desc.get("task_id", "")
+        decision = self._attention_decision_for_task_desc(task_desc, source_path=path)
+        if decision.executable:
+            return True
+
+        task_desc["_attention_suppressed_reason"] = decision.reason
+        if decision.reason == "snoozed":
+            self._move_attention_gated_file(path, deferred_dir, failed_dir, task_id=task_id, reason=decision.reason)
+            return False
+
+        self._cancel_queue_for_attention(task_id, decision.reason)
+        self._move_attention_gated_file(path, suppressed_dir, failed_dir, task_id=task_id, reason=decision.reason)
+        return False
+
+    def _restore_deferred_tasks(
+        self,
+        deferred_dir: Path,
+        pending_dir: Path,
+        suppressed_dir: Path,
+        failed_dir: Path,
+    ) -> None:
+        for path in sorted(deferred_dir.glob("*.json")):
+            try:
+                task_desc = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                logger.warning("Invalid JSON in deferred LLM task file: %s", path.name)
+                self._move_attention_gated_file(path, failed_dir, failed_dir, task_id=path.stem, reason="invalid_json")
+                continue
+
+            task_id = task_desc.get("task_id", path.stem)
+            decision = self._attention_decision_for_task_desc(task_desc, source_path=path)
+            if decision.executable:
+                self._move_attention_gated_file(path, pending_dir, failed_dir, task_id=task_id, reason="snooze_elapsed")
+            elif decision.reason != "snoozed":
+                self._cancel_queue_for_attention(task_id, decision.reason)
+                self._move_attention_gated_file(
+                    path,
+                    suppressed_dir,
+                    failed_dir,
+                    task_id=task_id,
+                    reason=decision.reason,
+                )
 
     # ── Watcher loop ─────────────────────────────────────────
 
@@ -248,6 +452,10 @@ class PendingTaskExecutor:
         llm_processing_dir.mkdir(exist_ok=True)
         llm_failed_dir = llm_pending_dir / "failed"
         llm_failed_dir.mkdir(exist_ok=True)
+        llm_deferred_dir = llm_pending_dir / "deferred"
+        llm_deferred_dir.mkdir(exist_ok=True)
+        llm_suppressed_dir = llm_pending_dir / "suppressed"
+        llm_suppressed_dir.mkdir(exist_ok=True)
 
         self._recover_processing(cmd_processing_dir, cmd_failed_dir)
         self._recover_processing(llm_processing_dir, llm_failed_dir)
@@ -302,6 +510,13 @@ class PendingTaskExecutor:
                             )
 
                 # Scan LLM pending tasks — group batch tasks, execute serial ones
+                self._restore_deferred_tasks(
+                    llm_deferred_dir,
+                    llm_pending_dir,
+                    llm_suppressed_dir,
+                    llm_failed_dir,
+                )
+
                 for path in sorted(llm_pending_dir.glob("*.json")):
                     try:
                         task_desc = json.loads(path.read_text(encoding="utf-8"))
@@ -311,6 +526,15 @@ class PendingTaskExecutor:
                             path.name,
                         )
                         path.unlink(missing_ok=True)
+                        continue
+
+                    if not self._handle_llm_attention_gate(
+                        path,
+                        task_desc,
+                        deferred_dir=llm_deferred_dir,
+                        suppressed_dir=llm_suppressed_dir,
+                        failed_dir=llm_failed_dir,
+                    ):
                         continue
 
                     try:
@@ -335,31 +559,6 @@ class PendingTaskExecutor:
                             )
                         else:
                             task_id = task_desc.get("task_id", "")
-                            # Skip if task was cancelled in task_queue
-                            try:
-                                from core.memory.task_queue import TaskQueueManager
-
-                                entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
-                                if entry and entry.status == "cancelled":
-                                    logger.info(
-                                        "[%s] Skipping cancelled LLM task: id=%s",
-                                        self._anima_name,
-                                        task_id,
-                                    )
-                                    try:
-                                        processing_path.rename(llm_failed_dir / path.name)
-                                    except OSError:
-                                        logger.exception(
-                                            "Failed to move cancelled task to failed: %s",
-                                            path.name,
-                                        )
-                                    continue
-                            except Exception:
-                                logger.debug(
-                                    "Could not check task_queue for cancellation: %s",
-                                    task_id,
-                                    exc_info=True,
-                                )
                             logger.info(
                                 "Picked up LLM pending task: id=%s anima=%s",
                                 task_id,
@@ -439,15 +638,34 @@ class PendingTaskExecutor:
 
         completed: dict[str, str] = {}  # task_id -> result_summary
         failed: set[str] = set()
+        attention_suppressed: set[str] = set()
         remaining = list(order)
+
+        for td in list(remaining):
+            decision = self._attention_decision_for_task_desc(td)
+            if decision.executable:
+                continue
+            task_id = td["task_id"]
+            remaining.remove(td)
+            failed.add(task_id)
+            attention_suppressed.add(task_id)
+            self._cancel_queue_for_attention(task_id, decision.reason)
+            self._save_task_result(task_id, _SENTINEL_CANCELLED)
+            logger.info(
+                "[%s] Suppressed batch task before dispatch: id=%s reason=%s",
+                self._anima_name,
+                task_id,
+                decision.reason,
+            )
 
         while remaining:
             ready = [td for td in remaining if _deps_satisfied(td, completed, failed)]
             if not ready:
                 for td in remaining:
+                    reason = _dependency_failure_reason(td, attention_suppressed)
                     failed.add(td["task_id"])
-                    self._write_failed_result(td["task_id"], "failed_dependency")
-                    self._sync_task_queue(td["task_id"], "failed", summary="FAILED: failed_dependency")
+                    self._write_failed_result(td["task_id"], reason)
+                    self._sync_task_queue(td["task_id"], "failed", summary=f"FAILED: {reason}")
                 break
 
             parallel_ready = [td for td in ready if td.get("parallel")]
@@ -456,11 +674,12 @@ class PendingTaskExecutor:
             # Skip parallel tasks whose dependencies have failed (mirror of serial check at 461)
             for td in list(parallel_ready):
                 if any(dep in failed for dep in td.get("depends_on", [])):
+                    reason = _dependency_failure_reason(td, attention_suppressed)
                     parallel_ready.remove(td)
                     remaining.remove(td)
                     failed.add(td["task_id"])
-                    self._write_failed_result(td["task_id"], "failed_dependency")
-                    self._sync_task_queue(td["task_id"], "failed", summary="FAILED: failed_dependency")
+                    self._write_failed_result(td["task_id"], reason)
+                    self._sync_task_queue(td["task_id"], "failed", summary=f"FAILED: {reason}")
 
             # Execute parallel tasks concurrently under semaphore
             if parallel_ready:
@@ -516,6 +735,9 @@ class PendingTaskExecutor:
                                             )
                             except Exception:
                                 logger.warning("[%s] Failed to build batch failure notification", self._anima_name)
+                    elif task.get("_attention_suppressed_reason"):
+                        failed.add(task["task_id"])
+                        attention_suppressed.add(task["task_id"])
                     else:
                         completed[task["task_id"]] = result or ""
 
@@ -523,9 +745,10 @@ class PendingTaskExecutor:
             for task in serial_ready:
                 remaining.remove(task)
                 if any(dep in failed for dep in task.get("depends_on", [])):
+                    reason = _dependency_failure_reason(task, attention_suppressed)
                     failed.add(task["task_id"])
-                    self._write_failed_result(task["task_id"], "failed_dependency")
-                    self._sync_task_queue(task["task_id"], "failed", summary="FAILED: failed_dependency")
+                    self._write_failed_result(task["task_id"], reason)
+                    self._sync_task_queue(task["task_id"], "failed", summary=f"FAILED: {reason}")
                     continue
                 try:
                     result = await self._execute_serial_batch_task(
@@ -533,7 +756,11 @@ class PendingTaskExecutor:
                         completed,
                         batch_id,
                     )
-                    completed[task["task_id"]] = result or ""
+                    if task.get("_attention_suppressed_reason"):
+                        failed.add(task["task_id"])
+                        attention_suppressed.add(task["task_id"])
+                    else:
+                        completed[task["task_id"]] = result or ""
                 except Exception as exc:
                     logger.error(
                         "[%s] Serial batch task %s failed: %s",
@@ -678,6 +905,18 @@ class PendingTaskExecutor:
                 task_id,
                 exc_info=True,
             )
+
+        decision = self._attention_decision_for_task_desc(task_desc)
+        if not decision.executable:
+            task_desc["_attention_suppressed_reason"] = decision.reason
+            self._cancel_queue_for_attention(task_id, decision.reason)
+            logger.info(
+                "[%s] Skipping non-executable LLM task: id=%s reason=%s",
+                self._anima_name,
+                task_id,
+                decision.reason,
+            )
+            return _SENTINEL_CANCELLED
 
         # TTL check
         if submitted_at:

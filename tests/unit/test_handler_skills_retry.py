@@ -26,7 +26,7 @@ class TestRegeneratePendingJsonGuard:
         h._anima_name = "test"
         h._pending_executor_wake = None
         (h._anima_dir / "state" / "pending").mkdir(parents=True)
-        (h._anima_dir / "state" / "processing").mkdir(parents=True)
+        (h._anima_dir / "state" / "pending" / "processing").mkdir(parents=True)
         return h
 
     def test_skip_when_pending_exists(self, handler):
@@ -40,7 +40,7 @@ class TestRegeneratePendingJsonGuard:
 
     def test_skip_when_processing_exists(self, handler):
         entry = FakeTaskEntry("task-002", meta={"task_desc": {"title": "t"}})
-        processing = handler._anima_dir / "state" / "processing" / "task-002.json"
+        processing = handler._anima_dir / "state" / "pending" / "processing" / "task-002.json"
         processing.write_text("{}")
 
         handler._regenerate_pending_json(entry)

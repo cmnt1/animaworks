@@ -19,6 +19,7 @@ FAILED_REVIEW_WINDOW = timedelta(days=7)
 PROMPT_REINJECTION_WINDOW = timedelta(hours=24)
 
 _TERMINAL_STATUSES = {"done", "cancelled"}
+_EXECUTION_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
 _SUPPRESSED_VISIBILITIES = {
     AttentionVisibility.EXPIRED,
     AttentionVisibility.ARCHIVED,
@@ -84,6 +85,41 @@ class AttentionResolver:
             for task in board_tasks
             if task.anima_name == anima_name and self.resolve_task(task, resolved_now).visible_in_prompt
         ]
+
+    def should_execute(
+        self,
+        anima_name: str,
+        task_id: str,
+        *,
+        queue_status: str | None = None,
+        now: datetime | None = None,
+    ) -> AttentionDecision:
+        """Return whether a runtime task may execute or be regenerated."""
+        resolved_now = _normalize_now(now)
+        metadata = self._get_metadata(anima_name, task_id)
+
+        if metadata is not None:
+            if self._is_expired(metadata.expires_at, resolved_now):
+                self._record_visibility(anima_name, task_id, AttentionVisibility.EXPIRED)
+                return _hidden("expired")
+
+            if metadata.visibility == AttentionVisibility.SNOOZED:
+                snoozed_until = _parse_datetime(metadata.snoozed_until)
+                if snoozed_until is None:
+                    logger.warning("Invalid snoozed_until for metadata %s/%s", anima_name, task_id)
+                elif snoozed_until > resolved_now:
+                    return _hidden("snoozed")
+                else:
+                    self._record_visibility(anima_name, task_id, AttentionVisibility.ACTIVE)
+                    return _visible("active")
+
+            if metadata.visibility in _SUPPRESSED_VISIBILITIES:
+                return _hidden(metadata.visibility.value)
+
+        if queue_status in _EXECUTION_TERMINAL_STATUSES:
+            return _hidden("terminal")
+
+        return _visible("active")
 
     def should_show_task_result(
         self,

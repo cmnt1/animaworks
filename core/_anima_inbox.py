@@ -53,6 +53,8 @@ _THREAD_CTX_BUDGET = 300
 _MSG_BODY_BUDGET = 2000
 _MAX_INBOX_RETRIES = 3
 _INBOX_THREAD_ID = "inbox"
+_RESCUE_QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
+_RESCUE_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
 
 
 def _truncate_with_thread_ctx(
@@ -248,6 +250,39 @@ def _check_task_state(anima_dir: Path, task_id: str) -> str:
     return "missing"
 
 
+def _rescue_attention_decision(anima_dir: Path, task_id: str):
+    """Return TaskBoard execution decision for delegation rescue."""
+    try:
+        from core.memory.task_queue import TaskQueueManager
+        from core.taskboard.attention_resolver import resolver_for_anima_dir
+
+        entry = TaskQueueManager(anima_dir).get_task_by_id(task_id)
+        return resolver_for_anima_dir(anima_dir).should_execute(
+            anima_dir.name,
+            task_id,
+            queue_status=entry.status if entry is not None else None,
+        )
+    except Exception:
+        logger.warning("TaskBoard delegation rescue gate unavailable for %s; failing open", task_id, exc_info=True)
+        from core.taskboard.models import AttentionDecision
+
+        return AttentionDecision(reason="active")
+
+
+def _cancel_rescued_queue_task(anima_dir: Path, task_id: str, reason: str) -> None:
+    if reason not in _RESCUE_QUEUE_CANCEL_REASONS:
+        return
+    try:
+        from core.memory.task_queue import TaskQueueManager
+
+        tqm = TaskQueueManager(anima_dir)
+        entry = tqm.get_task_by_id(task_id)
+        if entry and entry.status in _RESCUE_QUEUE_ACTIVE_STATUSES:
+            tqm.update_status(task_id, "cancelled", summary=f"{reason} by TaskBoard")
+    except Exception:
+        logger.debug("Failed to cancel suppressed rescued task %s", task_id, exc_info=True)
+
+
 def _rescue_regenerate_pending(anima_dir: Path, task_id: str, msg: Any) -> None:
     """Rescue: regenerate pending file from delegation DM content for TaskExec pickup."""
     pending_dir = anima_dir / "state" / "pending"
@@ -266,6 +301,16 @@ def _rescue_regenerate_pending(anima_dir: Path, task_id: str, msg: Any) -> None:
     except Exception:
         logger.debug("Failed to retrieve original instruction for task %s", task_id, exc_info=True)
 
+    decision = _rescue_attention_decision(anima_dir, task_id)
+    if not decision.executable and decision.reason != "snoozed":
+        _cancel_rescued_queue_task(anima_dir, task_id, decision.reason)
+        logger.info(
+            "Rescue: suppressed pending regeneration for task %s (reason=%s)",
+            task_id,
+            decision.reason,
+        )
+        return
+
     task_desc = {
         "task_type": "llm",
         "task_id": task_id,
@@ -280,13 +325,17 @@ def _rescue_regenerate_pending(anima_dir: Path, task_id: str, msg: Any) -> None:
         "reply_to": getattr(msg, "from_person", ""),
         "source": "delegation_rescue",
     }
-    path = pending_dir / f"{task_id}.json"
+
+    target_dir = pending_dir / "deferred" if decision.reason == "snoozed" else pending_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / f"{task_id}.json"
     path.write_text(
         json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     logger.info(
-        "Rescue: regenerated pending file for task %s from delegation DM",
+        "Rescue: regenerated %s file for task %s from delegation DM",
+        target_dir.name,
         task_id,
     )
 
