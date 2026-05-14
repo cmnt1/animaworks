@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
+import shutil
+import subprocess
+import textwrap
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from core.memory.task_queue import TaskQueueManager
@@ -13,7 +18,7 @@ from core.taskboard.store import TaskBoardStore
 pytestmark = pytest.mark.e2e
 
 
-def _create_app(tmp_path: Path, anima_names: list[str]):
+def _create_app(tmp_path: Path, anima_names: list[str], *, base_path: str = ""):
     animas_dir = tmp_path / "animas"
     shared_dir = tmp_path / "shared"
     for name in anima_names:
@@ -30,7 +35,7 @@ def _create_app(tmp_path: Path, anima_names: list[str]):
     ):
         cfg = MagicMock()
         cfg.setup_complete = True
-        cfg.server.base_path = ""
+        cfg.server.base_path = base_path
         mock_cfg.return_value = cfg
 
         auth_cfg = MagicMock()
@@ -44,8 +49,13 @@ def _create_app(tmp_path: Path, anima_names: list[str]):
         supervisor.scheduler = None
         mock_sup_cls.return_value = supervisor
 
+        async def _accept_ws(ws):
+            await ws.accept()
+
         ws_manager = MagicMock()
         ws_manager.active_connections = []
+        ws_manager.connect = AsyncMock(side_effect=_accept_ws)
+        ws_manager.handle_client_message = AsyncMock()
         mock_ws_cls.return_value = ws_manager
 
         from server.app import create_app
@@ -118,6 +128,8 @@ async def test_taskboard_route_static_assets_and_api_smoke(tmp_path: Path) -> No
     assert 'reasonRequired: action === "expire" || action === "tombstone"' in page_resp.text
     assert 'setCustomValidity(t("taskboard.reason_required"))' in page_resp.text
     assert 'confirmRequired: action === "tombstone"' in page_resp.text
+    assert "const hasVisibleTask = (column)" in page_resp.text
+    assert "COLUMNS.find(hasVisibleTask)" in page_resp.text
     assert "taskboard.mark_done" not in page_resp.text
     assert "/api/channels" not in page_resp.text
     assert "../pages/board" not in page_resp.text
@@ -134,6 +146,152 @@ async def test_taskboard_route_static_assets_and_api_smoke(tmp_path: Path) -> No
     assert board_resp.status_code == 200
     task_ids = {task["task_id"] for task in board_resp.json()["tasks"]}
     assert {"task-ui", "task-action"} <= task_ids
+
+
+def test_taskboard_mobile_active_column_logic_uses_visible_tasks(tmp_path: Path) -> None:
+    if shutil.which("node") is None:
+        pytest.skip("node not available")
+
+    source = (Path(__file__).parents[2] / "server/static/pages/task-board.js").read_text(encoding="utf-8")
+    module_body = source[source.index("const REFRESH_MS") :]
+    module_body = module_body.replace("export async function render", "async function render")
+    module_body = module_body.replace("export function destroy", "function destroy")
+    script = tmp_path / "taskboard-active-column.mjs"
+    script.write_text(
+        textwrap.dedent(
+            f"""
+            import assert from "node:assert/strict";
+            const COLUMNS = ["todo", "running", "blocked", "waiting", "review", "done", "suppressed"];
+            const SUPPRESSED_VISIBILITIES = new Set(["expired", "archived", "tombstoned"]);
+            const api = async () => ({{}});
+            const escapeAttr = (value) => String(value);
+            const escapeHtml = (value) => String(value);
+            const t = (key) => key;
+            const ageText = () => "";
+            const deadlineText = () => "";
+            const defaultLocalDateTime = () => "";
+            const isOverdue = () => false;
+            const shortId = (value) => value;
+            const statusClassSuffix = (value) => value || "";
+            const taskKey = (task) => `${{task.anima_name || ""}}:${{task.task_id || ""}}`;
+            const visibilityLabel = (value) => value || "";
+            const visibilityPayload = (value) => value;
+            globalThis.document = {{ visibilityState: "visible" }};
+            globalThis.window = {{}};
+            {module_body}
+            function choose(active, tasks) {{
+              _activeColumn = active;
+              _tasks = tasks;
+              _ensureActiveColumnHasView();
+              return _activeColumn;
+            }}
+            assert.equal(choose("todo", [{{ column: "running" }}]), "running");
+            assert.equal(choose("running", [{{ column: "running" }}]), "running");
+            assert.equal(choose("not-a-column", [{{ column: "review" }}]), "review");
+            assert.equal(choose("waiting", []), "todo");
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(["node", str(script)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+
+
+async def test_taskboard_base_path_serves_direct_prefixed_routes(tmp_path: Path) -> None:
+    app = _create_app(tmp_path, ["alice", "bob"], base_path="/app")
+    _seed_taskboard(app)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        exact_index_resp = await client.get("/app")
+        index_resp = await client.get("/app/")
+        api_resp = await client.get("/app/api/task-board", params={"include_missing": "true"})
+        workspace_resp = await client.get("/app/workspace/")
+        workspace_ws_resp = await client.get("/app/workspace/modules/websocket.js")
+        non_matching_resp = await client.get("/application")
+
+        version_match = re.search(r"/app/_v/([^/]+)/modules/app\.js", index_resp.text)
+        assert version_match is not None
+        version = version_match.group(1)
+        app_js_resp = await client.get(f"/app/_v/{version}/modules/app.js")
+        base_path_js_resp = await client.get(f"/app/_v/{version}/shared/base-path.js")
+
+    assert index_resp.status_code == 200
+    assert exact_index_resp.status_code == 200
+    assert 'content="/app"' in index_resp.text
+    assert "/app/_v/" in index_resp.text
+
+    assert app_js_resp.status_code == 200
+    assert base_path_js_resp.status_code == 200
+    assert api_resp.status_code == 200
+    assert {"task-ui", "task-action"} <= {task["task_id"] for task in api_resp.json()["tasks"]}
+
+    assert workspace_resp.status_code == 200
+    assert 'content="/app"' in workspace_resp.text
+    assert workspace_ws_resp.status_code == 200
+    assert 'import { basePath } from "/shared/base-path.js";' in workspace_ws_resp.text
+    assert "${basePath}/ws" in workspace_ws_resp.text
+
+    assert non_matching_resp.status_code == 404
+
+
+def test_taskboard_base_path_routes_installed_websocket(tmp_path: Path) -> None:
+    app = _create_app(tmp_path, ["alice"], base_path="/app")
+    client = TestClient(app)
+    auth_cfg = MagicMock(auth_mode="local_trust")
+
+    with patch("server.routes.websocket_route.load_auth", return_value=auth_cfg):
+        with client.websocket_connect("/app/ws") as ws:
+            ws.send_text('{"type":"ping"}')
+
+    app.state.ws_manager.connect.assert_awaited_once()
+    app.state.ws_manager.handle_client_message.assert_awaited_once()
+    assert app.state.ws_manager.handle_client_message.await_args.args[1] == '{"type":"ping"}'
+
+
+async def test_taskboard_base_path_strips_websocket_scope() -> None:
+    from server.app import BasePathMiddleware
+
+    captured_scope = {}
+    sent_messages = []
+
+    async def downstream(scope, receive, send):  # type: ignore[no-untyped-def]
+        captured_scope.update(scope)
+        await send({"type": "websocket.close", "code": 1000})
+
+    async def receive():  # type: ignore[no-untyped-def]
+        return {"type": "websocket.connect"}
+
+    async def send(message):  # type: ignore[no-untyped-def]
+        sent_messages.append(message)
+
+    middleware = BasePathMiddleware(downstream, base_path="/app")
+    await middleware(
+        {"type": "websocket", "path": "/app/ws", "raw_path": b"/app/ws", "root_path": ""},
+        receive,
+        send,
+    )
+
+    assert captured_scope["path"] == "/ws"
+    assert captured_scope["raw_path"] == b"/ws"
+    assert captured_scope.get("root_path", "") == ""
+    assert captured_scope["app_root_path"] == "/app"
+    assert sent_messages == [{"type": "websocket.close", "code": 1000}]
+
+    captured_scope.clear()
+    await middleware(
+        {
+            "type": "websocket",
+            "path": "/app/ws/voice/alice",
+            "raw_path": b"/app/ws/voice/alice",
+            "root_path": "",
+        },
+        receive,
+        send,
+    )
+    assert captured_scope["path"] == "/ws/voice/alice"
+    assert captured_scope["raw_path"] == b"/ws/voice/alice"
 
 
 async def test_taskboard_ui_actions_do_not_modify_board_channels(tmp_path: Path) -> None:
