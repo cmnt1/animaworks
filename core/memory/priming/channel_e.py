@@ -17,6 +17,7 @@ from pathlib import Path
 
 from core.i18n import t
 from core.memory.priming.constants import _BUDGET_PENDING_TASKS
+from core.paths import get_animas_dir
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.priming")
@@ -73,7 +74,8 @@ async def channel_e_pending_tasks(
             include_archived=True,
         )
         visible_tasks = resolver.filter_for_priming(anima_dir.name, board_tasks, now_local())
-        queue_summary = format_tasks_for_priming(visible_tasks, _BUDGET_PENDING_TASKS)
+        animas_dir = anima_dir.parent if anima_dir.parent.name == "animas" else get_animas_dir()
+        queue_summary = format_tasks_for_priming(visible_tasks, _BUDGET_PENDING_TASKS, animas_dir=animas_dir)
         if queue_summary:
             parts.append(queue_summary)
     except Exception:

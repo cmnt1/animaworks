@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -9,7 +10,7 @@ import pytest
 from core.memory.priming import PrimingEngine
 from core.memory.task_queue import TaskQueueManager
 from core.taskboard.store import TaskBoardStore
-from core.time_utils import now_local
+from core.time_utils import now_iso, now_local
 
 
 @pytest.fixture
@@ -20,6 +21,33 @@ def attention_env(tmp_path: Path) -> tuple[Path, TaskBoardStore]:
         (anima_dir / subdir).mkdir(parents=True, exist_ok=True)
     store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
     return anima_dir, store
+
+
+def _append_task_entry(
+    anima_dir: Path,
+    *,
+    task_id: str,
+    summary: str,
+    updated_at: str,
+    deadline: str | None = None,
+    source: str = "human",
+) -> None:
+    queue_path = anima_dir / "state" / "task_queue.jsonl"
+    entry = {
+        "task_id": task_id,
+        "ts": updated_at,
+        "source": source,
+        "original_instruction": summary,
+        "assignee": anima_dir.name,
+        "status": "pending",
+        "summary": summary,
+        "deadline": deadline,
+        "relay_chain": [],
+        "updated_at": updated_at,
+        "meta": {},
+    }
+    with queue_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 @pytest.mark.asyncio
@@ -89,6 +117,118 @@ async def test_channel_e_filters_task_results(attention_env: tuple[Path, TaskBoa
     assert "recent result" in result
     assert "hidden result" not in result
     assert "old orphan result" not in result
+
+
+@pytest.mark.asyncio
+async def test_channel_e_surfaces_recent_failed_tasks(attention_env: tuple[Path, TaskBoardStore]) -> None:
+    anima_dir, _store = attention_env
+    queue = TaskQueueManager(anima_dir)
+    task = queue.add_task(
+        source="anima",
+        original_instruction="fetch data",
+        assignee="sakura",
+        summary="fetch data",
+        task_id="failed1234",
+        meta={"executor": "taskexec"},
+        status="in_progress",
+    )
+    queue.update_status(task.task_id, "failed", summary="failed fetch data")
+
+    result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
+
+    assert "failed12" in result
+    assert "failed fetch data" in result
+
+
+@pytest.mark.asyncio
+async def test_channel_e_hides_explicitly_archived_failed_tasks(
+    attention_env: tuple[Path, TaskBoardStore],
+) -> None:
+    anima_dir, store = attention_env
+    queue = TaskQueueManager(anima_dir)
+    task = queue.add_task(
+        source="anima",
+        original_instruction="archived failure",
+        assignee="sakura",
+        summary="archived failure",
+        task_id="failed1234",
+        status="in_progress",
+    )
+    queue.update_status(task.task_id, "failed", summary="archived failed fetch")
+    store.upsert_metadata(anima_name="sakura", task_id=task.task_id, visibility="archived")
+
+    result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
+
+    assert "archived failed fetch" not in result
+
+
+@pytest.mark.asyncio
+async def test_channel_e_preserves_legacy_prompt_signals(attention_env: tuple[Path, TaskBoardStore]) -> None:
+    anima_dir, _store = attention_env
+    now = now_local()
+    _append_task_entry(
+        anima_dir,
+        task_id="stale1234",
+        summary="stale board work",
+        updated_at=(now - timedelta(minutes=45)).isoformat(),
+        deadline=(now + timedelta(hours=1)).isoformat(),
+    )
+    _append_task_entry(
+        anima_dir,
+        task_id="overdue1234",
+        summary="overdue board work",
+        updated_at=now_iso(),
+        deadline=(now - timedelta(hours=1)).isoformat(),
+    )
+    TaskQueueManager(anima_dir).add_task(
+        source="anima",
+        original_instruction="auto taskexec work",
+        assignee="sakura",
+        summary="auto taskexec work",
+        task_id="auto1234",
+        meta={"executor": "taskexec"},
+        status="in_progress",
+    )
+
+    result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
+
+    assert "stale board work" in result
+    assert "STALE" in result
+    assert "overdue board work" in result
+    assert "OVERDUE" in result
+    assert "(auto: TaskExec)" in result
+
+
+@pytest.mark.asyncio
+async def test_channel_e_preserves_delegated_status_section(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "sakura"
+    subordinate_dir = data_dir / "animas" / "hinata"
+    for directory in [anima_dir, subordinate_dir]:
+        for subdir in ["episodes", "knowledge", "skills", "state"]:
+            (directory / subdir).mkdir(parents=True, exist_ok=True)
+    TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+
+    subordinate_task = TaskQueueManager(subordinate_dir).add_task(
+        source="human",
+        original_instruction="subordinate work",
+        assignee="hinata",
+        summary="subordinate work",
+        task_id="child1234",
+    )
+    TaskQueueManager(anima_dir).add_delegated_task(
+        original_instruction="delegated board work",
+        assignee="sakura",
+        summary="delegated board work",
+        deadline="1h",
+        meta={"delegated_to": "hinata", "delegated_task_id": subordinate_task.task_id},
+    )
+
+    result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
+
+    assert "delegated board work" in result
+    assert "hinata: pending" in result
+    assert "⏳" in result
 
 
 @pytest.mark.asyncio
