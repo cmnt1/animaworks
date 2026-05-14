@@ -18,7 +18,7 @@ import {
 } from "../../modules/avatar-resolver.js";
 import { ReplayEngine } from "./replay-engine.js";
 import { ReplayUI } from "./replay-ui.js";
-import { resolveEventChannel, resolveEventPersons, resolveEventText } from "./activity-normalize.js";
+import { eventTimeMs } from "./activity-normalize.js";
 
 const logger = createLogger("org-dashboard");
 
@@ -1168,6 +1168,95 @@ export function updateCardActivity(name, data) {
   _ensureStaleTimer();
 }
 
+function _semanticEndpointName(value) {
+  return String(value || "").trim().replace(/^#/, "");
+}
+
+function _semanticCardNames(event) {
+  const out = [];
+  const actor = _semanticEndpointName(event.actor);
+  const target = _semanticEndpointName(event.target);
+  if (actor && _cardEls.has(actor)) out.push(actor);
+  if (target && target !== actor && !String(event.target || "").trim().startsWith("#") && _cardEls.has(target)) {
+    out.push(target);
+  }
+  return out;
+}
+
+function _semanticStreamType(event, cardName) {
+  const kind = String(event.kind || "").toLowerCase();
+  const actor = _semanticEndpointName(event.actor);
+  const target = _semanticEndpointName(event.target);
+  if (kind === "message" || kind === "response") {
+    return target && target === cardName && actor !== cardName ? "msg_in" : "msg_out";
+  }
+  if (kind === "delegation" || kind === "task") return "task";
+  if (kind === "channel" || kind === "external") return "board";
+  if (kind === "heartbeat") return "heartbeat";
+  if (kind === "cron") return "cron";
+  if (kind === "memory") return "memory";
+  if (kind === "error") return "error";
+  return "tool";
+}
+
+function _semanticStreamText(event) {
+  const label = String(event.label || event.kind || "activity").trim();
+  const summary = String(event.summary || "").trim();
+  return (summary ? `${label}: ${summary}` : label).slice(0, 80);
+}
+
+export function updateCardSemanticActivity(name, event) {
+  if (Number(event.importance || 0) < 2) return;
+
+  let entries = _cardStreams.get(name) || [];
+  entries.push({
+    id: event.id || Date.now().toString(),
+    type: _semanticStreamType(event, name),
+    text: _semanticStreamText(event),
+    status: event.status === "failed" ? "error" : "done",
+    ts: eventTimeMs(event) || Date.now(),
+  });
+
+  if (entries.length > MAX_STREAM_ENTRIES * 2) {
+    entries = entries.slice(-MAX_STREAM_ENTRIES);
+  }
+  _cardStreams.set(name, entries);
+
+  const streamEl = document.getElementById(`orgStream_${CSS.escape(name)}`);
+  if (streamEl) _renderStream(streamEl, entries.slice(-MAX_STREAM_ENTRIES));
+  _syncCardSpinner(name);
+  _ensureStaleTimer();
+}
+
+function _semanticExternalTool(event) {
+  const text = `${event.tool || ""} ${event.channel || ""} ${event.target || ""}`.toLowerCase();
+  if (text.includes("github")) return "github";
+  if (text.includes("gmail")) return "gmail";
+  if (text.includes("chatwork")) return "chatwork";
+  if (text.includes("slack")) return "slack";
+  if (event.kind === "channel") return "slack";
+  if (event.kind === "external") return event.tool || "web_search";
+  return "";
+}
+
+function _showSemanticReplayLine(event, speed) {
+  const actor = _semanticEndpointName(event.actor);
+  const target = _semanticEndpointName(event.target);
+  const kind = String(event.kind || "").toLowerCase();
+  const lineType = event.line_type || (kind === "delegation" ? "delegation" : "internal");
+
+  if (actor && target && _cardEls.has(actor) && _cardEls.has(target)) {
+    if (kind === "message" || kind === "response" || kind === "delegation" || kind === "error" || lineType === "delegation") {
+      showMessageLine(actor, target, event.summary || "", { lineType, replaySpeed: speed });
+    }
+    return;
+  }
+
+  if (actor && _cardEls.has(actor) && (kind === "channel" || kind === "external")) {
+    showExternalLine(actor, _semanticExternalTool(event), "out");
+  }
+}
+
 function _renderStream(container, entries) {
   if (!entries.length) {
     container.innerHTML = '<div class="org-stream-idle">\u{1F4A4} idle</div>';
@@ -1398,40 +1487,12 @@ function _clearAllCardStreams() {
 }
 
 function _handleReplayEvent(evt, speed) {
-  const type = evt.type || evt.name || "";
-  const anima = evt.anima || (evt.animas && evt.animas[0]) || "";
-  const persons = resolveEventPersons(evt);
-  const text = resolveEventText(evt);
-  const channel = resolveEventChannel(evt);
+  if (!evt?.kind || Number(evt.importance || 0) < 2) return;
 
-  if (anima && _cardEls.has(anima)) {
-    const data = {
-      eventType: type,
-      summary: evt.summary || text || "",
-      content: evt.content || text || "",
-      from_person: persons.from || "",
-      to_person: persons.to || "",
-      channel,
-      toolName: evt.tool || evt.tool_name || "",
-      toolId: evt.tool_id || "",
-      isError: evt.is_error || false,
-    };
-
-    if (speed < 50 || type.includes("message") || type.includes("heartbeat") || type.includes("response") || type.includes("cron")) {
-      updateCardActivity(anima, data);
-    }
+  for (const name of _semanticCardNames(evt)) {
+    updateCardSemanticActivity(name, evt);
   }
-
-  if (type === "message_sent" && persons.to && _cardEls.has(anima)) {
-    let msgLineType = "internal";
-    if (persons.intent === "delegation") msgLineType = "delegation";
-    else if (persons.fromType === "external") msgLineType = "external";
-    showMessageLine(anima, persons.to, evt.summary || text || "", { lineType: msgLineType, replaySpeed: speed });
-  } else if (type === "dm_sent" || type === "dm_received") {
-    const from = persons.from || anima;
-    const to = persons.to || "";
-    if (from && to) showMessageLine(from, to, evt.summary || "", { replaySpeed: speed });
-  }
+  _showSemanticReplayLine(evt, speed);
 }
 
 function _handleSeekRebuild({ cardStreams, cardStatus, kpiCounts }) {

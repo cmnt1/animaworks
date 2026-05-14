@@ -122,6 +122,8 @@ class TestReplayEngineStructure:
         assert "MAX_REPLAY_EVENTS = 200000" in self.src
         assert "URLSearchParams" in self.src
         assert 'replay: "true"' in self.src
+        assert 'grouped: "true"' in self.src
+        assert 'semantic: "true"' in self.src
         assert "while (true)" in self.src
         assert "data.has_more" in self.src
         assert "offset += pageEvents.length" in self.src
@@ -133,6 +135,15 @@ class TestReplayEngineStructure:
     def test_load_uses_shared_normalizer(self):
         assert 'from "./activity-normalize.js"' in self.src
         assert "normalizeActivityEvent" in self.src
+
+    def test_semantic_stream_entries_use_labels_and_summary(self):
+        assert "semanticEventToStreamEntry" in self.src
+        assert "semanticStreamType" in self.src
+        assert "summarizeSemanticEvent" in self.src
+        assert "evt.label" in self.src
+        assert "evt.summary" in self.src
+        assert "evt.kind" in self.src
+        assert "isVisibleReplayEvent" in self.src
 
 
 # ── ReplayUI Structure ──────────────────────────────────────────
@@ -256,15 +267,24 @@ class TestOrgDashboardReplayIntegration:
             "showMessageLine must have speed-dependent duration logic"
         )
 
-    def test_replay_handler_uses_shared_person_resolver(self):
-        assert "resolveEventPersons(evt)" in self.src
+    def test_replay_handler_uses_semantic_card_renderer(self):
+        assert "updateCardSemanticActivity" in self.src
+        assert "_semanticCardNames(evt)" in self.src
+        assert "_showSemanticReplayLine(evt, speed)" in self.src
+        assert "evt?.kind" in self.src
         assert "evt.meta?.to_person" not in self.src
         assert "evt.meta?.from_person" not in self.src
+        assert "updateCardActivity(anima, data)" not in self.src
 
     def test_startReplay_returns_boolean(self):
         assert "return true;" in self.src
         assert "return false;" in self.src
         assert "_replayUI.setError" in self.src
+
+    def test_exports_semantic_activity_update(self):
+        assert "export function updateCardSemanticActivity" in self.src
+        assert "_semanticStreamType(event, name)" in self.src
+        assert "eventTimeMs(event)" in self.src
 
 
 # ── Activity Normalize Shared Module ───────────────────────────
