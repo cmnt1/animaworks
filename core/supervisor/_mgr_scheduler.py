@@ -319,14 +319,31 @@ class SchedulerMixin:
             try:
                 _consolidating: set[str] = getattr(self, "_consolidating", set())
                 _consolidating.add(anima_name)
+                _timed_out = False
                 try:
                     response = await handle.send_request(
                         "run_consolidation",
                         {"consolidation_type": "daily", "max_turns": max_turns},
                         timeout=1800.0,
                     )
+                except TimeoutError:
+                    _timed_out = True
+                    logger.warning(
+                        "Daily consolidation timed out for %s; keeping busy-hang protection for 120s",
+                        anima_name,
+                    )
+                    try:
+                        await handle.send_request("interrupt", {}, timeout=10.0)
+                    except Exception:
+                        pass
+                    raise
                 finally:
-                    _consolidating.discard(anima_name)
+                    if _timed_out:
+                        # Grace period: keep protection for 120s after timeout
+                        _name_capture = anima_name
+                        asyncio.get_running_loop().call_later(120, self._consolidating.discard, _name_capture)
+                    else:
+                        _consolidating.discard(anima_name)
 
                 if response.error:
                     logger.error(
@@ -420,14 +437,30 @@ class SchedulerMixin:
             try:
                 _consolidating_w: set[str] = getattr(self, "_consolidating", set())
                 _consolidating_w.add(anima_name)
+                _timed_out_w = False
                 try:
                     response = await handle.send_request(
                         "run_consolidation",
                         {"consolidation_type": "weekly", "max_turns": max_turns},
                         timeout=1800.0,
                     )
+                except TimeoutError:
+                    _timed_out_w = True
+                    logger.warning(
+                        "Weekly consolidation timed out for %s; keeping busy-hang protection for 120s",
+                        anima_name,
+                    )
+                    try:
+                        await handle.send_request("interrupt", {}, timeout=10.0)
+                    except Exception:
+                        pass
+                    raise
                 finally:
-                    _consolidating_w.discard(anima_name)
+                    if _timed_out_w:
+                        _name_capture_w = anima_name
+                        asyncio.get_running_loop().call_later(120, self._consolidating.discard, _name_capture_w)
+                    else:
+                        _consolidating_w.discard(anima_name)
 
                 if response.error:
                     logger.error(
