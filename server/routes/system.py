@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from core.schedule_parser import parse_cron_md, parse_schedule
 from core.time_utils import now_local
+from server.routes.taskboard import summarize_task_board
 
 logger = logging.getLogger("animaworks.routes.system")
 
@@ -372,38 +373,16 @@ def create_system_router() -> APIRouter:
 
     @router.get("/tasks/summary")
     async def get_tasks_summary(request: Request):
-        """Aggregate pending task counts across all animas."""
+        """Aggregate active task counts across all animas from TaskBoard projection."""
         import asyncio
 
         animas_dir = request.app.state.animas_dir
+        shared_dir = request.app.state.shared_dir
         anima_names = request.app.state.anima_names
 
-        def _count_tasks(name: str) -> tuple[int, int]:
-            tq_path = animas_dir / name / "state" / "task_queue.jsonl"
-            if not tq_path.exists():
-                return (0, 0)
-            pend = prog = 0
-            try:
-                for raw_line in tq_path.read_text(encoding="utf-8").splitlines():
-                    raw_line = raw_line.strip()
-                    if not raw_line:
-                        continue
-                    try:
-                        entry = json.loads(raw_line)
-                    except json.JSONDecodeError:
-                        continue
-                    st = entry.get("status", "")
-                    if st in ("pending", "delegated"):
-                        pend += 1
-                    elif st == "in_progress":
-                        prog += 1
-            except OSError:
-                pass
-            return (pend, prog)
-
-        results = await asyncio.gather(*(asyncio.to_thread(_count_tasks, n) for n in anima_names))
-        pending = sum(r[0] for r in results)
-        in_progress = sum(r[1] for r in results)
+        summary = await asyncio.to_thread(summarize_task_board, animas_dir, shared_dir, anima_names)
+        pending = summary["pending"] + summary["delegated"]
+        in_progress = summary["in_progress"]
         return {"pending": pending, "in_progress": in_progress, "total_active": pending + in_progress}
 
     # ── Activity ───────────────────────────────────────────
