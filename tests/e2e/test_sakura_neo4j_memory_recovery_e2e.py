@@ -119,3 +119,57 @@ async def test_neo4j_backend_all_scope_retrieves_and_formats_mixed_results(tmp_p
     assert any("FutureSync -[RELATES_TO]-> Neo4j" in memory.content for memory in memories)
     assert any(memory.content == "Recent Sakura episode about Neo4j" for memory in memories)
     assert any(memory.content == "Sakura: An Anima using Neo4j memory" for memory in memories)
+
+
+@pytest.mark.e2e
+def test_realtime_neo4j_ingest_records_user_and_assistant_turn(tmp_path) -> None:
+    """Realtime chat ingest should store the full turn body with stable metadata."""
+    from core._anima_messaging import MessagingMixin
+
+    class FakeAnima(MessagingMixin):
+        pass
+
+    obj = FakeAnima.__new__(FakeAnima)
+    obj.name = "sakura"
+
+    mock_backend = MagicMock()
+    mock_backend.__class__ = type("Neo4jGraphBackend", (), {})
+    mock_backend._group_id = "sakura"
+    mock_backend.ingest_text = AsyncMock(return_value=1)
+
+    class FakeMemory:
+        def __init__(self, anima_dir):
+            self.anima_dir = anima_dir
+
+        @property
+        def memory_backend(self):
+            return mock_backend
+
+    obj.memory = FakeMemory(tmp_path)
+
+    cfg = MagicMock()
+    cfg.memory = MagicMock()
+    cfg.memory.neo4j_realtime_ingest = True
+
+    with (
+        patch("core.memory.backend.registry.resolve_backend_type", return_value="neo4j"),
+        patch("core.config.models.load_config", return_value=cfg),
+    ):
+        obj._maybe_neo4j_realtime_ingest(
+            "mio",
+            "What did FutureSync decide?",
+            "FutureSync decided to use Neo4j memory.",
+            thread_id="sakura-main",
+            request_id="req-e2e",
+        )
+
+    mock_backend.ingest_text.assert_awaited_once_with(
+        "mio: What did FutureSync decide?\nsakura: FutureSync decided to use Neo4j memory.",
+        source="chat:sakura:sakura-main",
+        metadata={
+            "stable_key": "chat:sakura:sakura-main:req-e2e",
+            "description": "chat turn sakura-main",
+            "thread_id": "sakura-main",
+            "request_id": "req-e2e",
+        },
+    )

@@ -9,10 +9,10 @@ Covers:
 
 from __future__ import annotations
 
+from hashlib import sha256
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
-
 
 # ── TestMemoryConfigField ────────────────────────────────
 
@@ -138,38 +138,124 @@ class TestMaybeNeo4jRealtimeIngest:
 
     def test_skips_when_legacy_backend(self) -> None:
         obj = self._make_mixin()
-        with patch("core.config.models.load_config") as mock_cfg:
+        obj._neo4j_ingest_turn = AsyncMock()
+        with (
+            patch("core.memory.backend.registry.resolve_backend_type", return_value="legacy"),
+            patch("core.config.models.load_config") as mock_cfg,
+        ):
             cfg = MagicMock()
             cfg.memory = MagicMock()
             cfg.memory.backend = "legacy"
             cfg.memory.neo4j_realtime_ingest = True
             mock_cfg.return_value = cfg
 
-            obj._maybe_neo4j_realtime_ingest("user", "response text")
+            obj._maybe_neo4j_realtime_ingest("user", "hello", "response text", thread_id="thread-a")
+
+        obj._neo4j_ingest_turn.assert_not_awaited()
 
     def test_skips_when_realtime_disabled(self) -> None:
         obj = self._make_mixin()
-        with patch("core.config.models.load_config") as mock_cfg:
+        obj._neo4j_ingest_turn = AsyncMock()
+        with (
+            patch("core.memory.backend.registry.resolve_backend_type", return_value="neo4j"),
+            patch("core.config.models.load_config") as mock_cfg,
+        ):
             cfg = MagicMock()
             cfg.memory = MagicMock()
             cfg.memory.backend = "neo4j"
             cfg.memory.neo4j_realtime_ingest = False
             mock_cfg.return_value = cfg
 
-            obj._maybe_neo4j_realtime_ingest("user", "response text")
+            obj._maybe_neo4j_realtime_ingest("user", "hello", "response text", thread_id="thread-a")
+
+        obj._neo4j_ingest_turn.assert_not_awaited()
 
     def test_skips_when_no_memory_config(self) -> None:
         obj = self._make_mixin()
-        with patch("core.config.models.load_config") as mock_cfg:
+        obj._neo4j_ingest_turn = AsyncMock()
+        with (
+            patch("core.memory.backend.registry.resolve_backend_type", return_value="neo4j"),
+            patch("core.config.models.load_config") as mock_cfg,
+        ):
             cfg = MagicMock(spec=[])
             mock_cfg.return_value = cfg
 
-            obj._maybe_neo4j_realtime_ingest("user", "response text")
+            obj._maybe_neo4j_realtime_ingest("user", "hello", "response text", thread_id="thread-a")
+
+        obj._neo4j_ingest_turn.assert_not_awaited()
 
     def test_config_error_doesnt_propagate(self) -> None:
         obj = self._make_mixin()
-        with patch("core.config.models.load_config", side_effect=RuntimeError("cfg")):
-            obj._maybe_neo4j_realtime_ingest("user", "response text")
+        with (
+            patch("core.memory.backend.registry.resolve_backend_type", return_value="neo4j"),
+            patch("core.config.models.load_config", side_effect=RuntimeError("cfg")),
+        ):
+            obj._maybe_neo4j_realtime_ingest("user", "hello", "response text", thread_id="thread-a")
+
+    def test_skips_empty_response_text(self) -> None:
+        obj = self._make_mixin()
+        obj._neo4j_ingest_turn = AsyncMock()
+        with patch("core.memory.backend.registry.resolve_backend_type") as mock_resolve:
+            obj._maybe_neo4j_realtime_ingest("user", "hello", "", thread_id="thread-a")
+
+        mock_resolve.assert_not_called()
+        obj._neo4j_ingest_turn.assert_not_awaited()
+
+    def test_ingests_full_turn_with_request_stable_key(self) -> None:
+        obj = self._make_mixin()
+        obj._neo4j_ingest_turn = AsyncMock()
+        with (
+            patch("core.memory.backend.registry.resolve_backend_type", return_value="neo4j"),
+            patch("core.config.models.load_config") as mock_cfg,
+        ):
+            cfg = MagicMock()
+            cfg.memory = MagicMock()
+            cfg.memory.neo4j_realtime_ingest = True
+            mock_cfg.return_value = cfg
+
+            obj._maybe_neo4j_realtime_ingest(
+                "mio",
+                "hello",
+                "hi there",
+                thread_id="thread-a",
+                request_id="req-123",
+            )
+
+        obj._neo4j_ingest_turn.assert_awaited_once_with(
+            "mio: hello\ntest-anima: hi there",
+            source="chat:test-anima:thread-a",
+            metadata={
+                "stable_key": "chat:test-anima:thread-a:req-123",
+                "description": "chat turn thread-a",
+                "thread_id": "thread-a",
+                "request_id": "req-123",
+            },
+        )
+
+    def test_hashes_turn_when_request_id_is_absent(self) -> None:
+        obj = self._make_mixin()
+        obj._neo4j_ingest_turn = AsyncMock()
+        with (
+            patch("core.memory.backend.registry.resolve_backend_type", return_value="neo4j"),
+            patch("core.config.models.load_config") as mock_cfg,
+        ):
+            cfg = MagicMock()
+            cfg.memory = MagicMock()
+            cfg.memory.neo4j_realtime_ingest = True
+            mock_cfg.return_value = cfg
+
+            obj._maybe_neo4j_realtime_ingest("mio", "hello", "hi there", thread_id="thread-a")
+
+        expected_hash = sha256(b"mio\nthread-a\nhello\nhi there").hexdigest()
+        obj._neo4j_ingest_turn.assert_awaited_once_with(
+            "mio: hello\ntest-anima: hi there",
+            source="chat:test-anima:thread-a",
+            metadata={
+                "stable_key": f"chat:test-anima:thread-a:{expected_hash}",
+                "description": "chat turn thread-a",
+                "thread_id": "thread-a",
+            },
+        )
 
 
 # ── TestNeo4jIngestTurn ──────────────────────────────────
@@ -193,8 +279,13 @@ class TestNeo4jIngestTurn:
         obj.memory = MagicMock()
         type(obj.memory).memory_backend = PropertyMock(return_value=mock_backend)
 
-        await obj._neo4j_ingest_turn("test text")
-        mock_backend.ingest_text.assert_called_once_with("test text", source="chat:test")
+        metadata = {"stable_key": "chat:test:thread-a:req-1", "description": "chat turn thread-a"}
+        await obj._neo4j_ingest_turn("test text", source="chat:test:thread-a", metadata=metadata)
+        mock_backend.ingest_text.assert_awaited_once_with(
+            "test text",
+            source="chat:test:thread-a",
+            metadata=metadata,
+        )
 
     @pytest.mark.asyncio
     async def test_failure_doesnt_propagate(self) -> None:

@@ -11,12 +11,13 @@ and hybrid retrieval (BM25 + Vector + BFS + cross-encoder reranking).
 """
 
 import asyncio
+import hashlib
 import logging
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from core.memory.backend.base import MemoryBackend, RetrievedMemory
 
@@ -167,7 +168,8 @@ class Neo4jGraphBackend(MemoryBackend):
         async with self._ingest_semaphore:
             driver = await self._ensure_driver()
             now_str = datetime.now(tz=UTC).isoformat()
-            episode_uuid = (metadata or {}).get("episode_uuid") or str(uuid4())
+            metadata = metadata or {}
+            episode_uuid = self._resolve_episode_uuid(metadata)
 
             existing = await driver.execute_query(
                 CHECK_EPISODE_EXISTS,
@@ -183,10 +185,10 @@ class Neo4jGraphBackend(MemoryBackend):
                     "uuid": episode_uuid,
                     "content": text[:10000],
                     "source": source,
-                    "source_description": (metadata or {}).get("description", source),
+                    "source_description": metadata.get("description", source),
                     "group_id": self._group_id,
                     "created_at": now_str,
-                    "valid_at": (metadata or {}).get("valid_at", now_str),
+                    "valid_at": metadata.get("valid_at", now_str),
                 },
             )
 
@@ -204,7 +206,7 @@ class Neo4jGraphBackend(MemoryBackend):
             try:
                 extractor = self._get_extractor()
                 entities = await extractor.extract_entities(text)
-                episode_valid_at = (metadata or {}).get("valid_at")
+                episode_valid_at = metadata.get("valid_at")
                 facts = await extractor.extract_facts(text, entities, reference_time=episode_valid_at)
             except Exception:
                 logger.warning("Extraction failed, Episode-only fallback", exc_info=True)
@@ -360,15 +362,45 @@ class Neo4jGraphBackend(MemoryBackend):
         if not content.strip():
             return 0
 
-        source = str(path.name)
+        normalized_source_path = self._normalize_source_path(path)
+        source = f"file:{normalized_source_path}"
         sections = self._split_sections(content)
         total = 0
-        for section in sections:
+        for section_index, section in enumerate(sections):
             if section.strip():
-                total += await self.ingest_text(section, source=source)
+                source_hash = hashlib.sha256(section.encode("utf-8")).hexdigest()
+                total += await self.ingest_text(
+                    section,
+                    source=source,
+                    metadata={
+                        "stable_key": f"file:{normalized_source_path}:{section_index}:{source_hash}",
+                        "source_path": normalized_source_path,
+                        "source_hash": source_hash,
+                        "section_index": section_index,
+                    },
+                )
         return total
 
     # ── Helpers ────────────────────────────────────────────────────────────
+
+    def _stable_episode_uuid(self, stable_key: str) -> str:
+        return str(uuid5(NAMESPACE_URL, f"animaworks:neo4j:{self._group_id}:{stable_key}"))
+
+    def _resolve_episode_uuid(self, metadata: dict) -> str:
+        explicit_uuid = metadata.get("episode_uuid")
+        if explicit_uuid:
+            return str(explicit_uuid)
+        stable_key = metadata.get("stable_key")
+        if stable_key:
+            return self._stable_episode_uuid(str(stable_key))
+        return str(uuid4())
+
+    def _normalize_source_path(self, path: Path) -> str:
+        resolved_path = path.resolve()
+        try:
+            return resolved_path.relative_to(self._anima_dir.resolve()).as_posix()
+        except ValueError:
+            return resolved_path.as_posix()
 
     def _get_resolver(self):  # noqa: ANN202 – lazy import avoids circular
         """Create or return cached EntityResolver."""
