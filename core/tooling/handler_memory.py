@@ -186,10 +186,24 @@ class MemoryToolsMixin:
         if scope in self._LEGACY_ONLY_SCOPES:
             return False
         try:
+            from core.memory.backend.registry import resolve_backend_type
+
+            if resolve_backend_type(Path(self._anima_dir)) == "neo4j":
+                return True
+        except Exception:
+            logger.debug("Failed to resolve memory backend type", exc_info=True)
+
+        try:
             backend = self._memory.memory_backend
             return type(backend).__name__ == "Neo4jGraphBackend"
         except Exception:
             return False
+
+    def _create_neo4j_backend(self) -> Any:
+        """Create a fresh Neo4j backend for a single ToolHandler search."""
+        from core.memory.backend.registry import get_backend
+
+        return get_backend("neo4j", Path(self._anima_dir))
 
     def _search_via_neo4j(
         self,
@@ -202,13 +216,38 @@ class MemoryToolsMixin:
     ) -> str | None:
         """Execute search via Neo4j backend, returning formatted string or None on failure."""
         import asyncio
+        import inspect
 
         neo4j_scope = self._NEO4J_SCOPE_MAP.get(scope, "all")
         limit = 10
         as_of_time = time_end
 
         try:
-            backend = self._memory.memory_backend
+            async def retrieve_memories() -> list[Any]:
+                backend = None
+                try:
+                    backend = self._create_neo4j_backend()
+                    return await backend.retrieve(
+                        query,
+                        scope=neo4j_scope,
+                        limit=limit + offset,
+                        time_start=time_start,
+                        time_end=time_end,
+                        as_of_time=as_of_time,
+                    )
+                finally:
+                    if backend is not None:
+                        close = getattr(backend, "close", None)
+                        if close is not None:
+                            try:
+                                close_result = close()
+                                if inspect.isawaitable(close_result):
+                                    await close_result
+                            except Exception:
+                                logger.debug("Failed to close Neo4j backend after search", exc_info=True)
+
+            def run_retrieve() -> list[Any]:
+                return asyncio.run(retrieve_memories())
 
             try:
                 loop = asyncio.get_running_loop()
@@ -219,28 +258,9 @@ class MemoryToolsMixin:
                 import concurrent.futures
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    memories = pool.submit(
-                        asyncio.run,
-                        backend.retrieve(
-                            query,
-                            scope=neo4j_scope,
-                            limit=limit + offset,
-                            time_start=time_start,
-                            time_end=time_end,
-                            as_of_time=as_of_time,
-                        ),
-                    ).result(timeout=30)
+                    memories = pool.submit(run_retrieve).result(timeout=30)
             else:
-                memories = asyncio.run(
-                    backend.retrieve(
-                        query,
-                        scope=neo4j_scope,
-                        limit=limit + offset,
-                        time_start=time_start,
-                        time_end=time_end,
-                        as_of_time=as_of_time,
-                    )
-                )
+                memories = run_retrieve()
 
             if offset:
                 memories = memories[offset:]

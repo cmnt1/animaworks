@@ -47,8 +47,11 @@ def _make_handler_mixin(mock_memory, backend_class_name="Neo4jGraphBackend"):
     handler._context_window = 128_000
     handler._read_paths = set()
 
-    mock_backend = AsyncMock()
-    mock_backend.__class__.__name__ = backend_class_name
+    backend_cls = type(backend_class_name, (), {})
+    mock_backend = backend_cls()
+    mock_backend.retrieve = AsyncMock(return_value=[])
+    mock_backend.close = AsyncMock()
+    handler._create_neo4j_backend = MagicMock(return_value=mock_backend)
     type(mock_memory).memory_backend = PropertyMock(return_value=mock_backend)
 
     return handler, mock_backend
@@ -131,6 +134,8 @@ class TestSearchViaNeo4j:
         assert "Alice → Bob" in result
         assert "score=0.95" in result
         assert "graph" in result
+        handler._create_neo4j_backend.assert_called_once()
+        mock_backend.close.assert_awaited_once()
 
     def test_returns_empty_string_on_no_results(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)
@@ -138,6 +143,7 @@ class TestSearchViaNeo4j:
 
         result = handler._search_via_neo4j("nothing", "all", 0)
         assert result == ""
+        mock_backend.close.assert_awaited_once()
 
     def test_returns_none_on_failure(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)
@@ -145,6 +151,7 @@ class TestSearchViaNeo4j:
 
         result = handler._search_via_neo4j("query", "all", 0)
         assert result is None
+        mock_backend.close.assert_awaited_once()
 
     def test_offset_skips_results(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)
@@ -160,6 +167,48 @@ class TestSearchViaNeo4j:
         assert result is not None
         assert "result1" not in result
         assert "result2" in result
+
+    def test_uses_scope_mapping_in_retrieve_call(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="fact result", score=0.9, source="fact:1"),
+            ]
+        )
+
+        handler._search_via_neo4j("query", "knowledge", 0)
+
+        mock_backend.retrieve.assert_awaited_once()
+        assert mock_backend.retrieve.await_args.kwargs["scope"] == "fact"
+
+    def test_consecutive_searches_use_separate_backends(self, mock_memory) -> None:
+        handler, first_backend = _make_handler_mixin(mock_memory)
+        second_backend_cls = type("Neo4jGraphBackend", (), {})
+        second_backend = second_backend_cls()
+        second_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="second", score=0.8, source="episode:2"),
+            ]
+        )
+        second_backend.close = AsyncMock()
+
+        first_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="first", score=0.9, source="episode:1"),
+            ]
+        )
+        handler._create_neo4j_backend = MagicMock(side_effect=[first_backend, second_backend])
+
+        first_result = handler._search_via_neo4j("query", "episodes", 0)
+        second_result = handler._search_via_neo4j("query", "episodes", 0)
+
+        assert first_result is not None
+        assert "first" in first_result
+        assert second_result is not None
+        assert "second" in second_result
+        assert handler._create_neo4j_backend.call_count == 2
+        first_backend.close.assert_awaited_once()
+        second_backend.close.assert_awaited_once()
 
 
 # ── TestHandleSearchMemoryIntegration ────────────────────
