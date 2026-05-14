@@ -9,6 +9,7 @@ from __future__ import annotations
 
 """Channel C: Related knowledge and important knowledge search."""
 
+import json
 import logging
 import re
 from collections.abc import Callable
@@ -22,6 +23,17 @@ if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever
 
 logger = logging.getLogger("animaworks.priming")
+
+
+def _single_line(text: str, limit: int = 160) -> str:
+    """Collapse prompt cue text to one bounded line."""
+    collapsed = " ".join(str(text or "").split())
+    return collapsed[:limit]
+
+
+def _quote_path(path: str) -> str:
+    """Return a JSON string literal for read_memory_file path examples."""
+    return json.dumps(path, ensure_ascii=False)
 
 
 def extract_summary(content: str, metadata: dict) -> tuple[str, str]:
@@ -39,7 +51,7 @@ def extract_summary(content: str, metadata: dict) -> tuple[str, str]:
     if fm_summary:
         return (str(fm_summary).strip(), "")
 
-    match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+    match = re.search(r"^#{1,6}\s+(.+)$", content, re.MULTILINE)
     if match:
         title = match.group(1).strip()
         after_h1 = content[match.end() :].lstrip("\n")
@@ -56,14 +68,52 @@ def extract_summary(content: str, metadata: dict) -> tuple[str, str]:
     return (title, body)
 
 
-def to_read_memory_path(metadata: dict, anima_name: str) -> str:
+def _path_from_doc_id(doc_id: str, memory_type: str = "knowledge") -> str:
+    """Best-effort conversion from retriever doc_id to read_memory_file path."""
+    if not doc_id:
+        return ""
+    doc_path = str(doc_id).split("#", 1)[0]
+    for marker in ("common_knowledge/", "knowledge/", "episodes/"):
+        if marker in doc_path:
+            return marker + doc_path.split(marker, 1)[1]
+    marker = f"{memory_type}/"
+    if marker in doc_path:
+        return marker + doc_path.split(marker, 1)[1]
+    if doc_path.endswith(".md"):
+        return f"{memory_type}/{Path(doc_path).name}"
+    return ""
+
+
+def to_read_memory_path(metadata: dict, anima_name: str, doc_id: str = "") -> str:
     """Convert chunk metadata to read_memory_file path."""
-    source = metadata.get("source_file", "")
+    source = metadata.get("source_file", "") or _path_from_doc_id(doc_id)
     if not source:
         return ""
     if metadata.get("anima") == "shared":
         return f"common_knowledge/{source}" if not source.startswith("common_knowledge/") else source
     return source
+
+
+def format_pointer_result(
+    *,
+    index: int,
+    label: str,
+    score: float,
+    content: str,
+    metadata: dict,
+    path: str,
+) -> str:
+    """Format a retrieval result as a pointer cue instead of raw payload."""
+    title, body = extract_summary(content, metadata)
+    summary = title or Path(path).stem.replace("-", " ").replace("_", " ")
+    if body:
+        summary = f"{summary} - {body}" if summary else body
+    summary = _single_line(summary)
+    return (
+        f"--- Result {index} [{label}] (score: {score:.3f}) ---\n"
+        f"{summary}\n"
+        f"  -> read_memory_file(path={_quote_path(path)})\n"
+    )
 
 
 async def channel_c0_important_knowledge(
@@ -92,9 +142,12 @@ async def channel_c0_important_knowledge(
             if not rel_path:
                 continue
             if body:
-                line = f'📌 {title} — {body}\n  → read_memory_file(path="{rel_path}")'
+                line = (
+                    f"📌 {_single_line(title)} — {_single_line(body, 100)}\n"
+                    f"  → read_memory_file(path={_quote_path(rel_path)})"
+                )
             else:
-                line = f'📌 {title} → read_memory_file(path="{rel_path}")'
+                line = f"📌 {_single_line(title)} → read_memory_file(path={_quote_path(rel_path)})"
             lines.append((len(line), line))
         lines.sort(key=lambda x: x[0])
         out: list[str] = []
@@ -177,21 +230,37 @@ async def channel_c_related_knowledge(
         if results:
             from core.execution._sanitize import ORIGIN_UNKNOWN, resolve_trust
 
-            retriever.record_access(results, anima_name)
-
             medium_parts: list[str] = []
             untrusted_parts: list[str] = []
+            accessed_results = []
+            display_index = 1
 
-            for i, result in enumerate(results):
+            for result in results:
                 chunk_origin = result.metadata.get("origin", "")
                 chunk_trust = resolve_trust(chunk_origin or ORIGIN_UNKNOWN)
                 source_label = result.metadata.get("anima", anima_name)
                 label = "shared" if source_label == "shared" else "personal"
-                line = f"--- Result {i + 1} [{label}] (score: {result.score:.3f}) ---\n{result.content}\n"
+                rel_path = to_read_memory_path(result.metadata, anima_name, result.doc_id)
+                if not rel_path:
+                    logger.debug("Channel C: skipping result without readable path: %s", result.doc_id)
+                    continue
+                line = format_pointer_result(
+                    index=display_index,
+                    label=label,
+                    score=result.score,
+                    content=result.content,
+                    metadata=result.metadata,
+                    path=rel_path,
+                )
+                display_index += 1
+                accessed_results.append(result)
                 if chunk_trust == "untrusted":
                     untrusted_parts.append(line)
                 else:
                     medium_parts.append(line)
+
+            if accessed_results:
+                retriever.record_access(accessed_results, anima_name)
 
             medium_output = "\n".join(medium_parts)
             untrusted_output = "\n".join(untrusted_parts)
