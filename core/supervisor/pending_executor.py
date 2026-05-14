@@ -40,6 +40,7 @@ _TASK_RESULT_MAX_CHARS = 2000
 
 _SENTINEL_CANCELLED = "(cancelled)"
 _SENTINEL_EXPIRED = "(expired)"
+_SENTINEL_DEFERRED = "(deferred)"
 
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
 _QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
@@ -75,6 +76,8 @@ def _classify_task_result(result: str) -> tuple[str, str]:
         return "cancelled", "cancelled before execution"
     if result == _SENTINEL_EXPIRED:
         return "cancelled", "expired (TTL exceeded)"
+    if result == _SENTINEL_DEFERRED:
+        return "pending", "snoozed by TaskBoard"
     auth_failure = _detect_task_auth_failure(result)
     if auth_failure:
         return "failed", f"FAILED: {auth_failure}"
@@ -317,6 +320,16 @@ class PendingTaskExecutor:
         entry = self._get_task_queue_entry(task_id)
         if entry and entry.status in _QUEUE_ACTIVE_STATUSES:
             self._sync_task_queue(task_id, "cancelled", summary=f"{reason} by TaskBoard")
+
+    def _write_deferred_task_json(self, task_desc: dict[str, Any]) -> None:
+        task_id = task_desc.get("task_id", "")
+        if not task_id:
+            return
+        deferred_dir = self._anima_dir / "state" / "pending" / "deferred"
+        deferred_dir.mkdir(parents=True, exist_ok=True)
+        path = deferred_dir / f"{task_id}.json"
+        path.write_text(json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        logger.info("[%s] Deferred snoozed LLM task: id=%s", self._anima_name, task_id)
 
     def _move_attention_gated_file(
         self,
@@ -746,6 +759,8 @@ class PendingTaskExecutor:
                                             )
                             except Exception:
                                 logger.warning("[%s] Failed to build batch failure notification", self._anima_name)
+                    elif result == _SENTINEL_DEFERRED:
+                        failed.add(task["task_id"])
                     elif task.get("_attention_suppressed_reason"):
                         failed.add(task["task_id"])
                         attention_suppressed.add(task["task_id"])
@@ -767,7 +782,9 @@ class PendingTaskExecutor:
                         completed,
                         batch_id,
                     )
-                    if task.get("_attention_suppressed_reason"):
+                    if result == _SENTINEL_DEFERRED:
+                        failed.add(task["task_id"])
+                    elif task.get("_attention_suppressed_reason"):
                         failed.add(task["task_id"])
                         attention_suppressed.add(task["task_id"])
                     else:
@@ -919,6 +936,14 @@ class PendingTaskExecutor:
 
         decision = self._attention_decision_for_task_desc(task_desc)
         if not decision.executable:
+            if decision.reason == "snoozed":
+                self._write_deferred_task_json(task_desc)
+                logger.info(
+                    "[%s] Deferring snoozed LLM task at final defense: id=%s",
+                    self._anima_name,
+                    task_id,
+                )
+                return _SENTINEL_DEFERRED
             task_desc["_attention_suppressed_reason"] = decision.reason
             self._cancel_queue_for_attention(task_id, decision.reason)
             logger.info(

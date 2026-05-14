@@ -98,6 +98,9 @@ class AttentionResolver:
         resolved_now = _normalize_now(now)
         metadata = self._get_metadata(anima_name, task_id)
 
+        if queue_status in _EXECUTION_TERMINAL_STATUSES:
+            return _hidden("terminal")
+
         if metadata is not None:
             if self._is_expired(metadata.expires_at, resolved_now):
                 self._record_visibility(anima_name, task_id, AttentionVisibility.EXPIRED)
@@ -115,9 +118,6 @@ class AttentionResolver:
 
             if metadata.visibility in _SUPPRESSED_VISIBILITIES:
                 return _hidden(metadata.visibility.value)
-
-        if queue_status in _EXECUTION_TERMINAL_STATUSES:
-            return _hidden("terminal")
 
         return _visible("active")
 

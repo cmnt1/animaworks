@@ -512,7 +512,7 @@ class SkillsToolsMixin:
 
         if (pending_dir / task_file).exists() or (processing_dir / task_file).exists():
             logger.warning("Task %s already in pipeline, skip regeneration", entry.task_id)
-            return False
+            return True
 
         decision = self._retry_attention_decision(entry.task_id, queue_status="pending")
         if not decision.executable:

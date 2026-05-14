@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.memory.task_queue import TaskQueueManager
-from core.supervisor.pending_executor import _SENTINEL_CANCELLED, PendingTaskExecutor
+from core.supervisor.pending_executor import _SENTINEL_CANCELLED, _SENTINEL_DEFERRED, PendingTaskExecutor
 from core.taskboard.models import AttentionVisibility
 from core.taskboard.store import TaskBoardStore
 
@@ -184,6 +184,35 @@ async def test_run_llm_task_final_defense_skips_suppressed_task(tmp_path: Path) 
 
     assert result == _SENTINEL_CANCELLED
     assert not executor._anima.agent.run_cycle_streaming.called
+
+
+@pytest.mark.asyncio
+async def test_run_llm_task_final_defense_defers_snoozed_task(tmp_path: Path) -> None:
+    executor = _make_executor(tmp_path)
+    _queue_task(executor, "snoozed1234")
+    _store_for(executor).upsert_metadata(
+        anima_name="sakura",
+        task_id="snoozed1234",
+        visibility=AttentionVisibility.SNOOZED,
+        snoozed_until=(datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+    )
+
+    result = await executor._run_llm_task(
+        {
+            "task_id": "snoozed1234",
+            "task_type": "llm",
+            "title": "title",
+            "description": "description",
+            "submitted_at": datetime.now(UTC).isoformat(),
+        }
+    )
+
+    assert result == _SENTINEL_DEFERRED
+    assert not executor._anima.agent.run_cycle_streaming.called
+    assert (executor._anima_dir / "state" / "pending" / "deferred" / "snoozed1234.json").exists()
+    entry = TaskQueueManager(executor._anima_dir).get_task_by_id("snoozed1234")
+    assert entry is not None
+    assert entry.status == "pending"
 
 
 @pytest.mark.asyncio

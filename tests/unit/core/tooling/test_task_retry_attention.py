@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 from core.memory.task_queue import TaskQueueManager
 from core.taskboard.models import AttentionVisibility
 from core.taskboard.store import TaskBoardStore
-from core.tooling.handler_skills import SkillsToolsMixin
 
 
-def _make_handler(tmp_path: Path) -> SkillsToolsMixin:
+def _make_handler(tmp_path: Path) -> Any:
+    from core.tooling.handler_skills import SkillsToolsMixin
+
     handler = object.__new__(SkillsToolsMixin)
     handler._anima_dir = tmp_path / "data" / "animas" / "sakura"
     handler._anima_name = "sakura"
@@ -20,7 +22,7 @@ def _make_handler(tmp_path: Path) -> SkillsToolsMixin:
     return handler
 
 
-def _store_for(handler: SkillsToolsMixin) -> TaskBoardStore:
+def _store_for(handler: Any) -> TaskBoardStore:
     return TaskBoardStore(handler._anima_dir.parent.parent / "shared" / "taskboard.sqlite3")
 
 
@@ -69,3 +71,26 @@ def test_update_task_pending_persists_retry_count(tmp_path: Path) -> None:
     reloaded = TaskQueueManager(handler._anima_dir).get_task_by_id(entry.task_id)
     assert reloaded is not None
     assert reloaded.meta["retry_count"] == 1
+
+
+def test_update_task_pending_existing_processing_keeps_in_progress_status(tmp_path: Path) -> None:
+    handler = _make_handler(tmp_path)
+    queue = TaskQueueManager(handler._anima_dir)
+    entry = queue.add_task(
+        source="human",
+        original_instruction="already processing",
+        assignee="sakura",
+        summary="already processing",
+        task_id="processing1234",
+        meta={"task_desc": {"title": "already processing"}},
+    )
+    processing_dir = handler._anima_dir / "state" / "pending" / "processing"
+    processing_dir.mkdir(parents=True, exist_ok=True)
+    (processing_dir / f"{entry.task_id}.json").write_text("{}", encoding="utf-8")
+
+    result = json.loads(handler._handle_update_task({"task_id": entry.task_id, "status": "pending"}))
+
+    assert result["status"] == "in_progress"
+    reloaded = TaskQueueManager(handler._anima_dir).get_task_by_id(entry.task_id)
+    assert reloaded is not None
+    assert reloaded.status == "in_progress"

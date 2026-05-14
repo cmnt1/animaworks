@@ -126,6 +126,16 @@ def test_should_execute_runtime_decisions(tmp_path: Path) -> None:
     assert resolver.should_execute("sakura", "elapsed1234", queue_status="pending", now=NOW).executable is True
     assert store.get_metadata("sakura", "elapsed1234").visibility == AttentionVisibility.ACTIVE
 
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id="terminal_elapsed1234",
+        visibility="snoozed",
+        snoozed_until=(NOW - timedelta(minutes=1)).isoformat(),
+    )
+    terminal_elapsed = resolver.should_execute("sakura", "terminal_elapsed1234", queue_status="done", now=NOW)
+    assert terminal_elapsed.executable is False
+    assert terminal_elapsed.reason == "terminal"
+
     assert resolver.should_execute("sakura", "done1234", queue_status="done", now=NOW).reason == "terminal"
 
 
