@@ -1,0 +1,36 @@
+cases:
+  - id: gmail_draft
+    query: "Gmailで取引先への返信メールの下書きを作って"
+    expected_any: ["gmail-tool"]
+
+  - id: gmail_unread
+    query: "未読メールを確認して本文を読んで"
+    expected_any: ["gmail-tool"]
+
+  - id: chatwork_reply
+    query: "Chatworkで森村さんに返信して"
+    expected_any: ["chatwork-tool", "chatwork-reply-on-behalf"]
+
+  - id: document_pdf
+    query: "このMarkdownをPDF化してDownloadsに置いて"
+    expected_any: ["document-creation"]
+
+  - id: obsidian_note
+    query: "Obsidianの関連ノートを検索してメモに追記して"
+    expected_any: ["obsidian_operations"]
+
+  - id: cron_edit
+    query: "cron.mdに毎朝9時の定時タスクを追加して"
+    expected_any: ["cron-management"]
+
+  - id: image_generation
+    query: "新しいキャラクターの立ち絵画像を生成して"
+    expected_any: ["image-gen-tool"]
+
+  - id: no_skill_greeting
+    query: "おはよう、今日はどう？"
+    no_skill: true
+
+  - id: no_skill_design_discussion
+    query: "priming gateの設計方針をもう少し話そう"
+    no_skill: true
