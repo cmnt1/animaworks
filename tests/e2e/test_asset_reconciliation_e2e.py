@@ -10,11 +10,11 @@ it would run at server startup and during periodic reconciliation.
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -26,12 +26,13 @@ def _create_anima_with_assets(
     complete: bool = True,
 ) -> Path:
     """Create an anima directory, optionally with all required assets."""
-    from core.asset_reconciler import REQUIRED_ASSETS, REALISTIC_REQUIRED_ASSETS
+    from core.asset_reconciler import REALISTIC_REQUIRED_ASSETS, REQUIRED_ASSETS
 
     anima_dir = animas_dir / name
     anima_dir.mkdir(parents=True)
     (anima_dir / "identity.md").write_text(
-        f"# {name}\nimage_prompt: 1girl, {name}\n", encoding="utf-8",
+        f"# {name}\nimage_prompt: 1girl, {name}\n",
+        encoding="utf-8",
     )
     if complete:
         assets_dir = anima_dir / "assets"
@@ -66,7 +67,8 @@ class TestStartupReconciliation:
 
     @pytest.mark.asyncio
     async def test_startup_detects_missing_and_generates(
-        self, data_dir: Path,
+        self,
+        data_dir: Path,
     ) -> None:
         """Startup reconciliation detects animas with missing assets and
         triggers generation for each one sequentially.
@@ -105,7 +107,8 @@ class TestStartupReconciliation:
 
     @pytest.mark.asyncio
     async def test_startup_noop_when_all_complete(
-        self, data_dir: Path,
+        self,
+        data_dir: Path,
     ) -> None:
         """Startup is a no-op when all animas have complete assets."""
         from core.asset_reconciler import reconcile_all_assets
@@ -126,7 +129,8 @@ class TestPeriodicReconciliation:
 
     @pytest.mark.asyncio
     async def test_reconcile_detects_newly_missing(
-        self, data_dir: Path,
+        self,
+        data_dir: Path,
     ) -> None:
         """Periodic reconciliation picks up assets that become missing
         after startup (e.g., bootstrap that just ran and failed).
@@ -139,7 +143,9 @@ class TestPeriodicReconciliation:
 
         # Start with complete assets
         anima_dir = _create_anima_with_assets(
-            animas_dir, "aoi", complete=True,
+            animas_dir,
+            "aoi",
+            complete=True,
         )
 
         # Verify initially complete
@@ -158,7 +164,8 @@ class TestPeriodicReconciliation:
 
     @pytest.mark.asyncio
     async def test_reconcile_skips_on_error_and_continues(
-        self, data_dir: Path,
+        self,
+        data_dir: Path,
     ) -> None:
         """If one anima's generation fails, the next anima still runs."""
         from core.asset_reconciler import reconcile_all_assets
@@ -201,7 +208,8 @@ class TestLockMechanism:
 
     @pytest.mark.asyncio
     async def test_concurrent_calls_serialized(
-        self, data_dir: Path,
+        self,
+        data_dir: Path,
     ) -> None:
         """Two concurrent reconcile calls for the same anima:
         one runs, the other is skipped.
@@ -210,23 +218,24 @@ class TestLockMechanism:
 
         animas_dir = data_dir / "animas"
         anima_dir = _create_anima_with_assets(
-            animas_dir, "lock-test", complete=False,
+            animas_dir,
+            "lock-test",
+            complete=False,
         )
 
         # Clear any stale lock
         _anima_locks.pop("lock-test", None)
 
+        loop = asyncio.get_running_loop()
         generation_started = asyncio.Event()
-        generation_proceed = asyncio.Event()
+        generation_proceed = threading.Event()
 
         mock_result = _make_mock_pipeline_result()
 
         def _slow_generate(**kwargs):
-            generation_started.set()
+            loop.call_soon_threadsafe(generation_started.set)
             # Block until test releases
-            asyncio.get_event_loop().run_until_complete(
-                asyncio.wait_for(generation_proceed.wait(), timeout=5.0),
-            )
+            assert generation_proceed.wait(timeout=5.0)
             return mock_result
 
         with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
@@ -255,17 +264,22 @@ class TestLockMechanism:
 
     @pytest.mark.asyncio
     async def test_different_animas_not_blocked(
-        self, data_dir: Path,
+        self,
+        data_dir: Path,
     ) -> None:
         """Different animas use different locks and can run independently."""
         from core.asset_reconciler import _anima_locks, reconcile_anima_assets
 
         animas_dir = data_dir / "animas"
         anima_a = _create_anima_with_assets(
-            animas_dir, "anima-a", complete=False,
+            animas_dir,
+            "anima-a",
+            complete=False,
         )
         anima_b = _create_anima_with_assets(
-            animas_dir, "anima-b", complete=False,
+            animas_dir,
+            "anima-b",
+            complete=False,
         )
 
         # Clear stale locks
@@ -303,7 +317,9 @@ class TestDifferentialGeneration:
 
         animas_dir = data_dir / "animas"
         anima_dir = _create_anima_with_assets(
-            animas_dir, "partial-test", complete=False,
+            animas_dir,
+            "partial-test",
+            complete=False,
         )
         # Add some assets
         assets_dir = anima_dir / "assets"
@@ -318,7 +334,8 @@ class TestDifferentialGeneration:
             mock_cls.return_value = mock_pipeline
 
             await reconcile_anima_assets(
-                anima_dir, prompt="1girl, test",
+                anima_dir,
+                prompt="1girl, test",
             )
 
         mock_pipeline.generate_all.assert_called_once()

@@ -223,6 +223,7 @@ class MemoryToolsMixin:
         as_of_time = time_end
 
         try:
+
             async def retrieve_memories() -> list[Any]:
                 backend = None
                 try:
