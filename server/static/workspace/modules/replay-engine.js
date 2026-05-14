@@ -148,12 +148,14 @@ export class ReplayEngine {
    * @param {function(object): void} options.onSeekRebuild — ({ cardStreams, cardStatus, kpiCounts }) after seek
    * @param {function(): void} options.onComplete — when replay reaches end
    * @param {function(number, number): void} options.onTimeUpdate — (currentTimeMs, progress) per frame
+   * @param {function(object): void} options.onNarrativeUpdate — current semantic replay state
    */
-  constructor({ onEvent, onSeekRebuild, onComplete, onTimeUpdate } = {}) {
+  constructor({ onEvent, onSeekRebuild, onComplete, onTimeUpdate, onNarrativeUpdate } = {}) {
     this._onEvent = onEvent || (() => {});
     this._onSeekRebuild = onSeekRebuild || (() => {});
     this._onComplete = onComplete || (() => {});
     this._onTimeUpdate = onTimeUpdate || (() => {});
+    this._onNarrativeUpdate = onNarrativeUpdate || (() => {});
 
     this._events = [];
     this._timeRange = { start: 0, end: 0 };
@@ -166,6 +168,8 @@ export class ReplayEngine {
     this._lastWallMs = 0;
     this._liveBuffer = [];
     this._lastTimeUpdateWall = 0;
+    this._narrativeEvents = [];
+    this._suppressedCountsByGroup = new Map();
   }
 
   /**
@@ -207,6 +211,8 @@ export class ReplayEngine {
 
       this._events = raw.map(normalizeActivityEvent).filter((e) => eventTimeMs(e) > 0);
       this._events.sort((a, b) => eventTimeMs(a) - eventTimeMs(b));
+      this._narrativeEvents = this._events.filter((evt) => evt?.kind && isVisibleReplayEvent(evt));
+      this._suppressedCountsByGroup = this._buildSuppressedCountsByGroup();
 
       const now = Date.now();
       const rangeStart = now - hours * ONE_HOUR_MS;
@@ -222,10 +228,13 @@ export class ReplayEngine {
       this._cursor = 0;
       this._virtualTimeMs = this._timeRange.start;
       this._loaded = true;
+      this._emitNarrativeUpdate();
       logger.info("Replay loaded", { events: this._events.length, hours, range: this._timeRange });
     } catch (err) {
       logger.error("Replay load failed", err);
       this._events = [];
+      this._narrativeEvents = [];
+      this._suppressedCountsByGroup = new Map();
       this._timeRange = { start: 0, end: 0 };
       this._loaded = false;
       throw err;
@@ -297,6 +306,7 @@ export class ReplayEngine {
       kpiCounts: { eventsInLastHour, activeTasks: 0 },
     });
     this._onTimeUpdate(this._virtualTimeMs, this.getProgress());
+    this._emitNarrativeUpdate();
   }
 
   /**
@@ -352,6 +362,8 @@ export class ReplayEngine {
     this.pause();
     this._loaded = false;
     this._events = [];
+    this._narrativeEvents = [];
+    this._suppressedCountsByGroup = new Map();
     this._liveBuffer = [];
   }
 
@@ -375,7 +387,76 @@ export class ReplayEngine {
     return out;
   }
 
-  // ── Internal ───────────────────────────────────────────────────────────────
+  _visibleEvents() {
+    return this._narrativeEvents;
+  }
+
+  _buildSuppressedCountsByGroup() {
+    const counts = new Map();
+    for (const evt of this._events) {
+      const groupId = evt?.group_id || "";
+      if (!groupId) continue;
+      counts.set(groupId, (counts.get(groupId) || 0) + Number(evt.debug?.suppressed_count || 0));
+    }
+    return counts;
+  }
+
+  _eventIndexAtOrBefore(events, timeMs) {
+    let lo = 0;
+    let hi = events.length - 1;
+    let out = -1;
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (eventTimeMs(events[mid]) <= timeMs) {
+        out = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return out;
+  }
+
+  _firstEventIndexAtOrAfter(events, timeMs) {
+    let lo = 0;
+    let hi = events.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (eventTimeMs(events[mid]) < timeMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  _buildNarrativeState(currentTimeMs = this._virtualTimeMs) {
+    const visibleEvents = this._visibleEvents();
+    const currentIndex = this._eventIndexAtOrBefore(visibleEvents, currentTimeMs);
+    const currentEvent = currentIndex >= 0 ? visibleEvents[currentIndex] : null;
+    const activeGroupId = currentEvent?.group_id || "";
+    const suppressedCount = activeGroupId ? this._suppressedCountsByGroup.get(activeGroupId) || 0 : 0;
+
+    const hourBeforeT = currentTimeMs - ONE_HOUR_MS;
+    const hourStartIndex = this._firstEventIndexAtOrAfter(visibleEvents, hourBeforeT);
+    const visibleEventsInLastHour = currentIndex >= 0 ? Math.max(0, currentIndex - hourStartIndex + 1) : 0;
+
+    return {
+      currentTimeMs,
+      currentEvent,
+      currentIndex,
+      totalEvents: visibleEvents.length,
+      visibleEventsInLastHour,
+      activeGroupId,
+      activeGroupType: currentEvent?.group_type || "",
+      suppressedCount,
+    };
+  }
+
+  _emitNarrativeUpdate() {
+    this._onNarrativeUpdate(this._buildNarrativeState(this._virtualTimeMs));
+  }
 
   _tick() {
     if (!this._playing) return;
@@ -396,6 +477,7 @@ export class ReplayEngine {
     }
 
     this._virtualTimeMs = nextVirtual;
+    this._emitNarrativeUpdate();
     if (now - this._lastTimeUpdateWall >= 66) {
       this._lastTimeUpdateWall = now;
       this._onTimeUpdate(this._virtualTimeMs, this.getProgress());
@@ -407,6 +489,7 @@ export class ReplayEngine {
         cancelAnimationFrame(this._rafId);
         this._rafId = null;
       }
+      this._emitNarrativeUpdate();
       this._onComplete();
       return;
     }
