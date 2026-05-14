@@ -46,6 +46,7 @@ from core.tools.image import (
     MeshyClient,
     NanoGPTImageClient,
     NovelAIClient,
+    OpenAIImageClient,
     _convert_anime_to_realistic,
     _image_to_data_uri,
     _retry,
@@ -86,4 +87,5 @@ __all__ = [
     "FalTextToImageClient",
     "MeshyClient",
     "NanoGPTImageClient",
+    "OpenAIImageClient",
 ]

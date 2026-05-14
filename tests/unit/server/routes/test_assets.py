@@ -16,6 +16,7 @@ from core.tools.image_gen import PipelineResult
 
 def _make_test_app(animas_dir: Path | None = None):
     from fastapi import FastAPI
+
     from server.routes.assets import create_assets_router
 
     app = FastAPI()
@@ -42,8 +43,11 @@ class TestImageModelCatalog:
         assert resp.status_code == 200
         data = resp.json()
         values = {model["value"] for model in data["models"]}
+        assert "openai:gpt-image-2" in values
         assert "nanogpt:chroma" in values
         assert "nanogpt:hidream" in values
+        gpt_image_2 = next(model for model in data["models"] if model["value"] == "openai:gpt-image-2")
+        assert gpt_image_2["image_to_image"] is True
         hidream = next(model for model in data["models"] if model["value"] == "nanogpt:hidream")
         assert hidream["image_to_image"] is True
 
@@ -70,16 +74,86 @@ class TestImageModelCatalog:
 
             assert resp.status_code == 200
             data = resp.json()
-            assert data["providers"][0]["dynamic"] is True
+            nanogpt_provider = next(provider for provider in data["providers"] if provider["provider"] == "nanogpt")
+            assert nanogpt_provider["dynamic"] is True
             assert any(model["value"] == "nanogpt:new-image-model" for model in data["models"])
 
             from server.routes.assets import RemakePreviewRequest
 
+            parsed = RemakePreviewRequest.model_validate({})
+            assert parsed.generation_model == "openai:gpt-image-2"
+            parsed = RemakePreviewRequest.model_validate({"generation_model": ""})
+            assert parsed.generation_model is None
             parsed = RemakePreviewRequest.model_validate({"generation_model": "nanogpt:new-image-model"})
             assert parsed.generation_model == "nanogpt:new-image-model"
+            parsed = RemakePreviewRequest.model_validate({"generation_model": "openai:gpt-image-2"})
+            assert parsed.generation_model == "openai:gpt-image-2"
 
 
 # ── GET /animas/{name}/assets ───────────────────────────
+
+
+class TestIdentityAppearancePrompt:
+    def test_prefers_identity_appearance_field_over_cached_prompt(self, tmp_path):
+        from server.routes.assets import _identity_appearance_prompt
+
+        anima_dir = tmp_path / "alice"
+        assets_dir = anima_dir / "assets"
+        assets_dir.mkdir(parents=True)
+        (assets_dir / "prompt_realistic.txt").write_text("generic cached office portrait\n", encoding="utf-8")
+        (anima_dir / "identity.md").write_text(
+            "# Alice\n\n"
+            "## \u5916\u898b\n"
+            "\u5916\u898b: realistic, young Japanese woman, thin-framed glasses, half-up black hair, soft cardigan\n",
+            encoding="utf-8",
+        )
+
+        prompt = _identity_appearance_prompt(anima_dir, name="alice", style="realistic")
+
+        assert prompt is not None
+        assert "thin-framed glasses" in prompt
+        assert "half-up black hair" in prompt
+        assert "generic cached" not in prompt
+
+    def test_openai_identity_appearance_can_use_bustup_composition(self, tmp_path):
+        from server.routes.assets import _identity_appearance_prompt
+
+        anima_dir = tmp_path / "alice"
+        anima_dir.mkdir()
+        (anima_dir / "identity.md").write_text(
+            "# Alice\n\n"
+            "## \u5916\u898b\n"
+            "\u5916\u898b: realistic, young Japanese woman, thin-framed glasses, half-up black hair\n",
+            encoding="utf-8",
+        )
+
+        prompt = _identity_appearance_prompt(anima_dir, name="alice", style="realistic", composition="bustup")
+
+        assert prompt is not None
+        assert "bust-up head-and-shoulders portrait" in prompt
+        assert "thin-framed glasses" in prompt
+        assert "full-length" not in prompt
+
+    def test_uses_identity_appearance_heading_when_field_is_absent(self, tmp_path):
+        from server.routes.assets import _identity_appearance_prompt
+
+        anima_dir = tmp_path / "alice"
+        anima_dir.mkdir()
+        (anima_dir / "identity.md").write_text(
+            "# Alice\n\n"
+            "## \u5916\u898b\n"
+            "\u77e5\u7684\u3067\u843d\u3061\u7740\u3044\u305f\u96f0\u56f2\u6c17\u306e\u5973\u6027\u3002\n"
+            "\u9577\u3081\u306e\u9ed2\u9aea\u3092\u30cf\u30fc\u30d5\u30a2\u30c3\u30d7\u306b\u307e\u3068\u3081\u3066\u3044\u308b\u3002\n\n"
+            "## Personality\n"
+            "Calm.\n",
+            encoding="utf-8",
+        )
+
+        prompt = _identity_appearance_prompt(anima_dir, name="alice", style="realistic")
+
+        assert prompt is not None
+        assert "\u77e5\u7684\u3067\u843d\u3061\u7740\u3044\u305f" in prompt
+        assert "Calm" not in prompt
 
 
 class TestListAssets:
@@ -533,6 +607,51 @@ class TestRemakePreview:
         mock_pipeline.generate_all.assert_called_once()
         ga_kw = mock_pipeline.generate_all.call_args.kwargs
         assert "vibe_image" not in ga_kw
+
+    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.config.models.load_config")
+    async def test_remake_preview_uses_identity_appearance_before_cached_prompt(
+        self,
+        mock_load_config,
+        mock_pipeline_cls,
+        tmp_path,
+    ):
+        import asyncio
+
+        animas_dir = tmp_path / "animas"
+        anima_dir = animas_dir / "alice"
+        assets_dir = anima_dir / "assets"
+        assets_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text(
+            "# Alice\n\n"
+            "## \u5916\u898b\n"
+            "\u5916\u898b: realistic, young Japanese woman, thin-framed glasses, half-up black hair\n",
+            encoding="utf-8",
+        )
+        (assets_dir / "prompt_realistic.txt").write_text("generic cached office portrait\n", encoding="utf-8")
+        (assets_dir / "avatar_fullbody_realistic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        mock_load_config.return_value = MagicMock(image_gen=ImageGenConfig(backend="diffusers", image_style="realistic"))
+        mock_pipeline = MagicMock()
+        mock_pipeline.generate_all.return_value = MagicMock(errors=[])
+        mock_pipeline_cls.return_value = mock_pipeline
+
+        app = _make_test_app(animas_dir=animas_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/alice/assets/remake-preview",
+                json={"image_style": "realistic"},
+            )
+
+        assert resp.status_code == 202
+
+        await asyncio.sleep(0.05)
+        prompt = mock_pipeline.generate_all.call_args.kwargs["prompt"]
+        assert "bust-up head-and-shoulders portrait" in prompt
+        assert "thin-framed glasses" in prompt
+        assert "half-up black hair" in prompt
+        assert "generic cached" not in prompt
 
 
 # ── POST /animas/{name}/assets/upload-fullbody ──────────

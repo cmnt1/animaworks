@@ -32,6 +32,7 @@ from .fal import FalTextToImageClient, FluxKontextClient
 from .meshy import MeshyClient
 from .nanogpt import NanoGPTImageClient
 from .novelai import NovelAIClient
+from .openai import OpenAIImageClient
 from .prompts import (
     _BUSTUP_PROMPT,
     _CHAT_ICON_PROMPT,
@@ -80,4 +81,5 @@ __all__ = [
     "FalTextToImageClient",
     "MeshyClient",
     "NanoGPTImageClient",
+    "OpenAIImageClient",
 ]

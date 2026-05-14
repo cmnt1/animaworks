@@ -26,7 +26,6 @@ from core.tools.image_gen import (
     get_tool_schemas,
 )
 
-
 # ── _image_to_data_uri ───────────────────────────────────────────
 
 
@@ -451,6 +450,7 @@ class TestImageGenPipeline:
     def test_generate_all_warns_missing_style_reference(self, tmp_path: Path, monkeypatch, caplog):
         monkeypatch.setenv("NOVELAI_TOKEN", "test-token")
         import logging
+
         from core.config.models import ImageGenConfig
 
         cfg = ImageGenConfig(image_style="anime", style_reference="/nonexistent/path/style.png")
@@ -493,6 +493,95 @@ class TestImageGenPipeline:
             call_kwargs = mock_client.generate_fullbody.call_args[1]
             assert call_kwargs["vibe_strength"] == 0.3
             assert call_kwargs["vibe_info_extracted"] == 0.5
+
+    def test_generate_all_uses_openai_generation_model(self, tmp_path: Path):
+        from core.config.models import ImageGenConfig
+
+        cfg = ImageGenConfig(image_style="realistic")
+        pipe = ImageGenPipeline(tmp_path, config=cfg)
+
+        with patch("core.tools.image.openai.OpenAIImageClient") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_client.generate_fullbody.return_value = b"PNG-DATA"
+            mock_openai_cls.return_value = mock_client
+
+            result = pipe.generate_all(
+                prompt="realistic full body portrait",
+                skip_existing=False,
+                steps=["fullbody"],
+                generation_model="openai:gpt-image-2",
+                vibe_image=b"STYLE",
+            )
+
+            assert result.fullbody_path == tmp_path / "assets" / "avatar_fullbody_realistic.png"
+            mock_openai_cls.assert_called_once_with(model="gpt-image-2")
+            call_kwargs = mock_client.generate_fullbody.call_args[1]
+            assert call_kwargs["vibe_image"] == b"STYLE"
+            assert call_kwargs["face_reference_image"] is None
+
+    def test_openai_image_client_uses_codex_subscription_image_gen(self, tmp_path: Path, monkeypatch):
+        from core.tools.image.openai import OpenAIImageClient
+
+        codex_home = tmp_path / "codex-home"
+        codex_home.mkdir()
+        seen: dict[str, object] = {}
+
+        def fake_run(cmd, **kwargs):
+            instruction = kwargs["input"]
+            marker = "Save or copy the final generated image to this exact path:\n"
+            output_path = Path(instruction.split(marker, 1)[1].split("\n", 1)[0])
+            output_path.write_bytes(b"PNG-DATA")
+            seen["cmd"] = cmd
+            seen["env"] = kwargs["env"]
+            seen["input"] = kwargs["input"]
+            seen["instruction"] = instruction
+            return type("Proc", (), {"returncode": 0, "stdout": str(output_path), "stderr": ""})()
+
+        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
+        monkeypatch.setattr(
+            "server.routes.usage_routes.get_openai_subscription_codex_home",
+            lambda refresh=False: codex_home,
+        )
+        monkeypatch.setattr("core.tools.image.openai.subprocess.run", fake_run)
+
+        img = OpenAIImageClient(model="gpt-image-2").generate_fullbody(
+            prompt="portrait",
+            vibe_image=b"STYLE",
+            face_reference_image=b"FACE",
+        )
+
+        assert img == b"PNG-DATA"
+        assert seen["cmd"][:2] == ["codex", "exec"]
+        assert seen["cmd"][-1] == "-"
+        assert seen["env"]["CODEX_HOME"] == str(codex_home)
+        assert seen["input"] == seen["instruction"]
+        assert seen["cmd"].count("--image") == 2
+        assert "style_reference.png" in seen["instruction"]
+        assert "face_reference.png" in seen["instruction"]
+        assert "mandatory visual inputs" in seen["instruction"]
+        assert "primary face and identity reference" in seen["instruction"]
+        assert "bust-up head-and-shoulders human character portrait" in seen["instruction"]
+        assert "Prioritize face identity" in seen["instruction"]
+        assert "Do not use the OpenAI API directly" in seen["instruction"]
+
+    def test_openai_image_client_reports_codex_failure(self, tmp_path: Path, monkeypatch):
+        from core.tools.image.openai import OpenAIImageClient
+
+        codex_home = tmp_path / "codex-home"
+        codex_home.mkdir()
+
+        def fake_run(cmd, **kwargs):
+            return type("Proc", (), {"returncode": 1, "stdout": "", "stderr": "image tool failed"})()
+
+        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
+        monkeypatch.setattr(
+            "server.routes.usage_routes.get_openai_subscription_codex_home",
+            lambda refresh=False: codex_home,
+        )
+        monkeypatch.setattr("core.tools.image.openai.subprocess.run", fake_run)
+
+        with pytest.raises(RuntimeError, match="Codex image_gen failed"):
+            OpenAIImageClient(model="gpt-image-2").generate_fullbody(prompt="portrait")
 
     @patch("core.tools._anima_icon_url.persist_anima_icon_path_template")
     def test_generate_all_icon_step_uses_square_aspect_ratio(

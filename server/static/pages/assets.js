@@ -1,4 +1,4 @@
-// ── Asset Management ────────────────────────
+﻿// ── Asset Management ────────────────────────
 import { api } from "../modules/api.js";
 import { escapeHtml } from "../modules/state.js";
 import { t } from "/shared/i18n.js";
@@ -16,6 +16,7 @@ let _previewHistory = [];
 let _currentPreviewIdx = -1;
 let _imageModelsCache = null;
 
+const DEFAULT_GENERATION_MODEL = "openai:gpt-image-2";
 const EXPRESSION_LIST = ["neutral", "smile", "laugh", "troubled", "surprised", "thinking", "embarrassed"];
 
 // ── Render / Destroy ────────────────────────
@@ -500,6 +501,7 @@ async function _regenerateAllExpressions(style) {
 
 function _fallbackImageModels() {
   return [
+    { id: "gpt-image-2", value: "openai:gpt-image-2", label: "gpt-image-2", provider: "openai", image_to_image: true },
     { id: "chroma", value: "nanogpt:chroma", label: "chroma", provider: "nanogpt", image_to_image: false },
     { id: "hidream", value: "nanogpt:hidream", label: "hidream", provider: "nanogpt", image_to_image: true },
     { id: "qwen-image", value: "nanogpt:qwen-image", label: "qwen-image", provider: "nanogpt", image_to_image: false },
@@ -518,7 +520,8 @@ async function _fetchImageModels(force = false) {
   return _imageModelsCache;
 }
 
-function _imageModelOptionsHtml(models, currentValue = "") {
+function _imageModelOptionsHtml(models, currentValue = null) {
+  const selectedValue = currentValue || DEFAULT_GENERATION_MODEL;
   const seen = new Set([""]);
   const options = [
     `<option value="">Diffusers (Local)</option>`,
@@ -527,29 +530,36 @@ function _imageModelOptionsHtml(models, currentValue = "") {
       const value = rawValue || "";
       if (!value || seen.has(value)) return "";
       seen.add(value);
-      const label = model.provider === "nanogpt" ? `nanoGPT: ${model.label || model.id}` : (model.label || model.id);
-      const selected = value === currentValue ? " selected" : "";
+      const label = model.provider === "nanogpt"
+        ? `nanoGPT: ${model.label || model.id}`
+        : model.provider === "openai"
+          ? `OpenAI: ${model.label || model.id}`
+          : (model.label || model.id);
+      const selected = value === selectedValue ? " selected" : "";
       const img2img = model.image_to_image ? "true" : "false";
       return `<option value="${escapeHtml(value)}" data-img2img="${img2img}"${selected}>${escapeHtml(label)}</option>`;
     }),
   ].filter(Boolean);
-  if (currentValue && !seen.has(currentValue)) {
-    options.push(`<option value="${escapeHtml(currentValue)}" selected>${escapeHtml(currentValue)} (current)</option>`);
+  if (selectedValue && !seen.has(selectedValue)) {
+    options.push(`<option value="${escapeHtml(selectedValue)}" selected>${escapeHtml(selectedValue)} (current)</option>`);
   }
   return options.join("");
 }
 
-async function _loadImageModelsIntoSelect(select, currentValue = "") {
+async function _loadImageModelsIntoSelect(select, currentValue = null) {
   if (!select) return;
-  const selected = currentValue || select.value || "";
+  const selected = currentValue === null || currentValue === undefined
+    ? (select.value || DEFAULT_GENERATION_MODEL)
+    : (currentValue || DEFAULT_GENERATION_MODEL);
   const models = await _fetchImageModels();
   select.innerHTML = _imageModelOptionsHtml(models, selected);
-  if (selected) select.value = selected;
+  select.value = selected;
   _updateVibeSliderState();
 }
 
 function _imageModelProviderLabel(provider) {
   if (provider === "nanogpt") return "nanoGPT";
+  if (provider === "openai") return "OpenAI";
   return provider || "";
 }
 
@@ -563,7 +573,10 @@ function _imageModelSourceLabel(result) {
 }
 
 function _imageModelRefreshStatusInfo(results) {
-  const nonDynamic = (Array.isArray(results) ? results : []).filter(r => r && r.dynamic !== true);
+  const nonDynamic = (Array.isArray(results) ? results : []).filter(r => {
+    if (!r || r.dynamic === true) return false;
+    return !(r.provider === "openai" && (r.source === "known" || r.status === "known"));
+  });
   if (nonDynamic.length === 0) {
     return {
       text: t("assets.image_model_refreshed"),
@@ -597,7 +610,7 @@ function _bindImageModelRefreshButton() {
   if (!btn) return;
 
   btn.addEventListener("click", async () => {
-    const selectedValue = select?.value || "";
+    const selectedValue = select?.value || DEFAULT_GENERATION_MODEL;
     btn.disabled = true;
     btn.textContent = t("assets.image_model_refreshing");
     if (status) {
@@ -713,9 +726,10 @@ function _openRemakeModal() {
           <div class="assets-modal-control-row">
             <label class="assets-modal-label" for="assetsGenModel">${t("assets.generation_model")}:</label>
             <select id="assetsGenModel" class="assets-modal-select">
+              <option value="openai:gpt-image-2" data-img2img="true" selected>OpenAI: gpt-image-2</option>
               <option value="">Diffusers (Local)</option>
               <option value="nanogpt:chroma">nanoGPT: chroma</option>
-              <option value="nanogpt:hidream">nanoGPT: hidream (image-to-image 対応)</option>
+              <option value="nanogpt:hidream" data-img2img="true">nanoGPT: hidream</option>
               <option value="nanogpt:qwen-image">nanoGPT: qwen-image</option>
               <option value="nanogpt:z-image-turbo">nanoGPT: z-image-turbo</option>
             </select>
@@ -823,6 +837,7 @@ function _openRemakeModal() {
   const genModelSelect = document.getElementById("assetsGenModel");
   if (genModelSelect) {
     genModelSelect.innerHTML = _imageModelOptionsHtml(_imageModelsCache || _fallbackImageModels());
+    genModelSelect.value = DEFAULT_GENERATION_MODEL;
     genModelSelect.insertAdjacentHTML(
       "afterend",
       `<button type="button" class="btn-secondary btn-sm" id="assetsImageModelRefreshBtn" style="margin-left:0.5rem;">${t("assets.image_model_refresh")}</button><span id="assetsImageModelRefreshStatus" style="margin-left:0.5rem;font-size:0.75rem;color:var(--aw-color-text-secondary,#888);"></span>`
@@ -902,6 +917,7 @@ function _updateVibeSliderState() {
   const genModelSelect = document.getElementById("assetsGenModel");
   const genModel = genModelSelect?.value || "";
   const isNanoGPT = genModel.startsWith("nanogpt:");
+  const isOpenAI = genModel.startsWith("openai:");
 
   const styleFrom = document.getElementById("assetsStyleFrom")?.value;
   const faceRefUrl = document.getElementById("assetsFaceRefUrl")?.value?.trim();
@@ -914,7 +930,10 @@ function _updateVibeSliderState() {
 
   // NanoGPT models: disable controls not supported by text-to-image.
   // Models with image-to-image support (e.g. hidream) keep Face Reference enabled.
-  const nanogptImg2Img = genModelSelect?.selectedOptions?.[0]?.dataset?.img2img === "true" || genModel === "nanogpt:hidream";
+  const selectedImg2Img = genModelSelect?.selectedOptions?.[0]?.dataset?.img2img === "true"
+    || genModel === "nanogpt:hidream"
+    || isOpenAI;
+  const nanogptImg2Img = selectedImg2Img && isNanoGPT;
   const nanogptDisabledIds = ["assetsStyleFrom", "assetsVibeStrength", "assetsInfoExtract",
                               "assetsSteps"];
   nanogptDisabledIds.forEach(id => {
@@ -935,6 +954,23 @@ function _updateVibeSliderState() {
     if (importRow) importRow.style.display = (nanogptImg2Img && hasFaceRef) ? "" : "none";
     if (!nanogptImg2Img) return;
     // For img2img NanoGPT models, fall through to handle import-as-is checkbox state
+    if (!hasFaceRef && importCheck) importCheck.checked = false;
+    return;
+  }
+
+  if (isOpenAI) {
+    ["assetsVibeStrength", "assetsInfoExtract", "assetsSteps"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.disabled = true;
+        el.closest(".assets-modal-control-row")?.classList.add("assets-control-disabled");
+      }
+    });
+    if (faceRefEl) {
+      faceRefEl.disabled = !selectedImg2Img;
+      faceRefEl.closest(".assets-modal-control-row")?.classList.toggle("assets-control-disabled", !selectedImg2Img);
+    }
+    if (importRow) importRow.style.display = hasFaceRef ? "" : "none";
     if (!hasFaceRef && importCheck) importCheck.checked = false;
     return;
   }
@@ -994,15 +1030,16 @@ async function _generatePreview() {
   const imageStyle = document.getElementById("assetsImageStyle")?.value || _currentImageStyle();
   const faceRefUrl = document.getElementById("assetsFaceRefUrl")?.value?.trim() || null;
 
-  const genModel = document.getElementById("assetsGenModel")?.value || null;
+  const genModelSelect = document.getElementById("assetsGenModel");
+  const genModel = genModelSelect ? genModelSelect.value : DEFAULT_GENERATION_MODEL;
 
   const requestBody = {
+    generation_model: genModel,
     vibe_strength: vibeStrength,
     vibe_info_extracted: infoExtracted,
     image_style: imageStyle,
     num_inference_steps: numSteps,
   };
-  if (genModel) requestBody.generation_model = genModel;
   if (styleFrom) requestBody.style_from = styleFrom;
   if (_previewBackupId) requestBody.backup_id = _previewBackupId;
   if (faceRefUrl) requestBody.face_reference_url = faceRefUrl;

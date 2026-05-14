@@ -76,6 +76,7 @@ from core.tools._image_clients import (
     MeshyClient,
     NanoGPTImageClient,
     NovelAIClient,
+    OpenAIImageClient,
     _image_to_data_uri,
     _retry,
 )

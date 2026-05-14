@@ -381,6 +381,12 @@ class ImageGenPipeline:
                         client: NanoGPTImageClient | NovelAIClient | FalTextToImageClient | LocalDiffusersClient = (
                             NanoGPTImageClient(model=nanogpt_model)
                         )
+                    elif generation_model and generation_model.startswith("openai:"):
+                        openai_model = generation_model.split(":", 1)[1]
+                        from core.tools.image.openai import OpenAIImageClient
+
+                        logger.info("Step 1: Generating full-body with OpenAI Images (%s) …", openai_model)
+                        client = OpenAIImageClient(model=openai_model)
                     elif self._use_diffusers:
                         logger.info("Step 1: Generating full-body with local Diffusers …")
                         client = LocalDiffusersClient(

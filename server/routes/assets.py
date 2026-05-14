@@ -19,6 +19,7 @@ from pydantic import BaseModel, field_validator
 
 from core.paths import get_data_dir
 from core.tools.image.nanogpt import NANOGPT_IMG2IMG_MODELS, NANOGPT_SUBSCRIPTION_MODELS
+from core.tools.image.openai import OPENAI_IMAGE_MODELS, OPENAI_IMG2IMG_MODELS
 from server.events import emit
 from server.routes.media_proxy import proxy_external_image
 
@@ -121,6 +122,7 @@ class AssetRegenerateRequest(BaseModel):
 IMAGE_MODEL_CATALOG_CACHE_FILE = "image_model_catalog_cache.json"
 NANOGPT_IMAGE_MODELS_URL = "https://nano-gpt.com/api/v1/image-models"
 _VALID_NANOGPT_MODELS = set(NANOGPT_SUBSCRIPTION_MODELS)
+DEFAULT_IMAGE_GENERATION_MODEL = "openai:gpt-image-2"
 
 
 def _unique_image_models(models: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -128,21 +130,22 @@ def _unique_image_models(models: list[dict[str, object]]) -> list[dict[str, obje
     result: list[dict[str, object]] = []
     for model in models:
         raw_id = str(model.get("id", "")).strip()
-        if not raw_id or raw_id in seen:
+        provider = str(model.get("provider") or "nanogpt").strip() or "nanogpt"
+        raw_value = str(model.get("value") or f"{provider}:{raw_id}").strip()
+        if not raw_id or not raw_value or raw_value in seen:
             continue
         label = str(model.get("label") or model.get("name") or raw_id).strip() or raw_id
-        provider = str(model.get("provider") or "nanogpt").strip() or "nanogpt"
         result.append(
             {
                 "id": raw_id,
-                "value": str(model.get("value") or f"{provider}:{raw_id}"),
+                "value": raw_value,
                 "label": label,
                 "provider": provider,
                 "image_to_image": bool(model.get("image_to_image")),
                 "source": str(model.get("source") or "api"),
             }
         )
-        seen.add(raw_id)
+        seen.add(raw_value)
     return result
 
 
@@ -157,6 +160,21 @@ def _known_nanogpt_image_models() -> list[dict[str, object]]:
                 "source": "known",
             }
             for model_id in NANOGPT_SUBSCRIPTION_MODELS
+        ]
+    )
+
+
+def _known_openai_image_models() -> list[dict[str, object]]:
+    return _unique_image_models(
+        [
+            {
+                "id": model_id,
+                "label": model_id,
+                "provider": "openai",
+                "image_to_image": model_id in OPENAI_IMG2IMG_MODELS,
+                "source": "known",
+            }
+            for model_id in OPENAI_IMAGE_MODELS
         ]
     )
 
@@ -305,11 +323,19 @@ def _list_nanogpt_image_models(api_key: str = "") -> list[dict[str, object]]:
 
 def _image_models_payload() -> dict[str, object]:
     known = _known_nanogpt_image_models()
+    known_openai = _known_openai_image_models()
     cached = _cached_nanogpt_image_models()
-    models = _unique_image_models([*known, *cached])
+    models = _unique_image_models([*known_openai, *known, *cached])
     source = "cache" if cached else "known"
     return {
         "providers": [
+            {
+                "provider": "openai",
+                "status": "known",
+                "source": "known",
+                "dynamic": False,
+                "count": len(known_openai),
+            },
             {
                 "provider": "nanogpt",
                 "status": source,
@@ -329,8 +355,148 @@ def _valid_nanogpt_image_model_ids() -> set[str]:
     }
 
 
+def _valid_openai_image_model_ids() -> set[str]:
+    return {str(model["id"]) for model in _known_openai_image_models()}
+
+
+_APPEARANCE_FIELD_NAMES = (
+    "image[_ ]?prompt",
+    "\u753b\u50cf\u30d7\u30ed\u30f3\u30d7\u30c8",
+    "\u5916\u898b",
+    "appearance",
+    "character[_ ]?design",
+    "\u30ad\u30e3\u30e9\u30af\u30bf\u30fc\u30c7\u30b6\u30a4\u30f3",
+    "\u898b\u305f\u76ee",
+)
+_APPEARANCE_FIELD_RE = re.compile(
+    rf"^\s*(?:{'|'.join(_APPEARANCE_FIELD_NAMES)})\s*[:\uff1a]\s*(.+?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_APPEARANCE_HEADING_RE = re.compile(
+    r"^\s{0,3}#{1,6}\s*(?:\u5916\u898b|appearance|\u898b\u305f\u76ee)\s*$",
+    re.IGNORECASE,
+)
+_MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+\S")
+
+
+def _clean_appearance_text(text: str) -> str:
+    lines: list[str] = []
+    for line in text.splitlines():
+        value = line.strip()
+        if not value or value.startswith("<!--") or value.startswith("```"):
+            continue
+        value = re.sub(r"^[-*]\s+", "", value).strip()
+        if value:
+            lines.append(value)
+    return re.sub(r"\s+", " ", " ".join(lines)).strip()
+
+
+def _read_identity_texts(anima_dir: Path) -> list[str]:
+    texts: list[str] = []
+    for filename in ("identity.md", "character_sheet.md"):
+        path = anima_dir / filename
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            logger.debug("Failed to read appearance source: %s", path, exc_info=True)
+            continue
+        if text.strip():
+            texts.append(text)
+    return texts
+
+
+def _extract_identity_appearance_text(anima_dir: Path) -> str | None:
+    """Extract the explicit appearance section from an Anima identity file."""
+    texts = _read_identity_texts(anima_dir)
+    for text in texts:
+        for match in _APPEARANCE_FIELD_RE.finditer(text):
+            value = _clean_appearance_text(match.group(1))
+            if value:
+                return value
+
+    for text in texts:
+        collecting = False
+        section_lines: list[str] = []
+        for line in text.splitlines():
+            if collecting and _MARKDOWN_HEADING_RE.match(line):
+                break
+            if _APPEARANCE_HEADING_RE.match(line):
+                collecting = True
+                continue
+            if collecting:
+                section_lines.append(line)
+        value = _clean_appearance_text("\n".join(section_lines))
+        if value:
+            return value
+    return None
+
+
+def _strip_style_prefix(appearance: str, style: str) -> str:
+    prefixes = ("realistic", "photorealistic", "anime", "illustration")
+    value = appearance.strip()
+    while True:
+        lowered = value.lower()
+        for prefix in prefixes:
+            marker = f"{prefix},"
+            if lowered.startswith(marker):
+                value = value[len(marker) :].strip()
+                break
+        else:
+            return value
+
+
+def _identity_appearance_prompt(
+    anima_dir: Path,
+    *,
+    name: str,
+    style: str,
+    composition: str = "fullbody",
+) -> str | None:
+    appearance = _extract_identity_appearance_text(anima_dir)
+    if not appearance:
+        return None
+    appearance = _strip_style_prefix(appearance, style)
+    if composition == "bustup":
+        if style == "realistic":
+            return (
+                "RAW photo, 8k uhd, high quality, sharp focus, photorealistic, "
+                "professional portrait photography, DSLR, 85mm lens, studio lighting, "
+                "natural skin texture, "
+                f"bust-up head-and-shoulders portrait of {appearance}, "
+                f"the Anima named {name}, solo, single subject, one person only, "
+                "centered face, visible head, shoulders, and upper torso, facing camera, "
+                "preserve the described identity, face, hairstyle, glasses, clothing, mood, and age, "
+                "no other people, no crowd, no duplicate face, no distorted face"
+            )
+        return (
+            "masterpiece, best quality, high detail, bust-up, head and shoulders, looking at viewer, "
+            f"{appearance}, {name}, solo, single subject, one person only, "
+            "preserve the described identity, face, hairstyle, outfit, mood, and age, "
+            "simple background, no other people, no duplicate face, no distorted face"
+        )
+    if style == "realistic":
+        return (
+            "RAW photo, 8k uhd, high quality, sharp focus, photorealistic, "
+            "professional portrait photography, DSLR, 85mm lens, studio lighting, "
+            "natural skin texture, "
+            f"full-length full-body portrait of {appearance}, "
+            f"the Anima named {name}, solo, single subject, one person only, "
+            "centered composition, standing naturally, facing camera, "
+            "preserve the described identity, face, hairstyle, glasses, clothing, mood, and age, "
+            "no other people, no crowd, no duplicate body, no extra limbs"
+        )
+    return (
+        "masterpiece, best quality, high detail, full body, standing, looking at viewer, "
+        f"{appearance}, {name}, solo, single subject, one person only, "
+        "preserve the described identity, hairstyle, outfit, mood, and age, "
+        "simple background, no other people, no duplicate body, no extra limbs"
+    )
+
+
 class RemakePreviewRequest(BaseModel):
-    generation_model: str | None = None  # "nanogpt:chroma", "nanogpt:hidream", etc. or None
+    generation_model: str | None = DEFAULT_IMAGE_GENERATION_MODEL  # "nanogpt:chroma", "openai:gpt-image-2", etc.
     style_from: str | None = None
     vibe_strength: float = 0.6
     vibe_info_extracted: float = 0.8
@@ -347,10 +513,17 @@ class RemakePreviewRequest(BaseModel):
     def validate_generation_model(cls, v: str | None) -> str | None:
         if v is None:
             return v
+        if v == "":
+            return None
         if v.startswith("nanogpt:"):
             model_name = v.split(":", 1)[1]
             if model_name not in _valid_nanogpt_image_model_ids():
                 raise ValueError(f"Unknown NanoGPT model: {model_name}")
+            return v
+        if v.startswith("openai:"):
+            model_name = v.split(":", 1)[1]
+            if model_name not in _valid_openai_image_model_ids():
+                raise ValueError(f"Unknown OpenAI image model: {model_name}")
             return v
         raise ValueError(f"Invalid generation_model: {v}")
 
@@ -462,6 +635,7 @@ def create_assets_router() -> APIRouter:
     async def refresh_image_models():
         """Refresh image-generation model catalogs and return the updated dropdown payload."""
         fallback = _known_nanogpt_image_models()
+        openai_known = _known_openai_image_models()
         try:
             models = _list_nanogpt_image_models(_nanogpt_image_api_key())
         except Exception as exc:
@@ -471,6 +645,13 @@ def create_assets_router() -> APIRouter:
             return {
                 "providers": [
                     {
+                        "provider": "openai",
+                        "status": "known",
+                        "source": "known",
+                        "dynamic": False,
+                        "count": len(openai_known),
+                    },
+                    {
                         "provider": "nanogpt",
                         "status": "cached" if cached else "fallback",
                         "source": "cache" if cached else "known",
@@ -479,11 +660,18 @@ def create_assets_router() -> APIRouter:
                         "message": str(exc),
                     }
                 ],
-                "models": _unique_image_models([*fallback, *(cached or [])]),
+                "models": _unique_image_models([*openai_known, *fallback, *(cached or [])]),
             }
         _cache_nanogpt_image_models(models, status="ok")
         return {
             "providers": [
+                {
+                    "provider": "openai",
+                    "status": "known",
+                    "source": "known",
+                    "dynamic": False,
+                    "count": len(openai_known),
+                },
                 {
                     "provider": "nanogpt",
                     "status": "ok",
@@ -492,7 +680,7 @@ def create_assets_router() -> APIRouter:
                     "count": len(models),
                 }
             ],
-            "models": _unique_image_models([*fallback, *models]),
+            "models": _unique_image_models([*openai_known, *fallback, *models]),
         }
 
     @router.get("/animas/{name}/assets")
@@ -1062,8 +1250,27 @@ def create_assets_router() -> APIRouter:
         if not prompt:
             from core.asset_reconciler import _extract_prompt, _resolve_prompt
 
+            prompt_style = "realistic" if is_realistic else "anime"
+            prompt_composition = (
+                "bustup" if (body.generation_model or "").startswith("openai:") else "fullbody"
+            )
+            prompt = _identity_appearance_prompt(
+                anima_dir,
+                name=name,
+                style=prompt_style,
+                composition=prompt_composition,
+            )
+            if prompt:
+                logger.info(
+                    "Using identity appearance prompt for '%s' (%s, %s)",
+                    name,
+                    prompt_style,
+                    prompt_composition,
+                )
+
             # Fast path: check cached prompt files
-            prompt = _resolve_prompt(anima_dir, style="realistic" if is_realistic else "anime")
+            if not prompt:
+                prompt = _resolve_prompt(anima_dir, style=prompt_style)
             if not prompt:
                 # Slow path: extract from identity.md / character_sheet.md via LLM
                 logger.info("No cached prompt for '%s', attempting LLM synthesis…", name)
@@ -1071,7 +1278,7 @@ def create_assets_router() -> APIRouter:
                     import asyncio as _asyncio
 
                     prompt = await _asyncio.wait_for(
-                        _extract_prompt(anima_dir, style="realistic" if is_realistic else "anime"),
+                        _extract_prompt(anima_dir, style=prompt_style),
                         timeout=45.0,
                     )
                 except TimeoutError:

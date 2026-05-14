@@ -646,6 +646,38 @@ def _read_codex_credentials() -> tuple[str | None, str | None]:
     return tokens.get("access_token"), _extract_codex_account_id(tokens)
 
 
+def get_openai_subscription_auth_headers(*, refresh: bool = False) -> dict[str, str]:
+    """Return ChatGPT subscription auth headers shared by Usage Governor and tools."""
+    if refresh:
+        auth_path, auth_data = _read_codex_auth_data()
+        if auth_path and auth_data:
+            _refresh_codex_token(auth_path, auth_data)
+
+    token, account_id = _read_codex_credentials()
+    if not token:
+        raise RuntimeError("Codex credentials not found")
+
+    headers: dict[str, str] = {
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "CodexBar",
+        "Accept": "application/json",
+    }
+    if account_id:
+        headers["ChatGPT-Account-Id"] = account_id
+    return headers
+
+
+def get_openai_subscription_codex_home(*, refresh: bool = False) -> Path:
+    """Return the Codex home directory used by OpenAI subscription auth."""
+    if refresh:
+        get_openai_subscription_auth_headers(refresh=True)
+
+    auth_path, auth_data = _read_codex_auth_data()
+    if not auth_path or not auth_data:
+        raise RuntimeError("Codex credentials not found")
+    return auth_path.parent
+
+
 def _window_label(seconds: int) -> str:
     """Convert limit_window_seconds to a human label like '5h' or 'Week'."""
     hours = seconds / 3600
@@ -663,21 +695,14 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
         if cached is not None:
             return cached
 
-    token, account_id = _read_codex_credentials()
-    if not token:
+    try:
+        headers = get_openai_subscription_auth_headers()
+    except RuntimeError:
         result: dict[str, Any] = {"error": "no_credentials", "message": "Codex credentials not found"}
         _set_cache("openai", result)
         return result
 
     try:
-        headers: dict[str, str] = {
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "CodexBar",
-            "Accept": "application/json",
-        }
-        if account_id:
-            headers["ChatGPT-Account-Id"] = account_id
-
         req = urllib.request.Request(_CHATGPT_USAGE_URL, headers=headers)
         with urllib.request.urlopen(req, timeout=8) as resp:
             raw = json.loads(resp.read().decode("utf-8"))
@@ -713,12 +738,13 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
             if allow_refresh:
-                auth_path, auth_data = _read_codex_auth_data()
-                if auth_path and auth_data:
-                    refreshed_token, _account_id = _refresh_codex_token(auth_path, auth_data)
-                    if refreshed_token:
-                        logger.info("Codex token refreshed after %s, retrying usage fetch", e.code)
-                        return _fetch_openai_usage(skip_cache=True, allow_refresh=False)
+                try:
+                    get_openai_subscription_auth_headers(refresh=True)
+                except Exception:
+                    logger.debug("Codex token refresh failed after %s", e.code, exc_info=True)
+                else:
+                    logger.info("Codex token refreshed after %s, retrying usage fetch", e.code)
+                    return _fetch_openai_usage(skip_cache=True, allow_refresh=False)
             result = {"error": "unauthorized", "message": "Codex token expired — re-login to Codex"}
         elif e.code == 429:
             return {"error": "rate_limited", "message": "Rate limited — retry shortly"}

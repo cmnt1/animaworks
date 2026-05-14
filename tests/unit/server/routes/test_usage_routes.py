@@ -164,6 +164,16 @@ def test_fetch_openai_usage_refreshes_after_401(monkeypatch):
     assert len(calls) == 2
 
 
+def test_openai_subscription_codex_home_uses_usage_governor_auth_path(tmp_path: Path, monkeypatch):
+    auth_path = tmp_path / "codex-home" / "auth.json"
+    auth_path.parent.mkdir()
+    auth_path.write_text(json.dumps({"tokens": {"access_token": "token"}}), encoding="utf-8")
+
+    monkeypatch.setattr(usage_routes, "_read_codex_auth_data", lambda: (auth_path, {"tokens": {"access_token": "token"}}))
+
+    assert usage_routes.get_openai_subscription_codex_home() == auth_path.parent
+
+
 def test_relogin_claude_does_not_launch_terminal_when_token_is_fresh(monkeypatch):
     launched: list[str] = []
     expires_at = int(time.time() * 1000) + 10 * 60 * 1000
