@@ -216,6 +216,9 @@ class TestDetectAndStore:
         ]
         total_members = sum(len(c.member_uuids) for c in result)
         assert len(member_calls) == total_members
+        for call in member_calls:
+            params = call.args[1] if len(call.args) > 1 else call.kwargs.get("parameters", {})
+            assert params["group_id"] == "group"
 
 
 # ── TestDynamicUpdate ──────────────────────────────────────────────────────
@@ -291,6 +294,7 @@ class TestDynamicUpdate:
             member_calls[0].args[1] if len(member_calls[0].args) > 1 else member_calls[0].kwargs.get("parameters", {})
         )
         assert params.get("entity_uuid") == "e_new"
+        assert params.get("group_id") == "group"
 
 
 # ── TestParseCommunityResponse ─────────────────────────────────────────────

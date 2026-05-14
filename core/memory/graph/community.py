@@ -124,7 +124,10 @@ class CommunityDetector:
 
         community_votes: dict[str, int] = {}
         for n_uuid in neighbor_uuids:
-            rows = await self._driver.execute_query(FIND_COMMUNITY_FOR_ENTITY, {"entity_uuid": n_uuid})
+            rows = await self._driver.execute_query(
+                FIND_COMMUNITY_FOR_ENTITY,
+                {"entity_uuid": n_uuid, "group_id": self._group_id},
+            )
             for row in rows:
                 c_uuid = row.get("community_uuid", "")
                 if c_uuid:
@@ -141,6 +144,7 @@ class CommunityDetector:
                 {
                     "community_uuid": best_community,
                     "entity_uuid": entity_uuid,
+                    "group_id": self._group_id,
                 },
             )
             return best_community
@@ -266,6 +270,7 @@ class CommunityDetector:
                     {
                         "community_uuid": comm.uuid,
                         "entity_uuid": member_uuid,
+                        "group_id": self._group_id,
                     },
                 )
 

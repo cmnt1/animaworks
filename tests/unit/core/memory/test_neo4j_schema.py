@@ -17,10 +17,20 @@ class TestSchemaConstants:
         assert len(CONSTRAINTS) >= 3  # Entity, Episode, Community
 
     def test_constraints_are_idempotent(self):
-        from core.memory.graph.schema import CONSTRAINTS
+        from core.memory.graph.schema import CONSTRAINTS, SCHEMA_META_CONSTRAINTS
 
-        for c in CONSTRAINTS:
+        for c in [*CONSTRAINTS, *SCHEMA_META_CONSTRAINTS]:
             assert "IF NOT EXISTS" in c
+
+    def test_schema_version_is_v5(self):
+        from core.memory.graph.schema import SCHEMA_VERSION
+
+        assert SCHEMA_VERSION == 5
+
+    def test_schema_meta_constraint_is_keyed(self):
+        from core.memory.graph.schema import SCHEMA_META_CONSTRAINTS
+
+        assert any("_SchemaMeta" in c and "m.name IS UNIQUE" in c for c in SCHEMA_META_CONSTRAINTS)
 
     def test_indexes_are_idempotent(self):
         from core.memory.graph.schema import INDEXES
@@ -52,6 +62,7 @@ class TestEnsureSchema:
             CONSTRAINTS,
             INDEXES,
             MIGRATIONS,
+            SCHEMA_META_CONSTRAINTS,
             VECTOR_INDEXES,
             ensure_schema,
         )
@@ -68,7 +79,13 @@ class TestEnsureSchema:
         assert "vector" in result
         migration_writes = sum(len(m["queries"]) + 1 for m in MIGRATIONS)
         expected_calls = (
-            len(CONSTRAINTS) + len(INDEXES) + len(ADVANCED_INDEXES) + len(VECTOR_INDEXES) + migration_writes
+            len(CONSTRAINTS)
+            + len(INDEXES)
+            + len(ADVANCED_INDEXES)
+            + len(VECTOR_INDEXES)
+            + 1  # schema meta canonicalization
+            + len(SCHEMA_META_CONSTRAINTS)
+            + migration_writes
         )
         assert mock_driver.execute_write.call_count == expected_calls
 
@@ -78,6 +95,7 @@ class TestEnsureSchema:
             ADVANCED_INDEXES,
             CONSTRAINTS,
             INDEXES,
+            SCHEMA_META_CONSTRAINTS,
             VECTOR_INDEXES,
             ensure_schema,
         )
@@ -88,7 +106,7 @@ class TestEnsureSchema:
 
         result = await ensure_schema(mock_driver)
 
-        assert result["constraints"] == len(CONSTRAINTS)
+        assert result["constraints"] == len(CONSTRAINTS) + len(SCHEMA_META_CONSTRAINTS)
         assert result["indexes"] == len(INDEXES)
         assert result["advanced"] == len(ADVANCED_INDEXES)
         assert result["vector"] == len(VECTOR_INDEXES)
@@ -102,12 +120,21 @@ class TestEnsureSchema:
             CONSTRAINTS,
             INDEXES,
             MIGRATIONS,
+            SCHEMA_META_CONSTRAINTS,
             VECTOR_INDEXES,
             ensure_schema,
         )
 
         migration_writes = sum(len(m["queries"]) + 1 for m in MIGRATIONS)
-        total = len(CONSTRAINTS) + len(INDEXES) + len(ADVANCED_INDEXES) + len(VECTOR_INDEXES) + migration_writes
+        total = (
+            len(CONSTRAINTS)
+            + len(INDEXES)
+            + len(ADVANCED_INDEXES)
+            + len(VECTOR_INDEXES)
+            + 1
+            + len(SCHEMA_META_CONSTRAINTS)
+            + migration_writes
+        )
         effects = [None] + [Exception("fail")] + [None] * (total - 2)
 
         mock_driver = AsyncMock()
@@ -131,3 +158,36 @@ class TestEnsureSchema:
         r2 = await ensure_schema(mock_driver)
         assert isinstance(r1, dict)
         assert isinstance(r2, dict)
+
+    @pytest.mark.asyncio
+    async def test_canonicalizes_schema_meta_before_meta_constraint(self):
+        from core.memory.graph.schema import (
+            SCHEMA_META_CANONICALIZATION,
+            SCHEMA_META_CONSTRAINTS,
+            ensure_schema,
+        )
+
+        mock_driver = AsyncMock()
+        mock_driver.execute_write = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[{"version": 5}])
+
+        await ensure_schema(mock_driver)
+
+        write_statements = [call.args[0] for call in mock_driver.execute_write.call_args_list]
+        canonicalization_index = write_statements.index(SCHEMA_META_CANONICALIZATION)
+        meta_constraint_index = write_statements.index(SCHEMA_META_CONSTRAINTS[0])
+        assert canonicalization_index < meta_constraint_index
+
+    def test_v5_migration_registers_optional_properties_and_backfills_group_id(self):
+        from core.memory.graph.schema import MIGRATIONS
+
+        migration = next(m for m in MIGRATIONS if m["version"] == 5)
+        joined = "\n".join(migration["queries"])
+
+        assert "_PropertyKeyRegistry" in joined
+        assert "deleted_at = true" in joined
+        assert "invalid_at = true" in joined
+        assert "expired_at = true" in joined
+        assert "MENTIONS" in joined
+        assert "HAS_MEMBER" in joined
+        assert "SET r.group_id" in joined

@@ -273,6 +273,7 @@ class Neo4jGraphBackend(MemoryBackend):
                             "episode_uuid": episode_uuid,
                             "entity_uuid": resolved.uuid,
                             "uuid": str(uuid4()),
+                            "group_id": self._group_id,
                             "created_at": now_str,
                         },
                     )
