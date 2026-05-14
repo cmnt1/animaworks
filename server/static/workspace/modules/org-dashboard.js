@@ -18,6 +18,7 @@ import {
 } from "../../modules/avatar-resolver.js";
 import { ReplayEngine } from "./replay-engine.js";
 import { ReplayUI } from "./replay-ui.js";
+import { resolveEventChannel, resolveEventPersons, resolveEventText } from "./activity-normalize.js";
 
 const logger = createLogger("org-dashboard");
 
@@ -1276,11 +1277,15 @@ export function isReplayMode() {
  * @param {number} [hours=12]
  */
 export async function startReplay(hours = 24) {
-  if (_replayMode) return;
-  _replayMode = true;
-
+  if (_replayMode) return true;
   const root = _container?.querySelector(".org-canvas-root");
-  if (!root) { _replayMode = false; return; }
+  if (!root) return false;
+
+  _replayUI?.dispose();
+  _replayUI = null;
+  _replayEngine?.dispose();
+  _replayEngine = null;
+  _replayMode = true;
 
   _replayEngine = new ReplayEngine({
     onEvent: _handleReplayEvent,
@@ -1300,10 +1305,25 @@ export async function startReplay(hours = 24) {
     initialHours: hours,
   });
 
-  await _loadReplayData(hours);
+  const loaded = await _loadReplayData(hours);
+  if (!loaded) {
+    const buffered = _replayEngine?.flushLiveBuffer() ?? [];
+    _replayEngine?.dispose();
+    _replayEngine = null;
+    _replayMode = false;
+    _clearAllCardStreams();
+    const animas = getState().animas || [];
+    _loadInitialStreams(animas);
+    for (const evt of buffered) {
+      if (evt.handler) evt.handler(evt.data);
+    }
+    return false;
+  }
+  return true;
 }
 
 async function _loadReplayData(hours) {
+  _replayUI.clearError();
   _replayUI.setLoading(true);
   _replayUI.show();
   _clearAllCardStreams();
@@ -1314,9 +1334,12 @@ async function _loadReplayData(hours) {
     _replayUI.updateTimeRange(range.start, range.end);
     _replayUI.setLoading(false);
     _replayEngine.seek(range.start);
-  } catch {
+    return true;
+  } catch (err) {
     _replayUI.setLoading(false);
-    stopReplay();
+    _replayUI.setError(err?.message || "Replay load failed");
+    logger.error("Replay data load failed", err);
+    return false;
   }
 }
 
@@ -1331,7 +1354,7 @@ async function _reloadReplayRange(hours) {
  * Exit replay mode: dispose engine/UI, restore live state.
  */
 export function stopReplay() {
-  if (!_replayMode) return;
+  if (!_replayMode && !_replayEngine && !_replayUI) return;
   _replayMode = false;
 
   const buffered = _replayEngine?.flushLiveBuffer() ?? [];
@@ -1377,15 +1400,18 @@ function _clearAllCardStreams() {
 function _handleReplayEvent(evt, speed) {
   const type = evt.type || evt.name || "";
   const anima = evt.anima || (evt.animas && evt.animas[0]) || "";
+  const persons = resolveEventPersons(evt);
+  const text = resolveEventText(evt);
+  const channel = resolveEventChannel(evt);
 
   if (anima && _cardEls.has(anima)) {
     const data = {
       eventType: type,
-      summary: evt.summary || "",
-      content: evt.content || "",
-      from_person: evt.meta?.from_person || "",
-      to_person: evt.meta?.to_person || "",
-      channel: evt.meta?.channel || evt.channel || "",
+      summary: evt.summary || text || "",
+      content: evt.content || text || "",
+      from_person: persons.from || "",
+      to_person: persons.to || "",
+      channel,
       toolName: evt.tool || evt.tool_name || "",
       toolId: evt.tool_id || "",
       isError: evt.is_error || false,
@@ -1396,14 +1422,14 @@ function _handleReplayEvent(evt, speed) {
     }
   }
 
-  if (type === "message_sent" && evt.meta?.to_person && _cardEls.has(anima)) {
-    const intent = evt.meta?.intent || "";
+  if (type === "message_sent" && persons.to && _cardEls.has(anima)) {
     let msgLineType = "internal";
-    if (intent === "delegation") msgLineType = "delegation";
-    showMessageLine(anima, evt.meta.to_person, evt.summary || "", { lineType: msgLineType, replaySpeed: speed });
+    if (persons.intent === "delegation") msgLineType = "delegation";
+    else if (persons.fromType === "external") msgLineType = "external";
+    showMessageLine(anima, persons.to, evt.summary || text || "", { lineType: msgLineType, replaySpeed: speed });
   } else if (type === "dm_sent" || type === "dm_received") {
-    const from = evt.meta?.from_person || anima;
-    const to = evt.meta?.to_person || "";
+    const from = persons.from || anima;
+    const to = persons.to || "";
     if (from && to) showMessageLine(from, to, evt.summary || "", { replaySpeed: speed });
   }
 }

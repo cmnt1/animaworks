@@ -280,6 +280,80 @@ class TestReplayAPIDataFlow:
             "Event must have anima/animas or type for replay"
         )
 
+    async def test_replay_api_pages_all_events_beyond_logger_cap(self, tmp_path: Path) -> None:
+        """Replay mode must bypass per-Anima 500 cap and expose all pages."""
+        animas_dir = tmp_path / "animas"
+        _setup_anima(animas_dir, "alice")
+        now = datetime.now(UTC)
+        entries = [
+            {
+                "ts": (now - timedelta(seconds=1200 - i)).isoformat(),
+                "type": "message_sent",
+                "summary": f"Replay event {i}",
+                "content": "",
+                "from": "alice",
+                "to": "bob",
+            }
+            for i in range(1200)
+        ]
+        _write_activity(animas_dir, "alice", entries)
+        app = _create_app(tmp_path, anima_names=["alice"])
+        transport = ASGITransport(app=app)
+
+        seen_ids: set[str] = set()
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.get("/api/activity/recent?hours=12&limit=500&offset=0&replay=true")
+            second = await client.get("/api/activity/recent?hours=12&limit=500&offset=500&replay=true")
+            third = await client.get("/api/activity/recent?hours=12&limit=500&offset=1000&replay=true")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert third.status_code == 200
+        first_data = first.json()
+        second_data = second.json()
+        third_data = third.json()
+
+        assert first_data["total"] == 1200
+        assert len(first_data["events"]) == 500
+        assert first_data["has_more"] is True
+        assert len(second_data["events"]) == 500
+        assert second_data["has_more"] is True
+        assert len(third_data["events"]) == 200
+        assert third_data["has_more"] is False
+
+        for page in (first_data, second_data, third_data):
+            for event in page["events"]:
+                seen_ids.add(event["id"])
+        assert len(seen_ids) == 1200
+
+    async def test_non_replay_api_still_caps_limit_to_500(self, tmp_path: Path) -> None:
+        """Non-replay callers keep bounded page size even with a large limit."""
+        animas_dir = tmp_path / "animas"
+        _setup_anima(animas_dir, "alice")
+        now = datetime.now(UTC)
+        entries = [
+            {
+                "ts": (now - timedelta(seconds=600 - i)).isoformat(),
+                "type": "tool_use",
+                "summary": f"Entry {i}",
+                "content": "",
+            }
+            for i in range(600)
+        ]
+        _write_activity(animas_dir, "alice", entries)
+        app = _create_app(tmp_path, anima_names=["alice"])
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/activity/recent?hours=12&limit=9999")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["limit"] == 500
+        assert len(data["events"]) == 500
+        assert data["total"] == 500
+        assert data["has_more"] is True
+
 
 # ── Speed Behavior (JS source analysis) ──────────────────────────
 

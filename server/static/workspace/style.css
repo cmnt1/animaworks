@@ -4221,6 +4221,19 @@ html, body {
   border-color: var(--aw-color-border-medium, #cbd5e1);
 }
 
+.org-replay-error {
+  min-width: 160px;
+  max-width: 320px;
+  color: var(--aw-color-danger, #dc2626);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.org-replay-error[hidden] {
+  display: none;
+}
+
 /* Replay trigger button in view toggle */
 .ws-replay-btn {
   margin-left: 8px;

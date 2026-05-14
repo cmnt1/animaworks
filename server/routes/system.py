@@ -444,12 +444,14 @@ def create_system_router() -> APIRouter:
         # Any entry in the global top-(offset+limit) must be in its own
         # Anima's top-(offset+limit), so this is safe for flat mode.
         # For grouped mode, estimate ~20 events/group with 2x headroom.
-        # For replay mode, load all events within the time window.
-        if grouped:
+        # For replay mode, load all events within the time window. The
+        # response is still globally paged below, but per-Anima loading must
+        # bypass ActivityLogger's normal 500-entry positive-limit cap.
+        if replay:
+            per_anima_limit = 0
+        elif grouped:
             per_anima_limit = (group_offset + group_limit) * 40
             per_anima_limit = max(per_anima_limit, 500)
-        elif replay:
-            per_anima_limit = 50_000
         else:
             per_anima_limit = offset + limit
 

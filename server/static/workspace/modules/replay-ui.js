@@ -81,6 +81,7 @@ export class ReplayUI {
     this._timeEnd = null;
     this._speedBtn = null;
     this._rangeSelect = null;
+    this._errorEl = null;
 
     this._build();
   }
@@ -109,6 +110,7 @@ export class ReplayUI {
       </div>
       <select class="org-replay-range" id="replayRangeSelect" title="遡り時間">${rangeOpts}</select>
       <button class="org-replay-speed" id="replaySpeedBtn">1x</button>
+      <div class="org-replay-error" id="replayError" role="status" hidden></div>
     `;
 
     this._playBtn = this._root.querySelector("#replayPlayBtn");
@@ -118,6 +120,7 @@ export class ReplayUI {
     this._timeEnd = this._root.querySelector("#replayTimeEnd");
     this._speedBtn = this._root.querySelector("#replaySpeedBtn");
     this._rangeSelect = this._root.querySelector("#replayRangeSelect");
+    this._errorEl = this._root.querySelector("#replayError");
 
     const exitBtn = this._root.querySelector("#replayExitBtn");
     const prevBtn = this._root.querySelector("#replayPrevBtn");
@@ -274,6 +277,25 @@ export class ReplayUI {
   }
 
   /**
+   * Show replay error message.
+   * @param {string} message - Error text
+   */
+  setError(message) {
+    if (!this._errorEl) return;
+    this._errorEl.textContent = message || "Replay failed";
+    this._errorEl.hidden = false;
+  }
+
+  /**
+   * Clear replay error message.
+   */
+  clearError() {
+    if (!this._errorEl) return;
+    this._errorEl.textContent = "";
+    this._errorEl.hidden = true;
+  }
+
+  /**
    * Remove DOM elements and clean up.
    */
   dispose() {
@@ -286,6 +308,7 @@ export class ReplayUI {
     this._timeEnd = null;
     this._speedBtn = null;
     this._rangeSelect = null;
+    this._errorEl = null;
     this._container = null;
     logger.debug("ReplayUI disposed");
   }

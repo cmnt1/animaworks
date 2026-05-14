@@ -7,6 +7,7 @@
 
 import { createLogger } from "../../shared/logger.js";
 import { basePath } from "/shared/base-path.js";
+import { eventTimeMs, normalizeActivityEvent } from "./activity-normalize.js";
 
 const logger = createLogger("replay-engine");
 
@@ -16,37 +17,8 @@ const MAX_STREAM_ENTRIES = 4;
 const SPEED_OPTIONS = [1, 5, 10, 50, 100, 200];
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const MAX_LIVE_BUFFER = 1000;
-
-// ── Event normalization ──────────────────────────────────────────────────────
-
-/**
- * Normalize API event: animas→anima, timestamp→ts, ensure id.
- * @param {object} raw
- * @returns {object}
- */
-function normalizeEvent(raw) {
-  const evt = { ...raw };
-  if (Array.isArray(evt.animas) && !evt.anima) {
-    evt.anima = evt.animas[0] ?? null;
-  }
-  if (evt.timestamp && !evt.ts) {
-    evt.ts = evt.timestamp;
-  }
-  if (!evt.id) {
-    evt.id = evt.ts || String(Date.now() + Math.random());
-  }
-  return evt;
-}
-
-/**
- * Get timestamp in ms for an event.
- * @param {object} evt
- * @returns {number}
- */
-function eventTimeMs(evt) {
-  const ts = evt.ts || evt.timestamp;
-  return ts ? new Date(ts).getTime() : 0;
-}
+const REPLAY_PAGE_LIMIT = 5000;
+const MAX_REPLAY_EVENTS = 200000;
 
 /**
  * Get anima name(s) for an event. Returns array of anima names.
@@ -140,11 +112,35 @@ export class ReplayEngine {
    */
   async load(hours = 12) {
     try {
-      const res = await fetch(`${basePath}/api/activity/recent?hours=${hours}&limit=50000&replay=true`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const raw = data.events || [];
-      this._events = raw.map(normalizeEvent).filter((e) => eventTimeMs(e) > 0);
+      const raw = [];
+      let offset = 0;
+
+      while (true) {
+        const params = new URLSearchParams({
+          hours: String(hours),
+          limit: String(REPLAY_PAGE_LIMIT),
+          offset: String(offset),
+          replay: "true",
+        });
+        const res = await fetch(`${basePath}/api/activity/recent?${params.toString()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        const pageEvents = data.events || [];
+        const total = Number(data.total || 0);
+        if (total > MAX_REPLAY_EVENTS || raw.length + pageEvents.length > MAX_REPLAY_EVENTS) {
+          throw new Error(`Replay range too large (${total || raw.length + pageEvents.length} events). Choose a shorter range.`);
+        }
+        if (data.has_more && pageEvents.length === 0) {
+          throw new Error("Replay page stalled while has_more=true");
+        }
+
+        raw.push(...pageEvents);
+        if (!data.has_more) break;
+        offset += pageEvents.length;
+      }
+
+      this._events = raw.map(normalizeActivityEvent).filter((e) => eventTimeMs(e) > 0);
       this._events.sort((a, b) => eventTimeMs(a) - eventTimeMs(b));
 
       const now = Date.now();

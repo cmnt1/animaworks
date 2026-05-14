@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]  # tests/unit/frontend/ → root
 # Paths
 REPLAY_ENGINE_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "replay-engine.js"
 REPLAY_UI_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "replay-ui.js"
+ACTIVITY_NORMALIZE_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "activity-normalize.js"
 ORG_DASHBOARD_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "org-dashboard.js"
 APP_WS_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app-websocket.js"
 APP_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app.js"
@@ -116,6 +117,23 @@ class TestReplayEngineStructure:
             "[1, 5, 10, 50, 100, 200]" in self.src and "SPEED" in self.src
         ), "Speed options must include 200x"
 
+    def test_load_uses_replay_page_loop(self):
+        assert "REPLAY_PAGE_LIMIT = 5000" in self.src
+        assert "MAX_REPLAY_EVENTS = 200000" in self.src
+        assert "URLSearchParams" in self.src
+        assert 'replay: "true"' in self.src
+        assert "while (true)" in self.src
+        assert "data.has_more" in self.src
+        assert "offset += pageEvents.length" in self.src
+
+    def test_load_fails_on_stalled_capped_page(self):
+        assert "Replay page stalled" in self.src
+        assert "pageEvents.length === 0" in self.src
+
+    def test_load_uses_shared_normalizer(self):
+        assert 'from "./activity-normalize.js"' in self.src
+        assert "normalizeActivityEvent" in self.src
+
 
 # ── ReplayUI Structure ──────────────────────────────────────────
 
@@ -166,6 +184,16 @@ class TestReplayUIStructure:
     def test_setLoading_method(self):
         assert re.search(r"\bsetLoading\s*\([^)]*\)\s*\{", self.src), (
             "ReplayUI must have setLoading method"
+        )
+
+    def test_setError_method(self):
+        assert re.search(r"\bsetError\s*\([^)]*\)\s*\{", self.src), (
+            "ReplayUI must have setError method"
+        )
+
+    def test_clearError_method(self):
+        assert re.search(r"\bclearError\s*\([^)]*\)\s*\{", self.src), (
+            "ReplayUI must have clearError method"
         )
 
     def test_dispose_method(self):
@@ -228,6 +256,47 @@ class TestOrgDashboardReplayIntegration:
             "showMessageLine must have speed-dependent duration logic"
         )
 
+    def test_replay_handler_uses_shared_person_resolver(self):
+        assert "resolveEventPersons(evt)" in self.src
+        assert "evt.meta?.to_person" not in self.src
+        assert "evt.meta?.from_person" not in self.src
+
+    def test_startReplay_returns_boolean(self):
+        assert "return true;" in self.src
+        assert "return false;" in self.src
+        assert "_replayUI.setError" in self.src
+
+
+# ── Activity Normalize Shared Module ───────────────────────────
+
+
+class TestActivityNormalizeModule:
+    """activity-normalize.js exports shared replay/timeline resolvers."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        assert ACTIVITY_NORMALIZE_JS.exists(), "activity-normalize.js must exist"
+        self.src = _read(ACTIVITY_NORMALIZE_JS)
+
+    def test_exports_normalize_and_resolvers(self):
+        for name in (
+            "normalizeActivityEvent",
+            "resolveEventPersons",
+            "resolveEventText",
+            "resolveEventChannel",
+            "eventTimeMs",
+        ):
+            assert f"export function {name}" in self.src
+
+    def test_resolver_prefers_meta_then_toplevel(self):
+        body = self.src
+        assert "meta.from_person" in body
+        assert "evt.from_person" in body
+        assert body.index("meta.from_person") < body.index("evt.from_person")
+        assert "meta.to_person" in body
+        assert "evt.to_person" in body
+        assert body.index("meta.to_person") < body.index("evt.to_person")
+
 
 # ── WS Buffering During Replay ──────────────────────────────────
 
@@ -257,6 +326,15 @@ class TestWSBufferingDuringReplay:
             "app-websocket must call bufferReplayEvent when in replay mode"
         )
 
+    def test_visual_effects_are_behind_buffer_helper(self):
+        assert "function applyOrBufferReplay" in self.src
+        for call in ("showMessageEffect", "showMessageLine", "showExternalLine"):
+            idx = self.src.index(f"{call}(")
+            context = self.src[max(0, idx - 300):idx]
+            assert "applyOrBufferReplay" in context, (
+                f"{call} must be called through replay buffer helper"
+            )
+
 
 # ── App.js Replay Button ───────────────────────────────────────
 
@@ -281,6 +359,11 @@ class TestAppJSReplayButton:
         assert "org-dashboard" in self.src and "startReplay" in self.src, (
             "app.js must import replay functions from org-dashboard"
         )
+
+    def test_replay_button_awaits_startReplay(self):
+        assert "await startReplay(24)" in self.src
+        assert "const started" in self.src
+        assert "if (started)" in self.src
 
 
 # ── Replay CSS Styles ───────────────────────────────────────────
@@ -316,4 +399,9 @@ class TestReplayCSSStyles:
     def test_org_replay_controls(self):
         assert ".org-replay-controls" in self.src or ".org-replay-seek" in self.src, (
             "CSS must define replay control layout classes"
+        )
+
+    def test_org_replay_error(self):
+        assert ".org-replay-error" in self.src, (
+            "CSS must define replay error status styles"
         )
