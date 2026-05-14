@@ -21,10 +21,41 @@ from pathlib import Path
 from core.platform.codex import default_home_dir, get_codex_executable
 from core.tools._base import logger
 
-from .utils import _retry
-
 OPENAI_IMAGE_MODELS = ("gpt-image-2",)
 OPENAI_IMG2IMG_MODELS = frozenset(OPENAI_IMAGE_MODELS)
+
+_TRANSIENT_CODEX_ERROR_MARKERS = (
+    "stream disconnected",
+    "reconnecting",
+    "retrying sampling request",
+    "you can retry your request",
+    "temporarily unavailable",
+)
+
+
+class _TransientCodexImageError(RuntimeError):
+    """A Codex image generation failure that is worth retrying from scratch."""
+
+
+def _is_transient_codex_failure(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in _TRANSIENT_CODEX_ERROR_MARKERS)
+
+
+def _read_env_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return max(0, value)
+
+
+def _read_env_float(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return max(0.0, value)
 
 
 def _openai_size(width: int, height: int) -> str:
@@ -183,7 +214,7 @@ class OpenAIImageClient:
             "exec",
             "--dangerously-bypass-approvals-and-sandbox",
             "--cd",
-            str(Path.cwd()),
+            str(output_path.parent),
         ]
         for reference in references:
             cmd.extend(["--image", str(reference)])
@@ -223,6 +254,8 @@ class OpenAIImageClient:
         )
         if proc.returncode != 0:
             tail = ((stderr or "") + "\n" + (stdout or ""))[-1200:]
+            if _is_transient_codex_failure(tail):
+                raise _TransientCodexImageError(f"Codex image_gen transient failure rc={proc.returncode}: {tail}")
             raise RuntimeError(f"Codex image_gen failed rc={proc.returncode}: {tail}")
 
         if output_path.exists() and output_path.stat().st_size > 0:
@@ -280,6 +313,24 @@ class OpenAIImageClient:
                 )
                 return output_path.read_bytes()
 
-        image = _retry(_call)
+        max_retries = _read_env_int("ANIMAWORKS_CODEX_IMAGE_RETRIES", 2)
+        retry_delay = _read_env_float("ANIMAWORKS_CODEX_IMAGE_RETRY_DELAY_SEC", 15.0)
+        for attempt in range(max_retries + 1):
+            try:
+                image = _call()
+                break
+            except _TransientCodexImageError as exc:
+                if attempt >= max_retries:
+                    raise RuntimeError(
+                        f"Codex image_gen failed after {attempt + 1} attempts due to transient stream errors: {exc}"
+                    ) from exc
+                wait = retry_delay * (attempt + 1)
+                logger.warning(
+                    "Codex image_gen transient failure; retrying attempt %d/%d in %.1fs",
+                    attempt + 2,
+                    max_retries + 1,
+                    wait,
+                )
+                time.sleep(wait)
         logger.info("Codex image generated (model=%s)", self._model)
         return image
