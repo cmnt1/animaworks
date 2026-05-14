@@ -1370,16 +1370,28 @@ def create_assets_router() -> APIRouter:
             pass
 
         # Emit start event immediately so UI shows spinner
+        _generation_model = body.generation_model or DEFAULT_IMAGE_GENERATION_MODEL
+        _is_openai_generation = _generation_model.startswith("openai:")
+        _codex_timeout_sec = 600
+        if _is_openai_generation:
+            try:
+                _codex_timeout_sec = int(os.environ.get("ANIMAWORKS_CODEX_IMAGE_TIMEOUT_SEC", "600"))
+            except ValueError:
+                _codex_timeout_sec = 600
         await emit(
             request,
             "anima.image_gen_progress",
             {
                 "name": name,
                 "step": "fullbody",
+                "phase": "starting",
                 "current": 0,
                 "total": 0,
                 "pct": 0,
                 "low_vram": _low_vram_mode,
+                "model": _generation_model,
+                "timeout_sec": _codex_timeout_sec if _is_openai_generation else None,
+                "indeterminate": _is_openai_generation,
             },
         )
 
@@ -1426,6 +1438,31 @@ def create_assets_router() -> APIRouter:
                     try:
                         await _ws.broadcast({"type": etype, "data": data})
                     except Exception:
+                        pass
+
+            async def _openai_progress_heartbeat(stop_event: asyncio.Event) -> None:
+                started_at = _time.monotonic()
+                while not stop_event.is_set():
+                    elapsed = int(_time.monotonic() - started_at)
+                    pct = min(95, max(1, int(elapsed * 100 / max(_codex_timeout_sec, 1))))
+                    await _ws_emit(
+                        "anima.image_gen_progress",
+                        {
+                            "name": name,
+                            "step": "fullbody",
+                            "phase": "running",
+                            "current": 0,
+                            "total": 0,
+                            "pct": pct,
+                            "elapsed_sec": elapsed,
+                            "timeout_sec": _codex_timeout_sec,
+                            "model": _generation_model,
+                            "indeterminate": True,
+                        },
+                    )
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=5.0)
+                    except TimeoutError:
                         pass
 
             async def _emit_ready(source_bytes: bytes) -> None:
@@ -1495,6 +1532,12 @@ def create_assets_router() -> APIRouter:
                 except Exception as _pil_exc:
                     logger.warning("PIL fast path failed (%s), falling back to SDXL", _pil_exc)
 
+            heartbeat_stop: asyncio.Event | None = None
+            heartbeat_task: asyncio.Task | None = None
+            if _is_openai_generation:
+                heartbeat_stop = asyncio.Event()
+                heartbeat_task = asyncio.create_task(_openai_progress_heartbeat(heartbeat_stop))
+
             try:
                 result = await bg_loop.run_in_executor(
                     None,
@@ -1554,6 +1597,15 @@ def create_assets_router() -> APIRouter:
                         "error": str(exc),
                     },
                 )
+            finally:
+                if heartbeat_stop is not None:
+                    heartbeat_stop.set()
+                if heartbeat_task is not None:
+                    heartbeat_task.cancel()
+                    try:
+                        await heartbeat_task
+                    except asyncio.CancelledError:
+                        pass
 
         asyncio.create_task(_bg_generate())
 

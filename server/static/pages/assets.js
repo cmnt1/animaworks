@@ -1351,10 +1351,42 @@ function _onImageGenProgress(data) {
     return;
   }
 
+  const _formatDuration = (seconds) => {
+    const total = Math.max(0, Number(seconds) || 0);
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+  };
+
+  if (data.indeterminate) {
+    const elapsed = data.elapsed_sec || 0;
+    const timeout = data.timeout_sec || 0;
+    const pct = Math.min(95, Math.max(1, Number(data.pct) || 1));
+    const bar = Math.round(pct / 5);
+    const filled = "█".repeat(bar);
+    const empty = "░".repeat(20 - bar);
+    const model = data.model || "gpt-image-2";
+    const elapsedText = elapsed ? `Elapsed ${_formatDuration(elapsed)}` : "Starting";
+    const timeoutText = timeout ? ` / timeout ${_formatDuration(timeout)}` : "";
+    const warmupMsg = data.low_vram
+      ? `<div style="font-size:0.78rem; color:var(--color-warning,#e8a000); margin-top:0.3rem;">Low VRAM mode may take several minutes</div>`
+      : "";
+    previewContainer.innerHTML = `
+      <div class="assets-spinner"></div>
+      <div style="margin-top:0.5rem;">${t("assets.preview_generating")}</div>
+      <div style="font-family:monospace; font-size:0.8rem; letter-spacing:0; margin-top:0.4rem; color:var(--color-primary,#0066cc);">${filled}${empty}</div>
+      <div style="font-size:0.78rem; color:var(--text-secondary,#888); margin-top:0.25rem;">${escapeHtml(model)} · ${elapsedText}${timeoutText}</div>
+      <div style="font-size:0.72rem; color:var(--text-secondary,#888); margin-top:0.2rem;">Generating externally; exact progress is unavailable, but the process is still active.</div>
+      ${warmupMsg}
+    `;
+    previewContainer.className = "assets-modal-preview-placeholder";
+    return;
+  }
+
   // Initial start event (current=0, total=0)
   if (data.current === 0 && data.total === 0) {
     const warmupMsg = data.low_vram
-      ? `<div style="font-size:0.78rem; color:var(--color-warning,#e8a000); margin-top:0.3rem;">⚠️ 低VRAMモード (数分かかります)</div>`
+      ? `<div style="font-size:0.78rem; color:var(--color-warning,#e8a000); margin-top:0.3rem;">Low VRAM mode may take several minutes</div>`
       : "";
     previewContainer.innerHTML = `<div class="assets-spinner"></div><div style="margin-top:0.5rem;">${t("assets.preview_generating")}</div>${warmupMsg}`;
     previewContainer.className = "assets-modal-preview-placeholder";

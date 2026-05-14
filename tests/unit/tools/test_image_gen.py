@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import io
+import subprocess
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -526,23 +527,34 @@ class TestImageGenPipeline:
         codex_home.mkdir()
         seen: dict[str, object] = {}
 
-        def fake_run(cmd, **kwargs):
-            instruction = kwargs["input"]
-            marker = "Save or copy the final generated image to this exact path:\n"
-            output_path = Path(instruction.split(marker, 1)[1].split("\n", 1)[0])
-            output_path.write_bytes(b"PNG-DATA")
+        class FakePopen:
+            pid = 12345
+
+            def __init__(self, cmd, **kwargs):
+                seen["cmd"] = cmd
+                seen["env"] = kwargs["env"]
+                self.returncode = 0
+
+            def communicate(self, input=None, timeout=None):
+                instruction = input
+                marker = "Save or copy the final generated image to this exact path:\n"
+                output_path = Path(instruction.split(marker, 1)[1].split("\n", 1)[0])
+                output_path.write_bytes(b"PNG-DATA")
+                seen["input"] = instruction
+                seen["instruction"] = instruction
+                return str(output_path), ""
+
+        def fake_popen(cmd, **kwargs):
             seen["cmd"] = cmd
             seen["env"] = kwargs["env"]
-            seen["input"] = kwargs["input"]
-            seen["instruction"] = instruction
-            return type("Proc", (), {"returncode": 0, "stdout": str(output_path), "stderr": ""})()
+            return FakePopen(cmd, **kwargs)
 
         monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
         monkeypatch.setattr(
             "server.routes.usage_routes.get_openai_subscription_codex_home",
             lambda refresh=False: codex_home,
         )
-        monkeypatch.setattr("core.tools.image.openai.subprocess.run", fake_run)
+        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", fake_popen)
 
         img = OpenAIImageClient(model="gpt-image-2").generate_fullbody(
             prompt="portrait",
@@ -570,18 +582,56 @@ class TestImageGenPipeline:
         codex_home = tmp_path / "codex-home"
         codex_home.mkdir()
 
-        def fake_run(cmd, **kwargs):
-            return type("Proc", (), {"returncode": 1, "stdout": "", "stderr": "image tool failed"})()
+        class FakePopen:
+            pid = 12345
+            returncode = 1
+
+            def __init__(self, cmd, **kwargs):
+                pass
+
+            def communicate(self, input=None, timeout=None):
+                return "", "image tool failed"
 
         monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
         monkeypatch.setattr(
             "server.routes.usage_routes.get_openai_subscription_codex_home",
             lambda refresh=False: codex_home,
         )
-        monkeypatch.setattr("core.tools.image.openai.subprocess.run", fake_run)
+        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", FakePopen)
 
         with pytest.raises(RuntimeError, match="Codex image_gen failed"):
             OpenAIImageClient(model="gpt-image-2").generate_fullbody(prompt="portrait")
+
+    def test_openai_image_client_kills_process_tree_on_timeout(self, tmp_path: Path, monkeypatch):
+        from core.tools.image.openai import OpenAIImageClient
+
+        codex_home = tmp_path / "codex-home"
+        codex_home.mkdir()
+        killed: list[int] = []
+
+        class FakePopen:
+            pid = 24680
+            returncode = None
+
+            def __init__(self, cmd, **kwargs):
+                pass
+
+            def communicate(self, input=None, timeout=None):
+                raise subprocess.TimeoutExpired(cmd="codex", timeout=timeout)
+
+        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
+        monkeypatch.setattr(
+            "server.routes.usage_routes.get_openai_subscription_codex_home",
+            lambda refresh=False: codex_home,
+        )
+        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", FakePopen)
+        monkeypatch.setattr("core.tools.image.openai._terminate_process_tree", lambda pid: killed.append(pid))
+        monkeypatch.setenv("ANIMAWORKS_CODEX_IMAGE_TIMEOUT_SEC", "1")
+
+        with pytest.raises(RuntimeError, match="timed out"):
+            OpenAIImageClient(model="gpt-image-2").generate_fullbody(prompt="portrait")
+
+        assert killed == [24680]
 
     @patch("core.tools._anima_icon_url.persist_anima_icon_path_template")
     def test_generate_all_icon_step_uses_square_aspect_ratio(

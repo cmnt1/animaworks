@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -77,6 +78,26 @@ def _find_latest_codex_generated_image(since_ts: float, codex_home: Path | None)
         return None
     candidates.sort(reverse=True)
     return candidates[0][1]
+
+
+def _terminate_process_tree(pid: int) -> None:
+    """Best-effort termination for a Codex CLI wrapper and its children."""
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except Exception:
+        logger.debug("Failed to terminate Codex process group pid=%s", pid, exc_info=True)
 
 
 class OpenAIImageClient:
@@ -168,17 +189,31 @@ class OpenAIImageClient:
             cmd.extend(["--image", str(reference)])
         cmd.append("-")
         timeout_sec = int(os.environ.get("ANIMAWORKS_CODEX_IMAGE_TIMEOUT_SEC", "600"))
-        proc = subprocess.run(
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if os.name == "nt":
+            creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        proc = subprocess.Popen(
             cmd,
-            capture_output=True,
-            input=instruction,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="ignore",
-            timeout=timeout_sec,
             env=env,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+            creationflags=creationflags,
+            start_new_session=os.name != "nt",
         )
+        try:
+            stdout, stderr = proc.communicate(input=instruction, timeout=timeout_sec)
+        except subprocess.TimeoutExpired as exc:
+            _terminate_process_tree(proc.pid)
+            try:
+                stdout, stderr = proc.communicate(timeout=10)
+            except Exception:
+                stdout, stderr = "", ""
+            tail = ((stderr or "") + "\n" + (stdout or ""))[-1200:]
+            raise RuntimeError(f"Codex image_gen timed out after {timeout_sec}s: {tail}") from exc
 
         logger.info(
             "Codex image_gen finished rc=%s model=%s codex_home=%s",
@@ -187,7 +222,7 @@ class OpenAIImageClient:
             codex_home,
         )
         if proc.returncode != 0:
-            tail = ((proc.stderr or "") + "\n" + (proc.stdout or ""))[-1200:]
+            tail = ((stderr or "") + "\n" + (stdout or ""))[-1200:]
             raise RuntimeError(f"Codex image_gen failed rc={proc.returncode}: {tail}")
 
         if output_path.exists() and output_path.stat().st_size > 0:
@@ -198,7 +233,7 @@ class OpenAIImageClient:
             shutil.copyfile(latest, output_path)
             return
 
-        tail = ((proc.stdout or "") + "\n" + (proc.stderr or ""))[-1200:]
+        tail = ((stdout or "") + "\n" + (stderr or ""))[-1200:]
         raise RuntimeError(f"Codex image_gen finished but image file was not found: {tail}")
 
     def generate_fullbody(
