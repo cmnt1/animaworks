@@ -24,6 +24,7 @@ TASKBOARD_EVENT_TYPES = {
     "tombstoned",
     "notification_acknowledged",
     "surface_recorded",
+    "stale_processing_recovered",
 }
 
 _METADATA_COLUMNS = [
@@ -108,6 +109,7 @@ class TaskBoardStore:
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
+            _migrate_taskboard_events_constraint(conn)
 
     def get_metadata(self, anima_name: str, task_id: str) -> TaskBoardMetadata | None:
         """Return metadata for a task, if present."""
@@ -395,6 +397,51 @@ def _append_event(
         ),
     )
     return int(cursor.lastrowid)
+
+
+def _migrate_taskboard_events_constraint(conn: sqlite3.Connection) -> None:
+    row = conn.execute(
+        """
+        SELECT sql
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'taskboard_events'
+        """
+    ).fetchone()
+    if row is None:
+        return
+    create_sql = str(row["sql"] or "")
+    if "stale_processing_recovered" in create_sql:
+        return
+
+    conn.execute("ALTER TABLE taskboard_events RENAME TO taskboard_events_legacy")
+    conn.execute(
+        f"""
+        CREATE TABLE taskboard_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            event_type TEXT NOT NULL
+                CHECK(event_type IN ({", ".join(repr(event_type) for event_type in sorted(TASKBOARD_EVENT_TYPES))})),
+            anima_name TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{{}}'
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO taskboard_events (id, ts, actor, event_type, anima_name, task_id, payload_json)
+        SELECT id, ts, actor, event_type, anima_name, task_id, payload_json
+        FROM taskboard_events_legacy
+        """
+    )
+    conn.execute("DROP TABLE taskboard_events_legacy")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_taskboard_events_task
+            ON taskboard_events(anima_name, task_id, id)
+        """
+    )
 
 
 def _event_type_for_update(
