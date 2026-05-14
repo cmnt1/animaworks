@@ -81,6 +81,7 @@ from core.config.schemas import (
     HousekeepingConfig,
     HumanNotificationConfig,
     ImageGenConfig,
+    InboxConfig,
     LocalLLMConfig,
     MachineConfig,
     MediaProxyConfig,
