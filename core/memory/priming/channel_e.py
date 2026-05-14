@@ -12,11 +12,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from core.i18n import t
 from core.memory.priming.constants import _BUDGET_PENDING_TASKS
+from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.priming")
 
@@ -55,19 +56,40 @@ async def channel_e_pending_tasks(
     since TaskQueueManager performs synchronous file I/O.
     """
     parts: list[str] = []
+    resolver = None
 
     try:
-        from core.memory.task_queue import TaskQueueManager
+        from core.taskboard.attention_resolver import resolver_for_anima_dir
+        from core.taskboard.formatting import format_tasks_for_priming
+        from core.taskboard.projector import project_anima
 
-        manager = TaskQueueManager(anima_dir)
-        queue_summary = await asyncio.to_thread(
-            manager.format_for_priming,
-            _BUDGET_PENDING_TASKS,
+        resolver = resolver_for_anima_dir(anima_dir)
+        board_tasks = await asyncio.to_thread(
+            project_anima,
+            anima_dir,
+            resolver.store,
+            anima_name=anima_dir.name,
+            include_missing=True,
+            include_archived=True,
         )
+        visible_tasks = resolver.filter_for_priming(anima_dir.name, board_tasks, now_local())
+        queue_summary = format_tasks_for_priming(visible_tasks, _BUDGET_PENDING_TASKS)
         if queue_summary:
             parts.append(queue_summary)
     except Exception:
-        logger.debug("Channel E (pending_tasks) failed", exc_info=True)
+        logger.debug("Channel E TaskBoard projection failed; falling back to task_queue formatter", exc_info=True)
+        from core.memory.task_queue import TaskQueueManager
+
+        try:
+            manager = TaskQueueManager(anima_dir)
+            queue_summary = await asyncio.to_thread(
+                manager.format_for_priming,
+                _BUDGET_PENDING_TASKS,
+            )
+            if queue_summary:
+                parts.append(queue_summary)
+        except Exception:
+            logger.debug("Channel E (pending_tasks) failed", exc_info=True)
 
     active = get_active_parallel_tasks() if get_active_parallel_tasks else {}
     if active:
@@ -110,11 +132,13 @@ async def channel_e_pending_tasks(
     results_dir = anima_dir / "state" / "task_results"
     if results_dir.is_dir():
         try:
-            result_files = sorted(
-                results_dir.glob("*.md"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )[:5]
+            now = now_local()
+            result_files = []
+            for rf in sorted(results_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
+                if _should_show_task_result(anima_dir, rf, resolver, now):
+                    result_files.append(rf)
+                if len(result_files) >= 5:
+                    break
             if result_files:
                 lines = [t("priming.completed_bg_tasks_header")]
                 for rf in result_files:
@@ -131,3 +155,28 @@ async def channel_e_pending_tasks(
             logger.debug("Channel E: task_results read failed", exc_info=True)
 
     return "\n\n".join(parts)
+
+
+def _should_show_task_result(anima_dir: Path, result_file: Path, resolver: object | None, now: datetime) -> bool:
+    try:
+        result_mtime = result_file.stat().st_mtime
+    except OSError:
+        return False
+
+    if resolver is None:
+        modified_at = datetime.fromtimestamp(result_mtime, tz=now.tzinfo)
+        return now - modified_at <= timedelta(hours=24)
+
+    try:
+        return bool(
+            resolver.should_show_task_result(
+                anima_dir.name,
+                result_file.stem,
+                result_mtime,
+                now,
+            )
+        )
+    except Exception:
+        logger.debug("Channel E: TaskBoard task_result gate failed", exc_info=True)
+        modified_at = datetime.fromtimestamp(result_mtime, tz=now.tzinfo)
+        return now - modified_at <= timedelta(hours=24)
