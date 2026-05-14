@@ -18,7 +18,7 @@ RETURN labels(n)[0] AS label, count(n) AS cnt
 
 COUNT_EDGES_BY_GROUP = """
 MATCH ()-[r]->()
-WHERE r.group_id = $group_id OR r.group_id IS NULL
+WHERE r.group_id = $group_id
 RETURN type(r) AS rel_type, count(r) AS cnt
 """
 
@@ -67,7 +67,8 @@ RETURN e.uuid AS uuid
 # ── RELATES_TO (Fact) ──────────
 
 CREATE_FACT = """
-MATCH (s:Entity {uuid: $source_uuid}), (t:Entity {uuid: $target_uuid})
+MATCH (s:Entity {uuid: $source_uuid})
+MATCH (t:Entity {uuid: $target_uuid})
 CREATE (s)-[r:RELATES_TO {
   uuid: $uuid,
   fact: $fact,
@@ -86,8 +87,13 @@ RETURN r.uuid AS uuid
 # ── MENTIONS ──────────
 
 CREATE_MENTION = """
-MATCH (ep:Episode {uuid: $episode_uuid}), (en:Entity {uuid: $entity_uuid})
-CREATE (ep)-[r:MENTIONS {uuid: $uuid, created_at: datetime($created_at)}]->(en)
+MATCH (ep:Episode {uuid: $episode_uuid})
+MATCH (en:Entity {uuid: $entity_uuid})
+CREATE (ep)-[r:MENTIONS {
+  uuid: $uuid,
+  group_id: $group_id,
+  created_at: datetime($created_at)
+}]->(en)
 RETURN r.uuid AS uuid
 """
 
@@ -117,7 +123,11 @@ SET e.summary = $summary
 REDIRECT_MENTIONS = """
 MATCH (ep:Episode)-[old:MENTIONS]->(old_entity:Entity {uuid: $old_uuid})
 MATCH (new_entity:Entity {uuid: $new_uuid})
-CREATE (ep)-[:MENTIONS {uuid: old.uuid, created_at: old.created_at}]->(new_entity)
+CREATE (ep)-[:MENTIONS {
+  uuid: old.uuid,
+  group_id: coalesce(old.group_id, ep.group_id),
+  created_at: old.created_at
+}]->(new_entity)
 DELETE old
 """
 
@@ -347,12 +357,14 @@ RETURN c.uuid AS uuid
 """
 
 CREATE_HAS_MEMBER = """
-MATCH (c:Community {uuid: $community_uuid}), (e:Entity {uuid: $entity_uuid})
-CREATE (c)-[:HAS_MEMBER]->(e)
+MATCH (c:Community {uuid: $community_uuid})
+MATCH (e:Entity {uuid: $entity_uuid})
+CREATE (c)-[:HAS_MEMBER {group_id: $group_id}]->(e)
 """
 
 FIND_COMMUNITY_FOR_ENTITY = """
-MATCH (c:Community)-[:HAS_MEMBER]->(e:Entity {uuid: $entity_uuid})
+MATCH (c:Community)-[r:HAS_MEMBER]->(e:Entity {uuid: $entity_uuid})
+WHERE r.group_id = $group_id
 RETURN c.uuid AS community_uuid, c.name AS name, c.summary AS summary
 """
 

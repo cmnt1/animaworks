@@ -69,8 +69,13 @@ class TestNeo4jGraphBackendStubs:
     async def test_ingest_text_needs_driver(self, tmp_path):
         from core.memory.backend.neo4j_graph import Neo4jGraphBackend
 
+        try:
+            from neo4j.exceptions import ServiceUnavailable
+        except ImportError:
+            ServiceUnavailable = RuntimeError
+
         backend = Neo4jGraphBackend(tmp_path, uri="bolt://localhost:19999")
-        with pytest.raises(Exception):
+        with pytest.raises((ImportError, RuntimeError, ServiceUnavailable)):
             await backend.ingest_text("hello", "test")
 
     @pytest.mark.asyncio
@@ -179,6 +184,12 @@ class TestNeo4jGraphBackendWithMockedDriver:
         assert result["nodes_Episode"] == 5
         assert result["edges_RELATES_TO"] == 8
 
+    def test_count_edges_query_is_strictly_group_scoped(self):
+        from core.memory.graph.queries import COUNT_EDGES_BY_GROUP
+
+        assert "WHERE r.group_id = $group_id" in COUNT_EDGES_BY_GROUP
+        assert "OR r.group_id IS NULL" not in COUNT_EDGES_BY_GROUP
+
     @pytest.mark.asyncio
     async def test_stats_on_driver_error(self, tmp_path):
         from core.memory.backend.neo4j_graph import Neo4jGraphBackend
@@ -216,6 +227,72 @@ class TestNeo4jGraphBackendWithMockedDriver:
         assert backend._driver is None
         await backend.close()
         assert backend._driver is None
+
+    @pytest.mark.asyncio
+    async def test_ingest_passes_group_id_to_create_mention(self, tmp_path):
+        from unittest.mock import MagicMock
+
+        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+        from core.memory.graph.queries import CREATE_MENTION
+        from core.memory.ontology.default import ExtractedEntity
+
+        backend = Neo4jGraphBackend(tmp_path, group_id="group-a")
+        backend._embedding_available = False
+
+        mock_driver = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
+        mock_driver.execute_write = AsyncMock()
+        backend._driver = mock_driver
+        backend._schema_ensured = True
+
+        mock_extractor = AsyncMock()
+        mock_extractor.extract_entities = AsyncMock(
+            return_value=[
+                ExtractedEntity(name="Alice", entity_type="Person", summary="Engineer"),
+            ]
+        )
+        mock_extractor.extract_facts = AsyncMock(return_value=[])
+        backend._extractor = mock_extractor
+
+        mock_resolver = MagicMock()
+        resolved = MagicMock()
+        resolved.uuid = "entity-uuid-1"
+        resolved.name = "Alice"
+        resolved.summary = "Engineer"
+        resolved.is_new = True
+        mock_resolver.resolve = AsyncMock(return_value=resolved)
+        backend._resolver = mock_resolver
+
+        await backend.ingest_text("Alice works here", "test")
+
+        mention_call = next(
+            call for call in mock_driver.execute_write.call_args_list if call.args and call.args[0] == CREATE_MENTION
+        )
+        assert mention_call.args[1]["group_id"] == "group-a"
+
+
+class TestNeo4jQueryHardening:
+    """Test schema-relevant Cypher templates stay group-scoped and warning-free."""
+
+    def test_create_fact_uses_sequential_match(self):
+        from core.memory.graph.queries import CREATE_FACT
+
+        assert "MATCH (s:Entity {uuid: $source_uuid})\nMATCH (t:Entity {uuid: $target_uuid})" in CREATE_FACT
+        assert "MATCH (s:Entity {uuid: $source_uuid})," not in CREATE_FACT
+
+    def test_create_mention_is_group_scoped_and_sequential(self):
+        from core.memory.graph.queries import CREATE_MENTION
+
+        assert "MATCH (ep:Episode {uuid: $episode_uuid})\nMATCH (en:Entity {uuid: $entity_uuid})" in CREATE_MENTION
+        assert "group_id: $group_id" in CREATE_MENTION
+        assert "MATCH (ep:Episode {uuid: $episode_uuid})," not in CREATE_MENTION
+
+    def test_create_has_member_is_group_scoped_and_sequential(self):
+        from core.memory.graph.queries import CREATE_HAS_MEMBER
+
+        assert "MATCH (c:Community {uuid: $community_uuid})\nMATCH (e:Entity {uuid: $entity_uuid})" in CREATE_HAS_MEMBER
+        assert "group_id: $group_id" in CREATE_HAS_MEMBER
+        assert "MATCH (c:Community {uuid: $community_uuid})," not in CREATE_HAS_MEMBER
 
 
 class TestRegistryNeo4j:

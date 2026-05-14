@@ -74,6 +74,9 @@ async def test_neo4j_backend_live_ingest_and_cleanup(tmp_path: Path, monkeypatch
         database=os.environ.get("NEO4J_DATABASE", "neo4j"),
         group_id=group_id,
     )
+    orphan_episode_uuid = f"{group_id}:orphan-episode"
+    orphan_entity_uuid = f"{group_id}:orphan-entity"
+    driver = None
 
     async def _empty_embeddings(texts: list[str]) -> list[list[float]]:
         return [[] for _ in texts]
@@ -89,13 +92,43 @@ async def test_neo4j_backend_live_ingest_and_cleanup(tmp_path: Path, monkeypatch
             source="integration-test",
             metadata={"episode_uuid": f"{group_id}:episode"},
         )
+        driver = await backend._ensure_driver()
+        await driver.execute_write(
+            """
+            CREATE (e:Episode {
+              uuid: $episode_uuid,
+              content: 'orphan relation for group stats test',
+              created_at: datetime(),
+              valid_at: datetime()
+            })
+            CREATE (n:Entity {
+              uuid: $entity_uuid,
+              name: 'Orphan Entity',
+              entity_type: 'Concept',
+              summary: 'No group_id test node',
+              created_at: datetime()
+            })
+            CREATE (e)-[:MENTIONS {uuid: $mention_uuid, created_at: datetime()}]->(n)
+            """,
+            {
+                "episode_uuid": orphan_episode_uuid,
+                "entity_uuid": orphan_entity_uuid,
+                "mention_uuid": f"{group_id}:orphan-mention",
+            },
+        )
 
         stats = await backend.stats()
 
         assert ingested == 4
         assert stats["nodes_Episode"] == 1
         assert stats["nodes_Entity"] == 2
+        assert stats["edges_MENTIONS"] == 2
         assert stats["edges_RELATES_TO"] >= 1
     finally:
+        if driver is not None:
+            await driver.execute_write(
+                "MATCH (n) WHERE n.uuid IN $uuids DETACH DELETE n",
+                {"uuids": [orphan_episode_uuid, orphan_entity_uuid]},
+            )
         await backend.reset()
         await backend.close()
