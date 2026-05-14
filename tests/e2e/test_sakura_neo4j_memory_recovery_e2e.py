@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -173,3 +174,66 @@ def test_realtime_neo4j_ingest_records_user_and_assistant_turn(tmp_path) -> None
             "request_id": "req-e2e",
         },
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.e2e
+async def test_channel_g_neo4j_retrieval_is_query_aware(tmp_path) -> None:
+    """Channel G should use query-aware Neo4j communities and recent facts."""
+    from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+    from core.memory.priming.channel_g import collect_graph_context
+
+    now = datetime.now(tz=UTC)
+    driver = AsyncMock()
+    driver.execute_query = AsyncMock(
+        return_value=[
+            {
+                "uuid": "community-frontend",
+                "name": "Frontend",
+                "summary": "React and UI ownership",
+                "score": 0.9,
+                "created_at": now.isoformat(),
+            }
+        ]
+    )
+    backend = Neo4jGraphBackend(tmp_path, group_id="sakura")
+    backend._driver = driver
+    backend._schema_ensured = True
+
+    mock_search = MagicMock()
+    mock_search.search = AsyncMock(
+        return_value=[
+            {
+                "uuid": "fact-recent",
+                "fact": "owns the dashboard UI",
+                "source_name": "Sakura",
+                "target_name": "React",
+                "edge_type": "OWNS",
+                "created_at": (now - timedelta(hours=1)).isoformat(),
+                "rrf_score": 0.8,
+            },
+            {
+                "uuid": "fact-old",
+                "fact": "owns legacy DB migration",
+                "source_name": "Sakura",
+                "target_name": "Postgres",
+                "created_at": (now - timedelta(days=3)).isoformat(),
+                "rrf_score": 0.95,
+            },
+        ]
+    )
+
+    with (
+        patch.object(backend, "_embed_texts", new_callable=AsyncMock, return_value=[[0.1] * 384]),
+        patch("core.memory.graph.search.HybridSearch", return_value=mock_search),
+    ):
+        context = await collect_graph_context(backend, "frontend dashboard")
+
+    assert "## Communities" in context
+    assert "[Frontend] React and UI ownership" in context
+    assert "## Recent Facts" in context
+    assert "Sakura -[OWNS]-> React: owns the dashboard UI" in context
+    assert "Postgres" not in context
+    community_query, community_params = driver.execute_query.call_args.args
+    assert "community_fulltext" in community_query
+    assert community_params["query"] == "frontend dashboard"

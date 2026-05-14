@@ -5,6 +5,7 @@ All tests use mocked MemoryBackend — no real Neo4j or LLM calls.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.memory.backend.base import RetrievedMemory
@@ -87,6 +88,29 @@ class TestCollectGraphContext:
 
         backend.get_community_context.assert_awaited_once_with("my query", limit=3)
         backend.get_recent_facts.assert_awaited_once_with("my query", hours=24, limit=10)
+
+    async def test_query_affects_returned_context(self) -> None:
+        backend = MagicMock()
+
+        async def _communities(query: str, limit: int = 3):
+            if "frontend" in query:
+                return [_mem("[Frontend] React owners")]
+            return [_mem("[Backend] Database owners")]
+
+        async def _facts(query: str, hours: int = 24, limit: int = 10):
+            if "frontend" in query:
+                return [_mem("Alice -[OWNS]-> React: maintains UI")]
+            return [_mem("Bob -[OWNS]-> Postgres: maintains DB")]
+
+        backend.get_community_context = AsyncMock(side_effect=_communities)
+        backend.get_recent_facts = AsyncMock(side_effect=_facts)
+
+        result = await collect_graph_context(backend, "frontend bug")
+
+        assert "Frontend" in result
+        assert "React" in result
+        assert "Backend" not in result
+        assert "Postgres" not in result
 
     async def test_truncates_to_budget(self) -> None:
         long_facts = [_mem(f"Fact number {i} with some longer content here") for i in range(50)]
@@ -237,3 +261,133 @@ class TestPrimingEngineChannelG:
         assert result1 is None
         assert result2 is None
         assert engine._memory_backend_init_failed is True
+
+
+class TestNeo4jQueryAwareGraphContext:
+    """Tests for Neo4j-backed Channel G relevance behavior."""
+
+    def _make_backend(self, tmp_path):
+        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+
+        backend = Neo4jGraphBackend(tmp_path, group_id="test")
+        mock_driver = AsyncMock()
+        mock_driver.execute_query = AsyncMock()
+        backend._driver = mock_driver
+        backend._schema_ensured = True
+        return backend, mock_driver
+
+    async def test_community_context_uses_fulltext_when_query_is_non_empty(self, tmp_path) -> None:
+        from core.memory.graph.queries import FULLTEXT_SEARCH_COMMUNITIES
+
+        backend, mock_driver = self._make_backend(tmp_path)
+        mock_driver.execute_query = AsyncMock(
+            return_value=[
+                {
+                    "uuid": "c1",
+                    "name": "Frontend",
+                    "summary": "React owners",
+                    "score": 0.8,
+                    "created_at": "2026-05-14T00:00:00Z",
+                }
+            ]
+        )
+
+        result = await backend.get_community_context("frontend bug", limit=3)
+
+        assert len(result) == 1
+        assert result[0].score == 0.8
+        assert result[0].content == "[Frontend] React owners"
+        mock_driver.execute_query.assert_awaited_once()
+        query, params = mock_driver.execute_query.call_args.args
+        assert query == FULLTEXT_SEARCH_COMMUNITIES
+        assert params["query"] == "frontend bug"
+        assert params["top_k"] == 9
+
+    async def test_community_context_uses_recency_fallback_when_query_is_empty(self, tmp_path) -> None:
+        from core.memory.graph.queries import SEARCH_COMMUNITIES
+
+        backend, mock_driver = self._make_backend(tmp_path)
+        mock_driver.execute_query = AsyncMock(return_value=[{"uuid": "c1", "name": "Latest", "summary": "Recent"}])
+
+        result = await backend.get_community_context("   ", limit=2)
+
+        assert len(result) == 1
+        assert result[0].score == 1.0
+        query, params = mock_driver.execute_query.call_args.args
+        assert query == SEARCH_COMMUNITIES
+        assert params == {"group_id": "test", "limit": 2}
+
+    async def test_recent_facts_uses_hybrid_search_and_recency_filter_when_query_is_non_empty(self, tmp_path) -> None:
+        backend, mock_driver = self._make_backend(tmp_path)
+        now = datetime.now(tz=UTC)
+        rows = [
+            {
+                "uuid": "recent",
+                "fact": "maintains UI",
+                "source_name": "Alice",
+                "target_name": "React",
+                "edge_type": "OWNS",
+                "created_at": (now - timedelta(hours=1)).isoformat(),
+                "rrf_score": 0.7,
+            },
+            {
+                "uuid": "old",
+                "fact": "maintains API",
+                "source_name": "Bob",
+                "target_name": "FastAPI",
+                "created_at": (now - timedelta(hours=48)).isoformat(),
+                "rrf_score": 0.9,
+            },
+            {
+                "uuid": "missing-created-at",
+                "fact": "has no timestamp",
+                "source_name": "Eve",
+                "target_name": "Unknown",
+                "rrf_score": 0.8,
+            },
+        ]
+        mock_search = MagicMock()
+        mock_search.search = AsyncMock(return_value=rows)
+
+        with (
+            patch.object(backend, "_embed_texts", new_callable=AsyncMock, return_value=[[0.1] * 384]),
+            patch("core.memory.graph.search.HybridSearch", return_value=mock_search) as mock_search_cls,
+        ):
+            result = await backend.get_recent_facts("frontend", hours=24, limit=2)
+
+        assert [mem.source for mem in result] == ["fact:recent"]
+        assert result[0].score == 0.7
+        assert result[0].content == "Alice -[OWNS]-> React: maintains UI"
+        mock_search_cls.assert_called_once_with(mock_driver, "test")
+        mock_search.search.assert_awaited_once()
+        _, kwargs = mock_search.search.call_args
+        assert kwargs["scope"] == "fact"
+        assert kwargs["limit"] == 6
+        assert kwargs["query_embedding"] == [0.1] * 384
+
+    async def test_recent_facts_uses_recency_query_when_query_is_empty(self, tmp_path) -> None:
+        from core.memory.graph.queries import FIND_RECENT_FACTS
+
+        backend, mock_driver = self._make_backend(tmp_path)
+        mock_driver.execute_query = AsyncMock(
+            return_value=[
+                {
+                    "uuid": "f1",
+                    "fact": "recent fact",
+                    "source_name": "Alice",
+                    "target_name": "React",
+                    "created_at": "2026-05-14T00:00:00Z",
+                }
+            ]
+        )
+
+        with patch("core.memory.graph.search.HybridSearch") as mock_search_cls:
+            result = await backend.get_recent_facts(" ", hours=12, limit=4)
+
+        assert len(result) == 1
+        assert result[0].score == 1.0
+        mock_search_cls.assert_not_called()
+        query, params = mock_driver.execute_query.call_args.args
+        assert query == FIND_RECENT_FACTS
+        assert params["group_id"] == "test"
+        assert params["limit"] == 4
