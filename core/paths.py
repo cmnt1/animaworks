@@ -55,6 +55,10 @@ def get_shared_dir() -> Path:
     return get_data_dir() / "shared"
 
 
+def get_taskboard_db_path() -> Path:
+    return get_shared_dir() / "taskboard.sqlite3"
+
+
 def get_company_dir() -> Path:
     return get_data_dir() / "company"
 
