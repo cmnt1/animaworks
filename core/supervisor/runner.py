@@ -252,7 +252,7 @@ class AnimaRunner:
         Checks both ``chat`` and ``heartbeat`` session types, including
         thread-specific subdirectories.
         """
-        for session_type in ("chat", "heartbeat", "task_exec", "inbox"):
+        for session_type in ("chat", "heartbeat", "task", "task_exec", "inbox"):
             # Collect all thread_ids with orphaned journals
             thread_ids = StreamingJournal.list_orphan_thread_ids(self._anima_dir, session_type)
 
@@ -272,7 +272,7 @@ class AnimaRunner:
                 )
 
                 # Only chat sessions write to conversation.json;
-                # heartbeat/task_exec/inbox are background and must not
+                # heartbeat/task/task_exec/inbox are background and must not
                 # pollute the human↔anima conversation history.
                 if session_type == "chat" and recovery.recovered_text and self.anima:
                     try:

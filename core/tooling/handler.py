@@ -30,6 +30,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from core.background import BackgroundTaskManager
 from core.exceptions import AnimaWorksError, ConfigError
+from core.execution.session_context import RuntimeSessionContext, current_runtime_session
 from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.activity import ActivityLogger
@@ -130,10 +131,23 @@ class ToolHandler(
         self._context_window = context_window
         self._process_supervisor = process_supervisor
         self._pending_notifications: list[dict[str, Any]] = []
-        self._replied_to: dict[str, set[str]] = {"chat": set(), "background": set()}
-        self._posted_channels: dict[str, set[str]] = {"chat": set(), "background": set()}
+        self._replied_to: dict[str, set[str]] = {
+            "chat": set(),
+            "heartbeat": set(),
+            "cron": set(),
+            "task": set(),
+            "inbox": set(),
+        }
+        self._posted_channels: dict[str, set[str]] = {
+            "chat": set(),
+            "heartbeat": set(),
+            "cron": set(),
+            "task": set(),
+            "inbox": set(),
+        }
         self._read_paths: set[str] = set()
         self._session_id: str = uuid.uuid4().hex[:12]
+        self._runtime_session_context: RuntimeSessionContext | None = None
         self._activity = ActivityLogger(self._anima_dir)
         self._state_file_lock: threading.Lock | None = None
         self._external = ExternalToolDispatcher(
@@ -391,6 +405,28 @@ class ToolHandler(
         """Names already replied to in a specific session type."""
         return self._replied_to.get(session_type, set())
 
+    def bind_runtime_session(self, ctx: RuntimeSessionContext) -> None:
+        """Bind per-run context and reset mutable state that must not leak."""
+        same_context = (
+            self._runtime_session_context is not None
+            and self._runtime_session_context.key == ctx.key
+            and self._runtime_session_context.tool_session_id == ctx.tool_session_id
+        )
+        self._runtime_session_context = ctx
+        self._session_id = ctx.tool_session_id
+        self._trigger = ctx.trigger
+        if not same_context:
+            self._pending_notifications = []
+            self._read_paths.clear()
+            self._session_todos = []
+            self._min_trust_seen = 2
+            self._replied_to.setdefault(ctx.session_type, set()).clear()
+            self._posted_channels.setdefault(ctx.session_type, set()).clear()
+        self._session_origin = ctx.origin
+        self._session_origin_chain = list(ctx.origin_chain)
+        self._replied_to.setdefault(ctx.session_type, set())
+        self._posted_channels.setdefault(ctx.session_type, set())
+
     def set_state_file_lock(self, lock: threading.Lock) -> None:
         """Attach a state-file lock from DigitalAnima for concurrent write protection."""
         self._state_file_lock = lock
@@ -431,6 +467,16 @@ class ToolHandler(
         """
         self._session_origin = origin
         self._session_origin_chain = origin_chain or []
+        if self._runtime_session_context is not None:
+            self._runtime_session_context = RuntimeSessionContext(
+                request_id=self._runtime_session_context.request_id,
+                session_type=self._runtime_session_context.session_type,
+                thread_id=self._runtime_session_context.thread_id,
+                trigger=self._runtime_session_context.trigger,
+                tool_session_id=self._runtime_session_context.tool_session_id,
+                origin=origin,
+                origin_chain=tuple(origin_chain or ()),
+            )
 
     @property
     def session_id(self) -> str:
@@ -439,7 +485,8 @@ class ToolHandler(
 
     def reset_session_id(self) -> None:
         """Generate a new session ID (call at start of each interaction cycle)."""
-        self._session_id = uuid.uuid4().hex[:12]
+        ctx = current_runtime_session()
+        self._session_id = ctx.tool_session_id if ctx else uuid.uuid4().hex[:12]
         self._min_trust_seen = 2
         self._read_paths.clear()
 
@@ -450,7 +497,7 @@ class ToolHandler(
     def reset_replied_to(self, session_type: str | None = None) -> None:
         """Reset replied-to tracking. If session_type given, clear only that session."""
         if session_type:
-            self._replied_to.get(session_type, set()).clear()
+            self._replied_to.setdefault(session_type, set()).clear()
         else:
             for s in self._replied_to.values():
                 s.clear()
@@ -462,7 +509,7 @@ class ToolHandler(
     def reset_posted_channels(self, session_type: str | None = None) -> None:
         """Reset posted-channels tracking. If session_type given, clear only that session."""
         if session_type:
-            self._posted_channels.get(session_type, set()).clear()
+            self._posted_channels.setdefault(session_type, set()).clear()
         else:
             for s in self._posted_channels.values():
                 s.clear()
@@ -471,18 +518,35 @@ class ToolHandler(
         """Persist replied_to entry to file for cross-mode tracking."""
         if not self._anima_dir:
             return
-        replied_to_path = self._anima_dir / "run" / "replied_to.jsonl"
+        ctx = current_runtime_session() or self._runtime_session_context
+        if ctx is not None:
+            replied_to_path = (
+                self._anima_dir / "run" / "replied_to" / ctx.session_type / f"{ctx.thread_id or 'default'}.jsonl"
+            )
+        else:
+            replied_to_path = self._anima_dir / "run" / "replied_to" / "unknown" / "default.jsonl"
         try:
             replied_to_path.parent.mkdir(parents=True, exist_ok=True)
-            entry = _json.dumps({"to": to, "success": success}, ensure_ascii=False)
+            entry = _json.dumps(
+                {
+                    "to": to,
+                    "success": success,
+                    "session_type": ctx.session_type if ctx else "unknown",
+                    "thread_id": ctx.thread_id if ctx else "default",
+                    "request_id": ctx.request_id if ctx else "",
+                },
+                ensure_ascii=False,
+            )
             with replied_to_path.open("a", encoding="utf-8") as f:
                 f.write(entry + "\n")
         except (OSError, TypeError, ValueError) as e:
             logger.warning("Failed to persist replied_to for '%s': %s", to, e)
 
-    def merge_replied_to(self, names: set[str], session_type: str = "chat") -> None:
+    def merge_replied_to(self, names: set[str], session_type: str | None = None) -> None:
         """Merge a set of names into replied-to for a given session."""
-        self._replied_to.setdefault(session_type, set()).update(names)
+        ctx = current_runtime_session() or self._runtime_session_context
+        effective = session_type or (ctx.session_type if ctx else active_session_type.get())
+        self._replied_to.setdefault(effective, set()).update(names)
 
     # ── Main dispatch ────────────────────────────────────────
 

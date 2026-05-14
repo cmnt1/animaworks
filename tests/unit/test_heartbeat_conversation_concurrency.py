@@ -296,36 +296,39 @@ class TestRepliedToSessionSeparation:
     """Verify replied_to tracks sessions independently."""
 
     def test_replied_to_dict_structure(self, handler: ToolHandler) -> None:
-        """_replied_to should be a dict with chat and background keys."""
+        """_replied_to should be a dict with isolated runtime session keys."""
         assert isinstance(handler._replied_to, dict)
         assert "chat" in handler._replied_to
-        assert "background" in handler._replied_to
+        assert "heartbeat" in handler._replied_to
+        assert "cron" in handler._replied_to
+        assert "task" in handler._replied_to
+        assert "inbox" in handler._replied_to
 
     def test_replied_to_property_returns_union(
         self,
         handler: ToolHandler,
     ) -> None:
         handler._replied_to["chat"].add("alice")
-        handler._replied_to["background"].add("bob")
+        handler._replied_to["heartbeat"].add("bob")
         assert handler.replied_to == {"alice", "bob"}
 
     def test_reset_specific_session(self, handler: ToolHandler) -> None:
         handler._replied_to["chat"].add("alice")
-        handler._replied_to["background"].add("bob")
+        handler._replied_to["heartbeat"].add("bob")
         handler.reset_replied_to(session_type="chat")
         assert handler._replied_to["chat"] == set()
-        assert handler._replied_to["background"] == {"bob"}
+        assert handler._replied_to["heartbeat"] == {"bob"}
 
     def test_set_active_session_type(self, handler: ToolHandler) -> None:
         from core.tooling.handler import active_session_type
 
-        token = handler.set_active_session_type("background")
-        assert active_session_type.get() == "background"
+        token = handler.set_active_session_type("heartbeat")
+        assert active_session_type.get() == "heartbeat"
         active_session_type.reset(token)
-        assert active_session_type.get() == "chat"
+        assert active_session_type.get() == "unknown"
 
     def test_active_session_type_is_contextvar(self) -> None:
-        """active_session_type should be a ContextVar with default 'chat'."""
+        """active_session_type should be a ContextVar with a neutral default."""
         from core.tooling.handler import active_session_type
 
-        assert active_session_type.get() == "chat"
+        assert active_session_type.get() == "unknown"

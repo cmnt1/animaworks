@@ -39,9 +39,9 @@ def _persist_replied_to_for_a1(to: str) -> None:
 
     In A1 mode, agents send messages via the CLI ``send`` command instead of
     the ``send_message`` tool, so ToolHandler._persist_replied_to() is never
-    called.  This function bridges the gap by writing to the same
-    ``{anima_dir}/run/replied_to.jsonl`` file that the Agent SDK executor
-    reads after the subprocess finishes.
+    called.  This function bridges the gap by writing to the same scoped
+    ``{anima_dir}/run/replied_to/{session_type}/{thread_id}.jsonl`` file that
+    the Agent SDK executor reads after the subprocess finishes.
 
     Only writes when ``ANIMAWORKS_ANIMA_DIR`` is set (i.e. running inside an
     Agent SDK subprocess).  No-op otherwise.
@@ -49,14 +49,31 @@ def _persist_replied_to_for_a1(to: str) -> None:
     import json as _json
     from pathlib import Path
 
+    from core.execution.session_context import RuntimeSessionContext
+
     anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
     if not anima_dir:
         return
-    replied_to_path = Path(anima_dir) / "run" / "replied_to.jsonl"
+    ctx = RuntimeSessionContext.from_env()
+    session_type = ctx.session_type if ctx else "unknown"
+    thread_id = ctx.thread_id if ctx else "default"
+    replied_to_path = Path(anima_dir) / "run" / "replied_to" / session_type / f"{thread_id or 'default'}.jsonl"
     try:
         replied_to_path.parent.mkdir(parents=True, exist_ok=True)
         with replied_to_path.open("a", encoding="utf-8") as f:
-            f.write(_json.dumps({"to": to, "success": True}) + "\n")
+            f.write(
+                _json.dumps(
+                    {
+                        "to": to,
+                        "success": True,
+                        "session_type": session_type,
+                        "thread_id": thread_id or "default",
+                        "request_id": ctx.request_id if ctx else "",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
     except Exception as e:
         logger.debug("Failed to persist replied_to for '%s': %s", to, e)
 

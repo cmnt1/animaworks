@@ -940,8 +940,8 @@ class TestExecuteHeartbeatCycle:
         finally:
             _stop_patches(mocks)
 
-    async def test_replied_to_file_cleared(self, data_dir, make_anima):
-        """replied_to.jsonl is deleted at the start of execution."""
+    async def test_replied_to_tracking_scoped_to_heartbeat(self, data_dir, make_anima):
+        """Heartbeat resets only the heartbeat reply-tracking bucket."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
         dp, mocks = _create_anima(anima_dir, shared_dir)
@@ -951,6 +951,7 @@ class TestExecuteHeartbeatCycle:
             dp._heartbeat_stream_queue = None
 
             replied_to_path = anima_dir / "run" / "replied_to.jsonl"
+            replied_to_path.parent.mkdir(parents=True, exist_ok=True)
             replied_to_path.write_text("old data", encoding="utf-8")
 
             async def mock_stream(prompt, trigger="heartbeat", **kwargs):
@@ -971,7 +972,8 @@ class TestExecuteHeartbeatCycle:
                     "test prompt", inbox_items=[], unread_count=0,
                 )
 
-            assert not replied_to_path.exists()
+            dp.agent.reset_reply_tracking.assert_called_with(session_type="heartbeat")
+            assert replied_to_path.exists()
         finally:
             _stop_patches(mocks)
 

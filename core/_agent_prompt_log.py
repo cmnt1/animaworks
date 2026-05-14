@@ -16,6 +16,7 @@ import logging
 from datetime import timedelta
 from pathlib import Path
 
+from core.execution.session_context import current_runtime_session
 from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.agent")
@@ -69,6 +70,11 @@ def _save_prompt_log(
     context_window: int = 0,
     prior_messages: list | None = None,
     tool_schemas: list | None = None,
+    request_id: str = "",
+    session_type: str = "",
+    thread_id: str = "",
+    tool_session_id: str = "",
+    sdk_session_id: str = "",
 ) -> None:
     """Persist the full prompt payload to a JSONL log for post-hoc debugging.
 
@@ -83,10 +89,14 @@ def _save_prompt_log(
         _rotate_prompt_logs(log_dir)
 
         today = now_iso()[:10]  # YYYY-MM-DD
+        ctx = current_runtime_session()
         entry = {
             "ts": now_iso(),
             "type": "request_start",
+            "request_id": request_id or (ctx.request_id if ctx else ""),
             "trigger": trigger,
+            "session_type": session_type or (ctx.session_type if ctx else ""),
+            "thread_id": thread_id or (ctx.thread_id if ctx else ""),
             "from": sender,
             "model": model,
             "mode": mode,
@@ -95,6 +105,8 @@ def _save_prompt_log(
             "user_message": user_message,
             "tools": tools,
             "session_id": session_id,
+            "tool_session_id": tool_session_id or (ctx.tool_session_id if ctx else session_id),
+            "sdk_session_id": sdk_session_id,
             "context_window": context_window,
             "prior_messages": prior_messages,
             "prior_messages_count": len(prior_messages) if prior_messages else 0,
@@ -114,6 +126,12 @@ def _save_prompt_log_end(
     final_messages: list[dict] | None = None,
     tool_call_count: int = 0,
     total_tokens_estimate: int = 0,
+    request_id: str = "",
+    session_type: str = "",
+    thread_id: str = "",
+    trigger: str = "",
+    tool_session_id: str = "",
+    sdk_session_id: str = "",
 ) -> None:
     """Persist post-execution metadata to the same JSONL log.
 
@@ -126,10 +144,17 @@ def _save_prompt_log_end(
         today = now_iso()[:10]
         log_file = log_dir / f"{today}.jsonl"
 
+        ctx = current_runtime_session()
         entry = {
             "ts": now_iso(),
             "type": "request_end",
+            "request_id": request_id or (ctx.request_id if ctx else ""),
             "session_id": session_id,
+            "session_type": session_type or (ctx.session_type if ctx else ""),
+            "thread_id": thread_id or (ctx.thread_id if ctx else ""),
+            "trigger": trigger or (ctx.trigger if ctx else ""),
+            "tool_session_id": tool_session_id or (ctx.tool_session_id if ctx else session_id),
+            "sdk_session_id": sdk_session_id,
             "final_messages_count": len(final_messages) if final_messages else 0,
             "final_messages": final_messages,
             "tool_call_count": tool_call_count,
