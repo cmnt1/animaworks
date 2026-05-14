@@ -254,6 +254,12 @@ Together, these let Animas recall **recent tool outcomes** (e.g. email or messag
 
 Early experiments paired BM25 with vectors for the main corpus; multilingual dense search won there, so per-scope RAG for those directories remains **vector-first**. Keyword retrieval is reserved for the short `activity_log` window where freshness and lexical overlap matter.
 
+### Backend policy
+
+`legacy` is the stable/default memory backend for AnimaWorks. It remains the production path for `search_memory`, priming, consolidation, and normal Anima operation.
+
+`neo4j` is currently an experimental opt-in backend. Use it for graph-memory research, local evaluation, and targeted per-Anima experiments only. It should be enabled explicitly with `animaworks anima set-memory-backend <name> neo4j` or `animaworks memory migrate --to neo4j --activate-global` when the operator intentionally accepts the experimental behavior. Plain migration prepares graph data but does not change the global default backend.
+
 | Search signal | Method | Brain analog |
 |---|---|---|
 | **Semantic vector** | Dense similarity (`intfloat/multilingual-e5-small`, 384-d, ChromaDB) | Conceptual neighbors; spreading activation approximated |
