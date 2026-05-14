@@ -24,9 +24,31 @@ _JP_SEGMENT_RE = re.compile(r"[ぁ-んァ-ヶー一-龯々]{2,}")
 _ASCII_PART_RE = re.compile(r"[_+.-]+")
 _JP_PARTICLE_CHARS = frozenset("をにへはがでとやもかの")
 _ROUTING_STOPWORDS = {
-    "する", "して", "してく", "したい", "お願い", "ください", "です", "ます",
-    "これ", "それ", "今日", "明日", "もう少し", "話そう", "相談", "方針", "設計",
-    "the", "and", "for", "with", "tool", "skill", "use", "md",
+    "する",
+    "して",
+    "してく",
+    "したい",
+    "お願い",
+    "ください",
+    "です",
+    "ます",
+    "これ",
+    "それ",
+    "今日",
+    "明日",
+    "もう少し",
+    "話そう",
+    "相談",
+    "方針",
+    "設計",
+    "the",
+    "and",
+    "for",
+    "with",
+    "tool",
+    "skill",
+    "use",
+    "md",
 }
 
 
@@ -111,11 +133,7 @@ class SkillRouter:
             if deterministic_score == 0 and dense_score == 0 and lexical_score < self.lexical_only_min_score:
                 continue
             score = (
-                deterministic_score
-                + lexical_score
-                + dense_score
-                + (rrf.get(key, 0.0) * self.rrf_weight)
-                + source_boost
+                deterministic_score + lexical_score + dense_score + (rrf.get(key, 0.0) * self.rrf_weight) + source_boost
             )
             if record.negative_penalty:
                 score -= record.negative_penalty
@@ -447,8 +465,17 @@ def _dedupe(values: Sequence[str]) -> list[str]:
 
 def _has_strong_signal(reasons: Sequence[str]) -> bool:
     strong_prefixes = (
-        "trigger:", "use_when:", "tag:", "tool:", "platform:", "example:", "dense:",
-        "name:exact:", "name:identifier:", "path:exact:", "path:identifier:",
+        "trigger:",
+        "use_when:",
+        "tag:",
+        "tool:",
+        "platform:",
+        "example:",
+        "dense:",
+        "name:exact:",
+        "name:identifier:",
+        "path:exact:",
+        "path:identifier:",
     )
     return any(reason.startswith(strong_prefixes) for reason in reasons)
 

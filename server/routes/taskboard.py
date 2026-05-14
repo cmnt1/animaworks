@@ -437,11 +437,7 @@ def _matches_filters(
 
     if q:
         needle = q.casefold()
-        haystack = " ".join(
-            value
-            for value in (task.summary, task.original_instruction)
-            if value
-        ).casefold()
+        haystack = " ".join(value for value in (task.summary, task.original_instruction) if value).casefold()
         if needle not in haystack:
             return False
 
@@ -460,8 +456,7 @@ def _column_response(tasks: list[BoardTask]) -> list[dict[str, Any]]:
     for task in tasks:
         counts[task.column.value] += 1
     return [
-        {"id": column.value, "title": _COLUMN_TITLES[column], "count": counts[column.value]}
-        for column in BoardColumn
+        {"id": column.value, "title": _COLUMN_TITLES[column], "count": counts[column.value]} for column in BoardColumn
     ]
 
 

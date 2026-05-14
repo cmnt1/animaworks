@@ -6,7 +6,8 @@ from __future__ import annotations
 
 """Semantic replay projection helpers for activity timeline groups."""
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 VISIBLE_TOOL_NAMES = frozenset(
     {
@@ -292,14 +293,29 @@ def _project_tool_use(
     line_type = ""
     event_channel = ""
     if tool == "delegate_task":
-        kind, label, importance, line_type = "delegation", f"Delegated to {target}" if target else "Delegated task", 4, "delegation"
+        kind, label, importance, line_type = (
+            "delegation",
+            f"Delegated to {target}" if target else "Delegated task",
+            4,
+            "delegation",
+        )
     elif tool in {"update_task", "backlog_task", "submit_tasks"}:
         kind, label, importance = "task", f"Task tool: {tool}", 4
     elif tool == "post_channel":
-        kind, label, importance, line_type = "channel", f"Posted to #{channel}" if channel else "Posted to channel", 4, "channel"
+        kind, label, importance, line_type = (
+            "channel",
+            f"Posted to #{channel}" if channel else "Posted to channel",
+            4,
+            "channel",
+        )
         target, event_channel = (f"#{channel}" if channel else target), channel
     elif tool in {"send_message", "call_human"}:
-        kind, label, importance, line_type = "external", "External message" if tool == "send_message" else "Human call", 4, "external"
+        kind, label, importance, line_type = (
+            "external",
+            "External message" if tool == "send_message" else "Human call",
+            4,
+            "external",
+        )
 
     return _emit(
         event,
@@ -394,12 +410,28 @@ def _event_type(event: dict[str, Any]) -> str:
 
 def _actor(event: dict[str, Any], group: dict[str, Any]) -> str:
     meta = _meta(event)
-    return _first(meta.get("actor"), meta.get("from_person"), event.get("from_person"), event.get("from"), event.get("anima"), group.get("anima"), event.get("tool"))
+    return _first(
+        meta.get("actor"),
+        meta.get("from_person"),
+        event.get("from_person"),
+        event.get("from"),
+        event.get("anima"),
+        group.get("anima"),
+        event.get("tool"),
+    )
 
 
 def _target(event: dict[str, Any]) -> str:
     meta = _meta(event)
-    return _first(meta.get("target"), meta.get("to_person"), meta.get("assignee"), meta.get("assigned_to"), meta.get("delegatee"), event.get("to_person"), event.get("to"))
+    return _first(
+        meta.get("target"),
+        meta.get("to_person"),
+        meta.get("assignee"),
+        meta.get("assigned_to"),
+        meta.get("delegatee"),
+        event.get("to_person"),
+        event.get("to"),
+    )
 
 
 def _channel(event: dict[str, Any]) -> str:
@@ -412,7 +444,14 @@ def _tool(event: dict[str, Any]) -> str:
 
 def _summary(event: dict[str, Any]) -> str:
     meta = _meta(event)
-    return _first(event.get("summary"), meta.get("summary"), meta.get("text"), event.get("content"), meta.get("task_name"), meta.get("title"))
+    return _first(
+        event.get("summary"),
+        meta.get("summary"),
+        meta.get("text"),
+        event.get("content"),
+        meta.get("task_name"),
+        meta.get("title"),
+    )
 
 
 def _tool_result_summary(event: dict[str, Any]) -> str:
@@ -466,9 +505,9 @@ def _suppressed_count(events: list[dict[str, Any]]) -> int:
     count = 0
     for event in events:
         event_type = _event_type(event)
-        if event_type == "tool_use" and _tool(event) not in VISIBLE_TOOL_NAMES:
-            count += 1
-        elif event_type == "tool_result" or (event_type.startswith("tool_") and event_type != "tool_use"):
+        if (event_type == "tool_use" and _tool(event) not in VISIBLE_TOOL_NAMES) or (
+            event_type == "tool_result" or (event_type.startswith("tool_") and event_type != "tool_use")
+        ):
             count += 1
         if isinstance(event.get("tool_result"), dict):
             count += 1

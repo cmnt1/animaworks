@@ -200,6 +200,7 @@ def canonicalize_edge_type(
         return canonical, None
     return DEFAULT_EDGE_TYPE, raw
 
+
 # ── Entity models ──────────────────────────────────────────
 
 

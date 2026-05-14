@@ -197,22 +197,14 @@ def build_priming_plan(
     message_risk_tags = classify_risk_tags(message, candidates, recent_human_messages=recent_human_messages)
     evidence_candidate_tags = (
         frozenset().union(
-            *(
-                candidate.risk_tags
-                for candidate in candidates
-                if _candidate_risk_enables_evidence(candidate)
-            )
+            *(candidate.risk_tags for candidate in candidates if _candidate_risk_enables_evidence(candidate))
         )
         if candidates
         else frozenset()
     )
     search_candidate_tags = (
         frozenset().union(
-            *(
-                candidate.risk_tags
-                for candidate in candidates
-                if _candidate_risk_requires_search(candidate)
-            )
+            *(candidate.risk_tags for candidate in candidates if _candidate_risk_requires_search(candidate))
         )
         if candidates
         else frozenset()
@@ -238,7 +230,8 @@ def build_priming_plan(
         candidate_risk_tags = candidate_evidence_tags | candidate_search_tags
         decision = decide_candidate(
             candidate,
-            evidence_mode=message_evidence_mode or bool(
+            evidence_mode=message_evidence_mode
+            or bool(
                 candidate_evidence_tags
                 & {"external_action", "evidence_request", "guardrail", "duplicate_prevention", "confidentiality"}
             ),
@@ -407,7 +400,9 @@ def evidence_needed(
 
     if risk_tags & {"explicit_recall", "external_action", "evidence_request"}:
         return True
-    return "resume" in risk_tags and any(c.channel in {"pending_tasks", "pending_human_notifications"} for c in candidates)
+    return "resume" in risk_tags and any(
+        c.channel in {"pending_tasks", "pending_human_notifications"} for c in candidates
+    )
 
 
 def is_pointer_like(content: str) -> bool:
@@ -426,9 +421,13 @@ def _is_guardrail_candidate(candidate: MemoryCandidate, risk_tags: frozenset[str
             frozenset({"duplicate", "重複", "二重", "confidential", "機密"}),
         ):
             return True
-        return "external_action" in risk_tags and _contains_any(content, EXTERNAL_ACTION_TERMS) and _contains_any(
-            content,
-            GUARDRAIL_TERMS,
+        return (
+            "external_action" in risk_tags
+            and _contains_any(content, EXTERNAL_ACTION_TERMS)
+            and _contains_any(
+                content,
+                GUARDRAIL_TERMS,
+            )
         )
     return False
 
