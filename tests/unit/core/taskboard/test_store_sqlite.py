@@ -50,6 +50,43 @@ def test_store_creates_wal_database_and_schema_is_idempotent(tmp_path: Path) -> 
     assert "taskboard_events" in tables
 
 
+def test_store_migrates_event_type_constraint_for_stale_processing_event(tmp_path: Path) -> None:
+    db_path = tmp_path / "shared" / "taskboard.sqlite3"
+    db_path.parent.mkdir(parents=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE taskboard_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                event_type TEXT NOT NULL
+                    CHECK(event_type IN ('metadata_upserted', 'surface_recorded')),
+                anima_name TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}'
+            );
+            INSERT INTO taskboard_events (ts, actor, event_type, anima_name, task_id, payload_json)
+            VALUES ('2026-05-14T00:00:00+09:00', 'test', 'surface_recorded', 'sakura', 'task-1', '{}');
+            """
+        )
+
+    store = TaskBoardStore(db_path)
+    store.append_event(
+        event_type="stale_processing_recovered",
+        anima_name="sakura",
+        task_id="task-1",
+        actor="housekeeping",
+        payload={"queue_synced": True},
+    )
+
+    events = store.list_events(anima_name="sakura", task_id="task-1")
+    assert [event["event_type"] for event in events] == [
+        "surface_recorded",
+        "stale_processing_recovered",
+    ]
+
+
 def test_upsert_and_read_metadata_appends_events(tmp_path: Path) -> None:
     store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
 
