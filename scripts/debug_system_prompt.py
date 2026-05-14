@@ -68,31 +68,43 @@ class SectionInfo:
 
 # Mapping from builder section id → (category, source hint)
 _SECTION_META: dict[str, tuple[str, str]] = {
+    "default_workspace":        ("framework",    "(computed: workspace registry)"),
     "environment":              ("framework",    "templates/prompts/environment.md"),
     "identity":                 ("identity",     "animas/{name}/identity.md"),
     "injection":                ("injection",    "animas/{name}/injection.md"),
+    "injection_size_warning":   ("injection",    "(computed: prompt.injection_size_warning_chars)"),
     "current_time":             ("time",         "(computed)"),
     "behavior_rules":           ("framework",    "templates/prompts/behavior_rules.md"),
     "tool_data_interpretation":  ("framework",    "templates/prompts/tool_data_interpretation.md"),
     "company_vision":           ("company",      "company/vision.md"),
+    "vision":                   ("company",      "company/vision.md"),
     "specialty_prompt":         ("company",      "animas/{name}/specialty_prompt.md"),
+    "specialty":                ("company",      "animas/{name}/specialty_prompt.md"),
     "permissions":              ("permissions",  "animas/{name}/permissions.json"),
     "bootstrap":                ("framework",    "animas/{name}/bootstrap.md"),
     "task_in_progress":         ("state",        "state/current_state.md"),
+    "current_state":            ("state",        "state/current_state.md"),
     "task_queue":               ("state",        "(computed: TaskQueueManager)"),
     "resolution_registry":      ("state",        "(computed: ResolutionTracker)"),
     "priming":                  ("priming",      "(computed: PrimingEngine)"),
+    "pending_human_notifications": (
+        "priming",
+        "(computed: PrimingEngine human_notify)",
+    ),
     "recent_tool_results":      ("tools",        "(computed: ConversationMemory)"),
+    "recent_tools":             ("tools",        "(computed: ConversationMemory)"),
     "pending_tasks":            ("state",        "state/pending/"),
     "memory_guide":             ("memory",       "templates/prompts/memory_guide.md"),
     "dk_procedures":            ("memory",       "procedures/ (distilled)"),
     "dk_knowledge":             ("memory",       "knowledge/ (distilled)"),
     "common_knowledge_hint":    ("memory",       "builder/common_knowledge_hint.md"),
+    "reference_hint":           ("memory",       "builder/reference_hint.md"),
     "org_context":              ("organization", "(computed: _build_org_context)"),
     "messaging":                ("organization", "templates/prompts/messaging_s.md"),
     "human_notification":       ("organization", "builder/human_notification.md"),
     "tool_guides":              ("tools",        "(computed: prompt_db)"),
     "external_tools":           ("tools",        "(computed: build_tools_guide)"),
+    "skill_catalog":            ("tools",        "(computed: SkillIndex)"),
     "emotion_instruction":      ("meta",         "builder/emotion_instruction.md"),
     "a_reflection":             ("meta",         "builder/a_reflection.md"),
     "c_response_requirement":   ("meta",         "(computed: codex guidance)"),
@@ -418,6 +430,7 @@ def main() -> None:
 
     # ── Run PrimingEngine ──────────────────────────────────
     priming_section = ""
+    pending_human_notifications = ""
     try:
         from core.memory.priming import PrimingEngine, format_priming_section
 
@@ -439,6 +452,7 @@ def main() -> None:
         )
 
         priming_section = format_priming_section(priming_result, sender_name="human")
+        pending_human_notifications = priming_result.pending_human_notifications
         print(f"Priming section : {len(priming_section)} chars")
         if priming_result.sender_profile:
             print(f"  - sender_profile   : {len(priming_result.sender_profile)} chars")
@@ -446,11 +460,25 @@ def main() -> None:
             print(f"  - recent_activity  : {len(priming_result.recent_activity)} chars")
         if priming_result.related_knowledge:
             print(f"  - related_knowledge: {len(priming_result.related_knowledge)} chars")
+        if priming_result.related_knowledge_untrusted:
+            print(
+                "  - related_knowledge_untrusted: "
+                f"{len(priming_result.related_knowledge_untrusted)} chars",
+            )
+        if priming_result.episodes:
+            print(f"  - episodes         : {len(priming_result.episodes)} chars")
         if priming_result.pending_tasks:
             print(f"  - pending_tasks    : {len(priming_result.pending_tasks)} chars")
+        if priming_result.recent_outbound:
+            print(f"  - recent_outbound  : {len(priming_result.recent_outbound)} chars")
+        if priming_result.graph_context:
+            print(f"  - graph_context    : {len(priming_result.graph_context)} chars")
+        if pending_human_notifications:
+            print(f"Pending human notifications: {len(pending_human_notifications)} chars")
     except Exception as e:
         print(f"WARN: Priming failed (using empty section): {e}")
         priming_section = ""
+        pending_human_notifications = ""
 
     print()
 
@@ -463,6 +491,7 @@ def main() -> None:
         execution_mode="s",
         message=test_message,
         priming_section=priming_section,
+        pending_human_notifications=pending_human_notifications,
         trigger=trigger,
     )
 

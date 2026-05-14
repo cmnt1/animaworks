@@ -233,7 +233,7 @@ class MemoryConfig(BaseModel):
 class PromptConfig(BaseModel):
     """Configuration for system prompt building."""
 
-    injection_size_warning_chars: int = 5000
+    injection_size_warning_chars: int = 2000
 
 
 class PrimingConfig(BaseModel):
