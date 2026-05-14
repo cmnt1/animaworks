@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -12,19 +13,19 @@ Tests cover:
 """
 
 import json
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.anima import DigitalAnima
 from core.lifecycle import LifecycleManager
+from core.memory import MemoryManager
 from core.memory.consolidation import ConsolidationEngine
 from core.memory.conversation import ConversationMemory
-from core.memory import MemoryManager
 from core.memory.priming import PrimingEngine, format_priming_section
-from core.anima import DigitalAnima
-
+from core.schemas import CycleResult
+from core.time_utils import now_jst
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -94,12 +95,14 @@ AI Assistant for software development team.
 
     # Create model_config.json
     (anima_dir / "model_config.json").write_text(
-        json.dumps({
-            "provider": "anthropic",
-            "model_name": "claude-sonnet-4-6",
-            "mode": "A1",
-            "max_tokens": 4096,
-        }),
+        json.dumps(
+            {
+                "provider": "anthropic",
+                "model_name": "claude-sonnet-4-6",
+                "mode": "A1",
+                "max_tokens": 4096,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -137,12 +140,12 @@ def mock_agent_core():
         # Mock run_cycle to return a realistic CycleResult
         async def mock_run_cycle(prompt, trigger="message:human", **kwargs):
             from core.schemas import CycleResult
+
             return CycleResult(
                 timestamp=now_jst(),
                 trigger=trigger,
                 action="respond",
-                summary="This is a mocked response from the agent. "
-                       "I understand the request and have processed it.",
+                summary="This is a mocked response from the agent. I understand the request and have processed it.",
                 duration_ms=150,
             )
 
@@ -170,6 +173,7 @@ def mock_llm():
     - Compression: Returns episode summary
     """
     with patch("litellm.acompletion") as mock:
+
         async def async_response(*args, **kwargs):
             # Return different responses based on the prompt content
             messages = kwargs.get("messages", [])
@@ -244,9 +248,7 @@ Combined content from both files with duplicates removed.
 """
 
             mock_response = MagicMock()
-            mock_response.choices = [
-                MagicMock(message=MagicMock(content=content))
-            ]
+            mock_response.choices = [MagicMock(message=MagicMock(content=content))]
             return mock_response
 
         mock.side_effect = async_response
@@ -350,8 +352,7 @@ Senior Software Engineer
     conv_memory.append_turn("human", message)
     conv_memory.append_turn(
         "assistant",
-        "The microservices architecture is progressing well. "
-        "We're using FastAPI with PostgreSQL and Redis."
+        "The microservices architecture is progressing well. We're using FastAPI with PostgreSQL and Redis.",
     )
     conv_memory.append_turn("human", "What about the PostgreSQL migration?")
     conv_memory.save()
@@ -422,8 +423,7 @@ async def test_multi_anima_isolation(tmp_path: Path, mock_llm):
 
         # Create unique knowledge
         (anima_dir / "knowledge" / f"{anima_name}-expertise.md").write_text(
-            f"# {anima_name.title()}'s Expertise\n\n"
-            f"I specialize in {anima_name}-specific tasks.",
+            f"# {anima_name.title()}'s Expertise\n\nI specialize in {anima_name}-specific tasks.",
             encoding="utf-8",
         )
 
@@ -486,10 +486,7 @@ All animas can see this profile.
                     # Allow for some edge cases where anima name might appear in generic text
                     # but the actual expertise content should not be there
                     if f"{other}-specific" in result.related_knowledge.lower():
-                        pytest.fail(
-                            f"{anima_name}'s priming contains {other}'s knowledge: "
-                            f"{result.related_knowledge}"
-                        )
+                        pytest.fail(f"{anima_name}'s priming contains {other}'s knowledge: {result.related_knowledge}")
 
             # Should retrieve own episodes only
             if result.recent_activity:
@@ -525,11 +522,13 @@ async def test_system_cron_integration(tmp_path: Path, mock_llm, mock_websocket)
     (anima_dir / "cron.md").write_text("", encoding="utf-8")
 
     (anima_dir / "model_config.json").write_text(
-        json.dumps({
-            "provider": "anthropic",
-            "model_name": "claude-sonnet-4-6",
-            "mode": "A1",
-        }),
+        json.dumps(
+            {
+                "provider": "anthropic",
+                "model_name": "claude-sonnet-4-6",
+                "mode": "A1",
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -558,6 +557,15 @@ async def test_system_cron_integration(tmp_path: Path, mock_llm, mock_websocket)
             lifecycle.set_broadcast(mock_websocket)
 
         # Register anima
+        anima.run_consolidation = AsyncMock(
+            return_value=CycleResult(
+                timestamp=now_jst(),
+                trigger="consolidation:daily",
+                action="completed",
+                summary="Mocked consolidation completed",
+                duration_ms=15_000,
+            )
+        )
         lifecycle.register_anima(anima)
 
         # Setup system crons
@@ -583,8 +591,6 @@ async def test_system_cron_integration(tmp_path: Path, mock_llm, mock_websocket)
         # Test manual trigger of daily consolidation
         await lifecycle._handle_daily_consolidation()
 
-        # Verify knowledge files were created (if consolidation ran)
-        knowledge_files = list((anima_dir / "knowledge").glob("*.md"))
         # Consolidation may or may not create files depending on LLM response parsing
         # Just verify it doesn't error
 

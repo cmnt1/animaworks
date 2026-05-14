@@ -6,15 +6,14 @@
 Tests the full flow from process_message_stream yielding notification_sent
 events through to WebSocket broadcast and queue lifecycle.
 """
+
 from __future__ import annotations
 
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 from core.tooling.handler import active_session_type
 from server.websocket import WebSocketManager
-
 
 # ── E2E: notification_sent event in stream ────────────────────
 
@@ -29,10 +28,12 @@ class TestNotificationSentEventInStream:
         anima_dir = make_anima("stream-notif-test")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore") as MockAgent, \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger"), \
-             patch("core._anima_messaging.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core.anima.MemoryManager") as MockMM,
+            patch("core.anima.Messenger"),
+            patch("core._anima_messaging.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
             MockConv.return_value.finalize_session = AsyncMock(return_value=False)
@@ -41,6 +42,7 @@ class TestNotificationSentEventInStream:
             MockConv.return_value.save = MagicMock()
 
             from core.anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -64,9 +66,7 @@ class TestNotificationSentEventInStream:
 
             # drain_notifications returns the queued notifications once,
             # then returns empty on subsequent calls
-            dp.agent.drain_notifications = MagicMock(
-                side_effect=[pending_notifications, []]
-            )
+            dp.agent.drain_notifications = MagicMock(side_effect=[pending_notifications, []])
 
             async def mock_stream(prompt, trigger="manual", **kwargs):
                 yield {"type": "text_delta", "text": "Processing your request..."}
@@ -112,10 +112,12 @@ class TestNotificationSentEventInStream:
         anima_dir = make_anima("no-notif-test")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger"), \
-             patch("core._anima_messaging.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core.anima.MemoryManager") as MockMM,
+            patch("core.anima.Messenger"),
+            patch("core._anima_messaging.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
             MockConv.return_value.finalize_session = AsyncMock(return_value=False)
@@ -124,6 +126,7 @@ class TestNotificationSentEventInStream:
             MockConv.return_value.save = MagicMock()
 
             from core.anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
@@ -134,7 +137,7 @@ class TestNotificationSentEventInStream:
                 yield {"type": "text_delta", "text": "Hello"}
                 yield {
                     "type": "cycle_done",
-                    "cycle_result": {"summary": "Hello"},
+                    "cycle_result": {"trigger": trigger, "session_type": "chat", "summary": "Hello"},
                 }
 
             dp.agent.run_cycle_streaming = mock_stream
@@ -162,20 +165,24 @@ class TestWebSocketNotificationQueueLifecycle:
         # Phase 1: Queue notifications while no clients connected
         assert len(manager.active_connections) == 0
 
-        await manager.broadcast_notification({
-            "anima": "alice",
-            "subject": "Offline Alert 1",
-            "body": "First notification while offline",
-            "priority": "normal",
-            "timestamp": "2026-02-16T10:00:00",
-        })
-        await manager.broadcast_notification({
-            "anima": "alice",
-            "subject": "Offline Alert 2",
-            "body": "Second notification while offline",
-            "priority": "high",
-            "timestamp": "2026-02-16T10:05:00",
-        })
+        await manager.broadcast_notification(
+            {
+                "anima": "alice",
+                "subject": "Offline Alert 1",
+                "body": "First notification while offline",
+                "priority": "normal",
+                "timestamp": "2026-02-16T10:00:00",
+            }
+        )
+        await manager.broadcast_notification(
+            {
+                "anima": "alice",
+                "subject": "Offline Alert 2",
+                "body": "Second notification while offline",
+                "priority": "high",
+                "timestamp": "2026-02-16T10:05:00",
+            }
+        )
 
         # Each broadcast_notification produces 2 events: proactive_message + notification
         assert len(manager._notification_queue) == 4
@@ -281,10 +288,12 @@ class TestWebSocketNotificationQueueLifecycle:
         anima_dir = make_anima("pipeline-test")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger"), \
-             patch("core._anima_messaging.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core.anima.MemoryManager") as MockMM,
+            patch("core.anima.Messenger"),
+            patch("core._anima_messaging.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
             MockConv.return_value.finalize_session = AsyncMock(return_value=False)
@@ -293,25 +302,28 @@ class TestWebSocketNotificationQueueLifecycle:
             MockConv.return_value.save = MagicMock()
 
             from core.anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
             # Simulate one pending notification
             dp.agent.drain_notifications = MagicMock(
-                return_value=[{
-                    "anima": "pipeline-test",
-                    "subject": "Pipeline Test",
-                    "body": "Full pipeline verification",
-                    "priority": "normal",
-                    "timestamp": "2026-02-16T12:00:00",
-                }]
+                return_value=[
+                    {
+                        "anima": "pipeline-test",
+                        "subject": "Pipeline Test",
+                        "body": "Full pipeline verification",
+                        "priority": "normal",
+                        "timestamp": "2026-02-16T12:00:00",
+                    }
+                ]
             )
 
             async def mock_stream(prompt, trigger="manual", **kwargs):
                 yield {"type": "text_delta", "text": "Done"}
                 yield {
                     "type": "cycle_done",
-                    "cycle_result": {"summary": "Done"},
+                    "cycle_result": {"trigger": trigger, "session_type": "chat", "summary": "Done"},
                 }
 
             dp.agent.run_cycle_streaming = mock_stream

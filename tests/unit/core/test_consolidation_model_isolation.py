@@ -72,9 +72,12 @@ async def test_daily_phase_b_uses_status_model_without_mutating_agent_executor()
     anima = _make_lifecycle(status_config)
     original_executor = anima.agent._executor
 
-    with patch("core.config.load_config", return_value=_mock_config()), patch(
-        "core._anima_lifecycle.load_prompt",
-        return_value="daily prompt",
+    with (
+        patch("core.config.load_config", return_value=_mock_config()),
+        patch(
+            "core._anima_lifecycle.load_prompt",
+            return_value="daily prompt",
+        ),
     ):
         result = await anima._run_daily_consolidation(_FakeEngine(), max_turns=7)
 
@@ -136,7 +139,7 @@ class _FakeCycle(CycleMixin):
         self._executor = _FakeExecutor(self.model_config)
         self._tool_registry = []
         self._personal_tools = {}
-        self._tool_handler = SimpleNamespace(session_id="sid")
+        self._tool_handler = _FakeToolHandler()
         self.created_executor_configs: list[ModelConfig] = []
         self._progress_callback = None
 
@@ -193,10 +196,14 @@ async def test_run_cycle_override_uses_local_executor_without_mutating_shared_st
     override = ModelConfig(model="claude-opus-4-6", resolved_mode="B")
     prompt_log_calls = []
 
-    with patch("core._agent_cycle.build_system_prompt", return_value=_simple_prompt_result()), patch(
-        "core._agent_cycle._save_prompt_log",
-        side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),
-    ), patch("core._agent_cycle._save_prompt_log_end"):
+    with (
+        patch("core._agent_cycle.build_system_prompt", return_value=_simple_prompt_result()),
+        patch(
+            "core._agent_cycle._save_prompt_log",
+            side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),
+        ),
+        patch("core._agent_cycle._save_prompt_log_end"),
+    ):
         result = await agent.run_cycle("hello", trigger="manual", model_config_override=override)
 
     assert result.summary == "blocking:claude-opus-4-6"
@@ -213,10 +220,14 @@ async def test_run_cycle_streaming_override_uses_local_executor_without_mutating
     prompt_log_calls = []
     chunks = []
 
-    with patch("core._agent_cycle.build_system_prompt", return_value=_simple_prompt_result()), patch(
-        "core._agent_cycle._save_prompt_log",
-        side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),
-    ), patch("core._agent_cycle._save_prompt_log_end"):
+    with (
+        patch("core._agent_cycle.build_system_prompt", return_value=_simple_prompt_result()),
+        patch(
+            "core._agent_cycle._save_prompt_log",
+            side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),
+        ),
+        patch("core._agent_cycle._save_prompt_log_end"),
+    ):
         async for chunk in agent.run_cycle_streaming(
             "hello",
             trigger="message:taka",
@@ -233,6 +244,9 @@ async def test_run_cycle_streaming_override_uses_local_executor_without_mutating
 
 class _FakeToolHandler:
     session_id = "sid"
+
+    def bind_runtime_session(self, ctx):
+        self.session_id = ctx.tool_session_id
 
     def set_active_session_type(self, session_type: str):
         from core.tooling.handler import active_session_type
