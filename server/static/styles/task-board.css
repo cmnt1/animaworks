@@ -1,0 +1,449 @@
+/* ── TaskBoard Kanban ─────────────────────── */
+
+.taskboard-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: calc(100svh - 120px);
+}
+
+.taskboard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.taskboard-header h2 {
+  margin: 0 0 4px;
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+
+.taskboard-header p {
+  margin: 0;
+  color: var(--aw-color-text-secondary);
+  font-size: 0.88rem;
+}
+
+.taskboard-icon-btn,
+.taskboard-actions button,
+.taskboard-mobile-tab,
+.taskboard-segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid var(--aw-color-border-input);
+  border-radius: 8px;
+  background: var(--aw-color-bg-primary);
+  color: var(--aw-color-text-primary);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.taskboard-icon-btn {
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.taskboard-icon-btn svg,
+.taskboard-actions svg,
+.taskboard-search svg,
+.taskboard-card-facts svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.taskboard-toolbar {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) auto max-content minmax(220px, 320px);
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--aw-color-border);
+  border-radius: 8px;
+  background: var(--aw-color-bg-primary);
+}
+
+.taskboard-field,
+.taskboard-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.taskboard-field span,
+.taskboard-check span {
+  color: var(--aw-color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.taskboard-field select,
+.taskboard-search input,
+.taskboard-modal input,
+.taskboard-modal textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--aw-color-border-input);
+  border-radius: 8px;
+  background: var(--aw-color-bg-primary);
+  color: var(--aw-color-text-primary);
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 7px 10px;
+}
+
+.taskboard-search {
+  position: relative;
+}
+
+.taskboard-search svg {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  color: var(--aw-color-text-muted);
+}
+
+.taskboard-search input {
+  padding-left: 32px;
+}
+
+.taskboard-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.taskboard-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  border: 0;
+}
+
+.taskboard-segment {
+  padding: 0 12px;
+}
+
+.taskboard-segment.is-active,
+.taskboard-mobile-tab.is-active {
+  border-color: var(--aw-color-accent);
+  background: var(--aw-color-accent);
+  color: var(--aw-color-bg-primary);
+}
+
+.taskboard-feedback {
+  min-height: 22px;
+  color: var(--aw-color-text-secondary);
+  font-size: 0.83rem;
+}
+
+.taskboard-feedback[data-tone="error"] {
+  color: var(--aw-color-error);
+}
+
+.taskboard-feedback[data-tone="ok"] {
+  color: var(--aw-color-success-text);
+}
+
+.taskboard-columns {
+  display: grid;
+  grid-auto-columns: minmax(260px, 1fr);
+  grid-auto-flow: column;
+  gap: 12px;
+  min-height: 520px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.taskboard-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 260px;
+  max-height: calc(100svh - 245px);
+  border: 1px solid var(--aw-color-border);
+  border-radius: 8px;
+  background: var(--aw-color-bg-subtle);
+}
+
+.taskboard-column-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--aw-color-border);
+}
+
+.taskboard-column-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.taskboard-column-header span {
+  color: var(--aw-color-text-secondary);
+  font-size: 0.76rem;
+}
+
+.taskboard-column-header strong {
+  align-self: flex-start;
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--aw-color-bg-primary);
+  text-align: center;
+}
+
+.taskboard-card-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.taskboard-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border: 1px solid var(--aw-color-border);
+  border-radius: 8px;
+  background: var(--aw-color-bg-primary);
+  padding: 12px;
+}
+
+.taskboard-card.is-dragging {
+  opacity: 0.55;
+}
+
+.taskboard-card-topline,
+.taskboard-meta-row,
+.taskboard-card-facts,
+.taskboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.taskboard-card-topline {
+  justify-content: space-between;
+}
+
+.taskboard-anima,
+.taskboard-visibility,
+.taskboard-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.taskboard-anima {
+  background: #e7f5ee;
+  color: #17664a;
+}
+
+.taskboard-visibility {
+  background: #f1f0ff;
+  color: #4c438f;
+}
+
+.taskboard-badge {
+  background: #eef2f6;
+  color: #394756;
+}
+
+.taskboard-badge--in_progress,
+.taskboard-badge--running {
+  background: #e8f2ff;
+  color: #135c9e;
+}
+
+.taskboard-badge--blocked,
+.taskboard-badge--failed {
+  background: #ffeded;
+  color: #a13333;
+}
+
+.taskboard-badge--delegated {
+  background: #fff3d6;
+  color: #7b4e00;
+}
+
+.taskboard-badge--done,
+.taskboard-badge--cancelled {
+  background: #edf7e7;
+  color: #346b21;
+}
+
+.taskboard-card h4 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.taskboard-card code {
+  color: var(--aw-color-text-muted);
+  font-size: 0.72rem;
+}
+
+.taskboard-card-facts {
+  color: var(--aw-color-text-secondary);
+  font-size: 0.76rem;
+}
+
+.taskboard-card-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.taskboard-card-facts .is-overdue {
+  color: var(--aw-color-error);
+  font-weight: 700;
+}
+
+.taskboard-actions button {
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 0.76rem;
+}
+
+.taskboard-actions button:hover,
+.taskboard-icon-btn:hover,
+.taskboard-mobile-tab:hover,
+.taskboard-segment:hover {
+  background: var(--aw-color-bg-hover);
+}
+
+.taskboard-empty-column,
+.taskboard-loading {
+  color: var(--aw-color-text-secondary);
+  padding: 18px 10px;
+  text-align: center;
+}
+
+.taskboard-mobile-tabs {
+  display: none;
+}
+
+.taskboard-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(18, 24, 32, 0.46);
+}
+
+.taskboard-modal-panel {
+  width: min(460px, 100%);
+  border-radius: 8px;
+  background: var(--aw-color-bg-primary);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.24);
+  padding: 16px;
+}
+
+.taskboard-modal-panel header,
+.taskboard-modal-panel footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.taskboard-modal-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--aw-color-text-secondary);
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.taskboard-modal textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.taskboard-modal-check {
+  flex-direction: row !important;
+  align-items: center;
+}
+
+.taskboard-modal-close {
+  border: 0;
+  background: transparent;
+  color: var(--aw-color-text-secondary);
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.taskboard-modal-panel footer {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+@media (max-width: 900px) {
+  .taskboard-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .taskboard-search {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .taskboard-header {
+    flex-direction: column;
+  }
+
+  .taskboard-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .taskboard-mobile-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .taskboard-mobile-tab {
+    justify-content: space-between;
+    padding: 0 10px;
+  }
+
+  .taskboard-columns {
+    display: block;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .taskboard-column {
+    display: none;
+    max-height: none;
+    min-width: 0;
+  }
+
+  .taskboard-column.is-active {
+    display: flex;
+  }
+}
