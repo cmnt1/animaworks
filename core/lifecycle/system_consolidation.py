@@ -298,17 +298,16 @@ class SystemConsolidationMixin:
     @staticmethod
     async def _detect_communities_if_neo4j(anima) -> None:  # noqa: ANN001
         """Run batch community detection if Neo4j backend is active."""
+        backend = None
         try:
-            from core.config.models import load_config
+            from core.memory.backend.registry import get_backend, resolve_backend_type
 
-            cfg = load_config()
-            mem_cfg = getattr(cfg, "memory", None)
-            if not mem_cfg or getattr(mem_cfg, "backend", "legacy") != "neo4j":
+            anima_dir = anima.memory.anima_dir
+            backend_type = resolve_backend_type(anima_dir)
+            if backend_type != "neo4j":
                 return
 
-            from core.memory.backend.registry import get_backend
-
-            backend = get_backend("neo4j", anima.memory.anima_dir)
+            backend = get_backend(backend_type, anima_dir)
             driver = await backend._ensure_driver()
 
             from core.memory.graph.community import CommunityDetector
@@ -320,11 +319,19 @@ class SystemConsolidationMixin:
                 locale=backend._resolve_locale(),
             )
             communities = await detector.detect_and_store()
+            stats = await detector.get_community_stats()
             logger.info(
-                "Community detection for %s: %d communities",
+                "Community detection for %s: detected=%d stored=%d memberships=%d",
                 anima.name,
                 len(communities),
+                stats["communities"],
+                stats["memberships"],
             )
-            await backend.close()
         except Exception:
             logger.exception("Community detection failed for anima=%s", anima.name)
+        finally:
+            if backend is not None:
+                try:
+                    await backend.close()
+                except Exception:
+                    logger.debug("Failed to close Neo4j backend after community detection", exc_info=True)

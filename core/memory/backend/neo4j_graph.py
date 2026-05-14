@@ -547,6 +547,11 @@ class Neo4jGraphBackend(MemoryBackend):
                         assigned = await detector.dynamic_update(entity_uuid, neighbor_uuids)
                         if assigned:
                             logger.debug("Entity %s assigned to community %s", entity_uuid, assigned)
+                        else:
+                            logger.debug(
+                                "Entity %s not assigned to an existing community; batch detection remains authoritative",
+                                entity_uuid,
+                            )
                 except Exception:
                     logger.debug("Dynamic community update failed for %s", entity_uuid, exc_info=True)
         except Exception:

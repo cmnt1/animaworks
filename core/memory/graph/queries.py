@@ -372,6 +372,21 @@ WHERE r.group_id = $group_id
 RETURN c.uuid AS community_uuid, c.name AS name, c.summary AS summary
 """
 
+COUNT_COMMUNITY_STATS = """
+CALL {
+  MATCH (c:Community)
+  WHERE c.group_id = $group_id
+  RETURN count(c) AS communities
+}
+CALL {
+  MATCH (c:Community)-[r:HAS_MEMBER]->(:Entity)
+  WHERE c.group_id = $group_id
+    AND r.group_id = $group_id
+  RETURN count(r) AS memberships
+}
+RETURN communities, memberships
+"""
+
 FIND_ENTITY_NEIGHBORS = """
 MATCH (e:Entity {uuid: $entity_uuid})-[:RELATES_TO]-(neighbor:Entity)
 WHERE neighbor.group_id = $group_id

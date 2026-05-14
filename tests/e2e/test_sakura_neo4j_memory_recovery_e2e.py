@@ -237,3 +237,41 @@ async def test_channel_g_neo4j_retrieval_is_query_aware(tmp_path) -> None:
     community_query, community_params = driver.execute_query.call_args.args
     assert "community_fulltext" in community_query
     assert community_params["query"] == "frontend dashboard"
+
+
+@pytest.mark.asyncio
+@pytest.mark.e2e
+async def test_scheduled_community_detection_uses_per_anima_neo4j_override(tmp_path) -> None:
+    """Scheduled community detection should follow status.json backend resolution."""
+    from core.lifecycle.system_consolidation import SystemConsolidationMixin
+
+    anima_dir = tmp_path / "sakura"
+    anima_dir.mkdir()
+    (anima_dir / "status.json").write_text('{"memory_backend": "neo4j"}', encoding="utf-8")
+
+    mock_anima = MagicMock()
+    mock_anima.name = "sakura"
+    mock_anima.memory.anima_dir = anima_dir
+
+    mock_backend = MagicMock()
+    mock_backend._group_id = "sakura"
+    mock_backend._resolve_background_model.return_value = "test-model"
+    mock_backend._resolve_locale.return_value = "ja"
+    mock_backend._ensure_driver = AsyncMock()
+    mock_backend.close = AsyncMock()
+
+    with (
+        patch("core.memory.backend.registry.get_backend", return_value=mock_backend) as mock_get_backend,
+        patch("core.memory.graph.community.CommunityDetector") as MockDetector,
+    ):
+        mock_detector = MagicMock()
+        mock_detector.detect_and_store = AsyncMock(return_value=[object()])
+        mock_detector.get_community_stats = AsyncMock(return_value={"communities": 1, "memberships": 3})
+        MockDetector.return_value = mock_detector
+
+        await SystemConsolidationMixin._detect_communities_if_neo4j(mock_anima)
+
+    mock_get_backend.assert_called_once_with("neo4j", anima_dir)
+    mock_detector.detect_and_store.assert_awaited_once()
+    mock_detector.get_community_stats.assert_awaited_once()
+    mock_backend.close.assert_awaited_once()

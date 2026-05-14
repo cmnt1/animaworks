@@ -104,6 +104,20 @@ class CommunityDetector:
         )
         return results
 
+    async def get_community_stats(self) -> dict[str, int]:
+        """Return group-scoped counts for persisted communities and memberships."""
+        from core.memory.graph.queries import COUNT_COMMUNITY_STATS
+
+        rows = await self._driver.execute_query(COUNT_COMMUNITY_STATS, {"group_id": self._group_id})
+        if not rows:
+            return {"communities": 0, "memberships": 0}
+
+        row = rows[0]
+        return {
+            "communities": int(row.get("communities") or 0),
+            "memberships": int(row.get("memberships") or 0),
+        }
+
     async def dynamic_update(self, entity_uuid: str, neighbor_uuids: list[str]) -> str | None:
         """Assign new entity to existing community via majority vote.
 
@@ -134,6 +148,11 @@ class CommunityDetector:
                     community_votes[c_uuid] = community_votes.get(c_uuid, 0) + 1
 
         if not community_votes:
+            logger.debug(
+                "No existing community found for entity %s from %d neighbors; batch detection must create communities",
+                entity_uuid,
+                len(neighbor_uuids),
+            )
             return None
 
         best_community = max(community_votes, key=community_votes.get)  # type: ignore[arg-type]
