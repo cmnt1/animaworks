@@ -105,9 +105,19 @@ class TestCrossEncoderReranker:
             items = [{"fact": "a"}, {"fact": "b"}, {"fact": "c"}]
             result = await reranker.rerank("query", items)
 
-        assert len(result) == 3
-        assert all("ce_score" in r for r in result)
-        assert all(r["ce_score"] == 0.0 for r in result)
+        assert result == items
+        assert all("ce_score" not in r for r in result)
+
+    @pytest.mark.asyncio
+    async def test_rerank_fallback_on_scoring_error(self):
+        reranker = _make_reranker_with_mock([])
+        reranker._model.predict.side_effect = RuntimeError("predict failed")
+
+        items = [{"fact": "a", "rrf_score": 0.4}, {"fact": "b", "rrf_score": 0.3}]
+        result = await reranker.rerank("query", items)
+
+        assert result == items
+        assert all("ce_score" not in r for r in result)
 
     @pytest.mark.asyncio
     async def test_rerank_empty_items(self):
@@ -374,6 +384,42 @@ class TestNeo4jRetrieve:
         assert result[0].score == pytest.approx(0.9)
 
     @pytest.mark.asyncio
+    async def test_retrieve_min_score_uses_rrf_when_ce_score_absent(self, tmp_path):
+        backend = self._make_backend(tmp_path)
+        mock_results = [
+            {**_make_fact("f1"), "rrf_score": 0.6},
+            {**_make_fact("f2"), "rrf_score": 0.2},
+        ]
+
+        with (
+            patch.object(backend, "_ensure_driver", new_callable=AsyncMock),
+            self._patch_hybrid_search(return_value=mock_results),
+        ):
+            result = await backend.retrieve("test", scope="fact", min_score=0.5)
+
+        assert len(result) == 1
+        assert result[0].source == "fact:f1"
+        assert result[0].score == pytest.approx(0.6)
+
+    @pytest.mark.asyncio
+    async def test_retrieve_min_score_uses_rrf_when_ce_score_is_none(self, tmp_path):
+        backend = self._make_backend(tmp_path)
+        mock_results = [
+            {**_make_fact("f1"), "ce_score": None, "rrf_score": 0.6},
+            {**_make_fact("f2"), "ce_score": None, "rrf_score": 0.2},
+        ]
+
+        with (
+            patch.object(backend, "_ensure_driver", new_callable=AsyncMock),
+            self._patch_hybrid_search(return_value=mock_results),
+        ):
+            result = await backend.retrieve("test", scope="fact", min_score=0.5)
+
+        assert len(result) == 1
+        assert result[0].source == "fact:f1"
+        assert result[0].score == pytest.approx(0.6)
+
+    @pytest.mark.asyncio
     async def test_retrieve_handles_search_failure(self, tmp_path):
         backend = self._make_backend(tmp_path)
 
@@ -409,3 +455,16 @@ class TestSearchQueries:
 
         assert hasattr(queries, "FULLTEXT_SEARCH_FACTS")
         assert len(queries.FULLTEXT_SEARCH_FACTS.strip()) > 0
+
+    def test_fact_search_queries_return_created_at(self):
+        from core.memory.graph.queries import BFS_FACTS_FROM_ENTITY, FULLTEXT_SEARCH_FACTS, VECTOR_SEARCH_FACTS
+
+        assert "toString(r.created_at) AS created_at" in VECTOR_SEARCH_FACTS
+        assert "toString(r.created_at) AS created_at" in FULLTEXT_SEARCH_FACTS
+        assert "toString(r.created_at) AS created_at" in BFS_FACTS_FROM_ENTITY
+
+    def test_fulltext_search_communities_exists(self):
+        from core.memory.graph import queries
+
+        assert hasattr(queries, "FULLTEXT_SEARCH_COMMUNITIES")
+        assert "community_fulltext" in queries.FULLTEXT_SEARCH_COMMUNITIES

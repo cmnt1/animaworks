@@ -224,7 +224,8 @@ WHERE relationship.group_id = $group_id
 WITH relationship AS r, score,
      startNode(relationship) AS s, endNode(relationship) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
+       toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
 """
 
 VECTOR_SEARCH_ENTITIES = """
@@ -269,7 +270,8 @@ WHERE relationship.group_id = $group_id
 WITH relationship AS r, score,
      startNode(relationship) AS s, endNode(relationship) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
+       toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
 """
 
 FULLTEXT_SEARCH_ENTITIES = """
@@ -293,7 +295,8 @@ WHERE r.group_id = $group_id
   AND (r.valid_at IS NULL OR r.valid_at <= datetime($as_of_time))
 WITH r, startNode(r) AS s, endNode(r) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type
+       toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type
 LIMIT $limit
 """
 
@@ -317,7 +320,8 @@ WHERE r.group_id = $group_id
   AND (r.valid_at IS NULL OR r.valid_at <= datetime($as_of_time))
 WITH r, startNode(r) AS s, endNode(r) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type
+       toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type
 LIMIT $limit
 """
 
@@ -378,8 +382,19 @@ LIMIT $limit
 SEARCH_COMMUNITIES = """
 MATCH (c:Community)
 WHERE c.group_id = $group_id
-RETURN c.uuid AS uuid, c.name AS name, c.summary AS summary
+RETURN c.uuid AS uuid, c.name AS name, c.summary AS summary,
+       toString(c.created_at) AS created_at
 ORDER BY c.created_at DESC
+LIMIT $limit
+"""
+
+FULLTEXT_SEARCH_COMMUNITIES = """
+CALL db.index.fulltext.queryNodes('community_fulltext', $query, {limit: $top_k})
+YIELD node, score
+WHERE node.group_id = $group_id
+RETURN node.uuid AS uuid, node.name AS name, node.summary AS summary,
+       toString(node.created_at) AS created_at, score
+ORDER BY score DESC
 LIMIT $limit
 """
 

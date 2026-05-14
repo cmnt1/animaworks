@@ -44,6 +44,15 @@ class TestSchemaConstants:
         for i in ADVANCED_INDEXES:
             assert "IF NOT EXISTS" in i
 
+    def test_advanced_indexes_include_community_fulltext(self):
+        from core.memory.graph.schema import ADVANCED_INDEXES
+
+        joined = "\n".join(ADVANCED_INDEXES)
+        assert "community_fulltext" in joined
+        assert "Community" in joined
+        assert "n.name" in joined
+        assert "n.summary" in joined
+
     def test_vector_indexes_have_name_and_query(self):
         from core.memory.graph.schema import VECTOR_INDEXES
 

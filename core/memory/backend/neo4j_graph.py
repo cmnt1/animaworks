@@ -14,7 +14,7 @@ import asyncio
 import hashlib
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -596,7 +596,7 @@ class Neo4jGraphBackend(MemoryBackend):
 
         memories: list[RetrievedMemory] = []
         for r in results:
-            score = float(r.get("ce_score", r.get("rrf_score", r.get("score", 0.0))))
+            score = self._result_score(r)
             if score < min_score:
                 continue
 
@@ -631,22 +631,40 @@ class Neo4jGraphBackend(MemoryBackend):
         return memories
 
     async def _retrieve_communities(self, query: str, limit: int, min_score: float) -> list[RetrievedMemory]:
-        """Retrieve communities by simple text match."""
+        """Retrieve communities by query relevance or recency fallback."""
         driver = await self._ensure_driver()
-        from core.memory.graph.queries import SEARCH_COMMUNITIES
+        from core.memory.graph.queries import FULLTEXT_SEARCH_COMMUNITIES, SEARCH_COMMUNITIES
 
-        rows = await driver.execute_query(
-            SEARCH_COMMUNITIES,
-            {"group_id": self._group_id, "limit": limit},
-        )
+        if query.strip():
+            try:
+                rows = await driver.execute_query(
+                    FULLTEXT_SEARCH_COMMUNITIES,
+                    {
+                        "query": query,
+                        "group_id": self._group_id,
+                        "top_k": max(limit * 3, limit, 1),
+                        "limit": limit,
+                    },
+                )
+            except Exception:
+                logger.debug("Community fulltext search failed", exc_info=True)
+                return []
+        else:
+            rows = await driver.execute_query(
+                SEARCH_COMMUNITIES,
+                {"group_id": self._group_id, "limit": limit},
+            )
 
         memories: list[RetrievedMemory] = []
         for r in rows:
+            score = self._result_score(r) if query.strip() else 1.0
+            if score < min_score:
+                continue
             content = f"[{r.get('name', '')}] {r.get('summary', '')}"
             memories.append(
                 RetrievedMemory(
                     content=content,
-                    score=1.0,
+                    score=score,
                     source=f"community:{r.get('uuid', '')}",
                     metadata={k: v for k, v in r.items() if isinstance(v, (str, int, float, bool))},
                     trust="medium",
@@ -676,32 +694,87 @@ class Neo4jGraphBackend(MemoryBackend):
         """Return recently valid facts from Neo4j."""
         try:
             driver = await self._ensure_driver()
-            from datetime import timedelta
 
             from core.memory.graph.queries import FIND_RECENT_FACTS
 
-            cutoff = (datetime.now(tz=UTC) - timedelta(hours=hours)).isoformat()
-            rows = await driver.execute_query(
-                FIND_RECENT_FACTS,
-                {"group_id": self._group_id, "since": cutoff, "limit": limit},
-            )
-            return [
-                RetrievedMemory(
-                    content=(
-                        f"{r.get('source_name', '')} "
-                        f"-[{r.get('edge_type', 'RELATES_TO')}]-> "
-                        f"{r.get('target_name', '')}: {r.get('fact', '')}"
-                    ),
-                    score=1.0,
-                    source=f"fact:{r.get('uuid', '')}",
-                    metadata={k: v for k, v in r.items() if isinstance(v, (str, int, float, bool))},
-                    trust="medium",
+            cutoff_dt = datetime.now(tz=UTC) - timedelta(hours=hours)
+            cutoff = cutoff_dt.isoformat()
+
+            if query.strip():
+                from core.memory.graph.search import HybridSearch
+
+                query_embeddings = await self._embed_texts([query])
+                query_embedding = query_embeddings[0] if query_embeddings else []
+                rows = await HybridSearch(driver, self._group_id).search(
+                    query,
+                    scope="fact",
+                    limit=max(limit * 3, limit),
+                    as_of_time=datetime.now(tz=UTC).isoformat(),
+                    query_embedding=query_embedding,
                 )
-                for r in rows
-            ]
+                rows = [r for r in rows if self._row_created_at_is_recent(r, cutoff_dt)][:limit]
+            else:
+                rows = await driver.execute_query(
+                    FIND_RECENT_FACTS,
+                    {"group_id": self._group_id, "since": cutoff, "limit": limit},
+                )
+
+            memories: list[RetrievedMemory] = []
+            for row in rows:
+                score = self._result_score(row) if query.strip() else 1.0
+                memories.append(self._fact_row_to_memory(row, score=score))
+            return memories
         except Exception:
             logger.debug("get_recent_facts failed", exc_info=True)
             return []
+
+    @staticmethod
+    def _result_score(row: dict) -> float:
+        for key in ("ce_score", "rrf_score", "score"):
+            value = row.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return 0.0
+
+    @staticmethod
+    def _parse_graph_datetime(value: object) -> datetime | None:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            dt = value
+        else:
+            try:
+                dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+
+    @classmethod
+    def _row_created_at_is_recent(cls, row: dict, cutoff: datetime) -> bool:
+        created_at = cls._parse_graph_datetime(row.get("created_at"))
+        if created_at is None:
+            return False
+        return created_at >= cutoff
+
+    @staticmethod
+    def _fact_row_to_memory(row: dict, *, score: float) -> RetrievedMemory:
+        return RetrievedMemory(
+            content=(
+                f"{row.get('source_name', '')} "
+                f"-[{row.get('edge_type', 'RELATES_TO')}]-> "
+                f"{row.get('target_name', '')}: {row.get('fact', '')}"
+            ),
+            score=score,
+            source=f"fact:{row.get('uuid', '')}",
+            metadata={k: v for k, v in row.items() if isinstance(v, (str, int, float, bool))},
+            trust="medium",
+        )
 
     async def delete(self, source: str) -> None:
         """Soft-delete an episode, entity, or fact by prefixed ID.

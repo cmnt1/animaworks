@@ -200,7 +200,7 @@ class TestNeo4jRecentFacts:
             ]
         )
 
-        result = await backend.get_recent_facts("Alice frontend")
+        result = await backend.get_recent_facts(" ")
 
         assert len(result) == 1
         mem = result[0]
@@ -215,7 +215,7 @@ class TestNeo4jRecentFacts:
         backend, mock_driver = neo4j_backend
         mock_driver.execute_query = AsyncMock(return_value=[])
 
-        result = await backend.get_recent_facts("unknown")
+        result = await backend.get_recent_facts(" ")
         assert result == []
 
     @pytest.mark.skipif(not _HAS_RECENT_FACTS, reason="get_recent_facts override pending")
@@ -223,7 +223,7 @@ class TestNeo4jRecentFacts:
         backend, mock_driver = neo4j_backend
         mock_driver.execute_query = AsyncMock(side_effect=RuntimeError("Neo4j down"))
 
-        result = await backend.get_recent_facts("test")
+        result = await backend.get_recent_facts(" ")
         assert result == []
 
 
