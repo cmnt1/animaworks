@@ -128,16 +128,26 @@ function updateViewToggle() {
     replayBtn.className = "ws-replay-btn";
     replayBtn.textContent = "▶ Replay";
     replayBtn.title = "Replay activity";
-    replayBtn.addEventListener("click", (e) => {
+    replayBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      if (isReplayMode()) {
-        stopReplay();
-        replayBtn.textContent = "▶ Replay";
-        replayBtn.classList.remove("ws-replay-btn--active");
-      } else {
-        startReplay(24);
-        replayBtn.textContent = "■ Live";
-        replayBtn.classList.add("ws-replay-btn--active");
+      replayBtn.disabled = true;
+      try {
+        if (isReplayMode()) {
+          stopReplay();
+          replayBtn.textContent = "▶ Replay";
+          replayBtn.classList.remove("ws-replay-btn--active");
+        } else {
+          const started = await startReplay(24);
+          if (started) {
+            replayBtn.textContent = "■ Live";
+            replayBtn.classList.add("ws-replay-btn--active");
+          } else {
+            replayBtn.textContent = "▶ Replay";
+            replayBtn.classList.remove("ws-replay-btn--active");
+          }
+        }
+      } finally {
+        replayBtn.disabled = false;
       }
     });
     dom.viewToggle.appendChild(replayBtn);
