@@ -24,6 +24,8 @@ from core.skills.models import (
     ScanFinding,
     ScanResult,
     SkillMetadata,
+    SkillRiskMetadata,
+    SkillRoutingMetadata,
     SkillScanVerdict,
     SkillSecurityScan,
     SkillSource,
@@ -33,6 +35,7 @@ from core.skills.models import (
     SkillUsageStats,
     ThreatPattern,
 )
+from core.skills.router import SkillRouteCandidate, SkillRouter
 from core.skills.usage import SkillUsageTracker
 
 __all__ = [
@@ -40,6 +43,10 @@ __all__ = [
     "ScanResult",
     "SkillIndex",
     "SkillMetadata",
+    "SkillRouteCandidate",
+    "SkillRouter",
+    "SkillRiskMetadata",
+    "SkillRoutingMetadata",
     "SkillScanVerdict",
     "SkillScanner",
     "SkillSecurityScan",
