@@ -502,9 +502,6 @@ class StreamingMixin:
                         iter_text,
                         _think_filter._state if hasattr(_think_filter, "_state") else "N/A",
                     )
-                if iter_text:
-                    all_response_text.append(iter_text)
-
                 # ── Detect text-format tool calls in streaming path ──
                 # Some models (e.g. qwen3.5:9b via Ollama) emit tool calls as
                 # JSON text in the content stream rather than using the
@@ -523,8 +520,6 @@ class StreamingMixin:
                         # Clear the text parts so the JSON blob isn't shown as
                         # a chat message — the tool result will follow instead.
                         iter_text_parts.clear()
-                        if iter_text in all_response_text:
-                            all_response_text.remove(iter_text)
                         yield {"type": "tool_start", "tool_name": _stc_name, "tool_id": _stc_id}
                         logger.info(
                             "A stream: text-format tool call parsed (streaming): %s args=%s",
@@ -557,6 +552,8 @@ class StreamingMixin:
                         logger.info("A stream completion_gate not called; injecting retry at iteration=%d", iteration)
                         continue
 
+                    if iter_text:
+                        all_response_text.append(iter_text)
                     cleanup_gate_marker(self._anima_dir)
                     full_text = "\n".join(all_response_text)
                     # Safety net: strip any residual <think> tags that the
@@ -942,7 +939,8 @@ class StreamingMixin:
                     _ol_text_tc = try_parse_text_tool_call(iter_text, iter_tools)
 
                 if iter_text and not _ol_text_tc:
-                    all_response_text.append(iter_text)
+                    if tool_calls:
+                        all_response_text.append(iter_text)
                     yield {"type": "text_delta", "text": iter_text}
 
                 if _ol_text_tc:
@@ -995,6 +993,8 @@ class StreamingMixin:
                         continue
                     _cg_cleanup(self._anima_dir)
 
+                    if iter_text and not _ol_text_tc:
+                        all_response_text.append(iter_text)
                     full_text = "\n".join(all_response_text)
                     logger.debug(
                         "A ollama stream final response at iteration=%d",

@@ -14,6 +14,7 @@ import asyncio
 import logging
 import os
 import time
+from contextlib import nullcontext
 from typing import Any
 
 from core.execution._sanitize import ORIGIN_SYSTEM
@@ -23,6 +24,13 @@ from core.schemas import CycleResult
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.anima")
+
+
+def _agent_session_context(owner: Any):
+    lock = getattr(owner, "_agent_session_lock", None)
+    if isinstance(lock, asyncio.Lock):
+        return lock
+    return nullcontext()
 
 
 # ── Consolidation prompt helpers ─────────────────────────────────
@@ -114,7 +122,6 @@ class LifecycleMixin:
         cascade_suppressed_senders: set[str] | None = None,
     ) -> CycleResult:
         self._get_interrupt_event("_background").clear()
-        self.agent.set_interrupt_event(self._get_interrupt_event("_background"))
         logger.info("[%s] run_heartbeat START", self.name)
         try:
             async with self._background_lock:
@@ -142,26 +149,28 @@ class LifecycleMixin:
                     from core.config.models import load_config as _load_cfg
                     from core.tooling.handler import active_session_type
 
-                    _session_token = self.agent._tool_handler.set_active_session_type("heartbeat")
-                    self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
                     heartbeat_text = "\n\n".join(parts)
                     prior_msgs = self._build_prior_messages(heartbeat_text)
                     _hard_timeout = _load_cfg().heartbeat.hard_timeout_seconds
-                    try:
-                        result = await asyncio.wait_for(
-                            self._execute_heartbeat_cycle(
-                                heartbeat_text,
-                                [],
-                                0,
-                                prior_messages=prior_msgs,
-                            ),
-                            timeout=float(_hard_timeout),
-                        )
-                    except TimeoutError:
-                        return self._handle_hard_timeout(_hard_timeout)
-                    finally:
-                        active_session_type.reset(_session_token)
-                        _keepalive.cancel()
+                    async with _agent_session_context(self):
+                        self.agent.set_interrupt_event(self._get_interrupt_event("_background"))
+                        _session_token = self.agent._tool_handler.set_active_session_type("heartbeat")
+                        self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
+                        try:
+                            result = await asyncio.wait_for(
+                                self._execute_heartbeat_cycle(
+                                    heartbeat_text,
+                                    [],
+                                    0,
+                                    prior_messages=prior_msgs,
+                                ),
+                                timeout=float(_hard_timeout),
+                            )
+                        except TimeoutError:
+                            return self._handle_hard_timeout(_hard_timeout)
+                        finally:
+                            active_session_type.reset(_session_token)
+                            _keepalive.cancel()
 
                     return result
 
@@ -301,7 +310,6 @@ class LifecycleMixin:
                 self._status_slots["background"] = "consolidating"
                 self._task_slots["background"] = f"Memory consolidation ({consolidation_type})"
                 _session_token = self.agent._tool_handler.set_active_session_type("heartbeat")
-                self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 _consolidation_flag = self.anima_dir / "state" / ".consolidation_mode"
                 try:
@@ -491,13 +499,19 @@ class LifecycleMixin:
             base_model_config.model,
         )
 
-        result = await self.agent.run_cycle(
-            prompt,
-            trigger="consolidation:daily",
-            message_intent="request",
-            max_turns_override=max_turns,
-            model_config_override=base_model_config,
-        )
+        async with _agent_session_context(self):
+            if hasattr(self, "_get_interrupt_event"):
+                self._get_interrupt_event("_background").clear()
+                self.agent.set_interrupt_event(self._get_interrupt_event("_background"))
+            if hasattr(self.agent, "_tool_handler"):
+                self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
+            result = await self.agent.run_cycle(
+                prompt,
+                trigger="consolidation:daily",
+                message_intent="request",
+                max_turns_override=max_turns,
+                model_config_override=base_model_config,
+            )
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
@@ -542,13 +556,19 @@ class LifecycleMixin:
             self.name,
             base_model_config.model,
         )
-        result = await self.agent.run_cycle(
-            prompt,
-            trigger="consolidation:weekly",
-            message_intent="request",
-            max_turns_override=max_turns,
-            model_config_override=base_model_config,
-        )
+        async with _agent_session_context(self):
+            if hasattr(self, "_get_interrupt_event"):
+                self._get_interrupt_event("_background").clear()
+                self.agent.set_interrupt_event(self._get_interrupt_event("_background"))
+            if hasattr(self.agent, "_tool_handler"):
+                self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
+            result = await self.agent.run_cycle(
+                prompt,
+                trigger="consolidation:weekly",
+                message_intent="request",
+                max_turns_override=max_turns,
+                model_config_override=base_model_config,
+            )
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
@@ -572,7 +592,6 @@ class LifecycleMixin:
             command_output: Optional stdout from a preceding command cron.
         """
         self._get_interrupt_event("_background").clear()
-        self.agent.set_interrupt_event(self._get_interrupt_event("_background"))
         logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
         from core.tooling.handler import active_session_type
 
@@ -583,8 +602,6 @@ class LifecycleMixin:
                 self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
-                _session_token = self.agent._tool_handler.set_active_session_type("cron")
-                self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 prompt = self._build_cron_prompt(
                     task_name,
@@ -593,14 +610,22 @@ class LifecycleMixin:
                 )
 
                 # ── Background model swap ──
-                original_config = None
-                bg_config = self._resolve_background_config()
-                if bg_config is not None:
-                    original_config = self.agent.model_config
-                    self.agent.update_model_config(bg_config)
-
                 try:
-                    result = await self.agent.run_cycle(prompt, trigger=f"cron:{task_name}")
+                    async with _agent_session_context(self):
+                        self.agent.set_interrupt_event(self._get_interrupt_event("_background"))
+                        _session_token = self.agent._tool_handler.set_active_session_type("cron")
+                        self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
+                        original_config = None
+                        bg_config = self._resolve_background_config()
+                        if bg_config is not None:
+                            original_config = self.agent.model_config
+                            self.agent.update_model_config(bg_config)
+                        try:
+                            result = await self.agent.run_cycle(prompt, trigger=f"cron:{task_name}")
+                        finally:
+                            if original_config is not None:
+                                self.agent.update_model_config(original_config)
+                            active_session_type.reset(_session_token)
                     self._last_activity = now_local()
 
                     # Record cron execution result
@@ -645,9 +670,6 @@ class LifecycleMixin:
                     raise
                 finally:
                     _keepalive.cancel()
-                    if original_config is not None:
-                        self.agent.update_model_config(original_config)
-                    active_session_type.reset(_session_token)
                     self._cron_idle.set()
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
@@ -695,9 +717,6 @@ class LifecycleMixin:
                     thread_id="default",
                     trigger=f"cron:{task_name}",
                 )
-                self.agent._tool_handler.bind_runtime_session(_runtime_ctx)
-                _session_token = self.agent._tool_handler.set_active_session_type("cron")
-                self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 proc = None
                 try:
@@ -769,8 +788,15 @@ class LifecycleMixin:
                     elif tool:
                         # Execute internal tool via ToolHandler
                         logger.debug("[%s] Executing tool: %s", self.name, tool)
-                        with runtime_session_scope(_runtime_ctx):
-                            result = self.agent._tool_handler.handle(tool, args or {})
+                        async with _agent_session_context(self):
+                            self.agent._tool_handler.bind_runtime_session(_runtime_ctx)
+                            _session_token = self.agent._tool_handler.set_active_session_type("cron")
+                            self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
+                            try:
+                                with runtime_session_scope(_runtime_ctx):
+                                    result = self.agent._tool_handler.handle(tool, args or {})
+                            finally:
+                                active_session_type.reset(_session_token)
                         stdout = str(result)
                         exit_code = 0
 
@@ -801,7 +827,6 @@ class LifecycleMixin:
                             await proc.wait()
                         except ProcessLookupError:
                             pass
-                    active_session_type.reset(_session_token)
                     self._cron_idle.set()
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""

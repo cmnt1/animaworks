@@ -24,10 +24,9 @@ from core.execution.base import (
     ExecutionResult,
     StreamDisconnectedError,
 )
+from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
-from core.memory.shortterm import ShortTermMemory
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -56,6 +55,13 @@ async def _collect_events(async_gen) -> list[dict[str, Any]]:
     async for event in async_gen:
         events.append(event)
     return events
+
+
+@pytest.fixture(autouse=True)
+def _bypass_completion_gate_for_streaming_tests():
+    """Most streaming tests are not about completion_gate retry behavior."""
+    with patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=False):
+        yield
 
 
 def _make_llm_response(content: str = "hello") -> MagicMock:
@@ -106,10 +112,12 @@ class TestStreamDisconnectedBackwardCompatImport:
 
     def test_import_from_agent_sdk(self) -> None:
         from core.execution.agent_sdk import StreamDisconnectedError as SDE
+
         assert SDE is StreamDisconnectedError
 
     def test_in_agent_sdk_all(self) -> None:
         from core.execution import agent_sdk
+
         assert "StreamDisconnectedError" in agent_sdk.__all__
 
 
@@ -186,9 +194,7 @@ class TestModeBStreamingNoToolCall:
         tracker = MagicMock(spec=ContextTracker)
 
         # Mock _call_llm to return a simple text response
-        assisted_executor._call_llm = AsyncMock(
-            return_value=_make_llm_response("This is the final answer.")
-        )
+        assisted_executor._call_llm = AsyncMock(return_value=_make_llm_response("This is the final answer."))
 
         events = await _collect_events(
             assisted_executor.execute_streaming(
@@ -229,15 +235,11 @@ class TestModeBStreamingWithToolCall:
         # Second call: LLM returns final text (no tool call)
         final_response = _make_llm_response("The answer is 42.")
 
-        assisted_executor._call_llm = AsyncMock(
-            side_effect=[tool_response, final_response]
-        )
+        assisted_executor._call_llm = AsyncMock(side_effect=[tool_response, final_response])
         # Add web_search to known tools so it passes validation
         assisted_executor._known_tools = {"web_search"}
         # Mock tool execution
-        assisted_executor._tool_handler.handle = MagicMock(
-            return_value="Search results: found 42"
-        )
+        assisted_executor._tool_handler.handle = MagicMock(return_value="Search results: found 42")
 
         events = await _collect_events(
             assisted_executor.execute_streaming(
@@ -283,7 +285,9 @@ class TestModeBStreamingWithToolCall:
 
         # Verify tool_handler.handle was called (includes tool_use_id)
         assisted_executor._tool_handler.handle.assert_called_once_with(
-            "web_search", {"query": "test"}, "assisted_0_web_search",
+            "web_search",
+            {"query": "test"},
+            "assisted_0_web_search",
         )
 
 
@@ -292,14 +296,13 @@ class TestModeBStreamingErrorRaisesStreamDisconnected:
 
     @pytest.mark.asyncio
     async def test_api_error_raises_stream_disconnected(
-        self, assisted_executor,
+        self,
+        assisted_executor,
     ) -> None:
         tracker = MagicMock(spec=ContextTracker)
 
         # _call_llm raises an exception
-        assisted_executor._call_llm = AsyncMock(
-            side_effect=RuntimeError("API connection refused")
-        )
+        assisted_executor._call_llm = AsyncMock(side_effect=RuntimeError("API connection refused"))
 
         with pytest.raises(StreamDisconnectedError) as exc_info:
             await _collect_events(
@@ -326,13 +329,9 @@ class TestModeBStreamingErrorRaisesStreamDisconnected:
             'Thinking...\n```json\n{"tool": "read_file", "arguments": {"path": "/tmp/x"}}\n```'
         )
         # Second call fails
-        assisted_executor._call_llm = AsyncMock(
-            side_effect=[tool_response, RuntimeError("timeout")]
-        )
+        assisted_executor._call_llm = AsyncMock(side_effect=[tool_response, RuntimeError("timeout")])
         assisted_executor._known_tools = {"read_file"}
-        assisted_executor._tool_handler.handle = MagicMock(
-            return_value="file contents"
-        )
+        assisted_executor._tool_handler.handle = MagicMock(return_value="file contents")
 
         with pytest.raises(StreamDisconnectedError) as exc_info:
             await _collect_events(
@@ -540,8 +539,11 @@ class TestIsOllamaModelDetection:
         (anima_dir / "permissions.md").write_text("")
         (anima_dir / "skills").mkdir()
         ex = LiteLLMExecutor(
-            model_config=config, anima_dir=anima_dir,
-            tool_handler=th, tool_registry=[], memory=MagicMock(),
+            model_config=config,
+            anima_dir=anima_dir,
+            tool_handler=th,
+            tool_registry=[],
+            memory=MagicMock(),
         )
         assert ex._is_ollama_model is True
 
@@ -556,8 +558,11 @@ class TestIsOllamaModelDetection:
         (anima_dir / "permissions.md").write_text("")
         (anima_dir / "skills").mkdir()
         ex = LiteLLMExecutor(
-            model_config=config, anima_dir=anima_dir,
-            tool_handler=th, tool_registry=[], memory=MagicMock(),
+            model_config=config,
+            anima_dir=anima_dir,
+            tool_handler=th,
+            tool_registry=[],
+            memory=MagicMock(),
         )
         assert ex._is_ollama_model is True
 
@@ -575,8 +580,11 @@ class TestIsOllamaModelDetection:
         (anima_dir / "permissions.md").write_text("")
         (anima_dir / "skills").mkdir()
         ex = LiteLLMExecutor(
-            model_config=config, anima_dir=anima_dir,
-            tool_handler=th, tool_registry=[], memory=MagicMock(),
+            model_config=config,
+            anima_dir=anima_dir,
+            tool_handler=th,
+            tool_registry=[],
+            memory=MagicMock(),
         )
         assert ex._is_ollama_model is False
 
@@ -599,8 +607,10 @@ class TestA2TokenLevelTextOnly:
 
         mock_acompletion = AsyncMock(return_value=_fake_async_stream(chunks))
 
-        with patch("litellm.acompletion", mock_acompletion), \
-             patch.object(litellm_executor, "_preflight_clamp", return_value={}):
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(litellm_executor, "_preflight_clamp", return_value={}),
+        ):
             events = await _collect_events(
                 litellm_executor.execute_streaming(
                     system_prompt="sys",
@@ -624,6 +634,82 @@ class TestA2TokenLevelTextOnly:
         assert len(done) == 1
         assert done[0]["full_text"] == "Hello world!"
         assert done[0]["result_message"] is None
+
+
+class TestA2CompletionGateRetry:
+    """completion_gate retry attempts must not be committed to final full_text."""
+
+    async def test_token_level_retry_text_is_not_in_done_full_text(self, litellm_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+
+        call_count = 0
+
+        async def mock_acompletion(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _fake_async_stream(
+                    [
+                        FakeStreamChunk(text="first answer"),
+                        FakeStreamChunk(finish_reason="stop"),
+                    ]
+                )
+            return _fake_async_stream(
+                [
+                    FakeStreamChunk(text="final answer"),
+                    FakeStreamChunk(finish_reason="stop"),
+                ]
+            )
+
+        with (
+            patch("litellm.acompletion", side_effect=mock_acompletion),
+            patch.object(litellm_executor, "_preflight_clamp", return_value={}),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=True),
+            patch("core.execution._completion_gate.gate_marker_exists", side_effect=[False, True]),
+        ):
+            events = await _collect_events(
+                litellm_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="Hi",
+                    tracker=tracker,
+                    trigger="message:tester",
+                )
+            )
+
+        done = [e for e in events if e["type"] == "done"]
+        assert len(done) == 1
+        assert done[0]["full_text"] == "final answer"
+        assert "first answer" not in done[0]["full_text"]
+
+    async def test_ollama_retry_text_is_not_in_done_full_text(self, ollama_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+
+        mock_acompletion = AsyncMock(
+            side_effect=[
+                _make_litellm_a2_response(content="first answer", tool_calls=None),
+                _make_litellm_a2_response(content="final answer", tool_calls=None),
+            ],
+        )
+
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=True),
+            patch("core.execution._completion_gate.gate_marker_exists", side_effect=[False, True]),
+        ):
+            events = await _collect_events(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="Hi",
+                    tracker=tracker,
+                    trigger="message:tester",
+                )
+            )
+
+        done = [e for e in events if e["type"] == "done"]
+        assert len(done) == 1
+        assert done[0]["full_text"] == "final answer"
+        assert "first answer" not in done[0]["full_text"]
 
 
 class TestA2TokenLevelWithToolCall:
@@ -671,12 +757,15 @@ class TestA2TokenLevelWithToolCall:
                     "tool_name": tc["name"],
                 }
 
-        with patch("litellm.acompletion", side_effect=mock_acompletion), \
-             patch.object(litellm_executor, "_preflight_clamp", return_value={}), \
-             patch.object(
-                 litellm_executor, "_process_streaming_tool_calls",
-                 mock_process_tool_calls,
-             ):
+        with (
+            patch("litellm.acompletion", side_effect=mock_acompletion),
+            patch.object(litellm_executor, "_preflight_clamp", return_value={}),
+            patch.object(
+                litellm_executor,
+                "_process_streaming_tool_calls",
+                mock_process_tool_calls,
+            ),
+        ):
             events = await _collect_events(
                 litellm_executor.execute_streaming(
                     system_prompt="sys",
@@ -712,7 +801,8 @@ class TestA2TokenLevelErrorRaisesStreamDisconnected:
     """API error during token-level streaming raises StreamDisconnectedError."""
 
     async def test_error_raises_stream_disconnected(
-        self, litellm_executor,
+        self,
+        litellm_executor,
     ) -> None:
         tracker = MagicMock(spec=ContextTracker)
 
@@ -720,16 +810,18 @@ class TestA2TokenLevelErrorRaisesStreamDisconnected:
             side_effect=RuntimeError("Connection refused"),
         )
 
-        with pytest.raises(StreamDisconnectedError) as exc_info:
-            with patch("litellm.acompletion", mock_acompletion), \
-                 patch.object(litellm_executor, "_preflight_clamp", return_value={}):
-                await _collect_events(
-                    litellm_executor.execute_streaming(
-                        system_prompt="sys",
-                        prompt="Hi",
-                        tracker=tracker,
-                    )
+        with (
+            pytest.raises(StreamDisconnectedError) as exc_info,
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(litellm_executor, "_preflight_clamp", return_value={}),
+        ):
+            await _collect_events(
+                litellm_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="Hi",
+                    tracker=tracker,
                 )
+            )
 
         err = exc_info.value
         assert err.partial_text == ""
@@ -752,12 +844,14 @@ class TestA2IterationLevelTextOnly:
 
         mock_acompletion = AsyncMock(return_value=resp)
 
-        with patch("litellm.acompletion", mock_acompletion), \
-             patch.object(ollama_executor, "_preflight_clamp", return_value={}), \
-             patch(
-                 "core.execution._completion_gate.completion_gate_applies_to_trigger",
-                 return_value=False,
-             ):
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch(
+                "core.execution._completion_gate.completion_gate_applies_to_trigger",
+                return_value=False,
+            ),
+        ):
             events = await _collect_events(
                 ollama_executor.execute_streaming(
                     system_prompt="sys",
@@ -787,7 +881,9 @@ class TestA2IterationLevelWithToolCall:
 
         # First response: tool call
         tc = _make_mock_tool_call(
-            "search_memory", {"query": "test"}, "call_olm_1",
+            "search_memory",
+            {"query": "test"},
+            "call_olm_1",
         )
         resp_tool = _make_litellm_a2_response(
             content="Searching...",
@@ -808,16 +904,19 @@ class TestA2IterationLevelWithToolCall:
         async def mock_execute_tool_call(tc, fn_args):
             return {"role": "tool", "tool_call_id": tc.id, "content": "result"}
 
-        with patch("litellm.acompletion", mock_acompletion), \
-             patch.object(ollama_executor, "_preflight_clamp", return_value={}), \
-             patch.object(
-                 ollama_executor, "_execute_tool_call",
-                 side_effect=mock_execute_tool_call,
-             ), \
-             patch(
-                 "core.execution._completion_gate.completion_gate_applies_to_trigger",
-                 return_value=False,
-             ):
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch.object(
+                ollama_executor,
+                "_execute_tool_call",
+                side_effect=mock_execute_tool_call,
+            ),
+            patch(
+                "core.execution._completion_gate.completion_gate_applies_to_trigger",
+                return_value=False,
+            ),
+        ):
             events = await _collect_events(
                 ollama_executor.execute_streaming(
                     system_prompt="sys",
@@ -848,10 +947,7 @@ class TestA2IterationLevelWithToolCall:
         tracker = MagicMock(spec=ContextTracker)
 
         resp_tool = _make_litellm_a2_response(
-            content=(
-                "了解しました。以下の方法で回答します。\n\n"
-                '{"name":"search_memory","arguments":{"query":"test"}}'
-            ),
+            content=('了解しました。以下の方法で回答します。\n\n{"name":"search_memory","arguments":{"query":"test"}}'),
             tool_calls=None,
         )
         resp_final = _make_litellm_a2_response(
@@ -864,16 +960,19 @@ class TestA2IterationLevelWithToolCall:
         async def mock_execute_tool_call(tc, fn_args):
             return {"role": "tool", "tool_call_id": tc.id, "content": "result"}
 
-        with patch("litellm.acompletion", mock_acompletion), \
-             patch.object(ollama_executor, "_preflight_clamp", return_value={}), \
-             patch.object(
-                 ollama_executor, "_execute_tool_call",
-                 side_effect=mock_execute_tool_call,
-             ), \
-             patch(
-                 "core.execution._completion_gate.completion_gate_applies_to_trigger",
-                 return_value=False,
-             ):
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch.object(
+                ollama_executor,
+                "_execute_tool_call",
+                side_effect=mock_execute_tool_call,
+            ),
+            patch(
+                "core.execution._completion_gate.completion_gate_applies_to_trigger",
+                return_value=False,
+            ),
+        ):
             events = await _collect_events(
                 ollama_executor.execute_streaming(
                     system_prompt="sys",
@@ -910,9 +1009,11 @@ class TestA2DispatchToTokenLevel:
             FakeStreamChunk(finish_reason="stop"),
         ]
 
-        with patch("litellm.acompletion", AsyncMock(return_value=_fake_async_stream(chunks))), \
-             patch.object(litellm_executor, "_preflight_clamp", return_value={}), \
-             patch.object(litellm_executor, "_stream_token_level", spy_token):
+        with (
+            patch("litellm.acompletion", AsyncMock(return_value=_fake_async_stream(chunks))),
+            patch.object(litellm_executor, "_preflight_clamp", return_value={}),
+            patch.object(litellm_executor, "_stream_token_level", spy_token),
+        ):
             await _collect_events(
                 litellm_executor.execute_streaming(
                     system_prompt="sys",
@@ -941,9 +1042,11 @@ class TestA2DispatchToIterationLevel:
 
         resp = _make_litellm_a2_response(content="ok", tool_calls=None)
 
-        with patch("litellm.acompletion", AsyncMock(return_value=resp)), \
-             patch.object(ollama_executor, "_preflight_clamp", return_value={}), \
-             patch.object(ollama_executor, "_stream_iteration_level", spy_iter):
+        with (
+            patch("litellm.acompletion", AsyncMock(return_value=resp)),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch.object(ollama_executor, "_stream_iteration_level", spy_iter),
+        ):
             await _collect_events(
                 ollama_executor.execute_streaming(
                     system_prompt="sys",
@@ -1075,7 +1178,8 @@ class TestA1FallbackStreamingTextOnly:
     """Anthropic fallback streaming with text-only response."""
 
     async def test_yields_text_deltas_and_done(
-        self, anthropic_fallback_executor,
+        self,
+        anthropic_fallback_executor,
     ) -> None:
         tracker = MagicMock(spec=ContextTracker)
 
@@ -1096,11 +1200,14 @@ class TestA1FallbackStreamingTextOnly:
         mock_client = MagicMock()
         mock_client.messages.stream = MagicMock(return_value=fake_stream)
 
-        with patch("anthropic.AsyncAnthropic", return_value=mock_client), \
-             patch.object(
-                 anthropic_fallback_executor, "_build_tools",
-                 return_value=[],
-             ):
+        with (
+            patch("anthropic.AsyncAnthropic", return_value=mock_client),
+            patch.object(
+                anthropic_fallback_executor,
+                "_build_tools",
+                return_value=[],
+            ),
+        ):
             events = await _collect_events(
                 anthropic_fallback_executor.execute_streaming(
                     system_prompt="sys",
@@ -1130,7 +1237,8 @@ class TestA1FallbackStreamingWithToolCall:
     """Anthropic fallback streaming with tool_use blocks."""
 
     async def test_yields_tool_events(
-        self, anthropic_fallback_executor,
+        self,
+        anthropic_fallback_executor,
     ) -> None:
         tracker = MagicMock(spec=ContextTracker)
 
@@ -1175,11 +1283,14 @@ class TestA1FallbackStreamingWithToolCall:
         mock_client = MagicMock()
         mock_client.messages.stream = MagicMock(side_effect=make_stream)
 
-        with patch("anthropic.AsyncAnthropic", return_value=mock_client), \
-             patch.object(
-                 anthropic_fallback_executor, "_build_tools",
-                 return_value=[],
-             ):
+        with (
+            patch("anthropic.AsyncAnthropic", return_value=mock_client),
+            patch.object(
+                anthropic_fallback_executor,
+                "_build_tools",
+                return_value=[],
+            ),
+        ):
             events = await _collect_events(
                 anthropic_fallback_executor.execute_streaming(
                     system_prompt="sys",
@@ -1207,7 +1318,9 @@ class TestA1FallbackStreamingWithToolCall:
 
         # Verify tool_handler was called
         anthropic_fallback_executor._tool_handler.handle.assert_called_once_with(
-            "search_memory", {"query": "test"}, "toolu_001",
+            "search_memory",
+            {"query": "test"},
+            "toolu_001",
         )
 
         # Verify done
@@ -1220,7 +1333,8 @@ class TestA1FallbackStreamingError:
     """API error during Anthropic fallback streaming raises StreamDisconnectedError."""
 
     async def test_error_raises_stream_disconnected(
-        self, anthropic_fallback_executor,
+        self,
+        anthropic_fallback_executor,
     ) -> None:
         tracker = MagicMock(spec=ContextTracker)
 
@@ -1235,19 +1349,22 @@ class TestA1FallbackStreamingError:
         mock_client = MagicMock()
         mock_client.messages.stream = MagicMock(return_value=FailingStream())
 
-        with pytest.raises(StreamDisconnectedError) as exc_info:
-            with patch("anthropic.AsyncAnthropic", return_value=mock_client), \
-                 patch.object(
-                     anthropic_fallback_executor, "_build_tools",
-                     return_value=[],
-                 ):
-                await _collect_events(
-                    anthropic_fallback_executor.execute_streaming(
-                        system_prompt="sys",
-                        prompt="Hi",
-                        tracker=tracker,
-                    )
+        with (
+            pytest.raises(StreamDisconnectedError) as exc_info,
+            patch("anthropic.AsyncAnthropic", return_value=mock_client),
+            patch.object(
+                anthropic_fallback_executor,
+                "_build_tools",
+                return_value=[],
+            ),
+        ):
+            await _collect_events(
+                anthropic_fallback_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="Hi",
+                    tracker=tracker,
                 )
+            )
 
         err = exc_info.value
         assert err.partial_text == ""
@@ -1259,7 +1376,8 @@ class TestA1FallbackStreamingToolErrorResilience:
     """Tool handler errors don't abort the stream — tool_end is still yielded."""
 
     async def test_tool_error_yields_tool_end(
-        self, anthropic_fallback_executor,
+        self,
+        anthropic_fallback_executor,
     ) -> None:
         tracker = MagicMock(spec=ContextTracker)
 
@@ -1305,11 +1423,14 @@ class TestA1FallbackStreamingToolErrorResilience:
             side_effect=RuntimeError("Tool crashed!"),
         )
 
-        with patch("anthropic.AsyncAnthropic", return_value=mock_client), \
-             patch.object(
-                 anthropic_fallback_executor, "_build_tools",
-                 return_value=[],
-             ):
+        with (
+            patch("anthropic.AsyncAnthropic", return_value=mock_client),
+            patch.object(
+                anthropic_fallback_executor,
+                "_build_tools",
+                return_value=[],
+            ),
+        ):
             events = await _collect_events(
                 anthropic_fallback_executor.execute_streaming(
                     system_prompt="sys",

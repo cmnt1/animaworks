@@ -908,12 +908,6 @@ class PendingTaskExecutor:
 
         Returns the result summary string.
         """
-        if self._anima and hasattr(self._anima, "_get_interrupt_event"):
-            self._anima._get_interrupt_event("_background").clear()
-            self._anima.agent.set_interrupt_event(
-                self._anima._get_interrupt_event("_background"),
-            )
-
         task_id = task_desc.get("task_id", "unknown")
         title = task_desc.get("title", "Untitled task")
         description = task_desc.get("description", "")
@@ -1035,15 +1029,25 @@ class PendingTaskExecutor:
         journal = StreamingJournal(self._anima_dir, session_type="task")
         journal.open(trigger=trigger)
 
-        self._anima.agent.reset_reply_tracking(session_type="task")
-        self._anima.agent.reset_read_paths()
         accumulated_text = ""
         result_summary = ""
         task_failed_reason = ""
         had_error = False
         error_message = ""
+        agent_session_acquired = False
+        agent_session_lock = getattr(self._anima, "_agent_session_lock", None)
 
         try:
+            if isinstance(agent_session_lock, asyncio.Lock):
+                await agent_session_lock.acquire()
+                agent_session_acquired = True
+            if self._anima and hasattr(self._anima, "_get_interrupt_event"):
+                self._anima._get_interrupt_event("_background").clear()
+                self._anima.agent.set_interrupt_event(
+                    self._anima._get_interrupt_event("_background"),
+                )
+            self._anima.agent.reset_reply_tracking(session_type="task")
+            self._anima.agent.reset_read_paths()
             async for chunk in self._anima.agent.run_cycle_streaming(
                 prompt,
                 trigger=trigger,
@@ -1074,6 +1078,8 @@ class PendingTaskExecutor:
                         task_failed_reason = result_summary or "task execution failed"
                     journal.finalize(summary=result_summary[:500])
         finally:
+            if agent_session_acquired:
+                agent_session_lock.release()
             journal.close()
             self._anima.agent.set_task_cwd(None)
 

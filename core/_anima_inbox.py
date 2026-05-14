@@ -10,6 +10,7 @@ Extracted from ``core.anima.DigitalAnima`` as a Mixin.  All ``self``
 references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -451,7 +452,6 @@ class InboxMixin:
         messages without triggering the full heartbeat observation cycle.
         """
         self._get_interrupt_event("_inbox").clear()
-        self.agent.set_interrupt_event(self._get_interrupt_event("_inbox"))
         logger.info("[%s] process_inbox_message START", self.name)
         started_at = now_local()
         try:
@@ -507,6 +507,12 @@ class InboxMixin:
                     has_board_mention = any(item.msg.type == "board_mention" for item in inbox_result.inbox_items)
                     from core.tooling.handler import active_session_type, suppress_board_fanout
 
+                    agent_session_acquired = False
+                    agent_session_lock = getattr(self, "_agent_session_lock", None)
+                    if isinstance(agent_session_lock, asyncio.Lock):
+                        await agent_session_lock.acquire()
+                        agent_session_acquired = True
+                    self.agent.set_interrupt_event(self._get_interrupt_event("_inbox"))
                     _fanout_token = suppress_board_fanout.set(True) if has_board_mention else None
                     _session_token = self.agent._tool_handler.set_active_session_type("inbox")
                     self.agent._tool_handler._trigger = trigger
@@ -578,6 +584,9 @@ class InboxMixin:
                         if _fanout_token is not None:
                             suppress_board_fanout.reset(_fanout_token)
                         active_session_type.reset(_session_token)
+                        if agent_session_acquired:
+                            agent_session_lock.release()
+                            agent_session_acquired = False
 
                     self._last_activity = now_local()
 
@@ -706,6 +715,9 @@ class InboxMixin:
                     return result
 
                 except Exception as exc:
+                    if locals().get("agent_session_acquired"):
+                        agent_session_lock.release()
+                        agent_session_acquired = False
                     logger.exception("[%s] process_inbox_message FAILED", self.name)
                     # Archive on crash to prevent re-processing storms
                     if inbox_result is not None and inbox_result.inbox_items:
