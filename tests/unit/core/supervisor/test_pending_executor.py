@@ -105,8 +105,6 @@ class TestWatcherLoop:
         task = {"task_id": "test-1", "tool_name": "test_tool", "subcommand": "", "raw_args": []}
         (pending_dir / "task1.json").write_text(json.dumps(task))
 
-        original_wait_for = asyncio.wait_for
-
         async def stop_after_first(coro, *, timeout):
             executor._shutdown_event.set()
             raise TimeoutError
@@ -221,12 +219,18 @@ class TestStreamErrorSuppression:
         mock_entry.status = "done"
         mock_entry.summary = "Task completed successfully"
 
+        from core.taskboard.models import AttentionDecision
+
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.ActivityLogger") as mock_activity,
             patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+            patch(
+                "core.supervisor.pending_executor.resolver_for_anima_dir",
+            ) as mock_resolver,
         ):
+            mock_resolver.return_value.should_execute.return_value = AttentionDecision(reason="active")
             mock_activity.return_value.log = MagicMock()
             mock_tqm.return_value.get_task_by_id.return_value = mock_entry
 

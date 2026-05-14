@@ -1,9 +1,9 @@
 # Code Review: Workspace Replay Narrative UI - Approved
 
-**Review Date**: 2026-05-14  
-**Original Issue**: `docs/issues/20260514_workspace-replay-narrative-ui.md`  
-**Worktree**: `/home/main/dev/animaworks-bak-issue-20260514-190806`  
-**Commit**: `d6eb6aa1 fix: add workspace replay narrative band`  
+**Review Date**: 2026-05-14
+**Original Issue**: `docs/issues/20260514_workspace-replay-narrative-ui.md`
+**Worktree**: `/home/main/dev/animaworks-bak-issue-20260514-190806`
+**Commit**: `d6eb6aa1 fix: add workspace replay narrative band`
 **Status**: APPROVED
 
 ## Summary
@@ -101,7 +101,7 @@ The repo has many pre-existing files over the 500-line threshold. Changed/new te
 
 ## Independent Reviews
 
-**Cursor Agent Review**: Failed/unavailable. The launcher exited and produced empty stdout/stderr files.  
+**Cursor Agent Review**: Failed/unavailable. The launcher exited and produced empty stdout/stderr files.
 **Codex Subagent Review**: Skipped because this session's instruction prohibits spawning subagents unless the user explicitly asks for subagents.
 
 ## Decision

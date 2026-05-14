@@ -38,6 +38,11 @@ def register_memory_command(subparsers: argparse._SubParsersAction) -> None:
     grp.add_argument("--anima", type=str, dest="migrate_anima")
     p_migrate.add_argument("--dry-run", action="store_true")
     p_migrate.add_argument("--resume", action="store_true")
+    p_migrate.add_argument(
+        "--activate-global",
+        action="store_true",
+        help="After migration, set global memory.backend to neo4j. Neo4j is experimental; default is migration only.",
+    )
 
     # memory rollback
     p_rollback = sub.add_parser("rollback", help="Rollback to backup")
@@ -94,11 +99,14 @@ def _handle_memory(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def _cmd_status(args: argparse.Namespace) -> None:
+def _cmd_status(args: argparse.Namespace | None = None) -> None:
     """Show memory backend status."""
     from core.config.models import load_config
     from core.memory.migration.backup import BackupManager
     from core.paths import get_animas_dir, get_data_dir
+
+    if args is None:
+        args = argparse.Namespace(status_anima=None, all_animas=False, json_output=False)
 
     cfg = load_config()
     memory_cfg = getattr(cfg, "memory", None)
@@ -134,7 +142,27 @@ def _cmd_status(args: argparse.Namespace) -> None:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
+    print(f"Memory Backend: {_backend_policy_label(global_backend)}")
+    print("Policy: legacy is stable/default; neo4j is experimental opt-in.")
+    overrides = [entry for entry in entries if entry.get("source") == "per-anima"]
+    if overrides:
+        print("\nPer-Anima Memory Backend Overrides:")
+        for entry in overrides:
+            backend = str(entry.get("effective_backend", "unknown"))
+            print(f"  {entry['name']}: {_backend_policy_label(backend)}")
+    else:
+        print("\nPer-Anima Memory Backend Overrides: None")
+
     print_status(payload, show_animas=bool(status_anima or getattr(args, "all_animas", False)))
+
+
+def _backend_policy_label(backend: str) -> str:
+    """Return backend name plus stability policy for CLI display."""
+    if backend == "legacy":
+        return "legacy (stable/default)"
+    if backend == "neo4j":
+        return "neo4j (experimental/opt-in)"
+    return backend
 
 
 def _cmd_migrate(args: argparse.Namespace) -> None:
@@ -219,9 +247,17 @@ def _cmd_migrate(args: argparse.Namespace) -> None:
             from core.config.models import load_config, save_config
 
             cfg = load_config()
-            cfg.memory.backend = "neo4j"
-            save_config(cfg)
-            print("\n  Config updated: memory.backend = neo4j")
+            if getattr(args, "activate_global", False):
+                cfg.memory.backend = "neo4j"
+                save_config(cfg)
+                print("\n  Config updated: memory.backend = neo4j")
+                print("  WARNING: Neo4j memory backend is experimental/opt-in.")
+            else:
+                current = getattr(getattr(cfg, "memory", None), "backend", "legacy")
+                print("\n  Global config unchanged: memory.backend = " + str(current))
+                print("  Neo4j migration completed as data preparation only.")
+                print("  To use Neo4j globally, re-run with --activate-global.")
+                print("  To opt in one anima, use: animaworks anima set-memory-backend <name> neo4j")
         else:
             print("\n  WARNING: Errors occurred. Config NOT updated.")
             print("  Fix errors and re-run with --resume")
