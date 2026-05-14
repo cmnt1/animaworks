@@ -77,9 +77,7 @@ def _patch_transport_close() -> None:
 
     SubprocessCLITransport = subprocess_cli_module.SubprocessCLITransport
     if _native_close_has_graceful_wait(SubprocessCLITransport.close):
-        logger.info(
-            "Skipping SubprocessCLITransport.close() patch; SDK close is already graceful"
-        )
+        logger.info("Skipping SubprocessCLITransport.close() patch; SDK close is already graceful")
         return
 
     active_children = getattr(subprocess_cli_module, "_ACTIVE_CHILDREN", None)

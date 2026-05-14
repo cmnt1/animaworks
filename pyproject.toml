@@ -106,6 +106,7 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "e2e: marks tests as end-to-end tests",
+    "neo4j: tests requiring a reachable Neo4j service",
     "live: tests making real API calls (skip with --mock or no API key)",
     "azure: tests requiring Azure OpenAI API key",
     "ollama: tests requiring Ollama server access",

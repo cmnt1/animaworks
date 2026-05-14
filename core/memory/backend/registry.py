@@ -7,13 +7,31 @@ from __future__ import annotations
 """Backend registry — factory function for memory backend instantiation."""
 
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 
 from core.memory.backend.base import MemoryBackend
 
 logger = logging.getLogger(__name__)
 
+_NEO4J_CONFIG_KEYS = ("uri", "user", "password", "database")
+
 # ── Factory ────────────────────────────────────────────────────────────────
+
+
+def _neo4j_kwargs_from_config(overrides: Mapping[str, object]) -> dict[str, object]:
+    """Resolve Neo4j constructor kwargs from global config plus explicit overrides."""
+    resolved: dict[str, object] = {}
+    try:
+        from core.config.models import load_config
+
+        neo4j_cfg = load_config().memory.neo4j
+        resolved.update({key: getattr(neo4j_cfg, key) for key in _NEO4J_CONFIG_KEYS})
+    except Exception:
+        logger.debug("Failed to load Neo4j config; using backend defaults", exc_info=True)
+
+    resolved.update({key: value for key, value in overrides.items() if value is not None})
+    return resolved
 
 
 def get_backend(
@@ -48,7 +66,7 @@ def get_backend(
                 "Neo4j backend requires the neo4j extra. Install with: pip install animaworks[neo4j]"
             ) from None
 
-        return Neo4jGraphBackend(anima_dir, **kwargs)
+        return Neo4jGraphBackend(anima_dir, **_neo4j_kwargs_from_config(kwargs))
 
     raise ValueError(f"Unknown memory backend: {backend_type}")
 

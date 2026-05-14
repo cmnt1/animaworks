@@ -10,12 +10,12 @@ Covers:
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
 from core.memory.backend.base import RetrievedMemory
-
 
 # ── Fixtures ─────────────────────────────────────────────
 
@@ -110,6 +110,34 @@ class TestNeo4jScopeMap:
         from core.tooling.handler_memory import MemoryToolsMixin
 
         assert MemoryToolsMixin._NEO4J_SCOPE_MAP["all"] == "all"
+
+
+# ── TestCreateNeo4jBackend ────────────────────────────────
+
+
+class TestCreateNeo4jBackend:
+    def test_fresh_backend_uses_registry_config(self, tmp_path: Path) -> None:
+        from core.tooling.handler_memory import MemoryToolsMixin
+
+        class FakeHandler(MemoryToolsMixin):
+            pass
+
+        handler = FakeHandler.__new__(FakeHandler)
+        handler._anima_dir = str(tmp_path)
+
+        mock_cfg = MagicMock()
+        mock_cfg.memory.neo4j.uri = "bolt://configured:7687"
+        mock_cfg.memory.neo4j.user = "configured-user"
+        mock_cfg.memory.neo4j.password = "configured-password"
+        mock_cfg.memory.neo4j.database = "configured-db"
+
+        with patch("core.config.models.load_config", return_value=mock_cfg):
+            backend = handler._create_neo4j_backend()
+
+        assert backend._uri == "bolt://configured:7687"
+        assert backend._user == "configured-user"
+        assert backend._password == "configured-password"
+        assert backend._database == "configured-db"
 
 
 # ── TestSearchViaNeo4j ───────────────────────────────────
@@ -233,7 +261,7 @@ class TestHandleSearchMemoryIntegration:
             {"content": "legacy result", "source_file": "log.jsonl", "score": 0.5, "search_method": "bm25"}
         ]
 
-        result = handler._handle_search_memory({"query": "test", "scope": "activity_log"})
+        handler._handle_search_memory({"query": "test", "scope": "activity_log"})
         mock_memory.search_memory_text.assert_called_once()
 
     def test_fallback_to_legacy_on_neo4j_failure(self, mock_memory) -> None:
@@ -243,7 +271,7 @@ class TestHandleSearchMemoryIntegration:
             {"content": "fallback", "source_file": "kb.md", "score": 0.5, "search_method": "vector"}
         ]
 
-        result = handler._handle_search_memory({"query": "test", "scope": "knowledge"})
+        handler._handle_search_memory({"query": "test", "scope": "knowledge"})
         mock_memory.search_memory_text.assert_called_once()
 
     def test_legacy_backend_never_routes_to_neo4j(self, mock_memory) -> None:
