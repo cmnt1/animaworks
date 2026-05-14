@@ -36,6 +36,10 @@ async def run_housekeeping(
     task_results_retention_days: int = 7,
     pending_failed_retention_days: int = 14,
     archive_superseded_retention_days: int = 7,
+    inbox_ttl_hours: float = 24.0,
+    inbox_expired_retention_days: int = 7,
+    inbox_processed_retention_days: int = 30,
+    inbox_quarantine_retention_days: int = 30,
 ) -> dict[str, Any]:
     """Run all housekeeping tasks. Returns summary of actions taken."""
     loop = asyncio.get_running_loop()
@@ -148,6 +152,22 @@ async def run_housekeeping(
         logger.exception("Housekeeping: archive_superseded rotation failed")
         results["archive_superseded"] = {"error": True}
 
+    # 9. Shared inbox stale-file cleanup
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _cleanup_shared_inbox,
+            data_dir / "shared" / "inbox",
+            inbox_ttl_hours,
+            inbox_expired_retention_days,
+            inbox_processed_retention_days,
+            inbox_quarantine_retention_days,
+        )
+        results["shared_inbox"] = r
+    except Exception:
+        logger.exception("Housekeeping: shared inbox cleanup failed")
+        results["shared_inbox"] = {"error": True}
+
     return results
 
 
@@ -220,6 +240,54 @@ def _rotate_daemon_log(
         deleted,
     )
     return {"rotated": True, "size_mb": round(size_mb, 1), "deleted_generations": deleted}
+
+
+def _cleanup_shared_inbox(
+    inbox_root: Path,
+    ttl_hours: float,
+    expired_retention_days: int,
+    processed_retention_days: int,
+    quarantine_retention_days: int,
+) -> dict[str, Any]:
+    """Sweep stale files and rotate archives under shared/inbox/<anima>/."""
+    if not inbox_root.exists():
+        return {"skipped": True}
+
+    from core.messenger import Messenger
+
+    shared_dir = inbox_root.parent
+    totals: dict[str, Any] = {
+        "animas": 0,
+        "expired": 0,
+        "protected": 0,
+        "quarantined": 0,
+        "deleted_expired": 0,
+        "deleted_processed": 0,
+        "deleted_quarantine": 0,
+        "errors": 0,
+    }
+    per_anima: dict[str, dict[str, int]] = {}
+
+    for inbox_dir in sorted(inbox_root.iterdir()):
+        if not inbox_dir.is_dir() or inbox_dir.name.startswith("."):
+            continue
+        messenger = Messenger(shared_dir, inbox_dir.name)
+        result = messenger.sweep_expired(
+            ttl_hours=ttl_hours,
+            expired_retention_days=expired_retention_days,
+            processed_retention_days=processed_retention_days,
+            quarantine_retention_days=quarantine_retention_days,
+        )
+        totals["animas"] += 1
+        for key, value in result.items():
+            totals[key] = totals.get(key, 0) + value
+        if any(result.values()):
+            per_anima[inbox_dir.name] = result
+
+    if per_anima:
+        logger.info("Shared inbox cleanup: %s", per_anima)
+    totals["per_anima"] = per_anima
+    return totals
 
 
 def _cleanup_dm_archives(

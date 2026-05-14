@@ -490,6 +490,15 @@ class HousekeepingConfig(BaseModel):
     pending_failed_retention_days: int = 14
 
 
+class InboxConfig(BaseModel):
+    """Configuration for shared inbox stale-file hygiene."""
+
+    ttl_hours: float = Field(default=24.0, gt=0)
+    expired_retention_days: int = Field(default=7, ge=1)
+    processed_retention_days: int = Field(default=30, ge=1)
+    quarantine_retention_days: int = Field(default=30, ge=1)
+
+
 class HeartbeatConfig(BaseModel):
     """Heartbeat scheduling and cascade prevention settings."""
 
@@ -794,6 +803,7 @@ class AnimaWorksConfig(BaseModel):
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     voice: VoiceConfig = VoiceConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
+    inbox: InboxConfig = InboxConfig()
     machine: MachineConfig = MachineConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
     workspaces: dict[str, str] = {}  # alias → absolute path
@@ -835,6 +845,7 @@ __all__ = [
     "HousekeepingConfig",
     "HumanNotificationConfig",
     "ImageGenConfig",
+    "InboxConfig",
     "InteractionConfig",
     "LocalLLMConfig",
     "MachineConfig",

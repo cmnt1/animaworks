@@ -11,10 +11,9 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-from core.time_utils import today_local
-
 import pytest
 
+from core.time_utils import now_local, today_local
 
 # ── HousekeepingConfig tests ────────────────────────────────────
 
@@ -75,6 +74,33 @@ class TestHousekeepingConfig:
 
         restored = AnimaWorksConfig(**data)
         assert restored.housekeeping.prompt_log_retention_days == 3
+
+
+class TestInboxConfig:
+    """Test InboxConfig defaults and config roundtrip."""
+
+    def test_default_values(self):
+        from core.config.models import InboxConfig
+
+        cfg = InboxConfig()
+        assert cfg.ttl_hours == 24.0
+        assert cfg.expired_retention_days == 7
+        assert cfg.processed_retention_days == 30
+        assert cfg.quarantine_retention_days == 30
+
+    def test_config_json_round_trip(self):
+        from core.config.models import AnimaWorksConfig
+
+        cfg = AnimaWorksConfig()
+        data = cfg.model_dump()
+        assert "inbox" in data
+        assert data["inbox"]["ttl_hours"] == 24.0
+
+        data["inbox"]["ttl_hours"] = 12.0
+        data["inbox"]["expired_retention_days"] = 3
+        restored = AnimaWorksConfig(**data)
+        assert restored.inbox.ttl_hours == 12.0
+        assert restored.inbox.expired_retention_days == 3
 
 
 # ── rotate_all_prompt_logs tests ────────────────────────────────
@@ -442,6 +468,53 @@ class TestRunHousekeeping:
         assert "shortterm" in results
         assert "task_results" in results
         assert "pending_failed" in results
+        assert "shared_inbox" in results
+        assert results["shared_inbox"]["skipped"] is True
+
+    @pytest.mark.asyncio
+    async def test_shared_inbox_cleanup(self, tmp_path: Path):
+        data_dir = tmp_path
+        inbox = data_dir / "shared" / "inbox" / "alice"
+        inbox.mkdir(parents=True)
+
+        from core.schemas import Message
+
+        old = now_local() - timedelta(hours=30)
+        stale = Message(from_person="bob", to_person="alice", content="old", timestamp=old)
+        (inbox / "old.json").write_text(stale.model_dump_json(indent=2), encoding="utf-8")
+        protected = Message(
+            from_person="bob",
+            to_person="alice",
+            content="task",
+            timestamp=old,
+            intent="delegation",
+        )
+        (inbox / "delegation.json").write_text(protected.model_dump_json(indent=2), encoding="utf-8")
+
+        processed = inbox / "processed"
+        processed.mkdir()
+        old_processed = processed / "processed_old.json"
+        old_processed.write_text("{}", encoding="utf-8")
+        old_mtime = time.time() - (40 * 86400)
+        os.utime(old_processed, (old_mtime, old_mtime))
+
+        from core.memory.housekeeping import run_housekeeping
+
+        results = await run_housekeeping(
+            data_dir,
+            inbox_ttl_hours=24,
+            inbox_expired_retention_days=7,
+            inbox_processed_retention_days=30,
+            inbox_quarantine_retention_days=30,
+        )
+
+        shared = results["shared_inbox"]
+        assert shared["expired"] == 1
+        assert shared["protected"] == 1
+        assert shared["deleted_processed"] == 1
+        assert (inbox / "expired" / "old.json").exists()
+        assert (inbox / "delegation.json").exists()
+        assert not old_processed.exists()
 
 
 # ── Task results cleanup tests ──────────────────────────────────

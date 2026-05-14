@@ -6,13 +6,18 @@
 from __future__ import annotations
 
 import json
+import os
+import time
+from datetime import timedelta
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.exceptions import DeliveryError
 from core.messenger import InboxItem, Messenger
 from core.schemas import Message
+from core.time_utils import now_local
 
 
 @pytest.fixture
@@ -27,12 +32,38 @@ def messenger(shared_dir: Path) -> Messenger:
     return Messenger(shared_dir, "alice")
 
 
+def _write_inbox_message(
+    inbox: Path,
+    filename: str,
+    *,
+    timestamp=None,
+    source: str = "anima",
+    intent: str = "",
+    external_user_id: str = "",
+    external_channel_id: str = "",
+    content: str = "hello",
+) -> Path:
+    msg = Message(
+        from_person="bob",
+        to_person="alice",
+        content=content,
+        timestamp=timestamp or now_local(),
+        source=source,
+        intent=intent,
+        external_user_id=external_user_id,
+        external_channel_id=external_channel_id,
+    )
+    path = inbox / filename
+    path.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
+    return path
+
+
 # ── Initialization ────────────────────────────────────────
 
 
 class TestMessengerInit:
     def test_creates_inbox_dir(self, shared_dir):
-        m = Messenger(shared_dir, "bob")
+        Messenger(shared_dir, "bob")
         assert (shared_dir / "inbox" / "bob").is_dir()
 
     def test_anima_name(self, messenger):
@@ -78,7 +109,7 @@ class TestSend:
         assert msg.reply_to == "msg-original"
 
     def test_message_file_content(self, shared_dir, messenger):
-        msg = messenger.send("bob", "Content check")
+        messenger.send("bob", "Content check")
         bob_inbox = shared_dir / "inbox" / "bob"
         files = list(bob_inbox.glob("*.json"))
         data = json.loads(files[0].read_text(encoding="utf-8"))
@@ -95,7 +126,7 @@ class TestSend:
         assert msg.intent == ""
 
     def test_send_intent_persisted_in_file(self, shared_dir, messenger):
-        msg = messenger.send("bob", "Report", intent="report")
+        messenger.send("bob", "Report", intent="report")
         bob_inbox = shared_dir / "inbox" / "bob"
         files = list(bob_inbox.glob("*.json"))
         data = json.loads(files[0].read_text(encoding="utf-8"))
@@ -108,6 +139,7 @@ class TestSend:
         messenger.send("bob", "Report", intent="report")
 
         from core.memory.activity import ActivityLogger
+
         activity = ActivityLogger(anima_dir)
         entries = activity.recent(days=1, types=["message_sent"])
         assert len(entries) >= 1
@@ -129,8 +161,10 @@ class TestSend:
 class TestReply:
     def test_reply_inherits_thread(self, shared_dir, messenger):
         original = Message(
-            from_person="bob", to_person="alice",
-            content="original", thread_id="thread-abc",
+            from_person="bob",
+            to_person="alice",
+            content="original",
+            thread_id="thread-abc",
         )
         reply = messenger.reply(original, "Got it!")
         assert reply.to_person == "bob"
@@ -139,7 +173,8 @@ class TestReply:
 
     def test_reply_uses_id_as_thread_when_no_thread(self, shared_dir, messenger):
         original = Message(
-            from_person="bob", to_person="alice",
+            from_person="bob",
+            to_person="alice",
             content="original",
         )
         original.thread_id = ""  # no thread_id
@@ -148,16 +183,20 @@ class TestReply:
 
     def test_reply_with_intent(self, shared_dir, messenger):
         original = Message(
-            from_person="bob", to_person="alice",
-            content="original", thread_id="thread-abc",
+            from_person="bob",
+            to_person="alice",
+            content="original",
+            thread_id="thread-abc",
         )
         reply = messenger.reply(original, "Report here", intent="report")
         assert reply.intent == "report"
 
     def test_reply_intent_default_empty(self, shared_dir, messenger):
         original = Message(
-            from_person="bob", to_person="alice",
-            content="original", thread_id="thread-abc",
+            from_person="bob",
+            to_person="alice",
+            content="original",
+            thread_id="thread-abc",
         )
         reply = messenger.reply(original, "Got it!")
         assert reply.intent == ""
@@ -186,9 +225,7 @@ class TestReceive:
         inbox = shared_dir / "inbox" / "alice"
         for i, content in enumerate(["first", "second", "third"]):
             msg = Message(from_person="bob", to_person="alice", content=content)
-            (inbox / f"msg_{i:03d}.json").write_text(
-                msg.model_dump_json(indent=2), encoding="utf-8"
-            )
+            (inbox / f"msg_{i:03d}.json").write_text(msg.model_dump_json(indent=2), encoding="utf-8")
         messages = messenger.receive()
         assert len(messages) == 3
 
@@ -305,6 +342,138 @@ class TestArchiveFrom:
         assert messenger.unread_count() == 1
 
 
+# ── sweep_expired ────────────────────────────────────────
+
+
+class TestSweepExpired:
+    def test_expires_low_priority_old_unread(self, shared_dir, messenger):
+        inbox = shared_dir / "inbox" / "alice"
+        now = now_local()
+        _write_inbox_message(inbox, "old.json", timestamp=now - timedelta(hours=25))
+
+        result = messenger.sweep_expired(now=now, ttl_hours=24)
+
+        assert result["expired"] == 1
+        assert not (inbox / "old.json").exists()
+        assert (inbox / "expired" / "old.json").exists()
+
+    def test_keeps_unread_at_or_below_ttl(self, shared_dir, messenger):
+        inbox = shared_dir / "inbox" / "alice"
+        now = now_local()
+        _write_inbox_message(inbox, "fresh.json", timestamp=now - timedelta(hours=24))
+
+        result = messenger.sweep_expired(now=now, ttl_hours=24)
+
+        assert result["expired"] == 0
+        assert (inbox / "fresh.json").exists()
+        assert not (inbox / "expired" / "fresh.json").exists()
+
+    def test_protects_delegation_human_and_directed_external(self, shared_dir, messenger):
+        inbox = shared_dir / "inbox" / "alice"
+        now = now_local()
+        old = now - timedelta(hours=30)
+        _write_inbox_message(inbox, "delegation.json", timestamp=old, intent="delegation")
+        _write_inbox_message(inbox, "human.json", timestamp=old, source="human")
+        _write_inbox_message(
+            inbox,
+            "slack.json",
+            timestamp=old,
+            source="slack",
+            external_user_id="U123",
+        )
+
+        result = messenger.sweep_expired(now=now, ttl_hours=24)
+
+        assert result["expired"] == 0
+        assert result["protected"] == 3
+        assert (inbox / "delegation.json").exists()
+        assert (inbox / "human.json").exists()
+        assert (inbox / "slack.json").exists()
+
+    def test_expires_undirected_external_noise(self, shared_dir, messenger):
+        inbox = shared_dir / "inbox" / "alice"
+        now = now_local()
+        _write_inbox_message(
+            inbox,
+            "noise.json",
+            timestamp=now - timedelta(hours=30),
+            source="slack",
+        )
+
+        result = messenger.sweep_expired(now=now, ttl_hours=24)
+
+        assert result["expired"] == 1
+        assert (inbox / "expired" / "noise.json").exists()
+
+    def test_invalid_json_is_quarantined(self, shared_dir, messenger):
+        inbox = shared_dir / "inbox" / "alice"
+        (inbox / "bad.json").write_text("not json", encoding="utf-8")
+
+        result = messenger.sweep_expired(now=now_local(), ttl_hours=24)
+
+        assert result["quarantined"] == 1
+        assert not (inbox / "bad.json").exists()
+        assert (inbox / "quarantine" / "bad.json").exists()
+
+    def test_missing_timestamp_uses_file_mtime(self, shared_dir, messenger):
+        inbox = shared_dir / "inbox" / "alice"
+        msg = {
+            "from_person": "bob",
+            "to_person": "alice",
+            "content": "legacy",
+        }
+        path = inbox / "legacy.json"
+        path.write_text(json.dumps(msg), encoding="utf-8")
+        old_time = time.time() - (30 * 3600)
+        os.utime(path, (old_time, old_time))
+
+        result = messenger.sweep_expired(now=now_local(), ttl_hours=24)
+
+        assert result["expired"] == 1
+        assert (inbox / "expired" / "legacy.json").exists()
+
+    def test_name_collision_appends_suffix(self, shared_dir, messenger):
+        inbox = shared_dir / "inbox" / "alice"
+        now = now_local()
+        _write_inbox_message(inbox, "dupe.json", timestamp=now - timedelta(hours=30))
+        expired = inbox / "expired"
+        expired.mkdir()
+        (expired / "dupe.json").write_text("existing", encoding="utf-8")
+
+        result = messenger.sweep_expired(now=now, ttl_hours=24)
+
+        assert result["expired"] == 1
+        assert (expired / "dupe.json").read_text(encoding="utf-8") == "existing"
+        assert (expired / "dupe_2.json").exists()
+
+    def test_archive_retention_cleanup(self, shared_dir, messenger):
+        inbox = shared_dir / "inbox" / "alice"
+        old_time = time.time() - (40 * 86400)
+        dirs = ("expired", "processed", "quarantine")
+        for dirname in dirs:
+            d = inbox / dirname
+            d.mkdir()
+            old_file = d / "old.json"
+            old_file.write_text("{}", encoding="utf-8")
+            os.utime(old_file, (old_time, old_time))
+            (d / "new.json").write_text("{}", encoding="utf-8")
+
+        result = messenger.sweep_expired(
+            now=now_local(),
+            ttl_hours=24,
+            expired_retention_days=7,
+            processed_retention_days=30,
+            quarantine_retention_days=30,
+        )
+
+        assert result["deleted_expired"] == 1
+        assert result["deleted_processed"] == 1
+        assert result["deleted_quarantine"] == 1
+        for dirname in dirs:
+            assert not (inbox / dirname / "old.json").exists()
+            assert (inbox / dirname / "new.json").exists()
+
+
 # ── has_unread / unread_count ─────────────────────────────
 
 
@@ -368,8 +537,10 @@ class TestSendNoDmLog:
 
     def test_reply_does_not_create_dm_log(self, shared_dir, messenger):
         original = Message(
-            from_person="bob", to_person="alice",
-            content="original", thread_id="thread-abc",
+            from_person="bob",
+            to_person="alice",
+            content="original",
+            thread_id="thread-abc",
         )
         messenger.reply(original, "Got it!")
         dm_log_dir = shared_dir / "dm_logs"
@@ -415,7 +586,8 @@ class TestReceiveWithPaths:
         for i, content in enumerate(["first", "second", "third"]):
             msg = Message(from_person="bob", to_person="alice", content=content)
             (inbox / f"msg_{i:03d}.json").write_text(
-                msg.model_dump_json(indent=2), encoding="utf-8",
+                msg.model_dump_json(indent=2),
+                encoding="utf-8",
             )
 
         items = messenger.receive_with_paths()
@@ -543,9 +715,8 @@ class TestSendDeliveryVerification:
                     return False
             return original_exists(self_path)
 
-        with patch.object(Path, "exists", fake_exists):
-            with pytest.raises(DeliveryError, match="Message delivery failed"):
-                messenger.send("bob", "will fail verification")
+        with patch.object(Path, "exists", fake_exists), pytest.raises(DeliveryError, match="Message delivery failed"):
+            messenger.send("bob", "will fail verification")
 
 
 # ── Activity logging warning ─────────────────────────────
@@ -557,7 +728,6 @@ class TestActivityLoggingWarning:
     def test_activity_logger_failure_logs_warning(self, shared_dir, messenger, caplog):
         """When ActivityLogger.log() raises, a warning should be logged."""
         import logging
-        from unittest.mock import patch, MagicMock
 
         # Create anima directory so the activity log path check passes
         anima_dir = shared_dir.parent / "animas" / "alice"
@@ -566,17 +736,17 @@ class TestActivityLoggingWarning:
         mock_activity = MagicMock()
         mock_activity.log.side_effect = RuntimeError("disk full")
 
-        with patch("core.memory.activity.ActivityLogger", return_value=mock_activity):
-            with caplog.at_level(logging.WARNING, logger="animaworks.messenger"):
-                messenger.send("bob", "activity will fail")
+        with (
+            patch("core.memory.activity.ActivityLogger", return_value=mock_activity),
+            caplog.at_level(logging.WARNING, logger="animaworks.messenger"),
+        ):
+            messenger.send("bob", "activity will fail")
 
         assert any("Activity logging failed" in r.message for r in caplog.records)
         assert any("disk full" in r.message for r in caplog.records)
 
     def test_send_succeeds_despite_activity_failure(self, shared_dir, messenger):
         """send() should succeed even when ActivityLogger fails."""
-        from unittest.mock import patch, MagicMock
-
         anima_dir = shared_dir.parent / "animas" / "alice"
         anima_dir.mkdir(parents=True)
 

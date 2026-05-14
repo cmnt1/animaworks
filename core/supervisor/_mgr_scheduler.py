@@ -762,16 +762,21 @@ class SchedulerMixin:
 
         try:
             from core.config import load_config
-            from core.config.models import HousekeepingConfig
+            from core.config.models import HousekeepingConfig, InboxConfig
 
-            hk_cfg = getattr(load_config(), "housekeeping", None)
+            cfg = load_config()
+            hk_cfg = getattr(cfg, "housekeeping", None)
             if not isinstance(hk_cfg, HousekeepingConfig):
                 hk_cfg = HousekeepingConfig()
+            inbox_cfg = getattr(cfg, "inbox", None)
+            if not isinstance(inbox_cfg, InboxConfig):
+                inbox_cfg = InboxConfig()
         except Exception:
             logger.debug("Config load failed for housekeeping", exc_info=True)
-            from core.config.models import HousekeepingConfig
+            from core.config.models import HousekeepingConfig, InboxConfig
 
             hk_cfg = HousekeepingConfig()
+            inbox_cfg = InboxConfig()
 
         try:
             from core.memory.housekeeping import run_housekeeping
@@ -786,6 +791,10 @@ class SchedulerMixin:
                 shortterm_retention_days=hk_cfg.shortterm_retention_days,
                 task_results_retention_days=hk_cfg.task_results_retention_days,
                 pending_failed_retention_days=hk_cfg.pending_failed_retention_days,
+                inbox_ttl_hours=inbox_cfg.ttl_hours,
+                inbox_expired_retention_days=inbox_cfg.expired_retention_days,
+                inbox_processed_retention_days=inbox_cfg.processed_retention_days,
+                inbox_quarantine_retention_days=inbox_cfg.quarantine_retention_days,
             )
             logger.info("Housekeeping complete: %s", results)
         except Exception:
