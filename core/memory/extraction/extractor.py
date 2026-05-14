@@ -181,12 +181,10 @@ class FactExtractor:
         """
         import litellm
 
-        from core.memory._llm_utils import get_llm_kwargs_for_model
+        from core.memory._llm_utils import get_memory_llm_kwargs_for_model
 
-        llm_kwargs = get_llm_kwargs_for_model(self._model)
+        llm_kwargs = get_memory_llm_kwargs_for_model(self._model, self._llm_extra)
         resolved_model = llm_kwargs.pop("model", self._model)
-        if self._llm_extra:
-            llm_kwargs.update(self._llm_extra)
         effective_timeout = llm_kwargs.pop("timeout", self._timeout)
 
         messages: list[dict[str, str]] = [

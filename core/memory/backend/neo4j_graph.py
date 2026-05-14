@@ -567,13 +567,15 @@ class Neo4jGraphBackend(MemoryBackend):
             if score < min_score:
                 continue
 
-            if scope == "entity":
+            result_type = r.get("type") or scope
+
+            if result_type == "entity":
                 content = f"{r.get('name', '')}: {r.get('summary', '')}"
                 source = f"entity:{r.get('uuid', '')}"
-            elif scope == "episode":
+            elif result_type == "episode":
                 content = r.get("content", "")
                 source = f"episode:{r.get('uuid', '')}"
-            elif scope == "community":
+            elif result_type == "community":
                 content = f"[{r.get('name', '')}] {r.get('summary', '')}"
                 source = f"community:{r.get('uuid', '')}"
             else:

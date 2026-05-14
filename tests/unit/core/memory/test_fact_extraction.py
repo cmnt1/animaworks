@@ -117,6 +117,44 @@ class TestFactExtractorExtractEntities:
         assert entities[1].entity_type == "Place"
 
     @pytest.mark.asyncio
+    @patch("litellm.acompletion", new_callable=AsyncMock)
+    async def test_extract_entities_prefixes_bare_custom_endpoint_model(self, mock_acompletion):
+        from core.memory.extraction.extractor import FactExtractor
+
+        payload = {
+            "entities": [
+                {"name": "FutureSync", "entity_type": "Organization", "summary": "A company"},
+            ]
+        }
+        mock_acompletion.return_value = _make_llm_response(json.dumps(payload, ensure_ascii=False))
+
+        cfg = MagicMock()
+        cfg.consolidation.llm_model = "anthropic/claude-sonnet-4-6"
+        cfg.credentials = {}
+
+        ext = FactExtractor(
+            model="deepseek-v4-flash",
+            max_retries=1,
+            llm_extra={
+                "api_base": "http://localhost:4000/v1",
+                "api_key": "dummy",
+                "timeout": 120,
+            },
+        )
+        with (
+            patch("core.memory._llm_utils.ensure_credentials_in_env"),
+            patch("core.config.load_config", return_value=cfg),
+        ):
+            entities = await ext.extract_entities("FutureSyncについて")
+
+        assert len(entities) == 1
+        kwargs = mock_acompletion.call_args.kwargs
+        assert kwargs["model"] == "openai/deepseek-v4-flash"
+        assert kwargs["api_base"] == "http://localhost:4000/v1"
+        assert kwargs["api_key"] == "dummy"
+        assert kwargs["timeout"] == 120
+
+    @pytest.mark.asyncio
     @_LLM_KWARGS_PATCH
     @patch("litellm.acompletion", new_callable=AsyncMock)
     async def test_extract_entities_empty_content(self, mock_acompletion, _mock_kwargs):

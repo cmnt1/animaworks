@@ -163,10 +163,13 @@ class EdgeInvalidator:
             existing_facts_json=candidates_json,
         )
 
-        extra = dict(self._llm_extra)
-        effective_timeout = extra.pop("timeout", 30)
+        from core.memory._llm_utils import get_memory_llm_kwargs_for_model
+
+        llm_kwargs = get_memory_llm_kwargs_for_model(self._model, self._llm_extra)
+        resolved_model = llm_kwargs.pop("model", self._model)
+        effective_timeout = llm_kwargs.pop("timeout", 30)
         response = await litellm.acompletion(
-            model=self._model,
+            model=resolved_model,
             messages=[
                 {"role": "system", "content": prompts.INVALIDATE_SYSTEM},
                 {"role": "user", "content": user_prompt},
@@ -174,7 +177,7 @@ class EdgeInvalidator:
             temperature=0.0,
             max_tokens=512,
             timeout=effective_timeout,
-            **extra,
+            **llm_kwargs,
         )
 
         text = response.choices[0].message.content or ""

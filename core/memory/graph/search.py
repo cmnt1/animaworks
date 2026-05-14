@@ -40,6 +40,21 @@ class HybridSearch:
 
     # ── Public API ────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _tag_results(rows: list[dict], result_type: str) -> list[dict]:
+        """Return result rows with an explicit graph result type."""
+        return [{**row, "type": row.get("type", result_type)} for row in rows]
+
+    @staticmethod
+    def _rerank_text(item: dict) -> str:
+        """Resolve searchable text for mixed graph result rows."""
+        result_type = item.get("type")
+        if result_type == "episode":
+            return str(item.get("content", ""))
+        if result_type == "entity":
+            return " ".join(str(item.get(k, "")) for k in ("name", "summary")).strip()
+        return str(item.get("fact", ""))
+
     async def search(
         self,
         query: str,
@@ -121,13 +136,25 @@ class HybridSearch:
             return []
 
         if edge_type_filter and scope in ("fact", "all"):
-            merged = [r for r in merged if r.get("edge_type", "RELATES_TO") == edge_type_filter]
+            merged = [
+                r
+                for r in merged
+                if r.get("type", "fact") == "fact" and r.get("edge_type", "RELATES_TO") == edge_type_filter
+            ]
 
         try:
             from core.memory.graph.reranker import get_reranker
 
             reranker = get_reranker(self._ce_model)
-            text_field = "fact" if scope == "fact" else "content" if scope == "episode" else "name"
+            text_field = (
+                self._rerank_text
+                if scope == "all"
+                else "fact"
+                if scope == "fact"
+                else "content"
+                if scope == "episode"
+                else "name"
+            )
             return await reranker.rerank(query, merged, text_field=text_field, top_k=limit)
         except Exception:
             logger.warning("Cross-encoder rerank failed, using RRF order", exc_info=True)
@@ -151,8 +178,54 @@ class HybridSearch:
 
         from core.memory.graph.queries import VECTOR_SEARCH_ENTITIES, VECTOR_SEARCH_FACTS
 
-        if scope in ("fact", "all"):
-            return await self._driver.execute_query(
+        if scope == "all":
+            from core.memory.graph.queries import VECTOR_SEARCH_EPISODES, VECTOR_SEARCH_EPISODES_TEMPORAL
+
+            use_temporal_window = time_start is not None or time_end is not None
+            episode_query = VECTOR_SEARCH_EPISODES_TEMPORAL if use_temporal_window else VECTOR_SEARCH_EPISODES
+            episode_params = {
+                "embedding": embedding,
+                "group_id": self._group_id,
+                "as_of_time": as_of_time,
+                "top_k": 20,
+            }
+            if use_temporal_window:
+                episode_params.update({"time_start": time_start, "time_end": time_end})
+
+            rows_by_type = await asyncio.gather(
+                self._driver.execute_query(
+                    VECTOR_SEARCH_FACTS,
+                    {
+                        "embedding": embedding,
+                        "group_id": self._group_id,
+                        "as_of_time": as_of_time,
+                        "top_k": 20,
+                    },
+                ),
+                self._driver.execute_query(
+                    VECTOR_SEARCH_ENTITIES,
+                    {
+                        "embedding": embedding,
+                        "group_id": self._group_id,
+                        "top_k": 20,
+                    },
+                ),
+                self._driver.execute_query(
+                    episode_query,
+                    episode_params,
+                ),
+                return_exceptions=True,
+            )
+            result_types = ("fact", "entity", "episode")
+            results: list[dict] = []
+            for result_type, rows in zip(result_types, rows_by_type, strict=True):
+                if isinstance(rows, Exception):
+                    logger.debug("Vector search on %s failed: %s", result_type, rows)
+                    continue
+                results.extend(self._tag_results(rows, result_type))
+            return results
+        if scope == "fact":
+            rows = await self._driver.execute_query(
                 VECTOR_SEARCH_FACTS,
                 {
                     "embedding": embedding,
@@ -161,8 +234,9 @@ class HybridSearch:
                     "top_k": 20,
                 },
             )
+            return self._tag_results(rows, "fact")
         if scope == "entity":
-            return await self._driver.execute_query(
+            rows = await self._driver.execute_query(
                 VECTOR_SEARCH_ENTITIES,
                 {
                     "embedding": embedding,
@@ -170,12 +244,13 @@ class HybridSearch:
                     "top_k": 20,
                 },
             )
+            return self._tag_results(rows, "entity")
         if scope == "episode":
             from core.memory.graph.queries import VECTOR_SEARCH_EPISODES, VECTOR_SEARCH_EPISODES_TEMPORAL
 
             use_temporal_window = time_start is not None or time_end is not None
             if use_temporal_window:
-                return await self._driver.execute_query(
+                rows = await self._driver.execute_query(
                     VECTOR_SEARCH_EPISODES_TEMPORAL,
                     {
                         "embedding": embedding,
@@ -186,7 +261,8 @@ class HybridSearch:
                         "top_k": 20,
                     },
                 )
-            return await self._driver.execute_query(
+                return self._tag_results(rows, "episode")
+            rows = await self._driver.execute_query(
                 VECTOR_SEARCH_EPISODES,
                 {
                     "embedding": embedding,
@@ -195,6 +271,7 @@ class HybridSearch:
                     "top_k": 20,
                 },
             )
+            return self._tag_results(rows, "episode")
         return []
 
     async def _fulltext_search(
@@ -211,9 +288,10 @@ class HybridSearch:
             pass  # Episode ``valid_at`` window is applied in ``_vector_search`` only.
         from core.memory.graph.queries import FULLTEXT_SEARCH_ENTITIES, FULLTEXT_SEARCH_FACTS
 
-        if scope in ("fact", "all"):
+        if scope == "all":
+            results: list[dict] = []
             try:
-                return await self._driver.execute_query(
+                fact_rows = await self._driver.execute_query(
                     FULLTEXT_SEARCH_FACTS,
                     {
                         "query": query,
@@ -222,12 +300,11 @@ class HybridSearch:
                         "top_k": 20,
                     },
                 )
+                results.extend(self._tag_results(fact_rows, "fact"))
             except Exception:
                 logger.debug("Fulltext search on facts failed (index may not exist)", exc_info=True)
-                return []
-        if scope == "entity":
             try:
-                return await self._driver.execute_query(
+                entity_rows = await self._driver.execute_query(
                     FULLTEXT_SEARCH_ENTITIES,
                     {
                         "query": query,
@@ -235,6 +312,36 @@ class HybridSearch:
                         "top_k": 20,
                     },
                 )
+                results.extend(self._tag_results(entity_rows, "entity"))
+            except Exception:
+                logger.debug("Fulltext search on entities failed", exc_info=True)
+            return results
+        if scope == "fact":
+            try:
+                rows = await self._driver.execute_query(
+                    FULLTEXT_SEARCH_FACTS,
+                    {
+                        "query": query,
+                        "group_id": self._group_id,
+                        "as_of_time": as_of_time,
+                        "top_k": 20,
+                    },
+                )
+                return self._tag_results(rows, "fact")
+            except Exception:
+                logger.debug("Fulltext search on facts failed (index may not exist)", exc_info=True)
+                return []
+        if scope == "entity":
+            try:
+                rows = await self._driver.execute_query(
+                    FULLTEXT_SEARCH_ENTITIES,
+                    {
+                        "query": query,
+                        "group_id": self._group_id,
+                        "top_k": 20,
+                    },
+                )
+                return self._tag_results(rows, "entity")
             except Exception:
                 logger.debug("Fulltext search on entities failed", exc_info=True)
                 return []
@@ -253,6 +360,8 @@ class HybridSearch:
         """Graph BFS from seed entities."""
         if time_start is not None or time_end is not None:
             pass  # Episode ``valid_at`` window is applied in ``_vector_search`` only.
+        if scope not in ("fact", "all"):
+            return []
         if not embedding:
             return []
 
@@ -298,7 +407,7 @@ class HybridSearch:
                     seen.add(uid)
                     deduped.append(f)
 
-            return deduped[:20]
+            return self._tag_results(deduped[:20], "fact")
         except Exception:
             logger.debug("BFS search failed", exc_info=True)
             return []
