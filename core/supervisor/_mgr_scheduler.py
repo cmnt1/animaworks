@@ -335,7 +335,7 @@ class SchedulerMixin:
                     try:
                         await handle.send_request("interrupt", {}, timeout=10.0)
                     except Exception:
-                        pass
+                        logger.debug("Interrupt request after daily consolidation timeout failed", exc_info=True)
                     raise
                 finally:
                     if _timed_out:
@@ -453,7 +453,7 @@ class SchedulerMixin:
                     try:
                         await handle.send_request("interrupt", {}, timeout=10.0)
                     except Exception:
-                        pass
+                        logger.debug("Interrupt request after weekly consolidation timeout failed", exc_info=True)
                     raise
                 finally:
                     if _timed_out_w:
