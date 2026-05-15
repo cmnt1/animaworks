@@ -143,6 +143,14 @@ class BuildResult:
         return self.system_prompt.count(sub, *args)
 
 
+@dataclass(frozen=True)
+class _SkillCatalogRouterSettings:
+    enabled: bool = False
+    top_k: int = 5
+    min_score: float = 1.15
+    include_body: bool = True
+
+
 # ── Per-group section builders ────────────────────────────────
 # Private helpers — kept in builder.py so they share the same
 # ``load_prompt`` binding that tests patch.
@@ -360,6 +368,68 @@ def _format_trust_tag(meta: Any) -> str:
     return f" [{level_str}]"
 
 
+def _load_skill_catalog_router_settings() -> _SkillCatalogRouterSettings:
+    try:
+        from core.config import load_config
+
+        prompt_cfg = load_config().prompt
+        return _SkillCatalogRouterSettings(
+            enabled=bool(getattr(prompt_cfg, "skill_catalog_router_enabled", False)),
+            top_k=max(1, int(getattr(prompt_cfg, "skill_catalog_router_top_k", 5))),
+            min_score=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_min_score", 1.15))),
+            include_body=bool(getattr(prompt_cfg, "skill_catalog_router_include_body", True)),
+        )
+    except Exception:
+        logger.debug("Failed to load skill catalog router settings", exc_info=True)
+        return _SkillCatalogRouterSettings()
+
+
+def _skill_catalog_pointer(meta: Any) -> str:
+    path = getattr(meta, "path", None)
+    name = getattr(meta, "name", "")
+    is_procedure = bool(getattr(meta, "is_procedure", False))
+    is_common = bool(getattr(meta, "is_common", False))
+    if path is not None:
+        parts = list(Path(path).parts)
+        for marker in ("common_skills", "skills", "procedures"):
+            if marker in parts:
+                idx = parts.index(marker)
+                return str(Path(*parts[idx:]))
+        if is_procedure:
+            return f"procedures/{Path(path).name}"
+        if is_common:
+            return f"common_skills/{Path(path).parent.name}/SKILL.md"
+        if Path(path).name == "SKILL.md":
+            return f"skills/{Path(path).parent.name}/SKILL.md"
+    if is_procedure:
+        return f"procedures/{name}.md"
+    if is_common:
+        return f"common_skills/{name}/SKILL.md"
+    return f"skills/{name}/SKILL.md"
+
+
+def _format_skill_catalog_line(
+    meta: Any,
+    *,
+    path: str,
+    common_label: str,
+    procedure_label: str,
+    desc_limit: int,
+    match_confidence: str | None = None,
+) -> str:
+    description = getattr(meta, "description", "")
+    desc = (description[:desc_limit] + "…") if len(description) > desc_limit else description
+    labels: list[str] = []
+    if bool(getattr(meta, "is_procedure", False)):
+        labels.append(procedure_label)
+    elif bool(getattr(meta, "is_common", False)):
+        labels.append(common_label)
+    if match_confidence:
+        labels.append(f"match={match_confidence}")
+    label_text = f" ({', '.join(labels)})" if labels else ""
+    return f"- {path}{label_text}{_format_trust_tag(meta)}: {desc}"
+
+
 def _build_group4(
     pd: Path,
     data_dir: Path,
@@ -374,6 +444,7 @@ def _build_group4(
     personal_tools: dict[str, str] | None,
     _ss: dict[str, str],
     _fs: dict[str, str],
+    message: str = "",
 ) -> tuple[list[SectionEntry], list[Path], list[str], list[str]]:
     """Group 4: Memory guide, DK, common knowledge, tool guides.
 
@@ -506,28 +577,57 @@ def _build_group4(
     # and supports nested common_skills directories.
     if not is_heartbeat:
         _DESC_LIMIT = 250
-        catalog_lines: list[str] = [
-            t("builder.skill_catalog_header"),
-            t("builder.skill_catalog_instruction"),
-            "",
-            "<available_skills>",
-        ]
         common_label = t("skill.label_common")
         procedure_label = t("skill.label_procedure")
+        settings = _load_skill_catalog_router_settings()
+        all_skills = list(skill_index.all_skills)
+        catalog_entries: list[str] = []
 
-        for meta in skill_index.all_skills:
-            desc = (meta.description[:_DESC_LIMIT] + "…") if len(meta.description) > _DESC_LIMIT else meta.description
-            trust_tag = _format_trust_tag(meta)
-            if meta.is_procedure:
-                catalog_lines.append(f"- procedures/{meta.name}.md ({procedure_label}){trust_tag}: {desc}")
-            elif meta.is_common:
-                catalog_lines.append(f"- common_skills/{meta.name}/SKILL.md ({common_label}){trust_tag}: {desc}")
-            else:
-                catalog_lines.append(f"- skills/{meta.name}/SKILL.md{trust_tag}: {desc}")
+        if settings.enabled and message.strip():
+            from core.skills.router import SkillRouter
 
-        catalog_lines.append("</available_skills>")
-        catalog_text = "\n".join(catalog_lines)
-        _add(catalog_text, "skill_catalog", 2, "elastic")
+            candidates = SkillRouter(
+                min_score=settings.min_score,
+                include_body=settings.include_body,
+            ).route(message, all_skills, top_k=settings.top_k)
+            metas_by_pointer = {_skill_catalog_pointer(meta): meta for meta in all_skills}
+            for candidate in candidates:
+                meta = metas_by_pointer.get(candidate.path)
+                if meta is None:
+                    continue
+                catalog_entries.append(
+                    _format_skill_catalog_line(
+                        meta,
+                        path=candidate.path,
+                        common_label=common_label,
+                        procedure_label=procedure_label,
+                        desc_limit=_DESC_LIMIT,
+                        match_confidence=candidate.confidence,
+                    )
+                )
+        else:
+            for meta in all_skills:
+                catalog_entries.append(
+                    _format_skill_catalog_line(
+                        meta,
+                        path=_skill_catalog_pointer(meta),
+                        common_label=common_label,
+                        procedure_label=procedure_label,
+                        desc_limit=_DESC_LIMIT,
+                    )
+                )
+
+        if catalog_entries or not (settings.enabled and message.strip()):
+            catalog_lines: list[str] = [
+                t("builder.skill_catalog_header"),
+                t("builder.skill_catalog_instruction"),
+                "",
+                "<available_skills>",
+                *catalog_entries,
+                "</available_skills>",
+            ]
+            catalog_text = "\n".join(catalog_lines)
+            _add(catalog_text, "skill_catalog", 2, "elastic")
 
     return out, injected_procs, injected_know, overflow
 
@@ -706,6 +806,7 @@ def build_system_prompt(
         personal_tools,
         _ss,
         _fs,
+        message=message,
     )
     sections += g4
     sections += _build_group5(

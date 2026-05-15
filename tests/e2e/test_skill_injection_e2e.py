@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from core.prompt.builder import build_system_prompt
@@ -89,6 +90,60 @@ class TestSkillCatalogE2E:
         assert "<available_skills>" in prompt
         assert "skills/cron-management/SKILL.md" in prompt
         assert "common_skills/animaworks-guide/SKILL.md" in prompt
+
+    def test_skill_catalog_router_flag_limits_prompt_to_matches(self, tmp_path: Path):
+        """When enabled, the skill catalog lists routed candidates instead of every skill."""
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+
+        personal_skill_dir = anima_dir / "skills" / "cron-management"
+        personal_skill_dir.mkdir(parents=True)
+        (personal_skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: cron-management\n"
+            "description: cron.mdの読み書き・定時タスク更新スキル\n"
+            "tags: [cron]\n"
+            "---\n\n"
+            "Body",
+            encoding="utf-8",
+        )
+
+        common_skills_dir = tmp_path / "common_skills"
+        image_skill_dir = common_skills_dir / "image-gen-tool"
+        image_skill_dir.mkdir(parents=True)
+        (image_skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: image-gen-tool\n"
+            "description: 画像生成スキル\n"
+            "tags: [image]\n"
+            "---\n\n"
+            "Body",
+            encoding="utf-8",
+        )
+
+        memory = _make_mock_memory(anima_dir, tmp_path)
+        settings = SimpleNamespace(
+            enabled=True,
+            top_k=3,
+            min_score=1.15,
+            include_body=False,
+        )
+
+        with (
+            patch("core.paths.get_common_skills_dir", return_value=common_skills_dir),
+            patch("core.prompt.builder._load_skill_catalog_router_settings", return_value=settings),
+            patch("core.prompt.builder.load_prompt", side_effect=_fake_load_prompt),
+            patch("core.prompt.builder._build_org_context", return_value=""),
+            patch("core.prompt.builder._discover_other_animas", return_value=[]),
+            patch("core.prompt.builder._build_messaging_section", return_value=""),
+        ):
+            result = build_system_prompt(memory, message="cron.mdに毎朝9時の定時タスクを追加して")
+
+        prompt = result.system_prompt
+        assert "<available_skills>" in prompt
+        assert "skills/cron-management/SKILL.md" in prompt
+        assert "match=high" in prompt
+        assert "common_skills/image-gen-tool/SKILL.md" not in prompt
 
     def test_create_skill_in_build_tool_list(self, tmp_path: Path) -> None:
         """build_tool_list with include_create_skill=True adds create_skill only."""
