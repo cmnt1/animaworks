@@ -505,8 +505,10 @@ def _suppressed_count(events: list[dict[str, Any]]) -> int:
     count = 0
     for event in events:
         event_type = _event_type(event)
-        if (event_type == "tool_use" and _tool(event) not in VISIBLE_TOOL_NAMES) or (
-            event_type == "tool_result" or (event_type.startswith("tool_") and event_type != "tool_use")
+        if (
+            (event_type == "tool_use" and _tool(event) not in VISIBLE_TOOL_NAMES)
+            or event_type == "tool_result"
+            or (event_type.startswith("tool_") and event_type != "tool_use")
         ):
             count += 1
         if isinstance(event.get("tool_result"), dict):
