@@ -265,7 +265,7 @@ class PromptConfig(BaseModel):
     """Configuration for system prompt building."""
 
     injection_size_warning_chars: int = 2000
-    skill_catalog_router_enabled: bool = False
+    skill_catalog_router_enabled: bool = True
     skill_catalog_router_top_k: int = Field(default=5, ge=1)
     skill_catalog_router_min_score: float = Field(default=1.15, ge=0.0)
     skill_catalog_router_include_body: bool = True

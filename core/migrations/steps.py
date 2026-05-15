@@ -129,6 +129,63 @@ def step_credentials_migration(data_dir: Path, dry_run: bool, verbose: bool) -> 
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_enable_skill_catalog_router(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Enable skill catalog routing in existing config.json files.
+
+    The feature was introduced behind a default-off flag in commit 8f8b37a3.
+    Current runtime defaults should route the skill catalog by message, so
+    existing runtime configs are migrated to the new default explicitly.
+    """
+    details: list[str] = []
+    try:
+        config_path = data_dir / "config.json"
+        if not config_path.is_file():
+            return StepResult(changed=0, skipped=1, details=["config.json not found"])
+
+        raw = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+        prompt = raw.get("prompt")
+        if prompt is None:
+            prompt = {}
+        if not isinstance(prompt, dict):
+            return StepResult(changed=0, skipped=1, details=["config.json prompt section is not an object"])
+
+        defaults = {
+            "skill_catalog_router_top_k": 5,
+            "skill_catalog_router_min_score": 1.15,
+            "skill_catalog_router_include_body": True,
+        }
+        changed_fields = []
+        if prompt.get("skill_catalog_router_enabled") is not True:
+            changed_fields.append("skill_catalog_router_enabled")
+        changed_fields.extend(key for key in defaults if key not in prompt)
+        if not changed_fields:
+            return StepResult(changed=0, skipped=1, details=["skill catalog router already enabled"])
+
+        if dry_run:
+            details.append(f"Would update prompt fields: {', '.join(changed_fields)}")
+            return StepResult(changed=1, skipped=0, details=details)
+
+        prompt["skill_catalog_router_enabled"] = True
+        for key, value in defaults.items():
+            prompt.setdefault(key, value)
+        raw["prompt"] = prompt
+        config_path.write_text(
+            json.dumps(raw, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        try:
+            from core.config import invalidate_cache
+
+            invalidate_cache()
+        except Exception:
+            logger.debug("Failed to invalidate config cache after skill router migration", exc_info=True)
+        details.append(f"Updated prompt fields: {', '.join(changed_fields)}")
+        return StepResult(changed=1, skipped=0, details=details)
+    except Exception as exc:
+        logger.exception("step_enable_skill_catalog_router failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 # ── Category 2: Per-anima file migrations ───────────────────────
 
 
@@ -975,6 +1032,12 @@ def register_all_steps(runner: Any) -> None:
             "model_config_to_status", "Model config → status.json", "structural", step_model_config_to_status
         ),
         MigrationStep("credentials_migration", "Credentials → vault", "structural", step_credentials_migration),
+        MigrationStep(
+            "enable_skill_catalog_router",
+            "Enable skill catalog router in config",
+            "structural",
+            step_enable_skill_catalog_router,
+        ),
         MigrationStep("current_task_rename", "current_task → current_state", "per_anima", step_current_task_rename),
         MigrationStep("pending_merge", "Merge pending.md into current_state", "per_anima", step_pending_merge),
         MigrationStep(

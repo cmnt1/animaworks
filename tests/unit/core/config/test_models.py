@@ -110,6 +110,7 @@ class TestAnimaWorksConfig:
         assert "anthropic" in config.credentials
         assert config.animas == {}
         assert config.local_llm.default_model == DEFAULT_LOCAL_LLM_MODEL
+        assert config.prompt.skill_catalog_router_enabled is True
 
     def test_roundtrip_json(self):
         config = AnimaWorksConfig()

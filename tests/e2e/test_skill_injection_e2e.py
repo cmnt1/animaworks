@@ -77,6 +77,10 @@ class TestSkillCatalogE2E:
 
         with (
             patch("core.paths.get_common_skills_dir", return_value=common_skills_dir),
+            patch(
+                "core.prompt.builder._load_skill_catalog_router_settings",
+                return_value=SimpleNamespace(enabled=False, top_k=5, min_score=1.15, include_body=True),
+            ),
             patch("core.prompt.builder.load_prompt", side_effect=_fake_load_prompt),
             patch("core.prompt.builder._build_org_context", return_value=""),
             patch("core.prompt.builder._discover_other_animas", return_value=[]),

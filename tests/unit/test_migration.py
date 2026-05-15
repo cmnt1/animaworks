@@ -6,6 +6,7 @@ from __future__ import annotations
 
 """Tests for the unified migration framework."""
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -239,6 +240,63 @@ class TestMigrationSteps:
 
         result = step_person_to_anima(data_dir, dry_run=False, verbose=True)
         assert result.skipped == 1
+
+    def test_step_enable_skill_catalog_router_updates_existing_config(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_enable_skill_catalog_router
+
+        config_path = data_dir / "config.json"
+        config_path.write_text(
+            json.dumps({"prompt": {"skill_catalog_router_enabled": False}}),
+            encoding="utf-8",
+        )
+
+        result = step_enable_skill_catalog_router(data_dir, dry_run=False, verbose=True)
+
+        assert result.changed == 1
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        assert raw["prompt"]["skill_catalog_router_enabled"] is True
+        assert raw["prompt"]["skill_catalog_router_top_k"] == 5
+        assert raw["prompt"]["skill_catalog_router_min_score"] == 1.15
+        assert raw["prompt"]["skill_catalog_router_include_body"] is True
+
+    def test_step_enable_skill_catalog_router_dry_run_keeps_config(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_enable_skill_catalog_router
+
+        config_path = data_dir / "config.json"
+        config_path.write_text('{"prompt": {"skill_catalog_router_enabled": false}}\n', encoding="utf-8")
+
+        result = step_enable_skill_catalog_router(data_dir, dry_run=True, verbose=True)
+
+        assert result.changed == 1
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        assert raw["prompt"]["skill_catalog_router_enabled"] is False
+
+    def test_step_enable_skill_catalog_router_preserves_tuned_values(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_enable_skill_catalog_router
+
+        config_path = data_dir / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "prompt": {
+                        "skill_catalog_router_enabled": False,
+                        "skill_catalog_router_top_k": 9,
+                        "skill_catalog_router_min_score": 2.0,
+                        "skill_catalog_router_include_body": False,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = step_enable_skill_catalog_router(data_dir, dry_run=False, verbose=True)
+
+        assert result.changed == 1
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        assert raw["prompt"]["skill_catalog_router_enabled"] is True
+        assert raw["prompt"]["skill_catalog_router_top_k"] == 9
+        assert raw["prompt"]["skill_catalog_router_min_score"] == 2.0
+        assert raw["prompt"]["skill_catalog_router_include_body"] is False
 
     def test_step_models_json_create_skip_existing(self, data_dir: Path) -> None:
         from core.migrations.steps import step_models_json_create
