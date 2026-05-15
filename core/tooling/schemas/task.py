@@ -33,7 +33,7 @@ def _submit_tasks_tools() -> list[dict[str, Any]]:
                             "type": "object",
                             "properties": {
                                 "task_id": {"type": "string"},
-                                "title": {"type": "string"},
+                                "title": {"type": "string", "description": _t("schema.submit_tasks.title")},
                                 "description": {"type": "string"},
                                 "parallel": {"type": "boolean", "default": False},
                                 "depends_on": {

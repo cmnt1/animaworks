@@ -78,6 +78,7 @@ submit_tasks(batch_id="human-20260313", tasks=[
 - 人間からの指示を受けたら、必ず `submit_tasks` でタスクキューに登録する（MUST）
 - 人間由来タスク（source=human 相当）は最優先で処理する（MUST）
 - キューのタスクは Heartbeat で確認され、着手時に `update_task` で `in_progress` に更新する
+- `tasks[].title` は TaskBoard に表示されるため、人間が単体で読んで分かる案件名にする（MUST）。内部ログ・委任経路・長い原文ではなく、「何の案件か」「今どういう状態か」を短く書く。
 
 #### update_task
 
@@ -399,12 +400,14 @@ submit_tasks(batch_id="build-20260301", tasks=[
 delegate_task(name="dave", instruction="API テストを実施して結果を報告してください", deadline="2d", summary="API テスト")
 ```
 
+`summary` は TaskBoard のカード表面になる。人間がカードだけを見ても意味が分かるように、案件名・状態・次の一手を短く書く（MUST）。内部の task_id、message id、ログ抜粋、長いファイルパス、委任経路の説明は `instruction` に入れ、`summary` には出さない。
+
 | パラメータ | 必須 | 説明 |
 |-----------|------|------|
 | `name` | MUST | 委譲先の直属部下Anima名 |
 | `instruction` | MUST | タスクの指示内容 |
 | `deadline` | MUST | 期限。相対形式 `30m` / `2h` / `1d` または ISO8601 |
-| `summary` | MAY | タスクの1行要約（省略時は instruction の先頭100文字） |
+| `summary` | MAY | TaskBoard に表示される人間向けの1行要約（省略時は instruction の先頭100文字になるため、原則指定する） |
 | `workspace` | MAY | 作業ディレクトリ。ワークスペースエイリアスを指定すると委譲先がそのディレクトリで作業する |
 
 ### 委譲タスクの追跡

@@ -17,6 +17,17 @@ AnimaWorks의 태스크 관리는 `task_queue.jsonl` + `current_state.md` + `del
 | `state/task_results/` | 태스크 실행 결과 | 시스템 자동 |
 | **`shared/task-board.md`** | **전체 태스크 조감** | **사람 (오너)** |
 
+## 사람용 문구 규칙
+
+TaskBoard에 표시되는 `summary` / `title` / 태스크 이름은 사람이 카드 하나만 읽어도 의미를 알 수 있어야 합니다 (MUST).
+
+- 첫 줄에는 업무 항목과 현재 상태를 요약합니다. 내부 로그, 위임 경로, 긴 원문 붙여넣기로 시작하지 않습니다.
+- 누가 맡고 있는지, 무엇이 막혔거나 대기 중인지, 다음 행동이 무엇인지 짧게 포함합니다.
+- `message id`, 내부 task_id, 긴 파일 경로, 로그 발췌, `heartbeat` 세부사항, 깨진 원문은 카드 표면에 노출하지 않습니다. 필요하면 `instruction` / `description` / `context`에 넣습니다.
+- `delegate_task(summary=...)`와 `submit_tasks(tasks[].title=...)`는 TaskBoard 카드 표면이라는 전제로, 사람이 읽기 쉬운 짧은 문구로 작성합니다.
+- 나쁜 예: `2026-05-15 09:00 JST 정기 태스크 확인. 과거 non-miyu delegation failure 방지 방침에 따라...`
+- 좋은 예: `아침 업무 계획 스크립트 실행이 위임 대기 중. kanna가 miyu 상태 확인 후 실행을 요청`
+
 ## 형식
 
 ```markdown

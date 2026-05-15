@@ -17,6 +17,17 @@ AnimaWorks のタスク管理は `task_queue.jsonl` + `current_state.md` + `dele
 | `state/task_results/` | タスク実行結果 | システム自動 |
 | **`shared/task-board.md`** | **全タスク俯瞰** | **人間（オーナー）** |
 
+## Human 向け文面ルール
+
+TaskBoard に表示される `summary` / `title` / タスク名は、人間がそのカードだけを切り取って読んでも意味が分かる文面にする（MUST）。
+
+- 1行目は案件名と現在状態をまとめる。内部ログ、委任経路、長い原文の貼り付けで始めない。
+- 「誰が・何を・なぜ止まっているか／次に何をするか」を短く含める。
+- `message id`、内部 task_id、長いファイルパス、ログ抜粋、`heartbeat` の詳細、文字化けした原文はカード表面に出さない。必要なら `instruction` / `description` / `context` 側に入れる。
+- `delegate_task(summary=...)` と `submit_tasks(tasks[].title=...)` は TaskBoard のカード表面になる前提で、人間向けの短い日本語にする。
+- 悪い例: `2026-05-15 09:00 JST定時タスクを確認。過去のnon-miyu delegation failure防止方針に従い...`
+- 良い例: `朝の業務計画スクリプト実行が委任待ち。kanna が miyu の状態確認後に実行依頼する`
+
 ## フォーマット
 
 ```markdown

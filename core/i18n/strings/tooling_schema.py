@@ -63,8 +63,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Task source (human=instruction from human, anima=inter-Anima delegation)",
     },
     "schema.backlog_task.summary": {
-        "ja": "タスクの1行要約",
-        "en": "One-line task summary",
+        "ja": "TaskBoardに表示される人間向けの1行要約。カードだけを読んでも案件名・状態・次の一手が分かる文面にする",
+        "en": "Human-facing one-line summary shown on TaskBoard. It should make the work item, state, and next action clear when read alone",
     },
     "schema.call_human.body": {
         "ja": "通知の本文（詳細な報告内容）",
@@ -174,6 +174,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "instructionは完全に自己完結させること。"
             "禁止: ❌「先ほどの報告内容をベースに」❌「前回の続き」❌「さっきのDMの内容」等の曖昧な参照（実行者はその情報を持たない）。"
             "必須: ✅具体的データ・本文を直接instructionに埋め込む ✅ファイルパス・完了条件を明記。"
+            "summaryはTaskBoardに表示されるため、人間がカードだけを読んでも意味が分かる短い文面にする（MUST）。"
             "詳細は common_knowledge/operations/task-delegation-guide.md を参照。"
         ),
         "en": (
@@ -186,6 +187,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "FORBIDDEN: ❌ 'based on the report you sent earlier' ❌ 'continue from last time' ❌ 'the content from the DM' "
             "— the executor has NONE of that context. "
             "REQUIRED: ✅ Embed concrete data/content directly in the instruction ✅ Specify file paths and completion criteria. "
+            "summary is shown on TaskBoard, so it MUST be a short human-readable label that makes sense when the card is read alone. "
             "Details: common_knowledge/operations/task-delegation-guide.md."
         ),
         "ko": (
@@ -197,6 +199,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "instruction은 완전히 자기 완결적이어야 한다. "
             "금지: ❌「앞서 보고한 내용을 기반으로」❌「지난번 계속」❌「아까 DM으로 보낸 내용」등 모호한 참조(실행자는 그 정보가 없음). "
             "필수: ✅구체적 데이터・본문을 직접 instruction에 포함 ✅파일 경로・완료 조건을 명기. "
+            "summary는 TaskBoard에 표시되므로 카드만 읽어도 의미를 알 수 있는 짧은 사람용 문구로 작성해야 한다(MUST). "
             "상세: common_knowledge/operations/task-delegation-guide.md 참조."
         ),
     },
@@ -206,6 +209,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "部下にタスクを委任する場合は delegate_task を使ってください。"
             "複数タスクをDAGとして並列/直列実行する。parallel=trueのタスクは同時実行。depends_on指定タスクは依存完了後に実行。"
             "TaskExecはあなたの会話履歴を持たない。descriptionの書き方は common_knowledge/operations/task-delegation-guide.md を参照（MUST）。"
+            "tasks[].titleはTaskBoardに表示されるため、人間がカードだけを読んでも意味が分かる短い文面にする（MUST）。"
         ),
         "en": (
             "IMPORTANT: Tasks submitted here are executed by YOUR OWN TaskExec — they are NOT sent to subordinates. "
@@ -214,7 +218,13 @@ STRINGS: dict[str, dict[str, str]] = {
             "Independent tasks with parallel=true run concurrently. "
             "Tasks with depends_on wait for dependencies to complete."
             " TaskExec has NO access to your conversation history. For description writing guidelines, read common_knowledge/operations/task-delegation-guide.md (MUST)."
+            " tasks[].title is shown on TaskBoard, so it MUST be a short human-readable label that makes sense when the card is read alone."
         ),
+    },
+    "schema.submit_tasks.title": {
+        "ja": "TaskBoardに表示される人間向けタイトル。案件名・状態・次の一手が単体で分かる短い文にする",
+        "en": "Human-facing title shown on TaskBoard; make the work item, state, and next action clear when read alone",
+        "ko": "TaskBoard에 표시되는 사람용 제목. 카드만 읽어도 항목, 상태, 다음 행동을 알 수 있게 짧게 작성",
     },
     "schema.delegate_task.instruction": {
         "ja": (
@@ -238,8 +248,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Direct subordinate Anima name to delegate to",
     },
     "schema.delegate_task.summary": {
-        "ja": "タスクの1行要約",
-        "en": "One-line task summary",
+        "ja": "TaskBoardに表示される人間向けの1行要約。案件名・状態・次の一手が単体で分かる短い文にする",
+        "en": "Human-facing one-line summary shown on TaskBoard; make the work item, state, and next action clear when read alone",
+        "ko": "TaskBoard에 표시되는 사람용 한 줄 요약. 카드만 읽어도 항목, 상태, 다음 행동을 알 수 있게 짧게 작성",
     },
     "schema.delegate_task.workspace": {
         "ja": "ワークスペースエイリアスまたはalias#hash。部下がこのディレクトリで作業する",

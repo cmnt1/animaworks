@@ -17,6 +17,17 @@ everything at a glance**. `shared/task-board.md` solves this as a human-facing d
 | `state/task_results/` | Task execution results | System auto |
 | **`shared/task-board.md`** | **All-task overview** | **Human (owner)** |
 
+## Human-Facing Copy Rules
+
+Any `summary`, `title`, or task name shown on the Task Board MUST make sense to a human when the card is read in isolation.
+
+- Start with the work item and its current state. Do not start with internal logs, delegation chains, or pasted raw instructions.
+- Briefly include who owns it, what is blocked or waiting, and the next action when relevant.
+- Keep message IDs, internal task IDs, long file paths, log excerpts, heartbeat details, and mojibake/raw text out of the card surface. Put those in `instruction`, `description`, or `context` when needed.
+- Treat `delegate_task(summary=...)` and `submit_tasks(tasks[].title=...)` as the Task Board card surface; write them as short human-readable labels.
+- Bad: `2026-05-15 09:00 JST task confirmed. Following prior non-miyu delegation failure prevention policy...`
+- Good: `Morning planning script is waiting on delegation. kanna will ask miyu after checking her current state`
+
 ## Format
 
 ```markdown

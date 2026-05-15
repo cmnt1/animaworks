@@ -44,6 +44,7 @@ TaskExec はサブエージェントとして動作する。あなたと同じ i
 - **ファイルパスと行番号は必ず記載する**: 実行者は記憶検索ができるが、具体的な場所を指定した方が確実に正しいファイルに到達できる
 - **現在の作業状態を含める**: current_state.md の関連部分を `context` フィールドにコピーすること（自動注入されるが、明示的に補足すると精度が上がる）
 - **「なぜやるか」を明記する**: 背景と目的がないと実行者が判断を誤る
+- **TaskBoard の表面文は Human 向けにする**: `submit_tasks.tasks[].title` と `delegate_task.summary` は人間がカードだけを見ても意味が分かる短い文にする。内部ログ、task_id、message id、長い原文、委任経路の説明は `description` / `instruction` に入れる。
 
 ### description に含めるべき情報
 
