@@ -187,6 +187,16 @@ def create_internal_router() -> APIRouter:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_native_executor, fn, *args)
 
+    def _vector_write_failed(operation: str, collection: str) -> JSONResponse:
+        logger.warning("Vector %s failed for collection '%s'", operation, collection)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": f"Vector {operation} failed",
+                "collection": collection,
+            },
+        )
+
     @router.post("/internal/vector/query")
     async def vector_query(body: VectorQueryRequest):
         from core.memory.rag.singleton import get_vector_store
@@ -230,7 +240,9 @@ def create_internal_router() -> APIRouter:
             )
             for d in body.documents
         ]
-        await _run_native(store.upsert, body.collection, docs)
+        ok = await _run_native(store.upsert, body.collection, docs)
+        if not ok:
+            return _vector_write_failed("upsert", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/update-metadata")
@@ -240,12 +252,14 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await _run_native(
+        ok = await _run_native(
             store.update_metadata,
             body.collection,
             body.ids,
             body.metadatas,
         )
+        if not ok:
+            return _vector_write_failed("update-metadata", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/delete-documents")
@@ -255,7 +269,9 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await _run_native(store.delete_documents, body.collection, body.ids)
+        ok = await _run_native(store.delete_documents, body.collection, body.ids)
+        if not ok:
+            return _vector_write_failed("delete-documents", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/get-by-metadata")
@@ -300,7 +316,9 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await _run_native(store.create_collection, body.collection)
+        ok = await _run_native(store.create_collection, body.collection)
+        if not ok:
+            return _vector_write_failed("create-collection", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/delete-collection")
@@ -310,7 +328,9 @@ def create_internal_router() -> APIRouter:
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await _run_native(store.delete_collection, body.collection)
+        ok = await _run_native(store.delete_collection, body.collection)
+        if not ok:
+            return _vector_write_failed("delete-collection", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/list-collections")

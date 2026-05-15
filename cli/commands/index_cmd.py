@@ -163,6 +163,7 @@ def _index_shared_collections(
     Returns total chunks indexed across all animas.
     """
     from core.memory.rag import MemoryIndexer
+    from core.memory.rag.repair import is_repair_locked
     from core.memory.rag.singleton import get_vector_store
     from core.memory.rag_search import _compute_dir_hash, _read_shared_hash, _write_shared_hash
 
@@ -182,6 +183,9 @@ def _index_shared_collections(
     total = 0
     for anima_dir in anima_dirs:
         anima_name = anima_dir.name
+        if is_repair_locked(anima_name):
+            logger.warning("  %s: skipping shared indexing because RAG repair lock is held", anima_name)
+            continue
         meta_path = anima_dir / "index_meta.json"
         vector_store = get_vector_store(anima_name)
         if vector_store is None:
@@ -220,6 +224,7 @@ def index_command(args: argparse.Namespace) -> None:
     """Execute the index command."""
     try:
         from core.memory.rag import MemoryIndexer
+        from core.memory.rag.repair import is_repair_locked
         from core.memory.rag.singleton import get_vector_store
         from core.memory.rag.store import ChromaVectorStore
     except ImportError:
@@ -259,6 +264,10 @@ def index_command(args: argparse.Namespace) -> None:
         logger.info("=" * 60)
         logger.info("Indexing anima: %s", anima_name)
         logger.info("=" * 60)
+
+        if is_repair_locked(anima_name):
+            logger.warning("Skipping %s: RAG repair lock is held", anima_name)
+            continue
 
         vector_store = get_vector_store(anima_name)
         if vector_store is None:
