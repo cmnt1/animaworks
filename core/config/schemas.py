@@ -211,6 +211,11 @@ class RAGConfig(BaseModel):
     spreading_memory_types: list[str] = ["knowledge", "episodes"]
     min_retrieval_score: float = 0.3
     skill_match_min_score: float = 0.75
+    repair_enabled: bool = True
+    repair_error_threshold: int = 2
+    repair_window_minutes: int = 5
+    repair_cooldown_minutes: int = 60
+    repair_max_consecutive_failures: int = 2
 
 
 class Neo4jConfig(BaseModel):

@@ -126,6 +126,32 @@ async def test_vector_upsert_no_store():
     assert resp.json()["detail"] == "Vector store unavailable"
 
 
+# ── test_vector_upsert_store_failure ──────────────────────────────
+
+
+async def test_vector_upsert_store_failure_returns_500():
+    """Store false return must not be hidden behind HTTP 200."""
+    mock_store = MagicMock()
+    mock_store.upsert.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/upsert",
+                json={
+                    "collection": "rin_knowledge",
+                    "documents": [
+                        {"id": "d1", "content": "c1", "embedding": [0.1, 0.2], "metadata": {"k": "v"}},
+                    ],
+                },
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector upsert failed"
+
+
 # ── test_vector_update_metadata ───────────────────────────────────
 
 
@@ -150,6 +176,27 @@ async def test_vector_update_metadata():
     mock_store.update_metadata.assert_called_once_with("col", ["id1", "id2"], [{"k1": "v1"}, {"k2": "v2"}])
 
 
+async def test_vector_update_metadata_store_failure_returns_500():
+    mock_store = MagicMock()
+    mock_store.update_metadata.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/update-metadata",
+                json={
+                    "collection": "col",
+                    "ids": ["id1"],
+                    "metadatas": [{"k1": "v1"}],
+                },
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector update-metadata failed"
+
+
 # ── test_vector_delete_documents ──────────────────────────────────
 
 
@@ -168,6 +215,23 @@ async def test_vector_delete_documents():
 
     assert resp.status_code == 200
     mock_store.delete_documents.assert_called_once_with("col", ["id1", "id2"])
+
+
+async def test_vector_delete_documents_store_failure_returns_500():
+    mock_store = MagicMock()
+    mock_store.delete_documents.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/delete-documents",
+                json={"collection": "col", "ids": ["id1"]},
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector delete-documents failed"
 
 
 # ── test_vector_get_by_metadata ───────────────────────────────────
@@ -244,6 +308,40 @@ async def test_vector_create_collection():
 
     assert resp.status_code == 200
     mock_store.create_collection.assert_called_once_with("new_col")
+
+
+async def test_vector_create_collection_store_failure_returns_500():
+    mock_store = MagicMock()
+    mock_store.create_collection.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/create-collection",
+                json={"collection": "new_col"},
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector create-collection failed"
+
+
+async def test_vector_delete_collection_store_failure_returns_500():
+    mock_store = MagicMock()
+    mock_store.delete_collection.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/delete-collection",
+                json={"collection": "old_col"},
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector delete-collection failed"
 
 
 # ── test_vector_list_collections ──────────────────────────────────

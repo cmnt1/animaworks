@@ -101,6 +101,25 @@ async def test_daily_indexing_incremental(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_daily_indexing_skips_repair_locked_anima(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=tmp_path),
+        patch("core.memory.rag.repair.is_repair_locked", return_value=True),
+        patch("core.memory.rag.singleton.get_vector_store") as mock_get_vs,
+        patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
+        patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
+        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
+    ):
+        await sup._run_daily_indexing()
+
+    mock_get_vs.assert_not_called()
+    mock_indexer_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_daily_indexing_writes_marker(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     _create_anima_dir(sup.animas_dir, "sakura")

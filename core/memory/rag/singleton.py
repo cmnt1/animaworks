@@ -90,7 +90,9 @@ def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
                         persist_dir = get_anima_vectordb_dir(anima_name)
                     else:
                         persist_dir = None  # ChromaVectorStore defaults to ~/.animaworks/vectordb
-                    _vector_stores[anima_name] = ChromaVectorStore(persist_dir=persist_dir)
+                    store = ChromaVectorStore(persist_dir=persist_dir)
+                    setattr(store, "anima_name", anima_name)
+                    _vector_stores[anima_name] = store
                 except Exception as exc:
                     _init_failed = True
                     import sys
@@ -215,6 +217,28 @@ def native_ops_lock() -> threading.Lock:
     Used by internal API endpoints to serialize ChromaDB Rust calls.
     """
     return _native_ops_lock
+
+
+def reset_vector_store(anima_name: str | None = None) -> None:
+    """Drop cached vector-store clients for runtime repair.
+
+    ``anima_name`` targets one per-anima store.  ``None`` resets the
+    legacy/shared store keyed by ``None``.  Any cached HTTP client is
+    closed when possible so callers can reconnect after server-side
+    repair.
+    """
+    global _init_failed
+
+    with _lock:
+        for cache in (_vector_stores, _http_stores):
+            store = cache.pop(anima_name, None)
+            close = getattr(store, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.debug("Failed to close vector store for %s", anima_name, exc_info=True)
+        _init_failed = False
 
 
 def get_embedding_dimension() -> int:

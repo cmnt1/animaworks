@@ -145,12 +145,13 @@ class ChromaVectorStore(VectorStore):
     Stores embeddings in SQLite at ~/.animaworks/vectordb/chroma.sqlite3
     """
 
-    def __init__(self, persist_dir: Path | None = None) -> None:
+    def __init__(self, persist_dir: Path | None = None, anima_name: str | None = None) -> None:
         """Initialize ChromaDB client.
 
         Args:
             persist_dir: Directory for ChromaDB persistence
                         (defaults to ~/.animaworks/vectordb)
+            anima_name: Owner anima for repair signal attribution.
         """
         import chromadb
 
@@ -171,6 +172,21 @@ class ChromaVectorStore(VectorStore):
         logger.debug("Initializing ChromaDB at %s", persist_dir)
         self.client = chromadb.PersistentClient(path=str(persist_dir))
         self.persist_dir = persist_dir
+        self.anima_name = anima_name
+
+    def _report_chroma_error(self, collection: str, error: Exception, source: str) -> None:
+        """Record Chroma errors that may indicate persistent-index corruption."""
+        try:
+            from core.memory.rag.repair import record_chroma_error
+
+            record_chroma_error(
+                anima_name=self.anima_name,
+                collection=collection,
+                error=error,
+                source=source,
+            )
+        except Exception:
+            logger.debug("Failed to record RAG repair signal", exc_info=True)
 
     def create_collection(self, name: str) -> bool:
         """Create a new collection or get existing one."""
@@ -182,8 +198,12 @@ class ChromaVectorStore(VectorStore):
             logger.info("Created collection '%s' (space=cosine)", name)
             return True
         except Exception as e:
-            logger.debug("Collection '%s' already exists: %s", name, e)
-            return True  # already-exists is not a failure
+            if "already exists" in str(e).lower():
+                logger.debug("Collection '%s' already exists: %s", name, e)
+                return True
+            self._report_chroma_error(name, e, "create_collection")
+            logger.warning("Failed to create collection '%s': %s", name, e)
+            return False
 
     def delete_collection(self, name: str) -> bool:
         """Delete a collection."""
@@ -192,13 +212,18 @@ class ChromaVectorStore(VectorStore):
             logger.info("Deleted collection '%s'", name)
             return True
         except Exception as e:
+            self._report_chroma_error(name, e, "delete_collection")
             logger.warning("Failed to delete collection '%s': %s", name, e)
             return False
 
     def list_collections(self) -> list[str]:
         """List all collections."""
-        collections = self.client.list_collections()
-        return [c.name for c in collections]
+        try:
+            collections = self.client.list_collections()
+            return [c.name for c in collections]
+        except Exception as e:
+            self._report_chroma_error("<list_collections>", e, "list_collections")
+            raise
 
     def upsert(self, collection: str, documents: list[Document]) -> bool:
         """Upsert documents into collection."""
@@ -230,6 +255,7 @@ class ChromaVectorStore(VectorStore):
             logger.debug("Upserted %d documents to collection '%s'", len(documents), collection)
             return True
         except Exception as e:
+            self._report_chroma_error(collection, e, "upsert")
             logger.warning("Failed to upsert %d documents to '%s': %s", len(documents), collection, e)
             return False
 
@@ -244,6 +270,7 @@ class ChromaVectorStore(VectorStore):
         try:
             coll = self.client.get_collection(name=collection)
         except Exception as e:
+            self._report_chroma_error(collection, e, "get_collection")
             logger.warning("Collection '%s' not found: %s", collection, e)
             return []
 
@@ -260,6 +287,7 @@ class ChromaVectorStore(VectorStore):
                 where=cast(Any, where),
             )
         except Exception as e:
+            self._report_chroma_error(collection, e, "query")
             logger.warning("ChromaDB query failed for collection '%s': %s", collection, e)
             return []
 
@@ -297,6 +325,7 @@ class ChromaVectorStore(VectorStore):
             logger.debug("Deleted %d documents from collection '%s'", len(ids), collection)
             return True
         except Exception as e:
+            self._report_chroma_error(collection, e, "delete_documents")
             logger.warning("Failed to delete documents from '%s': %s", collection, e)
             return False
 
@@ -311,6 +340,7 @@ class ChromaVectorStore(VectorStore):
             logger.debug("Updated metadata for %d documents in '%s'", len(ids), collection)
             return True
         except Exception as e:
+            self._report_chroma_error(collection, e, "update_metadata")
             logger.warning("Failed to update metadata in '%s': %s", collection, e)
             return False
 
@@ -324,6 +354,7 @@ class ChromaVectorStore(VectorStore):
         try:
             coll = self.client.get_collection(name=collection)
         except Exception as e:
+            self._report_chroma_error(collection, e, "get_by_metadata_collection")
             logger.debug("Collection '%s' not found for get_by_metadata: %s", collection, e)
             return []
 
@@ -362,6 +393,7 @@ class ChromaVectorStore(VectorStore):
         try:
             coll = self.client.get_collection(name=collection)
         except Exception as e:
+            self._report_chroma_error(collection, e, "get_by_ids_collection")
             logger.debug("Collection '%s' not found for get_by_ids: %s", collection, e)
             return []
         data = coll.get(ids=ids, include=["documents", "metadatas"])
