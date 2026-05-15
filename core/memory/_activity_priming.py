@@ -83,6 +83,8 @@ class PrimingMixin:
                 return reflection_line
         if entry.type == "tool_result":
             return PrimingMixin._format_tool_result_entry(entry, ts)
+        if entry.type == "human_notify":
+            return PrimingMixin._format_human_notify_entry(entry, ts)
 
         text = entry.summary or entry.content
 
@@ -136,6 +138,29 @@ class PrimingMixin:
 
         ctx = f"({', '.join(context_parts)})" if context_parts else ""
         return f"[{ts}] {icon} {entry.type}{ctx}: {text}"
+
+    @staticmethod
+    def _format_human_notify_entry(entry: ActivityEntry, ts: str) -> str:
+        """Format human notifications as pointers, not duplicated bodies."""
+        subject = str(entry.meta.get("subject") or entry.summary or "").strip()
+        if not subject:
+            for line in (entry.content or "").splitlines():
+                candidate = line.strip().lstrip("#").strip()
+                if candidate:
+                    subject = candidate
+                    break
+        if not subject:
+            subject = "human notification"
+        if len(subject) > 120:
+            subject = subject[:117] + "..."
+
+        date_str = entry.ts[:10] if len(entry.ts) >= 10 else "unknown"
+        pointer = f"activity_log/{date_str}.jsonl"
+        if entry._line_number > 0:
+            pointer += f"#L{entry._line_number}"
+
+        via = f"(via:{entry.via})" if entry.via else ""
+        return f"[{ts}] NTFY human_notify{via}: {subject} -> {pointer}"
 
     @staticmethod
     def _format_tool_result_entry(entry: ActivityEntry, ts: str) -> str:
