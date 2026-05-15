@@ -103,6 +103,66 @@ class RequestLoggingMiddleware:
                 )
 
 
+def _normalize_base_path(base_path: str | None) -> str:
+    """Return a canonical URL base path such as "/app" or ""."""
+    if not base_path or not isinstance(base_path, str):
+        return ""
+    normalized = "/" + str(base_path).strip("/")
+    return "" if normalized == "/" else normalized
+
+
+def _append_app_root_path(app_root_path: str, base_path: str) -> str:
+    """Append base_path to an application root path without duplicating it."""
+    if not app_root_path:
+        return base_path
+    normalized_root = app_root_path.rstrip("/")
+    if normalized_root == base_path or normalized_root.endswith(f"{base_path}"):
+        return normalized_root
+    return f"{normalized_root}{base_path}"
+
+
+class BasePathMiddleware:
+    """Strip configured deployment base path before routing.
+
+    This lets direct uvicorn requests to /app/... behave like a reverse proxy
+    that forwards /... to the ASGI app while preserving the effective
+    application root for downstream tooling.
+    """
+
+    def __init__(self, app: ASGIApp, base_path: str) -> None:
+        self.app = app
+        self.base_path = _normalize_base_path(base_path)
+        self._raw_prefix = self.base_path.encode("ascii") if self.base_path else b""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if not self.base_path or scope["type"] not in {"http", "websocket"}:
+            await self.app(scope, receive, send)
+            return
+
+        path = str(scope.get("path") or "")
+        if path == self.base_path:
+            stripped_path = "/"
+        elif path.startswith(f"{self.base_path}/"):
+            stripped_path = path[len(self.base_path) :] or "/"
+        else:
+            await self.app(scope, receive, send)
+            return
+
+        updated_scope = dict(scope)
+        updated_scope["path"] = stripped_path
+        app_root_path = str(scope.get("app_root_path") or scope.get("root_path") or "")
+        updated_scope["app_root_path"] = _append_app_root_path(app_root_path, self.base_path)
+
+        raw_path = scope.get("raw_path")
+        if isinstance(raw_path, bytes):
+            if raw_path == self._raw_prefix:
+                updated_scope["raw_path"] = b"/"
+            elif raw_path.startswith(self._raw_prefix + b"/"):
+                updated_scope["raw_path"] = raw_path[len(self._raw_prefix) :] or b"/"
+
+        await self.app(updated_scope, receive, send)
+
+
 async def _reconcile_assets_at_startup(animas_dir: Path) -> None:
     """Background task: generate missing anima assets after startup."""
     try:
@@ -547,6 +607,7 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
         logger.exception("Person-to-Anima migration failed")
 
     config = load_config()
+    _base_path = _normalize_base_path(getattr(config.server, "base_path", ""))
 
     # Create run directory for sockets and PID files
     from core.paths import get_data_dir
@@ -636,6 +697,11 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return response
 
+    def _base_prefixed(path: str) -> str:
+        if not _base_path:
+            return path
+        return f"{_base_path}{path}" if path.startswith("/") else f"{_base_path}/{path}"
+
     # ── Setup guard middleware ──────────────────────────────
     @app.middleware("http")
     async def setup_guard(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -653,14 +719,14 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
                 return response
             # Root redirects to setup wizard
             if path == "/":
-                return RedirectResponse("/setup/")
+                return RedirectResponse(_base_prefixed("/setup/"))
             # Block all other API/dashboard routes
             if path.startswith("/api/"):
                 return JSONResponse(
                     {"error": "Setup not yet complete"},
                     status_code=503,
                 )
-            return RedirectResponse("/setup/")
+            return RedirectResponse(_base_prefixed("/setup/"))
         else:
             # After setup: block setup API
             if path.startswith("/api/setup"):
@@ -670,7 +736,7 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
                 )
             # Redirect /setup/* to dashboard
             if path.startswith("/setup"):
-                return RedirectResponse("/")
+                return RedirectResponse(_base_prefixed("/"))
             return await call_next(request)
 
     # ── Auth guard middleware ──────────────────────────────
@@ -743,10 +809,6 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
     # ── Version stamp (changes on every server start) ────
     _app_version = str(int(time.time()))
     static_dir = Path(__file__).parent / "static"
-
-    # ── Base path for reverse-proxy sub-path deployments ───
-    # e.g. base_path="/app" when served at https://host/app/
-    _base_path = config.server.base_path.rstrip("/")
 
     # ── Serve index.html as template with version injection ─
     # Replace __AW_VERSION__ so all resource URLs (CSS, JS, import-map)
@@ -839,5 +901,8 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
 
     if static_dir.exists():
         app.mount("/", StaticFiles(directory=str(static_dir), html=False), name="static")
+
+    if _base_path:
+        app.add_middleware(BasePathMiddleware, base_path=_base_path)
 
     return app

@@ -3,10 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """E2E tests for Dashboard replay feature."""
+
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,6 +16,7 @@ from httpx import ASGITransport, AsyncClient
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REPLAY_ENGINE_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "replay-engine.js"
+REPLAY_UI_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "replay-ui.js"
 ORG_DASHBOARD_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "org-dashboard.js"
 APP_WS_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app-websocket.js"
 
@@ -172,9 +174,7 @@ class TestReplaySeekStateReconstruction:
             "ts": self.event_time_ms(evt) or 0,
         }
 
-    def seek_rebuild(
-        self, events: list[dict], virtual_time_ms: int
-    ) -> tuple[dict[str, list], dict[str, str], dict]:
+    def seek_rebuild(self, events: list[dict], virtual_time_ms: int) -> tuple[dict[str, list], dict[str, str], dict]:
         """Simulate seek: build cardStreams, cardStatus, kpiCounts."""
         card_streams: dict[str, list] = {}
         card_status: dict[str, str] = {}
@@ -193,7 +193,7 @@ class TestReplaySeekStateReconstruction:
                 entries = card_streams.get(name, [])
                 entries.append(self.event_to_stream_entry(evt))
                 if len(entries) > self.MAX_STREAM_ENTRIES:
-                    entries = entries[-self.MAX_STREAM_ENTRIES:]
+                    entries = entries[-self.MAX_STREAM_ENTRIES :]
                 card_streams[name] = entries
                 card_status[name] = status
             if ts >= hour_before:
@@ -240,9 +240,17 @@ class TestReplaySeekStateReconstruction:
         ]
         virtual_ms = int(now.timestamp() * 1000)
         streams, _, _ = self.seek_rebuild(events, virtual_ms)
-        assert len(streams["bob"]) <= self.MAX_STREAM_ENTRIES, (
-            "stream must be clipped to MAX_STREAM_ENTRIES"
-        )
+        assert len(streams["bob"]) <= self.MAX_STREAM_ENTRIES, "stream must be clipped to MAX_STREAM_ENTRIES"
+
+
+# ── Replay Narrative Smoke ──────────────────────────────────────
+
+
+class TestReplayNarrativeSmoke:
+    def test_workspace_replay_narrative_source_contract(self):
+        assert "_buildNarrativeState" in REPLAY_ENGINE_JS.read_text(encoding="utf-8")
+        assert "orgReplayNarrative" in REPLAY_UI_JS.read_text(encoding="utf-8")
+        assert "onNarrativeUpdate: _handleNarrativeUpdate" in ORG_DASHBOARD_JS.read_text(encoding="utf-8")
 
 
 # ── API Data Flow ───────────────────────────────────────────────
@@ -276,9 +284,81 @@ class TestReplayAPIDataFlow:
         assert len(data["events"]) >= 1, "Must return at least one event for replay"
         evt = data["events"][0]
         assert "ts" in evt or "timestamp" in evt, "Event must have timestamp"
-        assert "anima" in evt or "animas" in evt or "type" in evt, (
-            "Event must have anima/animas or type for replay"
-        )
+        assert "anima" in evt or "animas" in evt or "type" in evt, "Event must have anima/animas or type for replay"
+
+    async def test_replay_api_pages_all_events_beyond_logger_cap(self, tmp_path: Path) -> None:
+        """Replay mode must bypass per-Anima 500 cap and expose all pages."""
+        animas_dir = tmp_path / "animas"
+        _setup_anima(animas_dir, "alice")
+        now = datetime.now(UTC)
+        entries = [
+            {
+                "ts": (now - timedelta(seconds=1200 - i)).isoformat(),
+                "type": "message_sent",
+                "summary": f"Replay event {i}",
+                "content": "",
+                "from": "alice",
+                "to": "bob",
+            }
+            for i in range(1200)
+        ]
+        _write_activity(animas_dir, "alice", entries)
+        app = _create_app(tmp_path, anima_names=["alice"])
+        transport = ASGITransport(app=app)
+
+        seen_ids: set[str] = set()
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.get("/api/activity/recent?hours=12&limit=500&offset=0&replay=true")
+            second = await client.get("/api/activity/recent?hours=12&limit=500&offset=500&replay=true")
+            third = await client.get("/api/activity/recent?hours=12&limit=500&offset=1000&replay=true")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert third.status_code == 200
+        first_data = first.json()
+        second_data = second.json()
+        third_data = third.json()
+
+        assert first_data["total"] == 1200
+        assert len(first_data["events"]) == 500
+        assert first_data["has_more"] is True
+        assert len(second_data["events"]) == 500
+        assert second_data["has_more"] is True
+        assert len(third_data["events"]) == 200
+        assert third_data["has_more"] is False
+
+        for page in (first_data, second_data, third_data):
+            for event in page["events"]:
+                seen_ids.add(event["id"])
+        assert len(seen_ids) == 1200
+
+    async def test_non_replay_api_still_caps_limit_to_500(self, tmp_path: Path) -> None:
+        """Non-replay callers keep bounded page size even with a large limit."""
+        animas_dir = tmp_path / "animas"
+        _setup_anima(animas_dir, "alice")
+        now = datetime.now(UTC)
+        entries = [
+            {
+                "ts": (now - timedelta(seconds=600 - i)).isoformat(),
+                "type": "tool_use",
+                "summary": f"Entry {i}",
+                "content": "",
+            }
+            for i in range(600)
+        ]
+        _write_activity(animas_dir, "alice", entries)
+        app = _create_app(tmp_path, anima_names=["alice"])
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/activity/recent?hours=12&limit=9999")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["limit"] == 500
+        assert len(data["events"]) == 500
+        assert data["total"] == 500
+        assert data["has_more"] is True
 
 
 # ── Speed Behavior (JS source analysis) ──────────────────────────
@@ -292,14 +372,10 @@ class TestReplaySpeedBehavior:
         self.src = ORG_DASHBOARD_JS.read_text(encoding="utf-8")
 
     def test_duration_scaling_at_100x(self):
-        assert "replaySpeed >= 100" in self.src or "100 ? 200" in self.src, (
-            "JS must have 200ms duration at 100x speed"
-        )
+        assert "replaySpeed >= 100" in self.src or "100 ? 200" in self.src, "JS must have 200ms duration at 100x speed"
 
     def test_duration_scaling_at_50x(self):
-        assert "replaySpeed >= 50" in self.src, (
-            "JS must have speed-dependent duration (50x → 500ms)"
-        )
+        assert "replaySpeed >= 50" in self.src, "JS must have speed-dependent duration (50x → 500ms)"
 
     def test_duration_logic_exists(self):
         assert "dur" in self.src and ("replaySpeed" in self.src or "MESSAGE_LINE" in self.src), (
@@ -318,19 +394,13 @@ class TestReplayWSBufferingIntegration:
         self.src = APP_WS_JS.read_text(encoding="utf-8")
 
     def test_isReplayMode_imported(self):
-        assert "isReplayMode" in self.src, (
-            "app-websocket must import isReplayMode from org-dashboard"
-        )
+        assert "isReplayMode" in self.src, "app-websocket must import isReplayMode from org-dashboard"
 
     def test_bufferReplayEvent_used(self):
-        assert "bufferReplayEvent" in self.src, (
-            "app-websocket must use bufferReplayEvent when in replay mode"
-        )
+        assert "bufferReplayEvent" in self.src, "app-websocket must use bufferReplayEvent when in replay mode"
 
     def test_heartbeat_handler_buffers_during_replay(self):
-        assert "anima.heartbeat" in self.src, (
-            "anima.heartbeat handler must exist"
-        )
+        assert "anima.heartbeat" in self.src, "anima.heartbeat handler must exist"
         assert "isReplayMode()" in self.src and "bufferReplayEvent" in self.src, (
             "Handlers must check isReplayMode and buffer when true"
         )
@@ -347,16 +417,10 @@ class TestReplayNoRegression:
         self.src = APP_WS_JS.read_text(encoding="utf-8")
 
     def test_heartbeat_handler_exists(self):
-        assert "anima.heartbeat" in self.src, (
-            "anima.heartbeat handler must still exist"
-        )
+        assert "anima.heartbeat" in self.src, "anima.heartbeat handler must still exist"
 
     def test_cron_handler_exists(self):
-        assert "anima.cron" in self.src, (
-            "anima.cron handler must still exist"
-        )
+        assert "anima.cron" in self.src, "anima.cron handler must still exist"
 
     def test_tool_activity_handler_exists(self):
-        assert "anima.tool_activity" in self.src, (
-            "anima.tool_activity handler must still exist"
-        )
+        assert "anima.tool_activity" in self.src, "anima.tool_activity handler must still exist"

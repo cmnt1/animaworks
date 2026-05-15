@@ -591,7 +591,15 @@ class BaseExecutor(ABC):
         import json as _json
         import logging
 
-        replied_to_path = self._anima_dir / "run" / "replied_to.jsonl"
+        from core.execution.session_context import current_runtime_session
+
+        ctx = current_runtime_session()
+        if ctx is not None:
+            replied_to_path = (
+                self._anima_dir / "run" / "replied_to" / ctx.session_type / f"{ctx.thread_id or 'default'}.jsonl"
+            )
+        else:
+            replied_to_path = self._anima_dir / "run" / "replied_to" / "unknown" / "default.jsonl"
         if not replied_to_path.exists():
             return set()
         names: set[str] = set()

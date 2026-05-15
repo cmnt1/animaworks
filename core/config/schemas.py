@@ -223,18 +223,49 @@ class Neo4jConfig(BaseModel):
     database: str = "neo4j"
 
 
+class Neo4jEdgeTypeConfig(BaseModel):
+    """Configurable semantic Neo4j edge type.
+
+    Neo4j stores facts with the physical relationship type ``RELATES_TO``.
+    This model controls the semantic ``edge_type`` property exposed to the
+    extraction prompt and preserved on the relationship.
+    """
+
+    name: str = Field(..., description="Upper snake case semantic edge type name")
+    description: str = Field(..., description="Short explanation shown in extraction prompts")
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        name = value.strip().upper()
+        if not name:
+            raise ValueError("Neo4j edge type name must not be empty")
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+            raise ValueError("Neo4j edge type name must be upper snake case")
+        return name
+
+    @field_validator("description")
+    @classmethod
+    def _validate_description(cls, value: str) -> str:
+        description = value.strip()
+        if not description:
+            raise ValueError("Neo4j edge type description must not be empty")
+        return description
+
+
 class MemoryConfig(BaseModel):
     """Configuration for memory backend selection."""
 
     backend: Literal["legacy", "neo4j"] = "legacy"
     neo4j: Neo4jConfig = Neo4jConfig()
     neo4j_realtime_ingest: bool = False
+    neo4j_edge_types: list[Neo4jEdgeTypeConfig] = Field(default_factory=list)
 
 
 class PromptConfig(BaseModel):
     """Configuration for system prompt building."""
 
-    injection_size_warning_chars: int = 5000
+    injection_size_warning_chars: int = 2000
 
 
 class PrimingConfig(BaseModel):
@@ -499,6 +530,19 @@ class HousekeepingConfig(BaseModel):
     shortterm_retention_days: int = 7
     task_results_retention_days: int = 7
     pending_failed_retention_days: int = 14
+    pending_processing_stale_hours: int = Field(default=24, ge=1)
+    background_running_stale_hours: int = Field(default=48, ge=1)
+    current_state_stale_hours: int = Field(default=24, ge=1)
+    taskboard_suppressed_retention_days: int = Field(default=30, ge=1)
+
+
+class InboxConfig(BaseModel):
+    """Configuration for shared inbox stale-file hygiene."""
+
+    ttl_hours: float = Field(default=24.0, gt=0)
+    expired_retention_days: int = Field(default=7, ge=1)
+    processed_retention_days: int = Field(default=30, ge=1)
+    quarantine_retention_days: int = Field(default=30, ge=1)
 
 
 class HeartbeatConfig(BaseModel):
@@ -805,6 +849,7 @@ class AnimaWorksConfig(BaseModel):
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     voice: VoiceConfig = VoiceConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
+    inbox: InboxConfig = InboxConfig()
     machine: MachineConfig = MachineConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
     workspaces: dict[str, str] = {}  # alias → absolute path
@@ -855,12 +900,14 @@ __all__ = [
     "HousekeepingConfig",
     "HumanNotificationConfig",
     "ImageGenConfig",
+    "InboxConfig",
     "InteractionConfig",
     "LocalLLMConfig",
     "MachineConfig",
     "MediaProxyConfig",
     "MemoryConfig",
     "Neo4jConfig",
+    "Neo4jEdgeTypeConfig",
     "NotificationChannelConfig",
     "PrimingConfig",
     "PromptConfig",

@@ -11,7 +11,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 if TYPE_CHECKING:
     from core.schemas import SkillMeta
@@ -148,6 +148,59 @@ class SkillSecurityScan(BaseModel):
     scanner_version: str | None = None
 
 
+def _coerce_str_list(value: object) -> list[str]:
+    """Normalize YAML scalar/list metadata fields into a string list."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    if isinstance(value, (list, tuple, set)):
+        return [str(v).strip() for v in value if str(v).strip()]
+    return [str(value).strip()] if str(value).strip() else []
+
+
+class SkillRiskMetadata(BaseModel):
+    """Routing and approval hints for a skill.
+
+    These fields are advisory only. They help route and present skill hints,
+    but permission enforcement remains the responsibility of tool policy and
+    sandbox layers.
+    """
+
+    read_only: bool = False
+    destructive: bool = False
+    external_send: bool = False
+    handles_untrusted_data: bool = False
+    requires_human_approval: bool = False
+    open_world: bool = False
+
+
+class SkillRoutingMetadata(BaseModel):
+    """Metadata used by the shadow skill router."""
+
+    use_when: list[str] = Field(default_factory=list)
+    do_not_use_when: list[str] = Field(default_factory=list)
+    trigger_phrases: list[str] = Field(default_factory=list)
+    negative_phrases: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    routing_examples: list[str] = Field(default_factory=list)
+    risk: SkillRiskMetadata = Field(default_factory=SkillRiskMetadata)
+
+    @field_validator(
+        "use_when",
+        "do_not_use_when",
+        "trigger_phrases",
+        "negative_phrases",
+        "domains",
+        "routing_examples",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_list_fields(cls, value: object) -> list[str]:
+        return _coerce_str_list(value)
+
+
 # ── SkillMetadata ─────────────────────────────────────────
 
 
@@ -159,9 +212,18 @@ class SkillMetadata(BaseModel):
     name: str
     description: str = ""
     category: str | None = None
+    tags: list[str] = Field(default_factory=list)
     platforms: list[str] = Field(default_factory=list)
     requires_tools: list[str] = Field(default_factory=list)
     allowed_tools: list[str] = Field(default_factory=list)
+    use_when: list[str] = Field(default_factory=list)
+    do_not_use_when: list[str] = Field(default_factory=list)
+    trigger_phrases: list[str] = Field(default_factory=list)
+    negative_phrases: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    routing_examples: list[str] = Field(default_factory=list)
+    risk: SkillRiskMetadata = Field(default_factory=SkillRiskMetadata)
+    routing: SkillRoutingMetadata = Field(default_factory=SkillRoutingMetadata)
     trust_level: SkillTrustLevel = SkillTrustLevel.trusted
     source: SkillSource = Field(default_factory=SkillSource)
     version: int = 1
@@ -177,6 +239,23 @@ class SkillMetadata(BaseModel):
     path: Path | None = None
     is_common: bool = False
     is_procedure: bool = False
+
+    @field_validator(
+        "tags",
+        "platforms",
+        "requires_tools",
+        "allowed_tools",
+        "use_when",
+        "do_not_use_when",
+        "trigger_phrases",
+        "negative_phrases",
+        "domains",
+        "routing_examples",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_list_fields(cls, value: object) -> list[str]:
+        return _coerce_str_list(value)
 
     def to_legacy(self) -> SkillMeta:
         """Convert to the legacy ``SkillMeta`` dataclass used elsewhere in core.

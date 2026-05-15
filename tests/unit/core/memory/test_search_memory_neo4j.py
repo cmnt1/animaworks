@@ -10,12 +10,12 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, call, patch
 
 import pytest
 
 from core.memory.backend.base import RetrievedMemory
-
 
 # ── Fixtures ─────────────────────────────────────────────
 
@@ -47,8 +47,11 @@ def _make_handler_mixin(mock_memory, backend_class_name="Neo4jGraphBackend"):
     handler._context_window = 128_000
     handler._read_paths = set()
 
-    mock_backend = AsyncMock()
-    mock_backend.__class__.__name__ = backend_class_name
+    backend_cls = type(backend_class_name, (), {})
+    mock_backend = backend_cls()
+    mock_backend.retrieve = AsyncMock(return_value=[])
+    mock_backend.close = AsyncMock()
+    handler._create_neo4j_backend = MagicMock(return_value=mock_backend)
     type(mock_memory).memory_backend = PropertyMock(return_value=mock_backend)
 
     return handler, mock_backend
@@ -109,6 +112,54 @@ class TestNeo4jScopeMap:
         assert MemoryToolsMixin._NEO4J_SCOPE_MAP["all"] == "all"
 
 
+class TestScopePolicy:
+    def test_scope_policy_defines_neo4j_and_legacy_boundaries(self) -> None:
+        from core.memory.scope_policy import (
+            LEGACY_ONLY_SCOPES_FOR_ALL,
+            is_legacy_only_scope,
+            is_neo4j_backed_scope,
+            neo4j_scope_for,
+            title_for_legacy_scope,
+        )
+
+        assert is_neo4j_backed_scope("knowledge") is True
+        assert is_neo4j_backed_scope("all") is True
+        assert is_legacy_only_scope("common_knowledge") is True
+        assert is_legacy_only_scope("skills") is True
+        assert is_legacy_only_scope("activity_log") is True
+        assert LEGACY_ONLY_SCOPES_FOR_ALL == ("common_knowledge", "skills", "activity_log")
+        assert neo4j_scope_for("episodes") == "episode"
+        assert title_for_legacy_scope("common_knowledge") == "Common Knowledge"
+
+
+# ── TestCreateNeo4jBackend ────────────────────────────────
+
+
+class TestCreateNeo4jBackend:
+    def test_fresh_backend_uses_registry_config(self, tmp_path: Path) -> None:
+        from core.tooling.handler_memory import MemoryToolsMixin
+
+        class FakeHandler(MemoryToolsMixin):
+            pass
+
+        handler = FakeHandler.__new__(FakeHandler)
+        handler._anima_dir = str(tmp_path)
+
+        mock_cfg = MagicMock()
+        mock_cfg.memory.neo4j.uri = "bolt://configured:7687"
+        mock_cfg.memory.neo4j.user = "configured-user"
+        mock_cfg.memory.neo4j.password = "configured-password"
+        mock_cfg.memory.neo4j.database = "configured-db"
+
+        with patch("core.config.models.load_config", return_value=mock_cfg):
+            backend = handler._create_neo4j_backend()
+
+        assert backend._uri == "bolt://configured:7687"
+        assert backend._user == "configured-user"
+        assert backend._password == "configured-password"
+        assert backend._database == "configured-db"
+
+
 # ── TestSearchViaNeo4j ───────────────────────────────────
 
 
@@ -131,6 +182,8 @@ class TestSearchViaNeo4j:
         assert "Alice → Bob" in result
         assert "score=0.95" in result
         assert "graph" in result
+        handler._create_neo4j_backend.assert_called_once()
+        mock_backend.close.assert_awaited_once()
 
     def test_returns_empty_string_on_no_results(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)
@@ -138,6 +191,7 @@ class TestSearchViaNeo4j:
 
         result = handler._search_via_neo4j("nothing", "all", 0)
         assert result == ""
+        mock_backend.close.assert_awaited_once()
 
     def test_returns_none_on_failure(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)
@@ -145,6 +199,7 @@ class TestSearchViaNeo4j:
 
         result = handler._search_via_neo4j("query", "all", 0)
         assert result is None
+        mock_backend.close.assert_awaited_once()
 
     def test_offset_skips_results(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)
@@ -160,6 +215,48 @@ class TestSearchViaNeo4j:
         assert result is not None
         assert "result1" not in result
         assert "result2" in result
+
+    def test_uses_scope_mapping_in_retrieve_call(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="fact result", score=0.9, source="fact:1"),
+            ]
+        )
+
+        handler._search_via_neo4j("query", "knowledge", 0)
+
+        mock_backend.retrieve.assert_awaited_once()
+        assert mock_backend.retrieve.await_args.kwargs["scope"] == "fact"
+
+    def test_consecutive_searches_use_separate_backends(self, mock_memory) -> None:
+        handler, first_backend = _make_handler_mixin(mock_memory)
+        second_backend_cls = type("Neo4jGraphBackend", (), {})
+        second_backend = second_backend_cls()
+        second_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="second", score=0.8, source="episode:2"),
+            ]
+        )
+        second_backend.close = AsyncMock()
+
+        first_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="first", score=0.9, source="episode:1"),
+            ]
+        )
+        handler._create_neo4j_backend = MagicMock(side_effect=[first_backend, second_backend])
+
+        first_result = handler._search_via_neo4j("query", "episodes", 0)
+        second_result = handler._search_via_neo4j("query", "episodes", 0)
+
+        assert first_result is not None
+        assert "first" in first_result
+        assert second_result is not None
+        assert "second" in second_result
+        assert handler._create_neo4j_backend.call_count == 2
+        first_backend.close.assert_awaited_once()
+        second_backend.close.assert_awaited_once()
 
 
 # ── TestHandleSearchMemoryIntegration ────────────────────
@@ -184,7 +281,7 @@ class TestHandleSearchMemoryIntegration:
             {"content": "legacy result", "source_file": "log.jsonl", "score": 0.5, "search_method": "bm25"}
         ]
 
-        result = handler._handle_search_memory({"query": "test", "scope": "activity_log"})
+        handler._handle_search_memory({"query": "test", "scope": "activity_log"})
         mock_memory.search_memory_text.assert_called_once()
 
     def test_fallback_to_legacy_on_neo4j_failure(self, mock_memory) -> None:
@@ -194,7 +291,7 @@ class TestHandleSearchMemoryIntegration:
             {"content": "fallback", "source_file": "kb.md", "score": 0.5, "search_method": "vector"}
         ]
 
-        result = handler._handle_search_memory({"query": "test", "scope": "knowledge"})
+        handler._handle_search_memory({"query": "test", "scope": "knowledge"})
         mock_memory.search_memory_text.assert_called_once()
 
     def test_legacy_backend_never_routes_to_neo4j(self, mock_memory) -> None:
@@ -203,3 +300,108 @@ class TestHandleSearchMemoryIntegration:
 
         handler._handle_search_memory({"query": "test", "scope": "all"})
         mock_memory.search_memory_text.assert_called_once()
+
+    def test_all_scope_returns_graph_plus_legacy_only_sections(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="graph result", score=0.9, source="fact:1"),
+            ]
+        )
+
+        def legacy_side_effect(_query, scope="all", **_kwargs):
+            return {
+                "common_knowledge": [
+                    {
+                        "content": "common result",
+                        "source_file": "common_knowledge/policy.md",
+                        "score": 0.7,
+                        "search_method": "vector",
+                    }
+                ],
+                "skills": [
+                    {
+                        "content": "skill result",
+                        "source_file": "common_skills/skill/SKILL.md",
+                        "score": 0.6,
+                        "search_method": "vector",
+                    }
+                ],
+                "activity_log": [
+                    {
+                        "content": "activity result",
+                        "source_file": "activity/log.jsonl",
+                        "score": 0.5,
+                        "search_method": "bm25",
+                    }
+                ],
+            }.get(scope, [])
+
+        mock_memory.search_memory_text.side_effect = legacy_side_effect
+
+        result = handler._handle_search_memory({"query": "test", "scope": "all"})
+
+        assert "hybrid, all" in result
+        assert "## Graph Memory" in result
+        assert "graph result" in result
+        assert "## Common Knowledge" in result
+        assert "common result" in result
+        assert "## Skills" in result
+        assert "skill result" in result
+        assert "## Activity Log" in result
+        assert "activity result" in result
+        assert mock_backend.retrieve.await_args.kwargs["scope"] == "all"
+        mock_memory.search_memory_text.assert_has_calls(
+            [
+                call("test", scope="common_knowledge", offset=0, context_window=128_000),
+                call("test", scope="skills", offset=0, context_window=128_000),
+                call("test", scope="activity_log", offset=0, context_window=128_000),
+            ]
+        )
+
+    def test_all_scope_offset_applies_after_section_assembly(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(content="graph result", score=0.9, source="fact:1"),
+            ]
+        )
+
+        def legacy_side_effect(_query, scope="all", **_kwargs):
+            if scope != "common_knowledge":
+                return []
+            return [
+                {
+                    "content": "common result",
+                    "source_file": "common_knowledge/policy.md",
+                    "score": 0.7,
+                    "search_method": "vector",
+                }
+            ]
+
+        mock_memory.search_memory_text.side_effect = legacy_side_effect
+
+        result = handler._handle_search_memory({"query": "test", "scope": "all", "offset": 1})
+
+        assert "graph result" not in result
+        assert "## Graph Memory" not in result
+        assert "## Common Knowledge" in result
+        assert "common result" in result
+        assert "[2]" in result
+
+    def test_all_scope_falls_back_to_legacy_all_on_neo4j_failure(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(side_effect=RuntimeError("crash"))
+        mock_memory.search_memory_text.return_value = [
+            {"content": "fallback", "source_file": "kb.md", "score": 0.5, "search_method": "vector"}
+        ]
+
+        result = handler._handle_search_memory({"query": "test", "scope": "all"})
+
+        assert "fallback" in result
+        mock_memory.search_memory_text.assert_called_once_with(
+            "test",
+            scope="all",
+            offset=0,
+            context_window=128_000,
+        )

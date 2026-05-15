@@ -10,11 +10,14 @@ Extracted from ``core.anima.DigitalAnima`` as a Mixin.  All ``self``
 references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
+import asyncio
 import json
 import logging
 import re
 import time
 from collections.abc import AsyncGenerator
+from contextlib import nullcontext
+from hashlib import sha256
 from typing import Any
 
 from core.exceptions import (
@@ -24,6 +27,7 @@ from core.exceptions import (
     ToolError,
 )
 from core.execution._sanitize import ORIGIN_HUMAN, ORIGIN_SYSTEM
+from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
 from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 from core.memory.conversation import ConversationMemory, ToolRecord
@@ -34,6 +38,38 @@ from core.schemas import EXTERNAL_PLATFORM_SOURCES, VALID_EMOTIONS, CycleResult,
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.anima")
+
+
+def _agent_session_context(owner: Any):
+    lock = getattr(owner, "_agent_session_lock", None)
+    if isinstance(lock, asyncio.Lock):
+        return lock
+    return nullcontext()
+
+
+def _chat_cycle_isolated(
+    cycle_result: CycleResult | dict[str, Any],
+    *,
+    expected_trigger: str,
+    thread_id: str,
+) -> tuple[bool, dict[str, Any]]:
+    data = cycle_result.model_dump(mode="json") if isinstance(cycle_result, CycleResult) else cycle_result
+    actual_trigger = str(data.get("trigger") or "")
+    actual_session_type = str(data.get("session_type") or resolve_runtime_session_type(actual_trigger))
+    actual_thread_id = str(data.get("thread_id") or thread_id)
+    meta = {
+        "expected_trigger": expected_trigger,
+        "actual_trigger": actual_trigger,
+        "actual_session_type": actual_session_type,
+        "expected_thread_id": thread_id,
+        "actual_thread_id": actual_thread_id,
+        "request_id": str(data.get("request_id") or ""),
+        "tool_session_id": str(data.get("tool_session_id") or ""),
+    }
+    return (
+        actual_trigger == expected_trigger and actual_session_type == "chat" and actual_thread_id == thread_id,
+        meta,
+    )
 
 
 class MessagingMixin:
@@ -202,7 +238,6 @@ class MessagingMixin:
                 self._status_slots["conversation:default"] = "bootstrapping"
                 self._task_slots["conversation:default"] = "Initial bootstrap"
                 _session_token = self.agent._tool_handler.set_active_session_type("chat")
-                self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
 
                 conv_memory = ConversationMemory(self.anima_dir, self.model_config)
                 prompt = conv_memory.build_chat_prompt(
@@ -211,7 +246,11 @@ class MessagingMixin:
                 )
 
                 try:
-                    result = await self.agent.run_cycle(prompt, trigger="bootstrap")
+                    async with _agent_session_context(self):
+                        self._get_interrupt_event("default").clear()
+                        self.agent.set_interrupt_event(self._get_interrupt_event("default"))
+                        self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
+                        result = await self.agent.run_cycle(prompt, trigger="bootstrap")
                     self._last_activity = now_local()
 
                     # Safety net: if bootstrap.md still exists after the cycle,
@@ -283,7 +322,6 @@ class MessagingMixin:
                 self._mark_busy_start()
                 # Clear interrupt event for OUR session (after lock acquired)
                 self._get_interrupt_event(thread_id).clear()
-                self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
                 logger.info(
                     "[%s] process_message START (lock acquired) from=%s",
                     self.name,
@@ -298,7 +336,6 @@ class MessagingMixin:
                     from core.tooling.handler_base import meeting_mode
 
                     _meeting_token = meeting_mode.set(True)
-                self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
@@ -362,16 +399,19 @@ class MessagingMixin:
 
                 try:
                     external_chat_recipient = self._resolve_chat_external_recipient(from_person, source)
-                    result = await self.agent.run_cycle(
-                        prompt,
-                        trigger=f"message:{from_person}",
-                        message_intent=intent,
-                        images=images,
-                        prior_messages=prior_messages,
-                        max_turns_override=self._front_max_turns_override(),
-                        thread_id=thread_id,
-                        model_config_override=base_model_config,
-                    )
+                    async with _agent_session_context(self):
+                        self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
+                        self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
+                        result = await self.agent.run_cycle(
+                            prompt,
+                            trigger=f"message:{from_person}",
+                            message_intent=intent,
+                            images=images,
+                            prior_messages=prior_messages,
+                            max_turns_override=self._front_max_turns_override(),
+                            thread_id=thread_id,
+                            model_config_override=base_model_config,
+                        )
                     self._last_activity = now_local()
                     result.summary = normalize_user_facing_response_text(result.summary)
 
@@ -386,7 +426,33 @@ class MessagingMixin:
                     response_artifacts = extract_image_artifacts_from_tool_records(result.tool_call_records)
                     remaining = max(0, 5 - len(response_artifacts))
                     response_artifacts.extend(local_artifacts[:remaining])
+                    guard_ok, guard_meta = _chat_cycle_isolated(
+                        result,
+                        expected_trigger=f"message:{from_person}",
+                        thread_id=thread_id,
+                    )
+                    if not guard_ok:
+                        logger.error(
+                            "[%s] session guard blocked non-chat cycle from conversation storage: %s",
+                            self.name,
+                            guard_meta,
+                        )
+                        self._activity.log(
+                            "session_guard_violation",
+                            summary="Blocked non-chat cycle result from chat conversation storage",
+                            channel="chat",
+                            meta=guard_meta,
+                            safe=True,
+                        )
+                        result.summary = ""
+                        if include_cycle_result:
+                            return result.model_dump(mode="json")
+                        return ""
                     resp_meta: dict[str, Any] = {"thread_id": thread_id}
+                    for _field in ("session_type", "request_id", "tool_session_id"):
+                        _value = getattr(result, _field, "")
+                        if _value:
+                            resp_meta[_field] = _value
                     if external_chat_recipient is not None:
                         display_summary, delivery_meta = self._send_chat_reply_via_resolved(
                             external_chat_recipient,
@@ -426,7 +492,13 @@ class MessagingMixin:
                         meta=resp_meta,
                     )
 
-                    self._maybe_neo4j_realtime_ingest(from_person, display_summary)
+                    self._maybe_neo4j_realtime_ingest(
+                        from_person,
+                        content,
+                        display_summary,
+                        thread_id=thread_id,
+                        request_id=resp_meta.get("request_id"),
+                    )
 
                     logger.info(
                         "[%s] process_message END duration_ms=%d",
@@ -540,7 +612,6 @@ class MessagingMixin:
                 self._mark_busy_start()
                 # Clear interrupt event for OUR session (after lock acquired)
                 self._get_interrupt_event(thread_id).clear()
-                self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
                 logger.info(
                     "[%s] process_message_stream START (lock acquired) from=%s",
                     self.name,
@@ -555,7 +626,6 @@ class MessagingMixin:
                     from core.tooling.handler_base import meeting_mode
 
                     _meeting_token = meeting_mode.set(True)
-                self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
@@ -630,8 +700,15 @@ class MessagingMixin:
 
                 partial_response = ""
                 cycle_done = False
+                agent_session_acquired = False
 
                 try:
+                    agent_session_lock = getattr(self, "_agent_session_lock", None)
+                    if isinstance(agent_session_lock, asyncio.Lock):
+                        await agent_session_lock.acquire()
+                        agent_session_acquired = True
+                    self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
+                    self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
                     async for chunk in self.agent.run_cycle_streaming(
                         prompt,
                         trigger=f"message:{from_person}",
@@ -662,7 +739,31 @@ class MessagingMixin:
                             cycle_done = True
                             self._last_activity = now_local()
                             # Record assistant response with tool records
-                            cycle_result = chunk.get("cycle_result", {})
+                            raw_cycle_result = chunk.get("cycle_result", {})
+                            cycle_result = raw_cycle_result if isinstance(raw_cycle_result, dict) else {}
+                            chunk["cycle_result"] = cycle_result
+                            guard_ok, guard_meta = _chat_cycle_isolated(
+                                cycle_result,
+                                expected_trigger=f"message:{from_person}",
+                                thread_id=thread_id,
+                            )
+                            if not guard_ok:
+                                logger.error(
+                                    "[%s] session guard blocked non-chat stream result from conversation storage: %s",
+                                    self.name,
+                                    guard_meta,
+                                )
+                                self._activity.log(
+                                    "session_guard_violation",
+                                    summary="Blocked non-chat stream result from chat conversation storage",
+                                    channel="chat",
+                                    meta=guard_meta,
+                                    safe=True,
+                                )
+                                cycle_result["summary"] = ""
+                                journal.finalize(summary="session guard violation")
+                                yield chunk
+                                continue
                             summary = normalize_user_facing_response_text(cycle_result.get("summary", ""))
 
                             # Resolve local absolute/file:// image paths → attachments/
@@ -681,6 +782,10 @@ class MessagingMixin:
                                 cycle_result["images"] = response_artifacts
                             display_summary = summary
                             resp_meta: dict[str, Any] = {"thread_id": thread_id}
+                            for _field in ("session_type", "request_id", "tool_session_id"):
+                                _value = cycle_result.get(_field)
+                                if _value:
+                                    resp_meta[_field] = _value
                             if external_chat_recipient is not None:
                                 display_summary, delivery_meta = self._send_chat_reply_via_resolved(
                                     external_chat_recipient,
@@ -720,7 +825,13 @@ class MessagingMixin:
                                 meta=resp_meta,
                             )
 
-                            self._maybe_neo4j_realtime_ingest(from_person, display_summary)
+                            self._maybe_neo4j_realtime_ingest(
+                                from_person,
+                                content,
+                                display_summary,
+                                thread_id=thread_id,
+                                request_id=resp_meta.get("request_id"),
+                            )
 
                             # Finalize streaming journal (deletes the file)
                             journal.finalize(summary=display_summary[:500])
@@ -782,6 +893,8 @@ class MessagingMixin:
                         "message": "Internal error",
                     }
                 finally:
+                    if agent_session_acquired:
+                        agent_session_lock.release()
                     if not cycle_done:
                         logger.warning(
                             "[%s] process_message_stream END (cycle_done not received)",
@@ -867,10 +980,14 @@ class MessagingMixin:
             conv_memory.save()
 
             try:
-                result = await self.agent.run_cycle(
-                    prompt,
-                    trigger="greet:user",
-                )
+                async with _agent_session_context(self):
+                    self._get_interrupt_event("default").clear()
+                    self.agent.set_interrupt_event(self._get_interrupt_event("default"))
+                    self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
+                    result = await self.agent.run_cycle(
+                        prompt,
+                        trigger="greet:user",
+                    )
                 self._last_activity = now_local()
 
                 # Extract emotion from response
@@ -921,11 +1038,23 @@ class MessagingMixin:
 
     # ── Neo4j realtime ingest ────────────────────────────────
 
-    def _maybe_neo4j_realtime_ingest(self, from_person: str, response_text: str) -> None:
+    def _maybe_neo4j_realtime_ingest(
+        self,
+        from_person: str,
+        user_text: str,
+        response_text: str,
+        *,
+        thread_id: str = "default",
+        request_id: str | None = None,
+    ) -> None:
         """Fire-and-forget Neo4j ingest of the latest conversation turn."""
         import asyncio
 
         try:
+            response_text = str(response_text or "")
+            if not response_text.strip():
+                return
+
             from core.memory.backend.registry import resolve_backend_type
 
             if resolve_backend_type(self.memory.anima_dir) != "neo4j":
@@ -937,7 +1066,23 @@ class MessagingMixin:
             if not mem_cfg or not getattr(mem_cfg, "neo4j_realtime_ingest", False):
                 return
 
-            text = f"[{from_person} → {self.name}]\n{response_text}"
+            from_person = str(from_person or "")
+            user_text = str(user_text or "")
+            thread_id = str(thread_id or "default")
+            request_key = str(request_id or "").strip()
+            if not request_key:
+                digest_input = "\n".join([from_person, thread_id, user_text, response_text])
+                request_key = sha256(digest_input.encode("utf-8")).hexdigest()
+
+            source = f"chat:{self.name}:{thread_id}"
+            metadata = {
+                "stable_key": f"{source}:{request_key}",
+                "description": f"chat turn {thread_id}",
+                "thread_id": thread_id,
+            }
+            if str(request_id or "").strip():
+                metadata["request_id"] = request_key
+            text = f"{from_person}: {user_text}\n{self.name}: {response_text}"
 
             try:
                 loop = asyncio.get_running_loop()
@@ -945,13 +1090,19 @@ class MessagingMixin:
                 loop = None
 
             if loop and loop.is_running():
-                loop.create_task(self._neo4j_ingest_turn(text))
+                loop.create_task(self._neo4j_ingest_turn(text, source=source, metadata=metadata))
             else:
-                asyncio.run(self._neo4j_ingest_turn(text))
+                asyncio.run(self._neo4j_ingest_turn(text, source=source, metadata=metadata))
         except Exception:
             logger.debug("[%s] Neo4j realtime ingest check failed", self.name, exc_info=True)
 
-    async def _neo4j_ingest_turn(self, text: str) -> None:
+    async def _neo4j_ingest_turn(
+        self,
+        text: str,
+        *,
+        source: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
         """Ingest a single conversation turn into Neo4j."""
         try:
             backend = self.memory.memory_backend
@@ -959,7 +1110,7 @@ class MessagingMixin:
             has_ingest = hasattr(backend, "ingest_text") and hasattr(backend, "_group_id")
             if cls_name == "LegacyRAGBackend" or (cls_name != "Neo4jGraphBackend" and not has_ingest):
                 return
-            await backend.ingest_text(text, source=f"chat:{self.name}")
+            await backend.ingest_text(text, source=source or f"chat:{self.name}", metadata=metadata)
             logger.debug("[%s] Realtime Neo4j ingest complete", self.name)
         except Exception:
             logger.debug("[%s] Realtime Neo4j ingest failed", self.name, exc_info=True)

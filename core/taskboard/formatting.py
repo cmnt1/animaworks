@@ -1,0 +1,159 @@
+"""Formatting helpers for TaskBoard prompt sections."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+
+from core.i18n import t
+from core.memory.task_queue import (
+    _STALE_TASK_THRESHOLD_SEC,
+    TaskQueueManager,
+    _elapsed_seconds,
+    _format_deadline_display,
+    _format_elapsed_from_sec,
+    _is_overdue,
+)
+from core.taskboard.models import BoardTask
+from core.time_utils import now_local
+
+
+def format_tasks_for_priming(
+    board_tasks: list[BoardTask],
+    budget_tokens: int = 400,
+    *,
+    animas_dir: Path | None = None,
+) -> str:
+    """Format projected tasks in the compact Channel E style."""
+    max_chars = budget_tokens * 4
+    lines: list[str] = []
+    total = 0
+    now = now_local()
+
+    active: list[BoardTask] = []
+    overdue: list[BoardTask] = []
+    failed: list[BoardTask] = []
+    delegated: list[BoardTask] = []
+
+    for task in board_tasks:
+        if task.queue_status == "failed":
+            failed.append(task)
+        elif task.queue_status == "delegated":
+            delegated.append(task)
+        elif task.deadline and _is_overdue(task.deadline, now):
+            overdue.append(task)
+        else:
+            active.append(task)
+
+    active.sort(key=lambda task: (0 if task.source == "human" else 1, task.queue_updated_at or ""))
+
+    for task in active:
+        line = _format_active_task(task, now)
+        if total + len(line) > max_chars:
+            break
+        lines.append(line)
+        total += len(line) + 1
+
+    if overdue:
+        summaries = ", ".join(_summary(task)[:20] for task in overdue)
+        aggregate_line = t("task_queue.overdue_aggregate", count=len(overdue), summaries=summaries)
+        if total + len(aggregate_line) + 1 <= max_chars:
+            lines.append(aggregate_line)
+            total += len(aggregate_line) + 1
+
+    if failed and total < max_chars:
+        total = _append_failed_section(lines, failed, total, max_chars)
+
+    if delegated and total < max_chars:
+        delegated_section = _format_delegated_tasks(delegated, now, animas_dir, max_chars - total)
+        if delegated_section:
+            lines.append(delegated_section)
+
+    return "\n".join(lines)
+
+
+def _format_active_task(task: BoardTask, now: datetime) -> str:
+    priority = "🔴 HIGH" if task.source == "human" else "⚪"
+    status_icon = "🔄" if task.queue_status == "in_progress" else "📋"
+    assignee = task.assignee or task.anima_name
+    line = f"- {status_icon} {priority} [{task.task_id[:8]}] {_summary(task)} (assignee: {assignee})"
+    if task.queue_status == "in_progress" and task.meta.get("executor") == "taskexec":
+        line += f" {t('task_queue.auto_taskexec')}"
+    elif task.queue_status and task.queue_status not in {"pending", "in_progress"}:
+        line += f" status: {task.queue_status}"
+    if task.relay_chain:
+        line += f" chain: {' → '.join(task.relay_chain)}"
+
+    elapsed_sec = _elapsed_seconds(task.queue_updated_at or "", now)
+    elapsed_str = _format_elapsed_from_sec(elapsed_sec)
+    if elapsed_str:
+        line += f" {elapsed_str}"
+    if elapsed_sec is not None and elapsed_sec >= _STALE_TASK_THRESHOLD_SEC:
+        line += " ⚠️ STALE"
+
+    if task.deadline:
+        deadline_str = _format_deadline_display(task.deadline, now)
+        if deadline_str:
+            line += f" {deadline_str}"
+    return line
+
+
+def _append_failed_section(lines: list[str], failed: list[BoardTask], total: int, max_chars: int) -> int:
+    header = t("task_queue.failed_section_header")
+    if total + len(header) <= max_chars:
+        lines.append(header)
+        total += len(header) + 1
+    for task in failed:
+        if total >= max_chars:
+            break
+        line = t("task_queue.failed_line", task_id=task.task_id[:8], summary=_summary(task))
+        if total + len(line) <= max_chars:
+            lines.append(line)
+            total += len(line) + 1
+    return total
+
+
+def _format_delegated_tasks(
+    delegated: list[BoardTask],
+    now: datetime,
+    animas_dir: Path | None,
+    budget_chars: int,
+) -> str:
+    lines: list[str] = []
+    total = 0
+    status_icons = {"done": "✅", "failed": "❌", "cancelled": "🚫"}
+    unknown_label = t("task_queue.delegated_unknown")
+    for task in delegated[:5]:
+        meta = task.meta or {}
+        target = meta.get("delegated_to", unknown_label)
+        child_id = meta.get("delegated_task_id", "")
+        sub_status = "?"
+        if animas_dir is not None and child_id and target != unknown_label:
+            sub_status = _resolve_subordinate_display(animas_dir / str(target), str(child_id))
+        icon = status_icons.get(sub_status, "⏳")
+        elapsed_sec = _elapsed_seconds(task.queue_updated_at or "", now)
+        elapsed_str = _format_elapsed_from_sec(elapsed_sec) or ""
+        line = f"- 📌 [{task.task_id[:8]}] {_summary(task)} → {target} ({target}: {sub_status} {icon}) {elapsed_str}"
+        if total + len(line) > budget_chars:
+            break
+        lines.append(line)
+        total += len(line) + 1
+    return "\n".join(lines)
+
+
+def _resolve_subordinate_display(target_dir: Path, child_id: str) -> str:
+    if not target_dir.is_dir():
+        return "?"
+    try:
+        sub_tqm = TaskQueueManager(target_dir)
+        sub_task = sub_tqm.get_task_by_id(child_id)
+        if sub_task:
+            return sub_task.status
+        archived = TaskQueueManager._search_archive(target_dir, child_id)
+        return archived if archived else t("task_queue.delegated_archived")
+    except Exception:
+        return "?"
+
+
+def _summary(task: BoardTask) -> str:
+    return task.summary or task.original_instruction or task.task_id

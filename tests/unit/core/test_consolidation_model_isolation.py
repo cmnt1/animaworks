@@ -139,7 +139,7 @@ class _FakeCycle(CycleMixin):
         self._executor = _FakeExecutor(self.model_config)
         self._tool_registry = []
         self._personal_tools = {}
-        self._tool_handler = SimpleNamespace(session_id="sid")
+        self._tool_handler = _FakeToolHandler()
         self.created_executor_configs: list[ModelConfig] = []
         self._progress_callback = None
 
@@ -244,6 +244,9 @@ async def test_run_cycle_streaming_override_uses_local_executor_without_mutating
 
 class _FakeToolHandler:
     session_id = "sid"
+
+    def bind_runtime_session(self, ctx):
+        self.session_id = ctx.tool_session_id
 
     def set_active_session_type(self, session_type: str):
         from core.tooling.handler import active_session_type

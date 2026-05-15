@@ -11,12 +11,13 @@ and hybrid retrieval (BM25 + Vector + BFS + cross-encoder reranking).
 """
 
 import asyncio
+import hashlib
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from core.memory.backend.base import MemoryBackend, RetrievedMemory
 
@@ -167,7 +168,8 @@ class Neo4jGraphBackend(MemoryBackend):
         async with self._ingest_semaphore:
             driver = await self._ensure_driver()
             now_str = datetime.now(tz=UTC).isoformat()
-            episode_uuid = (metadata or {}).get("episode_uuid") or str(uuid4())
+            metadata = metadata or {}
+            episode_uuid = self._resolve_episode_uuid(metadata)
 
             existing = await driver.execute_query(
                 CHECK_EPISODE_EXISTS,
@@ -183,10 +185,10 @@ class Neo4jGraphBackend(MemoryBackend):
                     "uuid": episode_uuid,
                     "content": text[:10000],
                     "source": source,
-                    "source_description": (metadata or {}).get("description", source),
+                    "source_description": metadata.get("description", source),
                     "group_id": self._group_id,
                     "created_at": now_str,
-                    "valid_at": (metadata or {}).get("valid_at", now_str),
+                    "valid_at": metadata.get("valid_at", now_str),
                 },
             )
 
@@ -204,7 +206,7 @@ class Neo4jGraphBackend(MemoryBackend):
             try:
                 extractor = self._get_extractor()
                 entities = await extractor.extract_entities(text)
-                episode_valid_at = (metadata or {}).get("valid_at")
+                episode_valid_at = metadata.get("valid_at")
                 facts = await extractor.extract_facts(text, entities, reference_time=episode_valid_at)
             except Exception:
                 logger.warning("Extraction failed, Episode-only fallback", exc_info=True)
@@ -273,6 +275,7 @@ class Neo4jGraphBackend(MemoryBackend):
                             "episode_uuid": episode_uuid,
                             "entity_uuid": resolved.uuid,
                             "uuid": str(uuid4()),
+                            "group_id": self._group_id,
                             "created_at": now_str,
                         },
                     )
@@ -298,6 +301,9 @@ class Neo4jGraphBackend(MemoryBackend):
                 f_emb = fact_embeddings[idx] if idx < len(fact_embeddings) else []
                 try:
                     fact_uuid = str(uuid4())
+                    raw_edge_type = getattr(fact, "raw_edge_type", None)
+                    if not isinstance(raw_edge_type, str) or not raw_edge_type.strip():
+                        raw_edge_type = None
                     await driver.execute_write(
                         CREATE_FACT,
                         {
@@ -307,6 +313,7 @@ class Neo4jGraphBackend(MemoryBackend):
                             "fact": fact.fact,
                             "fact_embedding": f_emb,
                             "edge_type": getattr(fact, "edge_type", "RELATES_TO") or "RELATES_TO",
+                            "raw_edge_type": raw_edge_type,
                             "group_id": self._group_id,
                             "created_at": now_str,
                             "valid_at": fact.valid_at or now_str,
@@ -359,15 +366,45 @@ class Neo4jGraphBackend(MemoryBackend):
         if not content.strip():
             return 0
 
-        source = str(path.name)
+        normalized_source_path = self._normalize_source_path(path)
+        source = f"file:{normalized_source_path}"
         sections = self._split_sections(content)
         total = 0
-        for section in sections:
+        for section_index, section in enumerate(sections):
             if section.strip():
-                total += await self.ingest_text(section, source=source)
+                source_hash = hashlib.sha256(section.encode("utf-8")).hexdigest()
+                total += await self.ingest_text(
+                    section,
+                    source=source,
+                    metadata={
+                        "stable_key": f"file:{normalized_source_path}:{section_index}:{source_hash}",
+                        "source_path": normalized_source_path,
+                        "source_hash": source_hash,
+                        "section_index": section_index,
+                    },
+                )
         return total
 
     # ── Helpers ────────────────────────────────────────────────────────────
+
+    def _stable_episode_uuid(self, stable_key: str) -> str:
+        return str(uuid5(NAMESPACE_URL, f"animaworks:neo4j:{self._group_id}:{stable_key}"))
+
+    def _resolve_episode_uuid(self, metadata: dict) -> str:
+        explicit_uuid = metadata.get("episode_uuid")
+        if explicit_uuid:
+            return str(explicit_uuid)
+        stable_key = metadata.get("stable_key")
+        if stable_key:
+            return self._stable_episode_uuid(str(stable_key))
+        return str(uuid4())
+
+    def _normalize_source_path(self, path: Path) -> str:
+        resolved_path = path.resolve()
+        try:
+            return resolved_path.relative_to(self._anima_dir.resolve()).as_posix()
+        except ValueError:
+            return resolved_path.as_posix()
 
     def _get_resolver(self):  # noqa: ANN202 – lazy import avoids circular
         """Create or return cached EntityResolver."""
@@ -413,7 +450,12 @@ class Neo4jGraphBackend(MemoryBackend):
             locale = self._resolve_locale()
             from core.memory.extraction.extractor import FactExtractor
 
-            self._extractor = FactExtractor(model=model, locale=locale, llm_extra=llm_extra)
+            self._extractor = FactExtractor(
+                model=model,
+                locale=locale,
+                llm_extra=llm_extra,
+                anima_dir=self._anima_dir,
+            )
         return self._extractor
 
     def _resolve_extraction_config(self) -> tuple[str, dict[str, str]]:
@@ -514,6 +556,11 @@ class Neo4jGraphBackend(MemoryBackend):
                         assigned = await detector.dynamic_update(entity_uuid, neighbor_uuids)
                         if assigned:
                             logger.debug("Entity %s assigned to community %s", entity_uuid, assigned)
+                        else:
+                            logger.debug(
+                                "Entity %s not assigned to an existing community; batch detection remains authoritative",
+                                entity_uuid,
+                            )
                 except Exception:
                     logger.debug("Dynamic community update failed for %s", entity_uuid, exc_info=True)
         except Exception:
@@ -563,17 +610,19 @@ class Neo4jGraphBackend(MemoryBackend):
 
         memories: list[RetrievedMemory] = []
         for r in results:
-            score = float(r.get("ce_score", r.get("rrf_score", r.get("score", 0.0))))
+            score = self._result_score(r)
             if score < min_score:
                 continue
 
-            if scope == "entity":
+            result_type = r.get("type") or scope
+
+            if result_type == "entity":
                 content = f"{r.get('name', '')}: {r.get('summary', '')}"
                 source = f"entity:{r.get('uuid', '')}"
-            elif scope == "episode":
+            elif result_type == "episode":
                 content = r.get("content", "")
                 source = f"episode:{r.get('uuid', '')}"
-            elif scope == "community":
+            elif result_type == "community":
                 content = f"[{r.get('name', '')}] {r.get('summary', '')}"
                 source = f"community:{r.get('uuid', '')}"
             else:
@@ -596,22 +645,40 @@ class Neo4jGraphBackend(MemoryBackend):
         return memories
 
     async def _retrieve_communities(self, query: str, limit: int, min_score: float) -> list[RetrievedMemory]:
-        """Retrieve communities by simple text match."""
+        """Retrieve communities by query relevance or recency fallback."""
         driver = await self._ensure_driver()
-        from core.memory.graph.queries import SEARCH_COMMUNITIES
+        from core.memory.graph.queries import FULLTEXT_SEARCH_COMMUNITIES, SEARCH_COMMUNITIES
 
-        rows = await driver.execute_query(
-            SEARCH_COMMUNITIES,
-            {"group_id": self._group_id, "limit": limit},
-        )
+        if query.strip():
+            try:
+                rows = await driver.execute_query(
+                    FULLTEXT_SEARCH_COMMUNITIES,
+                    {
+                        "query": query,
+                        "group_id": self._group_id,
+                        "top_k": max(limit * 3, limit, 1),
+                        "limit": limit,
+                    },
+                )
+            except Exception:
+                logger.debug("Community fulltext search failed", exc_info=True)
+                return []
+        else:
+            rows = await driver.execute_query(
+                SEARCH_COMMUNITIES,
+                {"group_id": self._group_id, "limit": limit},
+            )
 
         memories: list[RetrievedMemory] = []
         for r in rows:
+            score = self._result_score(r) if query.strip() else 1.0
+            if score < min_score:
+                continue
             content = f"[{r.get('name', '')}] {r.get('summary', '')}"
             memories.append(
                 RetrievedMemory(
                     content=content,
-                    score=1.0,
+                    score=score,
                     source=f"community:{r.get('uuid', '')}",
                     metadata={k: v for k, v in r.items() if isinstance(v, (str, int, float, bool))},
                     trust="medium",
@@ -641,32 +708,87 @@ class Neo4jGraphBackend(MemoryBackend):
         """Return recently valid facts from Neo4j."""
         try:
             driver = await self._ensure_driver()
-            from datetime import timedelta
 
             from core.memory.graph.queries import FIND_RECENT_FACTS
 
-            cutoff = (datetime.now(tz=UTC) - timedelta(hours=hours)).isoformat()
-            rows = await driver.execute_query(
-                FIND_RECENT_FACTS,
-                {"group_id": self._group_id, "since": cutoff, "limit": limit},
-            )
-            return [
-                RetrievedMemory(
-                    content=(
-                        f"{r.get('source_name', '')} "
-                        f"-[{r.get('edge_type', 'RELATES_TO')}]-> "
-                        f"{r.get('target_name', '')}: {r.get('fact', '')}"
-                    ),
-                    score=1.0,
-                    source=f"fact:{r.get('uuid', '')}",
-                    metadata={k: v for k, v in r.items() if isinstance(v, (str, int, float, bool))},
-                    trust="medium",
+            cutoff_dt = datetime.now(tz=UTC) - timedelta(hours=hours)
+            cutoff = cutoff_dt.isoformat()
+
+            if query.strip():
+                from core.memory.graph.search import HybridSearch
+
+                query_embeddings = await self._embed_texts([query])
+                query_embedding = query_embeddings[0] if query_embeddings else []
+                rows = await HybridSearch(driver, self._group_id).search(
+                    query,
+                    scope="fact",
+                    limit=max(limit * 3, limit),
+                    as_of_time=datetime.now(tz=UTC).isoformat(),
+                    query_embedding=query_embedding,
                 )
-                for r in rows
-            ]
+                rows = [r for r in rows if self._row_created_at_is_recent(r, cutoff_dt)][:limit]
+            else:
+                rows = await driver.execute_query(
+                    FIND_RECENT_FACTS,
+                    {"group_id": self._group_id, "since": cutoff, "limit": limit},
+                )
+
+            memories: list[RetrievedMemory] = []
+            for row in rows:
+                score = self._result_score(row) if query.strip() else 1.0
+                memories.append(self._fact_row_to_memory(row, score=score))
+            return memories
         except Exception:
             logger.debug("get_recent_facts failed", exc_info=True)
             return []
+
+    @staticmethod
+    def _result_score(row: dict) -> float:
+        for key in ("ce_score", "rrf_score", "score"):
+            value = row.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return 0.0
+
+    @staticmethod
+    def _parse_graph_datetime(value: object) -> datetime | None:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            dt = value
+        else:
+            try:
+                dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+
+    @classmethod
+    def _row_created_at_is_recent(cls, row: dict, cutoff: datetime) -> bool:
+        created_at = cls._parse_graph_datetime(row.get("created_at"))
+        if created_at is None:
+            return False
+        return created_at >= cutoff
+
+    @staticmethod
+    def _fact_row_to_memory(row: dict, *, score: float) -> RetrievedMemory:
+        return RetrievedMemory(
+            content=(
+                f"{row.get('source_name', '')} "
+                f"-[{row.get('edge_type', 'RELATES_TO')}]-> "
+                f"{row.get('target_name', '')}: {row.get('fact', '')}"
+            ),
+            score=score,
+            source=f"fact:{row.get('uuid', '')}",
+            metadata={k: v for k, v in row.items() if isinstance(v, (str, int, float, bool))},
+            trust="medium",
+        )
 
     async def delete(self, source: str) -> None:
         """Soft-delete an episode, entity, or fact by prefixed ID.

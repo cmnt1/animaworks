@@ -35,7 +35,15 @@ async def run_housekeeping(
     shortterm_retention_days: int = 7,
     task_results_retention_days: int = 7,
     pending_failed_retention_days: int = 14,
+    pending_processing_stale_hours: int = 24,
+    background_running_stale_hours: int = 48,
+    current_state_stale_hours: int = 24,
+    taskboard_suppressed_retention_days: int = 30,
     archive_superseded_retention_days: int = 7,
+    inbox_ttl_hours: float = 24.0,
+    inbox_expired_retention_days: int = 7,
+    inbox_processed_retention_days: int = 30,
+    inbox_quarantine_retention_days: int = 30,
 ) -> dict[str, Any]:
     """Run all housekeeping tasks. Returns summary of actions taken."""
     loop = asyncio.get_running_loop()
@@ -135,7 +143,24 @@ async def run_housekeeping(
         logger.exception("Housekeeping: pending_failed cleanup failed")
         results["pending_failed"] = {"error": True}
 
-    # 8. Archive/superseded rotation
+    try:
+        from core.memory.taskboard_housekeeping import cleanup_taskboard_stale_artifacts
+
+        r = await loop.run_in_executor(
+            None,
+            cleanup_taskboard_stale_artifacts,
+            data_dir,
+            pending_processing_stale_hours,
+            background_running_stale_hours,
+            current_state_stale_hours,
+            taskboard_suppressed_retention_days,
+        )
+        results["taskboard_stale"] = r
+    except Exception:
+        logger.exception("Housekeeping: taskboard stale cleanup failed")
+        results["taskboard_stale"] = {"error": True}
+
+    # 9. Archive/superseded rotation
     try:
         r = await loop.run_in_executor(
             None,
@@ -147,6 +172,22 @@ async def run_housekeeping(
     except Exception:
         logger.exception("Housekeeping: archive_superseded rotation failed")
         results["archive_superseded"] = {"error": True}
+
+    # 10. Shared inbox stale-file cleanup
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _cleanup_shared_inbox,
+            data_dir / "shared" / "inbox",
+            inbox_ttl_hours,
+            inbox_expired_retention_days,
+            inbox_processed_retention_days,
+            inbox_quarantine_retention_days,
+        )
+        results["shared_inbox"] = r
+    except Exception:
+        logger.exception("Housekeeping: shared inbox cleanup failed")
+        results["shared_inbox"] = {"error": True}
 
     return results
 
@@ -220,6 +261,54 @@ def _rotate_daemon_log(
         deleted,
     )
     return {"rotated": True, "size_mb": round(size_mb, 1), "deleted_generations": deleted}
+
+
+def _cleanup_shared_inbox(
+    inbox_root: Path,
+    ttl_hours: float,
+    expired_retention_days: int,
+    processed_retention_days: int,
+    quarantine_retention_days: int,
+) -> dict[str, Any]:
+    """Sweep stale files and rotate archives under shared/inbox/<anima>/."""
+    if not inbox_root.exists():
+        return {"skipped": True}
+
+    from core.messenger import Messenger
+
+    shared_dir = inbox_root.parent
+    totals: dict[str, Any] = {
+        "animas": 0,
+        "expired": 0,
+        "protected": 0,
+        "quarantined": 0,
+        "deleted_expired": 0,
+        "deleted_processed": 0,
+        "deleted_quarantine": 0,
+        "errors": 0,
+    }
+    per_anima: dict[str, dict[str, int]] = {}
+
+    for inbox_dir in sorted(inbox_root.iterdir()):
+        if not inbox_dir.is_dir() or inbox_dir.name.startswith("."):
+            continue
+        messenger = Messenger(shared_dir, inbox_dir.name)
+        result = messenger.sweep_expired(
+            ttl_hours=ttl_hours,
+            expired_retention_days=expired_retention_days,
+            processed_retention_days=processed_retention_days,
+            quarantine_retention_days=quarantine_retention_days,
+        )
+        totals["animas"] += 1
+        for key, value in result.items():
+            totals[key] = totals.get(key, 0) + value
+        if any(result.values()):
+            per_anima[inbox_dir.name] = result
+
+    if per_anima:
+        logger.info("Shared inbox cleanup: %s", per_anima)
+    totals["per_anima"] = per_anima
+    return totals
 
 
 def _cleanup_dm_archives(
@@ -390,34 +479,6 @@ def _cleanup_pending_failed(
     animas_dir: Path,
     retention_days: int,
 ) -> dict[str, Any]:
-    """Delete old failed task files from state/pending/failed/ and
-    state/background_tasks/pending/failed/."""
-    if not animas_dir.exists():
-        return {"skipped": True}
+    from core.memory.pending_housekeeping import cleanup_pending_failed
 
-    cutoff_ts = (now_local() - timedelta(days=retention_days)).timestamp()
-    total_deleted = 0
-
-    _FAILED_SUBDIRS = (
-        Path("state") / "pending" / "failed",
-        Path("state") / "background_tasks" / "pending" / "failed",
-    )
-
-    for anima_dir in sorted(animas_dir.iterdir()):
-        if not anima_dir.is_dir():
-            continue
-        for rel in _FAILED_SUBDIRS:
-            failed_dir = anima_dir / rel
-            if not failed_dir.is_dir():
-                continue
-            for f in failed_dir.glob("*.json"):
-                try:
-                    if f.stat().st_mtime < cutoff_ts:
-                        f.unlink()
-                        total_deleted += 1
-                except OSError:
-                    logger.warning("Failed to delete failed task: %s", f)
-
-    if total_deleted:
-        logger.info("Pending failed cleanup: deleted %d files", total_deleted)
-    return {"deleted_files": total_deleted}
+    return cleanup_pending_failed(animas_dir, retention_days)

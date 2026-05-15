@@ -10,10 +10,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from core.memory.backend.registry import resolve_backend_type
-
+from core.memory.backend.registry import get_backend, resolve_backend_type
 
 # ── resolve_backend_type ──────────────────────────────────────────────
 
@@ -136,6 +133,59 @@ class TestMemoryManagerBackendInit:
                 "neo4j",
                 tmp_path,
             )
+
+
+# ── Neo4j config propagation ─────────────────────────────────────────
+
+
+class TestNeo4jBackendConfig:
+    """Registry-level Neo4j config merge behavior."""
+
+    def test_get_backend_reads_neo4j_config(self, tmp_path: Path) -> None:
+        mock_cfg = MagicMock()
+        mock_cfg.memory.neo4j.uri = "bolt://configured:7687"
+        mock_cfg.memory.neo4j.user = "configured-user"
+        mock_cfg.memory.neo4j.password = "configured-password"
+        mock_cfg.memory.neo4j.database = "configured-db"
+
+        with patch("core.config.models.load_config", return_value=mock_cfg):
+            backend = get_backend("neo4j", tmp_path)
+
+        assert backend._uri == "bolt://configured:7687"
+        assert backend._user == "configured-user"
+        assert backend._password == "configured-password"
+        assert backend._database == "configured-db"
+
+    def test_get_backend_explicit_kwargs_override_config(self, tmp_path: Path) -> None:
+        mock_cfg = MagicMock()
+        mock_cfg.memory.neo4j.uri = "bolt://configured:7687"
+        mock_cfg.memory.neo4j.user = "configured-user"
+        mock_cfg.memory.neo4j.password = "configured-password"
+        mock_cfg.memory.neo4j.database = "configured-db"
+
+        with patch("core.config.models.load_config", return_value=mock_cfg):
+            backend = get_backend(
+                "neo4j",
+                tmp_path,
+                uri="bolt://override:7687",
+                database="override-db",
+                group_id="override-group",
+            )
+
+        assert backend._uri == "bolt://override:7687"
+        assert backend._user == "configured-user"
+        assert backend._password == "configured-password"
+        assert backend._database == "override-db"
+        assert backend._group_id == "override-group"
+
+    def test_get_backend_uses_constructor_defaults_when_config_fails(self, tmp_path: Path) -> None:
+        with patch("core.config.models.load_config", side_effect=RuntimeError("no config")):
+            backend = get_backend("neo4j", tmp_path)
+
+        assert backend._uri == "bolt://localhost:7687"
+        assert backend._user == "neo4j"
+        assert backend._password == "animaworks"
+        assert backend._database == "neo4j"
 
 
 # ── update_status_model ───────────────────────────────────────────────

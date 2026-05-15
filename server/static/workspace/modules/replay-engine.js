@@ -7,6 +7,7 @@
 
 import { createLogger } from "../../shared/logger.js";
 import { basePath } from "/shared/base-path.js";
+import { eventTimeMs, normalizeActivityEvent } from "./activity-normalize.js";
 
 const logger = createLogger("replay-engine");
 
@@ -16,37 +17,8 @@ const MAX_STREAM_ENTRIES = 4;
 const SPEED_OPTIONS = [1, 5, 10, 50, 100, 200];
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const MAX_LIVE_BUFFER = 1000;
-
-// ── Event normalization ──────────────────────────────────────────────────────
-
-/**
- * Normalize API event: animas→anima, timestamp→ts, ensure id.
- * @param {object} raw
- * @returns {object}
- */
-function normalizeEvent(raw) {
-  const evt = { ...raw };
-  if (Array.isArray(evt.animas) && !evt.anima) {
-    evt.anima = evt.animas[0] ?? null;
-  }
-  if (evt.timestamp && !evt.ts) {
-    evt.ts = evt.timestamp;
-  }
-  if (!evt.id) {
-    evt.id = evt.ts || String(Date.now() + Math.random());
-  }
-  return evt;
-}
-
-/**
- * Get timestamp in ms for an event.
- * @param {object} evt
- * @returns {number}
- */
-function eventTimeMs(evt) {
-  const ts = evt.ts || evt.timestamp;
-  return ts ? new Date(ts).getTime() : 0;
-}
+const REPLAY_PAGE_LIMIT = 5000;
+const MAX_REPLAY_EVENTS = 200000;
 
 /**
  * Get anima name(s) for an event. Returns array of anima names.
@@ -54,12 +26,67 @@ function eventTimeMs(evt) {
  * @returns {string[]}
  */
 function eventAnimas(evt) {
+  const semanticNames = semanticEventCardNames(evt);
+  if (semanticNames) return semanticNames;
   if (evt.anima) return [evt.anima];
   if (Array.isArray(evt.animas) && evt.animas.length) return evt.animas;
   return [];
 }
 
 // ── Card stream entry builder ───────────────────────────────────────────────
+
+function cleanEndpointName(value) {
+  return String(value || "").trim().replace(/^#/, "");
+}
+
+function semanticEventCardNames(evt) {
+  if (!evt?.kind) return null;
+  const out = [];
+  const actor = cleanEndpointName(evt.actor);
+  const target = cleanEndpointName(evt.target);
+  if (actor) out.push(actor);
+  if (target && !String(evt.target || "").trim().startsWith("#") && target !== actor) {
+    out.push(target);
+  }
+  return out;
+}
+
+function isVisibleReplayEvent(evt) {
+  if (!evt?.kind) return true;
+  return Number(evt.importance || 0) >= 2;
+}
+
+function semanticStreamType(evt, cardName) {
+  const kind = String(evt.kind || "").toLowerCase();
+  const actor = cleanEndpointName(evt.actor);
+  const target = cleanEndpointName(evt.target);
+  if (kind === "message" || kind === "response") {
+    return target && target === cardName && actor !== cardName ? "msg_in" : "msg_out";
+  }
+  if (kind === "delegation" || kind === "task") return "task";
+  if (kind === "channel" || kind === "external") return "board";
+  if (kind === "heartbeat") return "heartbeat";
+  if (kind === "cron") return "cron";
+  if (kind === "memory") return "memory";
+  if (kind === "error") return "error";
+  return "tool";
+}
+
+function summarizeSemanticEvent(evt) {
+  const label = String(evt.label || evt.kind || "activity").trim();
+  const summary = String(evt.summary || "").trim();
+  return (summary ? `${label}: ${summary}` : label).slice(0, 80);
+}
+
+function semanticEventToStreamEntry(evt, cardName) {
+  return {
+    id: evt.id || String(Date.now() + Math.random()),
+    type: semanticStreamType(evt, cardName),
+    text: summarizeSemanticEvent(evt),
+    status: evt.status === "failed" ? "error" : "done",
+    ts: eventTimeMs(evt) || Date.now(),
+  };
+}
 
 function mapEventType(type) {
   if (!type) return "tool";
@@ -81,7 +108,8 @@ function summarizeEvent(ev) {
   return type.slice(0, 60) || "activity";
 }
 
-function eventToStreamEntry(evt) {
+function eventToStreamEntry(evt, cardName = "") {
+  if (evt.kind) return semanticEventToStreamEntry(evt, cardName);
   return {
     id: evt.id || String(Date.now() + Math.random()),
     type: mapEventType(evt.type || evt.name),
@@ -101,6 +129,13 @@ function statusFromEventType(type) {
   return "idle";
 }
 
+function statusFromEvent(evt) {
+  if (evt?.kind) {
+    return evt.status === "started" || evt.status === "progress" ? "working" : "idle";
+  }
+  return statusFromEventType(evt?.type || evt?.name);
+}
+
 // ── ReplayEngine ─────────────────────────────────────────────────────────────
 
 /**
@@ -113,12 +148,14 @@ export class ReplayEngine {
    * @param {function(object): void} options.onSeekRebuild — ({ cardStreams, cardStatus, kpiCounts }) after seek
    * @param {function(): void} options.onComplete — when replay reaches end
    * @param {function(number, number): void} options.onTimeUpdate — (currentTimeMs, progress) per frame
+   * @param {function(object): void} options.onNarrativeUpdate — current semantic replay state
    */
-  constructor({ onEvent, onSeekRebuild, onComplete, onTimeUpdate } = {}) {
+  constructor({ onEvent, onSeekRebuild, onComplete, onTimeUpdate, onNarrativeUpdate } = {}) {
     this._onEvent = onEvent || (() => {});
     this._onSeekRebuild = onSeekRebuild || (() => {});
     this._onComplete = onComplete || (() => {});
     this._onTimeUpdate = onTimeUpdate || (() => {});
+    this._onNarrativeUpdate = onNarrativeUpdate || (() => {});
 
     this._events = [];
     this._timeRange = { start: 0, end: 0 };
@@ -131,6 +168,8 @@ export class ReplayEngine {
     this._lastWallMs = 0;
     this._liveBuffer = [];
     this._lastTimeUpdateWall = 0;
+    this._narrativeEvents = [];
+    this._suppressedCountsByGroup = new Map();
   }
 
   /**
@@ -140,12 +179,40 @@ export class ReplayEngine {
    */
   async load(hours = 12) {
     try {
-      const res = await fetch(`${basePath}/api/activity/recent?hours=${hours}&limit=50000&replay=true`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const raw = data.events || [];
-      this._events = raw.map(normalizeEvent).filter((e) => eventTimeMs(e) > 0);
+      const raw = [];
+      let offset = 0;
+
+      while (true) {
+        const params = new URLSearchParams({
+          hours: String(hours),
+          limit: String(REPLAY_PAGE_LIMIT),
+          offset: String(offset),
+          replay: "true",
+          grouped: "true",
+          semantic: "true",
+        });
+        const res = await fetch(`${basePath}/api/activity/recent?${params.toString()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        const pageEvents = data.events || [];
+        const total = Number(data.raw_total || data.total || 0);
+        if (total > MAX_REPLAY_EVENTS || raw.length + pageEvents.length > MAX_REPLAY_EVENTS) {
+          throw new Error(`Replay range too large (${total || raw.length + pageEvents.length} events). Choose a shorter range.`);
+        }
+        if (data.has_more && pageEvents.length === 0) {
+          throw new Error("Replay page stalled while has_more=true");
+        }
+
+        raw.push(...pageEvents);
+        if (!data.has_more) break;
+        offset += pageEvents.length;
+      }
+
+      this._events = raw.map(normalizeActivityEvent).filter((e) => eventTimeMs(e) > 0);
       this._events.sort((a, b) => eventTimeMs(a) - eventTimeMs(b));
+      this._narrativeEvents = this._events.filter((evt) => evt?.kind && isVisibleReplayEvent(evt));
+      this._suppressedCountsByGroup = this._buildSuppressedCountsByGroup();
 
       const now = Date.now();
       const rangeStart = now - hours * ONE_HOUR_MS;
@@ -161,10 +228,13 @@ export class ReplayEngine {
       this._cursor = 0;
       this._virtualTimeMs = this._timeRange.start;
       this._loaded = true;
+      this._emitNarrativeUpdate();
       logger.info("Replay loaded", { events: this._events.length, hours, range: this._timeRange });
     } catch (err) {
       logger.error("Replay load failed", err);
       this._events = [];
+      this._narrativeEvents = [];
+      this._suppressedCountsByGroup = new Map();
       this._timeRange = { start: 0, end: 0 };
       this._loaded = false;
       throw err;
@@ -211,13 +281,14 @@ export class ReplayEngine {
       const evt = this._events[i];
       const ts = eventTimeMs(evt);
       if (ts > this._virtualTimeMs) break;
+      if (!isVisibleReplayEvent(evt)) continue;
 
       const animas = eventAnimas(evt);
-      const status = statusFromEventType(evt.type || evt.name);
+      const status = statusFromEvent(evt);
       for (const name of animas) {
         if (!name) continue;
         let entries = cardStreams.get(name) || [];
-        entries.push(eventToStreamEntry(evt));
+        entries.push(eventToStreamEntry(evt, name));
         if (entries.length > MAX_STREAM_ENTRIES) entries = entries.slice(-MAX_STREAM_ENTRIES);
         cardStreams.set(name, entries);
         cardStatus.set(name, status);
@@ -235,6 +306,7 @@ export class ReplayEngine {
       kpiCounts: { eventsInLastHour, activeTasks: 0 },
     });
     this._onTimeUpdate(this._virtualTimeMs, this.getProgress());
+    this._emitNarrativeUpdate();
   }
 
   /**
@@ -290,6 +362,8 @@ export class ReplayEngine {
     this.pause();
     this._loaded = false;
     this._events = [];
+    this._narrativeEvents = [];
+    this._suppressedCountsByGroup = new Map();
     this._liveBuffer = [];
   }
 
@@ -313,7 +387,76 @@ export class ReplayEngine {
     return out;
   }
 
-  // ── Internal ───────────────────────────────────────────────────────────────
+  _visibleEvents() {
+    return this._narrativeEvents;
+  }
+
+  _buildSuppressedCountsByGroup() {
+    const counts = new Map();
+    for (const evt of this._events) {
+      const groupId = evt?.group_id || "";
+      if (!groupId) continue;
+      counts.set(groupId, (counts.get(groupId) || 0) + Number(evt.debug?.suppressed_count || 0));
+    }
+    return counts;
+  }
+
+  _eventIndexAtOrBefore(events, timeMs) {
+    let lo = 0;
+    let hi = events.length - 1;
+    let out = -1;
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (eventTimeMs(events[mid]) <= timeMs) {
+        out = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return out;
+  }
+
+  _firstEventIndexAtOrAfter(events, timeMs) {
+    let lo = 0;
+    let hi = events.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (eventTimeMs(events[mid]) < timeMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  _buildNarrativeState(currentTimeMs = this._virtualTimeMs) {
+    const visibleEvents = this._visibleEvents();
+    const currentIndex = this._eventIndexAtOrBefore(visibleEvents, currentTimeMs);
+    const currentEvent = currentIndex >= 0 ? visibleEvents[currentIndex] : null;
+    const activeGroupId = currentEvent?.group_id || "";
+    const suppressedCount = activeGroupId ? this._suppressedCountsByGroup.get(activeGroupId) || 0 : 0;
+
+    const hourBeforeT = currentTimeMs - ONE_HOUR_MS;
+    const hourStartIndex = this._firstEventIndexAtOrAfter(visibleEvents, hourBeforeT);
+    const visibleEventsInLastHour = currentIndex >= 0 ? Math.max(0, currentIndex - hourStartIndex + 1) : 0;
+
+    return {
+      currentTimeMs,
+      currentEvent,
+      currentIndex,
+      totalEvents: visibleEvents.length,
+      visibleEventsInLastHour,
+      activeGroupId,
+      activeGroupType: currentEvent?.group_type || "",
+      suppressedCount,
+    };
+  }
+
+  _emitNarrativeUpdate() {
+    this._onNarrativeUpdate(this._buildNarrativeState(this._virtualTimeMs));
+  }
 
   _tick() {
     if (!this._playing) return;
@@ -329,11 +472,12 @@ export class ReplayEngine {
       const evt = this._events[this._cursor];
       const ts = eventTimeMs(evt);
       if (ts > nextVirtual) break;
-      this._onEvent(evt, this._speed);
+      if (isVisibleReplayEvent(evt)) this._onEvent(evt, this._speed);
       this._cursor++;
     }
 
     this._virtualTimeMs = nextVirtual;
+    this._emitNarrativeUpdate();
     if (now - this._lastTimeUpdateWall >= 66) {
       this._lastTimeUpdateWall = now;
       this._onTimeUpdate(this._virtualTimeMs, this.getProgress());
@@ -345,6 +489,7 @@ export class ReplayEngine {
         cancelAnimationFrame(this._rafId);
         this._rafId = null;
       }
+      this._emitNarrativeUpdate();
       this._onComplete();
       return;
     }

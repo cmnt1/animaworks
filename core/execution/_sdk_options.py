@@ -151,6 +151,7 @@ class SDKOptionsMixin:
         * ``"max"`` / ``None`` (default) — subscription auth →
           ``ANTHROPIC_API_KEY=""`` (Max plan).
         """
+        from core.execution.session_context import current_runtime_session
         from core.paths import PROJECT_DIR
 
         env: dict[str, str] = {
@@ -161,6 +162,9 @@ class SDKOptionsMixin:
             "ENABLE_TOOL_SEARCH": "false",
             "CLAUDECODE": "",
         }
+        ctx = current_runtime_session()
+        if ctx is not None:
+            env.update(ctx.to_env())
 
         # Claude Code on Windows requires Git Bash; auto-detect if not in
         # the default location so the CLI subprocess doesn't crash on init.
@@ -223,14 +227,19 @@ class SDKOptionsMixin:
         The MCP server needs ANIMAWORKS_ANIMA_DIR and ANIMAWORKS_PROJECT_DIR
         to initialize ToolHandler, plus PYTHONPATH so it can import core modules.
         """
+        from core.execution.session_context import current_runtime_session
         from core.paths import PROJECT_DIR
 
-        return {
+        env = {
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PYTHONPATH": str(PROJECT_DIR),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
+        ctx = current_runtime_session()
+        if ctx is not None:
+            env.update(ctx.to_env())
+        return env
 
     def _make_pending_executor_wake_callback(self) -> Callable[[], None] | None:
         """Create a callback that writes a .wake file for PendingTaskExecutor.

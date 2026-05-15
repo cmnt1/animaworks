@@ -26,6 +26,7 @@ Upstream references:
   - https://github.com/anthropics/claude-code/issues/21971
 """
 
+import inspect
 import logging
 import sys
 from contextlib import suppress
@@ -37,59 +38,140 @@ _GRACEFUL_EXIT_TIMEOUT_SEC = 5
 _patched = False
 
 
+class _NoopAsyncContext:
+    async def __aenter__(self) -> None:
+        return None
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        return None
+
+
+async def _maybe_await(result: object) -> None:
+    if inspect.isawaitable(result):
+        await result
+
+
+def _set_attr_safely(obj: object, name: str, value: object) -> None:
+    with suppress(Exception):
+        setattr(obj, name, value)
+
+
+def _native_close_has_graceful_wait(close_fn: object) -> bool:
+    """Return True when SDK close already waits before terminating the process."""
+    try:
+        source = inspect.getsource(inspect.unwrap(close_fn))
+    except (OSError, TypeError):
+        return False
+
+    compact = "".join(source.split())
+    has_bounded_wait = "fail_after" in source
+    waits_for_process = "awaitself._process.wait()" in compact or "awaitprocess.wait()" in compact
+    terminates_after_wait = ".terminate(" in source or "terminate()" in source
+    return has_bounded_wait and waits_for_process and terminates_after_wait
+
+
 def _patch_transport_close() -> None:
     """Patch ``SubprocessCLITransport.close()`` — graceful shutdown."""
     import anyio
-    from claude_agent_sdk._internal.transport.subprocess_cli import (
-        SubprocessCLITransport,
-    )
+    from claude_agent_sdk._internal.transport import subprocess_cli as subprocess_cli_module
+
+    SubprocessCLITransport = subprocess_cli_module.SubprocessCLITransport
+    if _native_close_has_graceful_wait(SubprocessCLITransport.close):
+        logger.info("Skipping SubprocessCLITransport.close() patch; SDK close is already graceful")
+        return
+
+    active_children = getattr(subprocess_cli_module, "_ACTIVE_CHILDREN", None)
 
     async def _patched_close(self: SubprocessCLITransport) -> None:  # type: ignore[override]
-        if not self._process:
-            self._ready = False
+        process = getattr(self, "_process", None)
+        if not process:
+            _set_attr_safely(self, "_ready", False)
             return
 
         # Close stderr task group if active
-        if self._stderr_task_group:
+        stderr_task_group = getattr(self, "_stderr_task_group", None)
+        if stderr_task_group:
             with suppress(Exception):
-                self._stderr_task_group.cancel_scope.cancel()
-                await self._stderr_task_group.__aexit__(None, None, None)
-            self._stderr_task_group = None
+                cancel_scope = getattr(stderr_task_group, "cancel_scope", None)
+                cancel = getattr(cancel_scope, "cancel", None)
+                if callable(cancel):
+                    cancel()
+                aexit = getattr(stderr_task_group, "__aexit__", None)
+                if callable(aexit):
+                    await aexit(None, None, None)
+            _set_attr_safely(self, "_stderr_task_group", None)
+
+        # Newer SDKs use a single stderr task instead of a task group.
+        stderr_task = getattr(self, "_stderr_task", None)
+        if stderr_task is not None:
+            should_cancel = True
+            done = getattr(stderr_task, "done", None)
+            if callable(done):
+                with suppress(Exception):
+                    should_cancel = not done()
+            if should_cancel:
+                cancel = getattr(stderr_task, "cancel", None)
+                if callable(cancel):
+                    with suppress(Exception):
+                        cancel()
+                wait = getattr(stderr_task, "wait", None)
+                if callable(wait):
+                    with suppress(Exception):
+                        await _maybe_await(wait())
+            _set_attr_safely(self, "_stderr_task", None)
 
         # Close stdin — signals EOF to the CLI subprocess
-        async with self._write_lock:
-            self._ready = False
-            if self._stdin_stream:
+        write_lock = getattr(self, "_write_lock", None) or _NoopAsyncContext()
+        async with write_lock:
+            _set_attr_safely(self, "_ready", False)
+            stdin_stream = getattr(self, "_stdin_stream", None)
+            if stdin_stream:
                 with suppress(Exception):
-                    await self._stdin_stream.aclose()
-                self._stdin_stream = None
+                    await _maybe_await(stdin_stream.aclose())
+                _set_attr_safely(self, "_stdin_stream", None)
 
-        if self._stderr_stream:
+        stderr_stream = getattr(self, "_stderr_stream", None)
+        if stderr_stream:
             with suppress(Exception):
-                await self._stderr_stream.aclose()
-            self._stderr_stream = None
+                await _maybe_await(stderr_stream.aclose())
+            _set_attr_safely(self, "_stderr_stream", None)
 
         # Wait for the CLI to exit gracefully after stdin EOF so it can
         # flush the session JSONL.  Only send SIGTERM on timeout.
-        if self._process.returncode is None:
+        wait = getattr(process, "wait", None)
+        if getattr(process, "returncode", None) is None and callable(wait):
             try:
                 with anyio.fail_after(_GRACEFUL_EXIT_TIMEOUT_SEC):
-                    await self._process.wait()
+                    await _maybe_await(wait())
             except TimeoutError:
                 logger.debug(
                     "CLI did not exit within %ds after stdin EOF; sending SIGTERM",
                     _GRACEFUL_EXIT_TIMEOUT_SEC,
                 )
-                with suppress(ProcessLookupError):
-                    self._process.terminate()
-                with suppress(Exception):
-                    await self._process.wait()
+                terminate = getattr(process, "terminate", None)
+                if callable(terminate):
+                    with suppress(ProcessLookupError):
+                        terminate()
+                try:
+                    with anyio.fail_after(_GRACEFUL_EXIT_TIMEOUT_SEC):
+                        await _maybe_await(wait())
+                except TimeoutError:
+                    kill = getattr(process, "kill", None)
+                    if callable(kill):
+                        with suppress(ProcessLookupError):
+                            kill()
+                    with suppress(Exception):
+                        await _maybe_await(wait())
 
-        self._process = None
-        self._stdout_stream = None
-        self._stdin_stream = None
-        self._stderr_stream = None
-        self._exit_error = None
+        if active_children is not None:
+            with suppress(Exception):
+                active_children.discard(process)
+
+        _set_attr_safely(self, "_process", None)
+        _set_attr_safely(self, "_stdout_stream", None)
+        _set_attr_safely(self, "_stdin_stream", None)
+        _set_attr_safely(self, "_stderr_stream", None)
+        _set_attr_safely(self, "_exit_error", None)
 
     SubprocessCLITransport.close = _patched_close  # type: ignore[assignment]
     logger.info(
@@ -133,7 +215,12 @@ def _patch_query_stdin_lifecycle() -> None:
     """
     from claude_agent_sdk._internal.query import Query
 
-    _original = Query.wait_for_result_and_end_input
+    if not hasattr(Query, "wait_for_result_and_end_input"):
+        logger.warning(
+            "Skipping Query.wait_for_result_and_end_input() patch; "
+            "SDK Query has no wait_for_result_and_end_input method"
+        )
+        return
 
     async def _patched_wait(self: Query) -> None:  # type: ignore[override]
         # Skip stdin closure.  transport.close() will handle it during

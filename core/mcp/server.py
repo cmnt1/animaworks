@@ -32,6 +32,9 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+from core.tooling.handler_base import active_session_type
+
 # ── Logging (stderr only — stdout is MCP JSON-RPC) ──────
 logging.basicConfig(
     stream=sys.stderr,
@@ -576,7 +579,17 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
     coerced_args = _coerce_integers(dict(arguments or {}), name)
 
     try:
-        result = await asyncio.to_thread(handler.handle, name, coerced_args)
+        ctx = RuntimeSessionContext.from_env()
+        if ctx is not None:
+            handler.bind_runtime_session(ctx)
+            token = handler.set_active_session_type(ctx.session_type)
+            try:
+                with runtime_session_scope(ctx):
+                    result = await asyncio.to_thread(handler.handle, name, coerced_args)
+            finally:
+                active_session_type.reset(token)
+        else:
+            result = await asyncio.to_thread(handler.handle, name, coerced_args)
         wrapped = _wrap_result(name, result)
         return [TextContent(type="text", text=wrapped)]
     except Exception as exc:

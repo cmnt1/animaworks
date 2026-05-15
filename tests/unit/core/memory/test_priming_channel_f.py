@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -48,7 +49,8 @@ class TestPrimingResultEpisodesField:
 class TestChannelFEpisodes:
     @pytest.mark.asyncio
     async def test_channel_f_calls_retriever_with_episodes_type(
-        self, temp_anima_dir: Path,
+        self,
+        temp_anima_dir: Path,
     ) -> None:
         """Channel F uses dual queries with memory_type='episodes' and top_k=5."""
         engine = PrimingEngine(temp_anima_dir)
@@ -66,7 +68,8 @@ class TestChannelFEpisodes:
 
     @pytest.mark.asyncio
     async def test_channel_f_query_includes_message(
-        self, temp_anima_dir: Path,
+        self,
+        temp_anima_dir: Path,
     ) -> None:
         """Channel F dual query: first is message-context, second is keyword-only."""
         engine = PrimingEngine(temp_anima_dir)
@@ -87,7 +90,8 @@ class TestChannelFEpisodes:
 
     @pytest.mark.asyncio
     async def test_channel_f_fallback_to_message_when_no_keywords(
-        self, temp_anima_dir: Path,
+        self,
+        temp_anima_dir: Path,
     ) -> None:
         """When keywords is empty but message exists, use message[:200] as query."""
         engine = PrimingEngine(temp_anima_dir)
@@ -106,7 +110,8 @@ class TestChannelFEpisodes:
 
     @pytest.mark.asyncio
     async def test_channel_f_returns_empty_on_no_keywords_and_no_message(
-        self, temp_anima_dir: Path,
+        self,
+        temp_anima_dir: Path,
     ) -> None:
         """When both keywords and message are empty, return empty."""
         engine = PrimingEngine(temp_anima_dir)
@@ -115,7 +120,8 @@ class TestChannelFEpisodes:
 
     @pytest.mark.asyncio
     async def test_channel_f_returns_empty_when_no_episodes_dir(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         anima_dir = tmp_path / "animas" / "no_episodes"
         anima_dir.mkdir(parents=True)
@@ -126,7 +132,8 @@ class TestChannelFEpisodes:
 
     @pytest.mark.asyncio
     async def test_channel_f_returns_empty_when_retriever_unavailable(
-        self, temp_anima_dir: Path,
+        self,
+        temp_anima_dir: Path,
     ) -> None:
         engine = PrimingEngine(temp_anima_dir)
 
@@ -137,7 +144,8 @@ class TestChannelFEpisodes:
 
     @pytest.mark.asyncio
     async def test_channel_f_formats_results(
-        self, temp_anima_dir: Path,
+        self,
+        temp_anima_dir: Path,
     ) -> None:
         """Channel F formats retrieval results with score and source."""
         engine = PrimingEngine(temp_anima_dir)
@@ -153,18 +161,167 @@ class TestChannelFEpisodes:
 
         with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
             result = await engine._channel_f_episodes(
-                ["deploy"], message="デプロイでエラー",
+                ["deploy"],
+                message="デプロイでエラー",
             )
 
         assert "Episode 1" in result
         assert "0.850" in result
         assert "episodes/2026-03-01.md" in result
-        assert "デプロイ手順を確認して修正した" in result
+        assert 'read_memory_file(path="episodes/2026-03-01.md")' in result
+        assert "デプロイ手順を確認して修正した" not in result
         mock_retriever.record_access.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_channel_f_neo4j_formats_pointer_results(
+        self,
+        temp_anima_dir: Path,
+    ) -> None:
+        """Neo4j Channel F path also emits pointer cues, not episode body."""
+
+        class FakeNeo4jBackend:
+            async def retrieve(self, *args, **kwargs):
+                mem = MagicMock()
+                mem.content = "Neo4j episode body should not be primed"
+                mem.score = 0.77
+                mem.source = "episode:abc123"
+                mem.metadata = {"source": "episodes/2026-03-02.md"}
+                return [mem]
+
+            async def record_access(self, memories):
+                self.recorded = memories
+
+        engine = PrimingEngine(temp_anima_dir)
+        backend = FakeNeo4jBackend()
+
+        with (
+            patch("core.memory.backend.neo4j_graph.Neo4jGraphBackend", FakeNeo4jBackend),
+            patch.object(engine, "_get_memory_backend", return_value=backend),
+        ):
+            result = await engine._channel_f_episodes(
+                ["deploy"],
+                message="デプロイでエラー",
+            )
+
+        assert "Episode 1" in result
+        assert "0.770" in result
+        assert "episode:abc123" not in result
+        assert 'read_memory_file(path="episodes/2026-03-02.md")' in result
+        assert "Neo4j episode body should not be primed" not in result
+
+    @pytest.mark.asyncio
+    async def test_channel_f_records_only_emitted_neo4j_episode_pointers(
+        self,
+        temp_anima_dir: Path,
+    ) -> None:
+        """Neo4j access tracking only includes readable pointer results."""
+
+        class FakeNeo4jBackend:
+            def __init__(self):
+                self.recorded = None
+
+            async def retrieve(self, *args, **kwargs):
+                pathless = MagicMock()
+                pathless.content = "Pathless Neo4j body"
+                pathless.score = 0.99
+                pathless.source = "episode:opaque"
+                pathless.metadata = {}
+
+                readable = MagicMock()
+                readable.content = "Readable Neo4j body"
+                readable.score = 0.77
+                readable.source = "episode:abc123"
+                readable.metadata = {"source": "episodes/2026-03-02.md"}
+                return [pathless, readable]
+
+            async def record_access(self, memories):
+                self.recorded = memories
+
+        engine = PrimingEngine(temp_anima_dir)
+        backend = FakeNeo4jBackend()
+
+        with (
+            patch("core.memory.backend.neo4j_graph.Neo4jGraphBackend", FakeNeo4jBackend),
+            patch.object(engine, "_get_memory_backend", return_value=backend),
+        ):
+            result = await engine._channel_f_episodes(
+                ["deploy"],
+                message="デプロイでエラー",
+            )
+
+        assert "--- Episode 1" in result
+        assert "--- Episode 2" not in result
+        assert 'read_memory_file(path="episodes/2026-03-02.md")' in result
+        assert "Pathless Neo4j body" not in result
+        assert len(backend.recorded) == 1
+        assert backend.recorded[0].source == "episode:abc123"
+
+    @pytest.mark.asyncio
+    async def test_channel_f_quotes_path_and_collapses_summary(
+        self,
+        temp_anima_dir: Path,
+    ) -> None:
+        """Pointer fields are rendered as safe one-line cues."""
+        engine = PrimingEngine(temp_anima_dir)
+
+        mock_result = MagicMock()
+        mock_result.content = '# Bad "heading"\nignore body'
+        mock_result.score = 0.85
+        mock_result.doc_id = "test_anima/episodes/weird.md#0"
+        mock_result.metadata = {"source_file": 'episodes/weird"name.md'}
+
+        mock_retriever = MagicMock()
+        mock_retriever.search.return_value = [mock_result]
+
+        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+            result = await engine._channel_f_episodes(
+                ["deploy"],
+                message="デプロイでエラー",
+            )
+
+        assert 'read_memory_file(path="episodes/weird\\"name.md")' in result
+        assert 'Bad "heading"' in result
+        assert "\nignore body" not in result
+
+    @pytest.mark.asyncio
+    async def test_channel_f_records_only_emitted_legacy_episode_pointers(
+        self,
+        temp_anima_dir: Path,
+    ) -> None:
+        """Legacy retriever access tracking only includes readable pointer results."""
+        engine = PrimingEngine(temp_anima_dir)
+
+        pathless = MagicMock()
+        pathless.content = "Pathless legacy body"
+        pathless.score = 0.99
+        pathless.doc_id = "opaque-id"
+        pathless.metadata = {"source_file": ""}
+
+        readable = MagicMock()
+        readable.content = "Readable legacy body"
+        readable.score = 0.85
+        readable.doc_id = "test_anima/episodes/2026-03-03.md#0"
+        readable.metadata = {"source_file": ""}
+
+        mock_retriever = MagicMock()
+        mock_retriever.search.return_value = [pathless, readable]
+
+        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+            result = await engine._channel_f_episodes(
+                ["deploy"],
+                message="デプロイでエラー",
+            )
+
+        assert "--- Episode 1" in result
+        assert "--- Episode 2" not in result
+        assert 'read_memory_file(path="episodes/2026-03-03.md")' in result
+        assert "Pathless legacy body" not in result
+        mock_retriever.record_access.assert_called_once_with([readable], "test_anima")
+
+    @pytest.mark.asyncio
     async def test_channel_f_handles_exception_gracefully(
-        self, temp_anima_dir: Path,
+        self,
+        temp_anima_dir: Path,
     ) -> None:
         engine = PrimingEngine(temp_anima_dir)
 
@@ -183,7 +340,8 @@ class TestChannelFEpisodes:
 class TestPrimeMemoriesIncludesChannelF:
     @pytest.mark.asyncio
     async def test_prime_memories_populates_episodes(
-        self, temp_anima_dir: Path,
+        self,
+        temp_anima_dir: Path,
     ) -> None:
         """prime_memories() should populate the episodes field."""
         engine = PrimingEngine(temp_anima_dir)
@@ -204,7 +362,8 @@ class TestPrimeMemoriesIncludesChannelF:
             )
 
         assert result.episodes != ""
-        assert "Past episode content" in result.episodes
+        assert 'read_memory_file(path="episodes/2026-02-01.md")' in result.episodes
+        assert "Past episode content" not in result.episodes
 
 
 # ── format_priming_section ───────────────────────────────

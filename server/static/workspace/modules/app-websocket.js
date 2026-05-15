@@ -20,6 +20,14 @@ import { bustupCandidates, resolveAvatar, invalidateAvatarCache } from "../../mo
 
 const logger = createLogger("ws-app");
 
+function applyOrBufferReplay(handler, data) {
+  if (isReplayMode()) {
+    bufferReplayEvent(handler, data);
+  } else {
+    handler(data);
+  }
+}
+
 // ── Status Mapping ──────────────────────
 
 export function mapAnimaStatusToAnim(status) {
@@ -52,54 +60,48 @@ export function setupWebSocket(deps) {
   connect();
 
   wsUnsubscribers.push(onEvent("anima.status", (data) => {
-    const { animas, selectedAnima } = getState();
-    const idx = animas.findIndex((p) => p.name === data.name);
-    if (idx >= 0) {
-      animas[idx] = { ...animas[idx], ...data };
-      setState({ animas: [...animas] });
-      renderAnimaSelector(dom.animaSelector);
-    }
-    if (data.name === selectedAnima) {
-      renderStatus(dom.paneState);
-    }
-    if (getState().officeInitialized) {
-      const animState = mapAnimaStatusToAnim(data.status);
-      updateCharacterState(data.name, animState);
-      setState({ characterStates: { ...getState().characterStates, [data.name]: animState } });
-    }
-    if (lastAnimaStatus[data.name] !== data.status) {
-      lastAnimaStatus[data.name] = data.status;
-      addActivity("system", data.name, `Status: ${data.status}`);
-    }
-    if (isReplayMode()) {
-      bufferReplayEvent((d) => {
-        updateAnimaStatus(d.name, d.status || d);
-        updateAvatarExpression(d.name, (typeof d.status === "object" ? (d.status.state || d.status.status || "idle") : String(d.status || "idle")).toLowerCase());
-      }, data);
-    } else {
-      updateAnimaStatus(data.name, data.status || data);
-      if (getCurrentView() === "org") {
-        const state = typeof data.status === "object"
-          ? (data.status.state || data.status.status || "idle")
-          : String(data.status || "idle");
-        updateAvatarExpression(data.name, state.toLowerCase());
+    applyOrBufferReplay((data) => {
+      const { animas, selectedAnima } = getState();
+      const idx = animas.findIndex((p) => p.name === data.name);
+      if (idx >= 0) {
+        animas[idx] = { ...animas[idx], ...data };
+        setState({ animas: [...animas] });
+        renderAnimaSelector(dom.animaSelector);
       }
-    }
+      if (data.name === selectedAnima) {
+        renderStatus(dom.paneState);
+      }
+      if (getState().officeInitialized) {
+        const animState = mapAnimaStatusToAnim(data.status);
+        updateCharacterState(data.name, animState);
+        setState({ characterStates: { ...getState().characterStates, [data.name]: animState } });
+      }
+      if (lastAnimaStatus[data.name] !== data.status) {
+        lastAnimaStatus[data.name] = data.status;
+        addActivity("system", data.name, `Status: ${data.status}`);
+      }
+      if (getCurrentView() === "org") {
+        updateAnimaStatus(data.name, data.status || data);
+        updateAvatarExpression(data.name, (typeof data.status === "object" ? (data.status.state || data.status.status || "idle") : String(data.status || "idle")).toLowerCase());
+      }
+    }, data);
   }));
 
   // ── anima.interaction — inter-anima messaging visualization ──
   wsUnsubscribers.push(onEvent("anima.interaction", (data) => {
-    cancelBehavior(data.from_person);
-    cancelBehavior(data.to_person);
+    applyOrBufferReplay((data) => {
+      cancelBehavior(data.from_person);
+      cancelBehavior(data.to_person);
 
-    if (data.type === "message") {
-      showMessageEffect(data.from_person, data.to_person, data.summary || "");
-      if (getCurrentView() === "org" && !isReplayMode()) {
-        showMessageLine(data.from_person, data.to_person, data.summary || "");
+      if (data.type === "message") {
+        showMessageEffect(data.from_person, data.to_person, data.summary || "");
+        if (getCurrentView() === "org") {
+          showMessageLine(data.from_person, data.to_person, data.summary || "");
+        }
       }
-    }
+    }, data);
 
-    addTimelineEvent({
+    applyOrBufferReplay((data) => addTimelineEvent({
       id: Date.now().toString(),
       type: "message",
       anima: `${data.from_person} → ${data.to_person}`,
@@ -111,49 +113,47 @@ export function setupWebSocket(deps) {
         from_person: data.from_person,
         to_person: data.to_person,
       },
-    });
+    }), data);
   }));
 
   wsUnsubscribers.push(onEvent("anima.heartbeat", (data) => {
-    addActivity("heartbeat", data.name, data.summary || "heartbeat completed");
-    const { selectedAnima } = getState();
-    if (data.name === selectedAnima) {
-      renderStatus(dom.paneState);
-    }
-    addTimelineEvent({
+    applyOrBufferReplay((d) => addActivity("heartbeat", d.name, d.summary || "heartbeat completed"), data);
+    applyOrBufferReplay((d) => {
+      const { selectedAnima } = getState();
+      if (d.name === selectedAnima) {
+        renderStatus(dom.paneState);
+      }
+    }, data);
+    applyOrBufferReplay((d) => addTimelineEvent({
       id: Date.now().toString(),
       type: "heartbeat",
-      anima: data.name,
-      ts: data.ts || localISOString(),
-      summary: data.summary || "heartbeat completed",
-    });
-    if (isReplayMode()) {
-      bufferReplayEvent((d) => updateCardActivity(d.name, { eventType: "heartbeat", summary: d.summary || "heartbeat" }), data);
-    } else {
-      updateCardActivity(data.name, {
+      anima: d.name,
+      ts: d.ts || localISOString(),
+      summary: d.summary || "heartbeat completed",
+    }), data);
+    applyOrBufferReplay((d) => {
+      updateCardActivity(d.name, {
         eventType: "heartbeat",
-        summary: data.summary || "heartbeat",
+        summary: d.summary || "heartbeat",
       });
-    }
+    }, data);
   }));
 
   wsUnsubscribers.push(onEvent("anima.cron", (data) => {
-    addActivity("cron", data.name, data.summary || `cron: ${data.task || ""}`);
-    addTimelineEvent({
+    applyOrBufferReplay((data) => addActivity("cron", data.name, data.summary || `cron: ${data.task || ""}`), data);
+    applyOrBufferReplay((data) => addTimelineEvent({
       id: Date.now().toString(),
       type: "cron",
       anima: data.name,
       ts: data.ts || localISOString(),
       summary: data.summary || `cron: ${data.task || ""}`,
-    });
-    if (isReplayMode()) {
-      bufferReplayEvent((d) => updateCardActivity(d.name, { eventType: "cron", summary: d.summary || `cron: ${d.task || ""}` }), data);
-    } else {
+    }), data);
+    applyOrBufferReplay((data) => {
       updateCardActivity(data.name, {
         eventType: "cron",
         summary: data.summary || `cron: ${data.task || ""}`,
       });
-    }
+    }, data);
   }));
 
   // ── anima.tool_activity — live tool usage ──
@@ -161,14 +161,14 @@ export function setupWebSocket(deps) {
     const evtType = data.event || data.type || "";
     const toolName = data.tool_name || data.tool || "tool";
     if (evtType === "tool_start") {
-      addActivity("tool", data.name, t("chat.tool_running", { tool: toolName }));
+      applyOrBufferReplay((d) => addActivity("tool", d.name, t("chat.tool_running", { tool: d.toolName })), { ...data, toolName });
     } else if (evtType === "tool_detail") {
-      addActivity("tool", data.name, `${toolName}: ${data.detail || ""}`);
+      applyOrBufferReplay((d) => addActivity("tool", d.name, `${d.toolName}: ${d.detail || ""}`), { ...data, toolName });
     } else if (evtType === "tool_end" || evtType === "tool_use") {
       const suffix = data.is_error ? " (error)" : "";
-      addActivity("tool", data.name, suffix ? t("chat.tool_done_suffix", { tool: toolName, suffix }) : t("chat.tool_done", { tool: toolName }));
+      applyOrBufferReplay((d) => addActivity("tool", d.name, suffix ? t("chat.tool_done_suffix", { tool: d.toolName, suffix }) : t("chat.tool_done", { tool: d.toolName })), { ...data, toolName });
     } else if (evtType) {
-      addActivity("tool", data.name, `${data.summary || evtType}`);
+      applyOrBufferReplay((d) => addActivity("tool", d.name, `${d.summary || evtType}`), data);
     }
     const isStreamingTool = evtType === "tool_start" || evtType === "tool_end" || evtType === "tool_detail";
     if (!isStreamingTool || VISIBLE_TOOL_NAMES.has(toolName)) {
@@ -184,41 +184,47 @@ export function setupWebSocket(deps) {
         to_person: data.to_person || "",
         channel: data.channel || "",
       };
-      if (isReplayMode()) {
-        bufferReplayEvent((d) => updateCardActivity(d.name, d.payload), { name: data.name, payload: _cardUpdatePayload });
-      } else {
-        updateCardActivity(data.name, _cardUpdatePayload);
-      }
+      applyOrBufferReplay((d) => updateCardActivity(d.name, d.payload), { name: data.name, payload: _cardUpdatePayload });
     }
     if (evtType === "message_sent" && data.to_person) {
-      if (getCurrentView() === "org") {
-        const intent = data.meta?.intent || "";
-        const fromType = data.meta?.from_type || "";
-        let msgLineType = "internal";
-        if (intent === "delegation") msgLineType = "delegation";
-        else if (fromType === "external") msgLineType = "external";
-        showMessageLine(data.name, data.to_person, data.summary || "", { lineType: msgLineType });
-      }
-      addTimelineEvent({
+      applyOrBufferReplay((d) => {
+        if (getCurrentView() === "org") {
+          const intent = d.meta?.intent || "";
+          const fromType = d.meta?.from_type || "";
+          let msgLineType = "internal";
+          if (intent === "delegation") msgLineType = "delegation";
+          else if (fromType === "external") msgLineType = "external";
+          showMessageLine(d.name, d.to_person, d.summary || "", { lineType: msgLineType });
+        }
+      }, data);
+      applyOrBufferReplay((d) => addTimelineEvent({
         id: Date.now().toString(),
         type: "message",
-        anima: `${data.name} → ${data.to_person}`,
-        ts: data.ts || localISOString(),
-        summary: `${data.name} → ${data.to_person}: ${data.summary || ""}`,
-        meta: { from_person: data.name, to_person: data.to_person },
-      });
+        anima: `${d.name} → ${d.to_person}`,
+        ts: d.ts || localISOString(),
+        summary: `${d.name} → ${d.to_person}: ${d.summary || ""}`,
+        meta: { from_person: d.name, to_person: d.to_person },
+      }), data);
     }
-    if ((evtType === "tool_use" || evtType === "tool_end") && getCurrentView() === "org") {
-      showExternalLine(data.name, toolName, "out");
+    if (evtType === "tool_use" || evtType === "tool_end") {
+      applyOrBufferReplay((d) => {
+        if (getCurrentView() === "org") showExternalLine(d.name, d.toolName, "out");
+      }, { ...data, toolName });
     }
-    if (evtType === "message_received" && data.meta?.from_type === "external" && getCurrentView() === "org") {
+    if (evtType === "message_received" && data.meta?.from_type === "external") {
       const channel = data.meta?.channel || data.channel || "";
       const extTool = channel.split(":")[0];
-      if (extTool) showExternalLine(data.name, extTool, "in");
+      if (extTool) {
+        applyOrBufferReplay((d) => {
+          if (getCurrentView() === "org") showExternalLine(d.name, d.extTool, "in");
+        }, { ...data, extTool });
+      }
     }
-    document.dispatchEvent(
-      new CustomEvent("anima-tool-activity", { detail: { ...data, event: evtType, tool_name: toolName } })
-    );
+    applyOrBufferReplay((d) => {
+      document.dispatchEvent(
+        new CustomEvent("anima-tool-activity", { detail: { ...d, event: d.evtType, tool_name: d.toolName } })
+      );
+    }, { ...data, evtType, toolName });
   }));
 
   // ── board.post — shared channel message ──
@@ -227,41 +233,37 @@ export function setupWebSocket(deps) {
     const channel = data.channel || "?";
     const text = data.text || "";
 
-    const boardSel = getSelectedBoard();
-    if (boardSel.type === "channel" && boardSel.channel === channel) {
-      appendBoardMessage({
-        ts: data.ts || new Date().toISOString(),
-        from,
-        text,
-        source: data.source || "",
-      });
-    }
-
-    addActivity("chat", from, `[#${channel}] ${text}`);
-
-    if (isReplayMode()) {
-      bufferReplayEvent((d) => updateCardActivity(d.from, { eventType: "board_post", channel: d.channel, summary: d.text.slice(0, 60) }), { from, channel, text });
-    } else {
-      updateCardActivity(from, {
+    applyOrBufferReplay((d) => {
+      const boardSel = getSelectedBoard();
+      if (boardSel.type === "channel" && boardSel.channel === d.channel) {
+        appendBoardMessage({
+          ts: d.ts || new Date().toISOString(),
+          from: d.from,
+          text: d.text,
+          source: d.source || "",
+        });
+      }
+      addActivity("chat", d.from, `[#${d.channel}] ${d.text}`);
+      updateCardActivity(d.from, {
         eventType: "board_post",
-        channel,
-        summary: text.slice(0, 60),
+        channel: d.channel,
+        summary: d.text.slice(0, 60),
       });
-    }
+    }, { ...data, from, channel, text });
 
-    addTimelineEvent({
+    applyOrBufferReplay((d) => addTimelineEvent({
       id: Date.now().toString(),
       type: "board",
-      anima: from,
-      ts: data.ts || localISOString(),
-      summary: `#${channel}: ${from} — ${text}`,
+      anima: d.from,
+      ts: d.ts || localISOString(),
+      summary: `#${d.channel}: ${d.from} — ${d.text}`,
       meta: {
-        channel,
-        from,
-        text,
-        source: data.source || "",
+        channel: d.channel,
+        from: d.from,
+        text: d.text,
+        source: d.source || "",
       },
-    });
+    }), { ...data, from, channel, text });
   }));
 
   // ── anima.proactive_message — autonomous outbound messages ──
@@ -269,13 +271,13 @@ export function setupWebSocket(deps) {
     const animaName = data.name || data.anima || "";
     const summary = data.summary || data.message || "";
     if (animaName) {
-      addTimelineEvent({
+      applyOrBufferReplay((d) => addTimelineEvent({
         id: Date.now().toString(),
         type: "dm_sent",
-        anima: animaName,
-        ts: data.ts || localISOString(),
-        summary: summary.slice(0, 100),
-      });
+        anima: d.animaName,
+        ts: d.ts || localISOString(),
+        summary: d.summary.slice(0, 100),
+      }), { ...data, animaName, summary });
     }
   }));
 
@@ -285,83 +287,85 @@ export function setupWebSocket(deps) {
   }));
 
   wsUnsubscribers.push(onEvent("anima.bootstrap", (data) => {
-    const { name, status: bsStatus } = data;
-    if (bsStatus === "started") {
-      const { animas } = getState();
-      const idx = animas.findIndex((p) => p.name === name);
-      if (idx >= 0) {
-        animas[idx] = { ...animas[idx], status: "bootstrapping", bootstrapping: true };
-        setState({ animas: [...animas] });
-        renderAnimaSelector(dom.animaSelector);
+    applyOrBufferReplay((d) => {
+      const { name, status: bsStatus } = d;
+      if (bsStatus === "started") {
+        const { animas } = getState();
+        const idx = animas.findIndex((p) => p.name === name);
+        if (idx >= 0) {
+          animas[idx] = { ...animas[idx], status: "bootstrapping", bootstrapping: true };
+          setState({ animas: [...animas] });
+          renderAnimaSelector(dom.animaSelector);
+        }
+        if (getState().officeInitialized) {
+          updateCharacterState(name, "thinking");
+        }
+        addActivity("system", name, t("ws.bootstrap_start"));
+      } else if (bsStatus === "completed") {
+        const { animas } = getState();
+        const idx = animas.findIndex((p) => p.name === name);
+        if (idx >= 0) {
+          animas[idx] = { ...animas[idx], status: "idle", bootstrapping: false };
+          setState({ animas: [...animas] });
+          renderAnimaSelector(dom.animaSelector);
+        }
+        if (getState().officeInitialized) {
+          updateCharacterState(name, "idle");
+        }
+        addActivity("system", name, t("ws.bootstrap_done"));
+      } else if (bsStatus === "failed") {
+        const { animas } = getState();
+        const idx = animas.findIndex((p) => p.name === name);
+        if (idx >= 0) {
+          animas[idx] = { ...animas[idx], status: "error", bootstrapping: false };
+          setState({ animas: [...animas] });
+          renderAnimaSelector(dom.animaSelector);
+        }
+        if (getState().officeInitialized) {
+          updateCharacterState(name, "error");
+        }
+        addActivity("system", name, t("ws.bootstrap_failed"));
       }
-      if (getState().officeInitialized) {
-        updateCharacterState(name, "thinking");
-      }
-      addActivity("system", name, t("ws.bootstrap_start"));
-    } else if (bsStatus === "completed") {
-      const { animas } = getState();
-      const idx = animas.findIndex((p) => p.name === name);
-      if (idx >= 0) {
-        animas[idx] = { ...animas[idx], status: "idle", bootstrapping: false };
-        setState({ animas: [...animas] });
-        renderAnimaSelector(dom.animaSelector);
-      }
-      if (getState().officeInitialized) {
-        updateCharacterState(name, "idle");
-      }
-      addActivity("system", name, t("ws.bootstrap_done"));
-    } else if (bsStatus === "failed") {
-      const { animas } = getState();
-      const idx = animas.findIndex((p) => p.name === name);
-      if (idx >= 0) {
-        animas[idx] = { ...animas[idx], status: "error", bootstrapping: false };
-        setState({ animas: [...animas] });
-        renderAnimaSelector(dom.animaSelector);
-      }
-      if (getState().officeInitialized) {
-        updateCharacterState(name, "error");
-      }
-      addActivity("system", name, t("ws.bootstrap_failed"));
-    }
+    }, data);
   }));
 
   wsUnsubscribers.push(onEvent("anima.assets_updated", async (data) => {
     const animaName = data.name;
     invalidateAvatarCache(animaName).catch(() => {});
-    addActivity("system", animaName, t("ws.asset_update_msg", { types: (data.assets || []).join(", ") }));
+    applyOrBufferReplay(async (d) => {
+      const animaName = d.name;
+      addActivity("system", animaName, t("ws.asset_update_msg", { types: (d.assets || []).join(", ") }));
 
-    // ── Reveal animation (Anima birth) ──
-    const assets = data.assets || [];
-    const hasAvatar = assets.some(
-      (a) => a.startsWith("avatar_") || a === "icon.png" || a === "icon_realistic.png",
-    );
-    if (hasAvatar) {
-      const avatarUrl = await resolveAvatar(animaName, bustupCandidates());
-      if (avatarUrl) await playReveal({ name: animaName, avatarUrl });
-    }
+      const assets = d.assets || [];
+      const hasAvatar = assets.some(
+        (a) => a.startsWith("avatar_") || a === "icon.png" || a === "icon_realistic.png",
+      );
+      if (hasAvatar) {
+        const avatarUrl = await resolveAvatar(animaName, bustupCandidates());
+        if (avatarUrl) await playReveal({ name: animaName, avatarUrl });
+      }
 
-    // Refresh 3D character if office is initialised
-    if (getState().officeInitialized) {
-      const desks = getDesks();
-      const deskPos = desks[animaName];
-      if (deskPos) {
-        removeCharacter(animaName);
-        const group = await createCharacter(
-          animaName,
-          { x: deskPos.x, y: deskPos.y + 0.4, z: deskPos.z - 0.3 },
-        );
-        if (group) {
-          group.traverse((child) => {
-            if (child.isMesh) registerClickTarget(animaName, child);
-          });
+      if (getState().officeInitialized) {
+        const desks = getDesks();
+        const deskPos = desks[animaName];
+        if (deskPos) {
+          removeCharacter(animaName);
+          const group = await createCharacter(
+            animaName,
+            { x: deskPos.x, y: deskPos.y + 0.4, z: deskPos.z - 0.3 },
+          );
+          if (group) {
+            group.traverse((child) => {
+              if (child.isMesh) registerClickTarget(animaName, child);
+            });
+          }
         }
       }
-    }
 
-    // Refresh bust-up if conversation is open for this anima
-    if (getState().conversationAnima === animaName) {
-      await setCharacter(animaName);
-    }
+      if (getState().conversationAnima === animaName) {
+        await setCharacter(animaName);
+      }
+    }, data);
   }));
 
   // Track connection state for status indicator

@@ -108,6 +108,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/tools/aws_collector.py": 1,
     "core/tools/github.py": 1,
     "core/tools/_slack_cli.py": 1,
+    # Japanese particle character set used for offline skill routing token cleanup
+    "core/skills/router.py": 1,
     # mock task data with Japanese titles
     "server/routes/animas.py": 24,
     "server/routes/external_tasks.py": 8,

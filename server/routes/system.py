@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from core.schedule_parser import parse_cron_md, parse_schedule
 from core.time_utils import now_local
+from server.routes.taskboard import summarize_task_board
 
 logger = logging.getLogger("animaworks.routes.system")
 
@@ -372,38 +373,16 @@ def create_system_router() -> APIRouter:
 
     @router.get("/tasks/summary")
     async def get_tasks_summary(request: Request):
-        """Aggregate pending task counts across all animas."""
+        """Aggregate active task counts across all animas from TaskBoard projection."""
         import asyncio
 
         animas_dir = request.app.state.animas_dir
+        shared_dir = request.app.state.shared_dir
         anima_names = request.app.state.anima_names
 
-        def _count_tasks(name: str) -> tuple[int, int]:
-            tq_path = animas_dir / name / "state" / "task_queue.jsonl"
-            if not tq_path.exists():
-                return (0, 0)
-            pend = prog = 0
-            try:
-                for raw_line in tq_path.read_text(encoding="utf-8").splitlines():
-                    raw_line = raw_line.strip()
-                    if not raw_line:
-                        continue
-                    try:
-                        entry = json.loads(raw_line)
-                    except json.JSONDecodeError:
-                        continue
-                    st = entry.get("status", "")
-                    if st in ("pending", "delegated"):
-                        pend += 1
-                    elif st == "in_progress":
-                        prog += 1
-            except OSError:
-                pass
-            return (pend, prog)
-
-        results = await asyncio.gather(*(asyncio.to_thread(_count_tasks, n) for n in anima_names))
-        pending = sum(r[0] for r in results)
-        in_progress = sum(r[1] for r in results)
+        summary = await asyncio.to_thread(summarize_task_board, animas_dir, shared_dir, anima_names)
+        pending = summary["pending"] + summary["delegated"]
+        in_progress = summary["in_progress"]
         return {"pending": pending, "in_progress": in_progress, "total_active": pending + in_progress}
 
     # ── Activity ───────────────────────────────────────────
@@ -418,6 +397,7 @@ def create_system_router() -> APIRouter:
         event_type: str | None = None,
         group_type: str | None = None,
         grouped: bool = False,
+        semantic: bool = False,
         group_limit: int = 50,
         group_offset: int = 0,
     ):
@@ -434,7 +414,7 @@ def create_system_router() -> APIRouter:
         filters groups by trigger type: chat, dm, cron, heartbeat, inbox,
         task_exec, task, single.
         """
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity import ActivityLogger, build_semantic_replay_events
 
         animas_dir = request.app.state.animas_dir
         anima_names = request.app.state.anima_names
@@ -452,6 +432,16 @@ def create_system_router() -> APIRouter:
         target_names = [anima] if anima and anima in anima_names else list(anima_names)
 
         replay = request.query_params.get("replay") == "true"
+        if semantic and not grouped:
+            return JSONResponse(
+                {"error": "semantic replay requires grouped=true"},
+                status_code=400,
+            )
+        if semantic and not replay:
+            return JSONResponse(
+                {"error": "semantic replay requires replay=true"},
+                status_code=400,
+            )
 
         if replay:
             limit = max(1, min(limit, 50_000))
@@ -465,12 +455,14 @@ def create_system_router() -> APIRouter:
         # Any entry in the global top-(offset+limit) must be in its own
         # Anima's top-(offset+limit), so this is safe for flat mode.
         # For grouped mode, estimate ~20 events/group with 2x headroom.
-        # For replay mode, load all events within the time window.
-        if grouped:
+        # For replay mode, load all events within the time window. The
+        # response is still globally paged below, but per-Anima loading must
+        # bypass ActivityLogger's normal 500-entry positive-limit cap.
+        if replay:
+            per_anima_limit = 0
+        elif grouped:
             per_anima_limit = (group_offset + group_limit) * 40
             per_anima_limit = max(per_anima_limit, 500)
-        elif replay:
-            per_anima_limit = 50_000
         else:
             per_anima_limit = offset + limit
 
@@ -496,14 +488,31 @@ def create_system_router() -> APIRouter:
 
         if grouped:
             chrono = list(reversed(all_entries))
-            all_groups = ActivityLogger.group_by_trigger(chrono)
-            all_groups.reverse()
+            all_groups_chrono = ActivityLogger.group_by_trigger(chrono)
 
             if group_types:
-                all_groups = [g for g in all_groups if g.get("type") in group_types]
+                all_groups_chrono = [g for g in all_groups_chrono if g.get("type") in group_types]
 
-            total_groups = len(all_groups)
+            total_groups = len(all_groups_chrono)
             total_events = len(all_entries)
+
+            if semantic:
+                semantic_events = build_semantic_replay_events(all_groups_chrono)
+                semantic_events.sort(key=lambda e: e["ts"], reverse=True)
+                total_semantic_events = len(semantic_events)
+                page_events = semantic_events[offset : offset + limit]
+
+                return {
+                    "events": page_events,
+                    "total": total_semantic_events,
+                    "total_groups": total_groups,
+                    "raw_total": total_events,
+                    "offset": offset,
+                    "limit": limit,
+                    "has_more": (offset + limit) < total_semantic_events or any_capped,
+                }
+
+            all_groups = list(reversed(all_groups_chrono))
             page_groups = all_groups[group_offset : group_offset + group_limit]
 
             return {

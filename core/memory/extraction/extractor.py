@@ -8,24 +8,24 @@ import asyncio
 import json
 import logging
 import re
+from pathlib import Path
 from typing import Any, get_args
 
 from core.memory.ontology.default import (
-    DEFAULT_EDGE_TYPE,
-    EDGE_TYPE_DESCRIPTIONS,
-    EDGE_TYPES,
     ENTITY_TYPES,
     EntityExtractionResult,
     ExtractedEntity,
     ExtractedFact,
     FactExtractionResult,
+    allowed_edge_types,
+    canonicalize_edge_type,
+    format_edge_types_for_prompt,
 )
 from core.time_utils import now_iso
 
 logger = logging.getLogger(__name__)
 
 _VALID_ENTITY_TYPES: frozenset[str] = frozenset(get_args(ENTITY_TYPES))
-_VALID_EDGE_TYPES: frozenset[str] = frozenset(get_args(EDGE_TYPES))
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)```", re.DOTALL)
 
 
@@ -50,12 +50,14 @@ class FactExtractor:
         max_retries: int = 3,
         timeout: int = 30,
         llm_extra: dict[str, object] | None = None,
+        anima_dir: Path | None = None,
     ) -> None:
         self._model = model
         self._locale = locale
         self._max_retries = max_retries
         self._timeout = timeout
         self._llm_extra = llm_extra or {}
+        self._anima_dir = Path(anima_dir) if anima_dir is not None else None
 
     # ── Public API ─────────────────────────────────────────
 
@@ -127,7 +129,7 @@ class FactExtractor:
             [e.model_dump(mode="json") for e in entities],
             ensure_ascii=False,
         )
-        edge_types_list = "\n".join(f"- `{k}`: {v}" for k, v in EDGE_TYPE_DESCRIPTIONS.items())
+        edge_types_list = format_edge_types_for_prompt(self._anima_dir)
         user_prompt = prompts.FACT_USER.format(
             content=content,
             entities_json=entities_json,
@@ -146,6 +148,7 @@ class FactExtractor:
             return []
 
         entity_names = {e.name for e in entities}
+        allowed = allowed_edge_types(self._anima_dir)
         facts: list[ExtractedFact] = []
         for fact in result.facts:
             if fact.source_entity not in entity_names:
@@ -154,8 +157,8 @@ class FactExtractor:
             if fact.target_entity not in entity_names:
                 logger.debug("Dropping fact: target %r not in entities", fact.target_entity)
                 continue
-            if fact.edge_type not in _VALID_EDGE_TYPES:
-                fact = fact.model_copy(update={"edge_type": DEFAULT_EDGE_TYPE})
+            edge_type, raw_edge_type = canonicalize_edge_type(fact.edge_type, allowed)
+            fact = fact.model_copy(update={"edge_type": edge_type, "raw_edge_type": raw_edge_type})
             facts.append(fact)
 
         logger.debug("Extracted %d facts from text", len(facts))
@@ -181,12 +184,10 @@ class FactExtractor:
         """
         import litellm
 
-        from core.memory._llm_utils import get_llm_kwargs_for_model
+        from core.memory._llm_utils import get_memory_llm_kwargs_for_model
 
-        llm_kwargs = get_llm_kwargs_for_model(self._model)
+        llm_kwargs = get_memory_llm_kwargs_for_model(self._model, self._llm_extra)
         resolved_model = llm_kwargs.pop("model", self._model)
-        if self._llm_extra:
-            llm_kwargs.update(self._llm_extra)
         effective_timeout = llm_kwargs.pop("timeout", self._timeout)
 
         messages: list[dict[str, str]] = [

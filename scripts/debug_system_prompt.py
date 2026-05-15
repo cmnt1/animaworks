@@ -13,6 +13,7 @@ Output:
     - /tmp/prompt_debug_{anima_name}.html
     - Optionally copies to server/static/files/ if the directory exists
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,6 +32,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 # ── Section Categories ──────────────────────────────────────
 
+
 @dataclass
 class CategoryStyle:
     bg: str
@@ -38,19 +40,19 @@ class CategoryStyle:
 
 
 CATEGORIES: dict[str, CategoryStyle] = {
-    "header":       CategoryStyle("#1f2937", "#f9fafb"),
-    "framework":    CategoryStyle("#dbeafe", "#1e3a5f"),
-    "identity":     CategoryStyle("#d1fae5", "#065f46"),
-    "injection":    CategoryStyle("#fef3c7", "#92400e"),
-    "time":         CategoryStyle("#f9fafb", "#111827"),
-    "company":      CategoryStyle("#ede9fe", "#5b21b6"),
-    "permissions":  CategoryStyle("#fee2e2", "#991b1b"),
-    "state":        CategoryStyle("#fef9c3", "#854d0e"),
-    "priming":      CategoryStyle("#cffafe", "#155e75"),
-    "tools":        CategoryStyle("#e0e7ff", "#3730a3"),
-    "memory":       CategoryStyle("#fce7f3", "#9d174d"),
+    "header": CategoryStyle("#1f2937", "#f9fafb"),
+    "framework": CategoryStyle("#dbeafe", "#1e3a5f"),
+    "identity": CategoryStyle("#d1fae5", "#065f46"),
+    "injection": CategoryStyle("#fef3c7", "#92400e"),
+    "time": CategoryStyle("#f9fafb", "#111827"),
+    "company": CategoryStyle("#ede9fe", "#5b21b6"),
+    "permissions": CategoryStyle("#fee2e2", "#991b1b"),
+    "state": CategoryStyle("#fef9c3", "#854d0e"),
+    "priming": CategoryStyle("#cffafe", "#155e75"),
+    "tools": CategoryStyle("#e0e7ff", "#3730a3"),
+    "memory": CategoryStyle("#fce7f3", "#9d174d"),
     "organization": CategoryStyle("#ccfbf1", "#134e4a"),
-    "meta":         CategoryStyle("#f3f4f6", "#374151"),
+    "meta": CategoryStyle("#f3f4f6", "#374151"),
 }
 
 
@@ -68,42 +70,52 @@ class SectionInfo:
 
 # Mapping from builder section id → (category, source hint)
 _SECTION_META: dict[str, tuple[str, str]] = {
-    "environment":              ("framework",    "templates/prompts/environment.md"),
-    "identity":                 ("identity",     "animas/{name}/identity.md"),
-    "injection":                ("injection",    "animas/{name}/injection.md"),
-    "current_time":             ("time",         "(computed)"),
-    "behavior_rules":           ("framework",    "templates/prompts/behavior_rules.md"),
-    "tool_data_interpretation":  ("framework",    "templates/prompts/tool_data_interpretation.md"),
-    "company_vision":           ("company",      "company/vision.md"),
-    "specialty_prompt":         ("company",      "animas/{name}/specialty_prompt.md"),
-    "permissions":              ("permissions",  "animas/{name}/permissions.json"),
-    "bootstrap":                ("framework",    "animas/{name}/bootstrap.md"),
-    "task_in_progress":         ("state",        "state/current_state.md"),
-    "task_queue":               ("state",        "(computed: TaskQueueManager)"),
-    "resolution_registry":      ("state",        "(computed: ResolutionTracker)"),
-    "priming":                  ("priming",      "(computed: PrimingEngine)"),
-    "recent_tool_results":      ("tools",        "(computed: ConversationMemory)"),
-    "pending_tasks":            ("state",        "state/pending/"),
-    "memory_guide":             ("memory",       "templates/prompts/memory_guide.md"),
-    "dk_procedures":            ("memory",       "procedures/ (distilled)"),
-    "dk_knowledge":             ("memory",       "knowledge/ (distilled)"),
-    "common_knowledge_hint":    ("memory",       "builder/common_knowledge_hint.md"),
-    "org_context":              ("organization", "(computed: _build_org_context)"),
-    "messaging":                ("organization", "templates/prompts/messaging_s.md"),
-    "human_notification":       ("organization", "builder/human_notification.md"),
-    "tool_guides":              ("tools",        "(computed: prompt_db)"),
-    "external_tools":           ("tools",        "(computed: build_tools_guide)"),
-    "emotion_instruction":      ("meta",         "builder/emotion_instruction.md"),
-    "a_reflection":             ("meta",         "builder/a_reflection.md"),
-    "c_response_requirement":   ("meta",         "(computed: codex guidance)"),
-    "light_tier_org":           ("organization", "builder/light_tier_org.md"),
+    "default_workspace": ("framework", "(computed: workspace registry)"),
+    "environment": ("framework", "templates/prompts/environment.md"),
+    "identity": ("identity", "animas/{name}/identity.md"),
+    "injection": ("injection", "animas/{name}/injection.md"),
+    "injection_size_warning": ("injection", "(computed: prompt.injection_size_warning_chars)"),
+    "current_time": ("time", "(computed)"),
+    "behavior_rules": ("framework", "templates/prompts/behavior_rules.md"),
+    "tool_data_interpretation": ("framework", "templates/prompts/tool_data_interpretation.md"),
+    "company_vision": ("company", "company/vision.md"),
+    "vision": ("company", "company/vision.md"),
+    "specialty_prompt": ("company", "animas/{name}/specialty_prompt.md"),
+    "specialty": ("company", "animas/{name}/specialty_prompt.md"),
+    "permissions": ("permissions", "animas/{name}/permissions.json"),
+    "bootstrap": ("framework", "animas/{name}/bootstrap.md"),
+    "task_in_progress": ("state", "state/current_state.md"),
+    "current_state": ("state", "state/current_state.md"),
+    "task_queue": ("state", "(computed: TaskQueueManager)"),
+    "resolution_registry": ("state", "(computed: ResolutionTracker)"),
+    "priming": ("priming", "(computed: PrimingEngine)"),
+    "pending_human_notifications": (
+        "priming",
+        "(computed: PrimingEngine human_notify)",
+    ),
+    "recent_tool_results": ("tools", "(computed: ConversationMemory)"),
+    "recent_tools": ("tools", "(computed: ConversationMemory)"),
+    "pending_tasks": ("state", "state/pending/"),
+    "memory_guide": ("memory", "templates/prompts/memory_guide.md"),
+    "dk_procedures": ("memory", "procedures/ (distilled)"),
+    "dk_knowledge": ("memory", "knowledge/ (distilled)"),
+    "common_knowledge_hint": ("memory", "builder/common_knowledge_hint.md"),
+    "reference_hint": ("memory", "builder/reference_hint.md"),
+    "org_context": ("organization", "(computed: _build_org_context)"),
+    "messaging": ("organization", "templates/prompts/messaging_s.md"),
+    "human_notification": ("organization", "builder/human_notification.md"),
+    "tool_guides": ("tools", "(computed: prompt_db)"),
+    "external_tools": ("tools", "(computed: build_tools_guide)"),
+    "skill_catalog": ("tools", "(computed: SkillIndex)"),
+    "emotion_instruction": ("meta", "builder/emotion_instruction.md"),
+    "a_reflection": ("meta", "builder/a_reflection.md"),
+    "c_response_requirement": ("meta", "(computed: codex guidance)"),
+    "light_tier_org": ("organization", "builder/light_tier_org.md"),
 }
 
 _RE_GROUP_OPEN = re.compile(r'<group_(\d+)\s+title="([^"]*)">')
 _RE_GROUP_CLOSE = re.compile(r"</group_(\d+)>")
-_RE_SECTION = re.compile(
-    r'<section\s+name="([^"]*)">\n(.*?)\n</section>', re.DOTALL
-)
+_RE_SECTION = re.compile(r'<section\s+name="([^"]*)">\n(.*?)\n</section>', re.DOTALL)
 
 
 def _parse_xml_sections(prompt_text: str, anima_name: str) -> list[SectionInfo]:
@@ -112,33 +124,44 @@ def _parse_xml_sections(prompt_text: str, anima_name: str) -> list[SectionInfo]:
 
     for m in _RE_GROUP_OPEN.finditer(prompt_text):
         gnum, title = m.group(1), m.group(2)
-        items.append((m.start(), SectionInfo(
-            name=f"Group {gnum}: {title}",
-            category="header",
-            source="builder/sections.md",
-            content=title,
-            chars=len(title),
-            tokens_est=len(title) // 3,
-        )))
+        items.append(
+            (
+                m.start(),
+                SectionInfo(
+                    name=f"Group {gnum}: {title}",
+                    category="header",
+                    source="builder/sections.md",
+                    content=title,
+                    chars=len(title),
+                    tokens_est=len(title) // 3,
+                ),
+            )
+        )
 
     for m in _RE_SECTION.finditer(prompt_text):
         sid, body = m.group(1), m.group(2)
         cat, src = _SECTION_META.get(sid, ("meta", "(unknown)"))
         src = src.replace("{name}", anima_name)
-        items.append((m.start(), SectionInfo(
-            name=sid,
-            category=cat,
-            source=src,
-            content=body,
-            chars=len(body),
-            tokens_est=len(body) // 3,
-        )))
+        items.append(
+            (
+                m.start(),
+                SectionInfo(
+                    name=sid,
+                    category=cat,
+                    source=src,
+                    content=body,
+                    chars=len(body),
+                    tokens_est=len(body) // 3,
+                ),
+            )
+        )
 
     items.sort(key=lambda t: t[0])
     return [info for _, info in items]
 
 
 # ── Legacy heuristic fallback (pre-XML prompts) ─────────────
+
 
 def _identify_section_legacy(text: str, idx: int, anima_name: str) -> SectionInfo:
     """Identify a section by content heuristics (legacy --- split)."""
@@ -147,8 +170,9 @@ def _identify_section_legacy(text: str, idx: int, anima_name: str) -> SectionInf
     tokens_est = chars // 3
 
     def _make(name: str, category: str, source: str) -> SectionInfo:
-        return SectionInfo(name=name, category=category, source=source,
-                           content=text, chars=chars, tokens_est=tokens_est)
+        return SectionInfo(
+            name=name, category=category, source=source, content=text, chars=chars, tokens_est=tokens_est
+        )
 
     for gnum, glabel in [
         ("1", "動作環境と行動ルール"),
@@ -185,27 +209,28 @@ def _identify_section_legacy(text: str, idx: int, anima_name: str) -> SectionInf
     heading_match = re.match(r"^#{1,3}\s+(.+)$", head, re.MULTILINE)
     fallback_name = heading_match.group(1).strip()[:60] if heading_match else f"section_{idx}"
     return SectionInfo(
-        name=fallback_name, category="meta",
+        name=fallback_name,
+        category="meta",
         source="(unknown)",
-        content=text, chars=chars, tokens_est=tokens_est,
+        content=text,
+        chars=chars,
+        tokens_est=tokens_est,
     )
 
 
 # ── HTML Rendering ──────────────────────────────────────────
 
+
 def _render_badge(cat: str) -> str:
     s = CATEGORIES.get(cat, CategoryStyle("#f3f4f6", "#374151"))
-    return (
-        f'<span style="background:{s.bg};color:{s.fg};'
-        f'padding:1px 6px;border-radius:3px;font-size:12px">{cat}</span>'
-    )
+    return f'<span style="background:{s.bg};color:{s.fg};padding:1px 6px;border-radius:3px;font-size:12px">{cat}</span>'
 
 
 def _render_legend_badge(cat: str) -> str:
     s = CATEGORIES.get(cat, CategoryStyle("#f3f4f6", "#374151"))
     return (
         f'<span style="background:{s.bg};color:{s.fg};'
-        f'padding:2px 8px;border-radius:4px;margin:2px;'
+        f"padding:2px 8px;border-radius:4px;margin:2px;"
         f'display:inline-block;font-size:13px">{cat}</span>'
     )
 
@@ -245,19 +270,19 @@ def render_html(
         pct = sec.chars / total_chars * 100 if total_chars else 0
         badge = _render_badge(sec.category)
         rows.append(
-            f'<tr>'
-            f'<td style="text-align:right;padding:2px 8px;color:#6b7280">{i+1}</td>'
+            f"<tr>"
+            f'<td style="text-align:right;padding:2px 8px;color:#6b7280">{i + 1}</td>'
             f'<td><a href="#section-{i}" style="text-decoration:none">'
-            f'{badge} {html.escape(sec.name)}</a></td>'
+            f"{badge} {html.escape(sec.name)}</a></td>"
             f'<td style="text-align:right;padding:2px 8px;font-family:monospace;font-size:13px">'
-            f'{sec.chars:,}</td>'
+            f"{sec.chars:,}</td>"
             f'<td style="text-align:right;padding:2px 8px;font-family:monospace;font-size:13px">'
-            f'~{sec.tokens_est:,}</td>'
+            f"~{sec.tokens_est:,}</td>"
             f'<td style="text-align:right;padding:2px 8px;font-family:monospace;font-size:13px">'
-            f'{pct:.1f}%</td>'
+            f"{pct:.1f}%</td>"
             f'<td style="color:#9ca3af;font-size:12px;padding:2px 8px">'
-            f'{html.escape(sec.source)}</td>'
-            f'</tr>'
+            f"{html.escape(sec.source)}</td>"
+            f"</tr>"
         )
     table_body = "\n".join(rows)
 
@@ -281,7 +306,7 @@ def render_html(
               display:flex;justify-content:space-between;align-items:center;
               position:sticky;top:0;z-index:10">
     <div>
-      <strong>#{i+1} {html.escape(sec.name)}</strong>
+      <strong>#{i + 1} {html.escape(sec.name)}</strong>
       <span style="opacity:0.7;margin-left:12px;font-size:13px">{sec.category}</span>
     </div>
     <div style="font-size:12px;opacity:0.8">
@@ -370,6 +395,7 @@ def render_html(
 
 # ── Main ────────────────────────────────────────────────────
 
+
 def main() -> None:
     anima_name = sys.argv[1] if len(sys.argv) > 1 else "sakura"
     test_message = sys.argv[2] if len(sys.argv) > 2 else "mcpサーバーツールはあなたは知っていますか"
@@ -418,17 +444,14 @@ def main() -> None:
 
     # ── Run PrimingEngine ──────────────────────────────────
     priming_section = ""
+    pending_human_notifications = ""
     try:
         from core.memory.priming import PrimingEngine, format_priming_section
 
         shared_dir = get_shared_dir()
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
 
-        _channel = (
-            "heartbeat" if trigger == "heartbeat"
-            else "cron" if trigger.startswith("cron")
-            else "chat"
-        )
+        _channel = "heartbeat" if trigger == "heartbeat" else "cron" if trigger.startswith("cron") else "chat"
         priming_result = asyncio.run(
             engine.prime_memories(
                 message=test_message,
@@ -439,6 +462,7 @@ def main() -> None:
         )
 
         priming_section = format_priming_section(priming_result, sender_name="human")
+        pending_human_notifications = priming_result.pending_human_notifications
         print(f"Priming section : {len(priming_section)} chars")
         if priming_result.sender_profile:
             print(f"  - sender_profile   : {len(priming_result.sender_profile)} chars")
@@ -446,11 +470,39 @@ def main() -> None:
             print(f"  - recent_activity  : {len(priming_result.recent_activity)} chars")
         if priming_result.related_knowledge:
             print(f"  - related_knowledge: {len(priming_result.related_knowledge)} chars")
+        if priming_result.related_knowledge_untrusted:
+            print(
+                f"  - related_knowledge_untrusted: {len(priming_result.related_knowledge_untrusted)} chars",
+            )
+        if priming_result.episodes:
+            print(f"  - episodes         : {len(priming_result.episodes)} chars")
         if priming_result.pending_tasks:
             print(f"  - pending_tasks    : {len(priming_result.pending_tasks)} chars")
+        if priming_result.recent_outbound:
+            print(f"  - recent_outbound  : {len(priming_result.recent_outbound)} chars")
+        if priming_result.graph_context:
+            print(f"  - graph_context    : {len(priming_result.graph_context)} chars")
+        if pending_human_notifications:
+            print(f"Pending human notifications: {len(pending_human_notifications)} chars")
+        gate_plan = getattr(priming_result, "gate_plan", None)
+        if gate_plan is not None:
+            print(
+                "Priming gate   : "
+                f"evidence_mode={gate_plan.evidence_mode}, "
+                f"require_search={gate_plan.require_search_before_action}, "
+                f"risk_tags={','.join(sorted(gate_plan.risk_tags)) or '-'}",
+            )
+            for decision in gate_plan.channel_decisions.values():
+                visibility = "show" if decision.visible else "hide"
+                print(
+                    "  - gate "
+                    f"{decision.channel}: {visibility}/{decision.render_mode.value} "
+                    f"p{decision.priority} ({decision.reason})",
+                )
     except Exception as e:
         print(f"WARN: Priming failed (using empty section): {e}")
         priming_section = ""
+        pending_human_notifications = ""
 
     print()
 
@@ -463,6 +515,7 @@ def main() -> None:
         execution_mode="s",
         message=test_message,
         priming_section=priming_section,
+        pending_human_notifications=pending_human_notifications,
         trigger=trigger,
     )
 
@@ -475,10 +528,7 @@ def main() -> None:
     else:
         print("Parsing mode    : Legacy (--- separators)")
         raw_sections = prompt_text.split("\n\n---\n\n")
-        raw_identified = [
-            _identify_section_legacy(r, i, anima_name)
-            for i, r in enumerate(raw_sections)
-        ]
+        raw_identified = [_identify_section_legacy(r, i, anima_name) for i, r in enumerate(raw_sections)]
         _ANIMA_SPECIFIC = {"identity", "injection", "permissions", "company", "time"}
         sections = []
         for sec in raw_identified:
@@ -486,17 +536,17 @@ def main() -> None:
             is_specific = sec.category in _ANIMA_SPECIFIC
             is_header = sec.category == "header"
             is_short_unk = sec.source == "(unknown)" and sec.chars < 120
-            should_merge = (
-                sections and not is_header
-                and ((is_sub and not is_specific) or is_short_unk)
-            )
+            should_merge = sections and not is_header and ((is_sub and not is_specific) or is_short_unk)
             if should_merge:
                 prev = sections[-1]
                 merged = prev.content + "\n\n---\n\n" + sec.content
                 sections[-1] = SectionInfo(
-                    name=prev.name, category=prev.category,
-                    source=prev.source, content=merged,
-                    chars=len(merged), tokens_est=len(merged) // 3,
+                    name=prev.name,
+                    category=prev.category,
+                    source=prev.source,
+                    content=merged,
+                    chars=len(merged),
+                    tokens_est=len(merged) // 3,
                 )
             else:
                 sections.append(sec)
@@ -535,7 +585,7 @@ def main() -> None:
     print("Sections:")
     for i, sec in enumerate(sections):
         pct = sec.chars / total_chars * 100 if total_chars else 0
-        print(f"  {i+1:2d}. [{sec.category:13s}] {sec.name:30s} {sec.chars:>6,} chars ({pct:4.1f}%) <- {sec.source}")
+        print(f"  {i + 1:2d}. [{sec.category:13s}] {sec.name:30s} {sec.chars:>6,} chars ({pct:4.1f}%) <- {sec.source}")
     print()
 
     if result.injected_procedures:

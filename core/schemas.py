@@ -187,6 +187,10 @@ class CycleResult(BaseModel):
     action: str
     summary: str = ""
     thinking_text: str = ""
+    session_type: str = ""
+    thread_id: str = "default"
+    request_id: str = ""
+    tool_session_id: str = ""
     duration_ms: int = 0
     timestamp: datetime = Field(default_factory=now_local)
     context_usage_ratio: float = 0.0

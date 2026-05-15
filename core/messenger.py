@@ -11,7 +11,9 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +22,8 @@ from core.exceptions import (
     RecipientNotFoundError,
 )  # noqa: F401
 from core.i18n import t
-from core.schemas import Message
-from core.time_utils import now_iso
+from core.schemas import EXTERNAL_PLATFORM_SOURCES, Message
+from core.time_utils import ensure_aware, now_iso, now_local
 
 logger = logging.getLogger("animaworks.messenger")
 
@@ -154,6 +156,22 @@ class InboxItem:
     path: Path
 
 
+def _unique_message_path(target_dir: Path, msg: Message, *, new_thread: bool) -> Path:
+    """Return a non-existing inbox path, updating msg.id if the timestamp ID collided."""
+    base_id = msg.id
+    for attempt in range(100):
+        candidate_id = base_id if attempt == 0 else f"{base_id}_{uuid.uuid4().hex[:8]}"
+        candidate_path = target_dir / f"{candidate_id}.json"
+        if candidate_path.is_file():
+            continue
+        if candidate_id != msg.id:
+            msg.id = candidate_id
+            if new_thread:
+                msg.thread_id = candidate_id
+        return candidate_path
+    raise DeliveryError(f"Message ID collision storm in inbox: {target_dir}")
+
+
 class Messenger:
     """File-system based messaging.
 
@@ -234,11 +252,12 @@ class Messenger:
             meta=meta or {},
         )
         # New thread: use message id as thread_id
-        if not msg.thread_id:
+        new_thread = not msg.thread_id
+        if new_thread:
             msg.thread_id = msg.id
         target_dir = self.shared_dir / "inbox" / to
         target_dir.mkdir(parents=True, exist_ok=True)
-        filepath = target_dir / f"{msg.id}.json"
+        filepath = _unique_message_path(target_dir, msg, new_thread=new_thread)
         filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
 
         if not filepath.exists():
@@ -627,7 +646,7 @@ class Messenger:
                 self._quarantine_file(f)
         return items
 
-    def _quarantine_file(self, f: Path) -> None:
+    def _quarantine_file(self, f: Path) -> bool:
         """Move an unparseable inbox file to ``quarantine/``.
 
         This prevents a single malformed file from blocking all subsequent
@@ -638,8 +657,166 @@ class Messenger:
         try:
             f.rename(quarantine_dir / f.name)
             logger.warning("Quarantined invalid inbox file: %s", f.name)
+            return True
         except OSError:
             logger.warning("Failed to quarantine file: %s", f.name)
+            return False
+
+    def sweep_expired(
+        self,
+        *,
+        now: datetime | None = None,
+        ttl_hours: float = 24.0,
+        expired_retention_days: int = 7,
+        processed_retention_days: int = 30,
+        quarantine_retention_days: int = 30,
+    ) -> dict[str, int]:
+        """Move stale low-priority inbox files to expired/ and clean archives.
+
+        Protected unread messages remain in the root inbox even when older
+        than the TTL. This keeps delegation and directed human/external
+        messages visible while still removing low-priority stale files from
+        normal inbox scans.
+        """
+        now_dt = ensure_aware(now or now_local())
+        result = {
+            "expired": 0,
+            "protected": 0,
+            "quarantined": 0,
+            "deleted_expired": 0,
+            "deleted_processed": 0,
+            "deleted_quarantine": 0,
+            "errors": 0,
+        }
+
+        for f in sorted(self.inbox_dir.glob("*.json")):
+            try:
+                loaded = self._load_message_for_sweep(f)
+            except FileNotFoundError:
+                continue
+            except Exception:
+                if self._quarantine_file(f):
+                    result["quarantined"] += 1
+                else:
+                    result["errors"] += 1
+                continue
+
+            msg, message_time = loaded
+            if message_time is None:
+                try:
+                    message_time = datetime.fromtimestamp(f.stat().st_mtime, tz=now_dt.tzinfo)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    logger.warning("Failed to stat inbox file during TTL sweep: %s", f)
+                    result["errors"] += 1
+                    continue
+            else:
+                message_time = ensure_aware(message_time)
+
+            if message_time > now_dt:
+                continue
+
+            age_hours = (now_dt - message_time).total_seconds() / 3600
+            if age_hours <= ttl_hours:
+                continue
+
+            if self._is_ttl_protected(msg):
+                result["protected"] += 1
+                continue
+
+            try:
+                self._move_file_to_dir(f, self.inbox_dir / "expired")
+                result["expired"] += 1
+            except FileNotFoundError:
+                continue
+            except OSError:
+                logger.warning("Failed to expire inbox file: %s", f, exc_info=True)
+                result["errors"] += 1
+
+        result["deleted_expired"] = self._cleanup_archive_dir(
+            self.inbox_dir / "expired",
+            retention_days=expired_retention_days,
+            label="expired",
+        )
+        result["deleted_processed"] = self._cleanup_archive_dir(
+            self.inbox_dir / "processed",
+            retention_days=processed_retention_days,
+            label="processed",
+        )
+        result["deleted_quarantine"] = self._cleanup_archive_dir(
+            self.inbox_dir / "quarantine",
+            retention_days=quarantine_retention_days,
+            label="quarantine",
+        )
+        return result
+
+    def _load_message_for_sweep(self, f: Path) -> tuple[Message, datetime | None]:
+        """Load an inbox file for TTL sweep, falling back on mtime for bad timestamps."""
+        data = json.loads(f.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("Inbox message JSON must be an object")
+
+        has_timestamp = "timestamp" in data or "ts" in data
+        try:
+            msg = Message(**data)
+        except Exception:
+            if not has_timestamp:
+                raise
+            without_ts = dict(data)
+            without_ts.pop("timestamp", None)
+            without_ts.pop("ts", None)
+            msg = Message(**without_ts)
+            return msg, None
+
+        return msg, msg.timestamp if has_timestamp else None
+
+    @staticmethod
+    def _is_ttl_protected(msg: Message) -> bool:
+        """Return True when a stale unread message must remain visible."""
+        if msg.intent == "delegation":
+            return True
+        if msg.source == "human":
+            return True
+        if msg.source in EXTERNAL_PLATFORM_SOURCES:
+            return bool(msg.intent or msg.external_channel_id or msg.external_user_id)
+        return False
+
+    @staticmethod
+    def _move_file_to_dir(src: Path, dest_dir: Path) -> Path:
+        """Move *src* into *dest_dir*, preserving name with numeric suffix on collision."""
+        dest_dir.mkdir(exist_ok=True)
+        dest = dest_dir / src.name
+        if dest.exists():
+            stem = src.stem
+            suffix = src.suffix
+            counter = 2
+            while dest.exists():
+                dest = dest_dir / f"{stem}_{counter}{suffix}"
+                counter += 1
+        src.rename(dest)
+        return dest
+
+    @staticmethod
+    def _cleanup_archive_dir(path: Path, *, retention_days: int, label: str) -> int:
+        """Delete direct child files older than *retention_days* from an archive dir."""
+        if not path.is_dir():
+            return 0
+
+        cutoff_ts = (now_local().timestamp()) - (retention_days * 86400)
+        deleted = 0
+        for f in path.iterdir():
+            if not f.is_file():
+                continue
+            try:
+                if f.stat().st_mtime < cutoff_ts:
+                    f.unlink()
+                    deleted += 1
+            except OSError:
+                logger.warning("Failed to delete %s inbox archive file: %s", label, f)
+        if deleted:
+            logger.info("Deleted %d %s inbox archive files from %s", deleted, label, path)
+        return deleted
 
     def archive_paths(self, items: list[InboxItem]) -> int:
         """Archive only the specified inbox items to processed/.
@@ -772,9 +949,10 @@ class Messenger:
             external_thread_ts=external_thread_ts,
             origin_chain=[ORIGIN_EXTERNAL_PLATFORM],
         )
-        if not msg.thread_id:
+        new_thread = not msg.thread_id
+        if new_thread:
             msg.thread_id = msg.id
-        filepath = self.inbox_dir / f"{msg.id}.json"
+        filepath = _unique_message_path(self.inbox_dir, msg, new_thread=new_thread)
         filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
         logger.info(
             "External message received: %s -> %s (source=%s, id=%s)",

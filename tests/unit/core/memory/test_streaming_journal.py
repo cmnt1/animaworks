@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -20,11 +21,15 @@ Tests cover:
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.streaming_journal import StreamingJournal, JournalRecovery
+from core.memory.streaming_journal import JournalRecovery, StreamingJournal
+
+if TYPE_CHECKING:
+    from core.supervisor.runner import AnimaRunner
 
 
 # ── Fixtures ────────────────────────────────────────────────────────
@@ -473,6 +478,69 @@ class TestRecoverStreamingJournal:
 
         conv_cls.assert_not_called()
         activity_cls.assert_not_called()
+
+    def test_recover_is_idempotent_when_journal_already_restored(
+        self,
+        journal: StreamingJournal,
+        anima_dir: Path,
+    ):
+        """A repeated recovery pass must not duplicate conversation or activity entries."""
+        from core.i18n import t
+        from core.memory.activity import ActivityLogger
+        from core.memory.conversation import ConversationMemory
+
+        (anima_dir / "state").mkdir(exist_ok=True)
+
+        journal.open(trigger="chat", from_person="tester", session_id="s-1")
+        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+            journal.write_text("partial response")
+        journal.close()
+
+        recovery = StreamingJournal.recover(anima_dir)
+        assert recovery is not None
+
+        runner = _make_runner(anima_dir)
+        conv_memory = ConversationMemory(anima_dir, runner.anima.model_config, thread_id="default")
+        saved_text = recovery.recovered_text + "\n" + t("anima.response_interrupted")
+        conv_memory.append_turn("assistant", saved_text)
+        conv_memory.save()
+
+        recovery_summary = t("runner.recovery_text", session_type="chat")
+        recovery_meta = {
+            "recovered_chars": len(recovery.recovered_text),
+            "trigger": recovery.trigger,
+            "tool_calls": len(recovery.tool_calls),
+            "from_person": recovery.from_person,
+            "started_at": recovery.started_at,
+            "last_event_at": recovery.last_event_at,
+            "session_type": "chat",
+            "thread_id": "default",
+        }
+        with patch.object(ActivityLogger, "_emit_live_event", return_value=None):
+            activity = ActivityLogger(anima_dir)
+            activity.log(
+                "error",
+                content=f"{recovery.recovered_text}\n\n{recovery_summary}",
+                summary=recovery_summary,
+                meta=recovery_meta,
+            )
+
+            runner._recover_streaming_journal()
+
+            reloaded = ConversationMemory(anima_dir, runner.anima.model_config, thread_id="default").load()
+            matching_turns = [
+                turn for turn in reloaded.turns if turn.role == "assistant" and "partial response" in turn.content
+            ]
+            assert len(matching_turns) == 1
+
+            matching_errors = [
+                entry
+                for entry in ActivityLogger(anima_dir).recent(days=1, limit=20, types=["error"])
+                if entry.meta == recovery_meta
+            ]
+            assert len(matching_errors) == 1
+
+        assert StreamingJournal.has_orphan(anima_dir, session_type="chat") is False
 
 
 # ── Tool ID Persistence ────────────────────────────────────────────

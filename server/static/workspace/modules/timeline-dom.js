@@ -9,6 +9,7 @@
 import { getIcon, getDisplaySummary } from "../../shared/activity-types.js";
 import { renderSimpleMarkdown } from "./utils.js";
 import { t } from "/shared/i18n.js";
+import { resolveEventPersons } from "./activity-normalize.js";
 
 // ── Time formatting ────────────────────────────────
 
@@ -36,11 +37,15 @@ export function formatTime(isoString) {
  * @returns {{ from: string, to: string, text: string }}
  */
 export function resolvePersons(event) {
-  const meta = event.meta || {};
+  // Compatibility wrapper. The shared resolver uses this precedence:
+  // meta.from_person → event.from_person → event.from → event.anima,
+  // meta.to_person → event.to_person → event.to,
+  // meta.text → event.content → event.summary.
+  const resolved = resolveEventPersons(event);
   return {
-    from: meta.from_person || event.from_person || event.anima || "",
-    to:   meta.to_person   || event.to_person   || "",
-    text: meta.text         || event.content     || event.summary || "",
+    from: resolved.from,
+    to: resolved.to,
+    text: resolved.text,
   };
 }
 

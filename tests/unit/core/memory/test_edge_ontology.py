@@ -14,7 +14,12 @@ from core.memory.ontology.default import (
     DEFAULT_EDGE_TYPE,
     EDGE_TYPE_DESCRIPTIONS,
     EDGE_TYPES,
+    ExtractedEntity,
     ExtractedFact,
+    canonicalize_edge_type,
+    format_edge_types_for_prompt,
+    merge_edge_type_descriptions,
+    resolve_edge_type_descriptions,
 )
 
 # ── Ontology definition tests ─────────────────────────────────────
@@ -50,6 +55,71 @@ class TestEdgeTypeDefinitions:
         for k, v in EDGE_TYPE_DESCRIPTIONS.items():
             assert v.strip(), f"Description for {k} is empty"
 
+    def test_merge_custom_edge_types_with_defaults(self) -> None:
+        merged = merge_edge_type_descriptions(
+            EDGE_TYPE_DESCRIPTIONS,
+            [{"name": "mentors", "description": "Mentorship relationship"}],
+        )
+
+        assert merged["WORKS_AT"] == "Employment / affiliation"
+        assert merged["MENTORS"] == "Mentorship relationship"
+
+    def test_memory_config_accepts_custom_neo4j_edge_types(self) -> None:
+        from core.config.schemas import MemoryConfig
+
+        cfg = MemoryConfig(
+            neo4j_edge_types=[
+                {"name": "mentors", "description": "Mentorship relationship"},
+            ]
+        )
+
+        assert cfg.neo4j_edge_types[0].name == "MENTORS"
+        assert cfg.neo4j_edge_types[0].description == "Mentorship relationship"
+
+    def test_global_config_edge_types_are_resolved(self) -> None:
+        from core.config.schemas import Neo4jEdgeTypeConfig
+
+        cfg = MagicMock()
+        cfg.memory.neo4j_edge_types = [
+            Neo4jEdgeTypeConfig(name="mentors", description="Mentorship relationship"),
+        ]
+
+        with patch("core.config.models.load_config", return_value=cfg):
+            descriptions = resolve_edge_type_descriptions()
+
+        assert descriptions["MENTORS"] == "Mentorship relationship"
+
+    def test_per_anima_status_edge_types_are_resolved(self, tmp_path) -> None:
+        (tmp_path / "status.json").write_text(
+            json.dumps(
+                {
+                    "neo4j_edge_types": [
+                        {"name": "reports_to", "description": "Org reporting line"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cfg = MagicMock()
+        cfg.memory.neo4j_edge_types = []
+
+        with patch("core.config.models.load_config", return_value=cfg):
+            descriptions = resolve_edge_type_descriptions(tmp_path)
+
+        assert descriptions["REPORTS_TO"] == "Org reporting line"
+
+    def test_unknown_edge_type_canonicalization_preserves_raw(self) -> None:
+        edge_type, raw_edge_type = canonicalize_edge_type("MENTORS", set(EDGE_TYPE_DESCRIPTIONS))
+
+        assert edge_type == "RELATES_TO"
+        assert raw_edge_type == "MENTORS"
+
+    def test_configured_edge_type_canonicalization_preserves_semantics(self) -> None:
+        edge_type, raw_edge_type = canonicalize_edge_type("mentors", {"MENTORS"})
+
+        assert edge_type == "MENTORS"
+        assert raw_edge_type is None
+
 
 # ── ExtractedFact model tests ─────────────────────────────────────
 
@@ -83,6 +153,7 @@ class TestExtractedFactEdgeType:
         )
         data = fact.model_dump(mode="json")
         assert data["edge_type"] == "LIVES_IN"
+        assert data["raw_edge_type"] is None
 
     def test_edge_type_from_json(self) -> None:
         raw = {
@@ -128,7 +199,12 @@ class TestExtractorEdgeTypeValidation:
             }
         )
 
-        with patch.object(extractor, "_call_llm", new_callable=AsyncMock, return_value=llm_response):
+        cfg = MagicMock()
+        cfg.memory.neo4j_edge_types = []
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch.object(extractor, "_call_llm", new_callable=AsyncMock, return_value=llm_response),
+        ):
             entities = [
                 MagicMock(name="Alice", spec=["name", "model_dump"]),
                 MagicMock(name="Bob", spec=["name", "model_dump"]),
@@ -142,6 +218,7 @@ class TestExtractorEdgeTypeValidation:
 
         assert len(facts) == 1
         assert facts[0].edge_type == "RELATES_TO"
+        assert facts[0].raw_edge_type == "MENTORS"
 
     @pytest.mark.asyncio
     async def test_valid_edge_type_preserved(self) -> None:
@@ -161,7 +238,12 @@ class TestExtractorEdgeTypeValidation:
             }
         )
 
-        with patch.object(extractor, "_call_llm", new_callable=AsyncMock, return_value=llm_response):
+        cfg = MagicMock()
+        cfg.memory.neo4j_edge_types = []
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch.object(extractor, "_call_llm", new_callable=AsyncMock, return_value=llm_response),
+        ):
             entities = [
                 MagicMock(name="Alice", spec=["name", "model_dump"]),
                 MagicMock(name="Acme", spec=["name", "model_dump"]),
@@ -175,6 +257,47 @@ class TestExtractorEdgeTypeValidation:
 
         assert len(facts) == 1
         assert facts[0].edge_type == "WORKS_AT"
+        assert facts[0].raw_edge_type is None
+
+    @pytest.mark.asyncio
+    async def test_configured_edge_type_from_status_is_preserved(self, tmp_path) -> None:
+        from core.memory.extraction.extractor import FactExtractor
+
+        (tmp_path / "status.json").write_text(
+            json.dumps({"neo4j_edge_types": [{"name": "mentors", "description": "Mentorship"}]}),
+            encoding="utf-8",
+        )
+        cfg = MagicMock()
+        cfg.memory.neo4j_edge_types = []
+        extractor = FactExtractor(model="test-model", anima_dir=tmp_path)
+        llm_response = json.dumps(
+            {
+                "facts": [
+                    {
+                        "source_entity": "Alice",
+                        "target_entity": "Bob",
+                        "fact": "Alice mentors Bob",
+                        "edge_type": "mentors",
+                    }
+                ]
+            }
+        )
+
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch.object(extractor, "_call_llm", new_callable=AsyncMock, return_value=llm_response),
+        ):
+            facts = await extractor.extract_facts(
+                "Alice mentors Bob",
+                [
+                    ExtractedEntity(name="Alice", entity_type="Person"),
+                    ExtractedEntity(name="Bob", entity_type="Person"),
+                ],
+            )
+
+        assert len(facts) == 1
+        assert facts[0].edge_type == "MENTORS"
+        assert facts[0].raw_edge_type is None
 
 
 # ── Prompt template tests ─────────────────────────────────────────
@@ -223,6 +346,20 @@ class TestPromptEdgeTypes:
         assert "WORKS_AT" in result
         assert "RELATES_TO" in result
 
+    def test_prompt_edge_types_include_per_anima_status_config(self, tmp_path) -> None:
+        (tmp_path / "status.json").write_text(
+            json.dumps({"neo4j_edge_types": [{"name": "mentors", "description": "Mentorship"}]}),
+            encoding="utf-8",
+        )
+        cfg = MagicMock()
+        cfg.memory.neo4j_edge_types = []
+
+        with patch("core.config.models.load_config", return_value=cfg):
+            edge_types_list = format_edge_types_for_prompt(tmp_path)
+
+        assert "`WORKS_AT`" in edge_types_list
+        assert "`MENTORS`" in edge_types_list
+
 
 # ── Cypher query tests ────────────────────────────────────────────
 
@@ -235,6 +372,9 @@ class TestQueriesEdgeType:
 
         assert "edge_type" in CREATE_FACT
         assert "$edge_type" in CREATE_FACT
+        assert "raw_edge_type" in CREATE_FACT
+        assert "$raw_edge_type" in CREATE_FACT
+        assert "CREATE (s)-[r:RELATES_TO" in CREATE_FACT
 
     def test_vector_search_facts_returns_edge_type(self) -> None:
         from core.memory.graph.queries import VECTOR_SEARCH_FACTS
@@ -412,6 +552,7 @@ class TestBackendEdgeType:
         mock_fact.fact = "Alice is a person"
         mock_fact.valid_at = None
         mock_fact.edge_type = "RELATES_TO"
+        mock_fact.raw_edge_type = "MENTORS"
 
         mock_extractor.extract_entities = AsyncMock(return_value=[mock_entity])
         mock_extractor.extract_facts = AsyncMock(return_value=[mock_fact])
@@ -437,6 +578,7 @@ class TestBackendEdgeType:
         params = create_fact_calls[0].args[1]
         assert "edge_type" in params
         assert params["edge_type"] == "RELATES_TO"
+        assert params["raw_edge_type"] == "MENTORS"
 
     def test_retrieve_content_includes_edge_type_label(self) -> None:
         """Verify fact content format includes edge type."""

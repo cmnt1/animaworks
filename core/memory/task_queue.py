@@ -305,6 +305,40 @@ class TaskQueueManager:
         logger.info("Task updated: id=%s status=%s", task_id, status)
         return task
 
+    def update_meta(
+        self,
+        task_id: str,
+        meta_patch: dict[str, Any],
+        *,
+        summary: str | None = None,
+    ) -> TaskEntry | None:
+        """Merge task metadata and append a durable update event."""
+        tasks = self._load_all()
+        task = tasks.get(task_id)
+        if task is None:
+            logger.warning("Task not found: %s", task_id)
+            return None
+
+        now = now_iso()
+        merged_meta = dict(task.meta or {})
+        merged_meta.update(meta_patch)
+        update: dict[str, Any] = {
+            "task_id": task_id,
+            "meta": merged_meta,
+            "updated_at": now,
+            "_event": "update",
+        }
+        if summary is not None:
+            update["summary"] = summary
+        self._append(update)
+
+        task.meta = merged_meta
+        task.updated_at = now
+        if summary is not None:
+            task.summary = summary
+        logger.info("Task metadata updated: id=%s keys=%s", task_id, sorted(meta_patch))
+        return task
+
     def find_by_summary(self, summary: str) -> TaskEntry | None:
         """Find an active task whose summary contains the given text.
 
@@ -361,6 +395,8 @@ class TaskQueueManager:
                         existing.summary = raw["summary"]
                     if "updated_at" in raw:
                         existing.updated_at = raw["updated_at"]
+                    if "meta" in raw and isinstance(raw["meta"], dict):
+                        existing.meta = raw["meta"]
             else:
                 # Task creation event — strip internal fields
                 raw.pop("_event", None)

@@ -9,9 +9,7 @@ from dataclasses import fields
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 from core.schemas import CycleResult, Message
-
 
 # ── Helpers ───────────────────────────────────────────────
 
@@ -45,6 +43,7 @@ def _create_anima(anima_dir, shared_dir, **extra_patches):
     MockMsg.return_value.unread_count.return_value = 0
 
     from core.anima import DigitalAnima
+
     dp = DigitalAnima(anima_dir, shared_dir)
 
     # Ensure run dir exists for replied_to file
@@ -70,6 +69,7 @@ def _stop_patches(mocks):
 def _make_inbox_item(from_person: str, content: str, path: Path | None = None):
     """Build a lightweight InboxItem-like object."""
     from core.messenger import InboxItem
+
     msg = Message(
         from_person=from_person,
         to_person="alice",
@@ -86,6 +86,7 @@ def _make_inbox_item(from_person: str, content: str, path: Path | None = None):
 class TestInboxResult:
     def test_default_values(self):
         from core.anima import InboxResult
+
         ir = InboxResult()
         assert ir.inbox_items == []
         assert ir.messages == []
@@ -95,6 +96,7 @@ class TestInboxResult:
 
     def test_custom_values(self):
         from core.anima import InboxResult
+
         item = _make_inbox_item("bob", "hello")
         ir = InboxResult(
             inbox_items=[item],
@@ -110,11 +112,13 @@ class TestInboxResult:
 
     def test_is_dataclass_with_expected_fields(self):
         from core.anima import InboxResult
+
         names = {f.name for f in fields(InboxResult)}
         assert names == {"inbox_items", "messages", "senders", "unread_count", "prompt_parts"}
 
     def test_mutable_defaults_are_independent(self):
         from core.anima import InboxResult
+
         ir1 = InboxResult()
         ir2 = InboxResult()
         ir1.inbox_items.append("x")
@@ -122,6 +126,7 @@ class TestInboxResult:
 
     def test_senders_set_operations(self):
         from core.anima import InboxResult
+
         ir = InboxResult(senders={"alice", "bob"})
         assert "alice" in ir.senders
         assert len(ir.senders) == 2
@@ -141,8 +146,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
@@ -167,8 +174,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
@@ -196,8 +205,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
@@ -215,12 +226,12 @@ class TestBuildHeartbeatPrompt:
         dp, mocks = _create_anima(anima_dir, shared_dir)
         try:
             dp._load_heartbeat_history = MagicMock(return_value="")
-            dp.drain_background_notifications = MagicMock(
-                return_value=["Task A done", "Task B done"]
-            )
+            dp.drain_background_notifications = MagicMock(return_value=["Task A done", "Task B done"])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
@@ -242,8 +253,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
@@ -263,8 +276,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="- 10:00: checked email")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
@@ -285,8 +300,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
@@ -310,11 +327,11 @@ class TestBuildHeartbeatPrompt:
             mock_turn.role = "human"
             mock_turn.content = "What's the status?"
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
-                MockConv.return_value.load.return_value = MagicMock(
-                    turns=[mock_turn]
-                )
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
+                MockConv.return_value.load.return_value = MagicMock(turns=[mock_turn])
                 MockCfg.return_value.animas = {}
 
                 parts = await dp._build_heartbeat_prompt()
@@ -333,8 +350,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
@@ -354,8 +373,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory", side_effect=RuntimeError("conv error")), \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory", side_effect=RuntimeError("conv error")),
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockCfg.return_value.animas = {}
 
                 # Should not raise
@@ -378,8 +399,10 @@ class TestBuildHeartbeatPrompt:
             sub_config = MagicMock()
             sub_config.supervisor = "alice"
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {"bob": sub_config, "charlie": sub_config}
 
@@ -399,8 +422,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
@@ -420,8 +445,10 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config", side_effect=RuntimeError("config error")):
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config", side_effect=RuntimeError("config error")),
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
 
                 # Should not raise
@@ -442,12 +469,14 @@ class TestBuildHeartbeatPrompt:
             dp._load_heartbeat_history = MagicMock(return_value="")
             dp.drain_background_notifications = MagicMock(return_value=[])
 
-            with patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
-                 patch("core.config.models.load_config") as MockCfg:
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+            ):
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
-                parts = await dp._build_heartbeat_prompt()
+                await dp._build_heartbeat_prompt()
 
             # load_prompt should have been called with "heartbeat_default_checklist"
             # first (to get the fallback checklist), then with "heartbeat"
@@ -471,6 +500,7 @@ class TestProcessInboxMessages:
             dp.messenger.has_unread.return_value = False
 
             from core.anima import InboxResult
+
             result = await dp._process_inbox_messages()
 
             assert isinstance(result, InboxResult)
@@ -501,8 +531,7 @@ class TestProcessInboxMessages:
             dp.messenger.receive_with_paths.return_value = [item]
 
             # Mock dedup to avoid import issues
-            with patch("core.memory.dedup.MessageDeduplicator") as MockDedup, \
-                 patch("core.anima.ActivityLogger"):
+            with patch("core.memory.dedup.MessageDeduplicator") as MockDedup, patch("core.anima.ActivityLogger"):
                 dedup_inst = MockDedup.return_value
                 dedup_inst.load_deferred.return_value = []
                 dedup_inst.apply_rate_limit.return_value = ([item.msg], [])
@@ -539,8 +568,7 @@ class TestProcessInboxMessages:
             item_eve = _make_inbox_item("eve", "Hi from eve", msg_file_eve)
             dp.messenger.receive_with_paths.return_value = [item_bob, item_eve]
 
-            with patch("core.memory.dedup.MessageDeduplicator") as MockDedup, \
-                 patch("core.anima.ActivityLogger"):
+            with patch("core.memory.dedup.MessageDeduplicator") as MockDedup, patch("core.anima.ActivityLogger"):
                 dedup_inst = MockDedup.return_value
                 dedup_inst.load_deferred.return_value = []
                 # After cascade filtering, only bob remains
@@ -577,8 +605,10 @@ class TestProcessInboxMessages:
             item = _make_inbox_item("bob", "Hello!", msg_file)
             dp.messenger.receive_with_paths.return_value = [item]
 
-            with patch("core.memory.dedup.MessageDeduplicator", side_effect=ImportError("no dedup")), \
-                 patch("core.anima.ActivityLogger"):
+            with (
+                patch("core.memory.dedup.MessageDeduplicator", side_effect=ImportError("no dedup")),
+                patch("core.anima.ActivityLogger"),
+            ):
                 dp.memory.append_episode = MagicMock()
 
                 # Should not raise
@@ -606,8 +636,7 @@ class TestProcessInboxMessages:
             item = _make_inbox_item("bob", "Important message", msg_file)
             dp.messenger.receive_with_paths.return_value = [item]
 
-            with patch("core.memory.dedup.MessageDeduplicator") as MockDedup, \
-                 patch("core.anima.ActivityLogger"):
+            with patch("core.memory.dedup.MessageDeduplicator") as MockDedup, patch("core.anima.ActivityLogger"):
                 dedup_inst = MockDedup.return_value
                 dedup_inst.load_deferred.return_value = []
                 dedup_inst.apply_rate_limit.return_value = ([item.msg], [])
@@ -654,8 +683,7 @@ class TestProcessInboxMessages:
             )
             dp.messenger.receive_with_paths.return_value = [slack_item, self_item]
 
-            with patch("core.memory.dedup.MessageDeduplicator") as MockDedup, \
-                 patch("core.anima.ActivityLogger"):
+            with patch("core.memory.dedup.MessageDeduplicator") as MockDedup, patch("core.anima.ActivityLogger"):
                 dedup_inst = MockDedup.return_value
                 dedup_inst.split_critical.side_effect = lambda msgs: (msgs, [])
                 dedup_inst.overflow_to_files.side_effect = lambda msgs: (msgs, 0)
@@ -672,8 +700,8 @@ class TestProcessInboxMessages:
 
 
 class TestProcessInboxFastPath:
-    async def test_slack_probe_uses_fast_reply_without_llm(self, data_dir, make_anima):
-        """Short Slack probe messages should be replied to without LLM latency."""
+    async def test_slack_probe_fast_reply_is_disabled(self, data_dir, make_anima):
+        """Slack probe fast replies are disabled during the Discord migration."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
@@ -684,34 +712,24 @@ class TestProcessInboxFastPath:
 
         dp, mocks = _create_anima(anima_dir, shared_dir)
         try:
-            dp.messenger.has_unread.return_value = True
-            dp.messenger.archive_paths = MagicMock(return_value=1)
-            dp.agent.run_cycle_streaming = MagicMock(side_effect=AssertionError("LLM path should not run"))
-
             slack_item = _make_inbox_item("slack:U1", "テスト", slack_file)
             slack_item.msg.source = "slack"
             slack_item.msg.external_channel_id = "D1"
             slack_item.msg.external_user_id = "U1"
             slack_item.msg.source_message_id = "1774615394.245749"
-            dp.messenger.receive_with_paths.return_value = [slack_item]
 
-            with patch("core.memory.dedup.MessageDeduplicator") as MockDedup, \
-                 patch("core.anima.ActivityLogger"), \
-                 patch(
-                     "core.tooling.dispatch.ExternalToolDispatcher.dispatch",
-                     return_value='{"status":"ok","channel":"D1","ts":"1774615571.307679"}',
-                 ):
-                dedup_inst = MockDedup.return_value
-                dedup_inst.split_critical.side_effect = lambda msgs: (msgs, [])
-                dedup_inst.overflow_to_files.side_effect = lambda msgs: (msgs, 0)
-                dp.memory.append_episode = MagicMock()
+            from core.anima import InboxResult
+            from core.time_utils import now_local
 
-                result = await dp.process_inbox_message()
+            inbox_result = InboxResult(
+                inbox_items=[slack_item],
+                messages=[slack_item.msg],
+                senders={"slack:U1"},
+                unread_count=1,
+                prompt_parts=["テスト"],
+            )
 
-            assert result.action == "responded"
-            assert "受信しました" in result.summary
-            dp.messenger.archive_paths.assert_called()
-            dp.agent.run_cycle_streaming.assert_not_called()
+            assert dp._maybe_fast_reply_external_probe(inbox_result, started_at=now_local()) is None
         finally:
             _stop_patches(mocks)
 
@@ -745,14 +763,18 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
-                 patch("core.anima.ActivityLogger"), \
-                 patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+            with (
+                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core.anima.ActivityLogger"),
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+            ):
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
                 dp.memory.append_episode = MagicMock()
 
                 result = await dp._execute_heartbeat_cycle(
-                    "test prompt", inbox_items=[], unread_count=0,
+                    "test prompt",
+                    inbox_items=[],
+                    unread_count=0,
                 )
 
             assert isinstance(result, CycleResult)
@@ -779,14 +801,18 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
-                 patch("core.anima.ActivityLogger"), \
-                 patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+            with (
+                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core.anima.ActivityLogger"),
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+            ):
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
                 dp.memory.append_episode = MagicMock()
 
                 result = await dp._execute_heartbeat_cycle(
-                    "test prompt", inbox_items=[], unread_count=0,
+                    "test prompt",
+                    inbox_items=[],
+                    unread_count=0,
                 )
 
             assert isinstance(result, CycleResult)
@@ -818,14 +844,18 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
-                 patch("core.anima.ActivityLogger"), \
-                 patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+            with (
+                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core.anima.ActivityLogger"),
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+            ):
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
                 dp.memory.append_episode = MagicMock()
 
                 await dp._execute_heartbeat_cycle(
-                    "test prompt", inbox_items=[], unread_count=0,
+                    "test prompt",
+                    inbox_items=[],
+                    unread_count=0,
                 )
 
             assert checkpoint_observed["exists_during_run"] is True
@@ -852,15 +882,19 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
-                 patch("core.anima.ActivityLogger"), \
-                 patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+            with (
+                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core.anima.ActivityLogger"),
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+            ):
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
                 dp.memory.append_episode = MagicMock()
 
                 # Should not raise
                 result = await dp._execute_heartbeat_cycle(
-                    "test prompt", inbox_items=[], unread_count=0,
+                    "test prompt",
+                    inbox_items=[],
+                    unread_count=0,
                 )
 
             assert result.summary == "ok"
@@ -888,14 +922,18 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
-                 patch("core.anima.ActivityLogger"), \
-                 patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+            with (
+                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core.anima.ActivityLogger"),
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+            ):
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
                 dp.memory.append_episode = MagicMock()
 
                 await dp._execute_heartbeat_cycle(
-                    "test prompt", inbox_items=[], unread_count=2,
+                    "test prompt",
+                    inbox_items=[],
+                    unread_count=2,
                 )
 
             dp.memory.append_episode.assert_called_once()
@@ -926,22 +964,26 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
-                 patch("core.anima.ActivityLogger"), \
-                 patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+            with (
+                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core.anima.ActivityLogger"),
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+            ):
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
                 dp.memory.append_episode = MagicMock()
 
                 await dp._execute_heartbeat_cycle(
-                    "test prompt", inbox_items=[], unread_count=0,
+                    "test prompt",
+                    inbox_items=[],
+                    unread_count=0,
                 )
 
             dp.memory.append_episode.assert_not_called()
         finally:
             _stop_patches(mocks)
 
-    async def test_replied_to_file_cleared(self, data_dir, make_anima):
-        """replied_to.jsonl is deleted at the start of execution."""
+    async def test_replied_to_tracking_scoped_to_heartbeat(self, data_dir, make_anima):
+        """Heartbeat resets only the heartbeat reply-tracking bucket."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
         dp, mocks = _create_anima(anima_dir, shared_dir)
@@ -951,6 +993,7 @@ class TestExecuteHeartbeatCycle:
             dp._heartbeat_stream_queue = None
 
             replied_to_path = anima_dir / "run" / "replied_to.jsonl"
+            replied_to_path.parent.mkdir(parents=True, exist_ok=True)
             replied_to_path.write_text("old data", encoding="utf-8")
 
             async def mock_stream(prompt, trigger="heartbeat", **kwargs):
@@ -961,17 +1004,22 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
-                 patch("core.anima.ActivityLogger"), \
-                 patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+            with (
+                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core.anima.ActivityLogger"),
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+            ):
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
                 dp.memory.append_episode = MagicMock()
 
                 await dp._execute_heartbeat_cycle(
-                    "test prompt", inbox_items=[], unread_count=0,
+                    "test prompt",
+                    inbox_items=[],
+                    unread_count=0,
                 )
 
-            assert not replied_to_path.exists()
+            dp.agent.reset_reply_tracking.assert_called_with(session_type="heartbeat")
+            assert replied_to_path.exists()
         finally:
             _stop_patches(mocks)
 
@@ -986,13 +1034,15 @@ class TestProcessInboxMessage:
             item = _make_inbox_item("bob", "resolved topic")
             from core.anima import InboxResult
 
-            dp._process_inbox_messages = AsyncMock(return_value=InboxResult(
-                inbox_items=[item],
-                messages=[],
-                senders=set(),
-                unread_count=0,
-                prompt_parts=[],
-            ))
+            dp._process_inbox_messages = AsyncMock(
+                return_value=InboxResult(
+                    inbox_items=[item],
+                    messages=[],
+                    senders=set(),
+                    unread_count=0,
+                    prompt_parts=[],
+                )
+            )
             dp._archive_processed_messages = AsyncMock()
 
             result = await dp.process_inbox_message()
@@ -1254,7 +1304,7 @@ class TestHandleHeartbeatFailure:
             recovery_path = anima_dir / "state" / "recovery_note.md"
             content = recovery_path.read_text(encoding="utf-8")
             # The error content line should contain at most 200 chars of the error
-            error_line = [l for l in content.split("\n") if "エラー内容" in l][0]
+            error_line = [line for line in content.split("\n") if "エラー内容" in line][0]
             # str(error)[:200] = first 200 'x' chars
             assert "x" * 200 in error_line
             # But not the full 500

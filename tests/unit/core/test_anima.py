@@ -10,9 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.schemas import CycleResult, AnimaStatus
-from core.tooling.handler import active_session_type
-
+from core.schemas import AnimaStatus, CycleResult
 
 # ── Helpers ───────────────────────────────────────────────
 
@@ -25,6 +23,8 @@ def _make_cycle_result(**kwargs) -> CycleResult:
 
 def _wire_session_type(dp) -> None:
     """Wire set_active_session_type to use the real ContextVar so reset() works."""
+    from core.tooling.handler import active_session_type
+
     dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
 
@@ -37,9 +37,9 @@ class TestDigitalAnimaInit:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
+            patch("core.anima.AgentCore"),
             patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger") as MockMessenger,
+            patch("core.anima.Messenger"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             from core.anima import DigitalAnima
@@ -62,7 +62,7 @@ class TestDigitalAnimaStatus:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
+            patch("core.anima.AgentCore"),
             patch("core.anima.MemoryManager") as MockMM,
             patch("core.anima.Messenger") as MockMessenger,
         ):
@@ -117,7 +117,7 @@ class TestCallbacks:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
+            patch("core.anima.AgentCore"),
             patch("core.anima.MemoryManager") as MockMM,
             patch("core.anima.Messenger"),
         ):
@@ -192,7 +192,7 @@ class TestProcessMessage:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
+            patch("core.anima.AgentCore"),
             patch("core.anima.MemoryManager") as MockMM,
             patch("core.anima.Messenger"),
             patch("core._anima_messaging.ConversationMemory") as MockConv,
@@ -208,7 +208,9 @@ class TestProcessMessage:
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
-            dp.agent.run_cycle = AsyncMock(return_value=_make_cycle_result(summary="Hello!"))
+            dp.agent.run_cycle = AsyncMock(
+                return_value=_make_cycle_result(trigger="message:human", session_type="chat", summary="Hello!")
+            )
 
             result = await dp.process_message("Hi", from_person="human")
             assert result == "Hello!"
@@ -251,7 +253,9 @@ class TestProcessMessage:
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
             dp._session_compactor.schedule = MagicMock()
-            dp.agent.run_cycle = AsyncMock(return_value=_make_cycle_result(summary="Hello!"))
+            dp.agent.run_cycle = AsyncMock(
+                return_value=_make_cycle_result(trigger="message:cmnt", session_type="chat", summary="Hello!")
+            )
 
             result = await dp.process_message("Hi", from_person="cmnt")
 
@@ -266,7 +270,7 @@ class TestProcessMessage:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
+            patch("core.anima.AgentCore"),
             patch("core.anima.MemoryManager") as MockMM,
             patch("core.anima.Messenger"),
             patch("core._anima_messaging.ConversationMemory") as MockConv,
@@ -287,7 +291,11 @@ class TestProcessMessage:
 
             async def mock_run_cycle(prompt, trigger="manual", **kwargs):
                 observed_statuses.append(dp._status_slots.get("conversation:default", "idle"))
-                return _make_cycle_result()
+                return _make_cycle_result(
+                    trigger=trigger,
+                    session_type="chat",
+                    thread_id=kwargs.get("thread_id", "default"),
+                )
 
             dp.agent.run_cycle = mock_run_cycle
             await dp.process_message("test")
@@ -369,10 +377,9 @@ class TestRunCronTask:
             MockMM.return_value.read_model_config.return_value = MagicMock()
 
             from core.anima import DigitalAnima
-            from core.tooling.handler import active_session_type
 
             dp = DigitalAnima(anima_dir, shared_dir)
-            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            _wire_session_type(dp)
             dp.agent.run_cycle = AsyncMock(return_value=_make_cycle_result())
 
             result = await dp.run_cron_task("daily_report", "Generate report")
@@ -389,7 +396,7 @@ class TestProcessGreet:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
+            patch("core.anima.AgentCore"),
             patch("core.anima.MemoryManager") as MockMM,
             patch("core.anima.Messenger"),
             patch("core._anima_messaging.ConversationMemory") as MockConv,
@@ -622,7 +629,7 @@ class TestProcessMessageConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
+            patch("core.anima.AgentCore"),
             patch("core.anima.MemoryManager") as MockMM,
             patch("core.anima.Messenger"),
             patch("core._anima_messaging.ConversationMemory") as MockConv,
@@ -648,7 +655,12 @@ class TestProcessMessageConversationSave:
 
             async def mock_run_cycle(prompt, trigger="manual", **kwargs):
                 call_order.append("run_cycle")
-                return _make_cycle_result(summary="OK")
+                return _make_cycle_result(
+                    trigger=trigger,
+                    session_type="chat",
+                    thread_id=kwargs.get("thread_id", "default"),
+                    summary="OK",
+                )
 
             dp.agent.run_cycle = mock_run_cycle
 
@@ -726,7 +738,9 @@ class TestProcessMessageConversationSave:
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
-            dp.agent.run_cycle = AsyncMock(return_value=_make_cycle_result(summary="Great answer"))
+            dp.agent.run_cycle = AsyncMock(
+                return_value=_make_cycle_result(trigger="message:human", session_type="chat", summary="Great answer")
+            )
 
             result = await dp.process_message("Question", from_person="human")
             assert result == "Great answer"
@@ -783,7 +797,7 @@ class TestProcessMessageStreamConversationSave:
                 yield {"type": "text_delta", "text": "Hello"}
                 yield {
                     "type": "cycle_done",
-                    "cycle_result": {"summary": "Hello"},
+                    "cycle_result": {"trigger": trigger, "session_type": "chat", "summary": "Hello"},
                 }
 
             dp.agent.run_cycle_streaming = mock_stream
@@ -923,7 +937,7 @@ class TestProcessMessageStreamConversationSave:
                 yield {"type": "text_delta", "text": "response"}
                 yield {
                     "type": "cycle_done",
-                    "cycle_result": {"summary": "Full response"},
+                    "cycle_result": {"trigger": trigger, "session_type": "chat", "summary": "Full response"},
                 }
 
             dp.agent.run_cycle_streaming = mock_stream
@@ -992,7 +1006,7 @@ class TestProcessMessageStreamConversationSave:
                 yield {"type": "text_delta", "text": "secret"}
                 yield {
                     "type": "cycle_done",
-                    "cycle_result": {"summary": "secret"},
+                    "cycle_result": {"trigger": trigger, "session_type": "chat", "summary": "secret"},
                 }
 
             dp.agent.run_cycle_streaming = mock_stream

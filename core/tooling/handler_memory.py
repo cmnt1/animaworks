@@ -13,6 +13,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.i18n import t
+from core.memory.scope_policy import (
+    LEGACY_ONLY_SCOPES,
+    LEGACY_ONLY_SCOPES_FOR_ALL,
+    NEO4J_SCOPE_MAP,
+    SearchResultItem,
+    format_graph_memory_entry,
+    format_hybrid_search_results,
+    is_legacy_only_scope,
+    is_neo4j_backed_scope,
+    neo4j_scope_for,
+    title_for_legacy_scope,
+)
 from core.tooling.handler_base import (
     _error_result,
     _extract_first_heading,
@@ -173,23 +185,91 @@ class MemoryToolsMixin:
 
     # ── Neo4j backend integration ──────────────────────────────────────────
 
-    _NEO4J_SCOPE_MAP: dict[str, str] = {
-        "knowledge": "fact",
-        "episodes": "episode",
-        "procedures": "fact",
-        "all": "all",
-    }
-    _LEGACY_ONLY_SCOPES: frozenset[str] = frozenset({"common_knowledge", "skills", "activity_log"})
+    _NEO4J_SCOPE_MAP: dict[str, str] = NEO4J_SCOPE_MAP
+    _LEGACY_ONLY_SCOPES: frozenset[str] = LEGACY_ONLY_SCOPES
 
     def _should_use_neo4j(self, scope: str) -> bool:
         """Return True if this scope should be routed to Neo4j backend."""
-        if scope in self._LEGACY_ONLY_SCOPES:
+        if is_legacy_only_scope(scope) or not is_neo4j_backed_scope(scope):
             return False
+        try:
+            from core.memory.backend.registry import resolve_backend_type
+
+            if resolve_backend_type(Path(self._anima_dir)) == "neo4j":
+                return True
+        except Exception:
+            logger.debug("Failed to resolve memory backend type", exc_info=True)
+
         try:
             backend = self._memory.memory_backend
             return type(backend).__name__ == "Neo4jGraphBackend"
         except Exception:
             return False
+
+    def _create_neo4j_backend(self) -> Any:
+        """Create a fresh Neo4j backend for a single ToolHandler search."""
+        from core.memory.backend.registry import get_backend
+
+        return get_backend("neo4j", Path(self._anima_dir))
+
+    def _retrieve_neo4j_memories(
+        self,
+        query: str,
+        scope: str,
+        limit: int,
+        *,
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> list[Any] | None:
+        """Retrieve memories via a fresh Neo4j backend, returning None on failure."""
+        import asyncio
+        import inspect
+
+        neo4j_scope = neo4j_scope_for(scope)
+        as_of_time = time_end
+
+        try:
+
+            async def retrieve_memories() -> list[Any]:
+                backend = None
+                try:
+                    backend = self._create_neo4j_backend()
+                    return await backend.retrieve(
+                        query,
+                        scope=neo4j_scope,
+                        limit=limit,
+                        time_start=time_start,
+                        time_end=time_end,
+                        as_of_time=as_of_time,
+                    )
+                finally:
+                    if backend is not None:
+                        close = getattr(backend, "close", None)
+                        if close is not None:
+                            try:
+                                close_result = close()
+                                if inspect.isawaitable(close_result):
+                                    await close_result
+                            except Exception:
+                                logger.debug("Failed to close Neo4j backend after search", exc_info=True)
+
+            def run_retrieve() -> list[Any]:
+                return asyncio.run(retrieve_memories())
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                import concurrent.futures
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    return pool.submit(run_retrieve).result(timeout=30)
+            return run_retrieve()
+        except Exception:
+            logger.warning("Neo4j search failed, falling back to legacy", exc_info=True)
+            return None
 
     def _search_via_neo4j(
         self,
@@ -201,73 +281,88 @@ class MemoryToolsMixin:
         time_end: str | None = None,
     ) -> str | None:
         """Execute search via Neo4j backend, returning formatted string or None on failure."""
-        import asyncio
-
-        neo4j_scope = self._NEO4J_SCOPE_MAP.get(scope, "all")
-        limit = 10
-        as_of_time = time_end
-
-        try:
-            backend = self._memory.memory_backend
-
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-
-            if loop and loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    memories = pool.submit(
-                        asyncio.run,
-                        backend.retrieve(
-                            query,
-                            scope=neo4j_scope,
-                            limit=limit + offset,
-                            time_start=time_start,
-                            time_end=time_end,
-                            as_of_time=as_of_time,
-                        ),
-                    ).result(timeout=30)
-            else:
-                memories = asyncio.run(
-                    backend.retrieve(
-                        query,
-                        scope=neo4j_scope,
-                        limit=limit + offset,
-                        time_start=time_start,
-                        time_end=time_end,
-                        as_of_time=as_of_time,
-                    )
-                )
-
-            if offset:
-                memories = memories[offset:]
-
-            if not memories:
-                return ""
-
-            scale = min(1.0, getattr(self, "_context_window", _SEARCH_CONTEXT_BASE) / _SEARCH_CONTEXT_BASE)
-            max_tokens = int(_SEARCH_MAX_TOKENS * scale)
-
-            header = f'Search results for "{query}" (graph, {scope}, {offset + 1}-{offset + len(memories)}):\n'
-            parts: list[str] = [header]
-            total_tokens = len(header) // 4
-
-            for i, mem in enumerate(memories):
-                entry = f"\n[{offset + i + 1}] score={mem.score:.2f} | {mem.source}\n{mem.content}\n"
-                entry_tokens = len(entry) // 4
-                if total_tokens + entry_tokens > max_tokens and i >= _SEARCH_MIN_RESULTS:
-                    parts.append(f"\n... {len(memories) - i} more results truncated")
-                    break
-                parts.append(entry)
-                total_tokens += entry_tokens
-
-            return "".join(parts)
-        except Exception:
-            logger.warning("Neo4j search failed, falling back to legacy", exc_info=True)
+        memories = self._retrieve_neo4j_memories(
+            query,
+            scope,
+            limit=10 + offset,
+            time_start=time_start,
+            time_end=time_end,
+        )
+        if memories is None:
             return None
+
+        if offset:
+            memories = memories[offset:]
+
+        if not memories:
+            return ""
+
+        scale = min(1.0, getattr(self, "_context_window", _SEARCH_CONTEXT_BASE) / _SEARCH_CONTEXT_BASE)
+        max_tokens = int(_SEARCH_MAX_TOKENS * scale)
+
+        header = f'Search results for "{query}" (graph, {scope}, {offset + 1}-{offset + len(memories)}):\n'
+        parts: list[str] = [header]
+        total_tokens = len(header) // 4
+
+        for i, mem in enumerate(memories):
+            entry = format_graph_memory_entry(mem, offset + i + 1)
+            entry_tokens = len(entry) // 4
+            if total_tokens + entry_tokens > max_tokens and i >= _SEARCH_MIN_RESULTS:
+                parts.append(f"\n... {len(memories) - i} more results truncated")
+                break
+            parts.append(entry)
+            total_tokens += entry_tokens
+
+        return "".join(parts)
+
+    def _search_all_hybrid(
+        self,
+        query: str,
+        offset: int,
+        *,
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> str | None:
+        """Search Neo4j graph memory plus legacy-only scopes for scope='all'."""
+        graph_memories = self._retrieve_neo4j_memories(
+            query,
+            "all",
+            limit=10 + offset,
+            time_start=time_start,
+            time_end=time_end,
+        )
+        if graph_memories is None:
+            return None
+
+        context_window = getattr(self, "_context_window", _SEARCH_CONTEXT_BASE)
+        items: list[SearchResultItem] = []
+        for mem in graph_memories:
+            items.append(SearchResultItem("Graph Memory", "graph", mem))
+
+        for legacy_scope in LEGACY_ONLY_SCOPES_FOR_ALL:
+            try:
+                legacy_results = self._memory.search_memory_text(
+                    query,
+                    scope=legacy_scope,
+                    offset=0,
+                    context_window=context_window,
+                )
+            except Exception:
+                logger.debug("Legacy search failed for scope=%s", legacy_scope, exc_info=True)
+                legacy_results = []
+            section_title = title_for_legacy_scope(legacy_scope)
+            for result in legacy_results:
+                items.append(SearchResultItem(section_title, "legacy", result))
+
+        return format_hybrid_search_results(
+            query=query,
+            items=items,
+            offset=offset,
+            context_window=context_window,
+            search_max_tokens=_SEARCH_MAX_TOKENS,
+            search_context_base=_SEARCH_CONTEXT_BASE,
+            search_min_results=_SEARCH_MIN_RESULTS,
+        )
 
     def _anima_search_hint(self, query: str) -> str | None:
         """If query looks like a search for a registered Anima, return a redirect hint.
@@ -339,13 +434,34 @@ class MemoryToolsMixin:
 
         # Neo4j backend: delegate to HybridSearch for eligible scopes
         if self._should_use_neo4j(scope):
-            neo4j_result = self._search_via_neo4j(
-                query,
-                scope,
-                offset,
-                time_start=time_start,
-                time_end=time_end,
-            )
+            if scope == "all":
+                neo4j_result = self._search_all_hybrid(
+                    query,
+                    offset,
+                    time_start=time_start,
+                    time_end=time_end,
+                )
+                if neo4j_result is not None:
+                    if not neo4j_result:
+                        base = (
+                            f"No more results for '{query}' at offset={offset}."
+                            if offset > 0
+                            else f"No results for '{query}'"
+                        )
+                        if anima_hint:
+                            return f"{base}\n\n{anima_hint}"
+                        return base
+                    if anima_hint:
+                        return f"{anima_hint}\n\n{neo4j_result}"
+                    return neo4j_result
+            else:
+                neo4j_result = self._search_via_neo4j(
+                    query,
+                    scope,
+                    offset,
+                    time_start=time_start,
+                    time_end=time_end,
+                )
             if neo4j_result is not None:
                 if not neo4j_result and anima_hint:
                     return f"No results for '{query}'\n\n{anima_hint}"

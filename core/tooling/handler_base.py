@@ -34,7 +34,7 @@ suppress_board_fanout: contextvars.ContextVar[bool] = contextvars.ContextVar(
 # ── Active session type (context-scoped for concurrent HB+conversation) ──
 active_session_type: contextvars.ContextVar[str] = contextvars.ContextVar(
     "active_session_type",
-    default="chat",
+    default="unknown",
 )
 
 # ── Meeting mode: block Anima-to-Anima communication tools during meetings ──

@@ -216,6 +216,9 @@ class TestDetectAndStore:
         ]
         total_members = sum(len(c.member_uuids) for c in result)
         assert len(member_calls) == total_members
+        for call in member_calls:
+            params = call.args[1] if len(call.args) > 1 else call.kwargs.get("parameters", {})
+            assert params["group_id"] == "group"
 
 
 # ── TestDynamicUpdate ──────────────────────────────────────────────────────
@@ -291,6 +294,42 @@ class TestDynamicUpdate:
             member_calls[0].args[1] if len(member_calls[0].args) > 1 else member_calls[0].kwargs.get("parameters", {})
         )
         assert params.get("entity_uuid") == "e_new"
+        assert params.get("group_id") == "group"
+
+
+# ── TestCommunityStats ────────────────────────────────────────────────────────
+
+
+class TestCommunityStats:
+    @pytest.mark.asyncio
+    async def test_get_community_stats_returns_group_counts(self):
+        from core.memory.graph.community import CommunityDetector
+        from core.memory.graph.queries import COUNT_COMMUNITY_STATS
+
+        mock_driver = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[{"communities": 2, "memberships": 5}])
+
+        detector = CommunityDetector(mock_driver, "group")
+        stats = await detector.get_community_stats()
+
+        assert stats == {"communities": 2, "memberships": 5}
+        mock_driver.execute_query.assert_awaited_once_with(COUNT_COMMUNITY_STATS, {"group_id": "group"})
+
+    @pytest.mark.asyncio
+    async def test_get_community_stats_defaults_to_zero_for_empty_result(self):
+        from core.memory.graph.community import CommunityDetector
+
+        mock_driver = AsyncMock()
+        mock_driver.execute_query = AsyncMock(return_value=[])
+
+        detector = CommunityDetector(mock_driver, "group")
+        assert await detector.get_community_stats() == {"communities": 0, "memberships": 0}
+
+    def test_stats_query_is_group_scoped(self):
+        from core.memory.graph.queries import COUNT_COMMUNITY_STATS
+
+        assert "c.group_id = $group_id" in COUNT_COMMUNITY_STATS
+        assert "r.group_id = $group_id" in COUNT_COMMUNITY_STATS
 
 
 # ── TestParseCommunityResponse ─────────────────────────────────────────────

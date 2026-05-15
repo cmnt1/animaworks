@@ -361,14 +361,31 @@ class SchedulerMixin:
             try:
                 _consolidating: set[str] = getattr(self, "_consolidating", set())
                 _consolidating.add(anima_name)
+                _timed_out = False
                 try:
                     response = await handle.send_request(
                         "run_consolidation",
                         {"consolidation_type": "daily", "max_turns": max_turns},
                         timeout=1800.0,
                     )
+                except TimeoutError:
+                    _timed_out = True
+                    logger.warning(
+                        "Daily consolidation timed out for %s; keeping busy-hang protection for 120s",
+                        anima_name,
+                    )
+                    try:
+                        await handle.send_request("interrupt", {}, timeout=10.0)
+                    except Exception:
+                        logger.debug("Interrupt request after daily consolidation timeout failed", exc_info=True)
+                    raise
                 finally:
-                    _consolidating.discard(anima_name)
+                    if _timed_out:
+                        # Grace period: keep protection for 120s after timeout
+                        _name_capture = anima_name
+                        asyncio.get_running_loop().call_later(120, self._consolidating.discard, _name_capture)
+                    else:
+                        _consolidating.discard(anima_name)
 
                 if response.error:
                     logger.error(
@@ -497,14 +514,30 @@ class SchedulerMixin:
             try:
                 _consolidating_w: set[str] = getattr(self, "_consolidating", set())
                 _consolidating_w.add(anima_name)
+                _timed_out_w = False
                 try:
                     response = await handle.send_request(
                         "run_consolidation",
                         {"consolidation_type": "weekly", "max_turns": max_turns},
                         timeout=1800.0,
                     )
+                except TimeoutError:
+                    _timed_out_w = True
+                    logger.warning(
+                        "Weekly consolidation timed out for %s; keeping busy-hang protection for 120s",
+                        anima_name,
+                    )
+                    try:
+                        await handle.send_request("interrupt", {}, timeout=10.0)
+                    except Exception:
+                        logger.debug("Interrupt request after weekly consolidation timeout failed", exc_info=True)
+                    raise
                 finally:
-                    _consolidating_w.discard(anima_name)
+                    if _timed_out_w:
+                        _name_capture_w = anima_name
+                        asyncio.get_running_loop().call_later(120, self._consolidating.discard, _name_capture_w)
+                    else:
+                        _consolidating_w.discard(anima_name)
 
                 if response.error:
                     logger.error(
@@ -846,16 +879,21 @@ class SchedulerMixin:
 
         try:
             from core.config import load_config
-            from core.config.models import HousekeepingConfig
+            from core.config.models import HousekeepingConfig, InboxConfig
 
-            hk_cfg = getattr(load_config(), "housekeeping", None)
+            cfg = load_config()
+            hk_cfg = getattr(cfg, "housekeeping", None)
             if not isinstance(hk_cfg, HousekeepingConfig):
                 hk_cfg = HousekeepingConfig()
+            inbox_cfg = getattr(cfg, "inbox", None)
+            if not isinstance(inbox_cfg, InboxConfig):
+                inbox_cfg = InboxConfig()
         except Exception:
             logger.debug("Config load failed for housekeeping", exc_info=True)
-            from core.config.models import HousekeepingConfig
+            from core.config.models import HousekeepingConfig, InboxConfig
 
             hk_cfg = HousekeepingConfig()
+            inbox_cfg = InboxConfig()
 
         try:
             from core.memory.housekeeping import run_housekeeping
@@ -870,6 +908,14 @@ class SchedulerMixin:
                 shortterm_retention_days=hk_cfg.shortterm_retention_days,
                 task_results_retention_days=hk_cfg.task_results_retention_days,
                 pending_failed_retention_days=hk_cfg.pending_failed_retention_days,
+                pending_processing_stale_hours=hk_cfg.pending_processing_stale_hours,
+                background_running_stale_hours=hk_cfg.background_running_stale_hours,
+                current_state_stale_hours=hk_cfg.current_state_stale_hours,
+                taskboard_suppressed_retention_days=hk_cfg.taskboard_suppressed_retention_days,
+                inbox_ttl_hours=inbox_cfg.ttl_hours,
+                inbox_expired_retention_days=inbox_cfg.expired_retention_days,
+                inbox_processed_retention_days=inbox_cfg.processed_retention_days,
+                inbox_quarantine_retention_days=inbox_cfg.quarantine_retention_days,
             )
             logger.info("Housekeeping complete: %s", results)
         except Exception:

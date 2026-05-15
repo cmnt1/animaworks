@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import sys
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from cli.commands.memory_ops import (
+    attach_neo4j_diagnostics,
+    collect_anima_statuses,
+    print_status,
+    public_neo4j_config,
+    purge_restored_anima_graphs,
+    run_cleanup,
+    status_summary,
+)
 
 
 def register_memory_command(subparsers: argparse._SubParsersAction) -> None:
@@ -17,7 +24,11 @@ def register_memory_command(subparsers: argparse._SubParsersAction) -> None:
     sub = p.add_subparsers(dest="memory_command")
 
     # memory status
-    sub.add_parser("status", help="Show current memory backend status")
+    p_status = sub.add_parser("status", help="Show current memory backend status")
+    status_scope = p_status.add_mutually_exclusive_group()
+    status_scope.add_argument("--anima", type=str, dest="status_anima", help="Show one Anima's effective backend")
+    status_scope.add_argument("--all-animas", action="store_true", help="Show every Anima's effective backend")
+    p_status.add_argument("--json", action="store_true", dest="json_output", help="Print structured JSON")
 
     # memory migrate
     p_migrate = sub.add_parser("migrate", help="Migrate to new backend")
@@ -27,6 +38,11 @@ def register_memory_command(subparsers: argparse._SubParsersAction) -> None:
     grp.add_argument("--anima", type=str, dest="migrate_anima")
     p_migrate.add_argument("--dry-run", action="store_true")
     p_migrate.add_argument("--resume", action="store_true")
+    p_migrate.add_argument(
+        "--activate-global",
+        action="store_true",
+        help="After migration, set global memory.backend to neo4j. Neo4j is experimental; default is migration only.",
+    )
 
     # memory rollback
     p_rollback = sub.add_parser("rollback", help="Rollback to backup")
@@ -69,7 +85,7 @@ def _handle_memory(args: argparse.Namespace) -> None:
     cmd = getattr(args, "memory_command", None)
 
     if cmd == "status":
-        _cmd_status()
+        _cmd_status(args)
     elif cmd == "migrate":
         _cmd_migrate(args)
     elif cmd == "rollback":
@@ -83,42 +99,70 @@ def _handle_memory(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def _cmd_status() -> None:
+def _cmd_status(args: argparse.Namespace | None = None) -> None:
     """Show memory backend status."""
     from core.config.models import load_config
-    from core.paths import get_data_dir
+    from core.memory.migration.backup import BackupManager
+    from core.paths import get_animas_dir, get_data_dir
+
+    if args is None:
+        args = argparse.Namespace(status_anima=None, all_animas=False, json_output=False)
 
     cfg = load_config()
-    backend = getattr(getattr(cfg, "memory", None), "backend", "legacy")
+    memory_cfg = getattr(cfg, "memory", None)
+    global_backend = str(getattr(memory_cfg, "backend", "legacy") or "legacy")
     data_dir = get_data_dir()
+    animas_dir = get_animas_dir()
+    entries = collect_anima_statuses(animas_dir, global_backend)
+    selected = entries
 
-    print(f"Memory Backend: {backend}")
-    print(f"Data Directory: {data_dir}")
+    status_anima = getattr(args, "status_anima", None)
+    if status_anima:
+        selected = [entry for entry in entries if entry["name"] == status_anima]
+        if not selected:
+            print(f"Error: anima '{status_anima}' not found")
+            sys.exit(1)
 
-    # Count animas
-    animas_dir = data_dir / "animas"
-    if animas_dir.is_dir():
-        anima_count = sum(1 for d in animas_dir.iterdir() if d.is_dir() and not d.name.startswith("."))
-        print(f"Anima Count: {anima_count}")
+    if status_anima or getattr(args, "all_animas", False):
+        asyncio.run(attach_neo4j_diagnostics(selected, animas_dir))
 
-    # List backups
-    from core.memory.migration.backup import BackupManager
+    backups = BackupManager(data_dir).list_backups()
+    payload = {
+        "global_backend": global_backend,
+        "data_dir": str(data_dir),
+        "neo4j": public_neo4j_config(memory_cfg),
+        "summary": status_summary(entries),
+        "backups": backups,
+        "animas": selected,
+    }
 
-    bm = BackupManager(data_dir)
-    backups = bm.list_backups()
-    if backups:
-        print(f"\nBackups ({len(backups)}):")
-        for b in backups:
-            print(f"  {b['name']}  ({b['size_mb']} MB)")
+    if getattr(args, "json_output", False):
+        import json
+
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    print(f"Memory Backend: {_backend_policy_label(global_backend)}")
+    print("Policy: legacy is stable/default; neo4j is experimental opt-in.")
+    overrides = [entry for entry in entries if entry.get("source") == "per-anima"]
+    if overrides:
+        print("\nPer-Anima Memory Backend Overrides:")
+        for entry in overrides:
+            backend = str(entry.get("effective_backend", "unknown"))
+            print(f"  {entry['name']}: {_backend_policy_label(backend)}")
     else:
-        print("\nNo backups found.")
+        print("\nPer-Anima Memory Backend Overrides: None")
 
-    # Neo4j connection status (if neo4j backend)
+    print_status(payload, show_animas=bool(status_anima or getattr(args, "all_animas", False)))
+
+
+def _backend_policy_label(backend: str) -> str:
+    """Return backend name plus stability policy for CLI display."""
+    if backend == "legacy":
+        return "legacy (stable/default)"
     if backend == "neo4j":
-        neo4j_cfg = getattr(getattr(cfg, "memory", None), "neo4j", None)
-        if neo4j_cfg:
-            print(f"\nNeo4j URI: {neo4j_cfg.uri}")
-            print(f"Neo4j Database: {neo4j_cfg.database}")
+        return "neo4j (experimental/opt-in)"
+    return backend
 
 
 def _cmd_migrate(args: argparse.Namespace) -> None:
@@ -203,9 +247,17 @@ def _cmd_migrate(args: argparse.Namespace) -> None:
             from core.config.models import load_config, save_config
 
             cfg = load_config()
-            cfg.memory.backend = "neo4j"
-            save_config(cfg)
-            print("\n  Config updated: memory.backend = neo4j")
+            if getattr(args, "activate_global", False):
+                cfg.memory.backend = "neo4j"
+                save_config(cfg)
+                print("\n  Config updated: memory.backend = neo4j")
+                print("  WARNING: Neo4j memory backend is experimental/opt-in.")
+            else:
+                current = getattr(getattr(cfg, "memory", None), "backend", "legacy")
+                print("\n  Global config unchanged: memory.backend = " + str(current))
+                print("  Neo4j migration completed as data preparation only.")
+                print("  To use Neo4j globally, re-run with --activate-global.")
+                print("  To opt in one anima, use: animaworks anima set-memory-backend <name> neo4j")
         else:
             print("\n  WARNING: Errors occurred. Config NOT updated.")
             print("  Fix errors and re-run with --resume")
@@ -235,6 +287,12 @@ def _cmd_rollback(args: argparse.Namespace) -> None:
     cfg.memory.backend = "legacy"
     save_config(cfg)
     print("Config updated: memory.backend = legacy")
+    if getattr(args, "purge_neo4j", False):
+        print("Purging Neo4j data for restored Anima groups...")
+        purged, failures = asyncio.run(purge_restored_anima_graphs(data_dir / "animas"))
+        print(f"Neo4j purge complete: {purged} group(s) purged, {len(failures)} failure(s)")
+        for name, error in failures:
+            print(f"  WARNING: {name}: {error}")
     print("Rollback complete.")
 
 
@@ -265,8 +323,6 @@ def _cmd_backup(args: argparse.Namespace) -> None:
 
 def _cmd_cleanup(args: argparse.Namespace) -> None:
     """Clean up Neo4j graph data by episode source prefix."""
-    import asyncio
-
     from core.memory.backend.registry import resolve_backend_type
     from core.paths import get_animas_dir
 
@@ -283,72 +339,5 @@ def _cmd_cleanup(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     asyncio.run(
-        _run_cleanup(anima_dir, args.source_prefix, args.include_orphans, args.cleanup_dry_run),
+        run_cleanup(anima_dir, args.source_prefix, args.include_orphans, args.cleanup_dry_run),
     )
-
-
-async def _run_cleanup(
-    anima_dir: Path,
-    prefix: str,
-    include_orphans: bool,
-    dry_run: bool,
-) -> None:
-    """Async cleanup runner."""
-    from core.memory.backend.registry import get_backend
-
-    backend = get_backend("neo4j", anima_dir)
-    driver = await backend._ensure_driver()
-    group_id = backend._group_id
-
-    try:
-        if dry_run:
-            # Count episodes to be deleted
-            count_result = await driver.execute_query(
-                "MATCH (ep:Episode) WHERE ep.group_id = $group_id AND ep.source STARTS WITH $prefix "
-                "RETURN count(ep) AS cnt",
-                {"group_id": group_id, "prefix": prefix},
-            )
-            ep_count = count_result[0]["cnt"] if count_result else 0
-            print(f"[DRY RUN] Episodes matching source prefix '{prefix}': {ep_count}")
-
-            if include_orphans:
-                orphan_result = await driver.execute_query(
-                    """MATCH (e:Entity)
-                    WHERE e.group_id = $group_id
-                      AND NOT EXISTS { (ep:Episode)-[:MENTIONS]->(e) WHERE NOT (ep.source STARTS WITH $prefix) }
-                      AND NOT EXISTS { ()-[:RELATES_TO]->(e) }
-                      AND NOT EXISTS { (e)-[:RELATES_TO]->() }
-                    RETURN count(e) AS cnt""",
-                    {"group_id": group_id, "prefix": prefix},
-                )
-                orphan_count = orphan_result[0]["cnt"] if orphan_result else 0
-                print(f"[DRY RUN] Orphaned entities (after episode deletion): {orphan_count}")
-
-            print("\nNo changes made (dry-run mode).")
-        else:
-            # Delete episodes
-            delete_result = await driver.execute_query(
-                "MATCH (ep:Episode) WHERE ep.group_id = $group_id AND ep.source STARTS WITH $prefix "
-                "DETACH DELETE ep RETURN count(ep) AS cnt",
-                {"group_id": group_id, "prefix": prefix},
-            )
-            ep_deleted = delete_result[0]["cnt"] if delete_result else 0
-            print(f"Deleted {ep_deleted} episodes with source prefix '{prefix}'")
-
-            if include_orphans:
-                orphan_result = await driver.execute_query(
-                    """MATCH (e:Entity)
-                    WHERE e.group_id = $group_id
-                      AND NOT EXISTS { (ep:Episode)-[:MENTIONS]->(e) }
-                      AND NOT EXISTS { ()-[:RELATES_TO]->(e) }
-                      AND NOT EXISTS { (e)-[:RELATES_TO]->() }
-                    DETACH DELETE e
-                    RETURN count(e) AS cnt""",
-                    {"group_id": group_id},
-                )
-                orphan_deleted = orphan_result[0]["cnt"] if orphan_result else 0
-                print(f"Deleted {orphan_deleted} orphaned entities")
-
-            print("\nCleanup complete.")
-    finally:
-        await backend.close()

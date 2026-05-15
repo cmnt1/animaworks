@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -47,24 +48,24 @@ class CrossEncoderReranker:
             self._available = False
             return False
 
-    def _score_sync(self, query: str, texts: list[str]) -> list[float]:
+    def _score_sync(self, query: str, texts: list[str]) -> list[float] | None:
         """Score query-text pairs synchronously."""
         if not self._ensure_model():
-            return [0.0] * len(texts)
+            return None
         try:
             pairs = [[query, t] for t in texts]
             scores = self._model.predict(pairs)
             return [float(s) for s in scores]
         except Exception:
             logger.warning("Cross-encoder scoring failed", exc_info=True)
-            return [0.0] * len(texts)
+            return None
 
     async def rerank(
         self,
         query: str,
         items: list[dict],
         *,
-        text_field: str = "fact",
+        text_field: str | Callable[[dict], str] = "fact",
         top_k: int = 10,
     ) -> list[dict]:
         """Rerank items by cross-encoder score.
@@ -72,19 +73,25 @@ class CrossEncoderReranker:
         Args:
             query: Search query.
             items: Candidate items with text_field.
-            text_field: Key containing text to score against query.
+            text_field: Key containing text to score against query, or a
+                callable that resolves text per item.
             top_k: Max results to return.
 
         Returns:
             Items sorted by cross-encoder score, with 'ce_score' added.
-            Falls back to input order if model unavailable.
+            Falls back to input order without 'ce_score' if model unavailable.
         """
         if not items:
             return []
 
-        texts = [str(item.get(text_field, "")) for item in items]
+        if callable(text_field):
+            texts = [str(text_field(item)) for item in items]
+        else:
+            texts = [str(item.get(text_field, "")) for item in items]
 
         scores = await asyncio.to_thread(self._score_sync, query, texts)
+        if scores is None:
+            return [dict(item) for item in items[:top_k]]
 
         scored = list(zip(items, scores, strict=False))
         scored.sort(key=lambda x: x[1], reverse=True)

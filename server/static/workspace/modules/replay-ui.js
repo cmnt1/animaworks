@@ -37,6 +37,18 @@ function formatTimeJST(ms) {
   });
 }
 
+function titleCase(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function shortenText(value, maxLen = 42) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, Math.max(0, maxLen - 3)).trim()}...`;
+}
+
 // ── ReplayUI ───────────────────────────────────────────────────────────────
 
 /**
@@ -81,6 +93,15 @@ export class ReplayUI {
     this._timeEnd = null;
     this._speedBtn = null;
     this._rangeSelect = null;
+    this._errorEl = null;
+    this._narrativeEl = null;
+    this._narrativeKind = null;
+    this._narrativeLabel = null;
+    this._narrativeSummary = null;
+    this._narrativeRoute = null;
+    this._narrativeGroup = null;
+    this._narrativeStatus = null;
+    this._narrativeCount = null;
 
     this._build();
   }
@@ -95,20 +116,36 @@ export class ReplayUI {
     ).join("");
 
     this._root.innerHTML = `
-      <div class="org-replay-controls">
-        <button class="org-replay-btn" id="replayExitBtn" title="Live mode">✕</button>
-        <button class="org-replay-btn" id="replayPrevBtn" title="Back 5min">◀◀</button>
-        <button class="org-replay-btn org-replay-btn--play" id="replayPlayBtn" title="Play">▶</button>
-        <button class="org-replay-btn" id="replayNextBtn" title="Forward 5min">▶▶</button>
+      <div class="org-replay-row">
+        <div class="org-replay-controls">
+          <button class="org-replay-btn" id="replayExitBtn" title="Live mode">✕</button>
+          <button class="org-replay-btn" id="replayPrevBtn" title="Back 5min">◀◀</button>
+          <button class="org-replay-btn org-replay-btn--play" id="replayPlayBtn" title="Play">▶</button>
+          <button class="org-replay-btn" id="replayNextBtn" title="Forward 5min">▶▶</button>
+        </div>
+        <div class="org-replay-seek">
+          <span class="org-replay-time" id="replayTimeStart">--:--</span>
+          <input type="range" class="org-replay-slider" id="replaySlider" min="0" max="1000" value="0" step="1">
+          <span class="org-replay-time" id="replayTimeCurrent">--:--</span>
+          <span class="org-replay-time" id="replayTimeEnd">--:--</span>
+        </div>
+        <select class="org-replay-range" id="replayRangeSelect" title="遡り時間">${rangeOpts}</select>
+        <button class="org-replay-speed" id="replaySpeedBtn">1x</button>
+        <div class="org-replay-error" id="replayError" role="status" hidden></div>
       </div>
-      <div class="org-replay-seek">
-        <span class="org-replay-time" id="replayTimeStart">--:--</span>
-        <input type="range" class="org-replay-slider" id="replaySlider" min="0" max="1000" value="0" step="1">
-        <span class="org-replay-time" id="replayTimeCurrent">--:--</span>
-        <span class="org-replay-time" id="replayTimeEnd">--:--</span>
+      <div class="org-replay-narrative" id="orgReplayNarrative">
+        <div class="org-replay-narrative-main">
+          <span class="org-replay-narrative-kind"></span>
+          <span class="org-replay-narrative-label"></span>
+          <span class="org-replay-narrative-summary"></span>
+        </div>
+        <div class="org-replay-narrative-meta">
+          <span class="org-replay-narrative-route"></span>
+          <span class="org-replay-narrative-group"></span>
+          <span class="org-replay-narrative-status"></span>
+          <span class="org-replay-narrative-count"></span>
+        </div>
       </div>
-      <select class="org-replay-range" id="replayRangeSelect" title="遡り時間">${rangeOpts}</select>
-      <button class="org-replay-speed" id="replaySpeedBtn">1x</button>
     `;
 
     this._playBtn = this._root.querySelector("#replayPlayBtn");
@@ -118,6 +155,15 @@ export class ReplayUI {
     this._timeEnd = this._root.querySelector("#replayTimeEnd");
     this._speedBtn = this._root.querySelector("#replaySpeedBtn");
     this._rangeSelect = this._root.querySelector("#replayRangeSelect");
+    this._errorEl = this._root.querySelector("#replayError");
+    this._narrativeEl = this._root.querySelector("#orgReplayNarrative");
+    this._narrativeKind = this._root.querySelector(".org-replay-narrative-kind");
+    this._narrativeLabel = this._root.querySelector(".org-replay-narrative-label");
+    this._narrativeSummary = this._root.querySelector(".org-replay-narrative-summary");
+    this._narrativeRoute = this._root.querySelector(".org-replay-narrative-route");
+    this._narrativeGroup = this._root.querySelector(".org-replay-narrative-group");
+    this._narrativeStatus = this._root.querySelector(".org-replay-narrative-status");
+    this._narrativeCount = this._root.querySelector(".org-replay-narrative-count");
 
     const exitBtn = this._root.querySelector("#replayExitBtn");
     const prevBtn = this._root.querySelector("#replayPrevBtn");
@@ -274,9 +320,74 @@ export class ReplayUI {
   }
 
   /**
+   * Show replay error message.
+   * @param {string} message - Error text
+   */
+  setError(message) {
+    if (!this._errorEl) return;
+    this._errorEl.textContent = message || "Replay failed";
+    this._errorEl.hidden = false;
+  }
+
+  /**
+   * Clear replay error message.
+   */
+  clearError() {
+    if (!this._errorEl) return;
+    this._errorEl.textContent = "";
+    this._errorEl.hidden = true;
+  }
+
+  _setOptionalText(el, text) {
+    if (!el) return;
+    const value = String(text || "").trim();
+    el.textContent = value;
+    el.hidden = value.length === 0;
+  }
+
+  /**
+   * Update the narrative band from ReplayEngine semantic state.
+   * @param {object} state - Narrative state emitted by ReplayEngine
+   */
+  updateNarrative(state = {}) {
+    const event = state.currentEvent || null;
+    const total = Number(state.totalEvents || 0);
+    const currentIndex = Number(state.currentIndex ?? -1);
+
+    if (!event) {
+      this._setOptionalText(this._narrativeKind, "Replay");
+      this._setOptionalText(this._narrativeLabel, "No activity at this time");
+      this._setOptionalText(this._narrativeSummary, "");
+      this._setOptionalText(this._narrativeRoute, "");
+      this._setOptionalText(this._narrativeGroup, "");
+      this._setOptionalText(this._narrativeStatus, "");
+      this._setOptionalText(this._narrativeCount, total > 0 ? `0 / ${total}` : "0 / 0");
+      return;
+    }
+
+    const actor = String(event.actor || "").trim();
+    const target = String(event.target || "").trim();
+    const route = actor && target ? `${actor} -> ${target}` : actor;
+    const groupId = state.activeGroupId || event.group_id || "";
+    const groupType = state.activeGroupType || event.group_type || "";
+    const group = groupId ? `${groupType || "group"} ${shortenText(groupId)}` : "";
+    const suppressed = Number(state.suppressedCount || 0);
+    const count = `${Math.max(0, currentIndex) + 1} / ${total || 1}${suppressed > 0 ? `, ${suppressed} suppressed` : ""}`;
+
+    this._setOptionalText(this._narrativeKind, titleCase(event.kind || "Replay"));
+    this._setOptionalText(this._narrativeLabel, event.label || "Activity");
+    this._setOptionalText(this._narrativeSummary, event.summary || "");
+    this._setOptionalText(this._narrativeRoute, route);
+    this._setOptionalText(this._narrativeGroup, group);
+    this._setOptionalText(this._narrativeStatus, event.status || "");
+    this._setOptionalText(this._narrativeCount, count);
+  }
+
+  /**
    * Remove DOM elements and clean up.
    */
   dispose() {
+    this.updateNarrative({});
     this._root?.remove();
     this._root = null;
     this._playBtn = null;
@@ -286,6 +397,15 @@ export class ReplayUI {
     this._timeEnd = null;
     this._speedBtn = null;
     this._rangeSelect = null;
+    this._errorEl = null;
+    this._narrativeEl = null;
+    this._narrativeKind = null;
+    this._narrativeLabel = null;
+    this._narrativeSummary = null;
+    this._narrativeRoute = null;
+    this._narrativeGroup = null;
+    this._narrativeStatus = null;
+    this._narrativeCount = null;
     this._container = null;
     logger.debug("ReplayUI disposed");
   }

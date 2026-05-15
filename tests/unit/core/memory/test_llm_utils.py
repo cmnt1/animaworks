@@ -23,10 +23,11 @@ def reset_credentials_exported() -> None:
     llm_utils._credentials_exported = False
 
 
-def _make_cred(api_key: str = "") -> MagicMock:
+def _make_cred(api_key: str = "", base_url: str = "") -> MagicMock:
     """Create a CredentialConfig-like mock with api_key attribute."""
     cred = MagicMock()
     cred.api_key = api_key
+    cred.base_url = base_url
     return cred
 
 
@@ -89,6 +90,51 @@ class TestGetConsolidationLlmKwargs:
         assert result["model"] == "ollama/qwen2.5-coder:14b"
         assert result["api_base"] == "http://127.0.0.1:11434"
         assert "api_key" not in result
+
+
+# ── get_memory_llm_kwargs_for_model ─────────────────────────────────────────
+
+
+class TestGetMemoryLlmKwargsForModel:
+    """Tests for memory-specific LiteLLM kwargs resolution."""
+
+    def test_prefixes_bare_model_when_api_base_is_explicit(self) -> None:
+        cfg = _make_config(credentials={})
+
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_memory_llm_kwargs_for_model(
+                "deepseek-v4-flash",
+                {
+                    "api_base": "http://localhost:4000/v1",
+                    "api_key": "dummy",
+                    "timeout": 120,
+                },
+            )
+
+        assert result["model"] == "openai/deepseek-v4-flash"
+        assert result["api_base"] == "http://localhost:4000/v1"
+        assert result["api_key"] == "dummy"
+        assert result["timeout"] == 120
+
+    def test_preserves_provider_prefixed_model_with_api_base(self) -> None:
+        cfg = _make_config(credentials={})
+
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_memory_llm_kwargs_for_model(
+                "openai/deepseek-v4-flash",
+                {"api_base": "http://localhost:4000/v1"},
+            )
+
+        assert result["model"] == "openai/deepseek-v4-flash"
+        assert result["api_base"] == "http://localhost:4000/v1"
+
+    def test_leaves_bare_model_without_api_base_unchanged(self) -> None:
+        cfg = _make_config(credentials={})
+
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_memory_llm_kwargs_for_model("deepseek-v4-flash")
+
+        assert result == {"model": "deepseek-v4-flash"}
 
 
 # ── ensure_credentials_in_env ─────────────────────────────────────────────────

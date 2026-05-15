@@ -381,9 +381,7 @@ class TestStaleActivityLevelRepair:
             if state.exists():
                 state.unlink()
             return
-        state.write_text(
-            json.dumps({"governor_activity_level": level}), encoding="utf-8"
-        )
+        state.write_text(json.dumps({"governor_activity_level": level}), encoding="utf-8")
 
     def test_repairs_stale_when_governor_healthy(self, tmp_path):
         path = tmp_path / "config.json"
@@ -681,11 +679,13 @@ class TestResolveExecutionModeWildcard:
         ~/.animaworks/models.json does not interfere with assertions
         about config.json model_modes and code-default priorities.
         """
+        import core.config.model_mode as _mode
         import core.config.models as _m
         from core.config.models import invalidate_models_json_cache
 
         invalidate_models_json_cache()
         monkeypatch.setattr(_m, "_load_models_json", lambda: {})
+        monkeypatch.setattr(_mode, "_load_models_json", lambda: {})
         yield
         invalidate_models_json_cache()
 

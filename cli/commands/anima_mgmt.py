@@ -823,6 +823,8 @@ def cmd_anima_set_memory_backend(args: argparse.Namespace) -> None:
                 sys.exit(1)
             update_status_model(anima_dir, memory_backend=args.backend)
             print(f"Memory backend set to '{args.backend}' for '{args.anima}'")
+            if args.backend == "neo4j":
+                print("  WARNING: Neo4j memory backend is experimental/opt-in. legacy remains the stable default.")
 
         if pid_file.exists():
             print("  Server is running. Restart the anima to apply (animaworks anima restart <name>).")
@@ -1254,53 +1256,13 @@ def cmd_anima_list(args: argparse.Namespace) -> None:
 
 def cmd_anima_detect_communities(args: argparse.Namespace) -> None:
     """Run batch community detection for Neo4j-backed animas."""
-    import asyncio
+    from cli.commands.anima_communities import cmd_anima_detect_communities as _cmd_anima_detect_communities
 
-    from core.paths import get_animas_dir
-
-    animas_dir = get_animas_dir()
-
-    if args.detect_all:
-        names = [d.name for d in animas_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
-    elif args.anima:
-        names = [args.anima]
-    else:
-        print("Error: specify anima name or --all")
-        sys.exit(1)
-
-    asyncio.run(_run_detect_communities(names, animas_dir))
+    _cmd_anima_detect_communities(args)
 
 
 async def _run_detect_communities(names: list[str], animas_dir: Path) -> None:
     """Async runner for community detection."""
-    from core.memory.backend.registry import get_backend, resolve_backend_type
+    from cli.commands.anima_communities import _run_detect_communities as _run
 
-    for name in names:
-        anima_dir = animas_dir / name
-        if not anima_dir.is_dir():
-            print(f"  {name}: not found, skipping")
-            continue
-
-        backend_type = resolve_backend_type(anima_dir)
-        if backend_type != "neo4j":
-            print(f"  {name}: not using Neo4j (backend={backend_type}), skipping")
-            continue
-
-        print(f"  {name}: detecting communities...")
-        try:
-            backend = get_backend("neo4j", anima_dir)
-            driver = await backend._ensure_driver()
-
-            from core.memory.graph.community import CommunityDetector
-
-            detector = CommunityDetector(
-                driver,
-                backend._group_id,
-                model=backend._resolve_background_model(),
-                locale=backend._resolve_locale(),
-            )
-            communities = await detector.detect_and_store()
-            print(f"  {name}: {len(communities)} communities detected")
-            await backend.close()
-        except Exception as e:
-            print(f"  {name}: ERROR - {e}")
+    await _run(names, animas_dir)

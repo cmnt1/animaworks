@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,10 +12,17 @@ short-term memory separation, board fanout context variable, and
 replied_to session separation.
 """
 
+import asyncio
+import inspect
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from core.anima import DigitalAnima
+    from core.tooling.handler import ToolHandler
 
 
 # ── Fixtures ──────────────────────────────────────────────────────
@@ -68,15 +76,14 @@ def handler(tmp_path: Path) -> ToolHandler:
     anima_dir.mkdir(parents=True)
     (anima_dir / "permissions.md").write_text("", encoding="utf-8")
 
-    with patch("core.tooling.handler.MemoryManager"):
-        with patch("core.tooling.handler.Messenger"):
-            from core.tooling.handler import ToolHandler
+    with patch("core.tooling.handler.MemoryManager"), patch("core.tooling.handler.Messenger"):
+        from core.tooling.handler import ToolHandler
 
-            return ToolHandler(
-                anima_dir=anima_dir,
-                memory=MagicMock(),
-                messenger=MagicMock(),
-            )
+        return ToolHandler(
+            anima_dir=anima_dir,
+            memory=MagicMock(),
+            messenger=MagicMock(),
+        )
 
 
 # ── Test 1: Lock separation ──────────────────────────────────────
@@ -90,7 +97,10 @@ class TestLockSeparation:
         """DigitalAnima should have _conversation_locks dict and _background_lock."""
         assert hasattr(anima, "_conversation_locks")
         assert hasattr(anima, "_background_lock")
+        assert hasattr(anima, "_agent_session_lock")
         assert anima._get_thread_lock("default") is not anima._background_lock
+        assert anima._agent_session_lock is not anima._background_lock
+        assert anima._agent_session_lock is not anima._get_thread_lock("default")
 
     def test_no_legacy_lock(self, anima: DigitalAnima) -> None:
         """DigitalAnima should NOT have the old single _lock."""
@@ -163,10 +173,9 @@ class TestConcurrentLockAcquisition:
         anima: DigitalAnima,
     ) -> None:
         """Both locks should be acquirable at the same time."""
-        async with anima._get_thread_lock("default"):
-            async with anima._background_lock:
-                assert anima._get_thread_lock("default").locked()
-                assert anima._background_lock.locked()
+        async with anima._get_thread_lock("default"), anima._background_lock:
+            assert anima._get_thread_lock("default").locked()
+            assert anima._background_lock.locked()
 
     async def test_conversation_does_not_block_background(
         self,
@@ -174,10 +183,9 @@ class TestConcurrentLockAcquisition:
     ) -> None:
         """Acquiring conversation lock should not prevent background lock acquisition."""
         acquired = False
-        async with anima._get_thread_lock("default"):
-            # This should NOT block
-            async with anima._background_lock:
-                acquired = True
+        # This should NOT block
+        async with anima._get_thread_lock("default"), anima._background_lock:
+            acquired = True
         assert acquired
 
     async def test_background_does_not_block_conversation(
@@ -186,10 +194,55 @@ class TestConcurrentLockAcquisition:
     ) -> None:
         """Acquiring background lock should not prevent conversation lock acquisition."""
         acquired = False
-        async with anima._background_lock:
-            async with anima._get_thread_lock("default"):
-                acquired = True
+        async with anima._background_lock, anima._get_thread_lock("default"):
+            acquired = True
         assert acquired
+
+    async def test_agent_session_lock_serializes_shared_agent_state(
+        self,
+        anima: DigitalAnima,
+    ) -> None:
+        """The shared AgentCore preparation lock should admit one session at a time."""
+        holder_entered = asyncio.Event()
+        release_holder = asyncio.Event()
+
+        async def holder() -> None:
+            async with anima._agent_session_lock:
+                holder_entered.set()
+                await release_holder.wait()
+
+        holder_task = asyncio.create_task(holder())
+        await holder_entered.wait()
+
+        waiter = asyncio.create_task(anima._agent_session_lock.acquire())
+        await asyncio.sleep(0)
+        assert waiter.done() is False
+
+        release_holder.set()
+        await holder_task
+        await asyncio.wait_for(waiter, timeout=1.0)
+        anima._agent_session_lock.release()
+
+    def test_agent_entrypoints_use_session_lock(self) -> None:
+        """Chat/background/inbox entrypoints should guard AgentCore mutable state."""
+        from core._anima_inbox import InboxMixin
+        from core._anima_lifecycle import LifecycleMixin
+        from core._anima_messaging import MessagingMixin
+        from core.supervisor.pending_executor import PendingTaskExecutor
+
+        def guarded(obj) -> bool:
+            source = inspect.getsource(obj)
+            return "_agent_session_lock" in source or "_agent_session_context" in source
+
+        assert guarded(MessagingMixin.process_message)
+        assert guarded(MessagingMixin.process_message_stream)
+        assert guarded(LifecycleMixin.run_heartbeat)
+        assert guarded(LifecycleMixin._run_daily_consolidation)
+        assert guarded(LifecycleMixin._run_weekly_consolidation)
+        assert guarded(LifecycleMixin.run_cron_task)
+        assert guarded(LifecycleMixin.run_cron_command)
+        assert guarded(InboxMixin.process_inbox_message)
+        assert guarded(PendingTaskExecutor._run_llm_task)
 
 
 # ── Test 4: Session file separation ──────────────────────────────
@@ -296,36 +349,39 @@ class TestRepliedToSessionSeparation:
     """Verify replied_to tracks sessions independently."""
 
     def test_replied_to_dict_structure(self, handler: ToolHandler) -> None:
-        """_replied_to should be a dict with chat and background keys."""
+        """_replied_to should be a dict with isolated runtime session keys."""
         assert isinstance(handler._replied_to, dict)
         assert "chat" in handler._replied_to
-        assert "background" in handler._replied_to
+        assert "heartbeat" in handler._replied_to
+        assert "cron" in handler._replied_to
+        assert "task" in handler._replied_to
+        assert "inbox" in handler._replied_to
 
     def test_replied_to_property_returns_union(
         self,
         handler: ToolHandler,
     ) -> None:
         handler._replied_to["chat"].add("alice")
-        handler._replied_to["background"].add("bob")
+        handler._replied_to["heartbeat"].add("bob")
         assert handler.replied_to == {"alice", "bob"}
 
     def test_reset_specific_session(self, handler: ToolHandler) -> None:
         handler._replied_to["chat"].add("alice")
-        handler._replied_to["background"].add("bob")
+        handler._replied_to["heartbeat"].add("bob")
         handler.reset_replied_to(session_type="chat")
         assert handler._replied_to["chat"] == set()
-        assert handler._replied_to["background"] == {"bob"}
+        assert handler._replied_to["heartbeat"] == {"bob"}
 
     def test_set_active_session_type(self, handler: ToolHandler) -> None:
         from core.tooling.handler import active_session_type
 
-        token = handler.set_active_session_type("background")
-        assert active_session_type.get() == "background"
+        token = handler.set_active_session_type("heartbeat")
+        assert active_session_type.get() == "heartbeat"
         active_session_type.reset(token)
-        assert active_session_type.get() == "chat"
+        assert active_session_type.get() == "unknown"
 
     def test_active_session_type_is_contextvar(self) -> None:
-        """active_session_type should be a ContextVar with default 'chat'."""
+        """active_session_type should be a ContextVar with a neutral default."""
         from core.tooling.handler import active_session_type
 
-        assert active_session_type.get() == "chat"
+        assert active_session_type.get() == "unknown"

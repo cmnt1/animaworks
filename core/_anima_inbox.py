@@ -10,6 +10,7 @@ Extracted from ``core.anima.DigitalAnima`` as a Mixin.  All ``self``
 references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -53,6 +54,8 @@ _THREAD_CTX_BUDGET = 300
 _MSG_BODY_BUDGET = 2000
 _MAX_INBOX_RETRIES = 3
 _INBOX_THREAD_ID = "inbox"
+_RESCUE_QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
+_RESCUE_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
 
 
 def _truncate_with_thread_ctx(
@@ -249,6 +252,39 @@ def _check_task_state(anima_dir: Path, task_id: str) -> str:
     return "missing"
 
 
+def _rescue_attention_decision(anima_dir: Path, task_id: str):
+    """Return TaskBoard execution decision for delegation rescue."""
+    try:
+        from core.memory.task_queue import TaskQueueManager
+        from core.taskboard.attention_resolver import resolver_for_anima_dir
+
+        entry = TaskQueueManager(anima_dir).get_task_by_id(task_id)
+        return resolver_for_anima_dir(anima_dir).should_execute(
+            anima_dir.name,
+            task_id,
+            queue_status=entry.status if entry is not None else None,
+        )
+    except Exception:
+        logger.warning("TaskBoard delegation rescue gate unavailable for %s; failing open", task_id, exc_info=True)
+        from core.taskboard.models import AttentionDecision
+
+        return AttentionDecision(reason="active")
+
+
+def _cancel_rescued_queue_task(anima_dir: Path, task_id: str, reason: str) -> None:
+    if reason not in _RESCUE_QUEUE_CANCEL_REASONS:
+        return
+    try:
+        from core.memory.task_queue import TaskQueueManager
+
+        tqm = TaskQueueManager(anima_dir)
+        entry = tqm.get_task_by_id(task_id)
+        if entry and entry.status in _RESCUE_QUEUE_ACTIVE_STATUSES:
+            tqm.update_status(task_id, "cancelled", summary=f"{reason} by TaskBoard")
+    except Exception:
+        logger.debug("Failed to cancel suppressed rescued task %s", task_id, exc_info=True)
+
+
 def _rescue_regenerate_pending(anima_dir: Path, task_id: str, msg: Any) -> None:
     """Rescue: regenerate pending file from delegation DM content for TaskExec pickup."""
     pending_dir = anima_dir / "state" / "pending"
@@ -267,6 +303,16 @@ def _rescue_regenerate_pending(anima_dir: Path, task_id: str, msg: Any) -> None:
     except Exception:
         logger.debug("Failed to retrieve original instruction for task %s", task_id, exc_info=True)
 
+    decision = _rescue_attention_decision(anima_dir, task_id)
+    if not decision.executable and decision.reason != "snoozed":
+        _cancel_rescued_queue_task(anima_dir, task_id, decision.reason)
+        logger.info(
+            "Rescue: suppressed pending regeneration for task %s (reason=%s)",
+            task_id,
+            decision.reason,
+        )
+        return
+
     task_desc = {
         "task_type": "llm",
         "task_id": task_id,
@@ -281,13 +327,17 @@ def _rescue_regenerate_pending(anima_dir: Path, task_id: str, msg: Any) -> None:
         "reply_to": getattr(msg, "from_person", ""),
         "source": "delegation_rescue",
     }
-    path = pending_dir / f"{task_id}.json"
+
+    target_dir = pending_dir / "deferred" if decision.reason == "snoozed" else pending_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / f"{task_id}.json"
     path.write_text(
         json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     logger.info(
-        "Rescue: regenerated pending file for task %s from delegation DM",
+        "Rescue: regenerated %s file for task %s from delegation DM",
+        target_dir.name,
         task_id,
     )
 
@@ -403,7 +453,6 @@ class InboxMixin:
         messages without triggering the full heartbeat observation cycle.
         """
         self._get_interrupt_event("_inbox").clear()
-        self.agent.set_interrupt_event(self._get_interrupt_event("_inbox"))
         logger.info("[%s] process_inbox_message START", self.name)
         started_at = now_local()
         try:
@@ -459,6 +508,12 @@ class InboxMixin:
                     has_board_mention = any(item.msg.type == "board_mention" for item in inbox_result.inbox_items)
                     from core.tooling.handler import active_session_type, suppress_board_fanout
 
+                    agent_session_acquired = False
+                    agent_session_lock = getattr(self, "_agent_session_lock", None)
+                    if isinstance(agent_session_lock, asyncio.Lock):
+                        await agent_session_lock.acquire()
+                        agent_session_acquired = True
+                    self.agent.set_interrupt_event(self._get_interrupt_event("_inbox"))
                     _fanout_token = suppress_board_fanout.set(True) if has_board_mention else None
                     _session_token = self.agent._tool_handler.set_active_session_type("inbox")
                     self.agent._tool_handler._trigger = trigger
@@ -618,6 +673,9 @@ class InboxMixin:
                         if _fanout_token is not None:
                             suppress_board_fanout.reset(_fanout_token)
                         active_session_type.reset(_session_token)
+                        if agent_session_acquired:
+                            agent_session_lock.release()
+                            agent_session_acquired = False
 
                     self._last_activity = now_local()
 
@@ -747,6 +805,9 @@ class InboxMixin:
                     return result
 
                 except Exception as exc:
+                    if locals().get("agent_session_acquired"):
+                        agent_session_lock.release()
+                        agent_session_acquired = False
                     logger.exception("[%s] process_inbox_message FAILED", self.name)
                     # Archive on crash to prevent re-processing storms
                     if inbox_result is not None and inbox_result.inbox_items:

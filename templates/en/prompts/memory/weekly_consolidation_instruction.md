@@ -15,6 +15,20 @@
 
 ## Workflow
 
+### Step 0: Self-compact injection.md (run every time — MUST)
+
+Use `read_memory_file(path="injection.md")` to inspect the current content.
+
+Keep `injection.md` under a **2,000 character target** as a constitution plus pointer index:
+
+- **Keep resident**: role definition, non-negotiable rules, safety, approval, confidentiality, and duplicate-action prevention that must apply on every turn
+- **Move out**: procedural details to `procedures/`; learned knowledge, examples, and operational notes to `knowledge/`
+- **Replace**: detailed prose with `read_memory_file(path="...")` pointers
+- **Preserve**: do not remove the core rules for external sending, confidential information, approval, and duplicate send/draft prevention
+
+If it exceeds 2,000 characters, do not create a proposal file. Rewrite it directly during this consolidation with `write_memory_file(path="injection.md", mode="overwrite")`.
+Even when it is already within 2,000 characters, check whether detailed prose has accumulated and shorten it with the same policy when needed.
+
 ### Step 1: Merge duplicate files (highest priority — MUST)
 
 When merge candidates are provided, process **every pair**.

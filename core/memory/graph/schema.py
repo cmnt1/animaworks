@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
+SCHEMA_META_NAME = "neo4j"
+OPTIONAL_PROPERTY_REGISTRY_NAME = "neo4j_optional_properties"
 
 # ── Constraints ──────────
 
@@ -22,6 +24,10 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Entity) REQUIRE n.uuid IS UNIQUE",
     "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Episode) REQUIRE n.uuid IS UNIQUE",
     "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Community) REQUIRE n.uuid IS UNIQUE",
+]
+
+SCHEMA_META_CONSTRAINTS = [
+    "CREATE CONSTRAINT IF NOT EXISTS FOR (m:_SchemaMeta) REQUIRE m.name IS UNIQUE",
 ]
 
 # ── Standard indexes ──────────
@@ -38,6 +44,7 @@ INDEXES = [
 ADVANCED_INDEXES = [
     "CREATE FULLTEXT INDEX entity_name_fulltext IF NOT EXISTS FOR (n:Entity) ON EACH [n.name, n.summary]",
     "CREATE FULLTEXT INDEX fact_fulltext IF NOT EXISTS FOR ()-[r:RELATES_TO]-() ON EACH [r.fact]",
+    "CREATE FULLTEXT INDEX community_fulltext IF NOT EXISTS FOR (n:Community) ON EACH [n.name, n.summary]",
 ]
 
 # ── Vector indexes (Neo4j 5.13+) ──────────
@@ -93,7 +100,69 @@ MIGRATIONS = [
             "MATCH (n:Episode) WHERE n.deleted_at IS NULL SET n.deleted_at = null",
         ],
     },
+    # v5: Group-scope relation edges and register optional property keys.
+    {
+        "version": 5,
+        "queries": [
+            (
+                "MERGE (r:_PropertyKeyRegistry {name: $registry_name}) "
+                "SET r.deleted_at = true, "
+                "r.invalid_at = true, "
+                "r.expired_at = true, "
+                "r.updated_at = datetime()"
+            ),
+            (
+                "MATCH (ep:Episode)-[r:MENTIONS]->() "
+                "WHERE r.group_id IS NULL AND ep.group_id IS NOT NULL "
+                "SET r.group_id = ep.group_id"
+            ),
+            (
+                "MATCH (c:Community)-[r:HAS_MEMBER]->() "
+                "WHERE r.group_id IS NULL AND c.group_id IS NOT NULL "
+                "SET r.group_id = c.group_id"
+            ),
+        ],
+    },
 ]
+
+SCHEMA_META_CANONICALIZATION = """
+MATCH (m:_SchemaMeta)
+WITH collect(m) AS metas
+CALL {
+  WITH metas
+  WITH metas WHERE size(metas) = 0
+  CREATE (created:_SchemaMeta {name: $name, version: 0})
+  RETURN created.version AS version
+  UNION
+  WITH metas
+  WITH metas WHERE size(metas) > 0
+  UNWIND metas AS candidate
+  WITH candidate
+  ORDER BY coalesce(toInteger(candidate.version), 0) DESC
+  WITH collect(candidate) AS ordered
+  WITH head(ordered) AS keep, tail(ordered) AS duplicates
+  FOREACH (duplicate IN duplicates | REMOVE duplicate.name)
+  SET keep.name = $name,
+      keep.version = coalesce(toInteger(keep.version), 0)
+  FOREACH (duplicate IN duplicates | DETACH DELETE duplicate)
+  RETURN keep.version AS version
+}
+RETURN version
+"""
+
+
+def _migration_parameters(migration: dict) -> dict[str, str]:
+    if migration["version"] == 5:
+        return {"registry_name": OPTIONAL_PROPERTY_REGISTRY_NAME}
+    return {}
+
+
+async def _canonicalize_schema_meta(driver: Neo4jDriver) -> None:
+    """Ensure exactly one keyed schema meta node exists before constraints."""
+    await driver.execute_write(
+        SCHEMA_META_CANONICALIZATION,
+        {"name": SCHEMA_META_NAME},
+    )
 
 
 async def _get_schema_version(driver: Neo4jDriver) -> dict[str, int]:
@@ -106,7 +175,8 @@ async def _get_schema_version(driver: Neo4jDriver) -> dict[str, int]:
         Dict with ``version`` key (0 if no meta node yet).
     """
     result = await driver.execute_query(
-        "MATCH (m:_SchemaMeta) RETURN m.version AS version LIMIT 1",
+        "MATCH (m:_SchemaMeta {name: $name}) RETURN coalesce(toInteger(m.version), 0) AS version LIMIT 1",
+        {"name": SCHEMA_META_NAME},
     )
     if result:
         return {"version": result[0].get("version", 0)}
@@ -121,8 +191,8 @@ async def _set_schema_version(driver: Neo4jDriver, version: int) -> None:
         version: Schema version to persist.
     """
     await driver.execute_write(
-        "MERGE (m:_SchemaMeta) SET m.version = $version",
-        {"version": version},
+        "MERGE (m:_SchemaMeta {name: $name}) SET m.version = $version",
+        {"name": SCHEMA_META_NAME, "version": version},
     )
 
 
@@ -170,6 +240,14 @@ async def ensure_schema(driver: Neo4jDriver) -> dict[str, int]:
                 exc_info=True,
             )
 
+    try:
+        await _canonicalize_schema_meta(driver)
+    except Exception:
+        counts["errors"] += 1
+        logger.warning("Schema meta canonicalization failed", exc_info=True)
+
+    await _run(SCHEMA_META_CONSTRAINTS, "constraints")
+
     # Run migrations
     schema_meta = await _get_schema_version(driver)
     current_version = schema_meta.get("version", 0)
@@ -177,7 +255,7 @@ async def ensure_schema(driver: Neo4jDriver) -> dict[str, int]:
         if migration["version"] > current_version:
             for q in migration["queries"]:
                 try:
-                    await driver.execute_write(q)
+                    await driver.execute_write(q, _migration_parameters(migration))
                 except Exception:
                     counts["errors"] += 1
                     logger.warning(

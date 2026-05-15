@@ -18,6 +18,7 @@ import {
 } from "../../modules/avatar-resolver.js";
 import { ReplayEngine } from "./replay-engine.js";
 import { ReplayUI } from "./replay-ui.js";
+import { eventTimeMs } from "./activity-normalize.js";
 
 const logger = createLogger("org-dashboard");
 
@@ -1167,6 +1168,95 @@ export function updateCardActivity(name, data) {
   _ensureStaleTimer();
 }
 
+function _semanticEndpointName(value) {
+  return String(value || "").trim().replace(/^#/, "");
+}
+
+function _semanticCardNames(event) {
+  const out = [];
+  const actor = _semanticEndpointName(event.actor);
+  const target = _semanticEndpointName(event.target);
+  if (actor && _cardEls.has(actor)) out.push(actor);
+  if (target && target !== actor && !String(event.target || "").trim().startsWith("#") && _cardEls.has(target)) {
+    out.push(target);
+  }
+  return out;
+}
+
+function _semanticStreamType(event, cardName) {
+  const kind = String(event.kind || "").toLowerCase();
+  const actor = _semanticEndpointName(event.actor);
+  const target = _semanticEndpointName(event.target);
+  if (kind === "message" || kind === "response") {
+    return target && target === cardName && actor !== cardName ? "msg_in" : "msg_out";
+  }
+  if (kind === "delegation" || kind === "task") return "task";
+  if (kind === "channel" || kind === "external") return "board";
+  if (kind === "heartbeat") return "heartbeat";
+  if (kind === "cron") return "cron";
+  if (kind === "memory") return "memory";
+  if (kind === "error") return "error";
+  return "tool";
+}
+
+function _semanticStreamText(event) {
+  const label = String(event.label || event.kind || "activity").trim();
+  const summary = String(event.summary || "").trim();
+  return (summary ? `${label}: ${summary}` : label).slice(0, 80);
+}
+
+export function updateCardSemanticActivity(name, event) {
+  if (Number(event.importance || 0) < 2) return;
+
+  let entries = _cardStreams.get(name) || [];
+  entries.push({
+    id: event.id || Date.now().toString(),
+    type: _semanticStreamType(event, name),
+    text: _semanticStreamText(event),
+    status: event.status === "failed" ? "error" : "done",
+    ts: eventTimeMs(event) || Date.now(),
+  });
+
+  if (entries.length > MAX_STREAM_ENTRIES * 2) {
+    entries = entries.slice(-MAX_STREAM_ENTRIES);
+  }
+  _cardStreams.set(name, entries);
+
+  const streamEl = document.getElementById(`orgStream_${CSS.escape(name)}`);
+  if (streamEl) _renderStream(streamEl, entries.slice(-MAX_STREAM_ENTRIES));
+  _syncCardSpinner(name);
+  _ensureStaleTimer();
+}
+
+function _semanticExternalTool(event) {
+  const text = `${event.tool || ""} ${event.channel || ""} ${event.target || ""}`.toLowerCase();
+  if (text.includes("github")) return "github";
+  if (text.includes("gmail")) return "gmail";
+  if (text.includes("chatwork")) return "chatwork";
+  if (text.includes("slack")) return "slack";
+  if (event.kind === "channel") return "slack";
+  if (event.kind === "external") return event.tool || "web_search";
+  return "";
+}
+
+function _showSemanticReplayLine(event, speed) {
+  const actor = _semanticEndpointName(event.actor);
+  const target = _semanticEndpointName(event.target);
+  const kind = String(event.kind || "").toLowerCase();
+  const lineType = event.line_type || (kind === "delegation" ? "delegation" : "internal");
+
+  if (actor && target && _cardEls.has(actor) && _cardEls.has(target)) {
+    if (kind === "message" || kind === "response" || kind === "delegation" || kind === "error" || lineType === "delegation") {
+      showMessageLine(actor, target, event.summary || "", { lineType, replaySpeed: speed });
+    }
+    return;
+  }
+
+  if (actor && _cardEls.has(actor) && (kind === "channel" || kind === "external")) {
+    showExternalLine(actor, _semanticExternalTool(event), "out");
+  }
+}
+
 function _renderStream(container, entries) {
   if (!entries.length) {
     container.innerHTML = '<div class="org-stream-idle">\u{1F4A4} idle</div>';
@@ -1276,17 +1366,22 @@ export function isReplayMode() {
  * @param {number} [hours=12]
  */
 export async function startReplay(hours = 24) {
-  if (_replayMode) return;
-  _replayMode = true;
-
+  if (_replayMode) return true;
   const root = _container?.querySelector(".org-canvas-root");
-  if (!root) { _replayMode = false; return; }
+  if (!root) return false;
+
+  _replayUI?.dispose();
+  _replayUI = null;
+  _replayEngine?.dispose();
+  _replayEngine = null;
+  _replayMode = true;
 
   _replayEngine = new ReplayEngine({
     onEvent: _handleReplayEvent,
     onSeekRebuild: _handleSeekRebuild,
     onComplete: _handleReplayComplete,
     onTimeUpdate: (ms, progress) => _replayUI?.updateTime(ms, progress),
+    onNarrativeUpdate: _handleNarrativeUpdate,
   });
 
   _replayUI = new ReplayUI({
@@ -1300,12 +1395,28 @@ export async function startReplay(hours = 24) {
     initialHours: hours,
   });
 
-  await _loadReplayData(hours);
+  const loaded = await _loadReplayData(hours);
+  if (!loaded) {
+    const buffered = _replayEngine?.flushLiveBuffer() ?? [];
+    _replayEngine?.dispose();
+    _replayEngine = null;
+    _replayMode = false;
+    _clearAllCardStreams();
+    const animas = getState().animas || [];
+    _loadInitialStreams(animas);
+    for (const evt of buffered) {
+      if (evt.handler) evt.handler(evt.data);
+    }
+    return false;
+  }
+  return true;
 }
 
 async function _loadReplayData(hours) {
+  _replayUI.clearError();
   _replayUI.setLoading(true);
   _replayUI.show();
+  _replayUI.updateNarrative({});
   _clearAllCardStreams();
 
   try {
@@ -1314,9 +1425,12 @@ async function _loadReplayData(hours) {
     _replayUI.updateTimeRange(range.start, range.end);
     _replayUI.setLoading(false);
     _replayEngine.seek(range.start);
-  } catch {
+    return true;
+  } catch (err) {
     _replayUI.setLoading(false);
-    stopReplay();
+    _replayUI.setError(err?.message || "Replay load failed");
+    logger.error("Replay data load failed", err);
+    return false;
   }
 }
 
@@ -1331,7 +1445,7 @@ async function _reloadReplayRange(hours) {
  * Exit replay mode: dispose engine/UI, restore live state.
  */
 export function stopReplay() {
-  if (!_replayMode) return;
+  if (!_replayMode && !_replayEngine && !_replayUI) return;
   _replayMode = false;
 
   const buffered = _replayEngine?.flushLiveBuffer() ?? [];
@@ -1375,37 +1489,19 @@ function _clearAllCardStreams() {
 }
 
 function _handleReplayEvent(evt, speed) {
-  const type = evt.type || evt.name || "";
-  const anima = evt.anima || (evt.animas && evt.animas[0]) || "";
+  if (!evt?.kind || Number(evt.importance || 0) < 2) return;
 
-  if (anima && _cardEls.has(anima)) {
-    const data = {
-      eventType: type,
-      summary: evt.summary || "",
-      content: evt.content || "",
-      from_person: evt.meta?.from_person || "",
-      to_person: evt.meta?.to_person || "",
-      channel: evt.meta?.channel || evt.channel || "",
-      toolName: evt.tool || evt.tool_name || "",
-      toolId: evt.tool_id || "",
-      isError: evt.is_error || false,
-    };
-
-    if (speed < 50 || type.includes("message") || type.includes("heartbeat") || type.includes("response") || type.includes("cron")) {
-      updateCardActivity(anima, data);
-    }
+  for (const name of _semanticCardNames(evt)) {
+    updateCardSemanticActivity(name, evt);
   }
+  _showSemanticReplayLine(evt, speed);
+}
 
-  if (type === "message_sent" && evt.meta?.to_person && _cardEls.has(anima)) {
-    const intent = evt.meta?.intent || "";
-    let msgLineType = "internal";
-    if (intent === "delegation") msgLineType = "delegation";
-    showMessageLine(anima, evt.meta.to_person, evt.summary || "", { lineType: msgLineType, replaySpeed: speed });
-  } else if (type === "dm_sent" || type === "dm_received") {
-    const from = evt.meta?.from_person || anima;
-    const to = evt.meta?.to_person || "";
-    if (from && to) showMessageLine(from, to, evt.summary || "", { replaySpeed: speed });
-  }
+function _handleNarrativeUpdate(state) {
+  _replayUI?.updateNarrative(state);
+  if (!state?.currentEvent || _replayEngine?.isPlaying()) return;
+  if (_msgLinesGroup) _msgLinesGroup.innerHTML = "";
+  _showSemanticReplayLine(state.currentEvent, _replayEngine?.getSpeed?.() || 0);
 }
 
 function _handleSeekRebuild({ cardStreams, cardStatus, kpiCounts }) {

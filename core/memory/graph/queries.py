@@ -18,7 +18,7 @@ RETURN labels(n)[0] AS label, count(n) AS cnt
 
 COUNT_EDGES_BY_GROUP = """
 MATCH ()-[r]->()
-WHERE r.group_id = $group_id OR r.group_id IS NULL
+WHERE r.group_id = $group_id
 RETURN type(r) AS rel_type, count(r) AS cnt
 """
 
@@ -67,12 +67,14 @@ RETURN e.uuid AS uuid
 # ── RELATES_TO (Fact) ──────────
 
 CREATE_FACT = """
-MATCH (s:Entity {uuid: $source_uuid}), (t:Entity {uuid: $target_uuid})
+MATCH (s:Entity {uuid: $source_uuid})
+MATCH (t:Entity {uuid: $target_uuid})
 CREATE (s)-[r:RELATES_TO {
   uuid: $uuid,
   fact: $fact,
   fact_embedding: $fact_embedding,
   edge_type: $edge_type,
+  raw_edge_type: $raw_edge_type,
   group_id: $group_id,
   created_at: datetime($created_at),
   valid_at: datetime($valid_at),
@@ -86,8 +88,13 @@ RETURN r.uuid AS uuid
 # ── MENTIONS ──────────
 
 CREATE_MENTION = """
-MATCH (ep:Episode {uuid: $episode_uuid}), (en:Entity {uuid: $entity_uuid})
-CREATE (ep)-[r:MENTIONS {uuid: $uuid, created_at: datetime($created_at)}]->(en)
+MATCH (ep:Episode {uuid: $episode_uuid})
+MATCH (en:Entity {uuid: $entity_uuid})
+CREATE (ep)-[r:MENTIONS {
+  uuid: $uuid,
+  group_id: $group_id,
+  created_at: datetime($created_at)
+}]->(en)
 RETURN r.uuid AS uuid
 """
 
@@ -117,7 +124,11 @@ SET e.summary = $summary
 REDIRECT_MENTIONS = """
 MATCH (ep:Episode)-[old:MENTIONS]->(old_entity:Entity {uuid: $old_uuid})
 MATCH (new_entity:Entity {uuid: $new_uuid})
-CREATE (ep)-[:MENTIONS {uuid: old.uuid, created_at: old.created_at}]->(new_entity)
+CREATE (ep)-[:MENTIONS {
+  uuid: old.uuid,
+  group_id: coalesce(old.group_id, ep.group_id),
+  created_at: old.created_at
+}]->(new_entity)
 DELETE old
 """
 
@@ -127,6 +138,7 @@ MATCH (new_entity:Entity {uuid: $new_uuid})
 CREATE (new_entity)-[r:RELATES_TO {
   uuid: old.uuid, fact: old.fact, fact_embedding: old.fact_embedding,
   edge_type: coalesce(old.edge_type, 'RELATES_TO'),
+  raw_edge_type: old.raw_edge_type,
   group_id: old.group_id, created_at: old.created_at, valid_at: old.valid_at,
   invalid_at: old.invalid_at, expired_at: old.expired_at,
   source_episode_uuids: old.source_episode_uuids
@@ -140,6 +152,7 @@ MATCH (new_entity:Entity {uuid: $new_uuid})
 CREATE (source)-[r:RELATES_TO {
   uuid: old.uuid, fact: old.fact, fact_embedding: old.fact_embedding,
   edge_type: coalesce(old.edge_type, 'RELATES_TO'),
+  raw_edge_type: old.raw_edge_type,
   group_id: old.group_id, created_at: old.created_at, valid_at: old.valid_at,
   invalid_at: old.invalid_at, expired_at: old.expired_at,
   source_episode_uuids: old.source_episode_uuids
@@ -214,7 +227,8 @@ WHERE relationship.group_id = $group_id
 WITH relationship AS r, score,
      startNode(relationship) AS s, endNode(relationship) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
+       toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
 """
 
 VECTOR_SEARCH_ENTITIES = """
@@ -259,7 +273,8 @@ WHERE relationship.group_id = $group_id
 WITH relationship AS r, score,
      startNode(relationship) AS s, endNode(relationship) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
+       toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type, score
 """
 
 FULLTEXT_SEARCH_ENTITIES = """
@@ -283,7 +298,8 @@ WHERE r.group_id = $group_id
   AND (r.valid_at IS NULL OR r.valid_at <= datetime($as_of_time))
 WITH r, startNode(r) AS s, endNode(r) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type
+       toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type
 LIMIT $limit
 """
 
@@ -307,7 +323,8 @@ WHERE r.group_id = $group_id
   AND (r.valid_at IS NULL OR r.valid_at <= datetime($as_of_time))
 WITH r, startNode(r) AS s, endNode(r) AS t
 RETURN r.uuid AS uuid, r.fact AS fact, s.name AS source_name, t.name AS target_name,
-       toString(r.valid_at) AS valid_at, coalesce(r.edge_type, 'RELATES_TO') AS edge_type
+       toString(r.valid_at) AS valid_at, toString(r.created_at) AS created_at,
+       coalesce(r.edge_type, 'RELATES_TO') AS edge_type
 LIMIT $limit
 """
 
@@ -347,13 +364,30 @@ RETURN c.uuid AS uuid
 """
 
 CREATE_HAS_MEMBER = """
-MATCH (c:Community {uuid: $community_uuid}), (e:Entity {uuid: $entity_uuid})
-CREATE (c)-[:HAS_MEMBER]->(e)
+MATCH (c:Community {uuid: $community_uuid})
+MATCH (e:Entity {uuid: $entity_uuid})
+CREATE (c)-[:HAS_MEMBER {group_id: $group_id}]->(e)
 """
 
 FIND_COMMUNITY_FOR_ENTITY = """
-MATCH (c:Community)-[:HAS_MEMBER]->(e:Entity {uuid: $entity_uuid})
+MATCH (c:Community)-[r:HAS_MEMBER]->(e:Entity {uuid: $entity_uuid})
+WHERE r.group_id = $group_id
 RETURN c.uuid AS community_uuid, c.name AS name, c.summary AS summary
+"""
+
+COUNT_COMMUNITY_STATS = """
+CALL {
+  MATCH (c:Community)
+  WHERE c.group_id = $group_id
+  RETURN count(c) AS communities
+}
+CALL {
+  MATCH (c:Community)-[r:HAS_MEMBER]->(:Entity)
+  WHERE c.group_id = $group_id
+    AND r.group_id = $group_id
+  RETURN count(r) AS memberships
+}
+RETURN communities, memberships
 """
 
 FIND_ENTITY_NEIGHBORS = """
@@ -366,8 +400,19 @@ LIMIT $limit
 SEARCH_COMMUNITIES = """
 MATCH (c:Community)
 WHERE c.group_id = $group_id
-RETURN c.uuid AS uuid, c.name AS name, c.summary AS summary
+RETURN c.uuid AS uuid, c.name AS name, c.summary AS summary,
+       toString(c.created_at) AS created_at
 ORDER BY c.created_at DESC
+LIMIT $limit
+"""
+
+FULLTEXT_SEARCH_COMMUNITIES = """
+CALL db.index.fulltext.queryNodes('community_fulltext', $query, {limit: $top_k})
+YIELD node, score
+WHERE node.group_id = $group_id
+RETURN node.uuid AS uuid, node.name AS name, node.summary AS summary,
+       toString(node.created_at) AS created_at, score
+ORDER BY score DESC
 LIMIT $limit
 """
 
