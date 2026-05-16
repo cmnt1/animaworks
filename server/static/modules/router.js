@@ -52,6 +52,7 @@ function registerRoutes() {
   routes["/chat"] = () => import("../pages/chat.js" + _v);
   routes["/board"] = () => import("../pages/board.js" + _v);
   routes["/task-board"] = () => import("../pages/task-board.js" + _v);
+  routes["/scheduler"] = () => import("../pages/scheduler-page.js" + _v);
   routes["/setup"] = () => import("../pages/setup.js" + _v);
   routes["/users"] = () => import("../pages/users.js" + _v);
   routes["/animas"] = () => import("../pages/animas.js" + _v);

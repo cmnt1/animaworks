@@ -298,6 +298,19 @@ class SchedulerManager:
             logger.debug("Failed to read heartbeat_interval_minutes from %s", self._anima_dir)
         return app_config.heartbeat.interval_minutes
 
+    def _read_per_anima_max_interval(self) -> int | None:
+        """Read optional heartbeat_max_interval_minutes from status.json."""
+        try:
+            status_path = self._anima_dir / "status.json"
+            if status_path.is_file():
+                data = json.loads(status_path.read_text(encoding="utf-8"))
+                val = data.get("heartbeat_max_interval_minutes")
+                if isinstance(val, (int, float)) and 5 <= val <= 1440:
+                    return int(val)
+        except (json.JSONDecodeError, OSError, ValueError):
+            logger.debug("Failed to read heartbeat_max_interval_minutes from %s", self._anima_dir)
+        return None
+
     def _setup_heartbeat(self) -> None:
         """Register heartbeat job from heartbeat.md + config.json + activity_level."""
         if not self._anima or not self.scheduler:
@@ -341,6 +354,10 @@ class SchedulerManager:
         effective_interval = base_interval / (activity_pct / 100.0)
         effective_interval = max(5.0, effective_interval)
         interval = round(effective_interval)
+        max_interval = self._read_per_anima_max_interval()
+        if max_interval is not None and interval > max_interval:
+            interval = max_interval
+            activity_source = f"{activity_source}+cap"
 
         # Fixed offset: crc32(anima_name) % 10 → deterministic 0-9 min spread
         offset = zlib.crc32(self._anima_name.encode()) % 10

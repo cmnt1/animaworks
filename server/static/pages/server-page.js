@@ -25,6 +25,87 @@ function _consolidationTimeStr(isoOrTs) {
   return `${d.getFullYear()}/${mm}/${dd}(${dow}) ${time}`;
 }
 
+function _padTimePart(value) {
+  return String(value).padStart(2, "0");
+}
+
+function _formatCronTime(minute, hour) {
+  if (/^\d+$/.test(minute) && /^\d+$/.test(hour)) {
+    return `${_padTimePart(hour)}:${_padTimePart(minute)}`;
+  }
+  if (/^\d+$/.test(minute) && hour.includes(",")) {
+    return hour
+      .split(",")
+      .filter(Boolean)
+      .map(h => `${_padTimePart(h)}:${_padTimePart(minute)}`)
+      .join("、");
+  }
+  if (hour === "*" && /^\d+$/.test(minute)) return `毎時 ${_padTimePart(minute)}分`;
+  if (minute.startsWith("*/") && hour === "*") return `${minute.slice(2)}分ごと`;
+  return `${minute}分 ${hour}時`;
+}
+
+function _formatCronWeekdays(dow) {
+  const names = ["日", "月", "火", "水", "木", "金", "土"];
+  const aliases = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+  if (!dow || dow === "*") return "";
+  const normalized = dow.toLowerCase();
+  if (aliases[normalized] !== undefined) return `毎週${names[aliases[normalized]]}`;
+  if (/^[a-z]{3}-[a-z]{3}$/i.test(dow)) {
+    const [startName, endName] = normalized.split("-");
+    const start = aliases[startName];
+    const end = aliases[endName];
+    if (start !== undefined && end !== undefined) {
+      if (start === 1 && end === 5) return "平日";
+      return `毎週${names[start]}〜${names[end]}`;
+    }
+  }
+  if (/^\d-\d$/.test(dow)) {
+    const [start, end] = dow.split("-").map(Number);
+    if (start === 1 && end === 5) return "平日";
+    if (start >= 0 && end <= 6 && start <= end) return `毎週${names[start]}〜${names[end]}`;
+  }
+  if (/^\d(,\d)*$/.test(dow)) {
+    return `毎週${dow.split(",").map(v => names[Number(v)] || v).join("・")}`;
+  }
+  if (/^\d$/.test(dow)) return `毎週${names[Number(dow)] || dow}`;
+  return `曜日 ${dow}`;
+}
+
+function _formatFiveFieldCron(expr) {
+  const parts = String(expr || "").trim().split(/\s+/);
+  if (parts.length !== 5) return "";
+  const [minute, hour, day, month, dow] = parts;
+  const time = _formatCronTime(minute, hour);
+  if (day === "*" && month === "*" && dow === "*") return `毎日 ${time}`;
+  if (day === "*" && month === "*" && dow !== "*") return `${_formatCronWeekdays(dow)} ${time}`;
+  if (day !== "*" && month === "*" && dow === "*") return `毎月${day}日 ${time}`;
+  if (day !== "*" && month !== "*" && dow === "*") return `毎年${month}月${day}日 ${time}`;
+  return `${time}（条件: 日=${day} 月=${month} 曜日=${dow}）`;
+}
+
+function _formatCronTrigger(trigger) {
+  const text = String(trigger || "");
+  if (!text.startsWith("cron[")) return "";
+  const hour = text.match(/hour='([^']+)'/)?.[1] || "*";
+  const minute = text.match(/minute='([^']+)'/)?.[1] || "0";
+  const day = text.match(/day='([^']+)'/)?.[1] || "*";
+  const month = text.match(/month='([^']+)'/)?.[1] || "*";
+  const dow = text.match(/day_of_week='([^']+)'/)?.[1] || "*";
+  return _formatFiveFieldCron(`${minute} ${hour} ${day} ${month} ${dow}`);
+}
+
+function _formatScheduleForHuman(job) {
+  const raw = String(job?.schedule || job?.trigger || "").trim();
+  if (!raw) return "--";
+  const cronLabel = _formatFiveFieldCron(raw);
+  if (cronLabel) return cronLabel;
+  const triggerLabel = _formatCronTrigger(raw);
+  if (triggerLabel) return triggerLabel;
+  if (raw.includes("`") || raw.split(/\s+/).length > 5) return "未設定または無効なスケジュール";
+  return raw;
+}
+
 let _refreshInterval = null;
 let _unsubConsolidation = null;
 
@@ -215,7 +296,7 @@ async function _loadScheduler() {
               <tr>
                 <td style="font-weight:500;">${escapeHtml(j.name || j.id || "--")}</td>
                 <td>${escapeHtml(j.anima || "--")}</td>
-                <td><code>${escapeHtml(j.schedule || j.trigger || "--")}</code></td>
+                <td title="${escapeHtml(j.schedule || j.trigger || "")}">${escapeHtml(_formatScheduleForHuman(j))}</td>
                 <td>${escapeHtml(j.last_run ? timeStr(j.last_run) : "--")}</td>
                 <td>${escapeHtml(j.next_run ? timeStr(j.next_run) : "--")}</td>
               </tr>

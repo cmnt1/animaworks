@@ -387,6 +387,29 @@ class TestGovernorAuthoritative:
         mgr.shutdown()
 
     @pytest.mark.asyncio
+    @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=1)
+    @patch("core.supervisor.scheduler_manager.load_config")
+    async def test_status_can_cap_governor_throttled_heartbeat_interval(
+        self,
+        mock_load_config,
+        _mock_gov,
+        tmp_path,
+    ):
+        """Per-Anima status can enforce a maximum heartbeat gap under governor throttle."""
+        config = AnimaWorksConfig(activity_level=100)
+        mock_load_config.return_value = config
+
+        mgr = self._make_mgr(tmp_path)
+        (mgr._anima_dir / "status.json").write_text(
+            json.dumps({"heartbeat_max_interval_minutes": 59}),
+            encoding="utf-8",
+        )
+        mgr.setup()
+
+        assert mgr._hb_effective_interval == 59
+        mgr.shutdown()
+
+    @pytest.mark.asyncio
     @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=None)
     @patch("core.supervisor.scheduler_manager.load_config")
     async def test_config_used_when_governor_absent(self, mock_load_config, _mock_gov, tmp_path):

@@ -163,8 +163,17 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
 
         if re.match(r"^(schedule|sched)\s*:", stripped, flags=re.IGNORECASE):
             _, value = stripped.split(":", 1)
-            schedule = _strip_inline_comment(value.strip())
-            schedule = _strip_outer_quotes(schedule)
+            candidate = _strip_inline_comment(value.strip())
+            candidate = _strip_outer_quotes(candidate)
+            if _CRON_EXPR_RE.match(candidate):
+                schedule = candidate
+            else:
+                logger.warning(
+                    "Ignoring invalid schedule directive for task %s: %s",
+                    name,
+                    candidate,
+                )
+                description_lines.append(line)
         elif stripped.startswith("type:"):
             task_type = _strip_inline_comment(stripped[5:].strip())
         elif stripped.startswith("command:"):

@@ -118,6 +118,23 @@ Summarize yesterday.
         assert len(tasks) == 1
         assert tasks[0].schedule == "0 9 * * *"
 
+    def test_description_schedule_bullet_does_not_override_schedule(self):
+        """Markdown schedule wording in the description does not override cron."""
+        content = """\
+## Anjo 1K Daily Report
+schedule: 0 6 * * *
+type: llm
+Analyze the Anjo 1K rental market.
+
+### Submission guard
+- schedule: `0 6 * * *` means the daily report is due at 06:00.
+- Save the output after reviewing the source data.
+"""
+        tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].schedule == "0 6 * * *"
+        assert "daily report is due at 06:00" in tasks[0].description
+
     def test_sched_alias_case_insensitive(self):
         """Alias parsing is case-insensitive (e.g., ``sched:``)."""
         content = """\
@@ -572,7 +589,9 @@ class TestBlankTemplateFormat:
 
     def test_blank_template_parses_correctly(self):
         """Updated blank template with schedule: lines parses correctly."""
-        content = (Path(__file__).resolve().parents[3] / "templates/ja/anima_templates/_blank/cron.md").read_text()
+        content = (
+            Path(__file__).resolve().parents[3] / "templates/ja/anima_templates/_blank/cron.md"
+        ).read_text(encoding="utf-8")
         # Replace {name} placeholder
         content = content.replace("{name}", "test")
         tasks = parse_cron_md(content)
@@ -587,7 +606,9 @@ class TestBlankTemplateFormat:
 
     def test_blank_template_schedules_are_valid(self):
         """All schedules in the blank template are valid cron expressions."""
-        content = (Path(__file__).resolve().parents[3] / "templates/ja/anima_templates/_blank/cron.md").read_text()
+        content = (
+            Path(__file__).resolve().parents[3] / "templates/ja/anima_templates/_blank/cron.md"
+        ).read_text(encoding="utf-8")
         content = content.replace("{name}", "test")
         tasks = parse_cron_md(content)
         for task in tasks:

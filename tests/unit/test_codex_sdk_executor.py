@@ -452,9 +452,19 @@ class TestExecutorInit:
             assert _default_home_dir() == r"C:\Users\Tester"
 
     def test_build_mcp_env(self, executor):
-        env = executor._build_mcp_env()
+        with patch.dict(
+            "os.environ",
+            {
+                "COMMONPROGRAMFILES(X86)": r"C:\Program Files (x86)\Common Files",
+                "PROGRAMFILES(X86)": r"C:\Program Files (x86)",
+            },
+            clear=False,
+        ):
+            env = executor._build_mcp_env()
         assert "ANIMAWORKS_ANIMA_DIR" in env
         assert "PYTHONPATH" in env
+        assert "COMMONPROGRAMFILES(X86)" not in env
+        assert "PROGRAMFILES(X86)" not in env
 
     def test_default_path_env_prepends_embedded_codex(self):
         if os.name == "nt":
@@ -515,7 +525,15 @@ class TestConfigWriting:
         assert instructions == "Test system prompt"
 
     def test_write_codex_config_toml_content(self, executor, anima_dir):
-        executor._write_codex_config("My prompt")
+        with patch.dict(
+            "os.environ",
+            {
+                "COMMONPROGRAMFILES(X86)": r"C:\Program Files (x86)\Common Files",
+                "PROGRAMFILES(X86)": r"C:\Program Files (x86)",
+            },
+            clear=False,
+        ):
+            executor._write_codex_config("My prompt")
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         assert "model_instructions_file" in config_toml
         assert "sandbox_mode" in config_toml
@@ -527,6 +545,8 @@ class TestConfigWriting:
         assert "rtk proxy <command>" in config_toml
         assert "mcp__codex_apps__gmail._send_email" in config_toml
         assert "the required channel is the AnimaWorks DM tool" in config_toml
+        assert "COMMONPROGRAMFILES(X86)" not in config_toml
+        assert "PROGRAMFILES(X86)" not in config_toml
         parsed = tomllib.loads(config_toml)
         assert parsed["mcp_servers"]["aw"]["default_tools_approval_mode"] == "approve"
 

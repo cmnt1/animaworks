@@ -121,11 +121,54 @@ async function initDemoMode() {
 
 async function startDashboard() {
   await initDemoMode();
+  ensurePrimaryNavOrder();
   initRouter("pageContent");
   connectWebSocket();
   loadSystemStatus();
   showAuthBannerIfNeeded();
   if (state.demoMode) showDemoSplashIfNeeded();
+}
+
+function ensurePrimaryNavOrder() {
+  const navList = document.querySelector("#sidebarNav .nav-list");
+  if (!navList) return;
+
+  const ensureItem = (route, html) => {
+    let item = navList.querySelector(`[data-route="${route}"]`)?.closest("li");
+    if (item) return item;
+    item = document.createElement("li");
+    item.innerHTML = html;
+    return item;
+  };
+
+  const dashboardItem = ensureItem("/", `
+    <a href="#/" class="nav-item" data-route="/">
+      <span class="nav-emoji">&#x1F9E9;</span>
+      <i data-lucide="layout-dashboard" class="nav-lucide"></i>
+      <span class="nav-label" data-i18n="nav.dashboard">${t("nav.dashboard")}</span>
+    </a>
+  `);
+  const schedulerItem = ensureItem("/scheduler", `
+    <a href="#/scheduler" class="nav-item" data-route="/scheduler">
+      <span class="nav-emoji">&#x1F5C2;</span>
+      <i data-lucide="kanban" class="nav-lucide"></i>
+      <span class="nav-label" data-i18n="nav.scheduler">${t("nav.scheduler")}</span>
+    </a>
+  `);
+  const taskBoardItem = ensureItem("/task-board", `
+    <a href="#/task-board" class="nav-item" data-route="/task-board">
+      <span class="nav-emoji">&#x1F5C2;</span>
+      <i data-lucide="kanban" class="nav-lucide"></i>
+      <span class="nav-label" data-i18n="nav.task_board">${t("nav.task_board")}</span>
+    </a>
+  `);
+  const chatItem = navList.querySelector('[data-route="/chat"]')?.closest("li");
+
+  navList.prepend(dashboardItem);
+  dashboardItem.after(schedulerItem);
+  schedulerItem.after(taskBoardItem);
+  if (chatItem) taskBoardItem.after(chatItem);
+  if (window.lucide) window.lucide.createIcons();
 }
 
 function showAuthBannerIfNeeded() {

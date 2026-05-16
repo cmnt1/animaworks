@@ -135,6 +135,11 @@ function _bindEvents() {
       _setActiveColumn(tab.dataset.mobileColumn);
       return;
     }
+    const copy = event.target.closest("[data-task-copy]");
+    if (copy) {
+      _handleCopyTask(copy);
+      return;
+    }
     const action = event.target.closest("[data-task-action]");
     if (action) _handleAction(action);
   });
@@ -284,13 +289,21 @@ function _cardHtml(task) {
   const key = taskKey(task);
   const column = task.column || "todo";
   const overdue = isOverdue(task.deadline);
+  const title = task.summary || task.original_instruction || t("taskboard.untitled");
+  const ref = _taskReference(task);
   return `
     <article class="taskboard-card" draggable="true" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
       <div class="taskboard-card-topline">
         <span class="taskboard-anima">${escapeHtml(task.anima_name || task.assignee || "-")}</span>
-        <code>${escapeHtml(shortId(task.task_id))}</code>
+        <button
+          type="button"
+          class="taskboard-copy-ref"
+          data-task-copy="${escapeAttr(key)}"
+          title="${escapeAttr(t("taskboard.copy_title"))}"
+        ><code>${escapeHtml(shortId(task.task_id))}</code></button>
       </div>
-      <h4>${escapeHtml(task.summary || task.original_instruction || t("taskboard.untitled"))}</h4>
+      <h4>${escapeHtml(title)}</h4>
+      <div class="taskboard-task-ref">${escapeHtml(ref)}</div>
       <div class="taskboard-meta-row">
         <span class="taskboard-badge taskboard-badge--${statusClassSuffix(task.queue_status)}">
           ${escapeHtml(task.queue_status || t("taskboard.queue_missing"))}
@@ -308,6 +321,74 @@ function _cardHtml(task) {
       </div>
     </article>
   `;
+}
+
+function _taskTitle(task) {
+  return task?.summary || task?.original_instruction || t("taskboard.untitled");
+}
+
+function _taskReference(task) {
+  const anima = task?.anima_name || task?.assignee || "--";
+  return `${anima}:${task?.task_id || "--"}`;
+}
+
+function _taskReferenceText(task) {
+  return [
+    `${t("taskboard.copy_ref_label")}: ${_taskReference(task)}`,
+    `${t("taskboard.copy_name_label")}: ${_taskTitle(task)}`,
+  ].join("\n");
+}
+
+function _copyTextWithSelection(text) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  textarea.remove();
+  return copied;
+}
+
+function _copyText(text) {
+  if (_copyTextWithSelection(text)) return Promise.resolve();
+  if (!navigator.clipboard?.writeText) return Promise.reject(new Error("clipboard unavailable"));
+  return Promise.race([
+    navigator.clipboard.writeText(text),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("clipboard timeout")), 800)),
+  ]);
+}
+
+async function _handleCopyTask(button) {
+  const task = _findTask(button.dataset.taskCopy);
+  if (!task) return;
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.textContent = t("taskboard.copying");
+  try {
+    await _copyText(_taskReferenceText(task));
+    button.textContent = t("taskboard.copied");
+    _setFeedback(t("taskboard.copied_feedback"), "ok");
+  } catch {
+    button.textContent = t("taskboard.copy_failed");
+    _setFeedback(t("taskboard.copy_failed"), "error");
+  } finally {
+    setTimeout(() => {
+      if (button.isConnected) {
+        button.disabled = false;
+        button.innerHTML = original;
+      }
+    }, 1200);
+  }
 }
 
 function _actionButtons(task, key) {

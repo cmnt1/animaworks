@@ -691,12 +691,15 @@ class CodexSDKExecutor(BaseExecutor):
         """Build env dict for the Codex CLI child process."""
         from core.paths import PROJECT_DIR
 
-        env: dict[str, str] = {
-            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PATH": _default_path_env(),
-            "HOME": _default_home_dir(),
-        }
+        env: dict[str, str] = dict(os.environ)
+        env.update(
+            {
+                "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
+                "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
+                "PATH": _default_path_env(),
+                "HOME": _default_home_dir(),
+            }
+        )
         # When per-anima auth.json is absent, use the system CODEX_HOME
         # (from env var) or omit entirely for default ~/.codex/ keychain.
         if not self._use_default_codex_home:
@@ -719,6 +722,7 @@ class CodexSDKExecutor(BaseExecutor):
                 val = os.environ.get(var)
                 if val:
                     env[var] = val
+        env.pop("OPENAI_API_KEY", None)
         api_key = self._resolve_api_key()
         if self._uses_codex_login_auth():
             logger.debug("Using Codex login auth; not forwarding OPENAI_API_KEY to Codex child")

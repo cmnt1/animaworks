@@ -436,10 +436,13 @@ async def _try_codex_sdk(
     from core.execution.codex_sdk import _default_path_env, _resolve_codex_model
     from core.platform.codex import default_home_dir, get_codex_executable
 
-    env: dict[str, str] = {
-        "PATH": _default_path_env(),
-        "HOME": default_home_dir(),
-    }
+    env: dict[str, str] = dict(os.environ)
+    env.update(
+        {
+            "PATH": _default_path_env(),
+            "HOME": default_home_dir(),
+        }
+    )
     if llm_kwargs.get("api_key"):
         env["OPENAI_API_KEY"] = str(llm_kwargs["api_key"])
     if llm_kwargs.get("api_base"):
@@ -480,9 +483,10 @@ async def one_shot_completion(
     """Execute a one-shot LLM completion with automatic backend selection.
 
     Fallback chain:
-      1. LiteLLM (if API key available) -- fast, no subprocess
-      2. Agent SDK one-shot (if installed and Anthropic model) -- Max plan compatible
-      3. Return None -- caller handles gracefully
+      1. Codex SDK for ``codex/*`` models -- these are not LiteLLM models
+      2. LiteLLM (if API key available) -- fast, no subprocess
+      3. Agent SDK one-shot (if installed and Anthropic model) -- Max plan compatible
+      4. Return None -- caller handles gracefully
 
     Args:
         prompt: User message content.
@@ -495,6 +499,22 @@ async def one_shot_completion(
     """
     llm_kwargs = get_llm_kwargs_for_model(model)
     resolved_model = llm_kwargs["model"]
+
+    # Codex model identifiers are routed through the Codex SDK/CLI.  LiteLLM
+    # does not know the ``codex/`` provider prefix and logs noisy provider
+    # resolution failures before falling back.
+    if _is_codex_model(resolved_model):
+        try:
+            return await _try_codex_sdk(
+                prompt,
+                system_prompt=system_prompt,
+                model=resolved_model,
+                max_tokens=max_tokens,
+                llm_kwargs=llm_kwargs,
+            )
+        except Exception as e:
+            logger.warning("Codex SDK one-shot failed: %s", e)
+        return None
 
     # 1. Try LiteLLM
     try:
@@ -522,18 +542,6 @@ async def one_shot_completion(
         except Exception as e:
             logger.warning("Agent SDK one-shot fallback also failed: %s", e)
 
-    if _is_codex_model(resolved_model):
-        try:
-            return await _try_codex_sdk(
-                prompt,
-                system_prompt=system_prompt,
-                model=resolved_model,
-                max_tokens=max_tokens,
-                llm_kwargs=llm_kwargs,
-            )
-        except Exception as e:
-            logger.warning("Codex SDK one-shot fallback also failed: %s", e)
-
     return None
 
 
@@ -547,6 +555,19 @@ async def one_shot_completion_with_model_config(
     """Execute one-shot completion with the active Anima model configuration."""
     llm_kwargs = get_llm_kwargs_for_model_config(model_config)
     resolved_model = llm_kwargs["model"]
+
+    if _is_codex_model(resolved_model):
+        try:
+            return await _try_codex_sdk(
+                prompt,
+                system_prompt=system_prompt,
+                model=resolved_model,
+                max_tokens=max_tokens,
+                llm_kwargs=llm_kwargs,
+            )
+        except Exception as e:
+            logger.warning("Codex SDK active-model one-shot failed: %s", e)
+        return None
 
     try:
         result = await _try_litellm(
@@ -571,17 +592,5 @@ async def one_shot_completion_with_model_config(
             )
         except Exception as e:
             logger.warning("Agent SDK active-model one-shot fallback also failed: %s", e)
-
-    if _is_codex_model(resolved_model):
-        try:
-            return await _try_codex_sdk(
-                prompt,
-                system_prompt=system_prompt,
-                model=resolved_model,
-                max_tokens=max_tokens,
-                llm_kwargs=llm_kwargs,
-            )
-        except Exception as e:
-            logger.warning("Codex SDK active-model one-shot fallback also failed: %s", e)
 
     return None

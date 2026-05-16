@@ -38,6 +38,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def _get_source_type(source: Any) -> str:
+    """v0.3.x: source.type / v0.4.x: source.kind の両方に対応するヘルパー。"""
+    val = getattr(source, "kind", None) or getattr(source, "type", None)
+    return str(val) if val is not None else "unknown"
+
+
 # ── Execution Profile ─────────────────────────────────────
 
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
@@ -109,7 +116,7 @@ async def _add_source_url(notebook_id: str, url: str) -> dict[str, Any]:
     path = _resolve_storage_path()
     async with await NotebookLMClient.from_storage(path) as client:
         source = await client.sources.add_url(notebook_id, url)
-        return {"id": source.id, "title": source.title, "type": str(source.type)}
+        return {"id": source.id, "title": source.title, "type": _get_source_type(source)}
 
 
 async def _add_source_text(
@@ -120,14 +127,14 @@ async def _add_source_text(
     path = _resolve_storage_path()
     async with await NotebookLMClient.from_storage(path) as client:
         source = await client.sources.add_text(notebook_id, text, title=title)
-        return {"id": source.id, "title": source.title, "type": str(source.type)}
+        return {"id": source.id, "title": source.title, "type": _get_source_type(source)}
 
 
 async def _add_source_file(notebook_id: str, file_path: str) -> dict[str, Any]:
     path = _resolve_storage_path()
     async with await NotebookLMClient.from_storage(path) as client:
         source = await client.sources.add_file(notebook_id, file_path)
-        return {"id": source.id, "title": source.title, "type": str(source.type)}
+        return {"id": source.id, "title": source.title, "type": _get_source_type(source)}
 
 
 async def _get_notebook(notebook_id: str) -> dict[str, Any]:
@@ -159,7 +166,7 @@ async def _list_sources(notebook_id: str) -> list[dict[str, Any]]:
     path = _resolve_storage_path()
     async with await NotebookLMClient.from_storage(path) as client:
         sources = await client.sources.list(notebook_id)
-        return [{"id": s.id, "title": s.title, "type": str(s.type)} for s in sources]
+        return [{"id": s.id, "title": s.title, "type": _get_source_type(s)} for s in sources]
 
 
 async def _chat(notebook_id: str, message: str) -> dict[str, Any]:
