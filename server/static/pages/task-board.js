@@ -84,6 +84,7 @@ export async function render(container) {
       </div>
 
       <div class="taskboard-feedback" id="taskboardFeedback" role="status"></div>
+      <div class="taskboard-needs-human-pin" id="taskboardNeedsHumanPin" hidden></div>
       <div class="taskboard-mobile-tabs" id="taskboardMobileTabs"></div>
       <div class="taskboard-columns" id="taskboardColumns">
         <div class="taskboard-loading">${t("taskboard.loading")}</div>
@@ -171,6 +172,7 @@ async function _loadBoard({ quiet = false, token = _renderToken } = {}) {
     _syncAssigneeOptionsFromTasks();
     _ensureActiveColumnHasView();
     _renderBoard();
+    _renderNeedsHumanPin();
     _setFeedback(_summaryText(data), "ok");
   } catch (err) {
     if (!_container || token !== _renderToken) return;
@@ -291,8 +293,15 @@ function _cardHtml(task) {
   const overdue = isOverdue(task.deadline);
   const title = task.summary || task.original_instruction || t("taskboard.untitled");
   const ref = _taskReference(task);
+  const needsHuman = task.needs_human === true;
+  const cardClass = `taskboard-card${needsHuman ? " taskboard-card--needs-human" : ""}`;
+  const reasonText = needsHuman ? _needsHumanReasonText(task.needs_human_reason) : "";
+  const needsHumanBadge = needsHuman
+    ? `<span class="taskboard-needs-human-badge" title="${escapeAttr(reasonText)}">🙋 ${escapeHtml(t("taskboard.needs_human_badge"))}</span>`
+    : "";
   return `
-    <article class="taskboard-card" draggable="true" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
+    <article class="${cardClass}" draggable="true" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
+      ${needsHumanBadge}
       <div class="taskboard-card-topline">
         <span class="taskboard-anima">${escapeHtml(task.anima_name || task.assignee || "-")}</span>
         <button
@@ -563,6 +572,28 @@ function _ensureActiveColumnHasView() {
   _activeColumn = COLUMNS.find(hasVisibleTask) || "todo";
 }
 function _findTask(key) { return _tasks.find((task) => taskKey(task) === key) || _allTasks.find((task) => taskKey(task) === key); }
+
+function _renderNeedsHumanPin() {
+  const pin = _container?.querySelector("#taskboardNeedsHumanPin");
+  if (!pin) return;
+  const count = _tasks.filter((task) => task.needs_human === true).length;
+  if (count <= 0) {
+    pin.hidden = true;
+    pin.innerHTML = "";
+    return;
+  }
+  pin.hidden = false;
+  pin.innerHTML = `
+    <span class="taskboard-needs-human-pin-icon" aria-hidden="true">🙋</span>
+    <span class="taskboard-needs-human-pin-text">${escapeHtml(t("taskboard.needs_human_count", { count }))}</span>
+  `;
+}
+
+function _needsHumanReasonText(reason) {
+  const key = `taskboard.needs_human_reason_${reason || "unspecified"}`;
+  const label = t(key);
+  return label && label !== key ? label : t("taskboard.needs_human_badge");
+}
 
 function _summaryText(data) {
   const warnings = data?.meta?.warnings?.corrupt_task_queue_lines || 0;

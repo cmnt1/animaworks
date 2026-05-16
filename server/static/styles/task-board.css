@@ -225,6 +225,50 @@
   opacity: 0.55;
 }
 
+.taskboard-card--needs-human {
+  border-color: #d97706;
+  border-width: 2px;
+  background: #fffbeb;
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.18);
+}
+
+.taskboard-needs-human-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fde68a;
+  color: #78350f;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.taskboard-needs-human-pin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid #f59e0b;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #78350f;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.taskboard-needs-human-pin[hidden] {
+  display: none;
+}
+
+.taskboard-needs-human-pin-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
 .taskboard-card-topline,
 .taskboard-meta-row,
 .taskboard-card-facts,

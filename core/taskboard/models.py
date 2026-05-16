@@ -94,6 +94,8 @@ class BoardTask(BaseModel):
     tombstone_reason: str | None = None
     board_updated_at: str | None = None
     board_updated_by: str | None = None
+    needs_human: bool = False
+    needs_human_reason: str | None = None
 
 
 class AttentionDecision(BaseModel):

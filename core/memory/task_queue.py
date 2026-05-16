@@ -371,7 +371,12 @@ class TaskQueueManager:
         if not self._queue_path.exists():
             return tasks
 
-        for line in self._queue_path.read_text(encoding="utf-8").splitlines():
+        # Tolerate stray non-UTF-8 bytes (e.g. CP932 lines accidentally appended
+        # by external scripts). With errors="replace", bad bytes become U+FFFD
+        # and the offending line fails json.loads → skipped below, so a single
+        # corrupted line cannot take down the whole queue read.
+        raw_text = self._queue_path.read_bytes().decode("utf-8", errors="replace")
+        for line in raw_text.splitlines():
             line = line.strip()
             if not line:
                 continue

@@ -178,6 +178,7 @@ def summarize_task_board(
         "failed_review": 0,
         "snoozed": 0,
         "suppressed": 0,
+        "needs_human": 0,
         "total_active": 0,
     }
 
@@ -190,6 +191,9 @@ def summarize_task_board(
             continue
         if task.visibility != AttentionVisibility.ACTIVE:
             continue
+
+        if task.needs_human:
+            summary["needs_human"] += 1
 
         status = task.queue_status
         if status == "pending":
@@ -476,7 +480,7 @@ def _count_corrupt_task_queue_lines(animas_dir: Path, anima_names: list[str]) ->
         if not queue_path.exists():
             continue
         try:
-            lines = queue_path.read_text(encoding="utf-8").splitlines()
+            lines = queue_path.read_bytes().decode("utf-8", errors="replace").splitlines()
         except OSError:
             continue
         for line in lines:

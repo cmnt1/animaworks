@@ -4,7 +4,7 @@ from pathlib import Path
 
 from core.memory.task_queue import TaskQueueManager
 from core.taskboard.models import AttentionVisibility, BoardColumn
-from core.taskboard.projector import QUEUE_STATUS_TO_COLUMN, project_all, project_anima
+from core.taskboard.projector import QUEUE_STATUS_TO_COLUMN, compute_needs_human, project_all, project_anima
 from core.taskboard.store import TaskBoardStore
 
 
@@ -146,6 +146,64 @@ def test_missing_queue_metadata_is_hidden_unless_requested(tmp_path: Path) -> No
     assert len(projected) == 1
     assert projected[0].queue_missing is True
     assert projected[0].column == BoardColumn.REVIEW
+
+
+def test_compute_needs_human_detects_known_signals() -> None:
+    # C: assignee == human
+    assert compute_needs_human(assignee="Human", queue_status="pending", meta=None, notification_key=None) == (
+        True,
+        "assignee_human",
+    )
+
+    # B: call_human pending, queue not terminal
+    assert compute_needs_human(assignee="sakura", queue_status="pending", meta=None, notification_key="nk-1") == (
+        True,
+        "call_human_pending",
+    )
+
+    # B suppressed when terminal
+    assert compute_needs_human(assignee="sakura", queue_status="done", meta=None, notification_key="nk-1") == (
+        False,
+        None,
+    )
+
+    # D: explicit flag
+    assert compute_needs_human(
+        assignee="sakura", queue_status="blocked", meta={"needs_human": True}, notification_key=None
+    ) == (True, "meta_flag")
+
+    # D: meta blocker on blocked task
+    assert compute_needs_human(
+        assignee="sakura", queue_status="blocked", meta={"blocker": "human"}, notification_key=None
+    ) == (True, "meta_blocker")
+
+    # D: meta blocker ignored when not blocked
+    assert compute_needs_human(
+        assignee="sakura", queue_status="pending", meta={"blocker": "human"}, notification_key=None
+    ) == (False, None)
+
+    # Negative baseline
+    assert compute_needs_human(
+        assignee="sakura", queue_status="pending", meta={"blocker": "kanna"}, notification_key=None
+    ) == (False, None)
+
+
+def test_projected_task_carries_needs_human_field(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    manager.add_task(
+        source="human",
+        original_instruction="escalate",
+        assignee="human",
+        summary="escalate to human",
+        task_id="task-1",
+    )
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    projected = project_anima(manager.anima_dir, store)
+
+    assert len(projected) == 1
+    assert projected[0].needs_human is True
+    assert projected[0].needs_human_reason == "assignee_human"
 
 
 def test_same_task_id_is_scoped_per_anima(tmp_path: Path) -> None:

@@ -24,6 +24,44 @@ ARCHIVED_QUEUE_STATUSES = {"done", "cancelled"}
 
 _COLUMN_ORDER = {column: index for index, column in enumerate(BoardColumn)}
 
+# A task is "needs_human" when progress is gated on a human action.
+_TERMINAL_QUEUE_STATUSES = {"done", "cancelled", "failed"}
+_HUMAN_BLOCKER_VALUES = {"human", "user", "owner"}
+_HUMAN_BLOCKER_KEYS = ("blocker", "blocked_on", "waiting_for", "waiting_on")
+
+
+def compute_needs_human(
+    *,
+    assignee: str | None,
+    queue_status: str | None,
+    meta: dict | None,
+    notification_key: str | None,
+) -> tuple[bool, str | None]:
+    """Return (needs_human, reason_code) for a projected task.
+
+    Detection rules:
+      * C: assignee resolves to "human"/"user".
+      * B: a call_human notification is registered and the queue task is not terminal.
+      * D: meta carries an explicit flag (``needs_human``) or a human-valued
+        blocker key on a blocked task.
+    """
+    if (assignee or "").strip().lower() in _HUMAN_BLOCKER_VALUES:
+        return True, "assignee_human"
+
+    if notification_key and (queue_status or "") not in _TERMINAL_QUEUE_STATUSES:
+        return True, "call_human_pending"
+
+    if meta:
+        if bool(meta.get("needs_human")):
+            return True, "meta_flag"
+        if queue_status == "blocked":
+            for key in _HUMAN_BLOCKER_KEYS:
+                value = meta.get(key)
+                if isinstance(value, str) and value.strip().lower() in _HUMAN_BLOCKER_VALUES:
+                    return True, "meta_blocker"
+
+    return False, None
+
 
 def project_anima(
     anima_dir: Path | str,
@@ -121,6 +159,13 @@ def _project_queue_task(
     visibility = metadata.visibility if metadata is not None else default_visibility
     column = metadata.column if metadata is not None and metadata.column is not None else default_column
 
+    needs_human, needs_human_reason = compute_needs_human(
+        assignee=task.assignee,
+        queue_status=task.status,
+        meta=task.meta,
+        notification_key=metadata.notification_key if metadata is not None else None,
+    )
+
     return BoardTask(
         anima_name=anima_name,
         task_id=task.task_id,
@@ -147,10 +192,18 @@ def _project_queue_task(
         tombstone_reason=metadata.tombstone_reason if metadata is not None else None,
         board_updated_at=metadata.updated_at if metadata is not None else None,
         board_updated_by=metadata.updated_by if metadata is not None else None,
+        needs_human=needs_human,
+        needs_human_reason=needs_human_reason,
     )
 
 
 def _project_missing_task(metadata: TaskBoardMetadata) -> BoardTask:
+    needs_human, needs_human_reason = compute_needs_human(
+        assignee=metadata.anima_name,
+        queue_status=None,
+        meta=None,
+        notification_key=metadata.notification_key,
+    )
     return BoardTask(
         anima_name=metadata.anima_name,
         task_id=metadata.task_id,
@@ -169,6 +222,8 @@ def _project_missing_task(metadata: TaskBoardMetadata) -> BoardTask:
         tombstone_reason=metadata.tombstone_reason,
         board_updated_at=metadata.updated_at,
         board_updated_by=metadata.updated_by,
+        needs_human=needs_human,
+        needs_human_reason=needs_human_reason,
     )
 
 
