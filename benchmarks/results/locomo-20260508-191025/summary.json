@@ -1,0 +1,169 @@
+{
+  "timestamp": "2026-05-09T12:03:06",
+  "elapsed_seconds": 60761.625073776,
+  "answer_model": "openai/qwen3.6-27b",
+  "conversations": 1,
+  "ac_threshold": 0.45,
+  "runs": {
+    "legacy_scope_all": {
+      "overall_f1": 0.6712953342015059,
+      "by_category": {
+        "temporal": {
+          "f1": 0.5741741741741743,
+          "judge": null,
+          "count": 37
+        },
+        "complex": {
+          "f1": 0.3961538461538462,
+          "judge": null,
+          "count": 13
+        },
+        "multi_hop": {
+          "f1": 0.4050719246031746,
+          "judge": null,
+          "count": 32
+        },
+        "open_domain": {
+          "f1": 0.7318717924907663,
+          "judge": null,
+          "count": 70
+        },
+        "adversarial": {
+          "f1": 0.9148936170212766,
+          "judge": null,
+          "count": 47
+        }
+      },
+      "question_count": 199,
+      "errors": 0
+    },
+    "neo4j_full": {
+      "overall_f1": 0.4129306185556772,
+      "by_category": {
+        "temporal": {
+          "f1": 0.5053196053196053,
+          "judge": null,
+          "count": 37
+        },
+        "complex": {
+          "f1": 0.18589743589743588,
+          "judge": null,
+          "count": 13
+        },
+        "multi_hop": {
+          "f1": 0.4188091422466422,
+          "judge": null,
+          "count": 32
+        },
+        "open_domain": {
+          "f1": 0.46064111226627813,
+          "judge": null,
+          "count": 70
+        },
+        "adversarial": {
+          "f1": 0.32608695652173914,
+          "judge": null,
+          "count": 46
+        }
+      },
+      "question_count": 198,
+      "errors": 31
+    },
+    "neo4j_no_reranker": {
+      "overall_f1": 0.45604482303428284,
+      "by_category": {
+        "temporal": {
+          "f1": 0.3734126984126984,
+          "judge": null,
+          "count": 36
+        },
+        "complex": {
+          "f1": 0.16025641025641027,
+          "judge": null,
+          "count": 13
+        },
+        "multi_hop": {
+          "f1": 0.23350694444444442,
+          "judge": null,
+          "count": 32
+        },
+        "open_domain": {
+          "f1": 0.3471208894625044,
+          "judge": null,
+          "count": 70
+        },
+        "adversarial": {
+          "f1": 0.9148936170212766,
+          "judge": null,
+          "count": 47
+        }
+      },
+      "question_count": 198,
+      "errors": 27
+    },
+    "neo4j_no_bfs": {
+      "overall_f1": 0.5537289968442636,
+      "by_category": {
+        "temporal": {
+          "f1": 0.46703131703131706,
+          "judge": null,
+          "count": 37
+        },
+        "complex": {
+          "f1": 0.34615384615384615,
+          "judge": null,
+          "count": 13
+        },
+        "multi_hop": {
+          "f1": 0.3919766865079365,
+          "judge": null,
+          "count": 32
+        },
+        "open_domain": {
+          "f1": 0.46955225247993937,
+          "judge": null,
+          "count": 70
+        },
+        "adversarial": {
+          "f1": 0.9148936170212766,
+          "judge": null,
+          "count": 47
+        }
+      },
+      "question_count": 199,
+      "errors": 0
+    },
+    "neo4j_no_invalidation": {
+      "overall_f1": 0.5288187099464073,
+      "by_category": {
+        "temporal": {
+          "f1": 0.41673101673101676,
+          "judge": null,
+          "count": 37
+        },
+        "complex": {
+          "f1": 0.2948717948717948,
+          "judge": null,
+          "count": 13
+        },
+        "multi_hop": {
+          "f1": 0.3752203525641026,
+          "judge": null,
+          "count": 32
+        },
+        "open_domain": {
+          "f1": 0.44250701492718303,
+          "judge": null,
+          "count": 70
+        },
+        "adversarial": {
+          "f1": 0.9148936170212766,
+          "judge": null,
+          "count": 47
+        }
+      },
+      "question_count": 199,
+      "errors": 0
+    }
+  }
+}

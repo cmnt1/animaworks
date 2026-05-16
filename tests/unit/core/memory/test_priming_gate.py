@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.priming import PrimingEngine
+from core.memory.priming import PrimingEngine, format_priming_section
 from core.memory.priming.engine import PrimingResult
 from core.memory.priming.gate import (
     MemoryCandidate,
@@ -138,6 +138,33 @@ def test_apply_plan_preserves_untrusted_split() -> None:
     assert gated.related_knowledge_untrusted
     assert plan.channel_decisions["related_knowledge"].render_mode == PrimingRenderMode.POINTER
     assert plan.channel_decisions["related_knowledge_untrusted"].render_mode == PrimingRenderMode.POINTER
+
+
+def test_format_priming_section_collapses_pointer_mode() -> None:
+    body = (
+        "--- Result 1 [personal] ---\n"
+        "Gmail下書きは送信前に承認を確認する\n"
+        '  -> read_memory_file(path="knowledge/gmail-approval.md")\n'
+        "RAW_DETAIL_SHOULD_NOT_BE_IN_POINTER_MODE\n"
+    )
+    result = PrimingResult(related_knowledge=body)
+    result.gate_plan = build_priming_plan("こんにちは", "chat", "", build_candidates_from_result(result))
+
+    formatted = format_priming_section(result)
+
+    assert 'render_mode="pointer"' in formatted
+    assert '- Gmail下書きは送信前に承認を確認する -> read_memory_file(path="knowledge/gmail-approval.md")' in formatted
+    assert "RAW_DETAIL_SHOULD_NOT_BE_IN_POINTER_MODE" not in formatted
+
+
+def test_format_priming_section_marks_evidence_mode() -> None:
+    result = PrimingResult(related_knowledge="RAW_EVIDENCE_PAYLOAD")
+    result.gate_plan = build_priming_plan("前に話した件の根拠を教えて", "chat", "", build_candidates_from_result(result))
+
+    formatted = format_priming_section(result)
+
+    assert 'render_mode="evidence"' in formatted
+    assert "RAW_EVIDENCE_PAYLOAD" in formatted
 
 
 @pytest.mark.asyncio

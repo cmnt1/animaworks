@@ -22,7 +22,21 @@ from core.skills.models import SkillMetadata, SkillRiskMetadata
 _ASCII_WORD_RE = re.compile(r"[a-z0-9][a-z0-9_+.-]*", re.IGNORECASE)
 _JP_SEGMENT_RE = re.compile(r"[ぁ-んァ-ヶー一-龯々]{2,}")
 _ASCII_PART_RE = re.compile(r"[_+.-]+")
-_JP_PARTICLE_CHARS = frozenset("をにへはがでとやもかの")
+_JP_PARTICLE_CHARS = frozenset(
+    {
+        "を",
+        "に",
+        "へ",
+        "は",
+        "が",
+        "で",
+        "と",
+        "や",
+        "も",
+        "か",
+        "の",
+    }
+)
 _ROUTING_STOPWORDS = {
     "する",
     "して",

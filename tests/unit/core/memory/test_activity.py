@@ -96,6 +96,23 @@ class TestTruncationPointer:
         line = ActivityLogger._format_entry(entry)
         assert "-> activity_log/" not in line
 
+    def test_human_notify_entry_is_pointer_only(self) -> None:
+        """human_notify should not duplicate full notification bodies in recent activity."""
+        entry = ActivityEntry(
+            ts="2026-05-15T12:02:00+09:00",
+            type="human_notify",
+            content="## Gmailチェック結果\n\n" + "Important mail body " * 20,
+            summary="Gmailチェック結果",
+            via="configured_channels",
+        )
+        entry._line_number = 460
+
+        line = ActivityLogger._format_entry(entry)
+
+        assert "NTFY human_notify(via:configured_channels): Gmailチェック結果" in line
+        assert "-> activity_log/2026-05-15.jsonl#L460" in line
+        assert "Important mail body" not in line
+
 
 # ── Line numbers ──────────────────────────────────────────
 
