@@ -15,7 +15,6 @@ from typing import Any
 from core.i18n import t
 from core.memory.priming.result import PrimingResult
 
-
 _POINTER_RE = re.compile(r'read_memory_file\(path="([^"]+)"\)')
 
 
