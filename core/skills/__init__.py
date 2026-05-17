@@ -12,15 +12,6 @@ Re-exports for convenience::
     from core.skills import load_skill_metadata, load_skill_document
 """
 
-from core.skills.curator import (
-    CuratorReplay,
-    DuplicateCandidate,
-    LifecycleSuggestion,
-    SkillCurator,
-)
-from core.skills.guard import SkillScanner
-from core.skills.hub import SkillHub, SkillHubResult
-from core.skills.index import SkillIndex
 from core.skills.activation import (
     ActiveSkillAttachment,
     ActiveSkillContextResult,
@@ -35,6 +26,15 @@ from core.skills.activation import (
     set_active_skill_refs,
     validate_thread_id,
 )
+from core.skills.curator import (
+    CuratorReplay,
+    DuplicateCandidate,
+    LifecycleSuggestion,
+    SkillCurator,
+)
+from core.skills.guard import SkillScanner
+from core.skills.hub import SkillHub, SkillHubResult
+from core.skills.index import SkillIndex
 from core.skills.loader import (
     is_skill_blocked,
     is_skill_loadable,

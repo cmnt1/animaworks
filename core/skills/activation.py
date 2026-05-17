@@ -129,9 +129,7 @@ class ActiveSkillContextResult:
 def validate_thread_id(thread_id: str) -> str:
     value = str(thread_id or "default").strip() or "default"
     if not _THREAD_ID_PATTERN.match(value):
-        raise ValueError(
-            f"Invalid thread_id: {value!r}. Must be 1-36 alphanumeric, underscore, or hyphen characters."
-        )
+        raise ValueError(f"Invalid thread_id: {value!r}. Must be 1-36 alphanumeric, underscore, or hyphen characters.")
     return value
 
 
@@ -349,12 +347,12 @@ def _first_risk_reason(meta: SkillMetadata) -> str | None:
 
 def _risk_reasons(meta: SkillMetadata) -> list[str]:
     reasons: list[str] = []
-    for field, reason in (
+    for risk_field, reason in (
         ("destructive", "risk_destructive"),
         ("external_send", "risk_external_send"),
         ("requires_human_approval", "risk_requires_human_approval"),
     ):
-        if _risk_flag(meta, field):
+        if _risk_flag(meta, risk_field):
             reasons.append(reason)
     return reasons
 
@@ -488,8 +486,16 @@ def _write_thread_refs(anima_dir: Path, thread_id: str, refs: list[str]) -> None
 
 
 __all__ = [
-    "ActiveSkillAttachment", "ActiveSkillContextResult", "ActiveSkillItem",
-    "ActiveSkillRejection", "ActiveSkillResolution", "ActiveSkillWarning",
-    "build_active_skill_context", "get_active_skill_refs", "get_active_skill_state",
-    "list_skill_catalog", "set_active_skill_refs", "validate_thread_id",
+    "ActiveSkillAttachment",
+    "ActiveSkillContextResult",
+    "ActiveSkillItem",
+    "ActiveSkillRejection",
+    "ActiveSkillResolution",
+    "ActiveSkillWarning",
+    "build_active_skill_context",
+    "get_active_skill_refs",
+    "get_active_skill_state",
+    "list_skill_catalog",
+    "set_active_skill_refs",
+    "validate_thread_id",
 ]
