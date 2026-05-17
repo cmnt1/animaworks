@@ -28,6 +28,7 @@ Status: PASS
 
 - Focused coverage command passed at 94.04% for `core.skills.activation` and `server.routes.skills`.
 - New focused tests: 13 passed.
+- Latest-main sanity set: 15 passed, covering the new tests plus Mode B common skill injection and bootstrap retry reset.
 - Existing skill/prompt regression set: 90 passed.
 - Existing server route regression set: 52 passed.
 - Marked E2E suite: 169 passed, 2 skipped, 14160 deselected.
@@ -51,14 +52,13 @@ Status: PASS
 
 ### Regression
 
-Status: PASS WITH KNOWN ENVIRONMENT/BASELINE FAILURES
+Status: PASS WITH ENVIRONMENT CAVEATS
 
-`python3 -m pytest --tb=short -q` completed with 14247 passed, 48 skipped, 6 failed, and 30 errors. The failures are not attributable to this change:
+`python3 -m pytest --tb=short -q` was run before the latest main commit was merged into the worktree and completed with 14247 passed, 48 skipped, 6 failed, and 30 errors. None of the failures involved the explicit skill activation changes:
 
 - Playwright browser executable is missing for `test_ipad_viewport_e2e.py` and `test_responsive_layout_e2e.py`.
 - `watchdog` is not installed for `test_common_knowledge.py` and `test_watcher.py`; clean main HEAD has the same failure.
-- `test_mode_b.py::TestModeBSkillInjection::test_common_skill_in_system_prompt` fails on clean main HEAD as well.
-- `test_bootstrap_protection.py::TestBootstrapRetryLimit::test_retry_count_reset_on_success` fails on clean main HEAD as well.
+- `test_mode_b.py::TestModeBSkillInjection::test_common_skill_in_system_prompt` and `test_bootstrap_protection.py::TestBootstrapRetryLimit::test_retry_count_reset_on_success` failed on the older clean main HEAD, then passed after merging latest main into this worktree.
 
 ### Independent Reviews
 
