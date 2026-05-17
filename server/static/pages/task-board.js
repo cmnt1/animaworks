@@ -300,16 +300,11 @@ function _cardHtml(task) {
   const needsHumanBadge = needsHuman
     ? `<span class="taskboard-needs-human-badge" title="${escapeAttr(reasonText)}">🙋 ${escapeHtml(t("taskboard.needs_human_badge"))}</span>`
     : "";
-  const cronLabel = isFromCron
-    ? (task.cron_task_name ? `${t("taskboard.cron_badge")}: ${task.cron_task_name}` : t("taskboard.cron_badge"))
-    : "";
-  const cronBadge = isFromCron
-    ? `<span class="taskboard-cron-badge" title="${escapeAttr(cronLabel)}">⏰ ${escapeHtml(cronLabel)}</span>`
-    : "";
+  const originBadge = _originBadgeHtml(task);
   return `
     <article class="${cardClass}" draggable="true" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
       ${needsHumanBadge}
-      ${cronBadge}
+      ${originBadge}
       <div class="taskboard-card-topline">
         <span class="taskboard-anima">${escapeHtml(task.anima_name || task.assignee || "-")}</span>
         <button
@@ -580,6 +575,24 @@ function _ensureActiveColumnHasView() {
   _activeColumn = COLUMNS.find(hasVisibleTask) || "todo";
 }
 function _findTask(key) { return _tasks.find((task) => taskKey(task) === key) || _allTasks.find((task) => taskKey(task) === key); }
+
+function _originBadgeHtml(task) {
+  if (task.is_from_cron === true) {
+    const label = task.cron_task_name
+      ? `${t("taskboard.origin_cron")}: ${task.cron_task_name}`
+      : t("taskboard.origin_cron");
+    return `<span class="taskboard-origin-badge taskboard-origin-badge--cron" title="${escapeAttr(label)}">⏰ ${escapeHtml(label)}</span>`;
+  }
+  if (task.source === "human") {
+    const label = t("taskboard.origin_human");
+    return `<span class="taskboard-origin-badge taskboard-origin-badge--human" title="${escapeAttr(label)}">👤 ${escapeHtml(label)}</span>`;
+  }
+  if (task.source === "anima") {
+    const label = t("taskboard.origin_anima");
+    return `<span class="taskboard-origin-badge taskboard-origin-badge--anima" title="${escapeAttr(label)}">🤖 ${escapeHtml(label)}</span>`;
+  }
+  return "";
+}
 
 function _renderNeedsHumanPin() {
   const pin = _container?.querySelector("#taskboardNeedsHumanPin");
