@@ -104,6 +104,8 @@ class MemoryIndexer:
         # Load index metadata
         self.meta_path = anima_dir / INDEX_META_FILE
         self.index_meta = self._load_index_meta()
+        self._skill_curator_replay = None
+        self._skill_curator_state_marker: tuple[int, int] | None = None
 
         # Cache of collection names known to exist in the vector store.
         # Populated lazily by ``_collection_exists()`` so that hash-based
@@ -234,15 +236,44 @@ class MemoryIndexer:
             logger.warning("File not found: %s", file_path)
             return 0
 
+        collection_name = f"{self.collection_prefix}_{memory_type}"
+        try:
+            file_key = str(file_path.relative_to(self.anima_dir))
+        except ValueError:
+            file_key = str(file_path)
+
         # Check .ragignore exclusion
         if self.is_ragignored(file_path):
             logger.debug("Skipping ragignored file: %s", file_path)
             return 0
 
+        if memory_type in ("skills", "common_skills") and file_path.name == "SKILL.md":
+            try:
+                from core.skills.curator import curator_allows_access, replay_curator_state
+                from core.skills.loader import load_skill_metadata
+
+                meta = load_skill_metadata(file_path)
+                curator_state_path = self.anima_dir / "state" / "skill_curator.jsonl"
+                state_marker = None
+                if curator_state_path.exists():
+                    state_stat = curator_state_path.stat()
+                    state_marker = (state_stat.st_mtime_ns, state_stat.st_size)
+                if self._skill_curator_replay is None or self._skill_curator_state_marker != state_marker:
+                    self._skill_curator_replay = replay_curator_state(self.anima_dir)
+                    self._skill_curator_state_marker = state_marker
+                allowed, reason = curator_allows_access(meta, replay=self._skill_curator_replay)
+                if not allowed:
+                    logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
+                    self._delete_indexed_file_documents(collection_name, file_key)
+                    if file_key in self.index_meta:
+                        self.index_meta.pop(file_key, None)
+                        self._save_index_meta()
+                    return 0
+            except Exception:
+                logger.debug("Failed to evaluate skill curator access for %s", file_path, exc_info=True)
+
         # Check if file has changed
         file_hash = self._compute_file_hash(file_path)
-        file_key = str(file_path.relative_to(self.anima_dir))
-        collection_name = f"{self.collection_prefix}_{memory_type}"
 
         if not force and file_key in self.index_meta:
             if self.index_meta[file_key].get("hash") == file_hash:
@@ -308,6 +339,16 @@ class MemoryIndexer:
 
         logger.info("Indexed %d chunks from %s", len(chunks), file_path)
         return len(chunks)
+
+    def _delete_indexed_file_documents(self, collection_name: str, source_file: str) -> None:
+        """Best-effort removal of stale chunks for a file that must not be indexed."""
+        try:
+            results = self.vector_store.get_by_metadata(collection_name, {"source_file": source_file}, limit=10_000)
+            ids = [result.document.id for result in results]
+            if ids:
+                self.vector_store.delete_documents(collection_name, ids)
+        except Exception:
+            logger.debug("Failed to delete indexed documents for %s/%s", collection_name, source_file, exc_info=True)
 
     def index_directory(
         self,

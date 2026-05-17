@@ -529,9 +529,15 @@ class MemoryManager:
         *,
         summary: str,
         duration_ms: int,
+        skill_rejections: list[dict[str, str]] | None = None,
     ) -> None:
         """Facade: CronLogger.append_cron_log."""
-        self._cron.append_cron_log(task_name, summary=summary, duration_ms=duration_ms)
+        self._cron.append_cron_log(
+            task_name,
+            summary=summary,
+            duration_ms=duration_ms,
+            skill_rejections=skill_rejections,
+        )
 
     def append_cron_command_log(
         self,

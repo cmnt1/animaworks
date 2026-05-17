@@ -23,7 +23,13 @@ from core.tooling.schemas.memory import (
 )
 from core.tooling.schemas.notification import _notification_tools
 from core.tooling.schemas.session_todo import _session_todo_tools
-from core.tooling.schemas.skill import DISCOVERY_TOOLS, TOOL_MANAGEMENT_TOOLS, USE_TOOL, _create_skill_schemas
+from core.tooling.schemas.skill import (
+    DISCOVERY_TOOLS,
+    TOOL_MANAGEMENT_TOOLS,
+    USE_TOOL,
+    _create_skill_schemas,
+    _curator_skill_schemas,
+)
 from core.tooling.schemas.supervisor import (
     _background_task_tools,
     _check_permissions_tools,
@@ -135,6 +141,7 @@ def build_tool_list(
 
     if include_create_skill:
         tools.extend(_create_skill_schemas())
+        tools.extend(_curator_skill_schemas())
     return tools
 
 
@@ -146,7 +153,7 @@ def build_unified_tool_list(
     trigger: str = "",
     compact: bool = False,
 ) -> list[dict[str, Any]]:
-    """Build the unified 18-tool list (Claude Code-compatible 8 + AW-essential 10).
+    """Build the unified runtime tool list.
 
     Used by Mode A (LiteLLM) and Mode B (Assisted) executors.
     Mode S/C get the CC tools from the Agent SDK built-ins and the AW tools
@@ -214,6 +221,7 @@ def build_unified_tool_list(
 
     if include_create_skill:
         tools.extend(t for t in _create_skill_schemas() if t["name"] == "create_skill")
+        tools.extend(_curator_skill_schemas())
 
     if compact:
         tools = [t for t in tools if t["name"] in _COMPACT_COMM_TOOLS]

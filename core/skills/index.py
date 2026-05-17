@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.skills.loader import load_skill_metadata
-from core.skills.models import SkillMetadata, SkillTrustLevel
+from core.skills.models import SkillMetadata, SkillScanVerdict, SkillTrustLevel
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ class SkillIndex:
         self._anima_dir = anima_dir
         self._cached_index: list[SkillMetadata] | None = None
         self._cached_all_entries: list[SkillMetadata] | None = None
+        self._curator_state_marker: tuple[int, int] | None = None
 
     # ── Cache ───────────────────────────────────────────────
 
@@ -55,10 +56,12 @@ class SkillIndex:
         """Drop cached scan results so the next access rebuilds from disk."""
         self._cached_index = None
         self._cached_all_entries = None
+        self._curator_state_marker = None
 
     @property
     def all_skills(self) -> list[SkillMetadata]:
         """All indexed skills after trust filtering (same as :meth:`build_index`)."""
+        self._invalidate_if_curator_state_changed()
         if self._cached_index is None:
             self.build_index()
         assert self._cached_index is not None
@@ -76,6 +79,7 @@ class SkillIndex:
         """
         entries: list[SkillMetadata] = []
         seen_paths: set[Path] = set()
+        curator_state_marker = self._read_curator_state_marker()
 
         def _add_metadata(meta: SkillMetadata) -> None:
             p = meta.path
@@ -171,10 +175,49 @@ class SkillIndex:
             except Exception:
                 logger.debug("Failed to merge usage stats into index", exc_info=True)
 
+        if self._anima_dir is not None:
+            try:
+                from core.skills.curator import apply_curator_state, replay_curator_state
+
+                replay = replay_curator_state(self._anima_dir)
+                sorted_all = [apply_curator_state(meta, replay) for meta in sorted_all]
+            except Exception:
+                logger.debug("Failed to merge curator state into index", exc_info=True)
+
         self._cached_all_entries = sorted_all
-        filtered = [m for m in sorted_all if m.trust_level not in _EXCLUDED_TRUST_LEVELS]
+        self._curator_state_marker = curator_state_marker
+        filtered = [m for m in sorted_all if self._is_catalog_visible(m)]
         self._cached_index = filtered
         return list(filtered)
+
+    def _read_curator_state_marker(self) -> tuple[int, int] | None:
+        if self._anima_dir is None:
+            return None
+        state_path = self._anima_dir / "state" / "skill_curator.jsonl"
+        try:
+            stat = state_path.stat()
+        except OSError:
+            return None
+        return stat.st_mtime_ns, stat.st_size
+
+    def _invalidate_if_curator_state_changed(self) -> None:
+        if self._anima_dir is None or self._cached_all_entries is None:
+            return
+        if self._read_curator_state_marker() != self._curator_state_marker:
+            self.invalidate()
+
+    @staticmethod
+    def _is_catalog_visible(meta: SkillMetadata) -> bool:
+        if meta.trust_level in _EXCLUDED_TRUST_LEVELS:
+            return False
+        if meta.security.verdict == SkillScanVerdict.dangerous:
+            return False
+        try:
+            from core.skills.curator import is_unloadable_lifecycle_state
+
+            return not is_unloadable_lifecycle_state(meta.lifecycle_state)
+        except Exception:
+            return True
 
     @staticmethod
     def _sort_key(meta: SkillMetadata) -> tuple[int, str, str]:
@@ -202,6 +245,7 @@ class SkillIndex:
         Returns:
             Filtered list in personal → common → procedure order.
         """
+        self._invalidate_if_curator_state_changed()
         if self._cached_all_entries is None:
             self.build_index()
         assert self._cached_all_entries is not None

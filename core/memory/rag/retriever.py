@@ -180,6 +180,9 @@ class MemoryRetriever:
                 )
                 vector_results.extend(shared_results)
 
+        if memory_type == "skills":
+            vector_results = self._filter_loadable_skill_vector_results(vector_results)
+
         # 2. Convert to RetrievalResult
         results = [
             RetrievalResult(
@@ -358,6 +361,53 @@ class MemoryRetriever:
         )
 
         return [(r.document.id, r.document.content, r.score, r.document.metadata) for r in results]
+
+    def _filter_loadable_skill_vector_results(
+        self,
+        results: list[tuple[str, str, float, dict]],
+    ) -> list[tuple[str, str, float, dict]]:
+        """Drop archived/blocked/deleted skill chunks that may still exist in vectors."""
+        try:
+            from core.skills.curator import curator_allows_access, replay_curator_state
+
+            replay = replay_curator_state(self.indexer.anima_dir)
+        except Exception:
+            logger.debug("Failed to replay curator state for vector skill filtering", exc_info=True)
+            return results
+
+        filtered: list[tuple[str, str, float, dict]] = []
+        for doc_id, content, score, metadata in results:
+            source_file = metadata.get("source_file") if isinstance(metadata, dict) else None
+            if not isinstance(source_file, str):
+                continue
+            skill_path = self._resolve_skill_source_file(source_file)
+            if skill_path is None or not skill_path.is_file():
+                continue
+            try:
+                from core.skills.loader import load_skill_metadata
+
+                meta = load_skill_metadata(skill_path)
+                allowed, _reason = curator_allows_access(meta, replay=replay)
+            except Exception:
+                logger.debug("Failed to evaluate vector skill result %s", source_file, exc_info=True)
+                continue
+            if allowed:
+                filtered.append((doc_id, content, score, metadata))
+        return filtered
+
+    def _resolve_skill_source_file(self, source_file: str) -> Path | None:
+        path = Path(source_file)
+        if path.parts[:1] == ("skills",):
+            return self.indexer.anima_dir / path
+        if path.parts[:1] == ("common_skills",):
+            try:
+                from core.paths import get_data_dir
+
+                return get_data_dir() / path
+            except Exception:
+                logger.debug("Failed to resolve data dir for shared skill source", exc_info=True)
+                return None
+        return None
 
     # ── Score adjustment ────────────────────────────────────────────
 

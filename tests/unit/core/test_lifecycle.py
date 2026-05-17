@@ -7,14 +7,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 from core.lifecycle import (
     LifecycleManager,
     _parse_cron_md,
     _parse_schedule,
 )
 from core.schemas import CronTask, Message
-
 
 # ── _parse_cron_md ────────────────────────────────────────
 
@@ -287,6 +285,29 @@ class TestCronWrapper:
         dp.run_cron_task.assert_called_once_with("daily_report", "Generate report")
         broadcast.assert_called_once()
 
+    async def test_cron_passes_skill_references(self):
+        import asyncio
+
+        lm = LifecycleManager()
+        dp = MagicMock()
+        dp.name = "alice"
+        dp.run_cron_task = AsyncMock(return_value=MagicMock())
+        dp.run_cron_task.return_value.model_dump.return_value = {}
+        lm.animas["alice"] = dp
+        lm._ws_broadcast = AsyncMock()
+
+        task = CronTask(
+            name="daily_report",
+            schedule="0 9 * * *",
+            type="llm",
+            description="Generate report",
+            skills=["daily-report"],
+        )
+        await lm._cron_wrapper("alice", task)
+        await asyncio.sleep(0)
+
+        dp.run_cron_task.assert_called_once_with("daily_report", "Generate report", skills=["daily-report"])
+
     async def test_cron_no_anima(self):
         lm = LifecycleManager()
         task = CronTask(name="task", schedule="0 10 * * *", description="desc")
@@ -491,8 +512,11 @@ class TestTryDeferredTrigger:
         lm.animas["alice"] = dp
         lm._deferred_timers["alice"] = MagicMock()
 
-        with patch.object(lm, "_is_in_cooldown", return_value=False), \
-             patch.object(lm, "_message_triggered_heartbeat", new_callable=AsyncMock) as mock_hb:
+        with patch.object(lm, "_is_in_cooldown", return_value=False), patch.object(
+            lm,
+            "_message_triggered_heartbeat",
+            new_callable=AsyncMock,
+        ):
             await lm._try_deferred_trigger("alice")
             assert "alice" in lm._pending_triggers
 
@@ -582,7 +606,8 @@ class TestCommandTypeCron:
     async def test_run_cron_command_bash_success(self):
         """Test successful bash command execution in cron."""
         from pathlib import Path
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from core.anima import DigitalAnima
         from core.memory import MemoryManager
 
@@ -613,7 +638,8 @@ class TestCommandTypeCron:
     async def test_run_cron_command_bash_failure(self):
         """Test bash command that returns non-zero exit code."""
         from pathlib import Path
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from core.anima import DigitalAnima
         from core.memory import MemoryManager
 
@@ -640,7 +666,8 @@ class TestCommandTypeCron:
     async def test_run_cron_command_tool(self):
         """Test internal tool execution in cron."""
         from pathlib import Path
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from core.anima import DigitalAnima
         from core.memory import MemoryManager
 

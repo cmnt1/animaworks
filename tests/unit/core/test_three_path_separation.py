@@ -19,7 +19,7 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from core.tooling.handler import active_session_type
+from core.tooling.handler_base import active_session_type
 
 # ── Lock Structure ──────────────────────────────────────────
 
@@ -339,6 +339,40 @@ class TestCronLLMSession:
             )
             assert captured_prompt is not None
             assert "no errors found" in captured_prompt
+
+    async def test_run_cron_task_records_skill_rejections(self, data_dir, make_anima):
+        """run_cron_task should expose rejected cron skills in result and cron log."""
+        anima_dir = make_anima("cron_skill_reject")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.anima.AgentCore"), \
+             patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
+             patch("core._anima_heartbeat.load_prompt", return_value="prompt"):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+
+            async def mock_run_cycle(prompt, trigger="manual", **kwargs):
+                from core.schemas import CycleResult
+
+                return CycleResult(
+                    trigger=trigger,
+                    action="responded",
+                    summary="done",
+                    duration_ms=10,
+                )
+
+            dp.agent.run_cycle = mock_run_cycle
+            result = await dp.run_cron_task("log_check", "ログ確認", skills=["missing-skill"])
+
+            assert result.cron_skill_rejections == [{"ref": "missing-skill", "reason": "not_found"}]
+            from core.time_utils import today_local
+
+            cron_log_path = anima_dir / "state" / "cron_logs" / f"{today_local().isoformat()}.jsonl"
+            raw_log = cron_log_path.read_text(encoding="utf-8")
+            assert "missing-skill" in raw_log
 
 
 # ── Heartbeat Plan-Focus ────────────────────────────────────

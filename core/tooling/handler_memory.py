@@ -655,14 +655,15 @@ class MemoryToolsMixin:
             # Block loading of skills with blocked trust_level or dangerous scan verdict
             if self._is_skill_path(rel):
                 try:
-                    from core.skills.loader import is_skill_blocked, load_skill_metadata
+                    from core.skills.loader import load_skill_metadata, skill_access_decision
 
                     skill_meta = load_skill_metadata(path)
-                    if is_skill_blocked(skill_meta):
+                    allowed, reason = skill_access_decision(skill_meta, anima_dir=self._anima_dir)
+                    if not allowed:
                         return _error_result(
                             "SkillBlocked",
                             f"Skill '{skill_meta.name}' is blocked "
-                            f"(trust_level={skill_meta.trust_level.value}). "
+                            f"(reason={reason}). "
                             "Contact your supervisor if you believe this is an error.",
                         )
                 except ImportError:

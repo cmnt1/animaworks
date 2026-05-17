@@ -37,6 +37,7 @@ class CronLogger:
         *,
         summary: str,
         duration_ms: int,
+        skill_rejections: list[dict[str, str]] | None = None,
     ) -> None:
         """Append a cron execution result to the daily log."""
         log_dir = self._log_dir()
@@ -49,6 +50,7 @@ class CronLogger:
                 "task": task_name,
                 "summary": summary[:500],
                 "duration_ms": duration_ms,
+                "skill_rejections": skill_rejections or [],
             },
             ensure_ascii=False,
         )

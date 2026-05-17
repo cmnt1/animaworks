@@ -755,11 +755,16 @@ class AnimaRunner:
 
         task_name = params.get("task_name")
         task_description = params.get("task_description", "")
+        task_skills = params.get("skills")
 
         if not task_name:
             raise ValueError("task_name is required")
 
-        await self.anima.run_cron_task(task_name, str(task_description))
+        await self.anima.run_cron_task(
+            task_name,
+            str(task_description),
+            skills=task_skills if isinstance(task_skills, list) else None,
+        )
 
         return {"status": "completed"}
 
