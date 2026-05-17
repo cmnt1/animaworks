@@ -477,6 +477,7 @@ class HeartbeatMixin:
 
         Returns the CycleResult from the agent execution.
         """
+        agent = self._agent_for_lane("background") if hasattr(self, "_agent_for_lane") else self.agent
         # ── Heartbeat Checkpoint ──
         checkpoint_path = self.anima_dir / "state" / "heartbeat_checkpoint.json"
         try:
@@ -493,9 +494,9 @@ class HeartbeatMixin:
             logger.debug("[%s] Failed to write heartbeat checkpoint", self.name, exc_info=True)
 
         # Reset reply tracking before the cycle
-        self.agent.reset_reply_tracking(session_type="heartbeat")
-        self.agent.reset_posted_channels(session_type="heartbeat")
-        self.agent.reset_read_paths()
+        agent.reset_reply_tracking(session_type="heartbeat")
+        agent.reset_posted_channels(session_type="heartbeat")
+        agent.reset_read_paths()
 
         accumulated_text = ""
         result: CycleResult | None = None
@@ -508,8 +509,8 @@ class HeartbeatMixin:
         original_config = None
         bg_config = self._resolve_background_config()
         if bg_config is not None:
-            original_config = self.agent.model_config
-            self.agent.update_model_config(bg_config)
+            original_config = agent.model_config
+            agent.update_model_config(bg_config)
 
         try:
             from core.config.models import load_config as _load_config_fresh
@@ -517,7 +518,7 @@ class HeartbeatMixin:
             _cfg = _load_config_fresh()
             _hb_cfg = _cfg.heartbeat
             effective_max_turns = _calc_effective_max_turns(
-                base_max_turns=self.agent.model_config.max_turns,
+                base_max_turns=agent.model_config.max_turns,
                 activity_level=_cfg.activity_level,
                 hb_max_turns=_hb_cfg.max_turns,
             )
@@ -528,7 +529,7 @@ class HeartbeatMixin:
             _soft_warned = False
             _hard_exceeded = False
 
-            async for chunk in self.agent.run_cycle_streaming(
+            async for chunk in agent.run_cycle_streaming(
                 prompt,
                 trigger="heartbeat",
                 prior_messages=prior_messages,
@@ -538,7 +539,7 @@ class HeartbeatMixin:
                 _elapsed = time.monotonic() - _start
                 if not _soft_warned and _elapsed > _soft_timeout:
                     _soft_warned = True
-                    self.agent._executor.reminder_queue.push_sync(t("reminder.hb_time_limit"))
+                    agent._executor.reminder_queue.push_sync(t("reminder.hb_time_limit"))
                     logger.info(
                         "[%s] Heartbeat soft timeout reached (%.0fs > %ds)",
                         self.name,
@@ -677,7 +678,7 @@ class HeartbeatMixin:
             return result
         finally:
             if original_config is not None:
-                self.agent.update_model_config(original_config)
+                agent.update_model_config(original_config)
             journal.close()
 
     async def _handle_heartbeat_failure(

@@ -57,12 +57,15 @@ def anima(tmp_path: Path) -> DigitalAnima:
         encoding="utf-8",
     )
 
-    with patch("core.anima.AgentCore") as mock_agent_cls:
+    def _mock_agent() -> MagicMock:
         mock_agent = MagicMock()
         mock_agent.background_manager = None
         mock_agent.execution_mode = "s"
         mock_agent._tool_handler = MagicMock()
-        mock_agent_cls.return_value = mock_agent
+        return mock_agent
+
+    with patch("core.anima.AgentCore") as mock_agent_cls:
+        mock_agent_cls.side_effect = [_mock_agent(), _mock_agent(), _mock_agent()]
 
         from core.anima import DigitalAnima
 
@@ -98,9 +101,49 @@ class TestLockSeparation:
         assert hasattr(anima, "_conversation_locks")
         assert hasattr(anima, "_background_lock")
         assert hasattr(anima, "_agent_session_lock")
+        assert hasattr(anima, "_agent_session_locks")
         assert anima._get_thread_lock("default") is not anima._background_lock
         assert anima._agent_session_lock is not anima._background_lock
         assert anima._agent_session_lock is not anima._get_thread_lock("default")
+        assert anima._agent_session_lock is anima._agent_session_locks["chat"]
+        assert anima._agent_session_locks["chat"] is not anima._agent_session_locks["background"]
+        assert anima._agent_session_locks["chat"] is not anima._agent_session_locks["inbox"]
+        assert anima._agent_session_locks["background"] is not anima._agent_session_locks["inbox"]
+
+    def test_anima_has_separate_lane_agents(self, anima: DigitalAnima) -> None:
+        """DigitalAnima should isolate AgentCore instances per execution lane."""
+        assert anima.agent is anima._agent_for_lane("chat")
+        assert anima._agent_for_lane("chat") is not anima._agent_for_lane("background")
+        assert anima._agent_for_lane("chat") is not anima._agent_for_lane("inbox")
+        assert anima._agent_for_lane("background") is not anima._agent_for_lane("inbox")
+
+    def test_callbacks_are_wired_to_all_lane_agents(self, anima: DigitalAnima) -> None:
+        """Public callback setters should propagate to every lane agent."""
+        on_message = MagicMock()
+        on_schedule = MagicMock()
+        wake = MagicMock()
+
+        anima.set_on_message_sent(on_message)
+        anima.set_on_schedule_changed(on_schedule)
+        anima._set_pending_executor_wake(wake)
+
+        for agent in anima._iter_lane_agents():
+            agent.set_on_message_sent.assert_called_with(on_message)
+            agent.set_on_schedule_changed.assert_called_with(on_schedule)
+            agent._tool_handler.set_pending_executor_wake.assert_called_with(wake)
+
+    def test_reload_config_updates_all_lane_agents(self, anima: DigitalAnima) -> None:
+        """Config reload should not leave background/inbox agents stale."""
+        from core.schemas import ModelConfig
+
+        new_config = ModelConfig(model="claude-sonnet-4-6")
+        anima.memory.read_model_config = MagicMock(return_value=new_config)
+
+        result = anima.reload_config()
+
+        assert result["model"] == "claude-sonnet-4-6"
+        for agent in anima._iter_lane_agents():
+            agent.update_model_config.assert_called_with(new_config)
 
     def test_no_legacy_lock(self, anima: DigitalAnima) -> None:
         """DigitalAnima should NOT have the old single _lock."""
@@ -198,11 +241,11 @@ class TestConcurrentLockAcquisition:
             acquired = True
         assert acquired
 
-    async def test_agent_session_lock_serializes_shared_agent_state(
+    async def test_chat_agent_session_lock_serializes_chat_agent_state(
         self,
         anima: DigitalAnima,
     ) -> None:
-        """The shared AgentCore preparation lock should admit one session at a time."""
+        """The chat lane preparation lock should admit one chat session at a time."""
         holder_entered = asyncio.Event()
         release_holder = asyncio.Event()
 
@@ -222,6 +265,28 @@ class TestConcurrentLockAcquisition:
         await holder_task
         await asyncio.wait_for(waiter, timeout=1.0)
         anima._agent_session_lock.release()
+
+    async def test_background_agent_session_lock_does_not_block_chat(
+        self,
+        anima: DigitalAnima,
+    ) -> None:
+        """A TaskExec/background session lock must not block chat session setup."""
+        async with anima._agent_session_context("background"):
+            waiter = asyncio.create_task(anima._agent_session_locks["chat"].acquire())
+            await asyncio.wait_for(waiter, timeout=1.0)
+            assert waiter.done()
+            anima._agent_session_locks["chat"].release()
+
+    async def test_chat_agent_session_lock_does_not_block_background(
+        self,
+        anima: DigitalAnima,
+    ) -> None:
+        """A chat session lock must not block TaskExec/background session setup."""
+        async with anima._agent_session_context("chat"):
+            waiter = asyncio.create_task(anima._agent_session_locks["background"].acquire())
+            await asyncio.wait_for(waiter, timeout=1.0)
+            assert waiter.done()
+            anima._agent_session_locks["background"].release()
 
     def test_agent_entrypoints_use_session_lock(self) -> None:
         """Chat/background/inbox entrypoints should guard AgentCore mutable state."""

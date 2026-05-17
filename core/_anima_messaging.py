@@ -41,6 +41,9 @@ logger = logging.getLogger("animaworks.anima")
 
 
 def _agent_session_context(owner: Any):
+    getter = getattr(owner, "_agent_session_context", None)
+    if callable(getter):
+        return getter("chat")
     lock = getattr(owner, "_agent_session_lock", None)
     if isinstance(lock, asyncio.Lock):
         return lock
