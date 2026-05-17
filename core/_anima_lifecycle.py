@@ -606,12 +606,14 @@ class LifecycleMixin:
                 self._task_slots["background"] = task_name
 
                 cron_skill_rejections = []
+                cron_skill_warnings = []
                 prompt = self._build_cron_prompt(
                     task_name,
                     description,
                     command_output=command_output,
                     skills=skills,
                     skill_rejections_out=cron_skill_rejections,
+                    skill_warnings_out=cron_skill_warnings,
                 )
 
                 # ── Background model swap ──
@@ -638,7 +640,17 @@ class LifecycleMixin:
                         {"ref": rejection.ref, "reason": rejection.reason}
                         for rejection in cron_skill_rejections
                     ]
+                    warning_dicts = [
+                        {
+                            "ref": warning.ref,
+                            "reason": warning.reason,
+                            "name": warning.name,
+                            "path": warning.path,
+                        }
+                        for warning in cron_skill_warnings
+                    ]
                     result.cron_skill_rejections = rejection_dicts
+                    result.cron_skill_warnings = warning_dicts
                     self.memory.append_cron_log(
                         task_name,
                         summary=result.summary,
@@ -655,8 +667,18 @@ class LifecycleMixin:
                             "task_name": task_name,
                             "duration_ms": result.duration_ms if result else 0,
                             "skill_rejections": rejection_dicts,
+                            "skill_warnings": warning_dicts,
                         },
                     )
+                    if warning_dicts:
+                        self._activity.log(
+                            "cron_skill_warning",
+                            summary=f"Cron skill warnings: {task_name}",
+                            meta={
+                                "task_name": task_name,
+                                "skill_warnings": warning_dicts,
+                            },
+                        )
 
                     logger.info(
                         "[%s] run_cron_task END task=%s duration_ms=%d",

@@ -8,13 +8,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-
 from core.schedule_parser import (
     parse_cron_md,
-    parse_schedule,
     parse_heartbeat_config,
+    parse_schedule,
 )
-
 
 # ── parse_cron_md tests ───────────────────────────────────
 
@@ -128,6 +126,32 @@ Just do something at noon.
         tasks = parse_cron_md(content)
         assert len(tasks) == 1
         assert tasks[0].type == "llm"
+
+    def test_skills_block_list(self):
+        """skills: YAML block list is parsed into CronTask.skills."""
+        content = """\
+## Skilled Task
+schedule: 0 9 * * *
+skills:
+  - github-pr-review
+  - repo-health-check
+Review the repository.
+"""
+        tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].skills == ["github-pr-review", "repo-health-check"]
+
+    def test_skills_inline_comma_list(self):
+        """skills: inline comma list is normalized into separate refs."""
+        content = """\
+## Skilled Task
+schedule: 0 9 * * *
+skills: github-pr-review, skills/repo-health/SKILL.md
+Review the repository.
+"""
+        tasks = parse_cron_md(content)
+        assert len(tasks) == 1
+        assert tasks[0].skills == ["github-pr-review", "skills/repo-health/SKILL.md"]
 
     def test_empty_content(self):
         """Empty content returns no tasks."""

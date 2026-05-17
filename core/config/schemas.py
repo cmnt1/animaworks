@@ -830,8 +830,17 @@ class SkillPromotionConfig(BaseModel):
     require_approval_on_warn: bool = True
 
 
+class SkillCronConfig(BaseModel):
+    max_skill_chars: int = Field(default=6000, ge=0)
+    max_total_chars: int = Field(default=12000, ge=0)
+    allow_warn_caution: bool = False
+    allow_destructive: bool = False
+    allow_external_send: bool = False
+
+
 class SkillsConfig(BaseModel):
     promotion: SkillPromotionConfig = SkillPromotionConfig()
+    cron: SkillCronConfig = SkillCronConfig()
 
 
 class AnimaWorksConfig(BaseModel):

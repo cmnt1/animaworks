@@ -231,6 +231,108 @@ class SkillIndex:
         path_s = str(meta.path) if meta.path is not None else ""
         return (tier, meta.name.casefold(), path_s)
 
+    # ── Reference Resolution ───────────────────────────────────
+
+    def resolve_skill_reference(self, ref: str) -> SkillMetadata | None:
+        """Resolve a cron skill reference to metadata.
+
+        Supported refs are exact skill/procedure names and safe ``SKILL.md``
+        pointers under ``skills/`` or ``common_skills/``.  Name matches use the
+        index order, so personal skills win over common skills, which win over
+        procedures.
+        """
+        value = str(ref).strip()
+        if not self._is_safe_reference(value):
+            return None
+
+        entries = self.search("", include_blocked=True)
+        pointer_path = self._path_from_pointer(value)
+        if pointer_path is not None:
+            existing = self._entry_for_path(entries, pointer_path)
+            if existing is not None:
+                return existing
+            if not pointer_path.is_file():
+                return None
+            try:
+                meta = load_skill_metadata(pointer_path)
+            except Exception as exc:
+                logger.warning("Failed to load skill reference metadata from %s: %s", pointer_path, exc)
+                return None
+            return meta.model_copy(
+                update={
+                    "is_common": self._is_under(pointer_path, self._common_skills_dir),
+                    "is_procedure": False,
+                }
+            )
+
+        matches = [
+            meta
+            for meta in entries
+            if meta.name == value or (meta.path is not None and meta.path.parent.name == value)
+        ]
+        if len(matches) > 1:
+            logger.warning(
+                "Multiple skill references matched %r; using %s by deterministic priority",
+                value,
+                matches[0].path,
+            )
+        return matches[0] if matches else None
+
+    @staticmethod
+    def _is_safe_reference(ref: str) -> bool:
+        if not ref or "\\" in ref:
+            return False
+        path = Path(ref)
+        if path.is_absolute() or ".." in path.parts:
+            return False
+        if ref.startswith(("skills/", "common_skills/")):
+            return len(path.parts) >= 3 and path.name == "SKILL.md"
+        return "/" not in ref
+
+    def _path_from_pointer(self, ref: str) -> Path | None:
+        path = Path(ref)
+        if ref.startswith("skills/"):
+            return self._safe_child_path(self._skills_dir.parent, path)
+        if ref.startswith("common_skills/"):
+            return self._safe_child_path(self._common_skills_dir.parent, path)
+        return None
+
+    @staticmethod
+    def _safe_child_path(root: Path, relative: Path) -> Path | None:
+        if relative.name != "SKILL.md" or ".." in relative.parts:
+            return None
+        try:
+            root_resolved = root.resolve(strict=False)
+            candidate = (root / relative).resolve(strict=False)
+            candidate.relative_to(root_resolved)
+            return candidate
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _entry_for_path(entries: list[SkillMetadata], path: Path) -> SkillMetadata | None:
+        try:
+            resolved = path.resolve(strict=False)
+        except OSError:
+            return None
+        for meta in entries:
+            if meta.path is None:
+                continue
+            try:
+                if meta.path.resolve(strict=False) == resolved:
+                    return meta
+            except OSError:
+                continue
+        return None
+
+    @staticmethod
+    def _is_under(path: Path, root: Path) -> bool:
+        try:
+            path.resolve(strict=False).relative_to(root.resolve(strict=False))
+            return True
+        except (OSError, ValueError):
+            return False
+
     # ── Search ────────────────────────────────────────────────
 
     def search(self, query: str, *, include_blocked: bool = False) -> list[SkillMetadata]:

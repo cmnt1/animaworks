@@ -75,6 +75,34 @@ def test_json_array_and_scalar_skill_rewrites() -> None:
     assert "skills:" not in rewritten_skills
 
 
+def test_scalar_comma_and_pointer_skill_refs_rewrite() -> None:
+    text = (
+        "## Daily\n"
+        "skills: old-skill, skills/old-skill/SKILL.md, common_skills/community/kept/SKILL.md\n"
+        "Do work.\n"
+    )
+
+    rewritten = rewrite_skill_references_in_text(text, "old-skill", absorbed_into="new-skill")
+
+    assert "old-skill" not in rewritten
+    assert "skills: new-skill, common_skills/community/kept/SKILL.md" in rewritten
+
+
+def test_block_pointer_skill_ref_removed() -> None:
+    text = (
+        "## Daily\n"
+        "skills:\n"
+        "  - common_skills/community/old-skill/SKILL.md\n"
+        "  - kept\n"
+        "Do work.\n"
+    )
+
+    rewritten = rewrite_skill_references_in_text(text, "old-skill", absorbed_into=None)
+
+    assert "old-skill" not in rewritten
+    assert "  - kept" in rewritten
+
+
 def test_malformed_json_falls_back_to_yamlish_rewrite() -> None:
     text = "{not json}\nskill: old-skill\n"
 

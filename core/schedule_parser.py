@@ -133,6 +133,18 @@ def _strip_inline_comment(val: str) -> str:
     return re.sub(r"\s+#.*$", "", val)
 
 
+def _normalize_skill_refs(raw_skills: object) -> list[str]:
+    if isinstance(raw_skills, str):
+        values = raw_skills.split(",") if "," in raw_skills else [raw_skills]
+        return [item.strip() for item in values if item.strip()]
+    if isinstance(raw_skills, list):
+        result: list[str] = []
+        for item in raw_skills:
+            result.extend(_normalize_skill_refs(item))
+        return result
+    return []
+
+
 def _parse_section(name: str, lines: list[str]) -> CronTask:
     """Parse a single cron task section from its body lines.
 
@@ -218,10 +230,7 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
             try:
                 parsed = yaml.safe_load("\n".join(yaml_lines))
                 raw_skills = parsed.get("skills") if isinstance(parsed, dict) else None
-                if isinstance(raw_skills, str):
-                    skills = [raw_skills]
-                elif isinstance(raw_skills, list):
-                    skills = [str(item).strip() for item in raw_skills if str(item).strip()]
+                skills = _normalize_skill_refs(raw_skills)
             except yaml.YAMLError as e:
                 logger.warning("Failed to parse skills YAML for task %s: %s", name, e)
         else:

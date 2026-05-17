@@ -458,7 +458,7 @@ def test_cron_skill_context_reports_read_failures(tmp_path: Path) -> None:
 
     with (
         patch("core.paths.get_common_skills_dir", return_value=common_dir),
-        patch("core.skills.context.load_skill_body", side_effect=OSError("boom")),
+        patch("core.skills.cron_context.load_skill_body", side_effect=OSError("boom")),
     ):
         result = build_cron_skill_context(anima_dir, ["active-skill"])
 

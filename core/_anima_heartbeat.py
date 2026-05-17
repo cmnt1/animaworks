@@ -23,7 +23,7 @@ from core.memory.streaming_journal import StreamingJournal
 from core.messenger import InboxItem
 from core.paths import load_prompt
 from core.schemas import CycleResult
-from core.skills.context import SkillContextRejection
+from core.skills.cron_context import SkillContextRejection, SkillContextWarning
 from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.anima")
@@ -417,6 +417,7 @@ class HeartbeatMixin:
         command_output: str | None = None,
         skills: list[str] | None = None,
         skill_rejections_out: list[SkillContextRejection] | None = None,
+        skill_warnings_out: list[SkillContextWarning] | None = None,
     ) -> str:
         """Build cron task prompt with heartbeat-equivalent context.
 
@@ -443,11 +444,13 @@ class HeartbeatMixin:
             parts.append(load_prompt("fragments/command_output", output=command_output))
 
         if skills:
-            from core.skills.context import build_cron_skill_context
+            from core.skills.cron_context import build_cron_skill_context
 
             skill_context = build_cron_skill_context(self.anima_dir, skills)
             if skill_rejections_out is not None:
                 skill_rejections_out.extend(skill_context.rejections)
+            if skill_warnings_out is not None:
+                skill_warnings_out.extend(skill_context.warnings)
             rendered = skill_context.render()
             if rendered:
                 parts.append(rendered)

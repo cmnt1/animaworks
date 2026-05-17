@@ -374,6 +374,62 @@ class TestCronLLMSession:
             raw_log = cron_log_path.read_text(encoding="utf-8")
             assert "missing-skill" in raw_log
 
+    async def test_run_cron_task_records_allowed_skill_warnings(self, data_dir, make_anima):
+        """run_cron_task should record activity warnings for explicitly allowed risky skill metadata."""
+        anima_dir = make_anima("cron_skill_warn")
+        shared_dir = data_dir / "shared"
+        skill_dir = anima_dir / "skills" / "warn-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: warn-skill\n"
+            "description: Warn skill\n"
+            "security:\n"
+            "  verdict: warn\n"
+            "---\n\n"
+            "Warn body.\n",
+            encoding="utf-8",
+        )
+
+        from core.config.models import SkillCronConfig
+
+        config = MagicMock()
+        config.skills.cron = SkillCronConfig(allow_warn_caution=True)
+
+        with patch("core.anima.AgentCore"), \
+             patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
+             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
+             patch("core.skills.cron_context.load_config", return_value=config):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            dp._activity = MagicMock()
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+
+            async def mock_run_cycle(prompt, trigger="manual", **kwargs):
+                from core.schemas import CycleResult
+
+                return CycleResult(
+                    trigger=trigger,
+                    action="responded",
+                    summary="done",
+                    duration_ms=10,
+                )
+
+            dp.agent.run_cycle = mock_run_cycle
+            result = await dp.run_cron_task("warn_check", "警告付きスキル確認", skills=["warn-skill"])
+
+        assert result.cron_skill_warnings == [
+            {
+                "ref": "warn-skill",
+                "reason": "security_warn_allowed",
+                "name": "warn-skill",
+                "path": "skills/warn-skill/SKILL.md",
+            }
+        ]
+        assert any(call.args[0] == "cron_skill_warning" for call in dp._activity.log.call_args_list)
+
 
 # ── Heartbeat Plan-Focus ────────────────────────────────────
 

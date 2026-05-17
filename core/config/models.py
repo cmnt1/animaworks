@@ -94,6 +94,7 @@ from core.config.schemas import (
     PromptConfig,
     RAGConfig,
     ServerConfig,
+    SkillCronConfig,
     SkillPromotionConfig,
     SkillsConfig,
     StyleBertVits2Config,

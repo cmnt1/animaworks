@@ -268,25 +268,35 @@ def _rewrite_scalar_skill_line(line: str, skill_name: str, absorbed_into: str | 
 
 def _rewrite_scalar_skills_line(line: str, skill_name: str, absorbed_into: str | None) -> str:
     prefix, value = line.split(":", 1)
-    current = _strip_quotes(value.strip())
-    rewritten = _rewrite_skill_list([current], skill_name, absorbed_into)
-    if rewritten == [current]:
+    raw = value.strip()
+    values = [_strip_quotes(v.strip()) for v in raw.split(",") if v.strip()] if "," in raw else [_strip_quotes(raw)]
+    rewritten = _rewrite_skill_list(values, skill_name, absorbed_into)
+    if rewritten == values:
         return line
     if not rewritten:
         return ""
-    return f"{prefix}: {rewritten[0]}"
+    return f"{prefix}: {', '.join(rewritten)}"
 
 
 def _rewrite_skill_list(values: list[str], skill_name: str, absorbed_into: str | None) -> list[str]:
     result: list[str] = []
     for value in values:
-        if value == skill_name:
+        if _skill_ref_matches(value, skill_name):
             if absorbed_into and absorbed_into not in result:
                 result.append(absorbed_into)
             continue
         if value not in result:
             result.append(value)
     return result
+
+
+def _skill_ref_matches(value: str, skill_name: str) -> bool:
+    if value == skill_name:
+        return True
+    path = Path(value)
+    if path.name != "SKILL.md" or ".." in path.parts:
+        return False
+    return path.parent.name == skill_name
 
 
 def _looks_jsonl(text: str) -> bool:
