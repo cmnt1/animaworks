@@ -379,6 +379,36 @@ class TestExecutorInit:
         assert env.get("OPENAI_API_KEY") == "test-key-123"
         assert "CODEX_HOME" in env
 
+    def test_build_env_codex_azure_uses_azure_api_key(self, model_config, anima_dir, monkeypatch):
+        monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+        model_config.credential = "azure_codex"
+        model_config.credential_type = "codex_azure"
+        model_config.api_key = "az-test-key"
+        model_config.api_base_url = "https://example-resource.openai.azure.com"
+        model_config.extra_keys = {"api_version": "2025-04-01-preview"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        env = exc._build_env()
+
+        assert env["AZURE_OPENAI_API_KEY"] == "az-test-key"
+        assert "OPENAI_API_KEY" not in env
+        assert "OPENAI_BASE_URL" not in env
+
+    def test_build_env_codex_azure_can_inherit_standard_env_key(self, model_config, anima_dir, monkeypatch):
+        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "az-env-key")
+        model_config.credential = "azure_codex"
+        model_config.credential_type = "codex_azure"
+        model_config.api_key = None
+        model_config.api_key_env = "AZURE_CODEX_API_KEY"
+        model_config.api_base_url = "https://example-resource.openai.azure.com"
+        model_config.extra_keys = {"api_version": "2025-04-01-preview"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        env = exc._build_env()
+
+        assert env["AZURE_OPENAI_API_KEY"] == "az-env-key"
+        assert "OPENAI_API_KEY" not in env
+
     def test_default_home_dir_prefers_userprofile_when_home_missing(self):
         with patch.dict("os.environ", {"USERPROFILE": r"C:\Users\Tester"}, clear=True):
             assert _default_home_dir() == r"C:\Users\Tester"
@@ -488,6 +518,68 @@ class TestConfigWriting:
         exc._write_codex_config("prompt")
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         assert 'model = "gpt-4.1"' in config_toml
+
+    def test_write_codex_config_openai_provider_by_default(self, executor, anima_dir):
+        executor._write_codex_config("prompt")
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(config_toml)
+        assert parsed["model_provider"] == "openai"
+        assert "model_providers" not in parsed
+
+    def test_write_codex_config_codex_azure_provider(self, model_config, anima_dir):
+        model_config.model = "codex/gpt-5.5"
+        model_config.credential = "azure_codex"
+        model_config.credential_type = "codex_azure"
+        model_config.api_key = "az-test-key"
+        model_config.api_base_url = "https://example-resource.openai.azure.com"
+        model_config.extra_keys = {
+            "api_version": "2025-04-01-preview",
+            "codex_model": "gpt-55-prod",
+        }
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        exc._write_codex_config("prompt")
+
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(config_toml)
+        provider = parsed["model_providers"]["azure"]
+        assert parsed["model"] == "gpt-55-prod"
+        assert parsed["model_provider"] == "azure"
+        assert provider["name"] == "Azure"
+        assert provider["base_url"] == "https://example-resource.openai.azure.com/openai"
+        assert provider["env_key"] == "AZURE_OPENAI_API_KEY"
+        assert provider["query_params"]["api-version"] == "2025-04-01-preview"
+        assert provider["wire_api"] == "responses"
+
+    def test_write_codex_config_codex_azure_keeps_openai_suffix(self, model_config, anima_dir):
+        model_config.credential_type = "codex_azure"
+        model_config.api_base_url = "https://example-resource.openai.azure.com/openai/"
+        model_config.extra_keys = {"api_version": "2025-04-01-preview"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        exc._write_codex_config("prompt")
+
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(config_toml)
+        assert parsed["model_providers"]["azure"]["base_url"] == "https://example-resource.openai.azure.com/openai"
+
+    def test_write_codex_config_codex_azure_requires_base_url(self, model_config, anima_dir):
+        model_config.credential_type = "codex_azure"
+        model_config.api_base_url = None
+        model_config.extra_keys = {"api_version": "2025-04-01-preview"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with pytest.raises(ValueError, match="base_url"):
+            exc._write_codex_config("prompt")
+
+    def test_write_codex_config_codex_azure_requires_api_version(self, model_config, anima_dir):
+        model_config.credential_type = "codex_azure"
+        model_config.api_base_url = "https://example-resource.openai.azure.com"
+        model_config.extra_keys = {}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with pytest.raises(ValueError, match="api_version"):
+            exc._write_codex_config("prompt")
 
     def test_toml_escapes_special_characters(self, model_config, anima_dir):
         """Paths with quotes/backslashes are escaped in TOML output."""

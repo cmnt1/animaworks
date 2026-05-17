@@ -777,6 +777,48 @@ class TestLoadModelConfig:
         mc = load_model_config(anima_dir)
         assert mc.api_key == "sk-openai"
         assert mc.api_base_url == "https://api.openai.com"
+        assert mc.credential == "openai"
+        assert mc.credential_type == "api_key"
+
+    def test_resolves_codex_azure_credential_metadata(self, data_dir):
+        import json as _json
+
+        config_data = {
+            "version": 1,
+            "credentials": {
+                "anthropic": {"api_key": ""},
+                "azure_codex": {
+                    "type": "codex_azure",
+                    "api_key": "az-key",
+                    "base_url": "https://example-resource.openai.azure.com",
+                    "keys": {
+                        "api_version": "2025-04-01-preview",
+                        "codex_model": "gpt-55-prod",
+                    },
+                },
+            },
+            "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
+            "animas": {"bob": {}},
+        }
+        (data_dir / "config.json").write_text(
+            _json.dumps(config_data),
+            encoding="utf-8",
+        )
+        invalidate_cache()
+
+        anima_dir = data_dir / "animas" / "bob"
+        anima_dir.mkdir(parents=True, exist_ok=True)
+        (anima_dir / "status.json").write_text(
+            _json.dumps({"model": "codex/gpt-5.5", "credential": "azure_codex"}),
+        )
+
+        mc = load_model_config(anima_dir)
+        assert mc.credential == "azure_codex"
+        assert mc.credential_type == "codex_azure"
+        assert mc.api_key == "az-key"
+        assert mc.api_base_url == "https://example-resource.openai.azure.com"
+        assert mc.extra_keys["api_version"] == "2025-04-01-preview"
+        assert mc.extra_keys["codex_model"] == "gpt-55-prod"
 
 
 # ── read_anima_supervisor ────────────────────────────────

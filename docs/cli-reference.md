@@ -318,6 +318,7 @@ animaworks anima delete alice --force       # Skip confirmation
 ```bash
 animaworks anima set-model alice claude-sonnet-4-6
 animaworks anima set-model alice openai/gpt-4.1 --credential azure
+animaworks anima set-model alice codex/gpt-5.5 --credential azure_codex
 animaworks anima set-model --all claude-sonnet-4-6
 ```
 
@@ -330,6 +331,26 @@ animaworks anima set-model --all claude-sonnet-4-6
 |--------|------|-------------|
 | `--credential` | string | Credential name |
 | `--all` | flag | Apply to all enabled Animas |
+
+For Azure-backed Codex in Mode C, define a credential in `config.json` and keep the Anima model under `codex/*`:
+
+```json
+{
+  "credentials": {
+    "azure_codex": {
+      "type": "codex_azure",
+      "api_key": "...",
+      "base_url": "https://<resource>.openai.azure.com",
+      "keys": {
+        "api_version": "2025-04-01-preview",
+        "codex_model": "<azure-deployment-name>"
+      }
+    }
+  }
+}
+```
+
+Use `keys.codex_model` when the Azure deployment name differs from the visible Codex model name. The Settings UI does not manage `codex_azure` yet; edit `config.json` directly or use `animaworks config set`.
 
 ---
 

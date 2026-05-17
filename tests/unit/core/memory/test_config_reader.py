@@ -1,10 +1,9 @@
 """Unit tests for core/memory/config_reader.py — ConfigReader."""
+from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
-from __future__ import annotations
-
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,7 +11,6 @@ import pytest
 
 from core.memory.config_reader import ConfigReader
 from core.schemas import ModelConfig
-
 
 # ── Fixtures ──────────────────────────────────────────────
 
@@ -244,6 +242,7 @@ class TestReadModelConfig:
         mock_resolved.extra_mcp_servers = {}
 
         mock_credential = MagicMock()
+        mock_credential.type = "api_key"
         mock_credential.api_key = "sk-test"
         mock_credential.base_url = None
         mock_credential.keys = {}
@@ -261,6 +260,8 @@ class TestReadModelConfig:
         assert mc.model == "gpt-4o"
         assert mc.api_key == "sk-test"
         assert mc.api_key_env == "OPENAI_API_KEY"
+        assert mc.credential == "openai"
+        assert mc.credential_type == "api_key"
         assert mc.resolved_mode == "A2"
 
     def test_falls_back_to_config_md(
