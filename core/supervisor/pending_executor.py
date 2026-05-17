@@ -37,6 +37,7 @@ _PENDING_WATCHER_POLL_INTERVAL = 3.0
 _LLM_TASK_TTL_HOURS = 24
 _PENDING_TASK_SUBPROCESS_TIMEOUT = 1800
 _TASK_RESULT_MAX_CHARS = 2000
+_TASK_COMPLETE_NOTIFY_MAX_CHARS = 10_000
 
 _SENTINEL_CANCELLED = "(cancelled)"
 _SENTINEL_EXPIRED = "(expired)"
@@ -1219,7 +1220,7 @@ class PendingTaskExecutor:
                     "task_complete_notify",
                     task_id=task_id,
                     title=title,
-                    result_summary=result_summary[:1000],
+                    result_summary=result_summary[:_TASK_COMPLETE_NOTIFY_MAX_CHARS],
                 )
                 from core.execution._sanitize import ORIGIN_ANIMA
 
