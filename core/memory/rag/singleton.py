@@ -91,7 +91,7 @@ def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
                     else:
                         persist_dir = None  # ChromaVectorStore defaults to ~/.animaworks/vectordb
                     store = ChromaVectorStore(persist_dir=persist_dir)
-                    setattr(store, "anima_name", anima_name)
+                    store.anima_name = anima_name
                     _vector_stores[anima_name] = store
                 except Exception as exc:
                     _init_failed = True

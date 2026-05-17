@@ -54,9 +54,7 @@ class RAGRepairService:
         self.cooldown = timedelta(minutes=cooldown_minutes if cooldown_minutes is not None else cfg["cooldown_minutes"])
         self.max_consecutive_failures = max(
             1,
-            max_consecutive_failures
-            if max_consecutive_failures is not None
-            else cfg["max_consecutive_failures"],
+            max_consecutive_failures if max_consecutive_failures is not None else cfg["max_consecutive_failures"],
         )
         self._signals: dict[str, list[dict[str, Any]]] = {}
         self._active_repairs: set[str] = set()
@@ -138,9 +136,7 @@ class RAGRepairService:
         with self._lock:
             signals = self._signals.setdefault(anima_name, [])
             signals.append(signal)
-            self._signals[anima_name] = [
-                s for s in signals[-50:] if (parse_dt(s.get("at")) or utc_now()) >= cutoff
-            ]
+            self._signals[anima_name] = [s for s in signals[-50:] if (parse_dt(s.get("at")) or utc_now()) >= cutoff]
         self._append_state_signal(anima_name, signal)
 
     def _threshold_met(self, anima_name: str, collection: str, reason: str) -> bool:

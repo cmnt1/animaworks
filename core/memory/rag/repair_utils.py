@@ -6,7 +6,7 @@ from __future__ import annotations
 
 """Utility functions for RAG corruption detection and repair locking."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +30,7 @@ SINGLE_SHOT_REASONS = {
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def parse_dt(value: Any) -> datetime | None:
@@ -41,7 +41,7 @@ def parse_dt(value: Any) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 

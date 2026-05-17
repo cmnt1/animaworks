@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger("animaworks.rag.repair")
@@ -29,7 +29,7 @@ def quarantine_vectordb(anima_name: str) -> Path | None:
 
     archive_dir = source.parent / "archive"
     archive_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     dest = archive_dir / f"vectordb-corrupt-{stamp}"
     suffix = 1
     while dest.exists():
