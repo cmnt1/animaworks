@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from core.goals import GoalJudgment, GoalManager
+from core.goals.judge import GoalJudge, parse_goal_judgment
 from core.memory.task_queue import TaskQueueManager
 from core.taskboard.models import AttentionVisibility
 from core.taskboard.store import TaskBoardStore
@@ -167,3 +170,171 @@ def test_goal_tool_schema_and_handler(tmp_path: Path, monkeypatch) -> None:
 
     assert result["status"] == "active"
     assert result["objective"] == "Prepare a release"
+    all_status = json.loads(handler.handle("goal", {"action": "status"}))
+    assert [item["goal_id"] for item in all_status] == [result["goal_id"]]
+
+    status = json.loads(handler.handle("goal", {"action": "status", "goal_id": result["goal_id"]}))
+    assert status["goal_id"] == result["goal_id"]
+
+    paused = json.loads(handler.handle("goal", {"action": "pause", "goal_id": result["goal_id"], "reason": "wait"}))
+    assert paused["status"] == "paused"
+
+    resumed = json.loads(handler.handle("goal", {"action": "resume", "goal_id": result["goal_id"]}))
+    assert resumed["status"] == "active"
+
+    judged = json.loads(
+        handler.handle(
+            "goal",
+            {
+                "action": "judge",
+                "goal_id": result["goal_id"],
+                "task_id": "task-1",
+                "result_summary": "tag exists",
+                "verdict": "done",
+                "reason": "criteria satisfied",
+            },
+        )
+    )
+    assert judged["status"] == "done"
+    assert judged["last_judgment"]["verdict"] == "done"
+
+    cleared = json.loads(handler.handle("goal", {"action": "clear", "goal_id": result["goal_id"]}))
+    assert cleared["status"] == "cleared"
+
+    invalid = json.loads(handler.handle("goal", {"action": "unknown"}))
+    assert invalid["status"] == "error"
+
+    missing = json.loads(handler.handle("goal", {"action": "status", "goal_id": "missing"}))
+    assert missing["status"] == "error"
+
+    no_current = json.loads(handler.handle("goal", {"action": "pause"}))
+    assert no_current["status"] == "error"
+
+    bad_set = json.loads(handler.handle("goal", {"action": "set", "objective": "x", "max_iterations": "bad"}))
+    assert bad_set["status"] == "error"
+
+
+def test_goal_tool_auto_judge_path_uses_sync_runner(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = _anima_dir(tmp_path, monkeypatch)
+    handler = ToolHandler(anima_dir, memory=object())  # type: ignore[arg-type]
+    goal = json.loads(
+        handler.handle(
+            "goal",
+            {
+                "action": "set",
+                "objective": "Ship docs",
+                "skills": "missing-skill, other-missing",
+            },
+        )
+    )
+    assert goal["skill_refs"] == []
+    assert {item["reason"] for item in goal["skill_rejections"]} == {"not_found"}
+
+    class FakeJudge:
+        def __init__(self, _anima_dir):
+            pass
+
+        async def judge(self, state, *, task_id, result_summaries, verification_output=""):
+            assert state.goal_id == goal["goal_id"]
+            assert result_summaries == ["docs shipped"]
+            return GoalJudgment(goal_id=state.goal_id, task_id=task_id, verdict="done", iteration=1)
+
+    monkeypatch.setattr("core.tooling.handler_goals.GoalJudge", FakeJudge)
+    judged = json.loads(
+        handler.handle(
+            "goal",
+            {
+                "action": "judge",
+                "goal_id": goal["goal_id"],
+                "task_id": "t1",
+                "result_summary": "docs shipped",
+            },
+        )
+    )
+
+    assert judged["status"] == "done"
+
+
+def test_goal_judgment_parser_fail_open_and_valid_json() -> None:
+    parsed = parse_goal_judgment(
+        '{"verdict":"blocked","reason":"missing credentials"}',
+        goal_id="g1",
+        task_id="t1",
+        iteration=2,
+    )
+    assert parsed.verdict == "blocked"
+    assert parsed.reason == "missing credentials"
+
+    failed_open = parse_goal_judgment("not-json", goal_id="g1", task_id="t1", iteration=2)
+    assert failed_open.verdict == "continue"
+    assert failed_open.failed_open is True
+    assert failed_open.reason == "judge_parse_failed"
+
+
+async def test_goal_judge_uses_injected_callable(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = _anima_dir(tmp_path, monkeypatch)
+    state = GoalManager(anima_dir).set_goal(objective="Verify release", max_iterations=2)
+
+    async def fake_judge(prompt, payload):
+        assert "Verify release" in prompt
+        assert payload["objective"] == "Verify release"
+        return {"verdict": "continue", "reason": "needs more proof"}
+
+    judgment = await GoalJudge(anima_dir, judge_fn=fake_judge).judge(
+        state,
+        task_id="t1",
+        result_summaries=["draft"],
+        verification_output="tests pending",
+    )
+
+    assert judgment.verdict == "continue"
+    assert judgment.reason == "needs more proof"
+    assert judgment.verification_output == "tests pending"
+
+
+async def test_goal_judge_background_model_call_is_narrow_and_parseable(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = _anima_dir(tmp_path, monkeypatch)
+    state = GoalManager(anima_dir).set_goal(
+        objective="Verify release",
+        success_criteria=["tests pass"],
+        judge_model="nanogpt/custom-judge",
+    )
+    captured = {}
+
+    async def fake_acompletion(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content='{"verdict":"done","reason":"tests pass"}')
+                )
+            ]
+        )
+
+    monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(acompletion=fake_acompletion))
+    monkeypatch.setattr(
+        "core.config.model_config.load_model_config",
+        lambda _anima_dir: SimpleNamespace(
+            background_model=None,
+            model="openai/fallback",
+            api_key="",
+            api_key_env="MISSING_KEY",
+            api_base_url="http://llm.local",
+            llm_timeout=12,
+        ),
+    )
+
+    judgment = await GoalJudge(anima_dir).judge(
+        state,
+        task_id="t1",
+        result_summaries=["all tests passed"],
+        verification_output="pytest green",
+    )
+
+    assert judgment.verdict == "done"
+    assert captured["model"] == "openai/custom-judge"
+    assert captured["api_base"] == "http://llm.local"
+    user_payload = captured["messages"][1]["content"]
+    assert "Verify release" in user_payload
+    assert "all tests passed" in user_payload
+    assert "pytest green" in user_payload
