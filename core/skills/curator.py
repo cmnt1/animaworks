@@ -90,14 +90,21 @@ def apply_curator_state(meta: SkillMetadata, replay: CuratorReplay) -> SkillMeta
     )
 
 
-def curator_allows_access(meta: SkillMetadata, *, anima_dir: Path | None = None) -> tuple[bool, str]:
+def curator_allows_access(
+    meta: SkillMetadata,
+    *,
+    anima_dir: Path | None = None,
+    replay: CuratorReplay | None = None,
+) -> tuple[bool, str]:
     """Return whether a skill can be loaded, plus a machine-readable reason."""
     if meta.trust_level == SkillTrustLevel.blocked:
         return False, "trust_level_blocked"
     if meta.security.verdict == SkillScanVerdict.dangerous:
         return False, "security_dangerous"
     state = meta.lifecycle_state
-    if anima_dir is not None:
+    if replay is not None:
+        state = replay.state_for(meta.name)
+    elif anima_dir is not None:
         try:
             state = replay_curator_state(anima_dir).state_for(meta.name)
         except Exception:
@@ -184,6 +191,7 @@ class SkillCurator:
         )
         self.append_event(event)
         self._invalidate_rag_cache(skill_name)
+        self._purge_personal_skill_vectors(skill_name)
         return event
 
     def archive_skill(
@@ -369,6 +377,26 @@ class SkillCurator:
             meta_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             logger.debug("Failed to invalidate skill index metadata for %s", skill_name, exc_info=True)
+
+    def _purge_personal_skill_vectors(self, skill_name: str) -> None:
+        """Best-effort deletion of already indexed personal skill chunks."""
+        try:
+            from core.memory.rag.singleton import get_vector_store
+
+            vector_store = get_vector_store(self.anima_dir.name)
+            if vector_store is None:
+                return
+            collection = f"{self.anima_dir.name}_skills"
+            for source_file in (
+                f"skills/{skill_name}/SKILL.md",
+                f"skills/quarantine/{skill_name}/SKILL.md",
+            ):
+                results = vector_store.get_by_metadata(collection, {"source_file": source_file}, limit=10_000)
+                ids = [result.document.id for result in results]
+                if ids:
+                    vector_store.delete_documents(collection, ids)
+        except Exception:
+            logger.debug("Failed to purge skill vectors for %s", skill_name, exc_info=True)
 
 
 def _parse_time(value: str | None) -> datetime | None:

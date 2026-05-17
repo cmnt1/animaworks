@@ -107,15 +107,25 @@ def rewrite_skill_references_in_text(text: str, skill_name: str, *, absorbed_int
 
 def _candidate_files(anima_dir: Path) -> list[Path]:
     candidates = [anima_dir / "cron.md"]
-    for root_name in ("goals", "state"):
-        root = anima_dir / root_name
-        if root.is_dir():
-            candidates.extend(
-                path
-                for path in root.rglob("*")
-                if path.suffix.lower() in {".md", ".json", ".jsonl", ".yaml", ".yml"}
-                and "skill_curator" not in path.parts
-            )
+    goals_dir = anima_dir / "goals"
+    if goals_dir.is_dir():
+        candidates.extend(
+            path
+            for path in goals_dir.rglob("*")
+            if path.suffix.lower() in {".md", ".json", ".jsonl", ".yaml", ".yml"}
+        )
+    state_dir = anima_dir / "state"
+    candidates.extend(
+        path
+        for path in [
+            state_dir / "task_queue.jsonl",
+            state_dir / "taskboard.json",
+            state_dir / "taskboard.jsonl",
+            state_dir / "taskboard.yaml",
+            state_dir / "taskboard.yml",
+        ]
+        if path.is_file()
+    )
     return sorted(set(candidates))
 
 

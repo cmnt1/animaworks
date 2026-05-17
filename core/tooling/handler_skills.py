@@ -386,7 +386,6 @@ class SkillsToolsMixin:
     def _handle_curator_state_change(self, args: dict[str, Any], state: str) -> str:
         skill_name = str(args.get("skill_name") or "").strip()
         reason = str(args.get("reason") or "").strip()
-        actor = str(args.get("actor") or self._anima_name)
         absorbed_into = args.get("absorbed_into")
         if not skill_name:
             return _error_result("InvalidArguments", "skill_name is required")
@@ -398,7 +397,7 @@ class SkillsToolsMixin:
                 skill_name,
                 state,
                 reason=reason,
-                actor=actor,
+                actor=self._anima_name,
                 absorbed_into=absorbed_target or None,
             )
         except ValueError as exc:

@@ -260,7 +260,6 @@ def _curator_skill_schemas() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": "Optional replacement skill when this archive is part of a merge.",
                     },
-                    "actor": {"type": "string"},
                 },
                 "required": ["skill_name", "reason"],
             },
@@ -273,7 +272,6 @@ def _curator_skill_schemas() -> list[dict[str, Any]]:
                 "properties": {
                     "skill_name": {"type": "string"},
                     "reason": {"type": "string"},
-                    "actor": {"type": "string"},
                 },
                 "required": ["skill_name", "reason"],
             },
@@ -286,7 +284,6 @@ def _curator_skill_schemas() -> list[dict[str, Any]]:
                 "properties": {
                     "skill_name": {"type": "string"},
                     "reason": {"type": "string"},
-                    "actor": {"type": "string"},
                 },
                 "required": ["skill_name", "reason"],
             },
@@ -299,7 +296,6 @@ def _curator_skill_schemas() -> list[dict[str, Any]]:
                 "properties": {
                     "skill_name": {"type": "string"},
                     "reason": {"type": "string"},
-                    "actor": {"type": "string"},
                 },
                 "required": ["skill_name", "reason"],
             },
@@ -312,7 +308,6 @@ def _curator_skill_schemas() -> list[dict[str, Any]]:
                 "properties": {
                     "skill_name": {"type": "string"},
                     "reason": {"type": "string"},
-                    "actor": {"type": "string"},
                 },
                 "required": ["skill_name", "reason"],
             },
@@ -327,7 +322,6 @@ def _curator_skill_schemas() -> list[dict[str, Any]]:
                     "state": {"type": "string", "enum": lifecycle_states},
                     "reason": {"type": "string"},
                     "absorbed_into": {"type": "string"},
-                    "actor": {"type": "string"},
                 },
                 "required": ["skill_name", "state", "reason"],
             },

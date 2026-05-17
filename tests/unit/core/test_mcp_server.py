@@ -28,6 +28,13 @@ EXPECTED_INTERNAL_TOOL_NAMES: frozenset[str] = frozenset(
         "update_task",
         "create_skill",
         "promote_procedure_to_skill",
+        "curate_skills",
+        "archive_skill",
+        "restore_skill",
+        "block_skill",
+        "unblock_skill",
+        "delete_skill",
+        "set_skill_lifecycle",
     }
 )
 

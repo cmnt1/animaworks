@@ -638,7 +638,8 @@ class SchedulerManager:
         self._cron_running.add(task.name)
         try:
             if task.type == "llm":
-                result = await self._anima.run_cron_task(task.name, task.description)
+                skill_kwargs = {"skills": task.skills} if task.skills else {}
+                result = await self._anima.run_cron_task(task.name, task.description, **skill_kwargs)
                 self._emit_event(
                     "anima.cron",
                     {
@@ -705,6 +706,7 @@ class SchedulerManager:
                         task.name,
                         task.description or f"cron.mdの「{task.name}」の指示に従って処理してください。",
                         command_output=stdout,
+                        **({"skills": task.skills} if task.skills else {}),
                     )
             else:
                 logger.warning("Unknown cron type '%s' for task '%s'", task.type, task.name)

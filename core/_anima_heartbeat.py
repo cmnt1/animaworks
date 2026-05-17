@@ -414,6 +414,7 @@ class HeartbeatMixin:
         task_name: str,
         description: str,
         command_output: str | None = None,
+        skills: list[str] | None = None,
     ) -> str:
         """Build cron task prompt with heartbeat-equivalent context.
 
@@ -421,6 +422,7 @@ class HeartbeatMixin:
             task_name: Cron task name from cron.md.
             description: Task description or instruction.
             command_output: Optional stdout from a preceding command-type cron.
+            skills: Optional cron skill references from cron.md.
         """
         parts: list[str] = []
 
@@ -436,6 +438,13 @@ class HeartbeatMixin:
         # Inject command output if this is a follow-up to a command cron
         if command_output:
             parts.append(load_prompt("fragments/command_output", output=command_output))
+
+        if skills:
+            from core.skills.context import build_cron_skill_context
+
+            skill_context = build_cron_skill_context(self.anima_dir, skills).render()
+            if skill_context:
+                parts.append(skill_context)
 
         # Shared background context (without dialogue — cron tasks must not inherit chat context)
         parts.extend(self._build_background_context_parts(include_dialogue=False))

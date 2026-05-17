@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from core.memory.frontmatter import parse_frontmatter
+from core.memory.rag.store import Document, SearchResult
+from core.skills.context import build_cron_skill_context
 from core.skills.curator import SkillCurator
 from core.skills.index import SkillIndex
 from core.skills.models import SkillLifecycleState, SkillMetadata, SkillUsageEventType
@@ -198,3 +200,81 @@ def test_rag_indexer_skips_archived_skill(tmp_path: Path) -> None:
     assert chunks == 0
     vector_store.create_collection.assert_not_called()
     vector_store.upsert.assert_not_called()
+
+
+def test_rag_indexer_deletes_existing_archived_skill_chunks(tmp_path: Path) -> None:
+    from core.memory.rag.indexer import MemoryIndexer
+
+    anima_dir = tmp_path / "alice"
+    skill_md = _write_skill(anima_dir, "old-skill")
+    SkillCurator(anima_dir).archive_skill("old-skill", reason="unused")
+    vector_store = MagicMock()
+    vector_store.get_by_metadata.return_value = [
+        SearchResult(
+            document=Document(id="alice/skills/old-skill/SKILL.md#0", content="old body"),
+            score=1.0,
+        )
+    ]
+    indexer = MemoryIndexer(vector_store, "alice", anima_dir, embedding_model=MagicMock())
+
+    chunks = indexer.index_file(skill_md, memory_type="skills", force=True)
+
+    assert chunks == 0
+    vector_store.delete_documents.assert_called_once_with(
+        "alice_skills",
+        ["alice/skills/old-skill/SKILL.md#0"],
+    )
+
+
+def test_rag_retriever_filters_archived_skill_chunks_left_in_vector_store(tmp_path: Path) -> None:
+    from core.memory.rag.retriever import MemoryRetriever
+
+    anima_dir = tmp_path / "alice"
+    _write_skill(anima_dir, "old-skill")
+    _write_skill(anima_dir, "new-skill")
+    SkillCurator(anima_dir).archive_skill("old-skill", reason="unused")
+    vector_store = MagicMock()
+    vector_store.query.return_value = [
+        SearchResult(
+            document=Document(
+                id="alice/skills/old-skill/SKILL.md#0",
+                content="old body",
+                metadata={"source_file": "skills/old-skill/SKILL.md"},
+            ),
+            score=0.9,
+        ),
+        SearchResult(
+            document=Document(
+                id="alice/skills/new-skill/SKILL.md#0",
+                content="new body",
+                metadata={"source_file": "skills/new-skill/SKILL.md"},
+            ),
+            score=0.8,
+        ),
+    ]
+    indexer = MagicMock()
+    indexer.anima_dir = anima_dir
+    indexer._generate_embeddings.return_value = [[0.1, 0.2]]
+    retriever = MemoryRetriever(vector_store, indexer, anima_dir / "knowledge")
+
+    results = retriever.search("deploy release", "alice", memory_type="skills", top_k=5)
+
+    assert [result.doc_id for result in results] == ["alice/skills/new-skill/SKILL.md#0"]
+
+
+def test_cron_skill_context_attaches_allowed_and_records_rejected_reason(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    common_dir = tmp_path / "common_skills"
+    common_dir.mkdir()
+    _write_skill(anima_dir, "active-skill")
+    _write_skill(anima_dir, "old-skill")
+    SkillCurator(anima_dir).archive_skill("old-skill", reason="unused")
+
+    with patch("core.paths.get_common_skills_dir", return_value=common_dir):
+        result = build_cron_skill_context(anima_dir, ["active-skill", "old-skill", "missing-skill"])
+
+    rendered = result.render()
+    assert "## Cron Skills" in rendered
+    assert "active-skill" in rendered
+    assert "old-skill: curator_archived" in rendered
+    assert "missing-skill: not_found" in rendered

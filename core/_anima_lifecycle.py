@@ -583,6 +583,7 @@ class LifecycleMixin:
         task_name: str,
         description: str,
         command_output: str | None = None,
+        skills: list[str] | None = None,
     ) -> CycleResult:
         """Execute a cron LLM task with heartbeat-equivalent context.
 
@@ -590,6 +591,7 @@ class LifecycleMixin:
             task_name: Cron task name from cron.md.
             description: Task description/instruction.
             command_output: Optional stdout from a preceding command cron.
+            skills: Optional cron skill references from cron.md.
         """
         self._get_interrupt_event("_background").clear()
         logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
@@ -607,6 +609,7 @@ class LifecycleMixin:
                     task_name,
                     description,
                     command_output=command_output,
+                    skills=skills,
                 )
 
                 # ── Background model swap ──

@@ -45,6 +45,7 @@ from core.tooling.schemas.skill import (
     TOOL_MANAGEMENT_TOOLS,
     USE_TOOL,
     _create_skill_schemas,
+    _curator_skill_schemas,
 )
 from core.tooling.schemas.supervisor import (
     _background_task_tools,
@@ -77,6 +78,7 @@ __all__ = [
     "_notification_tools",
     "_normalise_schema",
     "_create_skill_schemas",
+    "_curator_skill_schemas",
     "_supervisor_tools",
     "_task_tools",
     "_vault_tools",

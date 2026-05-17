@@ -43,10 +43,11 @@ def test_curator_tool_archives_and_restores_skill_access(tmp_path: Path) -> None
     archived = json.loads(
         handler.handle(
             "archive_skill",
-            {"skill_name": "old-skill", "reason": "unused", "absorbed_into": None},
+            {"skill_name": "old-skill", "reason": "unused", "absorbed_into": None, "actor": "mallory"},
         )
     )
     assert archived["to_state"] == "archived"
+    assert archived["actor"] == "alice"
 
     index = SkillIndex(anima_dir / "skills", common_dir, anima_dir=anima_dir)
     assert "old-skill" not in {meta.name for meta in index.all_skills}
