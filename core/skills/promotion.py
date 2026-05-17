@@ -11,10 +11,8 @@ separate explicit step that moves the skill into the active personal catalog.
 """
 
 import json
-import re
 import shutil
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +20,25 @@ import yaml
 
 from core.memory._io import atomic_write_text
 from core.memory.frontmatter import parse_frontmatter
-from core.skills.guard import SCANNER_VERSION, SkillScanner
-from core.skills.models import ScanResult, SkillScanVerdict, SkillUsageEventType
+from core.skills.guard import SkillScanner
+from core.skills.models import SkillScanVerdict, SkillUsageEventType
+from core.skills.promotion_approval import (
+    SkillPromotionApprovalMismatchError,
+    SkillPromotionApprovalRequiredError,
+    verify_skill_promotion_approval,
+)
+from core.skills.promotion_utils import (
+    as_float,
+    as_int,
+    as_list,
+    as_optional_str,
+    first_non_empty,
+    normalise_risk,
+    runtime_approval_required,
+    safe_skill_name,
+    scan_security_metadata,
+    within_days,
+)
 from core.skills.usage import SkillUsageTracker
 from core.time_utils import now_iso
 
@@ -67,6 +82,7 @@ class SkillPromotionResult:
     procedure_path: str | None = None
     quarantine_path: str | None = None
     active_path: str | None = None
+    approval_callback_id: str | None = None
     scan_verdict: str | None = None
     requires_human_approval: bool = True
     message: str = ""
@@ -80,6 +96,7 @@ class SkillPromotionResult:
             "procedure_path": self.procedure_path,
             "quarantine_path": self.quarantine_path,
             "active_path": self.active_path,
+            "approval_callback_id": self.approval_callback_id,
             "scan_verdict": self.scan_verdict,
             "requires_human_approval": self.requires_human_approval,
             "message": self.message,
@@ -133,10 +150,18 @@ class ProcedureToSkillConverter:
             return None
 
         meta, _body = parse_frontmatter(procedure_path.read_text(encoding="utf-8"))
-        success_count = _as_int(meta.get("success_count"), default=0)
-        failure_count = _as_int(meta.get("failure_count"), default=0)
-        confidence = _as_float(meta.get("confidence"), default=0.0)
-        last_used_at = _as_optional_str(meta.get("last_used") or meta.get("last_used_at"))
+        name = safe_skill_name(meta.get("name") or procedure_path.stem)
+        stats = self._usage_stats_for_procedure(meta.get("name") or procedure_path.stem, name)
+        if stats.success_count or stats.failure_count:
+            success_count = stats.success_count
+            failure_count = stats.failure_count
+            confidence = success_count / max(1, success_count + failure_count)
+            last_used_at = stats.last_used_at
+        else:
+            success_count = as_int(meta.get("success_count"), default=0)
+            failure_count = as_int(meta.get("failure_count"), default=0)
+            confidence = as_float(meta.get("confidence"), default=0.0)
+            last_used_at = as_optional_str(meta.get("last_used") or meta.get("last_used_at"))
 
         reasons: list[str] = []
         if success_count < self._policy.success_count_threshold:
@@ -145,12 +170,12 @@ class ProcedureToSkillConverter:
             reasons.append("confidence_below_threshold")
         if failure_count > self._policy.failure_count_max:
             reasons.append("failure_count_above_threshold")
-        if not _within_days(last_used_at, self._policy.last_used_within_days):
+        if not within_days(last_used_at, self._policy.last_used_within_days):
             reasons.append("last_used_outside_window")
 
         return ProcedurePromotionCandidate(
             path=procedure_path,
-            name=_safe_skill_name(meta.get("name") or procedure_path.stem),
+            name=name,
             metadata=meta,
             success_count=success_count,
             failure_count=failure_count,
@@ -166,6 +191,7 @@ class ProcedureToSkillConverter:
         *,
         skill_name: str | None = None,
         metadata_overrides: dict[str, Any] | None = None,
+        enforce_policy: bool = True,
     ) -> SkillPromotionResult:
         """Generate a quarantine SKILL.md and scan it before review."""
         source_path = self._resolve_procedure_path(procedure_path)
@@ -174,10 +200,19 @@ class ProcedureToSkillConverter:
 
         text = source_path.read_text(encoding="utf-8")
         proc_meta, proc_body = parse_frontmatter(text)
-        final_skill_name = _safe_skill_name(skill_name or proc_meta.get("name") or source_path.stem)
+        final_skill_name = safe_skill_name(skill_name or proc_meta.get("name") or source_path.stem)
+        active_skill_dir = self._skills_dir / final_skill_name
+        if active_skill_dir.exists():
+            raise FileExistsError(f"Active skill already exists: {active_skill_dir}")
         quarantine_skill_dir = self._quarantine_dir / final_skill_name
         if quarantine_skill_dir.exists():
             raise FileExistsError(f"Quarantine skill already exists: {quarantine_skill_dir}")
+        candidate = self.candidate_from_path(source_path)
+        if enforce_policy and candidate is not None and not candidate.eligible:
+            raise ValueError(
+                "Procedure is not eligible for skill promotion: "
+                + ", ".join(candidate.reasons)
+            )
 
         meta = self._build_skill_metadata(
             skill_name=final_skill_name,
@@ -192,8 +227,8 @@ class ProcedureToSkillConverter:
         self._write_skill_file(skill_md, meta, body)
 
         scan_result = self._scanner.scan_skill(quarantine_skill_dir, source="anima")
-        meta["security"] = _scan_security_metadata(scan_result)
-        meta["risk"]["requires_human_approval"] = _runtime_approval_required(meta["risk"], scan_result)
+        meta["security"] = scan_security_metadata(scan_result)
+        meta["risk"]["requires_human_approval"] = runtime_approval_required(meta["risk"], scan_result)
         self._write_skill_file(skill_md, meta, body)
 
         if scan_result.verdict == SkillScanVerdict.dangerous or scan_result.size_violations:
@@ -241,9 +276,25 @@ class ProcedureToSkillConverter:
             size_violations=scan_result.size_violations,
         )
 
-    def approve_skill(self, skill_name: str, *, approved_by: str) -> SkillPromotionResult:
+    def register_approval_request(self, skill_name: str, callback_id: str) -> None:
+        """Attach an interactive approval callback to a quarantine skill draft."""
+        final_skill_name = safe_skill_name(skill_name)
+        skill_md = self._quarantine_dir / final_skill_name / "SKILL.md"
+        if not skill_md.exists():
+            raise FileNotFoundError(f"Quarantine skill not found: {skill_md}")
+        meta, body = parse_frontmatter(skill_md.read_text(encoding="utf-8"))
+        meta["approval_callback_id"] = callback_id
+        self._write_skill_file(skill_md, meta, body)
+
+    def approve_skill(
+        self,
+        skill_name: str,
+        *,
+        approval_callback_id: str,
+        approved_by: str | None = None,
+    ) -> SkillPromotionResult:
         """Move a reviewed quarantine skill into the active personal catalog."""
-        final_skill_name = _safe_skill_name(skill_name)
+        final_skill_name = safe_skill_name(skill_name)
         quarantine_skill_dir = self._quarantine_dir / final_skill_name
         quarantine_skill_md = quarantine_skill_dir / "SKILL.md"
         if not quarantine_skill_md.exists():
@@ -254,17 +305,37 @@ class ProcedureToSkillConverter:
             raise FileExistsError(f"Active skill already exists: {active_skill_dir}")
 
         meta, body = parse_frontmatter(quarantine_skill_md.read_text(encoding="utf-8"))
+        stored_callback_id = as_optional_str(meta.get("approval_callback_id"))
+        if not approval_callback_id:
+            raise SkillPromotionApprovalRequiredError("approval_callback_id is required")
+        if not stored_callback_id:
+            raise SkillPromotionApprovalRequiredError(
+                "Quarantine skill has no registered approval_callback_id"
+            )
+        if stored_callback_id != approval_callback_id:
+            raise SkillPromotionApprovalMismatchError(
+                "approval_callback_id does not match quarantine skill metadata"
+            )
+        approval = verify_skill_promotion_approval(
+            approval_callback_id,
+            owner_anima=self._owner_anima,
+            skill_name=final_skill_name,
+        )
+        if approved_by is not None and approved_by != approval.actor:
+            raise SkillPromotionApprovalMismatchError("approved_by does not match approval actor")
+        approved_by = approval.actor
+
         scan = self._scanner.scan_skill(quarantine_skill_dir, source="anima")
         if scan.verdict == SkillScanVerdict.dangerous or scan.size_violations:
             raise ValueError("Dangerous or oversized quarantine skill cannot be approved")
 
-        meta["security"] = _scan_security_metadata(scan)
+        meta["security"] = scan_security_metadata(scan)
         meta["trust_level"] = "trusted"
         meta["promotion_status"] = "active"
         meta["approved_by"] = approved_by
         meta["approved_at"] = now_iso()
         meta.setdefault("risk", {})
-        meta["risk"]["requires_human_approval"] = _runtime_approval_required(meta["risk"], scan)
+        meta["risk"]["requires_human_approval"] = runtime_approval_required(meta["risk"], scan)
 
         self._write_skill_file(quarantine_skill_md, meta, body)
         active_skill_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -282,6 +353,7 @@ class ProcedureToSkillConverter:
                 "skill_name": final_skill_name,
                 "target_path": str((active_skill_dir / "SKILL.md").relative_to(self._anima_dir)),
                 "approved_by": approved_by,
+                "approval_callback_id": meta.get("approval_callback_id"),
                 "scan_verdict": scan.verdict.value,
             }
         )
@@ -290,12 +362,26 @@ class ProcedureToSkillConverter:
             status="active",
             skill_name=final_skill_name,
             active_path=str((active_skill_dir / "SKILL.md").relative_to(self._anima_dir)),
+            approval_callback_id=meta.get("approval_callback_id"),
             scan_verdict=scan.verdict.value,
             requires_human_approval=meta["risk"]["requires_human_approval"],
             message="Skill approved and activated.",
             findings=[f.model_dump(mode="json") for f in scan.findings],
             size_violations=scan.size_violations,
         )
+
+    def _usage_stats_for_procedure(self, raw_name: Any, safe_name: str):
+        tracker = SkillUsageTracker(self._anima_dir)
+        names = [str(raw_name or "").strip(), safe_name]
+        seen: set[str] = set()
+        for name in names:
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            stats = tracker.get_stats(name)
+            if stats.success_count or stats.failure_count:
+                return stats
+        return tracker.get_stats(safe_name)
 
     def _resolve_procedure_path(self, path: str | Path) -> Path:
         raw = Path(path)
@@ -314,28 +400,28 @@ class ProcedureToSkillConverter:
         procedure_metadata: dict[str, Any],
         overrides: dict[str, Any],
     ) -> dict[str, Any]:
-        description = _first_non_empty(
+        description = first_non_empty(
             overrides.get("description"),
             procedure_metadata.get("description"),
             procedure_metadata.get("title"),
             f"Promoted procedure skill for {skill_name}",
         )
-        use_when = _as_list(overrides.get("use_when") or procedure_metadata.get("use_when") or description)
-        trigger_phrases = _as_list(
+        use_when = as_list(overrides.get("use_when") or procedure_metadata.get("use_when") or description)
+        trigger_phrases = as_list(
             overrides.get("trigger_phrases")
             or procedure_metadata.get("trigger_phrases")
             or skill_name.replace("-", " ")
         )
-        negative_phrases = _as_list(
+        negative_phrases = as_list(
             overrides.get("negative_phrases")
             or procedure_metadata.get("negative_phrases")
             or procedure_metadata.get("do_not_use_when")
         )
-        domains = _as_list(overrides.get("domains") or procedure_metadata.get("domains") or procedure_metadata.get("tags"))
+        domains = as_list(overrides.get("domains") or procedure_metadata.get("domains") or procedure_metadata.get("tags"))
         if not domains:
             domains = ["general"]
-        tags = _as_list(overrides.get("tags") or procedure_metadata.get("tags"))
-        risk = _normalise_risk(overrides.get("risk") or procedure_metadata.get("risk") or {})
+        tags = as_list(overrides.get("tags") or procedure_metadata.get("tags"))
+        risk = normalise_risk(overrides.get("risk") or procedure_metadata.get("risk") or {})
 
         return {
             "name": skill_name,
@@ -363,7 +449,7 @@ class ProcedureToSkillConverter:
         procedure_metadata: dict[str, Any],
         procedure_body: str,
     ) -> str:
-        title = _first_non_empty(procedure_metadata.get("title"), skill_name.replace("-", " ").title())
+        title = first_non_empty(procedure_metadata.get("title"), skill_name.replace("-", " ").title())
         body = procedure_body.strip()
         if not body:
             body = f"# {title}\n\nFollow the promoted procedure for {skill_name}."
@@ -387,105 +473,3 @@ class ProcedureToSkillConverter:
         self._audit_path.parent.mkdir(parents=True, exist_ok=True)
         with self._audit_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
-
-
-def _safe_skill_name(raw: Any) -> str:
-    name = str(raw or "").strip().lower()
-    name = re.sub(r"\s+", "-", name)
-    name = re.sub(r"[^a-z0-9_.-]+", "-", name).strip("-._")
-    if not name:
-        raise ValueError("skill_name must contain at least one ASCII letter or digit")
-    if "/" in name or "\\" in name or ".." in name:
-        raise ValueError(f"Invalid skill name: {raw}")
-    return name
-
-
-def _as_int(value: Any, *, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _as_float(value: Any, *, default: float) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _as_optional_str(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def _as_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        text = value.strip()
-        return [text] if text else []
-    if isinstance(value, (list, tuple, set)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return [str(value).strip()] if str(value).strip() else []
-
-
-def _first_non_empty(*values: Any) -> str:
-    for value in values:
-        if value is None:
-            continue
-        text = str(value).strip()
-        if text:
-            return text
-    return ""
-
-
-def _normalise_risk(raw: Any) -> dict[str, bool]:
-    if not isinstance(raw, dict):
-        raw = {}
-    risk = {
-        "read_only": bool(raw.get("read_only", False)),
-        "destructive": bool(raw.get("destructive", False)),
-        "external_send": bool(raw.get("external_send", False)),
-        "handles_untrusted_data": bool(raw.get("handles_untrusted_data", False)),
-        "open_world": bool(raw.get("open_world", False)),
-        "requires_human_approval": bool(raw.get("requires_human_approval", False)),
-    }
-    if risk["destructive"] or risk["external_send"] or risk["open_world"]:
-        risk["requires_human_approval"] = True
-    return risk
-
-
-def _runtime_approval_required(risk: dict[str, Any], scan_result: ScanResult) -> bool:
-    return bool(
-        risk.get("requires_human_approval")
-        or risk.get("destructive")
-        or risk.get("external_send")
-        or risk.get("open_world")
-        or scan_result.verdict in {SkillScanVerdict.caution, SkillScanVerdict.warn}
-    )
-
-
-def _scan_security_metadata(scan_result: ScanResult) -> dict[str, Any]:
-    return {
-        "verdict": scan_result.verdict.value,
-        "scan_status": "scanned",
-        "findings": [f.model_dump(mode="json") for f in scan_result.findings],
-        "scanned_at": datetime.now(UTC).isoformat(),
-        "scanner_version": SCANNER_VERSION,
-    }
-
-
-def _within_days(value: str | None, days: int) -> bool:
-    if not value:
-        return False
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return False
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    cutoff = datetime.now(UTC) - timedelta(days=days)
-    return parsed >= cutoff

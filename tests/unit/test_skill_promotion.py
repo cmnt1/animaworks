@@ -6,14 +6,19 @@ from __future__ import annotations
 
 """Unit tests for procedure-to-skill promotion."""
 
+import asyncio
 import json
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from core.memory.frontmatter import parse_frontmatter
+from core.skills.models import SkillUsageEventType
 from core.skills.promotion import (
     PROMOTION_DRAFT_CREATED,
     ProcedureToSkillConverter,
 )
+from core.skills.usage import SkillUsageTracker
 from core.time_utils import now_iso
 
 
@@ -38,6 +43,35 @@ def _write_procedure(anima_dir: Path, name: str, *, body: str = "Step 1: Do the 
     return path
 
 
+@contextmanager
+def _resolved_promotion_approval(tmp_path: Path, anima_name: str, skill_name: str, actor: str):
+    mock_auth = MagicMock()
+    mock_auth.secret_key = "skill-promotion-unit-test"
+    with (
+        patch("core.notification.interactive.get_data_dir", return_value=tmp_path),
+        patch("core.notification.interactive.get_shared_dir", return_value=tmp_path / "shared"),
+        patch("core.notification.interactive.load_auth", return_value=mock_auth),
+    ):
+        import core.notification.interactive as interactive_mod
+        from core.notification.interactive import get_interaction_router
+
+        interactive_mod._router = None
+        router = get_interaction_router()
+        req = asyncio.run(
+            router.create(
+                anima_name,
+                "skill_promotion",
+                ["approve", "reject", "comment"],
+                metadata={"skill_name": skill_name},
+            )
+        )
+        asyncio.run(router.resolve(req.callback_id, "approve", actor, "test"))
+        try:
+            yield req.callback_id
+        finally:
+            interactive_mod._router = None
+
+
 def test_find_candidates_uses_policy_thresholds(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     procedure = _write_procedure(anima_dir, "deploy-flow")
@@ -48,6 +82,40 @@ def test_find_candidates_uses_policy_thresholds(tmp_path: Path) -> None:
     assert candidate is not None
     assert candidate.eligible is True
     assert converter.find_candidates() == [candidate]
+
+
+def test_candidate_stats_jsonl_override_frontmatter(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    procedure = _write_procedure(anima_dir, "jsonl-flow")
+    text = procedure.read_text(encoding="utf-8")
+    procedure.write_text(
+        text.replace("success_count: 3", "success_count: 0").replace("confidence: 0.95", "confidence: 0.0"),
+        encoding="utf-8",
+    )
+    tracker = SkillUsageTracker(anima_dir)
+    for _ in range(3):
+        tracker.record("jsonl-flow", SkillUsageEventType.success)
+
+    candidate = ProcedureToSkillConverter(anima_dir).candidate_from_path(procedure)
+
+    assert candidate is not None
+    assert candidate.eligible is True
+    assert candidate.success_count == 3
+    assert candidate.confidence == 1.0
+
+
+def test_draft_rejects_low_confidence_candidate(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    procedure = _write_procedure(anima_dir, "immature-flow")
+    text = procedure.read_text(encoding="utf-8")
+    procedure.write_text(text.replace("success_count: 3", "success_count: 1"), encoding="utf-8")
+
+    try:
+        ProcedureToSkillConverter(anima_dir).create_quarantine_skill("procedures/immature-flow.md")
+    except ValueError as exc:
+        assert "success_count_below_threshold" in str(exc)
+    else:
+        raise AssertionError("Expected low-confidence procedure to be rejected")
 
 
 def test_draft_creates_quarantine_skill_with_required_metadata(tmp_path: Path) -> None:
@@ -81,6 +149,21 @@ def test_draft_creates_quarantine_skill_with_required_metadata(tmp_path: Path) -
     assert audit["skill_name"] == "deploy-flow"
 
 
+def test_draft_rejects_active_name_collision(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    _write_procedure(anima_dir, "deploy-flow")
+    active = anima_dir / "skills" / "deploy-flow"
+    active.mkdir(parents=True)
+    (active / "SKILL.md").write_text("---\nname: deploy-flow\n---\n\n# Existing\n", encoding="utf-8")
+
+    try:
+        ProcedureToSkillConverter(anima_dir).create_quarantine_skill("procedures/deploy-flow.md")
+    except FileExistsError as exc:
+        assert "Active skill already exists" in str(exc)
+    else:
+        raise AssertionError("Expected active skill name collision to be rejected")
+
+
 def test_dangerous_draft_aborts_before_quarantine(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     _write_procedure(anima_dir, "dangerous-flow", body="Run rm -rf / before continuing.")
@@ -99,7 +182,9 @@ def test_approve_moves_skill_to_active_and_records_create_event(tmp_path: Path) 
     converter = ProcedureToSkillConverter(anima_dir)
     converter.create_quarantine_skill("procedures/deploy-flow.md")
 
-    result = converter.approve_skill("deploy-flow", approved_by="mei")
+    with _resolved_promotion_approval(tmp_path, "alice", "deploy-flow", "mei") as callback_id:
+        converter.register_approval_request("deploy-flow", callback_id)
+        result = converter.approve_skill("deploy-flow", approval_callback_id=callback_id, approved_by="mei")
 
     assert result.status == "active"
     assert not (anima_dir / "skills" / "quarantine" / "deploy-flow").exists()
@@ -117,6 +202,20 @@ def test_approve_moves_skill_to_active_and_records_create_event(tmp_path: Path) 
     assert usage["event_type"] == "create"
 
 
+def test_approve_requires_verified_approval_callback(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    _write_procedure(anima_dir, "deploy-flow")
+    converter = ProcedureToSkillConverter(anima_dir)
+    converter.create_quarantine_skill("procedures/deploy-flow.md")
+
+    try:
+        converter.approve_skill("deploy-flow", approval_callback_id="", approved_by="mei")
+    except ValueError as exc:
+        assert "approval_callback_id is required" in str(exc)
+    else:
+        raise AssertionError("Expected approval without callback_id to be rejected")
+
+
 def test_external_send_risk_keeps_runtime_human_approval(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     _write_procedure(anima_dir, "send-status")
@@ -126,7 +225,9 @@ def test_external_send_risk_keeps_runtime_human_approval(tmp_path: Path) -> None
         metadata_overrides={"risk": {"external_send": True}},
     )
 
-    converter.approve_skill("send-status", approved_by="mei")
+    with _resolved_promotion_approval(tmp_path, "alice", "send-status", "mei") as callback_id:
+        converter.register_approval_request("send-status", callback_id)
+        converter.approve_skill("send-status", approval_callback_id=callback_id, approved_by="mei")
 
     meta, _body = parse_frontmatter((anima_dir / "skills" / "send-status" / "SKILL.md").read_text(encoding="utf-8"))
     assert meta["risk"]["external_send"] is True

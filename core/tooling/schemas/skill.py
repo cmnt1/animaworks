@@ -189,7 +189,11 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
                     },
                     "approved_by": {
                         "type": "string",
-                        "description": "Human or reviewer identity recorded during action=approve.",
+                        "description": "Deprecated. Approval actor is read from the resolved interactive approval.",
+                    },
+                    "approval_callback_id": {
+                        "type": "string",
+                        "description": "Resolved interactive approval callback_id required for action=approve.",
                     },
                     "description": {
                         "type": "string",

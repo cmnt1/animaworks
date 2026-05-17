@@ -230,6 +230,7 @@ class SkillMetadata(BaseModel):
     promotion_status: str | None = None
     approved_by: str | None = None
     approved_at: datetime | None = None
+    approval_callback_id: str | None = None
     usage_count: int = 0
     success_count: int = 0
     failure_count: int = 0
