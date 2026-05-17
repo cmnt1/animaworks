@@ -60,6 +60,7 @@ class _TargetPaths:
     active_dir: Path
     quarantine_dir: Path
     lock_path: Path
+    backup_dir: Path
     rel_base: Path
 
     def active_skill_dir(self, name: str) -> Path:
@@ -101,7 +102,9 @@ class SkillHub:
         trust_level: SkillTrustLevel | str = SkillTrustLevel.community,
         quarantine: bool = False,
     ) -> SkillHubResult:
-        trust = trust_level if isinstance(trust_level, SkillTrustLevel) else SkillTrustLevel(str(trust_level))
+        trust = _coerce_import_trust(trust_level)
+        # Hub imports use the fixed community gate; --force must not bypass external-source policy.
+        del force
         paths = self._target_paths(target, anima=anima)
         tmp_parent = self.data_dir / "tmp" / "skill_hub"
         tmp_parent.mkdir(parents=True, exist_ok=True)
@@ -111,8 +114,9 @@ class SkillHub:
             bundle = self._stage_source(source, staging_root)
             meta = load_skill_metadata(Path(bundle.skill_md_path))
             skill_name = safe_skill_name(meta.name or Path(bundle.staging_path).name)
+            _validate_skill_name(skill_name, paths)
             scan = self.scanner.scan_skill(Path(bundle.staging_path), source=bundle.source_type)
-            decision, reason = self.scanner.should_allow(scan, trust, force=force)
+            decision, reason = self.scanner.should_allow(scan, SkillTrustLevel.community, force=False)
 
             if scan.verdict == SkillScanVerdict.dangerous or scan.size_violations:
                 return self._blocked_result(skill_name, paths.target, scan, decision, reason)
@@ -139,15 +143,20 @@ class SkillHub:
                     size_violations=scan.size_violations,
                 )
 
-            backup_path = self._prepare_destination(destination, replace=replace, rel=paths.rel)
-            self._install_staged_bundle(
-                Path(bundle.staging_path),
-                destination,
-                skill_name=skill_name,
-                trust_level=install_trust,
-                scan=scan,
-                source=bundle,
-            )
+            prepared = self._pending_destination(paths, skill_name)
+            try:
+                self._install_staged_bundle(
+                    Path(bundle.staging_path),
+                    prepared,
+                    skill_name=skill_name,
+                    trust_level=install_trust,
+                    scan=scan,
+                    source=bundle,
+                )
+                backup_path = self._activate_destination(prepared, destination, replace=replace, paths=paths)
+            except Exception:
+                shutil.rmtree(prepared, ignore_errors=True)
+                raise
             self._append_lock(
                 paths,
                 action="quarantine" if quarantine else "install",
@@ -178,6 +187,7 @@ class SkillHub:
     def inspect(self, skill_name: str, *, target: str, anima: str | None = None) -> dict[str, Any]:
         paths = self._target_paths(target, anima=anima)
         name = safe_skill_name(skill_name)
+        _validate_skill_name(name, paths)
         for root, state in ((paths.active_dir, "active"), (paths.quarantine_dir, "quarantine")):
             skill_md = root / name / "SKILL.md"
             if skill_md.is_file():
@@ -189,6 +199,7 @@ class SkillHub:
     def remove(self, skill_name: str, *, target: str, anima: str | None = None) -> SkillHubResult:
         paths = self._target_paths(target, anima=anima)
         name = safe_skill_name(skill_name)
+        _validate_skill_name(name, paths)
         for root in (paths.active_dir, paths.quarantine_dir):
             skill_dir = root / name
             if skill_dir.is_dir():
@@ -216,20 +227,29 @@ class SkillHub:
     ) -> SkillHubResult:
         if not approval_id:
             raise ValueError("approval_id is required")
-        trust = trust_level if isinstance(trust_level, SkillTrustLevel) else SkillTrustLevel(str(trust_level))
+        trust = _coerce_import_trust(trust_level)
         paths = self._target_paths(target, anima=anima)
         name = safe_skill_name(skill_name)
+        _validate_skill_name(name, paths)
         source_dir = paths.quarantine_skill_dir(name)
         if not (source_dir / "SKILL.md").is_file():
             raise FileNotFoundError(f"Quarantine skill not found: {name}")
         scan = self.scanner.scan_skill(source_dir, source="community")
-        decision, reason = self.scanner.should_allow(scan, trust, force=True)
+        decision, reason = self.scanner.should_allow(scan, SkillTrustLevel.community, force=False)
         if scan.verdict == SkillScanVerdict.dangerous or scan.size_violations:
             return self._blocked_result(name, paths.target, scan, decision, reason)
+        if decision is False:
+            return self._blocked_result(name, paths.target, scan, decision, reason)
         destination = paths.active_skill_dir(name)
-        backup_path = self._prepare_destination(destination, replace=replace, rel=paths.rel)
-        shutil.move(str(source_dir), str(destination))
-        self._rewrite_skill_metadata(destination / "SKILL.md", name, trust, scan, approval_id=approval_id)
+        prepared = self._pending_destination(paths, name)
+        try:
+            _copy_tree(source_dir, prepared)
+            self._rewrite_skill_metadata(prepared / "SKILL.md", name, trust, scan, approval_id=approval_id)
+            backup_path = self._activate_destination(prepared, destination, replace=replace, paths=paths)
+        except Exception:
+            shutil.rmtree(prepared, ignore_errors=True)
+            raise
+        shutil.rmtree(source_dir)
         installed_path = paths.rel(destination / "SKILL.md")
         self._append_lock(paths, action="promote", skill_name=name, scan=scan, installed_path=installed_path)
         return SkillHubResult(
@@ -281,6 +301,7 @@ class SkillHub:
                 active_dir=common_dir / "community",
                 quarantine_dir=common_dir / "quarantine",
                 lock_path=self.data_dir / "shared" / "skill_hub_lock.jsonl",
+                backup_dir=self.data_dir / "shared" / "skill_hub_backups",
                 rel_base=self.data_dir,
             )
         if target == "personal":
@@ -292,6 +313,7 @@ class SkillHub:
                 active_dir=anima_dir / "skills",
                 quarantine_dir=anima_dir / "skills" / "quarantine",
                 lock_path=anima_dir / "state" / "skill_hub_lock.jsonl",
+                backup_dir=anima_dir / "state" / "skill_hub_backups",
                 rel_base=anima_dir,
             )
         raise ValueError("target must be 'personal' or 'common'")
@@ -337,14 +359,35 @@ class SkillHub:
         frontmatter = yaml.dump(meta, allow_unicode=True, default_flow_style=False, sort_keys=False).strip()
         skill_md.write_text(f"---\n{frontmatter}\n---\n\n{body.lstrip()}", encoding="utf-8")
 
-    def _prepare_destination(self, destination: Path, *, replace: bool, rel) -> str | None:
+    def _pending_destination(self, paths: _TargetPaths, skill_name: str) -> Path:
+        return paths.backup_dir / "pending" / f"{skill_name}.install-{_stamp()}"
+
+    def _activate_destination(
+        self,
+        prepared: Path,
+        destination: Path,
+        *,
+        replace: bool,
+        paths: _TargetPaths,
+    ) -> str | None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
+            shutil.move(str(prepared), str(destination))
             return None
         if not replace:
+            shutil.rmtree(prepared, ignore_errors=True)
             raise FileExistsError(f"Skill already exists: {destination}")
-        backup = destination.with_name(f"{destination.name}.backup-{_stamp()}")
+
+        backup = paths.backup_dir / f"{destination.name}.backup-{_stamp()}"
+        backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(destination), str(backup))
-        return rel(backup / "SKILL.md")
+        try:
+            shutil.move(str(prepared), str(destination))
+        except Exception:
+            if not destination.exists() and backup.exists():
+                shutil.move(str(backup), str(destination))
+            raise
+        return paths.rel(backup / "SKILL.md")
 
     def _append_lock(
         self,
@@ -434,6 +477,18 @@ def _safe_anima_name(value: str) -> str:
     if not name or path.is_absolute() or ".." in path.parts or "/" in name or "\\" in name:
         raise ValueError(f"Invalid anima name: {value}")
     return name
+
+
+def _coerce_import_trust(value: SkillTrustLevel | str) -> SkillTrustLevel:
+    trust = value if isinstance(value, SkillTrustLevel) else SkillTrustLevel(str(value))
+    if trust not in {SkillTrustLevel.community, SkillTrustLevel.untrusted}:
+        raise ValueError("Skill Hub imports may only be installed as community or untrusted")
+    return trust
+
+
+def _validate_skill_name(skill_name: str, paths: _TargetPaths) -> None:
+    if paths.target == "personal" and skill_name == "quarantine":
+        raise ValueError("'quarantine' is reserved for personal skill quarantine storage")
 
 
 def result_json(value: SkillHubResult | list[dict[str, Any]] | dict[str, Any]) -> str:

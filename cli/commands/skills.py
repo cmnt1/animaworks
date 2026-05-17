@@ -21,12 +21,12 @@ def register_skills_command(subparsers: argparse._SubParsersAction) -> None:
     _target_args(install)
     install.add_argument("--dry-run", action="store_true", help="Stage and scan without installing")
     install.add_argument("--replace", action="store_true", help="Replace an existing skill after creating a backup")
-    install.add_argument("--force", action="store_true", help="Force policy ask/block outcomes except dangerous verdicts")
+    install.add_argument("--force", action="store_true", help="Accepted for compatibility; import policy still applies")
     install.add_argument("--quarantine", action="store_true", help="Install into quarantine instead of active catalog")
     install.add_argument(
         "--trust-level",
         default="community",
-        choices=["builtin", "official", "trusted", "community", "untrusted"],
+        choices=["community", "untrusted"],
         help="Trust level to apply to active installs",
     )
     install.set_defaults(func=cmd_skills_install)
@@ -60,7 +60,7 @@ def register_skills_command(subparsers: argparse._SubParsersAction) -> None:
     q_promote.add_argument(
         "--trust-level",
         default="community",
-        choices=["builtin", "official", "trusted", "community", "untrusted"],
+        choices=["community", "untrusted"],
         help="Trust level to apply after promotion",
     )
     _target_args(q_promote, require_source=False)
