@@ -112,7 +112,22 @@ def _migrate_skills(
             )
             continue
 
-        hub_result = _run_hub_install(skill_dir, options, target=target)
+        try:
+            hub_result = _run_hub_install(skill_dir, options, target=target)
+        except Exception as exc:
+            report.add_item(
+                MigrationItem(
+                    "hermes_skill",
+                    str(skill_dir),
+                    target_path,
+                    "skill_import",
+                    "error",
+                    fp,
+                    f"{type(exc).__name__}: {exc}",
+                    manual_action="review failed skill import",
+                )
+            )
+            continue
         item_status = _skill_status(hub_result.status, options.apply)
         item = MigrationItem(
             "hermes_skill",
