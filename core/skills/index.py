@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.skills.loader import load_skill_metadata
-from core.skills.models import SkillMetadata, SkillTrustLevel
+from core.skills.models import SkillMetadata, SkillScanVerdict, SkillTrustLevel
 
 logger = logging.getLogger(__name__)
 
@@ -171,10 +171,32 @@ class SkillIndex:
             except Exception:
                 logger.debug("Failed to merge usage stats into index", exc_info=True)
 
+        if self._anima_dir is not None:
+            try:
+                from core.skills.curator import apply_curator_state, replay_curator_state
+
+                replay = replay_curator_state(self._anima_dir)
+                sorted_all = [apply_curator_state(meta, replay) for meta in sorted_all]
+            except Exception:
+                logger.debug("Failed to merge curator state into index", exc_info=True)
+
         self._cached_all_entries = sorted_all
-        filtered = [m for m in sorted_all if m.trust_level not in _EXCLUDED_TRUST_LEVELS]
+        filtered = [m for m in sorted_all if self._is_catalog_visible(m)]
         self._cached_index = filtered
         return list(filtered)
+
+    @staticmethod
+    def _is_catalog_visible(meta: SkillMetadata) -> bool:
+        if meta.trust_level in _EXCLUDED_TRUST_LEVELS:
+            return False
+        if meta.security.verdict == SkillScanVerdict.dangerous:
+            return False
+        try:
+            from core.skills.curator import is_unloadable_lifecycle_state
+
+            return not is_unloadable_lifecycle_state(meta.lifecycle_state)
+        except Exception:
+            return True
 
     @staticmethod
     def _sort_key(meta: SkillMetadata) -> tuple[int, str, str]:

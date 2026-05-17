@@ -235,3 +235,101 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
             },
         },
     ]
+
+
+def _curator_skill_schemas() -> list[dict[str, Any]]:
+    lifecycle_states = ["active", "review", "stale", "archived", "blocked", "deleted"]
+    return [
+        {
+            "name": "curate_skills",
+            "description": "Generate a deterministic Skill Curator report: lifecycle suggestions, metadata gaps, and duplicates.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+        {
+            "name": "archive_skill",
+            "description": "Append an archived lifecycle event for a skill and generate a reference rewrite proposal.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "absorbed_into": {
+                        "type": "string",
+                        "description": "Optional replacement skill when this archive is part of a merge.",
+                    },
+                    "actor": {"type": "string"},
+                },
+                "required": ["skill_name", "reason"],
+            },
+        },
+        {
+            "name": "restore_skill",
+            "description": "Append an active lifecycle event for a previously stale/archived skill when policy allows it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "actor": {"type": "string"},
+                },
+                "required": ["skill_name", "reason"],
+            },
+        },
+        {
+            "name": "block_skill",
+            "description": "Append a blocked lifecycle event for a skill and generate a reference rewrite proposal.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "actor": {"type": "string"},
+                },
+                "required": ["skill_name", "reason"],
+            },
+        },
+        {
+            "name": "unblock_skill",
+            "description": "Append an active lifecycle event for a Curator-blocked skill when trust/security policy allows it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "actor": {"type": "string"},
+                },
+                "required": ["skill_name", "reason"],
+            },
+        },
+        {
+            "name": "delete_skill",
+            "description": "Append a deleted tombstone lifecycle event and generate a reference rewrite proposal; does not delete files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "actor": {"type": "string"},
+                },
+                "required": ["skill_name", "reason"],
+            },
+        },
+        {
+            "name": "set_skill_lifecycle",
+            "description": "Append a specific Skill Curator lifecycle transition.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {"type": "string"},
+                    "state": {"type": "string", "enum": lifecycle_states},
+                    "reason": {"type": "string"},
+                    "absorbed_into": {"type": "string"},
+                    "actor": {"type": "string"},
+                },
+                "required": ["skill_name", "state", "reason"],
+            },
+        },
+    ]

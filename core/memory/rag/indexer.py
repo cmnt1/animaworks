@@ -239,6 +239,18 @@ class MemoryIndexer:
             logger.debug("Skipping ragignored file: %s", file_path)
             return 0
 
+        if memory_type in ("skills", "common_skills") and file_path.name == "SKILL.md":
+            try:
+                from core.skills.loader import load_skill_metadata, skill_access_decision
+
+                meta = load_skill_metadata(file_path)
+                allowed, reason = skill_access_decision(meta, anima_dir=self.anima_dir)
+                if not allowed:
+                    logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
+                    return 0
+            except Exception:
+                logger.debug("Failed to evaluate skill curator access for %s", file_path, exc_info=True)
+
         # Check if file has changed
         file_hash = self._compute_file_hash(file_path)
         file_key = str(file_path.relative_to(self.anima_dir))

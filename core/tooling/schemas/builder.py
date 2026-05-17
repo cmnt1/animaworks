@@ -23,7 +23,13 @@ from core.tooling.schemas.memory import (
 )
 from core.tooling.schemas.notification import _notification_tools
 from core.tooling.schemas.session_todo import _session_todo_tools
-from core.tooling.schemas.skill import DISCOVERY_TOOLS, TOOL_MANAGEMENT_TOOLS, USE_TOOL, _create_skill_schemas
+from core.tooling.schemas.skill import (
+    DISCOVERY_TOOLS,
+    TOOL_MANAGEMENT_TOOLS,
+    USE_TOOL,
+    _create_skill_schemas,
+    _curator_skill_schemas,
+)
 from core.tooling.schemas.supervisor import (
     _background_task_tools,
     _check_permissions_tools,
@@ -135,6 +141,7 @@ def build_tool_list(
 
     if include_create_skill:
         tools.extend(_create_skill_schemas())
+        tools.extend(_curator_skill_schemas())
     return tools
 
 

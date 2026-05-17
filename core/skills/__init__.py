@@ -13,16 +13,27 @@ Re-exports for convenience::
 """
 
 from core.skills.guard import SkillScanner
+from core.skills.curator import (
+    CuratorReplay,
+    DuplicateCandidate,
+    LifecycleSuggestion,
+    SkillCurator,
+)
 from core.skills.index import SkillIndex
 from core.skills.loader import (
     is_skill_blocked,
+    is_skill_loadable,
     load_skill_body,
     load_skill_document,
     load_skill_metadata,
+    skill_access_decision,
 )
 from core.skills.models import (
     ScanFinding,
     ScanResult,
+    SkillCuratorEvent,
+    SkillCuratorEventType,
+    SkillLifecycleState,
     SkillMetadata,
     SkillRiskMetadata,
     SkillRoutingMetadata,
@@ -47,7 +58,14 @@ from core.skills.usage import SkillUsageTracker
 __all__ = [
     "ScanFinding",
     "ScanResult",
+    "CuratorReplay",
+    "DuplicateCandidate",
+    "LifecycleSuggestion",
+    "SkillCurator",
     "SkillIndex",
+    "SkillCuratorEvent",
+    "SkillCuratorEventType",
+    "SkillLifecycleState",
     "SkillMetadata",
     "SkillPromotionResult",
     "SkillRouteCandidate",
@@ -68,7 +86,9 @@ __all__ = [
     "ProcedureToSkillConverter",
     "PromotionPolicy",
     "is_skill_blocked",
+    "is_skill_loadable",
     "load_skill_body",
     "load_skill_document",
     "load_skill_metadata",
+    "skill_access_decision",
 ]

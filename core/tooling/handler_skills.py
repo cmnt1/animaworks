@@ -333,6 +333,81 @@ class SkillsToolsMixin:
 
         return handle_promote_procedure_to_skill(self, args)
 
+    def _curator(self):
+        from core.paths import get_common_skills_dir
+        from core.skills.curator import SkillCurator
+
+        return SkillCurator(self._anima_dir, common_skills_dir=get_common_skills_dir())
+
+    def _curator_index_entries(self):
+        from core.paths import get_common_skills_dir
+        from core.skills.index import SkillIndex
+
+        index = SkillIndex(
+            self._anima_dir / "skills",
+            get_common_skills_dir(),
+            self._anima_dir / "procedures",
+            anima_dir=self._anima_dir,
+        )
+        index.build_index()
+        return index.search("", include_blocked=True)
+
+    def _handle_curate_skills(self, args: dict[str, Any]) -> str:
+        """Return a deterministic curator report for the current skill catalog."""
+        del args
+        try:
+            report = self._curator().generate_report(self._curator_index_entries())
+        except Exception as exc:
+            logger.exception("curate_skills failed")
+            return _error_result("CuratorFailed", str(exc))
+        return _json.dumps(report, ensure_ascii=False, indent=2, default=str)
+
+    def _handle_archive_skill(self, args: dict[str, Any]) -> str:
+        return self._handle_curator_state_change(args, "archived")
+
+    def _handle_restore_skill(self, args: dict[str, Any]) -> str:
+        return self._handle_curator_state_change(args, "active")
+
+    def _handle_block_skill(self, args: dict[str, Any]) -> str:
+        return self._handle_curator_state_change(args, "blocked")
+
+    def _handle_unblock_skill(self, args: dict[str, Any]) -> str:
+        return self._handle_curator_state_change(args, "active")
+
+    def _handle_delete_skill(self, args: dict[str, Any]) -> str:
+        return self._handle_curator_state_change(args, "deleted")
+
+    def _handle_set_skill_lifecycle(self, args: dict[str, Any]) -> str:
+        state = args.get("state", "")
+        if not state:
+            return _error_result("InvalidArguments", "state is required")
+        return self._handle_curator_state_change(args, state)
+
+    def _handle_curator_state_change(self, args: dict[str, Any], state: str) -> str:
+        skill_name = str(args.get("skill_name") or "").strip()
+        reason = str(args.get("reason") or "").strip()
+        actor = str(args.get("actor") or self._anima_name)
+        absorbed_into = args.get("absorbed_into")
+        if not skill_name:
+            return _error_result("InvalidArguments", "skill_name is required")
+        if not reason:
+            return _error_result("InvalidArguments", "reason is required")
+        absorbed_target = str(absorbed_into).strip() if absorbed_into is not None else ""
+        try:
+            event = self._curator().change_state(
+                skill_name,
+                state,
+                reason=reason,
+                actor=actor,
+                absorbed_into=absorbed_target or None,
+            )
+        except ValueError as exc:
+            return _error_result("InvalidArguments", str(exc))
+        except Exception as exc:
+            logger.exception("skill lifecycle change failed")
+            return _error_result("CuratorFailed", str(exc))
+        return event.model_dump_json(indent=2)
+
     def _scan_created_skill(self, skill_dir: Path, trust_level: str | None) -> str:
         """Run security scan on a newly created skill and persist results."""
         from datetime import datetime
