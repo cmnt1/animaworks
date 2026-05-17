@@ -738,9 +738,8 @@ class TestStateFileLock:
              patch("core._anima_messaging.ConversationMemory"):
             from core.anima import DigitalAnima
             dp = DigitalAnima(anima_dir, shared_dir)
-            dp.agent._tool_handler.set_state_file_lock.assert_called_once_with(
-                dp._state_file_lock
-            )
+            assert dp.agent._tool_handler.set_state_file_lock.call_count == len(dp._AGENT_LANES)
+            dp.agent._tool_handler.set_state_file_lock.assert_any_call(dp._state_file_lock)
 
     def test_is_state_file_detection(self, data_dir, make_anima):
         from core.memory.manager import MemoryManager

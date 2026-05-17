@@ -1106,8 +1106,10 @@ class PendingTaskExecutor:
             file_paths=paths_text,
         )
 
+        lane_getter = getattr(type(self._anima), "_agent_for_lane", None)
+        agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
         if working_directory:
-            self._anima.agent.set_task_cwd(Path(working_directory))
+            agent.set_task_cwd(Path(working_directory))
 
         if "machine" in description.lower():
             prompt += "\n\n" + t("pending_executor.machine_directive")
@@ -1121,54 +1123,57 @@ class PendingTaskExecutor:
         task_failed_reason = ""
         had_error = False
         error_message = ""
-        agent_session_acquired = False
-        agent_session_lock = getattr(self._anima, "_agent_session_lock", None)
-
         try:
-            if isinstance(agent_session_lock, asyncio.Lock):
-                await agent_session_lock.acquire()
-                agent_session_acquired = True
-            if self._anima and hasattr(self._anima, "_get_interrupt_event"):
-                self._anima._get_interrupt_event("_background").clear()
-                self._anima.agent.set_interrupt_event(
-                    self._anima._get_interrupt_event("_background"),
-                )
-            self._anima.agent.reset_reply_tracking(session_type="task")
-            self._anima.agent.reset_read_paths()
-            async for chunk in self._anima.agent.run_cycle_streaming(
-                prompt,
-                trigger=trigger,
-            ):
-                chunk_type = chunk.get("type")
-                if chunk_type == "text_delta":
-                    accumulated_text += chunk.get("text", "")
-                    journal.write_text(chunk.get("text", ""))
-                elif chunk_type == "error":
-                    had_error = True
-                    error_message = chunk.get("message", "unknown error")
-                    logger.warning(
-                        "[%s] Streaming error during task %s: %s",
-                        self._anima_name,
-                        task_id,
-                        error_message,
+            if callable(getattr(type(self._anima), "_agent_session_context", None)):
+                session_context = self._anima._agent_session_context("background")
+            else:
+                session_context = getattr(self._anima, "_agent_session_lock", None)
+                if not isinstance(session_context, asyncio.Lock):
+                    session_context = None
+            if session_context is None:
+                from contextlib import nullcontext
+
+                session_context = nullcontext()
+            async with session_context:
+                if self._anima and hasattr(self._anima, "_get_interrupt_event"):
+                    self._anima._get_interrupt_event("_background").clear()
+                    agent.set_interrupt_event(
+                        self._anima._get_interrupt_event("_background"),
                     )
-                elif chunk_type == "retry_start":
-                    had_error = False
-                    error_message = ""
-                elif chunk_type == "cycle_done":
-                    cycle_result = chunk.get("cycle_result", {})
-                    result_summary = cycle_result.get(
-                        "summary",
-                        accumulated_text[:500],
-                    )
-                    if cycle_result.get("action") == "error":
-                        task_failed_reason = result_summary or "task execution failed"
-                    journal.finalize(summary=result_summary[:500])
+                agent.reset_reply_tracking(session_type="task")
+                agent.reset_read_paths()
+                async for chunk in agent.run_cycle_streaming(
+                    prompt,
+                    trigger=trigger,
+                ):
+                    chunk_type = chunk.get("type")
+                    if chunk_type == "text_delta":
+                        accumulated_text += chunk.get("text", "")
+                        journal.write_text(chunk.get("text", ""))
+                    elif chunk_type == "error":
+                        had_error = True
+                        error_message = chunk.get("message", "unknown error")
+                        logger.warning(
+                            "[%s] Streaming error during task %s: %s",
+                            self._anima_name,
+                            task_id,
+                            error_message,
+                        )
+                    elif chunk_type == "retry_start":
+                        had_error = False
+                        error_message = ""
+                    elif chunk_type == "cycle_done":
+                        cycle_result = chunk.get("cycle_result", {})
+                        result_summary = cycle_result.get(
+                            "summary",
+                            accumulated_text[:500],
+                        )
+                        if cycle_result.get("action") == "error":
+                            task_failed_reason = result_summary or "task execution failed"
+                        journal.finalize(summary=result_summary[:500])
         finally:
-            if agent_session_acquired:
-                agent_session_lock.release()
             journal.close()
-            self._anima.agent.set_task_cwd(None)
+            agent.set_task_cwd(None)
 
         if had_error:
             _queue_done = False
@@ -1279,7 +1284,9 @@ class PendingTaskExecutor:
             logger.warning("Cannot execute pending task: anima not initialized")
             return
 
-        bg_mgr = self._anima.agent.background_manager
+        lane_getter = getattr(type(self._anima), "_agent_for_lane", None)
+        agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
+        bg_mgr = agent.background_manager
         if not bg_mgr:
             logger.warning(
                 "Cannot execute pending task: BackgroundTaskManager not available",

@@ -507,15 +507,24 @@ class InboxMixin:
                     has_board_mention = any(item.msg.type == "board_mention" for item in inbox_result.inbox_items)
                     from core.tooling.handler import active_session_type, suppress_board_fanout
 
+                    agent = self._agent_for_lane("inbox") if hasattr(self, "_agent_for_lane") else self.agent
                     agent_session_acquired = False
-                    agent_session_lock = getattr(self, "_agent_session_lock", None)
+                    agent_session_lock = None
+                    agent_session_context = None
+                    if hasattr(self, "_agent_session_context"):
+                        agent_session_context = self._agent_session_context("inbox")
+                    else:
+                        agent_session_lock = getattr(self, "_agent_session_lock", None)
                     if isinstance(agent_session_lock, asyncio.Lock):
                         await agent_session_lock.acquire()
                         agent_session_acquired = True
-                    self.agent.set_interrupt_event(self._get_interrupt_event("_inbox"))
+                    elif agent_session_context is not None:
+                        await agent_session_context.__aenter__()
+                        agent_session_acquired = True
+                    agent.set_interrupt_event(self._get_interrupt_event("_inbox"))
                     _fanout_token = suppress_board_fanout.set(True) if has_board_mention else None
-                    _session_token = self.agent._tool_handler.set_active_session_type("inbox")
-                    self.agent._tool_handler._trigger = trigger
+                    _session_token = agent._tool_handler.set_active_session_type("inbox")
+                    agent._tool_handler._trigger = trigger
 
                     # Set session origin from the most untrusted message
                     _batch_origins: list[str] = []
@@ -530,11 +539,11 @@ class InboxMixin:
                         _batch_origins or [ORIGIN_ANIMA],
                         key=lambda o: {"untrusted": 0, "medium": 1, "trusted": 2}.get(resolve_trust(o), 0),
                     )
-                    self.agent._tool_handler.set_session_origin(_worst_origin, _unique_chains)
+                    agent._tool_handler.set_session_origin(_worst_origin, _unique_chains)
 
-                    self.agent.reset_reply_tracking(session_type="inbox")
-                    self.agent.reset_posted_channels(session_type="inbox")
-                    self.agent.reset_read_paths()
+                    agent.reset_reply_tracking(session_type="inbox")
+                    agent.reset_posted_channels(session_type="inbox")
+                    agent.reset_read_paths()
 
                     journal = StreamingJournal(self.anima_dir, session_type="inbox")
                     journal.open(trigger=trigger, from_person=senders_str)
@@ -545,11 +554,11 @@ class InboxMixin:
                     original_config = None
                     bg_config = self._resolve_background_config()
                     if bg_config is not None:
-                        original_config = self.agent.model_config
-                        self.agent.update_model_config(bg_config)
+                        original_config = agent.model_config
+                        agent.update_model_config(bg_config)
 
                     try:
-                        async for chunk in self.agent.run_cycle_streaming(
+                        async for chunk in agent.run_cycle_streaming(
                             prompt,
                             trigger=trigger,
                             thread_id=_INBOX_THREAD_ID,
@@ -579,13 +588,16 @@ class InboxMixin:
                             )
                     finally:
                         if original_config is not None:
-                            self.agent.update_model_config(original_config)
+                            agent.update_model_config(original_config)
                         journal.close()
                         if _fanout_token is not None:
                             suppress_board_fanout.reset(_fanout_token)
                         active_session_type.reset(_session_token)
                         if agent_session_acquired:
-                            agent_session_lock.release()
+                            if isinstance(agent_session_lock, asyncio.Lock):
+                                agent_session_lock.release()
+                            elif agent_session_context is not None:
+                                await agent_session_context.__aexit__(None, None, None)
                             agent_session_acquired = False
 
                     self._last_activity = now_local()
@@ -613,7 +625,7 @@ class InboxMixin:
                             _auto = SlackAutoResponder()
                             # Build set of channels the LLM already posted to
                             _already = set()
-                            for ch in self.agent._tool_handler.posted_channels_for("inbox"):
+                            for ch in agent._tool_handler.posted_channels_for("inbox"):
                                 _already.add(ch)
                             await _auto.on_inbox_response(
                                 anima_name=self.name,
@@ -652,11 +664,11 @@ class InboxMixin:
                     # returned nothing (e.g. SDK empty response due to API
                     # outage / rate limit).  Keeping them lets the next
                     # inbox cycle retry — up to _MAX_INBOX_RETRIES.
-                    if accumulated_text.strip() or self.agent.replied_to:
+                    if accumulated_text.strip() or agent.replied_to:
                         await self._archive_processed_messages(
                             inbox_result.inbox_items,
                             inbox_result.senders,
-                            self.agent.replied_to,
+                            agent.replied_to,
                         )
                     else:
                         _rc_path = self.anima_dir / "state" / "inbox_read_counts.json"
@@ -716,7 +728,10 @@ class InboxMixin:
 
                 except Exception as exc:
                     if locals().get("agent_session_acquired"):
-                        agent_session_lock.release()
+                        if isinstance(locals().get("agent_session_lock"), asyncio.Lock):
+                            locals()["agent_session_lock"].release()
+                        elif locals().get("agent_session_context") is not None:
+                            await locals()["agent_session_context"].__aexit__(None, None, None)
                         agent_session_acquired = False
                     logger.exception("[%s] process_inbox_message FAILED", self.name)
                     # Archive on crash to prevent re-processing storms

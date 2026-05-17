@@ -31,6 +31,38 @@ def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
     )
 
 
+class _LaneAnima:
+    """Minimal anima stub with real lane helper methods."""
+
+    def __init__(self) -> None:
+        self.agent = MagicMock(name="chat_agent")
+        self.background_agent = MagicMock(name="background_agent")
+        self.messenger = MagicMock()
+        self._events: dict[str, asyncio.Event] = {}
+        self._background_lock = asyncio.Lock()
+
+    def _agent_for_lane(self, lane: str):
+        return self.background_agent if lane == "background" else self.agent
+
+    def _agent_session_context(self, lane: str):
+        return self._background_lock if lane == "background" else asyncio.Lock()
+
+    def _get_interrupt_event(self, name: str) -> asyncio.Event:
+        self._events.setdefault(name, asyncio.Event())
+        return self._events[name]
+
+
+def _make_lane_executor(tmp_path: Path) -> PendingTaskExecutor:
+    anima_dir = tmp_path / "animas" / "lane-anima"
+    anima_dir.mkdir(parents=True, exist_ok=True)
+    return PendingTaskExecutor(
+        anima=_LaneAnima(),
+        anima_name="lane-anima",
+        anima_dir=anima_dir,
+        shutdown_event=asyncio.Event(),
+    )
+
+
 class TestPendingTaskExecutorInit:
     """Test PendingTaskExecutor initialization."""
 
@@ -49,6 +81,78 @@ class TestPendingTaskExecutorInit:
             shutdown_event=asyncio.Event(),
         )
         assert executor._anima_name == "standalone"
+
+
+class TestTaskExecLaneIsolation:
+    """Verify TaskExec uses the background lane, not the chat lane."""
+
+    @pytest.mark.asyncio
+    async def test_llm_task_uses_background_agent_and_cwd_isolated(self, tmp_path):
+        executor = _make_lane_executor(tmp_path)
+        chat_agent = executor._anima.agent
+        background_agent = executor._anima.background_agent
+        workdir = tmp_path / "workspace"
+        workdir.mkdir()
+
+        async def _stream_success(*args, **kwargs):
+            yield {"type": "text_delta", "text": "done"}
+            yield {
+                "type": "cycle_done",
+                "cycle_result": {"summary": "background result", "action": "complete"},
+            }
+
+        background_agent.run_cycle_streaming = MagicMock(side_effect=lambda *a, **kw: _stream_success(*a, **kw))
+        background_agent.reset_reply_tracking = MagicMock()
+        background_agent.reset_read_paths = MagicMock()
+        background_agent.set_interrupt_event = MagicMock()
+        background_agent.set_task_cwd = MagicMock()
+        chat_agent.set_task_cwd = MagicMock()
+        chat_agent.set_interrupt_event = MagicMock()
+
+        task_desc = {
+            "task_id": "lane-task-1",
+            "title": "Lane task",
+            "description": "Verify background lane",
+            "working_directory": str(workdir),
+        }
+
+        with (
+            patch("core.paths.load_prompt", return_value="test prompt"),
+            patch("core.memory.activity.ActivityLogger") as mock_activity,
+        ):
+            mock_activity.return_value.log = MagicMock()
+            result = await executor._run_llm_task(task_desc)
+
+        assert result == "background result"
+        background_agent.run_cycle_streaming.assert_called_once()
+        background_agent.reset_reply_tracking.assert_called_once_with(session_type="task")
+        background_agent.reset_read_paths.assert_called_once()
+        background_agent.set_interrupt_event.assert_called_once_with(executor._anima._get_interrupt_event("_background"))
+        background_agent.set_task_cwd.assert_any_call(workdir)
+        background_agent.set_task_cwd.assert_any_call(None)
+        chat_agent.set_task_cwd.assert_not_called()
+        chat_agent.set_interrupt_event.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_command_task_uses_background_lane_manager(self, tmp_path):
+        executor = _make_lane_executor(tmp_path)
+        chat_manager = MagicMock()
+        background_manager = MagicMock()
+        executor._anima.agent.background_manager = chat_manager
+        executor._anima.background_agent.background_manager = background_manager
+
+        task_desc = {
+            "task_id": "cmd-lane-1",
+            "tool_name": "web_search",
+            "subcommand": "search",
+            "raw_args": ["query"],
+            "anima_dir": str(executor._anima_dir),
+        }
+
+        await executor.execute_pending_task(task_desc)
+
+        background_manager.submit.assert_called_once()
+        chat_manager.submit.assert_not_called()
 
 
 class TestExecutePendingTask:

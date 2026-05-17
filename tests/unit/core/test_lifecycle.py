@@ -681,8 +681,9 @@ class TestCommandTypeCron:
 
         dp.memory.append_cron_command_log = MagicMock()
 
-        # Mock tool_handler.handle
-        dp.agent._tool_handler.handle = MagicMock(return_value="Tool executed successfully")
+        # Cron tool execution runs on the background lane.
+        agent = dp._agent_for_lane("background")
+        agent._tool_handler.handle = MagicMock(return_value="Tool executed successfully")
 
         # Execute tool
         result = await dp.run_cron_command(
@@ -694,7 +695,7 @@ class TestCommandTypeCron:
         # Verify result
         assert result["exit_code"] == 0
         assert "Tool executed successfully" in result["stdout"]
-        dp.agent._tool_handler.handle.assert_called_once_with(
+        agent._tool_handler.handle.assert_called_once_with(
             "test_tool",
             {"key": "value"},
         )

@@ -203,11 +203,17 @@ class AnimaRunner:
                 shutdown_event=self.shutdown_event,
             )
             self.anima._pending_executor = self._pending_executor
-            self.anima.agent._tool_handler.set_pending_executor_wake(
-                self._pending_executor.wake,
-            )
+            if hasattr(self.anima, "_set_pending_executor_wake"):
+                self.anima._set_pending_executor_wake(self._pending_executor.wake)
+            else:
+                self.anima.agent._tool_handler.set_pending_executor_wake(
+                    self._pending_executor.wake,
+                )
             # Wire active parallel tasks getter for Priming channel E
-            self.anima.agent._active_parallel_tasks_getter = lambda: self.anima._active_parallel_tasks
+            if hasattr(self.anima, "_set_active_parallel_tasks_getter"):
+                self.anima._set_active_parallel_tasks_getter(lambda: self.anima._active_parallel_tasks)
+            else:
+                self.anima.agent._active_parallel_tasks_getter = lambda: self.anima._active_parallel_tasks
             self._streaming_handler = StreamingIPCHandler(
                 anima=self.anima,
                 anima_name=self.anima_name,
