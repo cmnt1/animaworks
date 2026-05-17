@@ -166,6 +166,10 @@ def _project_queue_task(
         notification_key=metadata.notification_key if metadata is not None else None,
     )
 
+    task_meta = task.meta or {}
+    is_from_cron = bool(task_meta.get("from_cron"))
+    cron_task_name = task_meta.get("cron_task_name") if is_from_cron else None
+
     return BoardTask(
         anima_name=anima_name,
         task_id=task.task_id,
@@ -194,6 +198,8 @@ def _project_queue_task(
         board_updated_by=metadata.updated_by if metadata is not None else None,
         needs_human=needs_human,
         needs_human_reason=needs_human_reason,
+        is_from_cron=is_from_cron,
+        cron_task_name=cron_task_name if isinstance(cron_task_name, str) else None,
     )
 
 

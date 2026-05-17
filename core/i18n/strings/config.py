@@ -78,6 +78,26 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "タスク: {task}",
         "en": "Task: {task}",
     },
+    "anima.cron_taskboard_running": {
+        "ja": "⏰ cron 実行中: {task}",
+        "en": "⏰ cron running: {task}",
+    },
+    "anima.cron_taskboard_done": {
+        "ja": "⏰ cron 完了: {task}",
+        "en": "⏰ cron done: {task}",
+    },
+    "anima.cron_taskboard_failed": {
+        "ja": "⏰ cron 失敗: {task}: {error}",
+        "en": "⏰ cron failed: {task}: {error}",
+    },
+    "anima.cron_taskboard_cmd_done": {
+        "ja": "⏰ cron(cmd) 完了: {task} (exit=0)",
+        "en": "⏰ cron(cmd) done: {task} (exit=0)",
+    },
+    "anima.cron_taskboard_cmd_failed": {
+        "ja": "⏰ cron(cmd) 失敗: {task} (exit={exit_code})",
+        "en": "⏰ cron(cmd) failed: {task} (exit={exit_code})",
+    },
     "anima.delivery_via_chatwork": {
         "ja": "Chatwork",
         "en": "Chatwork",

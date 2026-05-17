@@ -871,6 +871,7 @@
   "taskboard.copy_title": "Copy task number and task name",
   "taskboard.copying": "Copying...",
   "taskboard.corrupt_warning": "Skipped {count} corrupt queue lines.",
+  "taskboard.cron_badge": "cron",
   "taskboard.empty_column": "No tasks in {column}.",
   "taskboard.expired": "Expired",
   "taskboard.filter_active": "Active",

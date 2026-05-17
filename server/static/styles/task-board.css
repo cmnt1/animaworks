@@ -246,6 +246,27 @@
   letter-spacing: 0.02em;
 }
 
+.taskboard-card--from-cron {
+  background: #f5f7ff;
+}
+
+.taskboard-cron-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 0.74rem;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .taskboard-needs-human-pin {
   display: flex;
   align-items: center;

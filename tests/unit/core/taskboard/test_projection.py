@@ -206,6 +206,38 @@ def test_projected_task_carries_needs_human_field(tmp_path: Path) -> None:
     assert projected[0].needs_human_reason == "assignee_human"
 
 
+def test_projected_task_surfaces_cron_metadata(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    manager.add_task(
+        source="anima",
+        original_instruction="毎朝の業務計画",
+        assignee="sakura",
+        summary="⏰ cron 実行中: 毎朝の業務計画",
+        task_id="cron-task-1",
+        status="in_progress",
+        meta={"from_cron": True, "cron_task_name": "毎朝の業務計画", "cron_type": "llm"},
+    )
+    # Non-cron task should not get the flag
+    manager.add_task(
+        source="anima",
+        original_instruction="regular work",
+        assignee="sakura",
+        summary="regular work",
+        task_id="task-2",
+    )
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    projected = {task.task_id: task for task in project_anima(manager.anima_dir, store)}
+
+    cron_task = projected["cron-task-1"]
+    assert cron_task.is_from_cron is True
+    assert cron_task.cron_task_name == "毎朝の業務計画"
+
+    regular = projected["task-2"]
+    assert regular.is_from_cron is False
+    assert regular.cron_task_name is None
+
+
 def test_same_task_id_is_scoped_per_anima(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     hinata = _queue(tmp_path, "hinata")

@@ -96,6 +96,8 @@ class BoardTask(BaseModel):
     board_updated_by: str | None = None
     needs_human: bool = False
     needs_human_reason: str | None = None
+    is_from_cron: bool = False
+    cron_task_name: str | None = None
 
 
 class AttentionDecision(BaseModel):

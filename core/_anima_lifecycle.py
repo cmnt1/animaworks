@@ -586,6 +586,48 @@ class LifecycleMixin:
             duration_ms=elapsed_ms,
         )
 
+    def _cron_taskboard_start(self, task_name: str, description: str, *, cron_type: str) -> str | None:
+        """Register a cron execution as a task_queue entry so it appears on TaskBoard.
+
+        Best-effort: failures are logged and ignored so they cannot disrupt the
+        actual cron execution. Returns the task_id on success, None on failure.
+        """
+        try:
+            from core.memory.task_queue import TaskQueueManager
+
+            manager = TaskQueueManager(self.anima_dir)
+            entry = manager.add_task(
+                source="anima",
+                original_instruction=description or task_name,
+                assignee=self.name,
+                summary=t("anima.cron_taskboard_running", task=task_name),
+                status="in_progress",
+                meta={
+                    "from_cron": True,
+                    "cron_task_name": task_name,
+                    "cron_type": cron_type,
+                },
+            )
+            return entry.task_id
+        except Exception:
+            logger.warning("[%s] Failed to register cron '%s' on task_queue", self.name, task_name, exc_info=True)
+            return None
+
+    def _cron_taskboard_finish(self, task_id: str | None, *, status: str, summary: str) -> None:
+        """Update the task_queue entry recorded by ``_cron_taskboard_start``.
+
+        Best-effort: failures are logged and ignored.
+        """
+        if not task_id:
+            return
+        try:
+            from core.memory.task_queue import TaskQueueManager
+
+            manager = TaskQueueManager(self.anima_dir)
+            manager.update_status(task_id, status, summary=summary[:500] if summary else None)
+        except Exception:
+            logger.warning("[%s] Failed to finalize cron task_queue entry %s", self.name, task_id, exc_info=True)
+
     async def run_cron_task(
         self,
         task_name: str,
@@ -602,6 +644,8 @@ class LifecycleMixin:
         self._get_interrupt_event("_background").clear()
         logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
         from core.tooling.handler import active_session_type
+
+        cron_tq_id = self._cron_taskboard_start(task_name, description, cron_type="llm")
 
         try:
             async with self._background_lock:
@@ -660,6 +704,11 @@ class LifecycleMixin:
                         task_name,
                         result.duration_ms,
                     )
+                    self._cron_taskboard_finish(
+                        cron_tq_id,
+                        status="done",
+                        summary=t("anima.cron_taskboard_done", task=task_name),
+                    )
                     self.memory.archive_and_reset_state()
                     return result
                 except Exception as exc:
@@ -674,6 +723,15 @@ class LifecycleMixin:
                         summary=t("anima.cron_task_error", exc=type(exc).__name__),
                         meta={"phase": "run_cron_task", "error": str(exc)[:200]},
                         safe=True,
+                    )
+                    self._cron_taskboard_finish(
+                        cron_tq_id,
+                        status="failed",
+                        summary=t(
+                            "anima.cron_taskboard_failed",
+                            task=task_name,
+                            error=type(exc).__name__,
+                        ),
                     )
                     raise
                 finally:
@@ -705,6 +763,12 @@ class LifecycleMixin:
         """
         logger.info("[%s] run_cron_command START task=%s", self.name, task_name)
         start_ms = time.time_ns() // 1_000_000
+
+        cron_tq_id = self._cron_taskboard_start(
+            task_name,
+            command or tool or task_name,
+            cron_type="command",
+        )
 
         stdout = ""
         stderr = ""
@@ -858,6 +922,23 @@ class LifecycleMixin:
                 summary=t("anima.cron_cmd_summary", task=task_name),
                 meta={"task_name": task_name, "exit_code": exit_code, "command": command or "", "tool": tool or ""},
             )
+
+            if exit_code == 0:
+                self._cron_taskboard_finish(
+                    cron_tq_id,
+                    status="done",
+                    summary=t("anima.cron_taskboard_cmd_done", task=task_name),
+                )
+            else:
+                self._cron_taskboard_finish(
+                    cron_tq_id,
+                    status="failed",
+                    summary=t(
+                        "anima.cron_taskboard_cmd_failed",
+                        task=task_name,
+                        exit_code=exit_code,
+                    ),
+                )
 
             logger.info(
                 "[%s] run_cron_command END task=%s exit_code=%d duration_ms=%d",

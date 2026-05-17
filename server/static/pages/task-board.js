@@ -294,14 +294,22 @@ function _cardHtml(task) {
   const title = task.summary || task.original_instruction || t("taskboard.untitled");
   const ref = _taskReference(task);
   const needsHuman = task.needs_human === true;
-  const cardClass = `taskboard-card${needsHuman ? " taskboard-card--needs-human" : ""}`;
+  const isFromCron = task.is_from_cron === true;
+  const cardClass = `taskboard-card${needsHuman ? " taskboard-card--needs-human" : ""}${isFromCron ? " taskboard-card--from-cron" : ""}`;
   const reasonText = needsHuman ? _needsHumanReasonText(task.needs_human_reason) : "";
   const needsHumanBadge = needsHuman
     ? `<span class="taskboard-needs-human-badge" title="${escapeAttr(reasonText)}">🙋 ${escapeHtml(t("taskboard.needs_human_badge"))}</span>`
     : "";
+  const cronLabel = isFromCron
+    ? (task.cron_task_name ? `${t("taskboard.cron_badge")}: ${task.cron_task_name}` : t("taskboard.cron_badge"))
+    : "";
+  const cronBadge = isFromCron
+    ? `<span class="taskboard-cron-badge" title="${escapeAttr(cronLabel)}">⏰ ${escapeHtml(cronLabel)}</span>`
+    : "";
   return `
     <article class="${cardClass}" draggable="true" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
       ${needsHumanBadge}
+      ${cronBadge}
       <div class="taskboard-card-topline">
         <span class="taskboard-anima">${escapeHtml(task.anima_name || task.assignee || "-")}</span>
         <button
