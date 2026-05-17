@@ -94,6 +94,55 @@ def _is_openai_api_key(key: str) -> bool:
     return bool(key) and not key.startswith("sk-ant-")
 
 
+@dataclass(frozen=True)
+class _CodexProviderConfig:
+    model: str
+    provider: str
+    is_azure: bool = False
+    base_url: str | None = None
+    api_version: str | None = None
+    env_key: str = "OPENAI_API_KEY"
+    wire_api: str = "responses"
+
+
+def _is_codex_azure_config(model_config: ModelConfig) -> bool:
+    """Return True when the resolved credential explicitly selects Azure for Codex."""
+    return model_config.credential_type == "codex_azure"
+
+
+def _normalize_azure_openai_base_url(base_url: str) -> str:
+    """Return the Azure OpenAI Codex provider base URL with the required /openai suffix."""
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/openai"):
+        return normalized
+    return f"{normalized}/openai"
+
+
+def _resolve_codex_provider_config(model_config: ModelConfig) -> _CodexProviderConfig:
+    """Resolve Codex CLI provider settings from the AnimaWorks model config."""
+    extra = model_config.extra_keys or {}
+    model = extra.get("codex_model") or _resolve_codex_model(model_config.model)
+
+    if not _is_codex_azure_config(model_config):
+        return _CodexProviderConfig(model=model, provider="openai")
+
+    if not model_config.api_base_url:
+        raise ValueError("Codex Azure credential requires base_url for the Azure OpenAI resource")
+    api_version = extra.get("api_version")
+    if not api_version:
+        raise ValueError("Codex Azure credential requires keys.api_version")
+
+    return _CodexProviderConfig(
+        model=model,
+        provider="azure",
+        is_azure=True,
+        base_url=_normalize_azure_openai_base_url(model_config.api_base_url),
+        api_version=api_version,
+        env_key="AZURE_OPENAI_API_KEY",
+        wire_api=extra.get("codex_wire_api") or "responses",
+    )
+
+
 def _escape_toml_string(value: str) -> str:
     """Escape a string for safe embedding in a TOML double-quoted value."""
     return value.replace("\\", "\\\\").replace('"', '\\"')
@@ -665,6 +714,13 @@ class CodexSDKExecutor(BaseExecutor):
                 if val:
                     env[var] = val
         api_key = self._resolve_api_key()
+        if _is_codex_azure_config(self._model_config):
+            if api_key:
+                env["AZURE_OPENAI_API_KEY"] = api_key
+            elif os.environ.get("AZURE_OPENAI_API_KEY"):
+                env["AZURE_OPENAI_API_KEY"] = os.environ["AZURE_OPENAI_API_KEY"]
+            return env
+
         if api_key and _is_openai_api_key(api_key):
             env["OPENAI_API_KEY"] = api_key
         elif api_key:
@@ -763,7 +819,7 @@ class CodexSDKExecutor(BaseExecutor):
         instructions_file = self._codex_home / "instructions.md"
         instructions_file.write_text(system_prompt, encoding="utf-8")
 
-        bare_model = _resolve_codex_model(self._model_config.model)
+        provider_config = _resolve_codex_provider_config(self._model_config)
         esc = _escape_toml_string
 
         from core.config.models import load_permissions
@@ -789,10 +845,21 @@ class CodexSDKExecutor(BaseExecutor):
 
         mcp_env = self._build_mcp_env()
         mcp_env_lines = "\n".join(f'{k} = "{esc(v)}"' for k, v in mcp_env.items())
+        provider_section = ""
+        if provider_config.is_azure:
+            provider_section = (
+                f"\n"
+                f"[model_providers.azure]\n"
+                f'name = "Azure"\n'
+                f'base_url = "{esc(provider_config.base_url or "")}"\n'
+                f'env_key = "{esc(provider_config.env_key)}"\n'
+                f'query_params = {{ api-version = "{esc(provider_config.api_version or "")}" }}\n'
+                f'wire_api = "{esc(provider_config.wire_api)}"\n'
+            )
 
         config_toml = (
-            f'model = "{esc(bare_model)}"\n'
-            f'model_provider = "openai"\n'
+            f'model = "{esc(provider_config.model)}"\n'
+            f'model_provider = "{esc(provider_config.provider)}"\n'
             f'model_instructions_file = "{esc(str(instructions_file))}"\n'
             f'developer_instructions = "{esc(self._CODEX_DEVELOPER_INSTRUCTIONS)}"\n'
             f'personality = "friendly"\n'
@@ -800,6 +867,7 @@ class CodexSDKExecutor(BaseExecutor):
             f'sandbox_mode = "{sandbox_mode}"\n'
             f'approval_policy = "never"\n'
             f"{sandbox_section}"
+            f"{provider_section}"
             f"\n"
             f"[mcp_servers.aw]\n"
             f'command = "{esc(sys.executable)}"\n'

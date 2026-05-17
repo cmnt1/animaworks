@@ -88,6 +88,8 @@ AnimaWorks does not lock you to one model. Claude, GPT, Gemini, Mistral, local L
 
 The mode is inferred automatically from the model name using **fnmatch wildcards** (**more specific patterns win**). Resolution order: `execution_mode` in `status.json` → `~/.animaworks/models.json` → deprecated `model_modes` in `config.json` → code default `DEFAULT_MODEL_MODE_PATTERNS`; if still unset, fall back to **B**.
 
+Mode C (`codex/*`) can authenticate through Codex login, an OpenAI API key, or a dedicated Azure OpenAI credential with `type: "codex_azure"`. Azure-backed Codex still uses `codex/*` as the model family; `azure/*` remains Mode A through LiteLLM.
+
 ### Background Model
 
 Background work such as heartbeat and cron can run on a separate, lighter model from the main one — e.g. Claude Opus for dialogue, Sonnet for patrols, GPT-4.1 mini or a local LLM for log monitoring — optimizing cost and quality per organization.
