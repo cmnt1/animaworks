@@ -291,6 +291,7 @@ class SkillsToolsMixin:
         else:
             base_dir = self._anima_dir / "skills"
 
+        skill_dir = base_dir / skill_name
         result = create_skill_directory(
             skill_name=skill_name,
             description=description,
@@ -306,7 +307,7 @@ class SkillsToolsMixin:
         )
 
         # Record create event in usage tracker
-        if "Created skill" in result or "スキル作成" in result:
+        if (skill_dir / "SKILL.md").exists():
             try:
                 from core.skills.models import SkillUsageEventType
                 from core.skills.usage import SkillUsageTracker
@@ -321,7 +322,7 @@ class SkillsToolsMixin:
                 logger.debug("Failed to record skill create event", exc_info=True)
 
         # Run security scan on the newly created skill
-        scan_summary = self._scan_created_skill(base_dir / skill_name, trust_level)
+        scan_summary = self._scan_created_skill(skill_dir, trust_level)
         if scan_summary:
             result += f"\n\n{scan_summary}"
 
