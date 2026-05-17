@@ -709,12 +709,19 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
         setup_complete = request.app.state.setup_complete
 
         if not setup_complete:
-            # During setup: only /api/setup/* and setup static files are accessible
-            if path.startswith("/api/setup") or path.startswith("/setup"):
+            # During setup: only setup API and the static assets needed by
+            # the setup wizard are accessible.  The setup HTML imports shared
+            # modules through the versioned static route.
+            if (
+                path.startswith("/api/setup")
+                or path.startswith("/setup")
+                or path.startswith("/_v/")
+                or path.startswith("/shared/")
+            ):
                 response = await call_next(request)
                 # Prevent browser caching of setup static files so code
                 # updates are picked up immediately without a hard refresh.
-                if path.startswith("/setup") and not path.startswith("/api/setup"):
+                if not path.startswith("/api/setup"):
                     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
                 return response
             # Root redirects to setup wizard
