@@ -92,7 +92,11 @@ class SkillIndex:
             entries.append(meta)
 
         if self._skills_dir.exists():
-            for skill_path in sorted(self._skills_dir.glob("*/SKILL.md")):
+            personal_skill_paths = [
+                *sorted(self._skills_dir.glob("*.md")),
+                *sorted(self._skills_dir.glob("*/SKILL.md")),
+            ]
+            for skill_path in personal_skill_paths:
                 try:
                     meta = load_skill_metadata(skill_path)
                     meta = meta.model_copy(update={"is_common": False, "is_procedure": False})

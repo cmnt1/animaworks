@@ -537,15 +537,23 @@ class MemoryToolsMixin:
     @staticmethod
     def _is_skill_path(rel: str) -> bool:
         """Return True if *rel* points to a skill or procedure file."""
+        if MemoryToolsMixin._is_flat_personal_skill_path(rel):
+            return True
         if rel.startswith("skills/") and "SKILL.md" in rel:
             return True
         if rel.startswith("common_skills/") and "SKILL.md" in rel:
             return True
         return rel.startswith("procedures/") and rel.endswith(".md")
 
+    @staticmethod
+    def _is_flat_personal_skill_path(rel: str) -> bool:
+        parts = Path(rel).parts
+        return len(parts) == 2 and parts[0] == "skills" and parts[1].endswith(".md")
+
     def _record_skill_view_if_applicable(self, rel: str) -> None:
         """Record a 'view' event if the path looks like a skill or procedure."""
-        is_skill = rel.startswith("skills/") and "SKILL.md" in rel
+        is_flat_personal_skill = self._is_flat_personal_skill_path(rel)
+        is_skill = is_flat_personal_skill or (rel.startswith("skills/") and "SKILL.md" in rel)
         is_common_skill = rel.startswith("common_skills/") and "SKILL.md" in rel
         is_procedure = rel.startswith("procedures/") and rel.endswith(".md")
 
@@ -559,7 +567,9 @@ class MemoryToolsMixin:
             tracker = SkillUsageTracker(self._anima_dir)
             is_common = is_common_skill
 
-            if is_skill:
+            if is_flat_personal_skill:
+                skill_name = Path(rel).stem
+            elif is_skill:
                 skill_name = Path(rel).parent.name
             elif is_common_skill:
                 parts = rel.split("/")

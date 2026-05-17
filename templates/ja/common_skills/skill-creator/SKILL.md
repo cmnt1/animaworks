@@ -171,7 +171,7 @@ create_skill(
 
 `references` / `templates` の `filename` にパス成分は含めない。`_validate_filename()` で親ディレクトリ外に解決されないことを確認し、不正なら**黙ってスキップ**（そのファイルは作られない）。
 
-※ 新規スキルには必ず `create_skill` を使うこと。`write_memory_file` で `skills/foo.md` のような**直下の単一ファイル**だけを作ると、**`read_memory_file(path="skills/foo/SKILL.md")` では開けない**（推奨は `skills/foo/SKILL.md` のディレクトリ形式）。
+※ 新規スキルには必ず `create_skill` を使うこと。`write_memory_file` で `skills/foo.md` のような**直下の単一ファイル**だけを作る方法は**非推奨**。この形式は **`read_memory_file(path="skills/foo/SKILL.md")` では開けない**ため、推奨は `skills/foo/SKILL.md` のディレクトリ形式。
 
 ※ 手続きは `procedures/{name}.md`（フラット1ファイル）。フロントマターはスキルと同様に `name` / `description`（＋任意 `allowed_tools`）を推奨。
 

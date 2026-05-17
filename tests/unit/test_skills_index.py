@@ -26,6 +26,17 @@ def _write_skill(base: Path, name: str, *, trust_level: str = "trusted", desc: s
     return d
 
 
+def _write_flat_skill(base: Path, name: str, *, trust_level: str = "trusted", desc: str = "") -> Path:
+    """Helper: create a legacy direct-child skills/*.md skill."""
+    f = base / f"{name}.md"
+    content = (
+        f"---\nname: {name}\ndescription: {desc or name + ' skill'}\n"
+        f"trust_level: {trust_level}\n---\n\n# {name}\n\nBody.\n"
+    )
+    f.write_text(content, encoding="utf-8")
+    return f
+
+
 def _write_procedure(base: Path, name: str, *, desc: str = "") -> Path:
     """Helper: create a procedure .md file."""
     f = base / f"{name}.md"
@@ -77,12 +88,32 @@ class TestSkillIndexBuild:
 
     def test_blocked_and_quarantine_excluded(self, skill_dirs: tuple[Path, Path, Path]):
         skills, common, procs = skill_dirs
+        _write_flat_skill(skills, "flat-blocked", trust_level="blocked", desc="Flat blocked")
+        _write_flat_skill(skills, "flat-quarantined", trust_level="quarantine", desc="Flat quarantined")
         idx = SkillIndex(skills, common, procs)
         results = idx.build_index()
 
         names = [m.name for m in results]
         assert "blocked-skill" not in names
         assert "quarantined" not in names
+        assert "flat-blocked" not in names
+        assert "flat-quarantined" not in names
+
+    def test_legacy_flat_personal_skill_is_indexed(self, skill_dirs: tuple[Path, Path, Path]):
+        skills, common, procs = skill_dirs
+        flat = _write_flat_skill(skills, "flat-review", desc="Legacy flat review")
+        nested_note = skills / "web-search" / "references" / "note.md"
+        nested_note.parent.mkdir(parents=True)
+        nested_note.write_text("---\nname: nested-note\n---\n\n# Not a skill\n", encoding="utf-8")
+
+        idx = SkillIndex(skills, common, procs)
+        results = idx.build_index()
+
+        by_name = {m.name: m for m in results}
+        assert by_name["flat-review"].path == flat
+        assert by_name["flat-review"].is_common is False
+        assert by_name["flat-review"].is_procedure is False
+        assert "nested-note" not in by_name
 
     def test_is_common_flag(self, skill_dirs: tuple[Path, Path, Path]):
         skills, common, procs = skill_dirs
