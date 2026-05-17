@@ -179,6 +179,9 @@ def test_url_source_installs_single_skill_file(tmp_path: Path) -> None:
         def __exit__(self, *args):
             return False
 
+        def geturl(self) -> str:
+            return "https://example.com/SKILL.md"
+
         def read(self, size: int = -1) -> bytes:
             assert size == (512 * 1024) + 1
             return b"---\nname: url-skill\ndescription: URL Skill\n---\n\n# URL\n"
@@ -200,6 +203,9 @@ def test_url_source_rejects_oversized_response_with_bounded_read(tmp_path: Path)
         def __exit__(self, *args):
             return False
 
+        def geturl(self) -> str:
+            return "https://example.com/SKILL.md"
+
         def read(self, size: int = -1) -> bytes:
             assert size == (512 * 1024) + 1
             return b"x" * size
@@ -209,6 +215,31 @@ def test_url_source_rejects_oversized_response_with_bounded_read(tmp_path: Path)
         pytest.raises(ValueError, match="exceeds 512KB"),
     ):
         stage_url_source("https://example.com/SKILL.md", tmp_path / "stage")
+
+
+def test_url_source_rejects_plaintext_and_downgrade_redirect(tmp_path: Path) -> None:
+    from core.skills.sources.url import stage_url_source
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def geturl(self) -> str:
+            return "http://example.com/SKILL.md"
+
+        def read(self, size: int = -1) -> bytes:
+            raise AssertionError("downgraded redirects must be rejected before reading")
+
+    with pytest.raises(ValueError, match="https"):
+        stage_url_source("http://example.com/SKILL.md", tmp_path / "stage-http")
+    with (
+        patch("core.skills.sources.url.urlopen", return_value=_Response()),
+        pytest.raises(ValueError, match="non-HTTPS"),
+    ):
+        stage_url_source("https://example.com/SKILL.md", tmp_path / "stage-redirect")
 
 
 def test_github_source_uses_https_fallback_when_gh_missing(tmp_path: Path) -> None:
@@ -297,7 +328,7 @@ def test_source_adapters_reject_invalid_inputs(tmp_path: Path) -> None:
     bad_file.write_text("# bad", encoding="utf-8")
     with pytest.raises(ValueError, match="named SKILL.md"):
         stage_local_source(str(bad_file), tmp_path / "stage-file")
-    with pytest.raises(ValueError, match="http"):
+    with pytest.raises(ValueError, match="https"):
         stage_url_source("ftp://example.com/SKILL.md", tmp_path / "stage-url")
     with pytest.raises(ValueError, match="owner/repo"):
         stage_github_source("github:owner-only", tmp_path / "stage-gh")
