@@ -327,6 +327,65 @@ class SkillsToolsMixin:
 
         return result
 
+    def _handle_promote_procedure_to_skill(self, args: dict[str, Any]) -> str:
+        """Create or approve a reviewed skill generated from a procedure."""
+        from core.skills.promotion import ProcedureToSkillConverter
+
+        action = args.get("action", "draft")
+        converter = ProcedureToSkillConverter(
+            self._anima_dir,
+            owner_anima=getattr(self, "_anima_name", None) or self._anima_dir.name,
+        )
+
+        try:
+            if action == "draft":
+                rel_path = args.get("path", "")
+                if not rel_path:
+                    return _error_result("InvalidArguments", "path is required for action=draft")
+                overrides = {
+                    key: args[key]
+                    for key in (
+                        "description",
+                        "use_when",
+                        "trigger_phrases",
+                        "negative_phrases",
+                        "domains",
+                        "tags",
+                        "risk",
+                    )
+                    if key in args
+                }
+                result = converter.create_quarantine_skill(
+                    rel_path,
+                    skill_name=args.get("skill_name"),
+                    metadata_overrides=overrides,
+                )
+            elif action == "approve":
+                skill_name = args.get("skill_name", "")
+                if not skill_name:
+                    return _error_result("InvalidArguments", "skill_name is required for action=approve")
+                approved_by = args.get("approved_by")
+                if not approved_by:
+                    return _error_result("InvalidArguments", "approved_by is required for action=approve")
+                result = converter.approve_skill(skill_name, approved_by=approved_by)
+            else:
+                return _error_result(
+                    "InvalidArguments",
+                    f"Unsupported action: {action}",
+                    suggestion="Use action='draft' or action='approve'",
+                )
+        except FileExistsError as exc:
+            return _error_result("FileExists", str(exc))
+        except FileNotFoundError as exc:
+            return _error_result("FileNotFound", str(exc))
+        except ValueError as exc:
+            return _error_result("InvalidArguments", str(exc))
+        except Exception as exc:
+            logger.exception("promote_procedure_to_skill failed")
+            return _error_result("PromotionFailed", str(exc))
+
+        return _json.dumps(result.to_dict(), ensure_ascii=False, indent=2)
+
     def _scan_created_skill(self, skill_dir: Path, trust_level: str | None) -> str:
         """Run security scan on a newly created skill and persist results."""
         from datetime import datetime

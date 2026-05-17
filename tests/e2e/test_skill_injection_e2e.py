@@ -150,10 +150,11 @@ class TestSkillCatalogE2E:
         assert "common_skills/image-gen-tool/SKILL.md" not in prompt
 
     def test_create_skill_in_build_tool_list(self, tmp_path: Path) -> None:
-        """build_tool_list with include_create_skill=True adds create_skill only."""
+        """build_tool_list with include_create_skill=True adds skill creation tools."""
         tools = build_tool_list(include_create_skill=True)
         names = {x["name"] for x in tools}
         assert "create_skill" in names
+        assert "promote_procedure_to_skill" in names
         assert "skill" not in names
         create = next(x for x in tools if x["name"] == "create_skill")
         assert create["name"] == "create_skill"
