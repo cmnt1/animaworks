@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from core.skills.models import SkillUsageEventType
 from core.skills.usage import SkillUsageTracker
+from core.tooling.handler import ToolHandler
 
 
 @pytest.fixture
@@ -91,6 +93,52 @@ class TestHandlerSkillsOutcome:
 
         stats = tracker.get_stats("deploy")
         assert stats.success_count == 1
+
+
+class TestCreateSkillUsageEvent:
+    """Test that create_skill records create events through the real handler."""
+
+    def test_create_skill_records_create_event(self, tmp_path: Path):
+        anima_dir = tmp_path / "alice"
+        (anima_dir / "state").mkdir(parents=True)
+        memory = MagicMock()
+        memory.read_permissions.return_value = ""
+        memory.search_memory_text.return_value = []
+        handler = ToolHandler(anima_dir=anima_dir, memory=memory, messenger=None, tool_registry=[])
+
+        result = handler.handle(
+            "create_skill",
+            {
+                "skill_name": "usage-probe",
+                "description": "Usage probe skill",
+                "body": "# Usage Probe\n\nBody.",
+            },
+        )
+
+        assert (anima_dir / "skills" / "usage-probe" / "SKILL.md").exists()
+        assert "usage-probe" in result
+        stats = SkillUsageTracker(anima_dir).get_stats("usage-probe")
+        assert stats.create_count == 1
+
+    def test_create_skill_invalid_name_does_not_record_create_event(self, tmp_path: Path):
+        anima_dir = tmp_path / "alice"
+        (anima_dir / "state").mkdir(parents=True)
+        memory = MagicMock()
+        memory.read_permissions.return_value = ""
+        memory.search_memory_text.return_value = []
+        handler = ToolHandler(anima_dir=anima_dir, memory=memory, messenger=None, tool_registry=[])
+
+        result = handler.handle(
+            "create_skill",
+            {
+                "skill_name": "../evil",
+                "description": "Invalid skill",
+                "body": "# Invalid\n",
+            },
+        )
+
+        assert "Invalid" in result or "無効" in result
+        assert not (anima_dir / "state" / "skill_usage.jsonl").exists()
 
 
 class TestViewEventDetection:
