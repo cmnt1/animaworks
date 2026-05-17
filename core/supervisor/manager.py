@@ -29,6 +29,7 @@ from core.exceptions import (  # noqa: F401
     ProcessError,
 )
 from core.supervisor._mgr_health import HealthMixin
+from core.supervisor._mgr_rag_repair import RAGRepairMixin
 from core.supervisor._mgr_reconcile import ReconcileMixin
 from core.supervisor._mgr_scheduler import SchedulerMixin
 from core.supervisor.ipc import IPCResponse
@@ -72,7 +73,7 @@ class ReconciliationConfig:
 # ── Process Supervisor ─────────────────────────────────────────────
 
 
-class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
+class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMixin):
     """
     Supervisor for managing Anima child processes.
 
@@ -120,6 +121,7 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
         self._failed_log_times: dict[str, float] = {}
         self._bootstrapping: set[str] = set()
         self._consolidating: set[str] = set()  # animas currently running daily/weekly consolidation
+        self._rag_repairs_in_progress: set[str] = set()
         self._recently_stopped: dict[str, float] = {}  # anima_name → monotonic timestamp
         self._start_failed_times: dict[str, float] = {}
         self._start_fail_counts: dict[str, int] = {}

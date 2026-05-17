@@ -41,6 +41,8 @@ class HealthMixin:
                 # Poll and broadcast child process events
                 await self._poll_anima_events()
 
+                await self._poll_requested_rag_repairs()
+
                 # Check all processes in parallel
                 checks = [
                     self._check_process_health(anima_name, handle)
@@ -345,66 +347,6 @@ class HealthMixin:
             handle.state = ProcessState.FAILED
         finally:
             self._restarting.discard(anima_name)
-
-    async def _maybe_repair_rag_before_restart(
-        self,
-        anima_name: str,
-        handle: ProcessHandle,
-    ) -> bool:
-        """Run RAG repair before restart when failure correlates with RAG corruption."""
-        try:
-            from core.memory.rag.repair import classify_corruption_error, get_repair_service
-
-            service = get_repair_service()
-            reason = classify_corruption_error(handle.stats.exit_code)
-            if reason is None and service.has_recent_corruption(anima_name):
-                reason = "recent_rag_corruption"
-            if reason is None:
-                return False
-
-            logger.warning(
-                "RAG corruption suspected before restart: anima=%s reason=%s exit_code=%s",
-                anima_name,
-                reason,
-                handle.stats.exit_code,
-            )
-            result = await asyncio.to_thread(
-                service.repair_anima_if_allowed,
-                anima_name,
-                reason=reason,
-                collection=None,
-                source="supervisor",
-                include_shared=True,
-            )
-            if result.ok:
-                self._restart_counts[anima_name] = 0
-                try:
-                    await self._broadcast_event(
-                        "system.rag_repair",
-                        {
-                            "anima": anima_name,
-                            "status": result.status,
-                            "reason": result.reason,
-                            "chunks_indexed": result.chunks_indexed,
-                            "quarantine_path": result.quarantine_path,
-                        },
-                    )
-                except Exception:
-                    logger.debug("Failed to broadcast rag_repair event", exc_info=True)
-                return True
-            else:
-                logger.warning(
-                    "RAG repair did not complete before restart: anima=%s status=%s error=%s",
-                    anima_name,
-                    result.status,
-                    result.error,
-                )
-                return False
-        except ImportError:
-            return False
-        except Exception:
-            logger.exception("RAG repair check failed before restart: %s", anima_name)
-            return False
 
     async def _handle_process_hang(
         self,

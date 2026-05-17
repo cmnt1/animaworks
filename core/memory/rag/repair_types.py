@@ -19,6 +19,8 @@ class RepairResult:
     quarantine_path: str | None = None
     chunks_indexed: int = 0
     error: str | None = None
+    stage: str | None = None
+    state_path: str | None = None
 
     @property
     def ok(self) -> bool:

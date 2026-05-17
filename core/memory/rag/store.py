@@ -173,6 +173,23 @@ class ChromaVectorStore(VectorStore):
         self.client = chromadb.PersistentClient(path=str(persist_dir))
         self.persist_dir = persist_dir
         self.anima_name = anima_name
+        self._closed = False
+
+    def close(self) -> None:
+        """Close the underlying Chroma client if supported.
+
+        A closed store instance is not reusable; callers should drop it and
+        obtain a fresh singleton/store after reset.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        close = getattr(self.client, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                logger.debug("Failed to close ChromaDB client at %s", self.persist_dir, exc_info=True)
 
     def _report_chroma_error(self, collection: str, error: Exception, source: str) -> None:
         """Record Chroma errors that may indicate persistent-index corruption."""

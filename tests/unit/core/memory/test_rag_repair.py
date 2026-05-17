@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -118,7 +118,7 @@ def test_has_recent_corruption_reads_state_file(data_dir: Path):
             {
                 "recent_signals": [
                     {
-                        "at": datetime.now(timezone.utc).isoformat(),
+                        "at": datetime.now(UTC).isoformat(),
                         "collection": "sora_knowledge",
                         "reason": "chroma_error_finding_id",
                         "source": "query",
@@ -148,6 +148,35 @@ def test_request_repair_disabled_is_blocked(data_dir: Path):
     service = RAGRepairService(enabled=False)
 
     assert service.request_repair("sora", reason="test", source="test", background=False) is False
+
+
+def test_request_repair_background_records_request_without_running_repair(data_dir: Path):
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "state").mkdir(parents=True)
+    service = RAGRepairService(enabled=True)
+    service.repair_anima = MagicMock()  # type: ignore[method-assign]
+
+    assert service.request_repair("sora", reason="sqlite_malformed", source="query", background=True) is True
+
+    service.repair_anima.assert_not_called()
+    state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
+    assert state["status"] == "requested"
+    assert state["stage"] == "detect"
+    assert state["reason"] == "sqlite_malformed"
+    assert state["source"] == "query"
+    assert state["pid"] is None
+
+
+def test_background_duplicate_request_is_not_started_twice(data_dir: Path):
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "state").mkdir(parents=True)
+    service = RAGRepairService(enabled=True)
+
+    assert service.request_repair("sora", reason="sqlite_malformed", source="query", background=True) is True
+    assert service.request_repair("sora", reason="sqlite_malformed", source="query", background=True) is False
+
+    state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
+    assert state["status"] == "requested"
 
 
 def test_repair_quarantines_vectordb_and_reindexes(data_dir: Path, monkeypatch):
@@ -193,6 +222,8 @@ def test_repair_quarantines_vectordb_and_reindexes(data_dir: Path, monkeypatch):
 
     state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
     assert state["status"] == "success"
+    assert state["stage"] == "complete"
+    assert state["pid"] is None
     assert state["consecutive_failures"] == 0
     assert state["last_chunks_indexed"] == 4
 
@@ -280,8 +311,8 @@ def test_repair_if_allowed_respects_failed_cooldown(data_dir: Path):
         json.dumps(
             {
                 "status": "failed",
-                "last_attempt_at": datetime.now(timezone.utc).isoformat(),
-                "last_failure_at": datetime.now(timezone.utc).isoformat(),
+                "last_attempt_at": datetime.now(UTC).isoformat(),
+                "last_failure_at": datetime.now(UTC).isoformat(),
                 "consecutive_failures": 2,
             }
         ),
@@ -305,8 +336,8 @@ def test_repair_if_allowed_retries_before_failure_limit(data_dir: Path):
         json.dumps(
             {
                 "status": "failed",
-                "last_attempt_at": datetime.now(timezone.utc).isoformat(),
-                "last_failure_at": datetime.now(timezone.utc).isoformat(),
+                "last_attempt_at": datetime.now(UTC).isoformat(),
+                "last_failure_at": datetime.now(UTC).isoformat(),
                 "consecutive_failures": 1,
             }
         ),

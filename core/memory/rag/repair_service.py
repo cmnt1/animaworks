@@ -11,13 +11,14 @@ internal consistency errors, the safest recovery is to quarantine the
 broken vectordb and rebuild it from source memory files.
 """
 
-import json
 import logging
+import os
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.memory.rag import repair_state
 from core.memory.rag.repair_rebuild import full_reindex, quarantine_vectordb
 from core.memory.rag.repair_types import RepairResult
 from core.memory.rag.repair_utils import (
@@ -127,7 +128,7 @@ class RAGRepairService:
             reason=reason,
             collection=collection,
             source=source,
-            include_shared=is_shared,
+            include_shared=True,
             background=True,
         )
 
@@ -137,7 +138,7 @@ class RAGRepairService:
             signals = self._signals.setdefault(anima_name, [])
             signals.append(signal)
             self._signals[anima_name] = [s for s in signals[-50:] if (parse_dt(s.get("at")) or utc_now()) >= cutoff]
-        self._append_state_signal(anima_name, signal)
+        repair_state.append_state_signal(anima_name, signal, self.window)
 
     def _threshold_met(self, anima_name: str, collection: str, reason: str) -> bool:
         cutoff = utc_now() - self.window
@@ -159,7 +160,7 @@ class RAGRepairService:
             in_memory = list(self._signals.get(anima_name, []))
         if self._contains_recent_signal(in_memory, cutoff, include_shared=include_shared):
             return True
-        state = self._read_state(anima_name)
+        state = repair_state.read_state(anima_name)
         return self._contains_recent_signal(state.get("recent_signals", []), cutoff, include_shared=include_shared)
 
     @staticmethod
@@ -184,28 +185,36 @@ class RAGRepairService:
     ) -> bool:
         """Request repair for an anima.
 
-        Returns True if a new repair was started or completed, False when
-        disabled, locked, cooling down, or already running.
+        Background requests only mark the anima for supervisor-managed repair.
+        Synchronous calls are reserved for CLI/supervisor repair execution.
         """
+        if background:
+            blocked = self._request_blocked(anima_name, reason=reason)
+            if blocked is not None:
+                repair_state.write_blocked_state(anima_name, blocked)
+                return False
+            if self._has_active_repair_state(anima_name):
+                logger.info("RAG supervised repair already requested or active: %s", anima_name)
+                return False
+            repair_state.write_repair_request_state(
+                anima_name,
+                reason=reason,
+                collection=collection,
+                source=source,
+                include_shared=include_shared,
+            )
+            logger.warning(
+                "RAG supervised repair requested: anima=%s reason=%s collection=%s source=%s",
+                anima_name,
+                reason,
+                collection,
+                source,
+            )
+            return True
+
         blocked = self._reserve_repair(anima_name, reason=reason)
         if blocked is not None:
             return False
-
-        if background:
-            thread = threading.Thread(
-                target=self._run_repair_guarded,
-                kwargs={
-                    "anima_name": anima_name,
-                    "reason": reason,
-                    "collection": collection,
-                    "source": source,
-                    "include_shared": include_shared,
-                },
-                name=f"rag-repair-{anima_name}",
-                daemon=True,
-            )
-            thread.start()
-            return True
 
         try:
             self.repair_anima(
@@ -246,6 +255,17 @@ class RAGRepairService:
                 self._active_repairs.discard(anima_name)
 
     def _reserve_repair(self, anima_name: str, *, reason: str) -> RepairResult | None:
+        blocked = self._request_blocked(anima_name, reason=reason)
+        if blocked is not None:
+            return blocked
+        with self._lock:
+            if anima_name in self._active_repairs:
+                logger.info("RAG repair already active: %s", anima_name)
+                return RepairResult(status="active", anima_name=anima_name, reason=reason)
+            self._active_repairs.add(anima_name)
+        return None
+
+    def _request_blocked(self, anima_name: str, *, reason: str) -> RepairResult | None:
         if not self.enabled:
             logger.info("RAG repair disabled; ignoring repair request for %s", anima_name)
             return RepairResult(status="disabled", anima_name=anima_name, reason=reason)
@@ -255,22 +275,15 @@ class RAGRepairService:
         if is_repair_locked(anima_name):
             logger.warning("RAG repair request skipped because lock is held: %s", anima_name)
             return RepairResult(status="locked", anima_name=anima_name, reason=reason)
-        with self._lock:
-            if anima_name in self._active_repairs:
-                logger.info("RAG repair already active: %s", anima_name)
-                return RepairResult(status="active", anima_name=anima_name, reason=reason)
-            self._active_repairs.add(anima_name)
         return None
 
-    def _run_repair_guarded(self, **kwargs: Any) -> None:
-        anima_name = str(kwargs["anima_name"])
-        try:
-            self.repair_anima(**kwargs)
-        except Exception:
-            logger.exception("Unhandled RAG repair failure for %s", anima_name)
-        finally:
-            with self._lock:
-                self._active_repairs.discard(anima_name)
+    def _has_active_repair_state(self, anima_name: str) -> bool:
+        state = repair_state.read_state(anima_name)
+        return state.get("status") in {
+            "requested",
+            "stopping",
+            "repairing",
+        }
 
     def repair_anima(
         self,
@@ -286,7 +299,14 @@ class RAGRepairService:
 
         anima_dir = get_animas_dir() / anima_name
         if not anima_dir.is_dir():
-            return RepairResult(status="failed", anima_name=anima_name, reason=reason, error="anima not found")
+            return RepairResult(
+                status="failed",
+                anima_name=anima_name,
+                reason=reason,
+                error="anima not found",
+                stage="validate_anima",
+                state_path=str(repair_state.state_path(anima_name)),
+            )
 
         lock_path = get_repair_lock_path(anima_name)
         lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -294,38 +314,64 @@ class RAGRepairService:
             try:
                 acquire_file_lock(lock_file, exclusive=True, blocking=False)
             except OSError:
-                return RepairResult(status="locked", anima_name=anima_name, reason=reason)
+                result = RepairResult(
+                    status="locked",
+                    anima_name=anima_name,
+                    reason=reason,
+                    stage="locked",
+                    state_path=str(repair_state.state_path(anima_name)),
+                )
+                repair_state.write_blocked_state(anima_name, result)
+                return result
 
             quarantine_path: Path | None = None
             try:
-                self._write_state(
+                repair_state.update_repair_state(
                     anima_name,
-                    {
-                        **self._read_state(anima_name),
-                        "last_attempt_at": iso(),
-                        "last_reason": reason,
-                        "last_collection": collection,
-                        "last_source": source,
-                        "status": "running",
-                    },
+                    status="repairing",
+                    stage="quarantine",
+                    pid=os.getpid(),
+                    started_at=iso(),
+                    last_attempt_at=iso(),
+                    reason=reason,
+                    collection=collection,
+                    source=source,
+                    include_shared=include_shared,
+                    last_reason=reason,
+                    last_collection=collection,
+                    last_source=source,
+                    last_error=None,
                 )
                 quarantine_path = quarantine_vectordb(anima_name)
+                repair_state.update_repair_state(
+                    anima_name,
+                    status="repairing",
+                    stage="reindex",
+                    pid=os.getpid(),
+                    last_quarantine_path=str(quarantine_path) if quarantine_path else None,
+                )
                 chunks = full_reindex(anima_name, include_shared=include_shared)
                 from core.memory.rag.singleton import reset_vector_store
 
-                reset_vector_store(anima_name)
-                state = self._read_state(anima_name)
-                state.update(
-                    {
-                        "status": "success",
-                        "last_success_at": iso(),
-                        "last_error": None,
-                        "consecutive_failures": 0,
-                        "last_quarantine_path": str(quarantine_path) if quarantine_path else None,
-                        "last_chunks_indexed": chunks,
-                    }
+                repair_state.update_repair_state(
+                    anima_name,
+                    status="repairing",
+                    stage="reset_store",
+                    pid=os.getpid(),
+                    last_chunks_indexed=chunks,
                 )
-                self._write_state(anima_name, state)
+                reset_vector_store(anima_name)
+                repair_state.update_repair_state(
+                    anima_name,
+                    status="success",
+                    stage="complete",
+                    pid=None,
+                    last_success_at=iso(),
+                    last_error=None,
+                    consecutive_failures=0,
+                    last_quarantine_path=str(quarantine_path) if quarantine_path else None,
+                    last_chunks_indexed=chunks,
+                )
                 logger.warning(
                     "RAG repair succeeded: anima=%s reason=%s chunks=%d quarantine=%s",
                     anima_name,
@@ -339,22 +385,25 @@ class RAGRepairService:
                     reason=reason,
                     quarantine_path=str(quarantine_path) if quarantine_path else None,
                     chunks_indexed=chunks,
+                    stage="complete",
+                    state_path=str(repair_state.state_path(anima_name)),
                 )
             except Exception as exc:
                 from core.memory.rag.singleton import reset_vector_store
 
                 reset_vector_store(anima_name)
-                state = self._read_state(anima_name)
-                state.update(
-                    {
-                        "status": "failed",
-                        "last_failure_at": iso(),
-                        "last_error": str(exc),
-                        "consecutive_failures": int(state.get("consecutive_failures") or 0) + 1,
-                        "last_quarantine_path": str(quarantine_path) if quarantine_path else None,
-                    }
+                state = repair_state.read_state(anima_name)
+                failures = int(state.get("consecutive_failures") or 0) + 1
+                repair_state.update_repair_state(
+                    anima_name,
+                    status="failed",
+                    stage="failed",
+                    pid=None,
+                    last_failure_at=iso(),
+                    last_error=str(exc),
+                    consecutive_failures=failures,
+                    last_quarantine_path=str(quarantine_path) if quarantine_path else None,
                 )
-                self._write_state(anima_name, state)
                 logger.exception("RAG repair failed: anima=%s reason=%s", anima_name, reason)
                 return RepairResult(
                     status="failed",
@@ -362,48 +411,20 @@ class RAGRepairService:
                     reason=reason,
                     quarantine_path=str(quarantine_path) if quarantine_path else None,
                     error=str(exc),
+                    stage="failed",
+                    state_path=str(repair_state.state_path(anima_name)),
                 )
             finally:
                 release_file_lock(lock_file)
 
     def _cooling_down(self, anima_name: str) -> bool:
-        state = self._read_state(anima_name)
+        state = repair_state.read_state(anima_name)
         failures = int(state.get("consecutive_failures") or 0)
         if failures >= self.max_consecutive_failures:
             last_failure = parse_dt(state.get("last_failure_at"))
             if last_failure and utc_now() - last_failure < self.cooldown:
                 return True
         return False
-
-    def _state_path(self, anima_name: str) -> Path:
-        from core.paths import get_animas_dir
-
-        return get_animas_dir() / anima_name / "state" / "rag_repair.json"
-
-    def _read_state(self, anima_name: str) -> dict[str, Any]:
-        path = self._state_path(anima_name)
-        if not path.is_file():
-            return {}
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    def _write_state(self, anima_name: str, state: dict[str, Any]) -> None:
-        path = self._state_path(anima_name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    def _append_state_signal(self, anima_name: str, signal: dict[str, Any]) -> None:
-        state = self._read_state(anima_name)
-        signals = state.get("recent_signals")
-        if not isinstance(signals, list):
-            signals = []
-        cutoff = utc_now() - self.window
-        signals.append(signal)
-        state["recent_signals"] = [s for s in signals[-50:] if (parse_dt(s.get("at")) or utc_now()) >= cutoff]
-        self._write_state(anima_name, state)
 
 
 _service: RAGRepairService | None = None

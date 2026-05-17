@@ -216,6 +216,8 @@ class RAGConfig(BaseModel):
     repair_window_minutes: int = 5
     repair_cooldown_minutes: int = 60
     repair_max_consecutive_failures: int = 2
+    repair_timeout_seconds: int = 1800
+    repair_poll_interval_seconds: int = 5
 
 
 class Neo4jConfig(BaseModel):
