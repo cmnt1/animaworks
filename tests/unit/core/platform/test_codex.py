@@ -68,6 +68,20 @@ class TestCodexLoginAvailability:
         ):
             assert codex.get_codex_executable() == str(exe)
 
+    def test_finds_user_local_codex_executable_when_not_on_path(self, tmp_path: Path):
+        codex.get_codex_executable.cache_clear()
+        local_bin = tmp_path / ".local" / "bin"
+        local_bin.mkdir(parents=True)
+        exe = local_bin / "codex"
+        exe.write_text("", encoding="utf-8")
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch("core.platform.codex.default_home_dir", return_value=str(tmp_path)),
+            patch("core.platform.codex._is_usable_codex_executable", return_value=True),
+        ):
+            assert codex.get_codex_executable() == str(exe)
+
     def test_skips_unusable_windowsapps_alias(self, tmp_path: Path):
         codex.get_codex_executable.cache_clear()
         ext_dir = tmp_path / ".antigravity" / "extensions" / "openai.chatgpt-1" / "bin" / "windows-x86_64"

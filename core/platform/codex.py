@@ -58,11 +58,25 @@ def _iter_codex_candidates() -> list[str]:
     seen: set[str] = set()
     candidates: list[str] = []
 
+    for env_name in ("ANIMAWORKS_CODEX_PATH", "CODEX_PATH"):
+        configured = os.environ.get(env_name)
+        if configured:
+            path = str(Path(configured).expanduser())
+            if path not in seen:
+                seen.add(path)
+                candidates.append(path)
+
     for path in _iter_embedded_codex_candidates():
         value = str(path)
         if value not in seen:
             seen.add(value)
             candidates.append(value)
+
+    local_bin = Path(default_home_dir()) / ".local" / "bin" / ("codex.exe" if os.name == "nt" else "codex")
+    local_bin_value = str(local_bin)
+    if local_bin.is_file() and local_bin_value not in seen:
+        seen.add(local_bin_value)
+        candidates.append(local_bin_value)
 
     direct = shutil.which("codex")
     if direct and direct not in seen:
