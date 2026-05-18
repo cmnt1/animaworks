@@ -347,8 +347,9 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
 
             if isinstance(message, ResultMessage):
                 result_message = message
-                if message.session_id and session_type in _RESUMABLE_SESSION_TYPES:
-                    _save_session_id(self._anima_dir, message.session_id, session_type, thread_id=thread_id)
+                session_id = getattr(message, "session_id", "")
+                if session_id and session_type in _RESUMABLE_SESSION_TYPES:
+                    _save_session_id(self._anima_dir, session_id, session_type, thread_id=thread_id)
                 if tracker:
                     tracker.update_from_result_message(message.usage)
                 if usage_acc and message.usage:

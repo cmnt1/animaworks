@@ -494,6 +494,62 @@ class TestMcpStatusLogging:
             assert "MCP server" not in str(c) or "failed to connect" not in str(c)
 
     @pytest.mark.asyncio
+    async def test_result_message_without_session_id_does_not_error(
+        self,
+        tmp_path: Path,
+        mock_sdk_with_system_message,
+    ) -> None:
+        """A ResultMessage-like mock without session_id should not trip execute()."""
+        mock_module, mock_types, FakeSystemMessage = mock_sdk_with_system_message
+
+        sys_msg = FakeSystemMessage(
+            subtype="init",
+            data={"mcp_servers": [{"name": "aw", "status": "connected"}]},
+        )
+        result_msg = MagicMock(spec=[])
+        result_msg.__class__ = mock_module.ResultMessage
+        result_msg.usage = {"input_tokens": 100, "output_tokens": 50}
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def query(self, prompt):
+                pass
+
+            async def receive_response(self):
+                yield sys_msg
+                yield result_msg
+
+        mock_module.ClaudeSDKClient = FakeClient
+
+        executor = _make_executor(tmp_path / "animas" / "test-anima")
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "claude_agent_sdk": mock_module,
+                    "claude_agent_sdk.types": mock_types,
+                },
+            ),
+            patch("core.execution.agent_sdk.logger") as mock_logger,
+        ):
+            result = await executor.execute(prompt="hello", system_prompt="sys")
+
+        assert result.usage is not None
+        assert result.usage.input_tokens == 100
+        assert result.usage.output_tokens == 50
+        for c in mock_logger.exception.call_args_list:
+            assert "Agent SDK execution error" not in str(c)
+
+    @pytest.mark.asyncio
     async def test_non_connected_status_logs_error(
         self,
         tmp_path: Path,
