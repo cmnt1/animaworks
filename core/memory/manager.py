@@ -14,6 +14,7 @@ from pathlib import Path
 
 from core.i18n import t
 from core.memory._io import atomic_write_text
+from core.paths import _resolve_at_imports, _strip_frontmatter
 from core.memory.config_reader import ConfigReader
 from core.memory.cron_logger import CronLogger
 from core.memory.frontmatter import FrontmatterService
@@ -240,17 +241,18 @@ class MemoryManager:
         if not path.exists():
             return ""
         try:
-            return path.read_text(encoding="utf-8")
+            raw = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             logger.warning("Invalid UTF-8 in %s; reading with replacement characters", path, exc_info=True)
             try:
-                return path.read_text(encoding="utf-8", errors="replace")
+                raw = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 logger.warning("Failed to read %s after UTF-8 fallback", path, exc_info=True)
                 return ""
         except OSError:
             logger.warning("Failed to read %s", path, exc_info=True)
             return ""
+        return _strip_frontmatter(_resolve_at_imports(raw))
 
     def read_company_vision(self) -> str:
         return self._read(self.company_dir / "vision.md")

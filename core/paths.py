@@ -106,6 +106,50 @@ class _SafeFormatDict(dict):
         return "{" + key + "}"
 
 
+def _strip_frontmatter(text: str) -> str:
+    """Strip leading YAML frontmatter (``---`` block) from a prompt template.
+
+    Prompts may live in an external SoT (e.g. Obsidian Vault) where frontmatter
+    is used for cataloguing. We must not leak that frontmatter into model input.
+    """
+    if not text.startswith("---"):
+        return text
+    nl_after_open = text.find("\n", 3)
+    if nl_after_open == -1:
+        return text
+    close = text.find("\n---", nl_after_open)
+    if close == -1:
+        return text
+    nl_after_close = text.find("\n", close + 4)
+    if nl_after_close == -1:
+        return ""
+    return text[nl_after_close + 1:].lstrip("\n")
+
+
+def _resolve_at_imports(text: str) -> str:
+    """Inline ``@<absolute_path>`` lines so prompt files can be 1-line shims.
+
+    A line whose stripped content is ``@<absolute_path>`` is replaced with the
+    referenced file's contents (with its own frontmatter stripped). Non-matching
+    lines pass through unchanged. Non-existent or non-absolute paths are left
+    as-is so genuine ``@user`` mentions are not destroyed.
+    """
+    out: list[str] = []
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith("@") and len(stripped) > 1:
+            candidate = Path(stripped[1:])
+            if candidate.is_absolute() and candidate.is_file():
+                imported = candidate.read_text(encoding="utf-8")
+                imported = _strip_frontmatter(imported)
+                out.append(imported)
+                if not imported.endswith("\n"):
+                    out.append("\n")
+                continue
+        out.append(line)
+    return "".join(out)
+
+
 def _get_locale() -> str:
     """Get locale from config lazily to avoid circular imports."""
     try:
@@ -194,6 +238,7 @@ def load_prompt(name: str, *, locale: str | None = None, **kwargs: object) -> st
     key = (loc, name)
     if key not in _prompt_cache:
         path = resolve_template_path("prompts", f"{name}.md", loc)
-        _prompt_cache[key] = path.read_text(encoding="utf-8")
+        raw = path.read_text(encoding="utf-8")
+        _prompt_cache[key] = _strip_frontmatter(_resolve_at_imports(raw))
     template = _prompt_cache[key]
     return template.format_map(_SafeFormatDict(kwargs))
