@@ -2,13 +2,13 @@
 
 ### How to Delegate Tasks
 
-> **Note**: Agent/Task tools (sub-agent spawning) are **disabled**. For task delegation use `delegate_task`; for background self-execution use `submit_tasks`.
+> **Note**: Agent/Task tools (sub-agent spawning) are **disabled**. For task delegation, use `delegate_task`. `submit_tasks` is not shown in normal chat/Heartbeat/Inbox/TaskExec; use it only in explicit background execution workflows.
 
 **With subordinates** → Use `delegate_task` to delegate to a subordinate
 - Include a subordinate's name to assign them directly
 - If no name is given, the least-loaded subordinate with the best role match is auto-selected
 
-**Without subordinates** → Use `submit_tasks` for background execution
+**Without subordinates** → Usually execute directly in this session. Use `submit_tasks` only when an explicit background execution workflow is enabled
 - Written to state/pending/ and automatically executed by TaskExec in a separate session
 - The executor shares your identity, injection, behavior rules, memory guide, and org context
 - A task_id is returned. You will receive a DM notification when it completes
@@ -18,17 +18,16 @@
 
 | Tool | Purpose | Execution Queue (Layer 1) | Tracking (Layer 2) | When to use |
 |------|---------|--------------------------|--------------------|----|
-| `submit_tasks` | Submit tasks for execution and registration | Creates in `state/pending/` | Registers in `task_queue.jsonl` | Tasks needing execution, recording human instructions, tasks for manual pickup |
+| `submit_tasks` | Submit tasks for execution and registration | Creates in `state/pending/` | Registers in `task_queue.jsonl` | Explicit background execution workflow, handed to your own TaskExec |
 | `delegate_task` | Delegate to subordinates | Creates in subordinate's `state/pending/` | Registers in both `task_queue.jsonl` | When assigning to subordinates |
 
-**Important**: Recording human instructions via `submit_tasks` is MUST. Use `submit_tasks` even for a single task (tasks array with one item).
+**Important**: Do not use `submit_tasks` in normal chat after receiving human instructions. Execute directly here, and when follow-up tracking is needed, record it with `update_task`, `state/current_state.md`, or an explicit background execution workflow.
 
-**[MUST] Do NOT manually create JSON files in `state/pending/`.** Always submit via the `submit_tasks` tool. `submit_tasks` registers in both the execution queue and task registry simultaneously, preventing tracking gaps.
+**[MUST] Do NOT manually create JSON files in `state/pending/`.** When an explicit background execution workflow exposes `submit_tasks`, submit through that tool.
 
-## Task Submission via submit_tasks
+## submit_tasks in Explicit Background Execution
 
-`submit_tasks` is the sole means of submitting tasks for execution (except subordinate delegation).
-Use `submit_tasks` even for a single task (tasks array with one item).
+Do not use `submit_tasks` in normal sessions. Use it only when the user or a skill explicitly requests background execution and `submit_tasks` is visible in the tool list. Even for one task, submit a tasks array with one item.
 
 ### About the Executor (TaskExec)
 
@@ -105,7 +104,8 @@ submit_tasks(batch_id="deploy-20260301", tasks=[
 - ❌ "Continue from last time" (executor has no conversation history)
 - ❌ Instructions without file paths (executor would have to start by exploring)
 - ❌ Empty context (executor makes poor decisions without background info)
-- ❌ Manually creating JSON in `state/pending/` (always use `submit_tasks`)
+- ❌ Trying to use `submit_tasks` in normal chat/Heartbeat/Inbox/TaskExec
+- ❌ Manually creating JSON in `state/pending/` (when explicit background execution is enabled, use `submit_tasks`)
 - ❌ Instructing writes to another Anima's directory (e.g. their `knowledge/`) — subordinates cannot write there. Use `common_knowledge/` for shared output
 
 ### Task Results

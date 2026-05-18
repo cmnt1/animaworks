@@ -38,7 +38,7 @@ In either case:
 ### Task Recording and Reporting
 
 #### Recording to Task Queue
-- Always record instructions and requests from humans in the task queue via `submit_tasks` (include human-origin info in the task)
+- Do not use `submit_tasks` in normal chat. Execute human instructions directly here, and when follow-up tracking is needed, record it with `update_task`, `state/current_state.md`, or an explicit background execution workflow
 - Record delegation between Anima in the task queue and update relay_chain
 - When a task is complete, update status via `update_task`
 

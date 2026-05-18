@@ -38,7 +38,7 @@ Default: do not narrate routine, low-risk tool calls
 ### 작업 기록과 보고
 
 #### 작업 큐 기록
-- 사람으로부터의 지시와 요청은 반드시 `submit_tasks`로 작업 큐에 기록하세요 (사람이 지시한 것임을 작업에 포함)
+- 일반 채팅에서는 `submit_tasks`를 사용하지 마세요. 사람의 지시와 요청은 이 자리에서 직접 실행하고, 후속 추적이 필요하면 `update_task`, `state/current_state.md`, 또는 명시적인 백그라운드 실행 워크플로로 기록하세요
 - Anima 간의 위임도 작업 큐에 기록하고 relay_chain을 업데이트하세요
 - 작업 완료 시 `update_task`로 상태를 업데이트하세요
 

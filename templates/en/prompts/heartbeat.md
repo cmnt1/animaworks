@@ -11,13 +11,12 @@ Based on your observations, decide what to do next.
 **[MUST] If you identify anything that requires action, you MUST formalize it as a task. "Acknowledged but no action taken" is prohibited.**
 Use one of the following to create a concrete action:
 - Delegate to subordinates → `delegate_task`
-- Do it yourself later → `submit_tasks` (written to state/pending/, executed by TaskExec in a separate session)
-- Register to task queue → `submit_tasks`
+- Do it yourself → record the next action in `state/current_state.md`; do not start hands-on work during normal Heartbeat
 - Immediate follow-up → `send_message` / `call_human`
 
 ### Checklist
 - Background task results: Check state/task_results/ for completed tasks and follow up as needed
-- **MUST**: If recent chat/inbox messages contain instructions from humans or Animas that are not yet in the task queue, register them with `submit_tasks` (include human-origin info in the task)
+- **MUST**: If recent chat/inbox messages contain unhandled instructions from humans or Animas, concretize them via direct handling, `delegate_task`, `send_message`, `call_human`, or `state/current_state.md`
 - STALE / near-deadline tasks: Follow up with assignee (send_message), escalate to supervisor if needed
 - Long-stalled waiting tasks (24h+): Send status check or reminder
 - If there is a blocker: report only (send_message / call_human)
@@ -26,7 +25,7 @@ Use one of the following to create a concrete action:
 **Important: Do not perform actual work (code changes, file edits, research, etc.) in this phase.**
 **Task execution is handled automatically in a separate session.**
 
-**Task submission guidelines**: When using `submit_tasks` / `delegate_task`, follow the writing principles and forbidden patterns in `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` (MUST).
+**Delegation guidelines**: When using `delegate_task`, follow the writing principles and forbidden patterns in `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` (MUST). Do not use `submit_tasks` during normal Heartbeat.
 
 ## Reflect
 After completing the above observation and planning, state any insights or observations in the following format if you have them.

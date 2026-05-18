@@ -334,8 +334,8 @@ class TestDefaultData:
         assert "**Bash**" in ja
         assert "**Read**" in ja
         assert "animaworks-tool <tool> <subcommand> [args]" in ja
-        assert "18ツール" in ja
-        assert "18 tools" in en
+        assert "統一されたツールセット" in ja
+        assert "unified tool set" in en
         assert "**Bash**" in en
         assert "**Read**" in en
 

@@ -2,7 +2,7 @@
 
 ### タスク委譲の方法
 
-> **注意**: Agent/Task ツール（サブエージェント起動）は**無効化**されている。タスクの委譲には `delegate_task` を、自分でバックグラウンド実行するには `submit_tasks` を使用すること。
+> **注意**: Agent/Task ツール（サブエージェント起動）は**無効化**されている。タスクの委譲には `delegate_task` を使う。`submit_tasks` は通常チャット/Heartbeat/Inbox/TaskExec には表示されず、明示的なバックグラウンド実行ワークフローでのみ使う。
 
 **部下がいる場合** → `delegate_task` で部下に委任する
 - description に部下名を含めると、その部下に指名委任される
@@ -11,7 +11,7 @@
 - 名前がなければ workload 最小 + role マッチで自動選択される
 - 全部下が無効の場合は state/pending/ にフォールバック
 
-**部下がいない場合** → バックグラウンドタスクとして投入される
+**部下がいない場合** → 通常はこのセッションで直接実行する。明示的なバックグラウンド実行ワークフローが有効な場合のみ `submit_tasks` で投入する
 - state/pending/ に書き出され、TaskExec が別セッションで自動実行する
 - 実行者はあなたと同じ identity・行動指針・記憶ディレクトリ・組織情報を持つ
 - task_id が返却される。完了時にDMで通知される
@@ -21,17 +21,16 @@
 
 | 手段 | 目的 | 実行キュー (Layer 1) | 追跡 (Layer 2) | いつ使うか |
 |------|------|---------------------|----------------|-----------|
-| `submit_tasks` | タスクの実行投入・登録 | `state/pending/` に作成 | `task_queue.jsonl` に登録 | 実行が必要なタスク、人間指示の記録、手動着手予定のタスク |
+| `submit_tasks` | タスクの実行投入・登録 | `state/pending/` に作成 | `task_queue.jsonl` に登録 | 明示的なバックグラウンド実行ワークフローで、自分のTaskExecに渡すとき |
 | `delegate_task` | 部下へのタスク委譲 | 部下の `state/pending/` に作成 | 両者の `task_queue.jsonl` に登録 | 部下に任せるとき |
 
-**重要**: 人間からの指示は `submit_tasks` で記録が MUST。単一タスクでも `submit_tasks`（tasks 配列 1 件）を使う。
+**重要**: 人間からの指示を受けた通常チャットでは `submit_tasks` を使わない。直接実行し、後続管理が必要な場合は `update_task`、`state/current_state.md`、または明示的なバックグラウンド実行ワークフローで記録する。
 
-**【MUST】`state/pending/` にJSONファイルを手動で作成してはならない。** 必ず `submit_tasks` ツール経由で投入すること。`submit_tasks` は実行キューとタスクレジストリの両方に同時登録するため、追跡漏れを防げる。
+**【MUST】`state/pending/` にJSONファイルを手動で作成してはならない。** 明示的なバックグラウンド実行ワークフローで `submit_tasks` が表示されている場合のみ、そのツール経由で投入すること。
 
-## submit_tasks によるタスク投入
+## 明示的バックグラウンド実行での submit_tasks
 
-`submit_tasks` は実行が必要なタスクを投入する唯一の手段（部下委譲を除く）。
-単一タスクでも `submit_tasks`（tasks配列1件）を使う。
+`submit_tasks` は通常セッションでは使わない。ユーザーまたはスキルが「バックグラウンドで」と明示し、ツール一覧に `submit_tasks` が表示されている場合だけ使う。単一タスクでも tasks 配列1件で投入する。
 
 ### 実行者（TaskExec）について
 
@@ -108,7 +107,8 @@ submit_tasks(batch_id="deploy-20260301", tasks=[
 - ❌ 「前回の続きをやる」（実行者は会話履歴を持たない）
 - ❌ ファイルパスなしの指示（実行者は探索から始めることになる）
 - ❌ context が空（背景情報なしでは実行者が判断を誤る）
-- ❌ `state/pending/` にJSONを手動作成（必ず `submit_tasks` を使うこと）
+- ❌ 通常チャット/Heartbeat/Inbox/TaskExec で `submit_tasks` を使おうとする
+- ❌ `state/pending/` にJSONを手動作成（明示的バックグラウンド実行では必ず `submit_tasks` を使うこと）
 - ❌ 他Animaのディレクトリ（`knowledge/` 等）への書き込み指示（部下はそのパスに書き込めない。共有には `common_knowledge/` を使うこと）
 
 ### タスク結果
