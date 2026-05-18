@@ -55,6 +55,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | ハートビートやcronの設定がわからない | `operations/heartbeat-cron-guide.md` |
 | 長時間ツールの実行方法がわからない | `operations/background-tasks.md` |
 | ワークスペースの登録・使い方がわからない | `operations/workspace-guide.md` |
+| Obsidian `_inbox/` の知見昇格レビューを判定したい（GL/COO向け） | `operations/knowledge-promotion-review.md` |
 | プロジェクト設定を変更したい | `reference/operations/project-setup.md` ※技術リファレンス |
 
 ### ツール・モデル・技術
