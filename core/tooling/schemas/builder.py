@@ -67,9 +67,7 @@ _SUBMIT_TASKS_ALLOWED_PREFIXES: tuple[str, ...] = ("background:", "submit_tasks:
 def submit_tasks_enabled_for_trigger(trigger: str | None) -> bool:
     """Return True only for explicit background task-authoring sessions."""
     normalized = (trigger or "").strip()
-    return normalized in _SUBMIT_TASKS_ALLOWED_TRIGGERS or normalized.startswith(
-        _SUBMIT_TASKS_ALLOWED_PREFIXES
-    )
+    return normalized in _SUBMIT_TASKS_ALLOWED_TRIGGERS or normalized.startswith(_SUBMIT_TASKS_ALLOWED_PREFIXES)
 
 
 def build_tool_list(

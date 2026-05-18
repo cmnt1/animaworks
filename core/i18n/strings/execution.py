@@ -127,7 +127,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "BLOCKED: Agent/Taskツールは無効です（サブエージェント起動は禁止）。"
             "以下の方法で作業してください:\n"
             "• **直接実行**: Read, Bash, Grep, Edit 等のツールで自分で作業する（推奨）\n"
-            "• **重い処理**: `animaworks-tool machine run \"指示\" -d ワークスペースパス` で外部エージェントに委託する\n"
+            '• **重い処理**: `animaworks-tool machine run "指示" -d ワークスペースパス` で外部エージェントに委託する\n'
             "• **部下に委譲**: `delegate_task` で部下にタスクを委任する（部下が実行する）\n"
             "Agent/Taskの代わりに上記を使ってください。"
         ),
@@ -135,7 +135,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "BLOCKED: Agent/Task tools are disabled (sub-agent spawning is not allowed). "
             "Use one of these methods instead:\n"
             "• **Direct execution**: Use Read, Bash, Grep, Edit, etc. to do the work yourself (recommended)\n"
-            "• **Heavy work**: Use `animaworks-tool machine run \"instruction\" -d workspace_path` for an external agent\n"
+            '• **Heavy work**: Use `animaworks-tool machine run "instruction" -d workspace_path` for an external agent\n'
             "• **Delegation**: Use `delegate_task` to delegate to a subordinate (they execute it)\n"
             "Use these instead of Agent/Task."
         ),

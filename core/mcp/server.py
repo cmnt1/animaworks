@@ -586,8 +586,7 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
                         "status": "error",
                         "error_type": "ToolBlocked",
                         "message": (
-                            "Tool 'submit_tasks' is only available in explicit "
-                            "background task-authoring sessions"
+                            "Tool 'submit_tasks' is only available in explicit background task-authoring sessions"
                         ),
                     },
                     ensure_ascii=False,
