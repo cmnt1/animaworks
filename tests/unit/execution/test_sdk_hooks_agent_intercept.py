@@ -3,10 +3,10 @@
 Verifies:
   - Both "Agent" and "Task" tool names are hard-blocked (no pending creation)
   - "TaskOutput" and "AgentOutput" are also blocked
-  - Deny reason redirects to submit_tasks / delegate_task
+  - Deny reason redirects to direct execution / delegate_task
   - No state/pending/ files are created
   - on_task_intercepted callback is NOT fired for Agent/Task
-  - submit_tasks intercept still works correctly
+  - submit_tasks intercept only works in explicit background sessions
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ class TestPreToolHookAgentHardBlock:
         assert output is not None
         assert output["permissionDecision"] == "deny"
         assert "BLOCKED" in output["permissionDecisionReason"]
-        assert "submit_tasks" in output["permissionDecisionReason"]
+        assert "submit_tasks" not in output["permissionDecisionReason"]
 
         pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
         assert len(pending_files) == 0, "No pending task should be written"
@@ -315,6 +315,19 @@ class TestPreToolHookAgentHardBlock:
 class TestSubmitTasksInterceptDenyReason:
     """Test submit_tasks intercept returns improved deny reason to prevent duplicate delegation."""
 
+    def _background_stats(self) -> dict:
+        return {
+            "tool_call_count": 0,
+            "total_result_bytes": 0,
+            "system_prompt_tokens": 100,
+            "user_prompt_tokens": 50,
+            "force_chain": False,
+            "trigger": "background:manual",
+            "start_time": 0.0,
+            "hb_soft_warned": False,
+            "hb_soft_timeout": 300,
+        }
+
     def _build_hook(self, anima_dir: Path, *, has_subordinates: bool = False, session_stats: dict | None = None):
         from core.execution._sdk_hooks import _build_pre_tool_hook
 
@@ -342,7 +355,11 @@ class TestSubmitTasksInterceptDenyReason:
             "core.tooling.handler_skills.SkillsToolsMixin._handle_submit_tasks",
             return_value=success_result,
         ):
-            hook = self._build_hook(anima_dir, has_subordinates=False)
+            hook = self._build_hook(
+                anima_dir,
+                has_subordinates=False,
+                session_stats=self._background_stats(),
+            )
             mock_context = MagicMock()
             input_data = {
                 "tool_name": "submit_tasks",
@@ -383,7 +400,11 @@ class TestSubmitTasksInterceptDenyReason:
             "core.tooling.handler_skills.SkillsToolsMixin._handle_submit_tasks",
             return_value=error_result,
         ):
-            hook = self._build_hook(anima_dir, has_subordinates=False)
+            hook = self._build_hook(
+                anima_dir,
+                has_subordinates=False,
+                session_stats=self._background_stats(),
+            )
             mock_context = MagicMock()
             input_data = {
                 "tool_name": "submit_tasks",
@@ -430,3 +451,32 @@ class TestSubmitTasksInterceptDenyReason:
         assert output is not None
         assert output["permissionDecision"] == "deny"
         assert "BLOCKED" in output["permissionDecisionReason"]
+
+    @pytest.mark.asyncio
+    async def test_submit_tasks_blocked_in_normal_chat(self, anima_dir: Path):
+        """submit_tasks should not execute in normal chat sessions."""
+        hook = self._build_hook(
+            anima_dir,
+            session_stats={
+                **self._background_stats(),
+                "trigger": "chat",
+            },
+        )
+
+        mock_context = MagicMock()
+        input_data = {
+            "tool_name": "submit_tasks",
+            "tool_input": {
+                "batch_id": "test",
+                "tasks": [{"task_id": "t1", "title": "T1", "description": "D1"}],
+            },
+        }
+        with patch("core.tooling.handler_skills.SkillsToolsMixin._handle_submit_tasks") as handler:
+            result = await hook(input_data, "tu_st_chat", mock_context)
+
+        output = result.get("hookSpecificOutput")
+        assert output is not None
+        assert output["permissionDecision"] == "deny"
+        assert "submit_tasks" in output["permissionDecisionReason"]
+        assert "BLOCKED" in output["permissionDecisionReason"]
+        handler.assert_not_called()

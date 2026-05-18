@@ -60,6 +60,17 @@ _COMPACT_COMM_TOOLS: frozenset[str] = frozenset(
     }
 )
 
+_SUBMIT_TASKS_ALLOWED_TRIGGERS: frozenset[str] = frozenset({"background", "submit_tasks"})
+_SUBMIT_TASKS_ALLOWED_PREFIXES: tuple[str, ...] = ("background:", "submit_tasks:")
+
+
+def submit_tasks_enabled_for_trigger(trigger: str | None) -> bool:
+    """Return True only for explicit background task-authoring sessions."""
+    normalized = (trigger or "").strip()
+    return normalized in _SUBMIT_TASKS_ALLOWED_TRIGGERS or normalized.startswith(
+        _SUBMIT_TASKS_ALLOWED_PREFIXES
+    )
+
 
 def build_tool_list(
     *,
@@ -92,7 +103,8 @@ def build_tool_list(
         include_supervisor_tools: Include supervisor tools (disable/enable subordinate).
         include_tool_management: Include refresh_tools/share_tool tools.
         include_task_tools: Include task queue tools (backlog_task, update_task, list_tasks).
-        include_submit_tasks: Include submit_tasks DAG batch submission tool.
+        include_submit_tasks: Include submit_tasks DAG batch submission tool
+            only for explicit background task-authoring triggers.
         include_goal_tools: Include persistent goal loop tool.
         include_background_task_tools: Include background task check/list tools.
         include_vault_tools: Include credential vault tools (get/store/list).
@@ -128,7 +140,7 @@ def build_tool_list(
         tools.extend(TOOL_MANAGEMENT_TOOLS)
     if include_task_tools:
         tools.extend(_task_tools())
-    if include_submit_tasks and not is_consolidation:
+    if include_submit_tasks and submit_tasks_enabled_for_trigger(trigger) and not is_consolidation:
         tools.extend(_submit_tasks_tools())
     if (include_goal_tools or include_task_tools) and not is_consolidation:
         tools.extend(_goal_tools())
@@ -205,9 +217,11 @@ def build_unified_tool_list(
             if t["name"] in _sup_include:
                 tools.append(t)
 
-    # AW-essential: task management (always present, but submit_tasks blocked during consolidation)
+    # AW-essential: task management. submit_tasks is withheld from normal
+    # chat/heartbeat/cron/task sessions to avoid duplicate self-execution.
     if not is_consolidation:
-        tools.extend(_submit_tasks_tools())
+        if submit_tasks_enabled_for_trigger(trigger):
+            tools.extend(_submit_tasks_tools())
         tools.extend(_goal_tools())
     for t in _task_tools():
         if t["name"] == "update_task":

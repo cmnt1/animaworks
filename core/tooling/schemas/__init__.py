@@ -16,6 +16,7 @@ from core.tooling.schemas.builder import (
     _CONSOLIDATION_BLOCKED_TOOLS,
     build_tool_list,
     build_unified_tool_list,
+    submit_tasks_enabled_for_trigger,
 )
 from core.tooling.schemas.channel import _channel_tools
 from core.tooling.schemas.completion_gate import _completion_gate_tools
@@ -94,4 +95,5 @@ __all__ = [
     "to_anthropic_format",
     "to_litellm_format",
     "to_text_format",
+    "submit_tasks_enabled_for_trigger",
 ]

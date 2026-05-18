@@ -316,7 +316,7 @@ class TestPreToolHookTaskBranching:
         assert "BLOCKED" in output.get("permissionDecisionReason", "")
 
     async def test_with_subs_hard_blocks_task(self, hook_with_subs) -> None:
-        """Supervisor: Task tool is also hard-blocked (use submit_tasks/delegate_task)."""
+        """Supervisor: Task tool is also hard-blocked (use direct tools/delegate_task)."""
         input_data = {
             "tool_name": "Task",
             "tool_input": {"description": "test", "prompt": "do it"},

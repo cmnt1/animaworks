@@ -314,7 +314,7 @@ class TestBuildToolSchemas:
         executor = self._make_executor(_anima_dir)
         names = executor._known_tools
         assert "update_task" in names
-        assert "submit_tasks" in names
+        assert "submit_tasks" not in names
 
     def test_supervisor_tools_when_has_subordinates(self, _anima_dir):
         executor = self._make_executor(_anima_dir, has_subs=True)

@@ -34,6 +34,7 @@ from mcp.types import TextContent, Tool
 
 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
 from core.tooling.handler_base import active_session_type
+from core.tooling.schemas import submit_tasks_enabled_for_trigger
 
 # ── Logging (stderr only — stdout is MCP JSON-RPC) ──────
 logging.basicConfig(
@@ -523,14 +524,33 @@ _CONSOLIDATION_BLOCKED_NAMES: frozenset[str] = frozenset(
 )
 
 
+def _submit_tasks_enabled_for_mcp() -> bool:
+    """Return True when this MCP subprocess is in an explicit background task session."""
+    env_flag = os.environ.get("ANIMAWORKS_ENABLE_SUBMIT_TASKS", "").strip().lower()
+    if env_flag in {"1", "true", "yes", "on"}:
+        return True
+    ctx = RuntimeSessionContext.from_env()
+    return bool(ctx and submit_tasks_enabled_for_trigger(ctx.trigger))
+
+
+def _runtime_blocked_tool_names() -> frozenset[str]:
+    """Return tool names blocked for the current MCP runtime context."""
+    blocked: set[str] = set()
+    if _is_consolidation_mode():
+        blocked.update(_CONSOLIDATION_BLOCKED_NAMES)
+    if not _submit_tasks_enabled_for_mcp():
+        blocked.add("submit_tasks")
+    return frozenset(blocked)
+
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """Return exposed AnimaWorks tools, filtering supervisor tools dynamically."""
-    if _is_consolidation_mode():
-        return [t for t in MCP_TOOLS if t.name not in _CONSOLIDATION_BLOCKED_NAMES]
+    blocked = _runtime_blocked_tool_names()
+    tools = [t for t in MCP_TOOLS if t.name not in blocked]
     if _has_subordinates_for_anima():
-        return MCP_TOOLS
-    return [t for t in MCP_TOOLS if t.name not in _SUPERVISOR_TOOL_NAMES]
+        return tools
+    return [t for t in tools if t.name not in _SUPERVISOR_TOOL_NAMES]
 
 
 @server.call_tool()
@@ -551,6 +571,24 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
                         "status": "error",
                         "error_type": "ToolBlocked",
                         "message": f"Tool '{name}' is not available during memory consolidation",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        ]
+
+    if name == "submit_tasks" and not _submit_tasks_enabled_for_mcp():
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "status": "error",
+                        "error_type": "ToolBlocked",
+                        "message": (
+                            "Tool 'submit_tasks' is only available in explicit "
+                            "background task-authoring sessions"
+                        ),
                     },
                     ensure_ascii=False,
                 ),

@@ -120,14 +120,30 @@ class TestBuildMcpTools:
 class TestListToolsHandler:
     """Tests for the list_tools() MCP handler with dynamic supervisor filtering."""
 
-    async def test_returns_all_tools_when_supervisor(self) -> None:
-        """list_tools() returns all MCP_TOOLS when Anima has subordinates."""
+    async def test_filters_submit_tasks_in_normal_supervisor_session(self) -> None:
+        """list_tools() hides submit_tasks even when Anima has subordinates."""
         import core.mcp.server as mcp_mod
         from core.mcp.server import MCP_TOOLS, list_tools
 
         with patch.object(mcp_mod, "_is_supervisor", True):
             result = await list_tools()
-        assert result is MCP_TOOLS
+
+        result_names = {t.name for t in result}
+        assert "submit_tasks" not in result_names
+        assert result_names == {t.name for t in MCP_TOOLS if t.name != "submit_tasks"}
+
+    async def test_background_session_can_list_submit_tasks(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """submit_tasks is listed only for explicit background task-authoring sessions."""
+        import core.mcp.server as mcp_mod
+        from core.mcp.server import MCP_TOOLS, list_tools
+
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "background:manual")
+        with patch.object(mcp_mod, "_is_supervisor", True):
+            result = await list_tools()
+
+        result_names = {t.name for t in result}
+        assert "submit_tasks" in result_names
+        assert result_names == {t.name for t in MCP_TOOLS}
 
     async def test_filters_supervisor_tools_when_non_supervisor(self) -> None:
         """list_tools() excludes supervisor tools when Anima has no subordinates."""
@@ -139,7 +155,11 @@ class TestListToolsHandler:
 
         result_names = {t.name for t in result}
         assert result_names & _SUPERVISOR_TOOL_NAMES == set()
-        non_supervisor_names = {t.name for t in MCP_TOOLS if t.name not in _SUPERVISOR_TOOL_NAMES}
+        non_supervisor_names = {
+            t.name
+            for t in MCP_TOOLS
+            if t.name not in _SUPERVISOR_TOOL_NAMES and t.name != "submit_tasks"
+        }
         assert result_names == non_supervisor_names
 
     async def test_supervisor_tool_names_from_schemas(self) -> None:
@@ -207,6 +227,17 @@ class TestCallToolHandler:
         assert payload["status"] == "error"
         assert payload["error_type"] == "InitError"
         assert "Test init error" in payload["message"]
+
+    async def test_blocks_submit_tasks_in_normal_session(self) -> None:
+        """call_tool() blocks submit_tasks outside explicit background sessions."""
+        import core.mcp.server as mcp_mod
+
+        result = await mcp_mod.call_tool("submit_tasks", {"batch_id": "b1", "tasks": []})
+
+        assert len(result) == 1
+        payload = json.loads(result[0].text)
+        assert payload["status"] == "error"
+        assert payload["error_type"] == "ToolBlocked"
 
     async def test_returns_error_when_init_error_is_none(self) -> None:
         """When handler is None and _init_error is also None, uses fallback message."""

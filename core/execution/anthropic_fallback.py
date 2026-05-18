@@ -54,6 +54,7 @@ from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 from core.tooling.schemas import (
     build_tool_list,
+    submit_tasks_enabled_for_trigger,
     to_anthropic_format,
 )
 
@@ -193,7 +194,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
             include_supervisor_tools=self._has_subordinates(),
             include_tool_management=True,
             include_task_tools=True,
-            include_submit_tasks=True,
+            include_submit_tasks=submit_tasks_enabled_for_trigger(trigger),
             include_background_task_tools=getattr(self._tool_handler, "_background_manager", None) is not None,
             include_vault_tools=True,
             include_create_skill=True,

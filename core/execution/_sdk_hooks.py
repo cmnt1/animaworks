@@ -34,6 +34,7 @@ from core.execution._sdk_security import (
 from core.execution._sdk_session import _CONTEXT_AUTOCOMPACT_SAFETY
 from core.execution._sdk_stream import _log_tool_use
 from core.prompt.context import CHARS_PER_TOKEN
+from core.tooling.schemas import submit_tasks_enabled_for_trigger
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 
@@ -711,8 +712,8 @@ def _build_pre_tool_hook(
         # the chat model doesn't trust: it says "TaskExecに回されましたが、
         # 自分で直接確認します" and does the work itself, causing double
         # execution and massive token waste.  Block entirely and redirect
-        # to submit_tasks (which the model explicitly chooses to delegate)
-        # or direct tool use.
+        # to direct tool use, CLI background execution, or subordinate
+        # delegation when available.
         if tool_name in ("Agent", "Task"):
             from core.i18n import t as _t
 
@@ -722,10 +723,10 @@ def _build_pre_tool_hook(
                 tool_input,
                 tool_use_id=tool_use_id,
                 blocked=True,
-                block_reason="Agent/Task hard-blocked → redirect to submit_tasks/delegate_task",
+                block_reason="Agent/Task hard-blocked",
             )
             logger.info(
-                "Hard-blocked %s tool for %s (use submit_tasks or delegate_task instead)",
+                "Hard-blocked %s tool for %s",
                 tool_name,
                 anima_dir.name,
             )
@@ -754,6 +755,21 @@ def _build_pre_tool_hook(
                         hookEventName="PreToolUse",
                         permissionDecision="deny",
                         permissionDecisionReason=_t("sdk_hooks.task_no_subtask"),
+                    )
+                )
+            if not submit_tasks_enabled_for_trigger(_trigger_st):
+                from core.i18n import t as _t
+
+                logger.info(
+                    "Blocked submit_tasks outside explicit background session (%s) for %s",
+                    _trigger_st or "<none>",
+                    anima_dir.name,
+                )
+                return SyncHookJSONOutput(
+                    hookSpecificOutput=PreToolUseHookSpecificOutput(
+                        hookEventName="PreToolUse",
+                        permissionDecision="deny",
+                        permissionDecisionReason=_t("sdk_hooks.submit_tasks_unavailable"),
                     )
                 )
 

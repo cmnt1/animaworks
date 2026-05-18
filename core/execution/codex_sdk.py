@@ -739,14 +739,19 @@ class CodexSDKExecutor(BaseExecutor):
 
     def _build_mcp_env(self) -> dict[str, str]:
         """Build env dict for the MCP server subprocess."""
+        from core.execution.session_context import current_runtime_session
         from core.paths import PROJECT_DIR
 
-        return {
+        env = {
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PYTHONPATH": str(PROJECT_DIR),
             "PATH": _default_path_env(),
         }
+        ctx = current_runtime_session()
+        if ctx is not None:
+            env.update(ctx.to_env())
+        return env
 
     def _propagate_auth(self) -> None:
         """Propagate ``auth.json`` from the default CODEX_HOME into per-anima CODEX_HOME.

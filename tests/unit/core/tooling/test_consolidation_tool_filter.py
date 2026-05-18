@@ -16,7 +16,7 @@ def _tool_names(tools: list[dict]) -> set[str]:
 class TestConsolidationToolFilter:
     """Verify delegation/messaging tools are excluded during consolidation."""
 
-    def test_normal_trigger_includes_delegation_tools(self):
+    def test_normal_trigger_excludes_submit_tasks(self):
         tools = build_unified_tool_list(
             include_supervisor_tools=True,
             include_create_skill=False,
@@ -24,8 +24,17 @@ class TestConsolidationToolFilter:
         )
         names = _tool_names(tools)
         assert "delegate_task" in names
-        assert "submit_tasks" in names
+        assert "submit_tasks" not in names
         assert "send_message" in names
+
+    def test_background_trigger_includes_submit_tasks(self):
+        tools = build_unified_tool_list(
+            include_supervisor_tools=True,
+            include_create_skill=False,
+            trigger="background:manual",
+        )
+        names = _tool_names(tools)
+        assert "submit_tasks" in names
 
     def test_consolidation_trigger_excludes_blocked_tools(self):
         tools = build_unified_tool_list(
@@ -57,7 +66,7 @@ class TestConsolidationToolFilter:
         assert "read_memory_file" in names
         assert "write_memory_file" in names
 
-    def test_empty_trigger_includes_all(self):
+    def test_empty_trigger_excludes_submit_tasks(self):
         tools = build_unified_tool_list(
             include_supervisor_tools=True,
             include_create_skill=False,
@@ -65,7 +74,7 @@ class TestConsolidationToolFilter:
         )
         names = _tool_names(tools)
         assert "delegate_task" in names
-        assert "submit_tasks" in names
+        assert "submit_tasks" not in names
         assert "send_message" in names
 
     def test_build_tool_list_consolidation_filter(self):
@@ -78,3 +87,9 @@ class TestConsolidationToolFilter:
         names = _tool_names(tools)
         for blocked in _CONSOLIDATION_BLOCKED_TOOLS:
             assert blocked not in names, f"{blocked} should be hidden in build_tool_list"
+
+    def test_build_tool_list_submit_tasks_requires_background_trigger(self):
+        normal = build_tool_list(include_submit_tasks=True, trigger="chat")
+        background = build_tool_list(include_submit_tasks=True, trigger="background:manual")
+        assert "submit_tasks" not in _tool_names(normal)
+        assert "submit_tasks" in _tool_names(background)
