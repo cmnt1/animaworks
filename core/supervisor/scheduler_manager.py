@@ -29,7 +29,11 @@ from core.schemas import CronTask
 from core.time_utils import get_app_timezone, now_local
 
 _INDENTED_SCHEDULE_RE = re.compile(r"^\s+schedule:", re.MULTILINE)
-_HEALTH_CHECK_HOURS = 3
+# Cron health check:
+# - interval: how often the health job runs (kept short for timely detection)
+# - window: lookback window for "no executions" detection (widened to avoid false positives for low-frequency crons)
+_HEALTH_CHECK_INTERVAL_HOURS = 3
+_HEALTH_CHECK_WINDOW_HOURS = 24
 
 if TYPE_CHECKING:
     from core.anima import DigitalAnima
@@ -403,7 +407,7 @@ class SchedulerManager:
 
         self.scheduler.add_job(
             self._cron_health_tick,
-            CronTrigger(minute=0, hour=f"*/{_HEALTH_CHECK_HOURS}"),
+            CronTrigger(minute=0, hour=f"*/{_HEALTH_CHECK_INTERVAL_HOURS}"),
             id=f"{self._anima_name}_cron_health",
             name=f"{self._anima_name} cron health check",
             replace_existing=True,
@@ -465,7 +469,7 @@ class SchedulerManager:
                 return
 
             entries = self._anima._activity._load_entries(
-                hours=_HEALTH_CHECK_HOURS,
+                hours=_HEALTH_CHECK_WINDOW_HOURS,
                 types=["cron_executed"],
             )
 
@@ -474,7 +478,7 @@ class SchedulerManager:
                     t(
                         "scheduler.cron_health_no_execution",
                         job_count=len(cron_jobs),
-                        hours=_HEALTH_CHECK_HOURS,
+                        hours=_HEALTH_CHECK_WINDOW_HOURS,
                     )
                 )
         except Exception:

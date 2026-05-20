@@ -117,12 +117,14 @@ STRINGS: dict[str, dict[str, str]] = {
     "scheduler.cron_health_no_execution": {
         "ja": (
             "{job_count}件のcronジョブが登録されていますが、"
-            "直近{hours}時間でcron実行が0件です。"
-            "cron.mdとスケジュール設定を確認してください。"
+            "直近{hours}時間にcron実行ログがありません。"
+            "低頻度（例: 日次/週次）のcronであれば正常な場合があります。"
+            "想定より頻度が高いはずの場合は、cron.mdとスケジュール設定を確認してください。"
         ),
         "en": (
-            "{job_count} cron job(s) registered but 0 executions in the last "
-            "{hours} hours. Please check cron.md and schedule settings."
+            "{job_count} cron job(s) registered but no execution logs in the last "
+            "{hours} hours. This can be normal for low-frequency crons (e.g., daily/weekly). "
+            "If the expected frequency is higher, please check cron.md and schedule settings."
         ),
     },
     "anima.greeting_error": {
