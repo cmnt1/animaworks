@@ -677,7 +677,8 @@ class SchedulerManager:
             # cron was actually expected to fire inside the health window.
             now = now_local()
             window_start = now - timedelta(hours=_HEALTH_CHECK_HOURS)
-            if not self._any_cron_expected_in_window(cron_jobs, window_start, now):
+            expected_jobs = [job for job in cron_jobs if self._job_has_schedule_in_window(job, window_start, now)]
+            if not expected_jobs:
                 return
 
             entries = self._anima._activity._load_entries(

@@ -14,7 +14,6 @@ from pathlib import Path
 
 from core.i18n import t
 from core.memory._io import atomic_write_text
-from core.paths import _resolve_at_imports, _strip_frontmatter
 from core.memory.config_reader import ConfigReader
 from core.memory.cron_logger import CronLogger
 from core.memory.frontmatter import FrontmatterService
@@ -35,7 +34,14 @@ from core.memory.skill_metadata import (  # noqa: F401
     _normalize_text,
     match_skills_by_description,
 )
-from core.paths import get_common_knowledge_dir, get_common_skills_dir, get_company_dir, get_shared_dir
+from core.paths import (
+    _resolve_at_imports,
+    _strip_frontmatter,
+    get_common_knowledge_dir,
+    get_common_skills_dir,
+    get_company_dir,
+    get_shared_dir,
+)
 from core.schemas import ModelConfig, SkillMeta
 from core.time_utils import today_local
 
