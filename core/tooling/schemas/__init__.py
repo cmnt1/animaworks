@@ -16,6 +16,7 @@ from core.tooling.schemas.builder import (
     _CONSOLIDATION_BLOCKED_TOOLS,
     build_tool_list,
     build_unified_tool_list,
+    submit_tasks_enabled_for_trigger,
 )
 from core.tooling.schemas.channel import _channel_tools
 from core.tooling.schemas.completion_gate import _completion_gate_tools
@@ -25,6 +26,7 @@ from core.tooling.schemas.converters import (
     to_litellm_format,
     to_text_format,
 )
+from core.tooling.schemas.goal import _goal_tools
 from core.tooling.schemas.loader import (
     _normalise_schema,
     load_all_tool_schemas,
@@ -45,6 +47,7 @@ from core.tooling.schemas.skill import (
     TOOL_MANAGEMENT_TOOLS,
     USE_TOOL,
     _create_skill_schemas,
+    _curator_skill_schemas,
 )
 from core.tooling.schemas.supervisor import (
     _background_task_tools,
@@ -77,6 +80,8 @@ __all__ = [
     "_notification_tools",
     "_normalise_schema",
     "_create_skill_schemas",
+    "_curator_skill_schemas",
+    "_goal_tools",
     "_supervisor_tools",
     "_task_tools",
     "_vault_tools",
@@ -90,4 +95,5 @@ __all__ = [
     "to_anthropic_format",
     "to_litellm_format",
     "to_text_format",
+    "submit_tasks_enabled_for_trigger",
 ]

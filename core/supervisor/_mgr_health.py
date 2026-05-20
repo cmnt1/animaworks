@@ -41,6 +41,8 @@ class HealthMixin:
                 # Poll and broadcast child process events
                 await self._poll_anima_events()
 
+                await self._poll_requested_rag_repairs()
+
                 # Check all processes in parallel
                 checks = [
                     self._check_process_health(anima_name, handle)
@@ -300,6 +302,10 @@ class HealthMixin:
                 self._permanently_failed.add(anima_name)
                 self._failed_log_times[anima_name] = asyncio.get_running_loop().time()
                 return
+
+            repaired = await self._maybe_repair_rag_before_restart(anima_name, handle)
+            if repaired:
+                count = 0
 
             # Calculate backoff delay
             backoff = min(

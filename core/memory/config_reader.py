@@ -41,6 +41,9 @@ class ConfigReader:
             # Derive env var name from credential name (e.g. "anthropic" -> "ANTHROPIC_API_KEY")
             cred_name = resolved.credential
             api_key_env = f"{cred_name.upper()}_API_KEY"
+            cred_type = getattr(credential, "type", None)
+            if not isinstance(cred_type, str):
+                cred_type = None
             mode = resolve_execution_mode(
                 config,
                 resolved.model,
@@ -53,6 +56,8 @@ class ConfigReader:
                 background_credential=resolved.background_credential,
                 max_tokens=resolved.max_tokens,
                 max_turns=resolved.max_turns,
+                credential=cred_name,
+                credential_type=cred_type,
                 api_key=credential.api_key or None,
                 api_key_env=api_key_env,
                 api_base_url=credential.base_url,

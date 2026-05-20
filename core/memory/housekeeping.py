@@ -189,10 +189,51 @@ async def run_housekeeping(
         logger.exception("Housekeeping: shared inbox cleanup failed")
         results["shared_inbox"] = {"error": True}
 
+    # 11. Skill Curator report
+    try:
+        r = await loop.run_in_executor(None, _run_skill_curator_reports, animas_dir)
+        results["skill_curator"] = r
+    except Exception:
+        logger.exception("Housekeeping: skill curator report failed")
+        results["skill_curator"] = {"error": True}
+
     return results
 
 
 # ── Sub-functions ───────────────────────────────────────────────
+
+
+def _run_skill_curator_reports(animas_dir: Path) -> dict[str, Any]:
+    """Generate daily deterministic Skill Curator reports for all Animas."""
+    if not animas_dir.is_dir():
+        return {"skipped": True}
+    generated = 0
+    for anima_dir in sorted(p for p in animas_dir.iterdir() if p.is_dir()):
+        try:
+            from core.paths import get_common_skills_dir
+            from core.skills.curator import SkillCurator
+            from core.skills.index import SkillIndex
+
+            index = SkillIndex(
+                anima_dir / "skills",
+                get_common_skills_dir(),
+                anima_dir / "procedures",
+                anima_dir=anima_dir,
+            )
+            index.build_index()
+            report = SkillCurator(anima_dir, common_skills_dir=get_common_skills_dir()).generate_report(
+                index.search("", include_blocked=True)
+            )
+            report_dir = anima_dir / "state" / "skill_curator"
+            report_dir.mkdir(parents=True, exist_ok=True)
+            report_path = report_dir / f"report-{today_local().isoformat()}.json"
+            import json
+
+            report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+            generated += 1
+        except Exception:
+            logger.debug("Skill Curator report failed for %s", anima_dir, exc_info=True)
+    return {"generated_reports": generated}
 
 
 def _rotate_prompt_logs_all(

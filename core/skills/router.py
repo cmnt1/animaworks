@@ -118,7 +118,9 @@ class SkillRouter:
         if not query_tokens:
             return []
 
-        records = [_SkillRecord.from_metadata(meta, include_body=self.include_body) for meta in skills]
+        records = [
+            _SkillRecord.from_metadata(meta, include_body=self.include_body) for meta in skills if _router_visible(meta)
+        ]
         if not records:
             return []
 
@@ -475,6 +477,15 @@ def _dedupe(values: Sequence[str]) -> list[str]:
         seen.add(value)
         result.append(value)
     return result
+
+
+def _router_visible(meta: SkillMetadata) -> bool:
+    try:
+        from core.skills.curator import is_unloadable_lifecycle_state
+
+        return not is_unloadable_lifecycle_state(meta.lifecycle_state)
+    except Exception:
+        return True
 
 
 def _has_strong_signal(reasons: Sequence[str]) -> bool:

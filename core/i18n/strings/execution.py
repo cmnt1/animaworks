@@ -100,14 +100,26 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "sdk_hooks.task_no_subtask": {
         "ja": (
-            "BLOCKED: TaskExecセッション内でAgent/Taskサブタスクは起動できません（再帰防止）。"
+            "BLOCKED: TaskExecセッション内でAgent/Task/submit_tasksサブタスクは起動できません（再帰防止）。"
             "自分で直接Bash/Read/Grep等のツールを使って作業するか、"
             '重い処理は `animaworks-tool machine run "指示" -d ワークスペースパス` で外部エージェントに委託してください。'
         ),
         "en": (
-            "BLOCKED: Cannot spawn Agent/Task subtasks from a TaskExec session (recursion prevention). "
+            "BLOCKED: Cannot spawn Agent/Task/submit_tasks subtasks from a TaskExec session (recursion prevention). "
             "Use Bash/Read/Grep and other tools directly, or delegate heavy work via "
             '`animaworks-tool machine run "instruction" -d workspace_path`.'
+        ),
+    },
+    "sdk_hooks.submit_tasks_unavailable": {
+        "ja": (
+            "BLOCKED: submit_tasksは通常チャット/heartbeat/cron/TaskExecでは利用できません。"
+            "この場ではRead/Bash/Grep/Edit等で直接作業してください。"
+            "バックグラウンド実行が必要な場合は、明示的なバックグラウンド実行ワークフローから起動してください。"
+        ),
+        "en": (
+            "BLOCKED: submit_tasks is not available in normal chat/heartbeat/cron/TaskExec sessions. "
+            "Do the work directly with Read/Bash/Grep/Edit here. "
+            "Use an explicit background execution workflow when background task submission is required."
         ),
     },
     "sdk_hooks.agent_task_blocked": {
@@ -115,7 +127,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "BLOCKED: Agent/Taskツールは無効です（サブエージェント起動は禁止）。"
             "以下の方法で作業してください:\n"
             "• **直接実行**: Read, Bash, Grep, Edit 等のツールで自分で作業する（推奨）\n"
-            "• **バックグラウンド実行**: `submit_tasks` で自分のTaskExecutorにタスク投入する（自分が実行する）\n"
+            '• **重い処理**: `animaworks-tool machine run "指示" -d ワークスペースパス` で外部エージェントに委託する\n'
             "• **部下に委譲**: `delegate_task` で部下にタスクを委任する（部下が実行する）\n"
             "Agent/Taskの代わりに上記を使ってください。"
         ),
@@ -123,7 +135,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "BLOCKED: Agent/Task tools are disabled (sub-agent spawning is not allowed). "
             "Use one of these methods instead:\n"
             "• **Direct execution**: Use Read, Bash, Grep, Edit, etc. to do the work yourself (recommended)\n"
-            "• **Background execution**: Use `submit_tasks` to queue tasks in your TaskExecutor (you execute them)\n"
+            '• **Heavy work**: Use `animaworks-tool machine run "instruction" -d workspace_path` for an external agent\n'
             "• **Delegation**: Use `delegate_task` to delegate to a subordinate (they execute it)\n"
             "Use these instead of Agent/Task."
         ),

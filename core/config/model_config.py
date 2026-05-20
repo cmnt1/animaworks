@@ -57,6 +57,9 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
 
     cred_name = resolved.credential
     api_key_env = _credential_api_key_env(cred_name)
+    cred_type = getattr(credential, "type", None)
+    if not isinstance(cred_type, str):
+        cred_type = None
     mode = resolve_execution_mode(
         config,
         resolved.model,
@@ -69,10 +72,11 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         background_credential=resolved.background_credential,
         max_tokens=resolved.max_tokens,
         max_turns=resolved.max_turns,
+        credential=cred_name,
+        credential_type=cred_type or credential.type or "api_key",
         api_key=credential.api_key or None,
         api_key_env=api_key_env,
         api_base_url=credential.base_url,
-        credential_type=credential.type or "api_key",
         context_threshold=resolved.context_threshold,
         max_chains=resolved.max_chains,
         conversation_history_threshold=resolved.conversation_history_threshold,

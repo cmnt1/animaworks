@@ -15,6 +15,7 @@ import pytest
 from cli.commands.index_cmd import (
     _index_shared_collections,
     _is_anima_enabled,
+    index_command,
     setup_index_command,
 )
 
@@ -124,6 +125,29 @@ class TestIndexSharedCollections:
             data = json.loads(meta_path.read_text(encoding="utf-8"))
             assert "shared_common_knowledge_hash" in data
 
+    def test_skips_repair_locked_anima(
+        self, anima_dirs: list[Path], base_dir: Path,
+    ) -> None:
+        """Shared indexing must not write into an anima under RAG repair."""
+        with (
+            patch("core.memory.rag.repair.is_repair_locked", side_effect=lambda name: name == "alice"),
+            patch("core.memory.rag.singleton.get_vector_store") as mock_get_vs,
+            patch(_PATCH_INDEXER) as MockIdx,
+        ):
+            mock_indexer = MagicMock()
+            mock_indexer.index_directory.return_value = 3
+            MockIdx.return_value = mock_indexer
+
+            total = _index_shared_collections(
+                anima_dirs,
+                base_dir,
+                full=False,
+                dry_run=False,
+            )
+
+        assert total == 3
+        mock_get_vs.assert_called_once_with("bob")
+
     def test_skips_when_no_shared_dirs(self, tmp_path: Path) -> None:
         """Returns 0 when common_knowledge/ and common_skills/ don't exist."""
         base = tmp_path / "empty"
@@ -175,3 +199,26 @@ class TestIndexSharedCollections:
                 anima_dirs, base_dir, full=True, dry_run=False,
             )
             assert total == 2 * len(anima_dirs)
+
+
+def test_index_command_skips_repair_locked_anima(tmp_path: Path) -> None:
+    """CLI indexing must not open a local vector store while repair lock is held."""
+    animas_dir = tmp_path / "animas"
+    anima_dir = animas_dir / "alice"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "knowledge" / "note.md").write_text("# Note", encoding="utf-8")
+
+    args = argparse.Namespace(anima="alice", full=False, shared=False, dry_run=False)
+
+    with (
+        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
+        patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
+        patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
+        patch("core.memory.rag.repair.is_repair_locked", return_value=True),
+        patch("core.memory.rag.singleton.get_vector_store") as mock_get_vs,
+        patch("core.memory.rag.MemoryIndexer") as mock_indexer,
+    ):
+        index_command(args)
+
+    mock_get_vs.assert_not_called()
+    mock_indexer.assert_not_called()

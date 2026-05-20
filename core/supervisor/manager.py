@@ -29,6 +29,7 @@ from core.exceptions import (  # noqa: F401
     ProcessError,
 )
 from core.supervisor._mgr_health import HealthMixin
+from core.supervisor._mgr_rag_repair import RAGRepairMixin
 from core.supervisor._mgr_reconcile import ReconcileMixin
 from core.supervisor._mgr_scheduler import SchedulerMixin
 from core.supervisor.ipc import IPCResponse
@@ -72,7 +73,7 @@ class ReconciliationConfig:
 # ── Process Supervisor ─────────────────────────────────────────────
 
 
-class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
+class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMixin):
     """
     Supervisor for managing Anima child processes.
 
@@ -120,6 +121,7 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
         self._failed_log_times: dict[str, float] = {}
         self._bootstrapping: set[str] = set()
         self._consolidating: set[str] = set()  # animas currently running daily/weekly consolidation
+        self._rag_repairs_in_progress: set[str] = set()
         self._recently_stopped: dict[str, float] = {}  # anima_name → monotonic timestamp
         self._start_failed_times: dict[str, float] = {}
         self._start_fail_counts: dict[str, int] = {}
@@ -348,7 +350,18 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
                         {},
                         timeout=10.0,
                     )
-                    if status.get("needs_bootstrap"):
+                    needs_background = status.get("needs_background_bootstrap")
+                    if needs_background is None:
+                        needs_background = bool(status.get("needs_bootstrap"))
+                    bootstrap_state = status.get("bootstrap_state") or {}
+                    if (
+                        not needs_background
+                        and bootstrap_state.get("state") == "running"
+                        and bootstrap_state.get("mode") == "character_sheet"
+                        and status.get("status") != "bootstrapping"
+                    ):
+                        needs_background = True
+                    if needs_background:
                         logger.info(
                             "Bootstrap needed for %s, launching background task",
                             anima_name,
@@ -383,6 +396,16 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
             failed_file = bootstrap_file.with_suffix(".md.failed")
             if bootstrap_file.exists():
                 bootstrap_file.rename(failed_file)
+                try:
+                    from core.bootstrap_state import mark_bootstrap_failed
+
+                    mark_bootstrap_failed(
+                        self.animas_dir / anima_name,
+                        "max_retries_exceeded",
+                        reason="max_retries_exceeded",
+                    )
+                except Exception:
+                    logger.debug("Failed to mark bootstrap max retries for %s", anima_name, exc_info=True)
                 logger.error(
                     "Bootstrap retry limit reached for %s (%d/%d). "
                     "Renamed bootstrap.md -> bootstrap.md.failed. "
@@ -441,6 +464,15 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
                     anima_name,
                     response.error.get("message", "Unknown error"),
                 )
+                try:
+                    from core.bootstrap_state import mark_bootstrap_failed
+
+                    mark_bootstrap_failed(
+                        self.animas_dir / anima_name,
+                        response.error.get("message", "Unknown error"),
+                    )
+                except Exception:
+                    logger.debug("Failed to mark bootstrap failure for %s", anima_name, exc_info=True)
                 await self._broadcast_event(
                     "anima.bootstrap",
                     {"name": anima_name, "status": "failed"},
@@ -448,6 +480,59 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
                 return
 
             result = response.result or {}
+            bootstrap_status: dict[str, Any] = {}
+            try:
+                from core.bootstrap_state import finalize_bootstrap_run, get_bootstrap_status
+
+                bootstrap_status = get_bootstrap_status(self.animas_dir / anima_name)
+                if bootstrap_status.get("validation_errors") == ["bootstrap_file_left_after_definition"]:
+                    bootstrap_status = finalize_bootstrap_run(self.animas_dir / anima_name)
+            except Exception:
+                logger.debug("Failed to read bootstrap status for %s", anima_name, exc_info=True)
+
+            if bootstrap_status and bootstrap_status.get("needs_repair"):
+                logger.error(
+                    "Bootstrap finished for %s but needs repair: %s",
+                    anima_name,
+                    bootstrap_status.get("validation_errors", []),
+                )
+                await self._broadcast_event(
+                    "anima.bootstrap",
+                    {
+                        "name": anima_name,
+                        "status": "needs_repair",
+                        "bootstrap_state": bootstrap_status,
+                    },
+                )
+                return
+
+            result_status = str(result.get("status") or result.get("action") or "")
+            if (
+                bootstrap_status
+                and bootstrap_status.get("state") != "completed"
+                and result_status
+                not in {
+                    "completed",
+                    "complete",
+                    "success",
+                }
+            ):
+                logger.error(
+                    "Bootstrap did not complete for %s: result=%s state=%s",
+                    anima_name,
+                    result_status,
+                    bootstrap_status.get("state"),
+                )
+                await self._broadcast_event(
+                    "anima.bootstrap",
+                    {
+                        "name": anima_name,
+                        "status": "failed",
+                        "bootstrap_state": bootstrap_status,
+                    },
+                )
+                return
+
             logger.info(
                 "Bootstrap completed for %s (duration_ms=%s)",
                 anima_name,
@@ -455,18 +540,30 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
             )
             await self._broadcast_event(
                 "anima.bootstrap",
-                {"name": anima_name, "status": "completed"},
+                {"name": anima_name, "status": "completed", "bootstrap_state": bootstrap_status},
             )
             success = True
 
         except TimeoutError:
             logger.error("Bootstrap timed out for %s (600s)", anima_name)
+            try:
+                from core.bootstrap_state import mark_bootstrap_failed
+
+                mark_bootstrap_failed(self.animas_dir / anima_name, "timeout")
+            except Exception:
+                logger.debug("Failed to mark bootstrap timeout for %s", anima_name, exc_info=True)
             await self._broadcast_event(
                 "anima.bootstrap",
                 {"name": anima_name, "status": "failed"},
             )
         except Exception:
             logger.exception("Bootstrap error for %s", anima_name)
+            try:
+                from core.bootstrap_state import mark_bootstrap_failed
+
+                mark_bootstrap_failed(self.animas_dir / anima_name, "supervisor_exception")
+            except Exception:
+                logger.debug("Failed to mark bootstrap exception for %s", anima_name, exc_info=True)
             await self._broadcast_event(
                 "anima.bootstrap",
                 {"name": anima_name, "status": "failed"},
@@ -747,9 +844,33 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
         """Get status of a Anima process."""
         handle = self.processes.get(anima_name)
         if not handle:
-            return {"status": "not_found"}
+            status = {"status": "not_found"}
+            try:
+                from core.bootstrap_state import get_bootstrap_status
+
+                bootstrap_status = get_bootstrap_status(self.animas_dir / anima_name)
+                status.update(
+                    {
+                        "bootstrap_state": bootstrap_status,
+                        "needs_bootstrap": bootstrap_status.get("needs_bootstrap", False),
+                        "needs_user_input": bootstrap_status.get("needs_user_input", False),
+                        "needs_repair": bootstrap_status.get("needs_repair", False),
+                        "needs_background_bootstrap": bootstrap_status.get("needs_background_bootstrap", False),
+                    }
+                )
+            except Exception:
+                logger.debug("Failed to read bootstrap status for %s", anima_name, exc_info=True)
+            return status
 
         uptime = (now_local() - ensure_aware(handle.stats.started_at)).total_seconds()
+
+        bootstrap_status: dict[str, Any] = {}
+        try:
+            from core.bootstrap_state import get_bootstrap_status
+
+            bootstrap_status = get_bootstrap_status(self.animas_dir / anima_name)
+        except Exception:
+            logger.debug("Failed to read bootstrap status for %s", anima_name, exc_info=True)
 
         return {
             "status": "bootstrapping" if self.is_bootstrapping(anima_name) else handle.state.value,
@@ -759,6 +880,11 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
             "missed_pings": handle.stats.missed_pings,
             "last_busy_since": (handle.stats.last_busy_since.isoformat() if handle.stats.last_busy_since else None),
             "bootstrapping": self.is_bootstrapping(anima_name),
+            "bootstrap_state": bootstrap_status,
+            "needs_bootstrap": bootstrap_status.get("needs_bootstrap", False),
+            "needs_user_input": bootstrap_status.get("needs_user_input", False),
+            "needs_repair": bootstrap_status.get("needs_repair", False),
+            "needs_background_bootstrap": bootstrap_status.get("needs_background_bootstrap", False),
             "last_ping_at": (handle.stats.last_ping_at.isoformat() if handle.stats.last_ping_at else None),
         }
 

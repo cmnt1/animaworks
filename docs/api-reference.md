@@ -2,7 +2,7 @@
 
 **[日本語版](api-reference.ja.md)**
 
-> Last updated: 2026-03-06
+> Last updated: 2026-05-17
 > Base URL: `http://localhost:18500`
 > See also: [spec.md](spec.md), [cli-reference.md](cli-reference.md)
 
@@ -358,6 +358,65 @@ Get the currently active stream state.
 ### GET `/api/animas/{name}/stream/{response_id}/progress`
 
 Get progress for a specific stream.
+
+---
+
+### GET `/api/animas/{name}/skills`
+
+List visible skills for an Anima and mark which ones are active for a chat thread.
+
+| Query Parameter | Type | Default | Description |
+|----------------|------|---------|-------------|
+| `thread_id` | string | "default" | Chat thread ID |
+
+**Response:**
+
+```json
+{
+  "anima": "alice",
+  "thread_id": "default",
+  "skills": [
+    {
+      "name": "gmail-tool",
+      "path": "common_skills/gmail-tool/SKILL.md",
+      "description": "Gmail workflow",
+      "is_common": true,
+      "is_procedure": false,
+      "trust_level": "trusted",
+      "security_verdict": "safe",
+      "active": true
+    }
+  ]
+}
+```
+
+---
+
+### GET `/api/animas/{name}/skills/active`
+
+Get active skills for a chat thread.
+
+| Query Parameter | Type | Default | Description |
+|----------------|------|---------|-------------|
+| `thread_id` | string | "default" | Chat thread ID |
+
+---
+
+### PUT `/api/animas/{name}/skills/active`
+
+Replace active skills for a chat thread. Pass `refs: []` to clear active skills.
+
+**Request:**
+
+```json
+{
+  "thread_id": "default",
+  "refs": ["gmail-tool"],
+  "confirm_risk": false
+}
+```
+
+**Response:** includes `accepted`, `rejections`, and `warnings`.
 
 ---
 

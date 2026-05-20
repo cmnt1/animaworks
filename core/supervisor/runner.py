@@ -203,11 +203,17 @@ class AnimaRunner:
                 shutdown_event=self.shutdown_event,
             )
             self.anima._pending_executor = self._pending_executor
-            self.anima.agent._tool_handler.set_pending_executor_wake(
-                self._pending_executor.wake,
-            )
+            if hasattr(self.anima, "_set_pending_executor_wake"):
+                self.anima._set_pending_executor_wake(self._pending_executor.wake)
+            else:
+                self.anima.agent._tool_handler.set_pending_executor_wake(
+                    self._pending_executor.wake,
+                )
             # Wire active parallel tasks getter for Priming channel E
-            self.anima.agent._active_parallel_tasks_getter = lambda: self.anima._active_parallel_tasks
+            if hasattr(self.anima, "_set_active_parallel_tasks_getter"):
+                self.anima._set_active_parallel_tasks_getter(lambda: self.anima._active_parallel_tasks)
+            else:
+                self.anima.agent._active_parallel_tasks_getter = lambda: self.anima._active_parallel_tasks
             self._streaming_handler = StreamingIPCHandler(
                 anima=self.anima,
                 anima_name=self.anima_name,
@@ -755,11 +761,16 @@ class AnimaRunner:
 
         task_name = params.get("task_name")
         task_description = params.get("task_description", "")
+        task_skills = params.get("skills")
 
         if not task_name:
             raise ValueError("task_name is required")
 
-        await self.anima.run_cron_task(task_name, str(task_description))
+        await self.anima.run_cron_task(
+            task_name,
+            str(task_description),
+            skills=task_skills if isinstance(task_skills, list) else None,
+        )
 
         return {"status": "completed"}
 
@@ -788,10 +799,15 @@ class AnimaRunner:
             raise AnimaNotRunningError("Anima not initialized")
 
         scheduler = self._scheduler_mgr.scheduler if self._scheduler_mgr else None
+        bootstrap_status = self.anima.bootstrap_state
         return {
             "status": self.anima.primary_status,
             "active_label": self.anima.primary_task or None,
             "needs_bootstrap": self.anima.needs_bootstrap,
+            "bootstrap_state": bootstrap_status,
+            "needs_user_input": bootstrap_status.get("needs_user_input", False),
+            "needs_repair": bootstrap_status.get("needs_repair", False),
+            "needs_background_bootstrap": bootstrap_status.get("needs_background_bootstrap", False),
             "scheduler_running": scheduler.running if scheduler else False,
             "scheduler_jobs": len(scheduler.get_jobs()) if scheduler else 0,
         }

@@ -7,6 +7,7 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 import asyncio
+import inspect
 import logging
 import re
 import time
@@ -47,6 +48,17 @@ _NOISY_PATHS = frozenset(
         "/ws",
     }
 )
+
+
+async def _call_optional_async(obj: object | None, method_name: str) -> None:
+    if obj is None:
+        return
+    method = getattr(obj, method_name, None)
+    if not callable(method):
+        return
+    result = method()
+    if inspect.isawaitable(result):
+        await result
 
 
 class RequestLoggingMiddleware:
@@ -529,6 +541,9 @@ async def lifespan(app: FastAPI):
         msg_log_scheduler.start()
         app.state.msg_log_scheduler = msg_log_scheduler
 
+        vector_worker = getattr(app.state, "vector_worker", None)
+        await _call_optional_async(vector_worker, "start")
+
         # ── URLs for child processes (NOT set in server's own os.environ) ─
         # ProcessSupervisor passes these to child processes via subprocess.Popen(env=).
         # Child processes use HTTP for embed/vector instead of loading ChromaDB locally.
@@ -587,6 +602,8 @@ async def lifespan(app: FastAPI):
         if governor:
             await governor.stop()
         await app.state.supervisor.shutdown_all()
+        vector_worker = getattr(app.state, "vector_worker", None)
+        await _call_optional_async(vector_worker, "stop")
         if hasattr(app.state, "msg_log_scheduler"):
             app.state.msg_log_scheduler.shutdown(wait=False)
     logger.info("Server stopped")
@@ -617,6 +634,10 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
 
     log_dir = get_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    from core.memory.rag.vector_worker_client import VectorWorkerManager
+
+    vector_worker = VectorWorkerManager.from_config(config, log_dir=log_dir)
 
     from core.supervisor.manager import HealthConfig
 
@@ -664,6 +685,7 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
     app.state.animas_dir = animas_dir
     app.state.shared_dir = shared_dir
     app.state.setup_complete = config.setup_complete
+    app.state.vector_worker = vector_worker
 
     # Meeting room manager
     from server.room_manager import RoomManager
@@ -709,12 +731,19 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
         setup_complete = request.app.state.setup_complete
 
         if not setup_complete:
-            # During setup: only /api/setup/* and setup static files are accessible
-            if path.startswith("/api/setup") or path.startswith("/setup"):
+            # During setup: only setup API and the static assets needed by
+            # the setup wizard are accessible.  The setup HTML imports shared
+            # modules through the versioned static route.
+            if (
+                path.startswith("/api/setup")
+                or path.startswith("/setup")
+                or path.startswith("/_v/")
+                or path.startswith("/shared/")
+            ):
                 response = await call_next(request)
                 # Prevent browser caching of setup static files so code
                 # updates are picked up immediately without a hard refresh.
-                if path.startswith("/setup") and not path.startswith("/api/setup"):
+                if not path.startswith("/api/setup"):
                     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
                 return response
             # Root redirects to setup wizard

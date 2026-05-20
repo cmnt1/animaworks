@@ -15,7 +15,6 @@ import pytest
 from core.exceptions import AnimaNotRunningError
 from core.schemas import ModelConfig
 
-
 # ── DigitalAnima.reload_config ──────────────────────────────
 
 
@@ -34,6 +33,7 @@ class TestAnimaReloadConfig:
             model=new_model, max_tokens=16384
         )
         anima.agent = MagicMock()
+        anima._iter_lane_agents.return_value = [anima.agent]
         anima.reload_config = DigitalAnima.reload_config.__get__(anima)
         return anima
 
@@ -132,7 +132,6 @@ class TestAgentUpdateModelConfig:
 
         memory = MagicMock(spec=MemoryManager)
         agent = AgentCore(anima_dir, memory, ModelConfig(model="claude-sonnet-4-6"))
-        old_cw = agent._tool_handler._context_window
 
         with patch("core.prompt.context.resolve_context_window", return_value=200_000):
             agent.update_model_config(ModelConfig(model="claude-opus-4-6"))
@@ -182,6 +181,7 @@ class TestCLIReloadCommand:
 
     def test_single_reload(self, tmp_path):
         import requests as _req_mod
+
         from cli.commands.anima_mgmt import cmd_anima_reload
 
         pid_file = tmp_path / "server.pid"
@@ -212,6 +212,7 @@ class TestCLIReloadCommand:
 
     def test_reload_all(self, tmp_path):
         import requests as _req_mod
+
         from cli.commands.anima_mgmt import cmd_anima_reload
 
         pid_file = tmp_path / "server.pid"

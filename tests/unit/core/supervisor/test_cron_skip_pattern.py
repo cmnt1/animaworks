@@ -13,7 +13,6 @@ import pytest
 from core.schemas import CronTask
 from core.supervisor.scheduler_manager import SchedulerManager
 
-
 # ── Helpers ──────────────────────────────────────────────────
 
 
@@ -54,6 +53,59 @@ def _make_command_task(
 
 class TestSkipPatternFiltering:
     """Tests for skip_pattern in _run_cron_task."""
+
+    @pytest.mark.asyncio
+    async def test_llm_task_passes_skills_to_cron_task(self):
+        """LLM cron tasks pass CronTask.skills through to DigitalAnima."""
+        mgr = _make_scheduler_mgr()
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {"summary": "done"}
+        mgr._anima.run_cron_task.return_value = mock_result
+
+        task = CronTask(
+            name="review",
+            schedule="0 9 * * *",
+            type="llm",
+            description="Review PRs",
+            skills=["github-pr-review"],
+        )
+
+        await mgr._run_cron_task(task)
+
+        mgr._anima.run_cron_task.assert_called_once_with(
+            "review",
+            "Review PRs",
+            skills=["github-pr-review"],
+        )
+
+    @pytest.mark.asyncio
+    async def test_command_followup_passes_skills_to_cron_task(self):
+        """Command cron follow-up LLM receives CronTask.skills."""
+        mgr = _make_scheduler_mgr()
+        mgr._anima.run_cron_command.return_value = {
+            "task": "review",
+            "exit_code": 0,
+            "stdout": "changed files",
+            "stderr": "",
+            "duration_ms": 100,
+        }
+        task = CronTask(
+            name="review",
+            schedule="0 9 * * *",
+            type="command",
+            description="Review command output",
+            tool="collect_changes",
+            skills=["github-pr-review"],
+        )
+
+        await mgr._run_cron_task(task)
+
+        mgr._anima.run_cron_task.assert_called_once_with(
+            "review",
+            "Review command output",
+            command_output="changed files",
+            skills=["github-pr-review"],
+        )
 
     @pytest.mark.asyncio
     async def test_empty_array_matches_skip_pattern(self):

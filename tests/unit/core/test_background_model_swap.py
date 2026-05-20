@@ -6,6 +6,7 @@ Covers:
 - Cron model swap and restore
 - Edge cases (same model, missing config)
 """
+
 from __future__ import annotations
 
 import json
@@ -15,7 +16,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.schemas import ModelConfig
-
 
 # ── _resolve_background_config ────────────────────────────────
 
@@ -107,6 +107,7 @@ class TestResolveBackgroundConfig:
         with patch(_PATCH_LOAD_CONFIG) as mock_config:
             mock_cfg = MagicMock()
             from core.config.models import CredentialConfig
+
             mock_cfg.credentials = {
                 "azure": CredentialConfig(
                     api_key="test-key",
@@ -121,8 +122,67 @@ class TestResolveBackgroundConfig:
         assert result is not None
         assert result.model == "openai/gpt-4.1-mini"
         assert result.api_key == "test-key"
+        assert result.api_key_env == "AZURE_API_KEY"
         assert result.api_base_url == "https://test.openai.azure.com"
         assert result.extra_keys == {"api_version": "2024-12-01"}
+
+    def test_infers_background_credential_from_model_family(self):
+        mc = ModelConfig(
+            model="codex/gpt-5.5",
+            api_key_env="OPENAI_API_KEY",
+            background_model="claude-sonnet-4-6",
+            mode_s_auth="api",
+        )
+        mixin = _make_heartbeat_mixin(mc)
+
+        with patch(_PATCH_LOAD_CONFIG) as mock_config:
+            from core.config.models import CredentialConfig
+
+            mock_cfg = MagicMock()
+            mock_cfg.credentials = {
+                "anthropic": CredentialConfig(
+                    api_key="anthropic-key",
+                    base_url="http://localhost:3456",
+                ),
+                "openai": CredentialConfig(type="codex_login"),
+            }
+            mock_config.return_value = mock_cfg
+
+            result = mixin._resolve_background_config()
+
+        assert result is not None
+        assert result.model == "claude-sonnet-4-6"
+        assert result.background_credential == "anthropic"
+        assert result.api_key == "anthropic-key"
+        assert result.api_key_env == "ANTHROPIC_API_KEY"
+        assert result.api_base_url == "http://localhost:3456"
+        assert result.mode_s_auth == "api"
+
+    def test_keeps_main_credential_within_same_model_family(self):
+        mc = ModelConfig(
+            model="claude-opus-4-6",
+            api_key="main-key",
+            api_key_env="CUSTOM_ANTHROPIC_API_KEY",
+            background_model="claude-sonnet-4-6",
+        )
+        mixin = _make_heartbeat_mixin(mc)
+
+        with patch(_PATCH_LOAD_CONFIG) as mock_config:
+            from core.config.models import CredentialConfig
+
+            mock_cfg = MagicMock()
+            mock_cfg.credentials = {
+                "anthropic": CredentialConfig(api_key="default-anthropic-key"),
+            }
+            mock_config.return_value = mock_cfg
+
+            result = mixin._resolve_background_config()
+
+        assert result is not None
+        assert result.model == "claude-sonnet-4-6"
+        assert result.background_credential is None
+        assert result.api_key == "main-key"
+        assert result.api_key_env == "CUSTOM_ANTHROPIC_API_KEY"
 
     def test_preserves_original_fields(self):
         mc = ModelConfig(
@@ -168,7 +228,6 @@ class TestHeartbeatModelSwap:
         bg_config = ModelConfig(model="claude-sonnet-4-6")
 
         with patch.object(type(mock_mixin), "_resolve_background_config", return_value=bg_config):
-            original = mock_mixin.agent.model_config
             mock_mixin.agent.update_model_config.assert_not_called()
 
     def test_resolve_returns_none_skips_swap(self, mock_mixin):
@@ -182,8 +241,8 @@ class TestHeartbeatModelSwap:
 
 def _make_inbox_mixin(model_config: ModelConfig) -> object:
     """Create a minimal InboxMixin-like object that also has _resolve_background_config."""
-    from core._anima_inbox import InboxMixin
     from core._anima_heartbeat import HeartbeatMixin
+    from core._anima_inbox import InboxMixin
 
     class FakeAnima(HeartbeatMixin, InboxMixin):
         pass
@@ -240,6 +299,7 @@ class TestInboxModelSwap:
 
         with patch(_PATCH_LOAD_CONFIG) as mock_config:
             from core.config.models import CredentialConfig
+
             mock_cfg = MagicMock()
             mock_cfg.credentials = {
                 "azure": CredentialConfig(
@@ -254,6 +314,7 @@ class TestInboxModelSwap:
         assert result is not None
         assert result.model == "azure/gpt-4.1-mini"
         assert result.api_key == "inbox-key"
+        assert result.api_key_env == "AZURE_API_KEY"
         assert result.api_base_url == "https://inbox.openai.azure.com"
 
 
@@ -270,12 +331,17 @@ class TestSetSubordinateBackgroundModel:
 
         target_dir = tmp_path / "animas" / "hinata"
         target_dir.mkdir(parents=True)
-        (target_dir / "status.json").write_text(json.dumps({
-            "enabled": True,
-            "supervisor": "sakura",
-            "model": "claude-opus-4-6",
-            "role": "engineer",
-        }), encoding="utf-8")
+        (target_dir / "status.json").write_text(
+            json.dumps(
+                {
+                    "enabled": True,
+                    "supervisor": "sakura",
+                    "model": "claude-opus-4-6",
+                    "role": "engineer",
+                }
+            ),
+            encoding="utf-8",
+        )
 
         memory = MagicMock()
         memory.read_permissions.return_value = ""
@@ -291,16 +357,22 @@ class TestSetSubordinateBackgroundModel:
     def test_set_background_model(self, tmp_path: Path):
         handler, target_dir = self._setup(tmp_path)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path), \
-             patch("core.config.models.load_config") as mock_cfg:
+        with (
+            patch("core.paths.get_data_dir", return_value=tmp_path),
+            patch("core.config.models.load_config") as mock_cfg,
+        ):
             from core.config.models import AnimaModelConfig
+
             mock_cfg.return_value = MagicMock(
                 animas={"hinata": AnimaModelConfig(supervisor="sakura")},
             )
-            result = handler.handle("set_subordinate_background_model", {
-                "name": "hinata",
-                "model": "claude-sonnet-4-6",
-            })
+            result = handler.handle(
+                "set_subordinate_background_model",
+                {
+                    "name": "hinata",
+                    "model": "claude-sonnet-4-6",
+                },
+            )
 
         assert "claude-sonnet-4-6" in result
         data = json.loads((target_dir / "status.json").read_text())
@@ -314,16 +386,22 @@ class TestSetSubordinateBackgroundModel:
         data["background_model"] = "claude-sonnet-4-6"
         (target_dir / "status.json").write_text(json.dumps(data), encoding="utf-8")
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path), \
-             patch("core.config.models.load_config") as mock_cfg:
+        with (
+            patch("core.paths.get_data_dir", return_value=tmp_path),
+            patch("core.config.models.load_config") as mock_cfg,
+        ):
             from core.config.models import AnimaModelConfig
+
             mock_cfg.return_value = MagicMock(
                 animas={"hinata": AnimaModelConfig(supervisor="sakura")},
             )
-            result = handler.handle("set_subordinate_background_model", {
-                "name": "hinata",
-                "model": "",
-            })
+            result = handler.handle(
+                "set_subordinate_background_model",
+                {
+                    "name": "hinata",
+                    "model": "",
+                },
+            )
 
         assert "クリア" in result
         data = json.loads((target_dir / "status.json").read_text())

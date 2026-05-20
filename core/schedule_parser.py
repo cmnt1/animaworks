@@ -133,6 +133,18 @@ def _strip_inline_comment(val: str) -> str:
     return re.sub(r"\s+#.*$", "", val)
 
 
+def _normalize_skill_refs(raw_skills: object) -> list[str]:
+    if isinstance(raw_skills, str):
+        values = raw_skills.split(",") if "," in raw_skills else [raw_skills]
+        return [item.strip() for item in values if item.strip()]
+    if isinstance(raw_skills, list):
+        result: list[str] = []
+        for item in raw_skills:
+            result.extend(_normalize_skill_refs(item))
+        return result
+    return []
+
+
 def _parse_section(name: str, lines: list[str]) -> CronTask:
     """Parse a single cron task section from its body lines.
 
@@ -148,6 +160,7 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
     command = None
     tool = None
     args = None
+    skills: list[str] = []
     skip_pattern = None
     trigger_heartbeat = True
     description_lines: list[str] = []
@@ -213,6 +226,23 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
                     args = parsed["args"]
             except yaml.YAMLError as e:
                 logger.warning("Failed to parse args YAML for task %s: %s", name, e)
+        elif stripped.startswith("skills:"):
+            yaml_lines = [line]
+            i += 1
+            while i < len(lines):
+                next_line = lines[i]
+                if next_line.startswith("  ") or not next_line.strip():
+                    yaml_lines.append(next_line)
+                    i += 1
+                else:
+                    break
+            i -= 1
+            try:
+                parsed = yaml.safe_load("\n".join(yaml_lines))
+                raw_skills = parsed.get("skills") if isinstance(parsed, dict) else None
+                skills = _normalize_skill_refs(raw_skills)
+            except yaml.YAMLError as e:
+                logger.warning("Failed to parse skills YAML for task %s: %s", name, e)
         else:
             # Regular description line
             description_lines.append(line)
@@ -237,6 +267,7 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
         command=command,
         tool=tool,
         args=args,
+        skills=skills,
         skip_pattern=skip_pattern,
         trigger_heartbeat=trigger_heartbeat,
     )

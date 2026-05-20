@@ -55,13 +55,13 @@ class TestExtractPlanSummary:
             "## Observe\nChecked board.\n\n"
             "## Plan\n"
             "1. delegate_task to natsume for PR #2185\n"
-            "2. submit_tasks for STALE follow-up\n"
+            "2. record STALE follow-up in state/current_state.md\n"
             "3. send_message to sakura (report)\n\n"
             "## Reflect\n[REFLECTION]\nGood progress.\n[/REFLECTION]"
         )
         result = _extract_plan_summary(text)
         assert "delegate_task" in result
-        assert "submit_tasks" in result
+        assert "state/current_state.md" in result
         assert "send_message" in result
 
     def test_plan_without_other_sections(self):

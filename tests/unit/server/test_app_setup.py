@@ -165,6 +165,35 @@ class TestSetupCacheControl:
             cc = resp.headers.get("cache-control", "")
             assert "no-cache" in cc
 
+    async def test_setup_versioned_shared_asset_accessible(self, tmp_path: Path):
+        """Setup wizard module imports must be accessible during setup mode."""
+        app = _make_app(False, tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            setup_resp = await client.get("/setup/")
+            assert setup_resp.status_code == 200
+            assert "/_v/" in setup_resp.text
+
+            version = setup_resp.text.split("/_v/", 1)[1].split("/", 1)[0]
+            resp = await client.get(f"/_v/{version}/shared/base-path.js")
+
+        assert resp.status_code == 200
+        assert "application/javascript" in resp.headers.get("content-type", "")
+        assert "export const basePath" in resp.text
+        cc = resp.headers.get("cache-control", "")
+        assert "no-cache" in cc
+        assert "no-store" in cc
+
+    async def test_setup_shared_favicon_accessible(self, tmp_path: Path):
+        """Non-versioned shared assets referenced by setup HTML should load."""
+        app = _make_app(False, tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/shared/favicon.svg")
+
+        assert resp.status_code == 200
+        assert "image/svg+xml" in resp.headers.get("content-type", "")
+
     async def test_setup_api_no_cache_control_header(self, tmp_path: Path):
         """Setup API responses (/api/setup/*) should NOT get cache-control headers."""
         app = _make_app(False, tmp_path)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -8,6 +9,13 @@ import pytest
 from core.paths import get_taskboard_db_path
 from core.taskboard.models import AttentionVisibility, BoardColumn
 from core.taskboard.store import TaskBoardStore
+
+
+def _open_fd_count() -> int:
+    fd_dir = Path("/proc/self/fd")
+    if not fd_dir.exists():
+        pytest.skip("/proc/self/fd is not available on this platform")
+    return len(os.listdir(fd_dir))
 
 
 def test_get_taskboard_db_path_uses_shared_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -48,6 +56,21 @@ def test_store_creates_wal_database_and_schema_is_idempotent(tmp_path: Path) -> 
     assert journal_mode == "wal"
     assert "taskboard_metadata" in tables
     assert "taskboard_events" in tables
+
+
+def test_store_operations_do_not_leak_sqlite_connections(tmp_path: Path) -> None:
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    store.upsert_metadata(anima_name="sakura", task_id="task-1", actor="test")
+
+    before = _open_fd_count()
+    for idx in range(50):
+        store.get_metadata("sakura", "task-1")
+        store.list_metadata(anima_name="sakura")
+        store.record_surface(anima_name="sakura", task_id=f"task-{idx}", actor="test")
+        store.list_events(anima_name="sakura")
+    after = _open_fd_count()
+
+    assert after <= before + 2
 
 
 def test_store_migrates_event_type_constraint_for_stale_processing_event(tmp_path: Path) -> None:

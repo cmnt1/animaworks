@@ -187,8 +187,47 @@ def create_internal_router() -> APIRouter:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_native_executor, fn, *args)
 
+    def _vector_write_failed(operation: str, collection: str) -> JSONResponse:
+        logger.warning("Vector %s failed for collection '%s'", operation, collection)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": f"Vector {operation} failed",
+                "collection": collection,
+            },
+        )
+
+    def _body_payload(body: BaseModel) -> dict[str, Any]:
+        if hasattr(body, "model_dump"):
+            return body.model_dump()
+        return body.dict()
+
+    async def _try_vector_worker(request: Request, path: str, body: BaseModel) -> dict[str, Any] | JSONResponse | None:
+        manager = getattr(request.app.state, "vector_worker", None)
+        if manager is None or not getattr(manager, "enabled", False):
+            return None
+        try:
+            response = await manager.post(path, _body_payload(body))
+        except Exception as exc:
+            from core.memory.rag.vector_worker_client import VectorWorkerUnavailable
+
+            if not isinstance(exc, VectorWorkerUnavailable):
+                logger.exception("Vector worker request failed unexpectedly: %s", path)
+            else:
+                logger.warning("Vector worker unavailable for %s: %s", path, exc)
+            if getattr(manager, "fallback_direct", False) and not getattr(manager, "native_crash_detected", False):
+                return None
+            return JSONResponse(status_code=503, content={"detail": "Vector worker unavailable"})
+        if response.status_code >= 400:
+            return JSONResponse(status_code=response.status_code, content=response.data)
+        return response.data
+
     @router.post("/internal/vector/query")
-    async def vector_query(body: VectorQueryRequest):
+    async def vector_query(body: VectorQueryRequest, request: Request):
+        proxied = await _try_vector_worker(request, "/query", body)
+        if proxied is not None:
+            return proxied
+
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(body.anima_name)
@@ -214,7 +253,11 @@ def create_internal_router() -> APIRouter:
         }
 
     @router.post("/internal/vector/upsert")
-    async def vector_upsert(body: VectorUpsertRequest):
+    async def vector_upsert(body: VectorUpsertRequest, request: Request):
+        proxied = await _try_vector_worker(request, "/upsert", body)
+        if proxied is not None:
+            return proxied
+
         from core.memory.rag.singleton import get_vector_store
         from core.memory.rag.store import Document
 
@@ -230,36 +273,54 @@ def create_internal_router() -> APIRouter:
             )
             for d in body.documents
         ]
-        await _run_native(store.upsert, body.collection, docs)
+        ok = await _run_native(store.upsert, body.collection, docs)
+        if not ok:
+            return _vector_write_failed("upsert", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/update-metadata")
-    async def vector_update_metadata(body: VectorUpdateMetadataRequest):
+    async def vector_update_metadata(body: VectorUpdateMetadataRequest, request: Request):
+        proxied = await _try_vector_worker(request, "/update-metadata", body)
+        if proxied is not None:
+            return proxied
+
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await _run_native(
+        ok = await _run_native(
             store.update_metadata,
             body.collection,
             body.ids,
             body.metadatas,
         )
+        if not ok:
+            return _vector_write_failed("update-metadata", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/delete-documents")
-    async def vector_delete_documents(body: VectorDeleteDocumentsRequest):
+    async def vector_delete_documents(body: VectorDeleteDocumentsRequest, request: Request):
+        proxied = await _try_vector_worker(request, "/delete-documents", body)
+        if proxied is not None:
+            return proxied
+
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await _run_native(store.delete_documents, body.collection, body.ids)
+        ok = await _run_native(store.delete_documents, body.collection, body.ids)
+        if not ok:
+            return _vector_write_failed("delete-documents", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/get-by-metadata")
-    async def vector_get_by_metadata(body: VectorGetByMetadataRequest):
+    async def vector_get_by_metadata(body: VectorGetByMetadataRequest, request: Request):
+        proxied = await _try_vector_worker(request, "/get-by-metadata", body)
+        if proxied is not None:
+            return proxied
+
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(body.anima_name)
@@ -284,7 +345,11 @@ def create_internal_router() -> APIRouter:
         }
 
     @router.post("/internal/vector/get-by-ids")
-    async def vector_get_by_ids(body: VectorGetByIdsRequest):
+    async def vector_get_by_ids(body: VectorGetByIdsRequest, request: Request):
+        proxied = await _try_vector_worker(request, "/get-by-ids", body)
+        if proxied is not None:
+            return proxied
+
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(body.anima_name)
@@ -294,27 +359,43 @@ def create_internal_router() -> APIRouter:
         return {"documents": [{"id": d.id, "content": d.content, "metadata": d.metadata} for d in docs]}
 
     @router.post("/internal/vector/create-collection")
-    async def vector_create_collection(body: VectorCollectionRequest):
+    async def vector_create_collection(body: VectorCollectionRequest, request: Request):
+        proxied = await _try_vector_worker(request, "/create-collection", body)
+        if proxied is not None:
+            return proxied
+
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await _run_native(store.create_collection, body.collection)
+        ok = await _run_native(store.create_collection, body.collection)
+        if not ok:
+            return _vector_write_failed("create-collection", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/delete-collection")
-    async def vector_delete_collection(body: VectorCollectionRequest):
+    async def vector_delete_collection(body: VectorCollectionRequest, request: Request):
+        proxied = await _try_vector_worker(request, "/delete-collection", body)
+        if proxied is not None:
+            return proxied
+
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        await _run_native(store.delete_collection, body.collection)
+        ok = await _run_native(store.delete_collection, body.collection)
+        if not ok:
+            return _vector_write_failed("delete-collection", body.collection)
         return {"status": "ok"}
 
     @router.post("/internal/vector/list-collections")
-    async def vector_list_collections(body: VectorListCollectionsRequest):
+    async def vector_list_collections(body: VectorListCollectionsRequest, request: Request):
+        proxied = await _try_vector_worker(request, "/list-collections", body)
+        if proxied is not None:
+            return proxied
+
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(body.anima_name)

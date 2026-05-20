@@ -12,17 +12,45 @@ Re-exports for convenience::
     from core.skills import load_skill_metadata, load_skill_document
 """
 
+from core.skills.activation import (
+    ActiveSkillAttachment,
+    ActiveSkillContextResult,
+    ActiveSkillItem,
+    ActiveSkillRejection,
+    ActiveSkillResolution,
+    ActiveSkillWarning,
+    build_active_skill_context,
+    get_active_skill_refs,
+    get_active_skill_state,
+    list_skill_catalog,
+    set_active_skill_refs,
+    validate_thread_id,
+)
+from core.skills.curator import (
+    CuratorReplay,
+    DuplicateCandidate,
+    LifecycleSuggestion,
+    SkillCurator,
+)
 from core.skills.guard import SkillScanner
+from core.skills.hub import SkillHub, SkillHubResult
 from core.skills.index import SkillIndex
 from core.skills.loader import (
     is_skill_blocked,
+    is_skill_loadable,
     load_skill_body,
     load_skill_document,
     load_skill_metadata,
+    skill_access_decision,
 )
 from core.skills.models import (
     ScanFinding,
     ScanResult,
+    SkillBundle,
+    SkillCuratorEvent,
+    SkillCuratorEventType,
+    SkillHubLockEntry,
+    SkillLifecycleState,
     SkillMetadata,
     SkillRiskMetadata,
     SkillRoutingMetadata,
@@ -35,20 +63,38 @@ from core.skills.models import (
     SkillUsageStats,
     ThreatPattern,
 )
+from core.skills.promotion import (
+    ProcedurePromotionCandidate,
+    ProcedureToSkillConverter,
+    PromotionPolicy,
+    SkillPromotionResult,
+)
 from core.skills.router import SkillRouteCandidate, SkillRouter
 from core.skills.usage import SkillUsageTracker
 
 __all__ = [
     "ScanFinding",
     "ScanResult",
+    "SkillBundle",
+    "CuratorReplay",
+    "DuplicateCandidate",
+    "LifecycleSuggestion",
+    "SkillCurator",
     "SkillIndex",
+    "SkillCuratorEvent",
+    "SkillCuratorEventType",
+    "SkillHubLockEntry",
+    "SkillLifecycleState",
     "SkillMetadata",
+    "SkillPromotionResult",
     "SkillRouteCandidate",
     "SkillRouter",
     "SkillRiskMetadata",
     "SkillRoutingMetadata",
     "SkillScanVerdict",
     "SkillScanner",
+    "SkillHub",
+    "SkillHubResult",
     "SkillSecurityScan",
     "SkillSource",
     "SkillTrustLevel",
@@ -56,9 +102,26 @@ __all__ = [
     "SkillUsageEventType",
     "SkillUsageStats",
     "SkillUsageTracker",
+    "ActiveSkillAttachment",
+    "ActiveSkillContextResult",
+    "ActiveSkillItem",
+    "ActiveSkillRejection",
+    "ActiveSkillResolution",
+    "ActiveSkillWarning",
     "ThreatPattern",
+    "ProcedurePromotionCandidate",
+    "ProcedureToSkillConverter",
+    "PromotionPolicy",
+    "build_active_skill_context",
+    "get_active_skill_refs",
+    "get_active_skill_state",
     "is_skill_blocked",
+    "is_skill_loadable",
+    "list_skill_catalog",
     "load_skill_body",
     "load_skill_document",
     "load_skill_metadata",
+    "set_active_skill_refs",
+    "skill_access_decision",
+    "validate_thread_id",
 ]

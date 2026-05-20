@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Unit tests for core.tooling.prompt_db — ToolPromptStore and defaults."""
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -19,6 +21,13 @@ from core.tooling.prompt_db import (
 )
 
 
+def _open_fd_count() -> int:
+    fd_dir = Path("/proc/self/fd")
+    if not fd_dir.exists():
+        pytest.skip("/proc/self/fd is not available on this platform")
+    return len(os.listdir(fd_dir))
+
+
 # ── Schema / Init ────────────────────────────────────────────
 
 
@@ -28,19 +37,14 @@ class TestToolPromptStoreInit:
         ToolPromptStore(db_path)
 
         conn = sqlite3.connect(str(db_path))
-        tables = {
-            row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         conn.close()
         assert "tool_descriptions" in tables
         assert "tool_guides" in tables
 
     def test_wal_mode_enabled(self, tmp_path: Path) -> None:
         db_path = tmp_path / "prompts.sqlite3"
-        store = ToolPromptStore(db_path)
+        ToolPromptStore(db_path)
 
         conn = sqlite3.connect(str(db_path))
         mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
@@ -51,6 +55,26 @@ class TestToolPromptStoreInit:
         db_path = tmp_path / "nested" / "dir" / "prompts.sqlite3"
         ToolPromptStore(db_path)
         assert db_path.exists()
+
+    def test_crud_operations_do_not_leak_sqlite_connections(self, tmp_path: Path) -> None:
+        store = ToolPromptStore(tmp_path / "prompts.sqlite3")
+        store.set_description("tool_a", "A tool")
+        store.set_guide("guide_a", "A guide")
+        store.set_section("section_a", "A section", None)
+
+        before = _open_fd_count()
+        for idx in range(50):
+            store.set_description(f"tool_{idx}", "description")
+            store.get_description("tool_a")
+            store.list_descriptions()
+            store.get_guide("guide_a")
+            store.list_guides()
+            store.get_section("section_a")
+            store.get_section_with_condition("section_a")
+            store.list_sections()
+        after = _open_fd_count()
+
+        assert after <= before + 2
 
 
 # ── Descriptions CRUD ────────────────────────────────────────
@@ -67,27 +91,19 @@ class TestDescriptionsCRUD:
         assert result["description"] == "Search long-term memory"
         assert "updated_at" in result
 
-    def test_get_description_returns_correct_value(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_get_description_returns_correct_value(self, store: ToolPromptStore) -> None:
         store.set_description("read_file", "Read a file by path")
         assert store.get_description("read_file") == "Read a file by path"
 
-    def test_get_description_returns_none_for_missing_key(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_get_description_returns_none_for_missing_key(self, store: ToolPromptStore) -> None:
         assert store.get_description("nonexistent_tool") is None
 
-    def test_set_description_overwrites_existing(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_set_description_overwrites_existing(self, store: ToolPromptStore) -> None:
         store.set_description("tool_a", "Original description")
         store.set_description("tool_a", "Updated description")
         assert store.get_description("tool_a") == "Updated description"
 
-    def test_list_descriptions_returns_all_sorted_by_name(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_list_descriptions_returns_all_sorted_by_name(self, store: ToolPromptStore) -> None:
         store.set_description("zebra_tool", "Z tool")
         store.set_description("alpha_tool", "A tool")
         store.set_description("middle_tool", "M tool")
@@ -102,9 +118,7 @@ class TestDescriptionsCRUD:
             assert "description" in entry
             assert "updated_at" in entry
 
-    def test_empty_description_rejected_by_check_constraint(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_empty_description_rejected_by_check_constraint(self, store: ToolPromptStore) -> None:
         with pytest.raises(sqlite3.IntegrityError):
             store.set_description("bad_tool", "")
 
@@ -127,9 +141,7 @@ class TestGuidesCRUD:
         store.set_guide("non_a1", "## Non-A1 mode guide")
         assert store.get_guide("non_a1") == "## Non-A1 mode guide"
 
-    def test_get_guide_returns_none_for_missing_key(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_get_guide_returns_none_for_missing_key(self, store: ToolPromptStore) -> None:
         assert store.get_guide("nonexistent_guide") is None
 
     def test_set_guide_overwrites_existing(self, store: ToolPromptStore) -> None:
@@ -137,9 +149,7 @@ class TestGuidesCRUD:
         store.set_guide("a1_mcp", "Updated guide")
         assert store.get_guide("a1_mcp") == "Updated guide"
 
-    def test_list_guides_returns_all_sorted_by_key(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_list_guides_returns_all_sorted_by_key(self, store: ToolPromptStore) -> None:
         store.set_guide("z_guide", "Z content")
         store.set_guide("a_guide", "A content")
         store.set_guide("m_guide", "M content")
@@ -154,9 +164,7 @@ class TestGuidesCRUD:
             assert "content" in entry
             assert "updated_at" in entry
 
-    def test_empty_content_allowed_for_guides(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_empty_content_allowed_for_guides(self, store: ToolPromptStore) -> None:
         """tool_guides allows empty content (used to mark a guide as disabled)."""
         result = store.set_guide("disabled_guide", "")
         assert result["key"] == "disabled_guide"
@@ -171,18 +179,14 @@ class TestSeedDefaults:
     def store(self, tmp_path: Path) -> ToolPromptStore:
         return ToolPromptStore(tmp_path / "prompts.sqlite3")
 
-    def test_seed_defaults_populates_empty_db(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_seed_defaults_populates_empty_db(self, store: ToolPromptStore) -> None:
         descs = {"tool_x": "X desc", "tool_y": "Y desc"}
         store.seed_defaults(descriptions=descs)
 
         assert store.get_description("tool_x") == "X desc"
         assert store.get_description("tool_y") == "Y desc"
 
-    def test_seed_defaults_does_not_overwrite_existing(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_seed_defaults_does_not_overwrite_existing(self, store: ToolPromptStore) -> None:
         # Pre-populate with a custom value
         store.set_description("tool_x", "Custom description")
 
@@ -195,9 +199,7 @@ class TestSeedDefaults:
         # New key should be inserted
         assert store.get_description("tool_z") == "Z desc"
 
-    def test_seed_defaults_with_both_descriptions_and_guides(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_seed_defaults_with_both_descriptions_and_guides(self, store: ToolPromptStore) -> None:
         descs = {"tool_a": "A desc"}
         guides = {"guide_a": "A guide content"}
         store.seed_defaults(descriptions=descs, guides=guides)
@@ -205,18 +207,14 @@ class TestSeedDefaults:
         assert store.get_description("tool_a") == "A desc"
         assert store.get_guide("guide_a") == "A guide content"
 
-    def test_seed_defaults_with_none_arguments(
-        self, store: ToolPromptStore
-    ) -> None:
+    def test_seed_defaults_with_none_arguments(self, store: ToolPromptStore) -> None:
         # Should be a no-op, not raise
         store.seed_defaults(descriptions=None, guides=None)
 
         assert store.list_descriptions() == []
         assert store.list_guides() == []
 
-    def test_seed_defaults_with_locale_dicts(
-        self, store: ToolPromptStore, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_seed_defaults_with_locale_dicts(self, store: ToolPromptStore, monkeypatch: pytest.MonkeyPatch) -> None:
         """Locale dicts are flattened using current locale."""
         import core.tooling.prompt_db as prompt_db_mod
 
@@ -254,9 +252,7 @@ class TestSingleton:
         result = get_prompt_store()
         assert result is None
 
-    def test_reset_prompt_store_clears_singleton(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_reset_prompt_store_clears_singleton(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         import core.paths
 
         monkeypatch.setattr(core.paths, "get_data_dir", lambda: tmp_path)
@@ -298,9 +294,7 @@ class TestDefaultData:
             "Bash",
         ]
         for name in expected_names:
-            assert name in DEFAULT_DESCRIPTIONS, (
-                f"Expected '{name}' in DEFAULT_DESCRIPTIONS"
-            )
+            assert name in DEFAULT_DESCRIPTIONS, f"Expected '{name}' in DEFAULT_DESCRIPTIONS"
 
     def test_default_guides_has_exactly_three_keys(self) -> None:
         assert set(DEFAULT_GUIDES.keys()) == {"s_builtin", "s_mcp", "non_s"}
@@ -315,9 +309,7 @@ class TestDefaultData:
             for loc in ("ja", "en"):
                 content = entry.get(loc, "")
                 assert len(content) > 0, f"Guide '{key}' [{loc}] has empty content"
-                assert "#" in content, (
-                    f"Guide '{key}' [{loc}] should contain markdown headings"
-                )
+                assert "#" in content, f"Guide '{key}' [{loc}] should contain markdown headings"
 
     def test_guide_content_has_no_unresolved_template_variables(self) -> None:
         """Ensure no {data_dir} or {name} template variables remain in guides."""
@@ -325,12 +317,10 @@ class TestDefaultData:
             if isinstance(entry, dict):
                 for loc, content in entry.items():
                     assert "{data_dir}" not in content, (
-                        f"Guide '{key}' [{loc}] contains unresolved "
-                        "{{data_dir}} template variable"
+                        f"Guide '{key}' [{loc}] contains unresolved {{{{data_dir}}}} template variable"
                     )
                     assert "{name}" not in content, (
-                        f"Guide '{key}' [{loc}] contains unresolved "
-                        "{{name}} template variable"
+                        f"Guide '{key}' [{loc}] contains unresolved {{{{name}}}} template variable"
                     )
             else:
                 assert "{data_dir}" not in entry
@@ -344,8 +334,8 @@ class TestDefaultData:
         assert "**Bash**" in ja
         assert "**Read**" in ja
         assert "animaworks-tool <tool> <subcommand> [args]" in ja
-        assert "18ツール" in ja
-        assert "18 tools" in en
+        assert "統一されたツールセット" in ja
+        assert "unified tool set" in en
         assert "**Bash**" in en
         assert "**Read**" in en
 

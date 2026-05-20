@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from core.memory.rag.vector_worker_client import VectorWorkerResponse, VectorWorkerUnavailable
 from server.routes.internal import create_internal_router
 
 
@@ -18,6 +19,23 @@ def _make_test_app() -> FastAPI:
     app = FastAPI()
     app.include_router(create_internal_router(), prefix="/api")
     return app
+
+
+class _FakeVectorWorker:
+    enabled = True
+    fallback_direct = True
+    native_crash_detected = False
+
+    def __init__(self, response: VectorWorkerResponse | None = None, exc: Exception | None = None) -> None:
+        self.response = response or VectorWorkerResponse(status_code=200, data={"results": []})
+        self.exc = exc
+        self.calls: list[tuple[str, dict]] = []
+
+    async def post(self, path: str, payload: dict):
+        self.calls.append((path, payload))
+        if self.exc:
+            raise self.exc
+        return self.response
 
 
 # ── test_vector_query ─────────────────────────────────────────────
@@ -54,6 +72,105 @@ async def test_vector_query():
     assert data["results"][0]["content"] == "hello"
     assert data["results"][0]["score"] == 0.9
     mock_store.query.assert_called_once_with("rin_knowledge", [0.1, 0.2], 5, None)
+
+
+async def test_vector_query_uses_worker_when_available():
+    """Server proxies vector requests to the isolated worker before touching Chroma locally."""
+    worker = _FakeVectorWorker(
+        VectorWorkerResponse(
+            status_code=200,
+            data={"results": [{"id": "docw", "content": "worker", "score": 1.0, "metadata": {}}]},
+        )
+    )
+    app = _make_test_app()
+    app.state.vector_worker = worker
+    transport = ASGITransport(app=app)
+
+    with patch("core.memory.rag.singleton.get_vector_store") as get_store:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/query",
+                json={
+                    "anima_name": "rin",
+                    "collection": "rin_knowledge",
+                    "embedding": [0.1, 0.2],
+                    "top_k": 5,
+                },
+            )
+
+    assert resp.status_code == 200
+    assert resp.json()["results"][0]["id"] == "docw"
+    assert worker.calls == [
+        (
+            "/query",
+            {
+                "anima_name": "rin",
+                "collection": "rin_knowledge",
+                "embedding": [0.1, 0.2],
+                "top_k": 5,
+                "filter_metadata": None,
+            },
+        )
+    ]
+    get_store.assert_not_called()
+
+
+async def test_vector_query_falls_back_when_worker_unavailable():
+    worker = _FakeVectorWorker(exc=VectorWorkerUnavailable("down"))
+    mock_store = MagicMock()
+    mock_store.query.return_value = []
+
+    app = _make_test_app()
+    app.state.vector_worker = worker
+    transport = ASGITransport(app=app)
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/query",
+                json={"collection": "rin_knowledge", "embedding": [0.1]},
+            )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"results": []}
+    mock_store.query.assert_called_once()
+
+
+async def test_vector_query_no_fallback_returns_503_when_worker_unavailable():
+    worker = _FakeVectorWorker(exc=VectorWorkerUnavailable("down"))
+    worker.fallback_direct = False
+    app = _make_test_app()
+    app.state.vector_worker = worker
+    transport = ASGITransport(app=app)
+
+    with patch("core.memory.rag.singleton.get_vector_store") as get_store:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/query",
+                json={"collection": "rin_knowledge", "embedding": [0.1]},
+            )
+
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Vector worker unavailable"
+    get_store.assert_not_called()
+
+
+async def test_vector_query_does_not_fallback_after_native_worker_crash():
+    worker = _FakeVectorWorker(exc=VectorWorkerUnavailable("native crash"))
+    worker.fallback_direct = True
+    worker.native_crash_detected = True
+    app = _make_test_app()
+    app.state.vector_worker = worker
+    transport = ASGITransport(app=app)
+
+    with patch("core.memory.rag.singleton.get_vector_store") as get_store:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/query",
+                json={"collection": "rin_knowledge", "embedding": [0.1]},
+            )
+
+    assert resp.status_code == 503
+    get_store.assert_not_called()
 
 
 # ── test_vector_query_no_store ────────────────────────────────────
@@ -126,6 +243,32 @@ async def test_vector_upsert_no_store():
     assert resp.json()["detail"] == "Vector store unavailable"
 
 
+# ── test_vector_upsert_store_failure ──────────────────────────────
+
+
+async def test_vector_upsert_store_failure_returns_500():
+    """Store false return must not be hidden behind HTTP 200."""
+    mock_store = MagicMock()
+    mock_store.upsert.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/upsert",
+                json={
+                    "collection": "rin_knowledge",
+                    "documents": [
+                        {"id": "d1", "content": "c1", "embedding": [0.1, 0.2], "metadata": {"k": "v"}},
+                    ],
+                },
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector upsert failed"
+
+
 # ── test_vector_update_metadata ───────────────────────────────────
 
 
@@ -150,6 +293,27 @@ async def test_vector_update_metadata():
     mock_store.update_metadata.assert_called_once_with("col", ["id1", "id2"], [{"k1": "v1"}, {"k2": "v2"}])
 
 
+async def test_vector_update_metadata_store_failure_returns_500():
+    mock_store = MagicMock()
+    mock_store.update_metadata.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/update-metadata",
+                json={
+                    "collection": "col",
+                    "ids": ["id1"],
+                    "metadatas": [{"k1": "v1"}],
+                },
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector update-metadata failed"
+
+
 # ── test_vector_delete_documents ──────────────────────────────────
 
 
@@ -168,6 +332,23 @@ async def test_vector_delete_documents():
 
     assert resp.status_code == 200
     mock_store.delete_documents.assert_called_once_with("col", ["id1", "id2"])
+
+
+async def test_vector_delete_documents_store_failure_returns_500():
+    mock_store = MagicMock()
+    mock_store.delete_documents.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/delete-documents",
+                json={"collection": "col", "ids": ["id1"]},
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector delete-documents failed"
 
 
 # ── test_vector_get_by_metadata ───────────────────────────────────
@@ -244,6 +425,40 @@ async def test_vector_create_collection():
 
     assert resp.status_code == 200
     mock_store.create_collection.assert_called_once_with("new_col")
+
+
+async def test_vector_create_collection_store_failure_returns_500():
+    mock_store = MagicMock()
+    mock_store.create_collection.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/create-collection",
+                json={"collection": "new_col"},
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector create-collection failed"
+
+
+async def test_vector_delete_collection_store_failure_returns_500():
+    mock_store = MagicMock()
+    mock_store.delete_collection.return_value = False
+
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/vector/delete-collection",
+                json={"collection": "old_col"},
+            )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Vector delete-collection failed"
 
 
 # ── test_vector_list_collections ──────────────────────────────────

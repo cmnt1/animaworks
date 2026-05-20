@@ -229,9 +229,9 @@ class TestBaseToolCount:
     """Verify the base tool set matches the unified design spec."""
 
     def test_base_tool_count(self, executor):
-        """Base tools should be 18 (CC 8 + AW-essential 10, no notification/supervisor)."""
+        """Base tools include CC, AW essentials, skill authoring, and curator APIs."""
         tools = executor._build_base_tools()
-        assert len(tools) == 18
+        assert len(tools) == 25
         names = {t["function"]["name"] for t in tools}
         # CC built-in tools (8)
         assert "Read" in names
@@ -249,10 +249,19 @@ class TestBaseToolCount:
         assert "send_message" in names
         assert "post_channel" in names
         # AW-essential: task management
-        assert "submit_tasks" in names
+        assert "submit_tasks" not in names
         assert "update_task" in names
+        assert "goal" in names
         # AW-essential: create_skill
         assert "create_skill" in names
+        # AW-essential: skill lifecycle APIs
+        assert "curate_skills" in names
+        assert "archive_skill" in names
+        assert "restore_skill" in names
+        assert "block_skill" in names
+        assert "unblock_skill" in names
+        assert "delete_skill" in names
+        assert "set_skill_lifecycle" in names
         # AW-essential: planning
         assert "todo_write" in names
         # AW-essential: completion gate

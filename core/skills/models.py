@@ -79,6 +79,25 @@ class SkillScanVerdict(str, Enum):  # noqa: UP042
     dangerous = "dangerous"
 
 
+class SkillLifecycleState(str, Enum):  # noqa: UP042
+    """Curator-managed skill lifecycle state."""
+
+    active = "active"
+    review = "review"
+    stale = "stale"
+    archived = "archived"
+    blocked = "blocked"
+    deleted = "deleted"
+
+
+class SkillCuratorEventType(str, Enum):  # noqa: UP042
+    """Append-only event types emitted by SkillCurator."""
+
+    state_changed = "state_changed"
+    merge_proposed = "merge_proposed"
+    reference_rewrite_proposed = "reference_rewrite_proposed"
+
+
 # ── Constants ──────────────────────────────────────────────
 
 _SEVERITY_RANKS: dict[str, int] = {
@@ -146,6 +165,47 @@ class SkillSecurityScan(BaseModel):
     findings: list[dict] = Field(default_factory=list)
     scanned_at: datetime | None = None
     scanner_version: str | None = None
+
+
+class SkillCuratorEvent(BaseModel):
+    """Single append-only lifecycle event for skill curator state."""
+
+    ts: str
+    event_type: SkillCuratorEventType | str
+    skill_name: str
+    from_state: SkillLifecycleState | None = None
+    to_state: SkillLifecycleState | None = None
+    reason: str = ""
+    actor: str = "curator"
+    related_skill: str | None = None
+    absorbed_into: str | None = None
+    proposal_path: str | None = None
+
+
+class SkillBundle(BaseModel):
+    """A staged skill bundle resolved from an import source."""
+
+    source_type: str
+    source_identifier: str
+    staging_path: str
+    skill_md_path: str
+    resolved_commit: str | None = None
+
+
+class SkillHubLockEntry(BaseModel):
+    """Append-only provenance lock entry for Skill Hub operations."""
+
+    ts: str
+    action: str
+    skill_name: str
+    target: str
+    source_type: str | None = None
+    source_identifier: str | None = None
+    resolved_commit: str | None = None
+    scan_verdict: str | None = None
+    installed_path: str | None = None
+    actor: str = "cli"
+    reason: str = ""
 
 
 def _coerce_str_list(value: object) -> list[str]:
@@ -227,6 +287,12 @@ class SkillMetadata(BaseModel):
     trust_level: SkillTrustLevel = SkillTrustLevel.trusted
     source: SkillSource = Field(default_factory=SkillSource)
     version: int = 1
+    promotion_status: str | None = None
+    lifecycle_state: SkillLifecycleState = SkillLifecycleState.active
+    absorbed_into: str | None = None
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    approval_callback_id: str | None = None
     usage_count: int = 0
     success_count: int = 0
     failure_count: int = 0

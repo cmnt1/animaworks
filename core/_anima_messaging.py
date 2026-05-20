@@ -41,6 +41,9 @@ logger = logging.getLogger("animaworks.anima")
 
 
 def _agent_session_context(owner: Any):
+    getter = getattr(owner, "_agent_session_context", None)
+    if callable(getter):
+        return getter("chat")
     lock = getattr(owner, "_agent_session_lock", None)
     if isinstance(lock, asyncio.Lock):
         return lock
@@ -88,6 +91,18 @@ class MessagingMixin:
         except Exception:
             logger.debug("[%s] Failed to resolve front activity max_turns", self.name, exc_info=True)
             return None
+
+    def _sync_interactive_bootstrap_state(self) -> None:
+        """Persist completed/repair state after chat-driven bootstrap changes."""
+        try:
+            from core.bootstrap_state import get_bootstrap_status, write_bootstrap_state
+
+            status = get_bootstrap_status(self.anima_dir)
+            if status.get("state") in {"completed", "needs_repair"}:
+                payload = {k: v for k, v in status.items() if not k.startswith("needs_")}
+                write_bootstrap_state(self.anima_dir, payload)
+        except Exception:
+            logger.debug("[%s] Failed to sync interactive bootstrap state", self.name, exc_info=True)
 
     def _log_human_conversation(
         self,
@@ -230,6 +245,7 @@ class MessagingMixin:
             )
 
         logger.info("[%s] run_bootstrap START", self.name)
+        from core.bootstrap_state import finalize_bootstrap_run, mark_bootstrap_failed, mark_bootstrap_running
         from core.tooling.handler import active_session_type
 
         try:
@@ -237,6 +253,10 @@ class MessagingMixin:
                 self._mark_busy_start()
                 self._status_slots["conversation:default"] = "bootstrapping"
                 self._task_slots["conversation:default"] = "Initial bootstrap"
+                mark_bootstrap_running(
+                    self.anima_dir,
+                    mode="character_sheet" if (self.anima_dir / "character_sheet.md").exists() else "interactive",
+                )
                 _session_token = self.agent._tool_handler.set_active_session_type("chat")
 
                 conv_memory = ConversationMemory(self.anima_dir, self.model_config)
@@ -252,17 +272,13 @@ class MessagingMixin:
                         self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
                         result = await self.agent.run_cycle(prompt, trigger="bootstrap")
                     self._last_activity = now_local()
-
-                    # Safety net: if bootstrap.md still exists after the cycle,
-                    # rename it to prevent re-triggering on next restart.
-                    bootstrap_file = self.anima_dir / "bootstrap.md"
-                    if bootstrap_file.exists():
-                        resolved_file = bootstrap_file.with_suffix(".md.auto_resolved")
-                        bootstrap_file.rename(resolved_file)
+                    bootstrap_status = finalize_bootstrap_run(self.anima_dir)
+                    if bootstrap_status.get("state") != "completed":
                         logger.warning(
-                            "[%s] bootstrap.md was NOT deleted by agent; auto-renamed to %s to prevent loop",
+                            "[%s] bootstrap did not pass validation: state=%s errors=%s",
                             self.name,
-                            resolved_file.name,
+                            bootstrap_status.get("state"),
+                            bootstrap_status.get("validation_errors", []),
                         )
 
                     logger.info(
@@ -273,6 +289,7 @@ class MessagingMixin:
                     return result
                 except Exception:
                     logger.exception("[%s] run_bootstrap FAILED", self.name)
+                    mark_bootstrap_failed(self.anima_dir, "run_bootstrap_exception")
                     raise
                 finally:
                     active_session_type.reset(_session_token)
@@ -330,6 +347,7 @@ class MessagingMixin:
                 _conv_key = f"conversation:{thread_id}"
                 self._status_slots[_conv_key] = "thinking"
                 self._task_slots[_conv_key] = f"Responding to {from_person}"
+                bootstrap_before = self.needs_bootstrap
                 _session_token = self.agent._tool_handler.set_active_session_type("chat")
                 _meeting_token = None
                 if source == "meeting":
@@ -499,6 +517,8 @@ class MessagingMixin:
                         thread_id=thread_id,
                         request_id=resp_meta.get("request_id"),
                     )
+                    if bootstrap_before:
+                        self._sync_interactive_bootstrap_state()
 
                     logger.info(
                         "[%s] process_message END duration_ms=%d",
@@ -620,6 +640,7 @@ class MessagingMixin:
                 _conv_key = f"conversation:{thread_id}"
                 self._status_slots[_conv_key] = "thinking"
                 self._task_slots[_conv_key] = f"Responding to {from_person}"
+                bootstrap_before = self.needs_bootstrap
                 _session_token = self.agent._tool_handler.set_active_session_type("chat")
                 _meeting_token = None
                 if source == "meeting":
@@ -832,6 +853,8 @@ class MessagingMixin:
                                 thread_id=thread_id,
                                 request_id=resp_meta.get("request_id"),
                             )
+                            if bootstrap_before:
+                                self._sync_interactive_bootstrap_state()
 
                             # Finalize streaming journal (deletes the file)
                             journal.finalize(summary=display_summary[:500])

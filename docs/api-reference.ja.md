@@ -2,7 +2,7 @@
 
 **[English version](api-reference.md)**
 
-> 最終更新: 2026-03-06
+> 最終更新: 2026-05-17
 > ベースURL: `http://localhost:18500`
 > 関連: [spec.ja.md](spec.ja.md), [cli-reference.ja.md](cli-reference.ja.md)
 
@@ -385,6 +385,65 @@ data: {"error": "メッセージ"}
 ### GET `/api/animas/{name}/stream/{response_id}/progress`
 
 特定のストリームの進捗を取得する。
+
+---
+
+### GET `/api/animas/{name}/skills`
+
+Anima の表示可能なスキル一覧を取得し、指定スレッドで active かどうかを返す。
+
+| クエリパラメータ | 型 | デフォルト | 説明 |
+|----------------|-----|-----------|------|
+| `thread_id` | string | "default" | チャットスレッド ID |
+
+**レスポンス:**
+
+```json
+{
+  "anima": "alice",
+  "thread_id": "default",
+  "skills": [
+    {
+      "name": "gmail-tool",
+      "path": "common_skills/gmail-tool/SKILL.md",
+      "description": "Gmail workflow",
+      "is_common": true,
+      "is_procedure": false,
+      "trust_level": "trusted",
+      "security_verdict": "safe",
+      "active": true
+    }
+  ]
+}
+```
+
+---
+
+### GET `/api/animas/{name}/skills/active`
+
+指定チャットスレッドで active なスキルを取得する。
+
+| クエリパラメータ | 型 | デフォルト | 説明 |
+|----------------|-----|-----------|------|
+| `thread_id` | string | "default" | チャットスレッド ID |
+
+---
+
+### PUT `/api/animas/{name}/skills/active`
+
+指定チャットスレッドの active スキルを置き換える。`refs: []` で解除する。
+
+**リクエスト:**
+
+```json
+{
+  "thread_id": "default",
+  "refs": ["gmail-tool"],
+  "confirm_risk": false
+}
+```
+
+**レスポンス:** `accepted`、`rejections`、`warnings` を返す。
 
 ---
 

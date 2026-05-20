@@ -8,16 +8,15 @@ Verifies:
 - _run_bootstrap() logs warnings when process is not running after bootstrap
 - _run_bootstrap() tracks retry counts and renames bootstrap.md on max retries
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 from core.supervisor.manager import ProcessSupervisor
 from core.supervisor.process_handle import ProcessState
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -42,6 +41,7 @@ def _create_anima_dir(
     name: str,
     *,
     has_identity: bool = True,
+    has_injection: bool = True,
     has_status: bool = True,
     enabled: bool = True,
     has_bootstrap: bool = False,
@@ -51,10 +51,10 @@ def _create_anima_dir(
     d.mkdir(parents=True, exist_ok=True)
     if has_identity:
         (d / "identity.md").write_text(f"# {name}", encoding="utf-8")
+    if has_injection:
+        (d / "injection.md").write_text(f"# {name} instructions", encoding="utf-8")
     if has_status:
-        (d / "status.json").write_text(
-            json.dumps({"enabled": enabled}), encoding="utf-8"
-        )
+        (d / "status.json").write_text(json.dumps({"enabled": enabled}), encoding="utf-8")
     if has_bootstrap:
         (d / "bootstrap.md").write_text("# Bootstrap instructions", encoding="utf-8")
     return d
@@ -199,10 +199,7 @@ class TestBootstrapProcessStateWarning:
             await sup._run_bootstrap("kotoha")
 
             # Check that warning was logged
-            warning_calls = [
-                call for call in mock_logger.warning.call_args_list
-                if "process not running" in str(call)
-            ]
+            warning_calls = [call for call in mock_logger.warning.call_args_list if "process not running" in str(call)]
             assert len(warning_calls) == 1
 
     async def test_no_warning_when_process_running_after_success(self, tmp_path: Path):
@@ -221,10 +218,7 @@ class TestBootstrapProcessStateWarning:
         with patch("core.supervisor.manager.logger") as mock_logger:
             await sup._run_bootstrap("kotoha")
 
-            warning_calls = [
-                call for call in mock_logger.warning.call_args_list
-                if "process not running" in str(call)
-            ]
+            warning_calls = [call for call in mock_logger.warning.call_args_list if "process not running" in str(call)]
             assert len(warning_calls) == 0
 
 
@@ -273,9 +267,7 @@ class TestBootstrapRetryLimit:
     async def test_bootstrap_md_renamed_on_max_retries(self, tmp_path: Path):
         """bootstrap.md should be renamed to .failed after max retries."""
         sup = _make_supervisor(tmp_path)
-        anima_dir = _create_anima_dir(
-            sup.animas_dir, "kotoha", has_bootstrap=True
-        )
+        anima_dir = _create_anima_dir(sup.animas_dir, "kotoha", has_bootstrap=True)
         sup.ws_manager = None
         sup._bootstrap_retry_counts["kotoha"] = 3  # Already at max (default=3)
 

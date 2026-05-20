@@ -254,6 +254,21 @@ def cli_main() -> None:
 
     setup_index_command(sub)
 
+    # ── RAG Repair ───────────────────────────────────────
+    from cli.commands.repair_rag_cmd import setup_repair_rag_command
+
+    setup_repair_rag_command(sub)
+
+    # ── Skills ────────────────────────────────────────────
+    from cli.commands.skills import register_skills_command
+
+    register_skills_command(sub)
+
+    # ── External Agent Import ─────────────────────────────
+    from cli.commands.import_cmd import register_import_command
+
+    register_import_command(sub)
+
     # ── Config ────────────────────────────────────────────
     from core.config.cli import (
         cmd_config_dispatch,
@@ -395,6 +410,35 @@ def cli_main() -> None:
         help="Output as JSON",
     )
     p_anima_info.set_defaults(func=_lazy_anima_info)
+
+    # anima repair-bootstrap
+    p_anima_repair_bootstrap = anima_sub.add_parser(
+        "repair-bootstrap",
+        help="Inspect or repair first-run bootstrap state",
+    )
+    p_anima_repair_bootstrap.add_argument("anima", help="Anima name")
+    repair_group = p_anima_repair_bootstrap.add_mutually_exclusive_group(required=True)
+    repair_group.add_argument(
+        "--status",
+        action="store_true",
+        help="Show bootstrap state and validation errors without changing files",
+    )
+    repair_group.add_argument(
+        "--retry",
+        action="store_true",
+        help="Restore bootstrap artifacts and prepare another bootstrap attempt",
+    )
+    repair_group.add_argument(
+        "--complete",
+        action="store_true",
+        help="Archive stale bootstrap artifacts and mark a fully defined Anima as completed",
+    )
+    repair_group.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Archive runtime data and recreate a blank Anima while preserving model settings",
+    )
+    p_anima_repair_bootstrap.set_defaults(func=_lazy_anima_repair_bootstrap)
 
     # anima permissions
     p_anima_permissions = anima_sub.add_parser(
@@ -892,6 +936,12 @@ def _lazy_anima_permissions(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_permissions
 
     cmd_anima_permissions(args)
+
+
+def _lazy_anima_repair_bootstrap(args: argparse.Namespace) -> None:
+    from cli.commands.anima_mgmt import cmd_anima_repair_bootstrap
+
+    cmd_anima_repair_bootstrap(args)
 
 
 def _lazy_anima_set_role(args: argparse.Namespace) -> None:

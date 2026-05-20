@@ -424,10 +424,24 @@ def _format_skill_catalog_line(
         labels.append(procedure_label)
     elif bool(getattr(meta, "is_common", False)):
         labels.append(common_label)
+    risk = getattr(meta, "risk", None)
+    if bool(getattr(risk, "requires_human_approval", False)):
+        labels.append("human-approval")
     if match_confidence:
         labels.append(f"match={match_confidence}")
     label_text = f" ({', '.join(labels)})" if labels else ""
     return f"- {path}{label_text}{_format_trust_tag(meta)}: {desc}"
+
+
+def _requires_human_approval(meta: Any) -> bool:
+    risk = getattr(meta, "risk", None)
+    if isinstance(risk, dict):
+        return bool(risk.get("requires_human_approval", False))
+    return bool(getattr(risk, "requires_human_approval", False))
+
+
+def _skill_visible_in_prompt_context(meta: Any, *, is_background_auto: bool) -> bool:
+    return not (is_background_auto and _requires_human_approval(meta))
 
 
 def _build_group4(
@@ -439,12 +453,15 @@ def _build_group4(
     skill_index: Any,
     prompt_store: Any,
     is_heartbeat: bool,
+    is_background_auto: bool,
+    is_chat: bool,
     is_task: bool,
     tool_registry: list[str] | None,
     personal_tools: dict[str, str] | None,
     _ss: dict[str, str],
     _fs: dict[str, str],
     message: str = "",
+    thread_id: str = "default",
 ) -> tuple[list[SectionEntry], list[Path], list[str], list[str]]:
     """Group 4: Memory guide, DK, common knowledge, tool guides.
 
@@ -572,15 +589,30 @@ def _build_group4(
                 et += t("builder.machine_hint")
             _add(et, "external_tools", 2)
 
+    if is_chat:
+        try:
+            from core.skills.activation import build_active_skill_context
+
+            active_context = build_active_skill_context(pd, thread_id=thread_id)
+            rendered_active = active_context.render()
+            if rendered_active:
+                _add(rendered_active, "active_skills", 1, "elastic")
+        except Exception:
+            logger.debug("Skipped active skill context injection", exc_info=True)
+
     # ── Skill catalog (Agent Skills standard) ───
-    # Uses SkillIndex which automatically excludes blocked/quarantine skills
-    # and supports nested common_skills directories.
+    # Uses SkillIndex which excludes blocked/quarantine skills. Background
+    # automation also excludes skills that need separate human approval.
     if not is_heartbeat:
         _DESC_LIMIT = 250
         common_label = t("skill.label_common")
         procedure_label = t("skill.label_procedure")
         settings = _load_skill_catalog_router_settings()
-        all_skills = list(skill_index.all_skills)
+        all_skills = [
+            meta
+            for meta in skill_index.all_skills
+            if _skill_visible_in_prompt_context(meta, is_background_auto=is_background_auto)
+        ]
         catalog_entries: list[str] = []
 
         if settings.enabled and message.strip():
@@ -729,6 +761,7 @@ def build_system_prompt(
     context_window: int = 200_000,
     system_budget: int | None = None,
     pending_human_notifications: str = "",
+    thread_id: str = "default",
 ) -> BuildResult:
     """Construct the full system prompt from Markdown files.
 
@@ -801,12 +834,15 @@ def build_system_prompt(
         skill_index,
         prompt_store,
         is_heartbeat,
+        is_background_auto,
+        is_chat,
         is_task,
         tool_registry,
         personal_tools,
         _ss,
         _fs,
         message=message,
+        thread_id=thread_id,
     )
     sections += g4
     sections += _build_group5(

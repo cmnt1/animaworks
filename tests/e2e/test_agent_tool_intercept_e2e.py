@@ -123,7 +123,7 @@ class TestAgentToolHardBlockE2E:
         output = result.get("hookSpecificOutput")
         assert output["permissionDecision"] == "deny"
         assert "BLOCKED" in output["permissionDecisionReason"]
-        assert "submit_tasks" in output["permissionDecisionReason"]
+        assert "submit_tasks" not in output["permissionDecisionReason"]
 
         pending_files = list((anima_dir / "state" / "pending").glob("*.json"))
         assert len(pending_files) == 0

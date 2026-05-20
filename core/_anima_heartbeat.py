@@ -23,6 +23,7 @@ from core.memory.streaming_journal import StreamingJournal
 from core.messenger import InboxItem
 from core.paths import load_prompt
 from core.schemas import CycleResult
+from core.skills.cron_context import SkillContextRejection, SkillContextWarning
 from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.anima")
@@ -110,6 +111,7 @@ class HeartbeatMixin:
         Usage Governor may throttle background activity level, but it must not
         rewrite the configured background model.
         """
+        from core.config.model_config import _FAMILY_CREDENTIAL_MAP, _model_family, infer_mode_s_auth
         from core.config.models import load_config, resolve_execution_mode
         from core.schemas import ModelConfig
 
@@ -132,15 +134,39 @@ class HeartbeatMixin:
         # which may be incompatible with the background model name.
         bg_resolved_mode = resolve_execution_mode(config, bg_model)
 
-        new_config: ModelConfig = self.agent.model_config.model_copy(
-            update={"model": bg_model, "resolved_mode": bg_resolved_mode},
-        )
+        bg_credential = self.agent.model_config.background_credential
+        bg_family = _model_family(bg_model)
+        main_family = _model_family(self.agent.model_config.model)
+        if not bg_credential and bg_family != main_family:
+            mapped_credential = _FAMILY_CREDENTIAL_MAP.get(bg_family)
+            if mapped_credential in config.credentials:
+                bg_credential = mapped_credential
+
+        updates: dict[str, Any] = {
+            "model": bg_model,
+            "resolved_mode": bg_resolved_mode,
+        }
         if bg_credential:
             if bg_credential in config.credentials:
                 cred = config.credentials[bg_credential]
-                new_config.api_key = cred.api_key or None
-                new_config.api_base_url = cred.base_url or None
-                new_config.extra_keys = dict(cred.keys) if cred.keys else {}
+                updates.update(
+                    {
+                        "background_credential": bg_credential,
+                        "api_key": cred.api_key or None,
+                        "api_key_env": f"{bg_credential.upper()}_API_KEY",
+                        "api_base_url": cred.base_url or None,
+                        "extra_keys": dict(cred.keys) if cred.keys else {},
+                    }
+                )
+                if bg_resolved_mode == "S" and not self.agent.model_config.mode_s_auth:
+                    updates["mode_s_auth"] = infer_mode_s_auth(
+                        mode=bg_resolved_mode,
+                        credential_name=bg_credential,
+                        config=config,
+                    )
+                elif bg_resolved_mode != "S":
+                    updates["mode_s_auth"] = None
+        new_config: ModelConfig = self.agent.model_config.model_copy(update=updates)
         return new_config
 
     # ── Heartbeat history ────────────────────────────────────
@@ -395,6 +421,9 @@ class HeartbeatMixin:
         task_name: str,
         description: str,
         command_output: str | None = None,
+        skills: list[str] | None = None,
+        skill_rejections_out: list[SkillContextRejection] | None = None,
+        skill_warnings_out: list[SkillContextWarning] | None = None,
     ) -> str:
         """Build cron task prompt with heartbeat-equivalent context.
 
@@ -402,6 +431,8 @@ class HeartbeatMixin:
             task_name: Cron task name from cron.md.
             description: Task description or instruction.
             command_output: Optional stdout from a preceding command-type cron.
+            skills: Optional cron skill references from cron.md.
+            skill_rejections_out: Optional list populated with rejected skill refs.
         """
         parts: list[str] = []
 
@@ -417,6 +448,18 @@ class HeartbeatMixin:
         # Inject command output if this is a follow-up to a command cron
         if command_output:
             parts.append(load_prompt("fragments/command_output", output=command_output))
+
+        if skills:
+            from core.skills.cron_context import build_cron_skill_context
+
+            skill_context = build_cron_skill_context(self.anima_dir, skills)
+            if skill_rejections_out is not None:
+                skill_rejections_out.extend(skill_context.rejections)
+            if skill_warnings_out is not None:
+                skill_warnings_out.extend(skill_context.warnings)
+            rendered = skill_context.render()
+            if rendered:
+                parts.append(rendered)
 
         # Shared background context (without dialogue — cron tasks must not inherit chat context)
         parts.extend(self._build_background_context_parts(include_dialogue=False))
@@ -440,6 +483,7 @@ class HeartbeatMixin:
 
         Returns the CycleResult from the agent execution.
         """
+        agent = self._agent_for_lane("background") if hasattr(self, "_agent_for_lane") else self.agent
         # ── Heartbeat Checkpoint ──
         checkpoint_path = self.anima_dir / "state" / "heartbeat_checkpoint.json"
         try:
@@ -456,9 +500,9 @@ class HeartbeatMixin:
             logger.debug("[%s] Failed to write heartbeat checkpoint", self.name, exc_info=True)
 
         # Reset reply tracking before the cycle
-        self.agent.reset_reply_tracking(session_type="heartbeat")
-        self.agent.reset_posted_channels(session_type="heartbeat")
-        self.agent.reset_read_paths()
+        agent.reset_reply_tracking(session_type="heartbeat")
+        agent.reset_posted_channels(session_type="heartbeat")
+        agent.reset_read_paths()
 
         accumulated_text = ""
         result: CycleResult | None = None
@@ -471,8 +515,8 @@ class HeartbeatMixin:
         original_config = None
         bg_config = self._resolve_background_config()
         if bg_config is not None:
-            original_config = self.agent.model_config
-            self.agent.update_model_config(bg_config)
+            original_config = agent.model_config
+            agent.update_model_config(bg_config)
 
         try:
             from core.config.models import load_config as _load_config_fresh
@@ -493,7 +537,7 @@ class HeartbeatMixin:
             if _gov is not None:
                 _activity = min(_activity, _gov)
             effective_max_turns = _calc_effective_max_turns(
-                base_max_turns=self.agent.model_config.max_turns,
+                base_max_turns=agent.model_config.max_turns,
                 activity_level=_activity,
                 hb_max_turns=_hb_cfg.max_turns,
             )
@@ -504,7 +548,7 @@ class HeartbeatMixin:
             _soft_warned = False
             _hard_exceeded = False
 
-            async for chunk in self.agent.run_cycle_streaming(
+            async for chunk in agent.run_cycle_streaming(
                 prompt,
                 trigger="heartbeat",
                 prior_messages=prior_messages,
@@ -514,7 +558,7 @@ class HeartbeatMixin:
                 _elapsed = time.monotonic() - _start
                 if not _soft_warned and _elapsed > _soft_timeout:
                     _soft_warned = True
-                    self.agent._executor.reminder_queue.push_sync(t("reminder.hb_time_limit"))
+                    agent._executor.reminder_queue.push_sync(t("reminder.hb_time_limit"))
                     logger.info(
                         "[%s] Heartbeat soft timeout reached (%.0fs > %ds)",
                         self.name,
@@ -653,7 +697,7 @@ class HeartbeatMixin:
             return result
         finally:
             if original_config is not None:
-                self.agent.update_model_config(original_config)
+                agent.update_model_config(original_config)
             journal.close()
 
     async def _handle_heartbeat_failure(

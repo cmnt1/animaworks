@@ -9,7 +9,6 @@ All tests use mocks — no Codex CLI binary or API key required.
 """
 
 import asyncio
-import json
 import os
 import tomllib
 from pathlib import Path
@@ -18,10 +17,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.execution.base import ExecutionResult, StreamDisconnectedError
+from core.execution.base import ExecutionResult
 from core.execution.codex_sdk import (
     CodexSDKExecutor,
     _clear_thread_id,
+    _close_subprocess_stdio,
     _codex_item_tool_name,
     _default_home_dir,
     _default_path_env,
@@ -29,7 +29,6 @@ from core.execution.codex_sdk import (
     _extract_item_text,
     _extract_tool_records,
     _get_thread_id,
-    _is_codex_stdout_noise_line,
     _is_desktop_extension_codex,
     _item_to_tool_record,
     _load_thread_id,
@@ -213,10 +212,6 @@ class TestHelpers:
         exc = RuntimeError("Codex Exec aborted after fatal stderr signal: Reading prompt from stdin...")
         assert _should_cli_exec_fallback(exc)
 
-    def test_should_cli_exec_fallback_detects_sdk_idle_timeout(self):
-        exc = StreamDisconnectedError("Codex SDK stream idle timeout after 45s")
-        assert _should_cli_exec_fallback(exc)
-
     def test_is_desktop_extension_codex(self):
         assert _is_desktop_extension_codex(
             r"C:\Users\cmnt\.antigravity\extensions\openai.chatgpt-26.313.41514-win32-x64\bin\windows-x86_64\codex.exe"
@@ -239,18 +234,6 @@ class TestHelpers:
         assert _should_prefer_cli_exec("inbox")
         assert _should_prefer_cli_exec("task:demo")
         assert not _should_prefer_cli_exec("manual")
-
-    def test_codex_stdout_noise_line_detects_windows_taskkill_success(self):
-        line = "SUCCESS: The process with PID 15052 (child process of PID 80976) has been terminated."
-        assert _is_codex_stdout_noise_line(line)
-        assert not _is_codex_stdout_noise_line('{"type":"turn.started"}')
-
-    def test_should_cli_exec_fallback_for_jsonl_parse_error(self):
-        exc = RuntimeError(
-            "Failed to parse JSONL event line: "
-            "'SUCCESS: The process with PID 15052 (child process of PID 80976) has been terminated.'"
-        )
-        assert _should_cli_exec_fallback(exc)
 
     @pytest.mark.asyncio
     async def test_patch_codex_exec_stream_limit_fails_fast_on_fatal_stderr(self):
@@ -322,72 +305,32 @@ class TestHelpers:
 
         assert proc.kill_calls == 1
 
-    @pytest.mark.asyncio
-    async def test_patch_codex_exec_stream_limit_skips_taskkill_stdout_noise(self):
-        class _FakeStdin:
-            def write(self, _data):
-                return None
-
-            async def drain(self):
-                return None
+    def test_close_subprocess_stdio_closes_writer_and_reader_transports(self):
+        class _FakeClosable:
+            def __init__(self):
+                self.close_calls = 0
 
             def close(self):
-                return None
+                self.close_calls += 1
 
-        class _NoisyStdout:
+        class _FakeReader:
             def __init__(self):
-                self._lines = [
-                    b"SUCCESS: The process with PID 15052 (child process of PID 80976) has been terminated.\r\n",
-                    b'{"type":"turn.started"}\n',
-                    b"",
-                ]
+                self._transport = _FakeClosable()
 
-            async def readline(self):
-                await asyncio.sleep(0)
-                return self._lines.pop(0)
+        stdin = _FakeClosable()
+        stdout = _FakeReader()
+        stderr = _FakeReader()
+        proc = SimpleNamespace(stdin=stdin, stdout=stdout, stderr=stderr)
 
-        class _EmptyStderr:
-            async def read(self, _size):
-                await asyncio.sleep(0)
-                return b""
+        _close_subprocess_stdio(proc)
 
-        class _FakeProc:
-            def __init__(self):
-                self.stdin = _FakeStdin()
-                self.stdout = _NoisyStdout()
-                self.stderr = _EmptyStderr()
-                self.returncode = None
-                self.kill_calls = 0
-
-            def kill(self):
-                self.kill_calls += 1
-                self.returncode = 1
-
-            async def wait(self):
-                self.returncode = 0
-                return 0
-
-        class _FakeExec:
-            executable_path = "codex"
-
-            def _build_command_args(self, _args):
-                return []
-
-            def _build_env(self, _args):
-                return {}
-
-        proc = _FakeProc()
-        exec_ = _FakeExec()
-        _patch_codex_exec_stream_limit(exec_)
-
-        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
-            lines = [line async for line in exec_.run(SimpleNamespace(input="hello"))]
-
-        assert lines == ['{"type":"turn.started"}']
-        assert proc.kill_calls == 0
+        assert stdin.close_calls == 1
+        assert stdout._transport.close_calls == 1
+        assert stderr._transport.close_calls == 1
 
 
 # ── Session persistence tests ────────────────────────────────
+
 
 class TestSessionPersistence:
     def test_save_and_load_thread_id(self, anima_dir):
@@ -436,35 +379,44 @@ class TestExecutorInit:
         assert env.get("OPENAI_API_KEY") == "test-key-123"
         assert "CODEX_HOME" in env
 
-    def test_build_env_omits_api_key_for_codex_login(self, model_config, anima_dir):
-        model_config.api_key = None
-        model_config.credential_type = "codex_login"
+    def test_build_env_codex_azure_uses_azure_api_key(self, model_config, anima_dir, monkeypatch):
+        monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+        model_config.credential = "azure_codex"
+        model_config.credential_type = "codex_azure"
+        model_config.api_key = "az-test-key"
+        model_config.api_base_url = "https://example-resource.openai.azure.com"
+        model_config.extra_keys = {"api_version": "2025-04-01-preview"}
         exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
 
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-env-should-not-leak"}):
-            env = exc._build_env()
+        env = exc._build_env()
 
+        assert env["AZURE_OPENAI_API_KEY"] == "az-test-key"
         assert "OPENAI_API_KEY" not in env
-        assert env["CODEX_HOME"] == str(anima_dir / ".codex_home")
+        assert "OPENAI_BASE_URL" not in env
+
+    def test_build_env_codex_azure_can_inherit_standard_env_key(self, model_config, anima_dir, monkeypatch):
+        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "az-env-key")
+        model_config.credential = "azure_codex"
+        model_config.credential_type = "codex_azure"
+        model_config.api_key = None
+        model_config.api_key_env = "AZURE_CODEX_API_KEY"
+        model_config.api_base_url = "https://example-resource.openai.azure.com"
+        model_config.extra_keys = {"api_version": "2025-04-01-preview"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        env = exc._build_env()
+
+        assert env["AZURE_OPENAI_API_KEY"] == "az-env-key"
+        assert "OPENAI_API_KEY" not in env
 
     def test_default_home_dir_prefers_userprofile_when_home_missing(self):
         with patch.dict("os.environ", {"USERPROFILE": r"C:\Users\Tester"}, clear=True):
             assert _default_home_dir() == r"C:\Users\Tester"
 
     def test_build_mcp_env(self, executor):
-        with patch.dict(
-            "os.environ",
-            {
-                "COMMONPROGRAMFILES(X86)": r"C:\Program Files (x86)\Common Files",
-                "PROGRAMFILES(X86)": r"C:\Program Files (x86)",
-            },
-            clear=False,
-        ):
-            env = executor._build_mcp_env()
+        env = executor._build_mcp_env()
         assert "ANIMAWORKS_ANIMA_DIR" in env
         assert "PYTHONPATH" in env
-        assert "COMMONPROGRAMFILES(X86)" not in env
-        assert "PROGRAMFILES(X86)" not in env
 
     def test_default_path_env_prepends_embedded_codex(self):
         if os.name == "nt":
@@ -525,91 +477,18 @@ class TestConfigWriting:
         assert instructions == "Test system prompt"
 
     def test_write_codex_config_toml_content(self, executor, anima_dir):
-        with patch.dict(
-            "os.environ",
-            {
-                "COMMONPROGRAMFILES(X86)": r"C:\Program Files (x86)\Common Files",
-                "PROGRAMFILES(X86)": r"C:\Program Files (x86)",
-            },
-            clear=False,
-        ):
-            executor._write_codex_config("My prompt")
+        executor._write_codex_config("My prompt")
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         assert "model_instructions_file" in config_toml
         assert "sandbox_mode" in config_toml
         assert "danger-full-access" in config_toml  # default file_roots=["/"]
         assert 'approval_policy = "never"' in config_toml
         assert "[mcp_servers.aw]" in config_toml
-        assert 'preferred_auth_method = "apikey"' in config_toml
-        assert "route them through RTK" in config_toml
-        assert "rtk proxy <command>" in config_toml
-        assert "mcp__codex_apps__gmail._send_email" in config_toml
-        assert "the required channel is the AnimaWorks DM tool" in config_toml
-        assert "COMMONPROGRAMFILES(X86)" not in config_toml
-        assert "PROGRAMFILES(X86)" not in config_toml
         parsed = tomllib.loads(config_toml)
         assert parsed["mcp_servers"]["aw"]["default_tools_approval_mode"] == "approve"
 
-    def test_write_codex_config_prunes_gmail_send_tools_from_codex_apps_cache(self, executor, anima_dir):
-        cache_dir = anima_dir / ".codex_home" / "cache" / "codex_apps_tools"
-        cache_dir.mkdir(parents=True)
-        cache_file = cache_dir / "tools.json"
-        cache_file.write_text(
-            json.dumps(
-                {
-                    "schema_version": 2,
-                    "tools": [
-                        {"tool_namespace": "mcp__codex_apps__gmail", "tool_name": "_send_email"},
-                        {"tool_namespace": "mcp__codex_apps__gmail", "tool_name": "_send_draft"},
-                        {"tool_namespace": "mcp__codex_apps__gmail", "tool_name": "_forward_emails"},
-                        {"tool_namespace": "mcp__codex_apps__gmail", "tool_name": "_read_email"},
-                        {"tool_namespace": "mcp__codex_apps__github", "tool_name": "_add_comment_to_issue"},
-                    ],
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        executor._write_codex_config("My prompt")
-
-        tools = json.loads(cache_file.read_text(encoding="utf-8"))["tools"]
-        tool_names = {tool["tool_name"] for tool in tools}
-        assert "_send_email" not in tool_names
-        assert "_send_draft" not in tool_names
-        assert "_forward_emails" not in tool_names
-        assert "_read_email" in tool_names
-        assert "_add_comment_to_issue" in tool_names
-
-    def test_write_codex_config_prefers_chatgpt_for_codex_login(self, model_config, anima_dir):
-        model_config.api_key = None
-        model_config.credential_type = "codex_login"
-        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-
-        with (
-            patch.object(exc, "_propagate_auth"),
-            patch("core.execution.codex_sdk.is_codex_login_available", return_value=True),
-        ):
-            exc._write_codex_config("prompt")
-
-        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
-        assert 'preferred_auth_method = "chatgpt"' in config_toml
-        assert 'model = "o4-mini"' in config_toml
-
-    def test_write_codex_config_raises_when_codex_login_missing(self, model_config, anima_dir):
-        model_config.api_key = None
-        model_config.credential_type = "codex_login"
-        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-
-        with (
-            patch.object(exc, "_propagate_auth"),
-            patch("core.execution.codex_sdk.is_codex_login_available", return_value=False),
-            pytest.raises(RuntimeError, match="Codex CLI login is required"),
-        ):
-            exc._write_codex_config("prompt")
-
-    @patch("sys.platform", "linux")
     def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir):
-        """Restricted file_roots produces workspace-write with writable_roots (non-Windows)."""
+        """Restricted file_roots produces workspace-write with writable_roots."""
         import json
 
         perms = {
@@ -640,6 +519,68 @@ class TestConfigWriting:
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         assert 'model = "gpt-4.1"' in config_toml
 
+    def test_write_codex_config_openai_provider_by_default(self, executor, anima_dir):
+        executor._write_codex_config("prompt")
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(config_toml)
+        assert parsed["model_provider"] == "openai"
+        assert "model_providers" not in parsed
+
+    def test_write_codex_config_codex_azure_provider(self, model_config, anima_dir):
+        model_config.model = "codex/gpt-5.5"
+        model_config.credential = "azure_codex"
+        model_config.credential_type = "codex_azure"
+        model_config.api_key = "az-test-key"
+        model_config.api_base_url = "https://example-resource.openai.azure.com"
+        model_config.extra_keys = {
+            "api_version": "2025-04-01-preview",
+            "codex_model": "gpt-55-prod",
+        }
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        exc._write_codex_config("prompt")
+
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(config_toml)
+        provider = parsed["model_providers"]["azure"]
+        assert parsed["model"] == "gpt-55-prod"
+        assert parsed["model_provider"] == "azure"
+        assert provider["name"] == "Azure"
+        assert provider["base_url"] == "https://example-resource.openai.azure.com/openai"
+        assert provider["env_key"] == "AZURE_OPENAI_API_KEY"
+        assert provider["query_params"]["api-version"] == "2025-04-01-preview"
+        assert provider["wire_api"] == "responses"
+
+    def test_write_codex_config_codex_azure_keeps_openai_suffix(self, model_config, anima_dir):
+        model_config.credential_type = "codex_azure"
+        model_config.api_base_url = "https://example-resource.openai.azure.com/openai/"
+        model_config.extra_keys = {"api_version": "2025-04-01-preview"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        exc._write_codex_config("prompt")
+
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(config_toml)
+        assert parsed["model_providers"]["azure"]["base_url"] == "https://example-resource.openai.azure.com/openai"
+
+    def test_write_codex_config_codex_azure_requires_base_url(self, model_config, anima_dir):
+        model_config.credential_type = "codex_azure"
+        model_config.api_base_url = None
+        model_config.extra_keys = {"api_version": "2025-04-01-preview"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with pytest.raises(ValueError, match="base_url"):
+            exc._write_codex_config("prompt")
+
+    def test_write_codex_config_codex_azure_requires_api_version(self, model_config, anima_dir):
+        model_config.credential_type = "codex_azure"
+        model_config.api_base_url = "https://example-resource.openai.azure.com"
+        model_config.extra_keys = {}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with pytest.raises(ValueError, match="api_version"):
+            exc._write_codex_config("prompt")
+
     def test_toml_escapes_special_characters(self, model_config, anima_dir):
         """Paths with quotes/backslashes are escaped in TOML output."""
         from core.execution.codex_sdk import _escape_toml_string
@@ -654,7 +595,6 @@ class TestConfigWriting:
         source_auth.write_text('{"token":"abc"}', encoding="utf-8")
 
         with (
-            patch.dict("os.environ", {}, clear=True),
             patch("core.execution.codex_sdk.Path.home", return_value=default_codex.parent),
             patch("pathlib.Path.symlink_to", side_effect=OSError("symlink blocked")),
             patch("core.execution.codex_sdk.os.link", side_effect=OSError("hardlink blocked")),
@@ -1414,7 +1354,7 @@ class TestProgressiveStreaming:
         assert full_text == "Complete text here"
 
     @pytest.mark.asyncio
-    async def test_stream_idle_timeout_falls_back_to_cli_exec(self, executor):
+    async def test_stream_idle_timeout_raises_stream_disconnected(self, executor):
         class NeverEvents:
             def __aiter__(self):
                 return self
@@ -1433,69 +1373,13 @@ class TestProgressiveStreaming:
         mock_codex = MagicMock()
         mock_codex.start_thread.return_value = mock_thread
 
-        async def fallback_events(*_args, **_kwargs):
-            yield {"type": "text_delta", "text": "fallback after idle"}
-            yield {
-                "type": "done",
-                "full_text": "fallback after idle",
-                "result_message": None,
-                "replied_to_from_transcript": set(),
-                "tool_call_records": [],
-                "usage": {},
-            }
-
         with (
             patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=fallback_events) as mock_fallback,
             patch("core.execution.codex_sdk._BACKGROUND_EVENT_IDLE_TIMEOUT_SEC", 0.01),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
-            events = []
-            async for ev in executor.execute_streaming(
-                system_prompt="test",
-                prompt="Hello",
-                tracker=tracker,
-                trigger="heartbeat",
-            ):
-                events.append(ev)
-
-        assert [e["type"] for e in events] == ["text_delta", "done"]
-        assert events[-1]["full_text"] == "fallback after idle"
-        mock_fallback.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_stream_idle_timeout_without_cli_exec_still_surfaces_error(self, executor):
-        class NeverEvents:
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                await asyncio.sleep(3600)
-                raise StopAsyncIteration
-
-        mock_streamed = MagicMock()
-        mock_streamed.events = NeverEvents()
-
-        mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
-        mock_thread.id = "idle-thread"
-
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
-
-        async def broken_fallback(*_args, **_kwargs):
-            raise RuntimeError("fallback unavailable")
-            yield  # pragma: no cover
-
-        with (
-            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
-            patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=broken_fallback),
-            patch("core.execution.codex_sdk._BACKGROUND_EVENT_IDLE_TIMEOUT_SEC", 0.01),
-        ):
-            tracker = ContextTracker(model="codex/o4-mini")
-            with pytest.raises(RuntimeError, match="fallback unavailable"):
+            with pytest.raises(Exception) as exc_info:
                 async for _ in executor.execute_streaming(
                     system_prompt="test",
                     prompt="Hello",
@@ -1503,6 +1387,8 @@ class TestProgressiveStreaming:
                     trigger="heartbeat",
                 ):
                     pass
+
+        assert "idle timeout" in str(exc_info.value)
 
 
 # ── Mode resolution tests ────────────────────────────────────

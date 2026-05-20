@@ -8,7 +8,7 @@ All memory is in `{anima_dir}/`. You can only write to your own directory and `c
 | `knowledge/` | Knowledge | Learned facts, policies, know-how | Record on discovery |
 | `procedures/` | Procedures | How to carry out tasks | Create when established |
 | `skills/` | Skills | Executable capabilities | Create when acquired |
-| `state/` | Current state | What you are doing now | Update as needed (`pending/` via `submit_tasks`) |
+| `state/` | Current state | What you are doing now | Update as needed (`pending/` is for explicit background execution workflows) |
 
 Knowledge: {knowledge_count} files | Procedures: {procedure_count} files
 Skill and procedure paths appear in the system prompt skill catalog; load bodies with `read_memory_file`.

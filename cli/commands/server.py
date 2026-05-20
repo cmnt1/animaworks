@@ -371,6 +371,67 @@ def _pin_native_threads() -> None:
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
+def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
+    """Repair suspected corrupt RAG DBs before the server imports Chroma."""
+    try:
+        from core.config import load_config
+        from core.paths import get_animas_dir
+
+        config = load_config()
+        rag = config.rag
+        if not config.setup_complete:
+            return
+        if not bool(getattr(rag, "repair_enabled", True)):
+            return
+        if not bool(getattr(rag, "startup_repair_preflight_enabled", True)):
+            return
+
+        from core.memory.rag.repair import get_repair_service
+
+        service = get_repair_service()
+        window_minutes = int(getattr(rag, "startup_repair_window_minutes", 1440))
+        suspects = service.discover_suspect_animas(window_minutes=window_minutes)
+        reason = "startup_chroma_crash_preflight"
+        if not suspects and force_all_vectordb:
+            animas_dir = get_animas_dir()
+            suspects = [
+                name
+                for name in service.list_repairable_animas(animas_dir=animas_dir)
+                if (animas_dir / name / "vectordb").exists()
+            ]
+            reason = "startup_unclean_exit_preflight"
+        if not suspects:
+            logger.info("RAG startup preflight: no suspect DBs found")
+            return
+
+        joined = ", ".join(suspects)
+        print(f"RAG startup preflight: repairing suspected vector DB(s): {joined}")
+        results = service.repair_animas_if_allowed(
+            suspects,
+            reason=reason,
+            source="startup_preflight",
+            include_shared=True,
+        )
+        for result in results.values():
+            if result.ok:
+                logger.warning(
+                    "RAG startup preflight repaired %s: chunks=%s quarantine=%s",
+                    result.anima_name,
+                    result.chunks_indexed,
+                    result.quarantine_path,
+                )
+            else:
+                logger.error(
+                    "RAG startup preflight failed for %s: status=%s stage=%s error=%s",
+                    result.anima_name,
+                    result.status,
+                    result.stage,
+                    result.error,
+                )
+    except Exception:
+        logger.exception("RAG startup preflight failed unexpectedly; continuing server startup")
+
+
 def _start_foreground(args: argparse.Namespace) -> None:
     """Run the server in the foreground (blocking, with log output)."""
     _pin_native_threads()
@@ -382,12 +443,14 @@ def _start_foreground(args: argparse.Namespace) -> None:
     from server.app import create_app
 
     existing_pid = _read_pid()
+    unclean_previous_exit = False
     if existing_pid is not None and _is_process_alive(existing_pid):
         print(f"Error: Server is already running (pid={existing_pid}).")
         print("Use 'animaworks stop' first, or 'animaworks restart'.")
         sys.exit(1)
     elif existing_pid is not None:
         logger.info("Stale PID file found (pid=%d). Cleaning up.", existing_pid)
+        unclean_previous_exit = True
         _remove_pid_file()
 
     orphan_pid = _find_server_pid_by_process()
@@ -398,9 +461,11 @@ def _start_foreground(args: argparse.Namespace) -> None:
 
     orphan_count = _kill_orphan_runners()
     if orphan_count:
+        unclean_previous_exit = True
         print(f"Killed {orphan_count} orphan runner process(es) from previous server.")
 
     ensure_runtime_dir()
+    _run_rag_startup_preflight(force_all_vectordb=unclean_previous_exit)
     _write_pid_file()
     atexit.register(_remove_pid_file)
     _start_pid_watchdog()

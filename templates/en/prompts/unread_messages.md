@@ -69,4 +69,4 @@ When you receive a task delegation message:
 
 1. **Paraphrase confirmation**: Confirm your understanding in your own words ("So to confirm, … is that correct?")
 2. **Clarifying questions**: Ask about unclear completion criteria or expected deliverables before starting
-3. **Task queue registration**: Register the task in your queue with `submit_tasks`
+3. **Task management**: Do not use `submit_tasks` in normal chat; track follow-up with `update_task`, `state/current_state.md`, or an explicit background execution workflow when needed

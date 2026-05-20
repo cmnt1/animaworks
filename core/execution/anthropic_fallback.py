@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager as _acm
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -52,11 +52,14 @@ from core.memory.shortterm import ShortTermMemory
 from core.prompt.builder import build_system_prompt
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
-from core.tooling.handler import ToolHandler
 from core.tooling.schemas import (
     build_tool_list,
+    submit_tasks_enabled_for_trigger,
     to_anthropic_format,
 )
+
+if TYPE_CHECKING:
+    from core.tooling.handler import ToolHandler
 
 logger = logging.getLogger("animaworks.execution.anthropic_fallback")
 
@@ -205,7 +208,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
             include_supervisor_tools=self._has_subordinates(),
             include_tool_management=True,
             include_task_tools=True,
-            include_submit_tasks=True,
+            include_submit_tasks=submit_tasks_enabled_for_trigger(trigger),
             include_background_task_tools=getattr(self._tool_handler, "_background_manager", None) is not None,
             include_vault_tools=True,
             include_create_skill=True,

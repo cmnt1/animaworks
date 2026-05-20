@@ -42,7 +42,7 @@ Default: do not narrate routine, low-risk tool calls
 ### タスク記録と報告
 
 #### タスクキューへの記録義務
-- 人間からの指示・依頼は必ず `submit_tasks` でタスクキューに記録せよ（人間指示である旨をタスクに含める）
+- 通常チャットでは `submit_tasks` を使わない。人間からの指示・依頼はその場で直接実行し、後続管理が必要な場合は `update_task`、`state/current_state.md`、または明示的なバックグラウンド実行ワークフローで記録する
 - Anima間の委任もタスクキューに記録し、relay_chainを更新せよ
 - タスク完了時は `update_task` でステータスを更新せよ
 

@@ -262,6 +262,11 @@ class RAGMemorySearch:
                 collection_prefix="shared",
                 embedding_model=self._indexer.embedding_model if self._indexer else None,
             )
+            # shared_common_skills is a global collection. Per-anima curator
+            # archive/block/delete state cannot be applied destructively here
+            # without hiding common skills from other Animas, so personal
+            # enforcement happens at retrieval time in MemoryRetriever.
+            # Trust/security metadata remains enforced by MemoryIndexer.
             indexed = shared_indexer.index_directory(cs_dir, "common_skills", force=force)
             _write_shared_hash(meta_path, "shared_common_skills_hash", current_hash)
             if indexed > 0:

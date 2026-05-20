@@ -20,6 +20,7 @@ import logging
 import re
 import threading
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -74,6 +75,7 @@ class DigitalAnima(
 
     _MAX_THREAD_LOCKS = 20
     _THREAD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,36}$")
+    _AGENT_LANES = ("chat", "background", "inbox")
 
     @staticmethod
     def _validate_thread_id(thread_id: str) -> None:
@@ -92,7 +94,6 @@ class DigitalAnima(
         self.model_config = self.memory.read_model_config()
         self.messenger = Messenger(shared_dir, self.name)
         self._interrupt_events: dict[str, asyncio.Event] = {}
-        self.agent = AgentCore(anima_dir, self.memory, self.model_config, self.messenger)
         self._progress_min_interval = 0.5  # seconds
         self._progress_last_mono: float = 0.0
 
@@ -104,16 +105,17 @@ class DigitalAnima(
                 self._last_progress_at = now_local()
                 self._progress_last_mono = mono
 
-        self.agent._progress_callback = _throttled_progress
+        self._agent_progress_callback = _throttled_progress
 
         # 3-lock structure: conversation (human chat) / inbox (Anima-to-Anima MSG) / background (HB/cron/TaskExec)
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self._inbox_lock = asyncio.Lock()
         self._background_lock = asyncio.Lock()
-        # Shared AgentCore mutable state (interrupt event, session origin,
-        # temporary model swaps) must be prepared and used by only one
-        # DigitalAnima session at a time.
-        self._agent_session_lock = asyncio.Lock()
+        # AgentCore carries mutable executor/tool state, so each execution lane
+        # gets its own AgentCore and its own preparation/use lock.
+        self._agent_session_locks: dict[str, asyncio.Lock] = {lane: asyncio.Lock() for lane in self._AGENT_LANES}
+        # Backward-compatible alias for legacy chat-only call sites/tests.
+        self._agent_session_lock = self._agent_session_locks["chat"]
         self._cron_idle = asyncio.Event()
         self._cron_idle.set()  # initially idle (no cron running)
         self._state_file_lock = threading.Lock()  # protects current_state.md / pending.md
@@ -123,7 +125,14 @@ class DigitalAnima(
         self._active_parallel_tasks: dict[
             str, dict[str, Any]
         ] = {}  # task_id -> {title, description, started_at, batch_id, status}
-        self.agent._tool_handler.set_state_file_lock(self._state_file_lock)
+        self._ws_broadcast: Callable[[dict], Any] | None = None
+        self._pending_executor: Any | None = None  # set by runner after PendingTaskExecutor init
+        self.agent = self._create_lane_agent("chat")
+        self._lane_agents: dict[str, AgentCore] = {
+            "chat": self.agent,
+            "background": self._create_lane_agent("background"),
+            "inbox": self._create_lane_agent("inbox"),
+        }
         self._status_slots: dict[str, str] = {"inbox": "idle", "background": "idle"}
         self._task_slots: dict[str, str] = {"inbox": "", "background": ""}
         self._last_heartbeat: datetime | None = None
@@ -131,7 +140,6 @@ class DigitalAnima(
         self._last_progress_at: datetime | None = None
         self._busy_since: datetime | None = None
         self._on_lock_released: Callable[[], None] | None = None
-        self._pending_executor: Any | None = None  # set by runner after PendingTaskExecutor init
 
         # Idle compaction timer (per-thread)
         from core.config.models import load_config
@@ -146,11 +154,66 @@ class DigitalAnima(
         self._GREET_COOLDOWN = 3600  # seconds
 
         # Wire background task completion callback
-        self._ws_broadcast: Callable[[dict], Any] | None = None
-        if self.agent.background_manager:
-            self.agent.background_manager.on_complete = self._on_background_task_complete
+        for agent in self._iter_lane_agents():
+            if agent.background_manager:
+                agent.background_manager.on_complete = self._on_background_task_complete
 
         logger.info("DigitalAnima '%s' initialized from %s", self.name, anima_dir)
+
+    # ── Agent lane management ──────────────────────────────────────
+
+    def _create_lane_agent(self, lane: str) -> AgentCore:
+        """Create an AgentCore for one isolated execution lane."""
+        agent = AgentCore(self.anima_dir, self.memory, self.model_config, self.messenger)
+        agent._progress_callback = self._agent_progress_callback
+        agent._tool_handler.set_state_file_lock(self._state_file_lock)
+        if agent.background_manager:
+            agent.background_manager.on_complete = self._on_background_task_complete
+        logger.debug("[%s] Agent lane initialized: %s", self.name, lane)
+        return agent
+
+    def _iter_lane_agents(self) -> list[AgentCore]:
+        """Return unique AgentCore instances for all lanes."""
+        agents = getattr(self, "_lane_agents", None)
+        if not isinstance(agents, dict):
+            return [self.agent] if hasattr(self, "agent") else []
+        unique: list[AgentCore] = []
+        seen: set[int] = set()
+        for agent in agents.values():
+            ident = id(agent)
+            if ident not in seen:
+                seen.add(ident)
+                unique.append(agent)
+        return unique
+
+    def _agent_for_lane(self, lane: str) -> AgentCore:
+        """Return the AgentCore assigned to *lane*."""
+        agents = getattr(self, "_lane_agents", None)
+        if isinstance(agents, dict) and lane in agents:
+            return agents[lane]
+        return self.agent
+
+    def _agent_session_context(self, lane: str = "chat"):
+        """Return the session lock context for one execution lane."""
+        locks = getattr(self, "_agent_session_locks", None)
+        if isinstance(locks, dict):
+            lock = locks.get(lane)
+            if isinstance(lock, asyncio.Lock):
+                return lock
+        lock = getattr(self, "_agent_session_lock", None)
+        if isinstance(lock, asyncio.Lock):
+            return lock
+        return nullcontext()
+
+    def _set_pending_executor_wake(self, wake_fn: Callable[[], Any]) -> None:
+        """Wire PendingTaskExecutor wake callback into every lane ToolHandler."""
+        for agent in self._iter_lane_agents():
+            agent._tool_handler.set_pending_executor_wake(wake_fn)
+
+    def _set_active_parallel_tasks_getter(self, getter: Callable[[], dict[str, dict[str, Any]]]) -> None:
+        """Wire active parallel task visibility into every lane AgentCore."""
+        for agent in self._iter_lane_agents():
+            agent._active_parallel_tasks_getter = getter
 
     # ── Progress tracking ────────────────────────────────────────
 
@@ -197,18 +260,23 @@ class DigitalAnima(
         fn: Callable[[str, str, str], None],
     ) -> None:
         """Inject a callback fired after this anima sends a message."""
-        self.agent.set_on_message_sent(fn)
+        for agent in self._iter_lane_agents():
+            agent.set_on_message_sent(fn)
 
     def set_on_schedule_changed(
         self,
         fn: Callable[[str], Any] | None,
     ) -> None:
         """Inject a callback fired when heartbeat.md or cron.md is modified."""
-        self.agent.set_on_schedule_changed(fn)
+        for agent in self._iter_lane_agents():
+            agent.set_on_schedule_changed(fn)
 
     def drain_notifications(self) -> list[dict[str, Any]]:
         """Return and clear pending notification events."""
-        return self.agent.drain_notifications()
+        events: list[dict[str, Any]] = []
+        for agent in self._iter_lane_agents():
+            events.extend(agent.drain_notifications())
+        return events
 
     def drain_background_notifications(self) -> list[str]:
         """Read and remove all pending background task notifications.
@@ -252,7 +320,8 @@ class DigitalAnima(
         old = self.model_config
         new = self.memory.read_model_config()
         self.model_config = new
-        self.agent.update_model_config(new)
+        for agent in self._iter_lane_agents():
+            agent.update_model_config(new)
         changes = [k for k in ModelConfig.model_fields if getattr(old, k) != getattr(new, k)]
         logger.info("reload_config: model=%s, changes=%s", new.model, changes)
         return {"status": "ok", "model": new.model, "changes": changes}
@@ -367,7 +436,31 @@ class DigitalAnima(
     @property
     def needs_bootstrap(self) -> bool:
         """True if this anima has not completed the first-run bootstrap."""
-        return (self.anima_dir / "bootstrap.md").exists()
+        from core.bootstrap_state import get_bootstrap_status
+
+        return bool(get_bootstrap_status(self.anima_dir).get("needs_bootstrap"))
+
+    @property
+    def bootstrap_state(self) -> dict[str, Any]:
+        """Return state-aware first-run bootstrap lifecycle information."""
+        from core.bootstrap_state import get_bootstrap_status
+
+        return get_bootstrap_status(self.anima_dir)
+
+    @property
+    def needs_user_input(self) -> bool:
+        """True when interactive bootstrap is waiting for the user's first input."""
+        return bool(self.bootstrap_state.get("needs_user_input"))
+
+    @property
+    def needs_repair(self) -> bool:
+        """True when bootstrap artifacts indicate manual or CLI repair is needed."""
+        return bool(self.bootstrap_state.get("needs_repair"))
+
+    @property
+    def needs_background_bootstrap(self) -> bool:
+        """True when a character-sheet bootstrap can safely run in background."""
+        return bool(self.bootstrap_state.get("needs_background_bootstrap"))
 
     @property
     def primary_status(self) -> str:

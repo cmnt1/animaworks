@@ -132,6 +132,19 @@ def is_skill_blocked(metadata: SkillMetadata) -> bool:
     return metadata.security.verdict == SkillScanVerdict.dangerous
 
 
+def skill_access_decision(metadata: SkillMetadata, *, anima_dir: Path | None = None) -> tuple[bool, str]:
+    """Return load/access decision for a skill metadata record."""
+    from core.skills.curator import curator_allows_access
+
+    return curator_allows_access(metadata, anima_dir=anima_dir)
+
+
+def is_skill_loadable(metadata: SkillMetadata, *, anima_dir: Path | None = None) -> bool:
+    """Return True when the skill is not blocked by trust, security, or curator state."""
+    allowed, _reason = skill_access_decision(metadata, anima_dir=anima_dir)
+    return allowed
+
+
 def load_skill_body(path: Path) -> str:
     """Return the Markdown body of *path* with YAML frontmatter removed.
 

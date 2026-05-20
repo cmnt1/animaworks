@@ -21,6 +21,7 @@ from server.routes.logs_routes import create_logs_router
 from server.routes.memory_routes import create_memory_router
 from server.routes.room import create_room_router
 from server.routes.sessions import create_sessions_router
+from server.routes.skills import create_skills_router
 from server.routes.system import create_system_router
 from server.routes.taskboard import create_taskboard_router
 from server.routes.team_presets import create_team_presets_router
@@ -44,6 +45,7 @@ def create_router() -> APIRouter:
     api.include_router(create_memory_router())
     api.include_router(create_room_router())
     api.include_router(create_sessions_router())
+    api.include_router(create_skills_router())
     api.include_router(create_system_router())
     api.include_router(create_taskboard_router())
     api.include_router(create_config_router())

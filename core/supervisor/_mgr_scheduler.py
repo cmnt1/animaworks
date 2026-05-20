@@ -731,6 +731,12 @@ class SchedulerMixin:
 
         for anima_name, anima_dir in self._iter_consolidation_targets():
             try:
+                from core.memory.rag.repair import is_repair_locked
+
+                if is_repair_locked(anima_name):
+                    logger.warning("Skipping daily RAG indexing for %s: RAG repair lock is held", anima_name)
+                    continue
+
                 vector_store = get_vector_store(anima_name)
                 if vector_store is None:
                     logger.warning("Vector store unavailable for %s, skipping indexing", anima_name)

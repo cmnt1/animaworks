@@ -35,7 +35,7 @@ class TestBehaviorRulesTemplate:
     def test_task_recording_rules(self):
         path = TEMPLATES_DIR / "behavior_rules.md"
         content = path.read_text(encoding="utf-8")
-        assert "submit_tasks" in content
+        assert "通常チャットでは `submit_tasks` を使わない" in content
         assert "解決済み案件の再報告禁止" in content
 
     def test_existing_sections_preserved(self):

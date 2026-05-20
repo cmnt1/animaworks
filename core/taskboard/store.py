@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -106,14 +107,23 @@ class TaskBoardStore:
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _ensure_schema(self) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.executescript(_SCHEMA_SQL)
             _migrate_taskboard_events_constraint(conn)
 
     def get_metadata(self, anima_name: str, task_id: str) -> TaskBoardMetadata | None:
         """Return metadata for a task, if present."""
-        with self._connect() as conn:
+        with self._connection() as conn:
             row = conn.execute(
                 """
                 SELECT *
@@ -142,7 +152,7 @@ class TaskBoardStore:
             """
             params = (anima_name,)
 
-        with self._connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute(query, params).fetchall()
         return [_metadata_from_row(row) for row in rows]
 
@@ -161,7 +171,7 @@ class TaskBoardStore:
             fields = ", ".join(sorted(unknown))
             raise TypeError(f"unknown TaskBoard metadata fields: {fields}")
 
-        with self._connect() as conn:
+        with self._connection() as conn:
             existing_row = conn.execute(
                 """
                 SELECT *
@@ -233,7 +243,7 @@ class TaskBoardStore:
         ts: str | None = None,
     ) -> int:
         """Append an audit event and return its row id."""
-        with self._connect() as conn:
+        with self._connection() as conn:
             return _append_event(
                 conn,
                 event_type=event_type,
@@ -253,7 +263,7 @@ class TaskBoardStore:
         notification_key: str | None = None,
     ) -> TaskBoardMetadata:
         """Increment surface_count and record a surface event."""
-        with self._connect() as conn:
+        with self._connection() as conn:
             existing_row = conn.execute(
                 """
                 SELECT *
@@ -329,7 +339,7 @@ class TaskBoardStore:
             params.append(task_id)
 
         where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
-        with self._connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute(
                 f"""
                 SELECT *
