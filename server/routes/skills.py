@@ -30,7 +30,6 @@ class ActiveSkillsRequest(BaseModel):
 
 class TrustSkillRequest(BaseModel):
     ref: str
-    trusted_by: str = "user"
     trust_reason: str = "human_instruction"
 
 
@@ -68,11 +67,12 @@ def create_skills_router() -> APIRouter:
 
         anima_dir = _resolve_anima_dir(request, name)
         try:
+            actor = _human_actor(request)
             result = await asyncio.to_thread(
                 promote_skill_to_trusted,
                 anima_dir,
                 body.ref,
-                trusted_by=body.trusted_by,
+                trusted_by=actor,
                 trust_reason=body.trust_reason,
             )
         except ValueError as exc:
@@ -119,6 +119,14 @@ def _validate_thread_or_400(thread_id: str) -> str:
         return validate_thread_id(thread_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+def _human_actor(request: Request) -> str:
+    user = getattr(request.state, "user", None)
+    username = str(getattr(user, "username", "") or "").strip()
+    if username:
+        return username
+    return "local_user"
 
 
 __all__ = ["ActiveSkillsRequest", "TrustSkillRequest", "create_skills_router"]

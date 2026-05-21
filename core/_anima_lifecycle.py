@@ -604,42 +604,9 @@ class LifecycleMixin:
 
     def _run_autonomous_skill_learning(self):
         """Run deterministic skill auto-learning after successful consolidation."""
-        try:
-            from core.skills.autolearn import AutonomousSkillLearner
+        from core.skills.autolearn_lifecycle import run_autonomous_skill_learning_for
 
-            result = AutonomousSkillLearner(self.anima_dir).run()
-        except Exception:
-            logger.debug("[%s] autonomous skill learning failed", self.name, exc_info=True)
-            return None
-
-        for created in result.created:
-            self._activity.log(
-                "skill_auto_created",
-                summary=created.message,
-                meta={
-                    "skill_name": created.skill_name,
-                    "path": created.active_path,
-                    "scan_verdict": created.scan_verdict,
-                },
-            )
-        if result.skipped or result.blocked:
-            self._activity.log(
-                "skill_autolearn_summary",
-                summary=f"Autonomous skill learning skipped={len(result.skipped)} blocked={len(result.blocked)}",
-                meta={
-                    "skipped": [
-                        {
-                            "skill_name": skip.skill_name,
-                            "procedure_path": skip.procedure_path,
-                            "reason": skip.reason,
-                            "related_skill": skip.related_skill,
-                        }
-                        for skip in result.skipped
-                    ],
-                    "blocked": [blocked.to_dict() for blocked in result.blocked],
-                },
-            )
-        return result
+        return run_autonomous_skill_learning_for(self)
 
     async def run_cron_task(
         self,

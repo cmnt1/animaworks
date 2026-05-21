@@ -94,6 +94,24 @@ def test_autonomous_learner_skips_private_or_billing_risk(tmp_path: Path) -> Non
     assert not (anima_dir / "skills" / "billing-helper").exists()
 
 
+def test_autonomous_learner_skips_nested_routing_risk(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "mei"
+    anima_dir.mkdir(parents=True)
+    common_dir = tmp_path / "common_skills"
+    common_dir.mkdir()
+    _write_procedure(
+        anima_dir,
+        "routing-send-helper",
+        extra="routing:\n  risk:\n    external_send: true\n",
+    )
+
+    result = AutonomousSkillLearner(anima_dir, common_skills_dir=common_dir).run()
+
+    assert result.created == []
+    assert result.skipped[0].reason == "risk_external_send"
+    assert not (anima_dir / "skills" / "routing-send-helper").exists()
+
+
 def test_autonomous_learner_records_ineligible_candidate_reason(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "mei"
     anima_dir.mkdir(parents=True)

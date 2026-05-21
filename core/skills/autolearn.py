@@ -121,7 +121,10 @@ class AutonomousSkillLearner:
         return None
 
     def _risk_skip_reason(self, metadata: dict[str, Any]) -> str | None:
-        risk = normalise_risk(metadata.get("risk") or {})
+        raw_risk = metadata.get("risk") or {}
+        routing = metadata.get("routing") if isinstance(metadata.get("routing"), dict) else {}
+        nested_risk = routing.get("risk") if isinstance(routing.get("risk"), dict) else {}
+        risk = normalise_risk({**nested_risk, **raw_risk})
         for risk_field in (
             "destructive",
             "external_send",

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
+from starlette.middleware.base import BaseHTTPMiddleware
 
 
 def _write_skill(root: Path, name: str, *, body: str = "Use this skill.", extra: str = "") -> Path:
@@ -33,6 +34,18 @@ def _make_app(animas_dir: Path):
     app = FastAPI()
     app.state.animas_dir = animas_dir
     app.include_router(create_skills_router(), prefix="/api")
+    return app
+
+
+def _make_app_with_user(animas_dir: Path, username: str):
+    app = _make_app(animas_dir)
+
+    class UserMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            request.state.user = type("User", (), {"username": username})()
+            return await call_next(request)
+
+    app.add_middleware(UserMiddleware)
     return app
 
 
@@ -161,7 +174,7 @@ async def test_trust_skill_route_promotes_probation_skill(tmp_path: Path) -> Non
     text = (anima_dir / "skills" / "writer" / "SKILL.md").read_text(encoding="utf-8")
     assert "trust_level: trusted" in text
     assert "promotion_status: trusted" in text
-    assert "trusted_by: user" in text
+    assert "trusted_by: local_user" in text
 
 
 async def test_trust_skill_route_rejects_non_probation_skill(tmp_path: Path) -> None:
@@ -188,3 +201,37 @@ async def test_trust_skill_route_rejects_non_probation_skill(tmp_path: Path) -> 
 
     assert rejected.status_code == 400
     assert "Only probation skills" in rejected.json()["detail"]
+
+
+async def test_trust_skill_route_derives_actor_from_request_state(tmp_path: Path) -> None:
+    animas_dir = tmp_path / "animas"
+    anima_dir = animas_dir / "alice"
+    common_dir = tmp_path / "common_skills"
+    anima_dir.mkdir(parents=True)
+    common_dir.mkdir()
+    _write_skill(
+        anima_dir,
+        "writer",
+        body="Writer body.",
+        extra=(
+            "trust_level: community\n"
+            "promotion_status: probation\n"
+            "skill_policy:\n"
+            "  use_mode: candidate_hint\n"
+            "  injection: pointer_preferred\n"
+        ),
+    )
+
+    app = _make_app_with_user(animas_dir, "owner")
+    transport = ASGITransport(app=app)
+    with patch("core.paths.get_common_skills_dir", return_value=common_dir):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            promoted = await client.post(
+                "/api/animas/alice/skills/trust",
+                json={"ref": "writer", "trusted_by": "spoofed"},
+            )
+
+    assert promoted.status_code == 200
+    text = (anima_dir / "skills" / "writer" / "SKILL.md").read_text(encoding="utf-8")
+    assert "trusted_by: owner" in text
+    assert "trusted_by: spoofed" not in text
