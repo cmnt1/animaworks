@@ -245,9 +245,7 @@ def build_unified_tool_list(
 
     if include_create_skill:
         tools.extend(
-            t
-            for t in _skill_authoring_schemas_for_trigger(trigger)
-            if t["name"] in {"create_skill", "trust_skill"}
+            t for t in _skill_authoring_schemas_for_trigger(trigger) if t["name"] in {"create_skill", "trust_skill"}
         )
         tools.extend(_curator_skill_schemas())
 
