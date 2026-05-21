@@ -210,10 +210,6 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": "Skill name or pointer such as skills/<name>/SKILL.md.",
                     },
-                    "trusted_by": {
-                        "type": "string",
-                        "description": "Actor approving trusted promotion, default user.",
-                    },
                     "trust_reason": {
                         "type": "string",
                         "description": "Reason for promotion, default human_instruction.",

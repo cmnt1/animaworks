@@ -355,7 +355,7 @@ class SkillsToolsMixin:
         ref = str(args.get("ref") or args.get("skill_name") or "").strip()
         if not ref:
             return _error_result("InvalidArguments", "ref is required")
-        trusted_by = str(args.get("trusted_by") or "user").strip() or "user"
+        trusted_by = "user"
         trust_reason = str(args.get("trust_reason") or "human_instruction").strip() or "human_instruction"
         try:
             result = promote_skill_to_trusted(
