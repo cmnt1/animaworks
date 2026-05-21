@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -51,6 +51,7 @@ class SkillUsageStats(BaseModel):
     failure_count: int = 0
     patch_count: int = 0
     create_count: int = 0
+    created_at: str | None = None
     last_used_at: str | None = None
     is_common: bool = False
 
@@ -232,6 +233,10 @@ class SkillRiskMetadata(BaseModel):
     destructive: bool = False
     external_send: bool = False
     handles_untrusted_data: bool = False
+    credential: bool = False
+    production: bool = False
+    billing: bool = False
+    private_data: bool = False
     requires_human_approval: bool = False
     open_world: bool = False
 
@@ -261,6 +266,13 @@ class SkillRoutingMetadata(BaseModel):
         return _coerce_str_list(value)
 
 
+class SkillPolicyMetadata(BaseModel):
+    """How strongly a skill may influence prompt context and behavior."""
+
+    use_mode: Literal["primary_guidance", "candidate_hint"] = "primary_guidance"
+    injection: Literal["body_allowed", "pointer_preferred", "blocked"] = "body_allowed"
+
+
 # ── SkillMetadata ─────────────────────────────────────────
 
 
@@ -284,6 +296,7 @@ class SkillMetadata(BaseModel):
     routing_examples: list[str] = Field(default_factory=list)
     risk: SkillRiskMetadata = Field(default_factory=SkillRiskMetadata)
     routing: SkillRoutingMetadata = Field(default_factory=SkillRoutingMetadata)
+    skill_policy: SkillPolicyMetadata = Field(default_factory=SkillPolicyMetadata)
     trust_level: SkillTrustLevel = SkillTrustLevel.trusted
     source: SkillSource = Field(default_factory=SkillSource)
     version: int = 1
@@ -293,6 +306,9 @@ class SkillMetadata(BaseModel):
     approved_by: str | None = None
     approved_at: datetime | None = None
     approval_callback_id: str | None = None
+    trusted_by: str | None = None
+    trusted_at: datetime | None = None
+    trust_reason: str | None = None
     usage_count: int = 0
     success_count: int = 0
     failure_count: int = 0
@@ -322,6 +338,25 @@ class SkillMetadata(BaseModel):
     @classmethod
     def _normalize_list_fields(cls, value: object) -> list[str]:
         return _coerce_str_list(value)
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _normalize_source_field(cls, value: object) -> object:
+        """Accept legacy scalar ``source`` frontmatter values.
+
+        Older procedure / skill files frequently stored provenance as a simple
+        string such as ``activity_log`` or ``error_trace_analysis``. The newer
+        schema expects a ``SkillSource`` object, so we normalize a scalar into
+        ``{\"type\": <value>}`` to preserve backward compatibility.
+        """
+        if value is None:
+            return value
+        if isinstance(value, SkillSource):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            return {"type": stripped} if stripped else None
+        return value
 
     def to_legacy(self) -> SkillMeta:
         """Convert to the legacy ``SkillMeta`` dataclass used elsewhere in core.

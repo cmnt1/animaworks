@@ -15,6 +15,17 @@ Default: do not narrate routine, low-risk tool calls
 ### Data Access Policy
 - For SSH connections to EC2, SQL Server connections, site IDs, passwords, API codes, and other credentials, `E:\OneDriveBiz\Tools\abconfig\Cnct_Env.py` is the single source of truth.
 - Do not guess connection targets, database names, or authentication methods.
+### Choosing Where To Record
+
+| Destination | Use for | Authoring rule |
+|-------------|---------|----------------|
+| `knowledge/` | Facts, preferences, policies, decisions, lessons, failure records | Search `knowledge/` first and update a related file when one exists |
+| `procedures/` | Repeatable step-by-step task execution | Use for procedures that do not need skill-catalog routing |
+| `skills/{name}/SKILL.md` | Reusable capabilities, tool workflows, template-backed playbooks, meta-procedures | Read `common_skills/skill-creator/SKILL.md` first and create with `create_skill` |
+| `knowledge/action-rule-*.md` + `[ACTION-RULE]` | Pre-action checks before send/post/notify/write tools | Include `trigger_tools:`. If a specific memory must be read first, include `read_memory_file(path="...")` in the body |
+| `heartbeat.md` | Recurring periodic checks | Read the current file and update the checklist while preserving protected sections |
+| `cron.md` | Scheduled work at fixed times | Read the current file and add a valid cron task entry |
+| `state/current_state.md` | Session working memory | Store temporary observations, plans, and blockers only. Move durable knowledge or procedures elsewhere |
 
 ### Communication Rules
 - Text and file references only. Do not share internal state directly

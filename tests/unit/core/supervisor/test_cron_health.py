@@ -171,6 +171,35 @@ class TestCronHealthTick:
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "1" in content  # 1 cron job (health job excluded)
+        scheduler_mgr._anima._activity._load_entries.assert_called_once_with(
+            hours=24,
+            types=["cron_executed"],
+        )
+
+    @pytest.mark.asyncio
+    async def test_expected_fire_in_24h_window_triggers_notification(
+        self, scheduler_mgr: SchedulerManager, tmp_path: Path
+    ) -> None:
+        # The health job still runs every 3h, but missing-execution detection
+        # now looks back across 24h to avoid false positives for daily crons.
+        in_widened_window = now_local() - timedelta(hours=23)
+        mock_scheduler = MagicMock()
+        job_cron = _job_with_next_fire("test_anima_cron_0", in_widened_window)
+        mock_scheduler.get_jobs.return_value = [job_cron]
+        scheduler_mgr.scheduler = mock_scheduler
+
+        scheduler_mgr._anima._activity._load_entries = MagicMock(return_value=[])
+
+        await scheduler_mgr._cron_health_tick()
+
+        files = _notif_files(tmp_path)
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "直近24時間" in content
+        scheduler_mgr._anima._activity._load_entries.assert_called_once_with(
+            hours=24,
+            types=["cron_executed"],
+        )
 
     @pytest.mark.asyncio
     async def test_long_period_cron_outside_window_no_notification(
@@ -252,26 +281,32 @@ class TestAnyCronExpectedInWindow:
 
     def test_fire_inside_window(self) -> None:
         now = now_local()
-        ws = now - timedelta(hours=3)
+        ws = now - timedelta(hours=24)
         job = _job_with_next_fire("c0", now - timedelta(hours=1))
+        assert SchedulerManager._any_cron_expected_in_window([job], ws, now) is True
+
+    def test_fire_inside_widened_window(self) -> None:
+        now = now_local()
+        ws = now - timedelta(hours=24)
+        job = _job_with_next_fire("c0", now - timedelta(hours=23))
         assert SchedulerManager._any_cron_expected_in_window([job], ws, now) is True
 
     def test_fire_outside_window(self) -> None:
         now = now_local()
-        ws = now - timedelta(hours=3)
+        ws = now - timedelta(hours=24)
         job = _job_with_next_fire("c0", now + timedelta(days=2))
         assert SchedulerManager._any_cron_expected_in_window([job], ws, now) is False
 
     def test_mixed_jobs_any_match(self) -> None:
         now = now_local()
-        ws = now - timedelta(hours=3)
+        ws = now - timedelta(hours=24)
         far = _job_with_next_fire("c0", now + timedelta(days=2))
         near = _job_with_next_fire("c1", now - timedelta(minutes=30))
         assert SchedulerManager._any_cron_expected_in_window([far, near], ws, now) is True
 
     def test_trigger_error_is_conservative(self) -> None:
         now = now_local()
-        ws = now - timedelta(hours=3)
+        ws = now - timedelta(hours=24)
         job = MagicMock()
         job.id = "c0"
         job.trigger.get_next_fire_time.side_effect = RuntimeError("boom")

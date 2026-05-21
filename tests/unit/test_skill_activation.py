@@ -3,7 +3,6 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,12 +24,7 @@ def _write_skill(root: Path, name: str, *, body: str = "Use this skill.", extra:
     skill_dir.mkdir(parents=True, exist_ok=True)
     path = skill_dir / "SKILL.md"
     path.write_text(
-        "---\n"
-        f"name: {name}\n"
-        "description: test skill\n"
-        f"{extra}"
-        "---\n\n"
-        f"{body}\n",
+        f"---\nname: {name}\ndescription: test skill\n{extra}---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -41,11 +35,7 @@ def _write_common_skill(common_dir: Path, name: str, *, body: str = "Use common 
     skill_dir.mkdir(parents=True, exist_ok=True)
     path = skill_dir / "SKILL.md"
     path.write_text(
-        "---\n"
-        f"name: {name}\n"
-        "description: common test skill\n"
-        "---\n\n"
-        f"{body}\n",
+        f"---\nname: {name}\ndescription: common test skill\n---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -123,7 +113,7 @@ def test_build_active_skill_context_renders_body_and_records_use(tmp_path: Path)
         result = build_active_skill_context(anima_dir)
 
     rendered = result.render()
-    assert "## Active Skills" in rendered
+    assert "## Trusted Skills" in rendered
     assert "### writer" in rendered
     assert "Follow writer rules." in rendered
     assert SkillUsageTracker(anima_dir).get_stats("writer").use_count == 1

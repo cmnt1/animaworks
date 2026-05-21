@@ -84,16 +84,19 @@ animaworks/
 │   │   ├── shortterm.py       #   Short-term memory (chat/heartbeat separated)
 │   │   ├── activity.py        #   Unified activity log (JSONL timeline)
 │   │   ├── streaming_journal.py #  Streaming journal (WAL)
-│   │   ├── priming/           #   Automatic recall layer (6 channels: engine + channel_a–f + budget)
+│   │   ├── priming/           #   Automatic recall layer (multi-source search + deterministic gate)
+│   │   ├── action_gate.py     #   Memory check before side-effecting actions
 │   │   ├── consolidation.py   #   Memory consolidation (daily/weekly)
 │   │   ├── forgetting.py      #   Active forgetting (3 stages)
 │   │   ├── reconsolidation.py #   Memory reconsolidation
 │   │   ├── task_queue.py      #   Persistent task queue
+│   │   ├── taskboard_housekeeping.py # TaskBoard cleanup integration
 │   │   ├── resolution_tracker.py # Resolution registry
 │   │   ├── rag_search.py      #   Search orchestration
 │   │   └── rag/               #   RAG engine (ChromaDB + sentence-transformers)
 │   │       ├── indexer.py, retriever.py, graph.py, store.py, http_store.py
-│   │       └── watcher.py     #   File change monitoring
+│   │       ├── vector_worker_client.py, vector_worker_process.py, vector_worker_server.py
+│   │       └── watcher.py, repair.py # File monitoring and RAG repair
 │   ├── supervisor/            # Process supervision
 │   │   ├── manager.py         #   ProcessSupervisor (child process launch, monitoring)
 │   │   ├── ipc.py             #   Unix Domain Socket IPC
@@ -144,6 +147,8 @@ animaworks/
 │   │   ├── assisted.py        #   Mode B: Framework-assisted
 │   │   └── _session.py, etc.  #   Session, SDK stream, sanitization, etc.
 │   ├── i18n/                  #   User-facing strings (t() / _STRINGS)
+│   ├── skills/                # Skill Hub, activation, router, curator, promotion
+│   ├── taskboard/             # TaskBoard store, state, cleanup
 │   └── tools/                 # External tool implementations
 │       ├── web_search.py, x_search.py, slack.py, chatwork.py
 │       ├── gmail.py, github.py, google_calendar.py, google_tasks.py
@@ -187,7 +192,7 @@ animaworks/
 │       ├── modules/, pages/, shared/, styles/
 │       └── workspace/         # 3D office Workspace (`/workspace`)
 ├── templates/
-│   ├── ja/, en/               # Locale-specific templates
+│   ├── ja/, en/, ko/          # Locale-specific templates
 │   │   ├── prompts/           #   Prompt templates
 │   │   ├── anima_templates/   #   Anima scaffolding (_blank)
 │   │   ├── roles/             #   Role templates (engineer, researcher, manager, writer, ops, general)
@@ -467,7 +472,7 @@ When `execution_mode` is not set in `status.json`, `resolve_execution_mode()` re
 |`implicit_link_threshold`      |`float`   |`0.75`                            |Similarity threshold for implicit link generation|
 |`spreading_memory_types`       |`list`    |`["knowledge", "episodes"]`        |Memory types targeted by spreading activation|
 |`min_retrieval_score`          |`float`   |`0.30`                            |Minimum retrieval score (drop hits below)|
-|`skill_match_min_score`        |`float`   |`0.75`                            |Minimum similarity for Priming skill matching|
+|`skill_match_min_score`        |`float`   |`0.75`                            |Minimum similarity for legacy/auxiliary skill matching|
 
 **PromptConfig Fields (excerpt):**
 
@@ -479,7 +484,7 @@ When `execution_mode` is not set in `status.json`, `resolve_execution_mode()` re
 
 |Field                 |Type    |Default |Description                        |
 |----------------------|--------|--------|-----------------------------------|
-|`dynamic_budget`      |`bool`  |`true`  |Enable/disable dynamic budget allocation|
+|`dynamic_budget`      |`bool`  |`true`  |Compatibility field; normal chat paths use `enable_dynamic_budget` and the `budget_*` values|
 |`budget_greeting`     |`int`   |`500`   |Token budget for greeting messages |
 |`budget_question`     |`int`   |`2000`  |Token budget for question messages |
 |`budget_request`      |`int`   |`3000`  |Token budget for request messages  |
@@ -638,7 +643,7 @@ The archive-based approach is different. Just as a person retrieves the document
 - **Encoding (write)**: After action, append logs to `episodes/`; record new knowledge in `knowledge/`
 - **Consolidation (reflection)**: Transfer from episodic to semantic memory (automatic daily/weekly)
 - **Forgetting**: Staged archival of low-activity chunks (3 stages: downscaling → reorganization → forgetting)
-- **Priming (automatic recall)**: Six-channel parallel automatic memory search injected into the system prompt
+- **Priming (automatic recall)**: Multi-source parallel memory search with a deterministic gate, injected into the system prompt
 
 The key to success is a strong system-prompt instruction that **deciding without searching memory is forbidden**.
 
@@ -916,7 +921,7 @@ Group 2: Who you are
 
 Group 3: Current situation
   - state/current_state.md + pending.md (in-progress tasks)
-  - Task Queue (persistent task queue — conditional)
+  - TaskBoard / task queue (current, deferred, suppressed, background, fallback queue — conditional)
   - Resolution Registry (resolved issues, last 7 days — conditional)
   - Recent Outbound (send history, last 2 hours, max 3)
   - Priming (RAG automatic recall — conditional)
@@ -942,7 +947,7 @@ Group 6: Meta settings
 
 **Tiered System Prompt:** Adjusts prompt content in 4 tiers based on context window (T1 FULL 128k+ / T2 STANDARD 32k–128k / T3 LIGHT 16k–32k / T4 MINIMAL <16k).
 
-**Skill injection (progressive disclosure):** Channel D (skill_match) returns only the **names** of matched skills/procedures. Full text is loaded on demand via the `skill` tool. Budget is determined by message type: greeting=500, question=2000, request=3000, heartbeat=200 (`PrimingConfig` defaults).
+**Skill injection (progressive disclosure):** Skills are not loaded wholesale by the main priming body. Active skill context, the Skill Router, Skill Hub, the `skill` tool, and `read_memory_file` provide the body or pointer only when needed. Message-type budgets still apply to the surrounding priming context: greeting=500, question=2000, request=3000, heartbeat=200 (`PrimingConfig` defaults).
 
 Including "Making decisions without searching memory is prohibited" in `behavior_rules` is the key to the success of archive-based memory (validated experimentally).
 
@@ -955,22 +960,24 @@ Including "Making decisions without searching memory is prohibited" in `behavior
 - **Background model** — heartbeat/inbox/cron can run on a separate lightweight model from the main model (cost optimization)
 - **ProcessSupervisor** — Launches and monitors each Anima as an independent child process with Unix socket
 - **Archive-based memory** — episodes / knowledge / procedures / state. Details in **[memory.md](memory.md)**
-- **Priming (6 channels)** — sender_profile, recent_activity, related_knowledge, skill_match, pending_tasks, episodes
+- **Priming (multi-source automatic recall)** — sender profile, recent activity, important knowledge, related knowledge, TaskBoard/task state, episodes, graph context, recent outbound, pending human notifications
+- **Action memory gate** — side-effecting actions verify related memory and `[ACTION-RULE]` context before execution
 - **Memory consolidation and forgetting** — Daily/weekly consolidation; 3-stage forgetting (synaptic homeostasis hypothesis–based)
 - **Board/shared channels** — Slack-style shared channels. REST API for channel posts, mentions, DM history
 - **Unified outbound routing** — Auto-resolves recipient names to internal Anima or external platforms (Slack/Chatwork) for delivery
-- **Heartbeat, cron, TaskExec** — Schedule management via APScheduler. Tasks in state/pending/ executed by TaskExec via 3-second polling
+- **Heartbeat, cron, TaskExec, TaskBoard** — Schedule management via APScheduler. TaskBoard and TaskExec manage queued, running, deferred, suppressed, and completed work
 - **Inter-Anima messaging** — Text communication via Messenger. intent control (report/delegation/question); 3-layer rate limiting
 - **Supervisor tools** — Auto-enabled for Animas with subordinates (see tool list below)
 - **Unified configuration** — config.json + Pydantic validation. status.json SSoT; models.json for execution mode override
 - **Credential Vault** — `vault.json` + `vault.key` (PyNaCl SealedBox, `core/config/vault.py`). Tools: `vault_get` / `vault_store` / `vault_list`
 - **Common tools directory** — Scans `~/.animaworks/common_tools/*.py` and loads when names do not collide with core tools (`core/tools/__init__.py`)
+- **Skill Hub / Curator** — Skill installation, activation, quarantine, promotion from procedures, and usage-based review
 - **FastAPI server** — REST (`/api`) + dashboard WebSocket (`/ws`) + voice (`/ws/voice/{name}`) + first-run setup wizard (`/setup`) + SPA (`#/chat`, etc.) + Workspace (`/workspace`). Internal embed/vector API centralizes child-process RAG; meeting room API + SSE; `StreamRegistry` / `ConfigReloadManager`; Slack Socket Mode integration
 - **Voice chat** — WebSocket /ws/voice/{name}. STT (faster-whisper) → Chat IPC → TTS (VOICEVOX/ElevenLabs/SBV2)
 - **Anima creation** — From template / blank (_blank) / MD file (create --from-md)
-- **Skill progressive disclosure** — Only matched skill names injected. Full text loaded on demand via `skill` tool
+- **Skill progressive disclosure** — Active skill context, Skill Router, and `skill` / `read_memory_file` load full text only when needed
 - **External messaging integration** — Slack Socket Mode (real-time bidirectional), Chatwork Webhook (inbound)
-- **Persistent task queue** — task_queue.jsonl. Staleness detection, DAG parallel execution (submit_tasks), delegation prompt injection
+- **TaskBoard / persistent task queue** — TaskBoard is primary for current, processing, deferred, suppressed, background, and completed work; task_queue.jsonl remains as compatibility fallback. Includes staleness detection, DAG parallel execution (`submit_tasks`), and delegation prompt context
 - **Resolution registry** — Cross-Anima issue resolution tracking via shared/resolutions.jsonl
 - **Human notification** — call_human integration. Slack, Chatwork, LINE, Telegram, ntfy channels
 - **External tools** — web_search, x_search, slack, chatwork, gmail, github, google_calendar, google_tasks, discord, notion, machine, transcribe, aws_collector, local_llm, image_gen, call_human, etc. (via `permissions` and `ExternalToolDispatcher`)
@@ -1005,7 +1012,7 @@ Internal tools provided by the framework. Combines Claude Code–compatible tool
 
 | Tool | Description |
 |------|-------------|
-| `backlog_task` | Add to task queue (human-origin tasks highest priority) |
+| `backlog_task` | Add to TaskBoard / fallback task queue (human-origin tasks highest priority) |
 | `submit_tasks` | DAG batch of tasks (dependency resolution, parallel execution) |
 | `update_task` | Update task state |
 | `list_tasks` | List tasks (tool or CLI depending on mode) |

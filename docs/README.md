@@ -48,7 +48,7 @@ This page is your starting point for understanding the whole picture.
 
 | Document | Description |
 |----------|-------------|
-| [CLI Reference](cli-reference.md) | Every `animaworks` subcommand and option — initialization, server management, Anima operations, chat, model management, RAG indexing |
+| [CLI Reference](cli-reference.md) | Every `animaworks` subcommand and option — initialization, server management, Anima operations, chat, model management, RAG repair, memory backends, Skill Hub, TaskBoard |
 | [API Reference](api-reference.md) | All REST endpoints — authentication, Anima management, chat (SSE streaming), memory operations, configuration, webhooks |
 | [Slack Integration](slack-socket-mode-setup.md) | Step-by-step Socket Mode setup. Create the Slack App, configure tokens, connect to your Animas. Works behind NAT |
 
@@ -56,8 +56,8 @@ This page is your starting point for understanding the whole picture.
 
 | Document | Description |
 |----------|-------------|
-| [Technical Spec](spec.md) | Full specification. Four execution modes (S/A/B/C), 6-group prompt construction, 3-pass execution isolation, configuration resolution precedence |
-| [Memory System](memory.md) | Mapping to human memory models, RAG retrieval, 6-channel parallel priming, daily/weekly consolidation, 3-stage active forgetting |
+| [Technical Spec](spec.md) | Full specification. Six execution modes (S/C/D/G/A/B), prompt construction, execution-path isolation, configuration resolution precedence |
+| [Memory System](memory.md) | Mapping to human memory models, RAG search, automatic recall, action memory gate, daily/weekly consolidation, active forgetting |
 | [Security](security.md) | Threat model, data provenance tracking, trust-level classification, command execution control, path traversal defense, authentication |
 | [Brain Mapping](brain-mapping.md) | LLM as neocortex, priming as hippocampus, forgetting as sleep-dependent homeostasis. Designed from clinical psychiatric experience |
 

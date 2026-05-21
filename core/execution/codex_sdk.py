@@ -773,6 +773,7 @@ class CodexSDKExecutor(BaseExecutor):
 
     def _build_env(self) -> dict[str, str]:
         """Build env dict for the Codex CLI child process."""
+        from core.execution.session_context import current_runtime_session
         from core.paths import PROJECT_DIR
 
         env: dict[str, str] = dict(os.environ)
@@ -790,6 +791,9 @@ class CodexSDKExecutor(BaseExecutor):
             env["CODEX_HOME"] = str(self._codex_home)
         elif os.environ.get("CODEX_HOME"):
             env["CODEX_HOME"] = os.environ["CODEX_HOME"]
+        ctx = current_runtime_session()
+        if ctx is not None:
+            env.update(ctx.to_env())
         # Windows requires SYSTEMROOT for Winsock/TLS initialisation and
         # TEMP/TMP for scratch files.  Without these the Codex CLI subprocess
         # fails with OS error 10106 (WSAEPROVIDERFAILEDINIT).
@@ -870,12 +874,10 @@ class CodexSDKExecutor(BaseExecutor):
            omits CODEX_HOME entirely (letting Codex use OS keychain).
            Per-anima config is then passed via ``-c`` flags instead.
         """
-        # Check the system-level CODEX_HOME first (env var), then ~/.codex/
+        default_auth = Path.home() / ".codex" / "auth.json"
         _sys_codex_home = os.environ.get("CODEX_HOME")
-        if _sys_codex_home:
+        if not default_auth.is_file() and _sys_codex_home:
             default_auth = Path(_sys_codex_home) / "auth.json"
-        else:
-            default_auth = Path.home() / ".codex" / "auth.json"
         target = self._codex_home / "auth.json"
 
         if target.exists() and not target.is_symlink() and not force:
@@ -1025,7 +1027,7 @@ class CodexSDKExecutor(BaseExecutor):
 
         permissions_config = load_permissions(self._anima_dir)
 
-        if "/" in permissions_config.file_roots or sys.platform == "win32":
+        if "/" in permissions_config.file_roots:
             sandbox_mode = "danger-full-access"
             sandbox_section = ""
         else:
@@ -1040,7 +1042,10 @@ class CodexSDKExecutor(BaseExecutor):
                 if cwd_str not in writable_roots:
                     writable_roots.append(cwd_str)
             roots_list = ", ".join(f'"{esc(r)}"' for r in writable_roots)
-            sandbox_section = f"\n[sandbox_workspace_write]\nwritable_roots = [{roots_list}]\nnetwork_access = true\n"
+            root_comments = "".join(f"# writable_root = {r}\n" for r in writable_roots)
+            sandbox_section = (
+                f"\n[sandbox_workspace_write]\n{root_comments}writable_roots = [{roots_list}]\nnetwork_access = true\n"
+            )
 
         mcp_env = self._build_mcp_env()
         mcp_env_lines = "\n".join(f'{k} = "{esc(v)}"' for k, v in mcp_env.items())

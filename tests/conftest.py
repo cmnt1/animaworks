@@ -35,6 +35,7 @@ load_dotenv()
 # Check if ChromaDB is available
 try:
     import chromadb  # noqa: F401
+
     CHROMADB_AVAILABLE = True
 except ImportError:
     CHROMADB_AVAILABLE = False
@@ -78,6 +79,12 @@ def _reset_app_timezone():
 
 
 @pytest.fixture(autouse=True)
+def _allow_direct_chroma_for_tests(monkeypatch: pytest.MonkeyPatch):
+    """Allow low-level Chroma tests to instantiate the guarded store explicitly."""
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+
+
+@pytest.fixture(autouse=True)
 def _restore_load_auth():
     """Restore server.app.load_auth after tests that monkey-patch it.
 
@@ -87,6 +94,7 @@ def _restore_load_auth():
     leaks into subsequent tests that expect the real ``load_auth``.
     """
     import server.app as sa
+
     original = sa.load_auth
     yield
     sa.load_auth = original
@@ -201,7 +209,9 @@ def _kill_orphan_runners_pgrep(data_dir_str: str) -> None:
     try:
         result = subprocess.run(
             ["pgrep", "-f", "core.supervisor.runner"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         for line in result.stdout.strip().splitlines():
             pid = int(line.strip())

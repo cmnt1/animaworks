@@ -231,7 +231,7 @@ class TestBaseToolCount:
     def test_base_tool_count(self, executor):
         """Base tools include CC, AW essentials, skill authoring, and curator APIs."""
         tools = executor._build_base_tools()
-        assert len(tools) == 25
+        assert len(tools) == 27
         names = {t["function"]["name"] for t in tools}
         # CC built-in tools (8)
         assert "Read" in names
@@ -248,12 +248,14 @@ class TestBaseToolCount:
         assert "write_memory_file" in names
         assert "send_message" in names
         assert "post_channel" in names
+        assert "grant_workspace_access" in names
         # AW-essential: task management
         assert "submit_tasks" not in names
         assert "update_task" in names
         assert "goal" in names
         # AW-essential: create_skill
         assert "create_skill" in names
+        assert "trust_skill" in names
         # AW-essential: skill lifecycle APIs
         assert "curate_skills" in names
         assert "archive_skill" in names

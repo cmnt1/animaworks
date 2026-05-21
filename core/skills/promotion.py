@@ -44,6 +44,8 @@ from core.time_utils import now_iso
 
 PROMOTION_DRAFT_CREATED = "promotion_draft_created"
 PROMOTION_APPROVED = "promotion_approved"
+AUTO_SKILL_CREATED = "auto_skill_created"
+AUTO_SKILL_BLOCKED = "auto_skill_blocked"
 
 
 @dataclass(slots=True)
@@ -273,6 +275,25 @@ class ProcedureToSkillConverter:
             size_violations=scan_result.size_violations,
         )
 
+    def create_probation_skill(
+        self,
+        procedure_path: str | Path,
+        *,
+        skill_name: str | None = None,
+        metadata_overrides: dict[str, Any] | None = None,
+        enforce_policy: bool = True,
+    ) -> SkillPromotionResult:
+        """Generate an active low-risk probation skill without human approval."""
+        from core.skills.probation_promotion import create_probation_skill_for_converter
+
+        return create_probation_skill_for_converter(
+            self,
+            procedure_path,
+            skill_name=skill_name,
+            metadata_overrides=metadata_overrides,
+            enforce_policy=enforce_policy,
+        )
+
     def register_approval_request(self, skill_name: str, callback_id: str) -> None:
         """Attach an interactive approval callback to a quarantine skill draft."""
         final_skill_name = safe_skill_name(skill_name)
@@ -415,8 +436,13 @@ class ProcedureToSkillConverter:
         )
         if not domains:
             domains = ["general"]
+        routing_examples = as_list(overrides.get("routing_examples") or procedure_metadata.get("routing_examples"))
         tags = as_list(overrides.get("tags") or procedure_metadata.get("tags"))
-        risk = normalise_risk(overrides.get("risk") or procedure_metadata.get("risk") or {})
+        routing = procedure_metadata.get("routing") if isinstance(procedure_metadata.get("routing"), dict) else {}
+        routing_risk = routing.get("risk") if isinstance(routing.get("risk"), dict) else {}
+        risk = normalise_risk(
+            {**routing_risk, **(procedure_metadata.get("risk") or {}), **(overrides.get("risk") or {})}
+        )
 
         return {
             "name": skill_name,
@@ -434,6 +460,7 @@ class ProcedureToSkillConverter:
             "trigger_phrases": trigger_phrases,
             "negative_phrases": negative_phrases,
             "domains": domains,
+            "routing_examples": routing_examples,
             "tags": tags,
             "risk": risk,
         }

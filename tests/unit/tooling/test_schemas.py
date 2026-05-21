@@ -284,9 +284,10 @@ class TestBuildToolList:
         )
         names = [t["name"] for t in result]
         # 5 memory + 4 channel (incl. manage_channel) + 1 report_procedure_outcome
-        # + 1 report_knowledge_outcome + 1 check_permissions + 4 file + 4 search
-        # (web_search, web_fetch, search_code, list_directory) + 1 use_tool + 2 tool_management = 23
-        assert len(result) == 23
+        # + 1 report_knowledge_outcome + 1 workspace + 1 check_permissions + 4 file
+        # + 4 search (web_search, web_fetch, search_code, list_directory)
+        # + 1 use_tool + 2 tool_management = 24
+        assert len(result) == 24
         assert "search_code" in names
         assert "list_directory" in names
         assert "use_tool" in names
@@ -295,6 +296,7 @@ class TestBuildToolList:
         assert "post_channel" in names
         assert "read_channel" in names
         assert "read_dm_history" in names
+        assert "grant_workspace_access" in names
 
     def test_does_not_mutate_memory_tools(self):
         original_len = len(MEMORY_TOOLS)

@@ -3,7 +3,7 @@
 **[日本語版](memory.ja.md)**
 
 > Created: 2026-02-14
-> Updated: 2026-03-25
+> Updated: 2026-05-21
 > Related: [vision.md](vision.md), [spec.md](spec.md), [specs/20260214_priming-layer_design.md](specs/20260214_priming-layer_design.md)
 
 
@@ -15,7 +15,7 @@ The AnimaWorks memory system is designed around **human brain memory mechanisms*
 
 The human brain has distinct systems—working memory, episodic memory, semantic memory, and procedural memory—each processed in different regions. Recall uses two pathways: **automatic recall (priming)** and **intentional recall**. Consolidation follows a three-stage automatic process: immediate encoding, sleep-time consolidation, and long-term integration.
 
-AnimaWorks reproduces these mechanisms faithfully. The agent (LLM) is a “thinking person,” not a “manager of its own brain.” The framework owns memory infrastructure; encoding and consolidation invoke a separate LLM in the background with one-shot calls (independent of the agent’s own LLM session).
+AnimaWorks reproduces these mechanisms faithfully. The agent (LLM) is a “thinking person,” not a “manager of its own brain.” The framework owns memory infrastructure; priming, logging, RAG, forgetting, and scheduling are framework responsibilities, while daily and weekly consolidation are carried out through an Anima tool loop with framework pre/post-processing.
 
 ---
 
@@ -174,48 +174,29 @@ Message received → Context extraction → Priming search → Context assembly 
                                          parallel)         budget)            present)
 ```
 
-Priming lives in `core/memory/priming/` (`engine.py`: `PrimingEngine`). `prime_memories()` runs **nine coroutines in parallel** via `asyncio.gather`: sender **A**, recent activity **B**, **C0: [IMPORTANT] knowledge**, related knowledge **C**, skills/procedures **D**, pending tasks **E**, **Recent Outbound**, episodes **F**, and **pending human notifications**. Class comments that say “6-channel” refer mainly to A–F; C0 and the outbound-related collectors run as additional gathers in parallel. After fetch, each block is `truncate_*`’d per `token_budget` ratios and assembled into the injected string.
+Priming lives in `core/memory/priming/` (`engine.py`: `PrimingEngine`). `prime_memories()` gathers multiple sources in parallel, then the deterministic priming gate decides whether each item appears as body text, a pointer, evidence, or is suppressed for this turn.
 
-**The actual dynamic-budget switch** is the `prime_memories(..., enable_dynamic_budget=...)` argument—not `PrimingConfig.dynamic_budget`. Today `config.json` `priming.dynamic_budget` is schema-only and **not read by the engine**. Normal chat paths pass `enable_dynamic_budget=True` from `core/_agent_priming.py`. When `False`, the overall cap is fixed at `_DEFAULT_MAX_PRIMING_TOKENS` (~2000 token-equivalent).
-
-**Main data sources and default budgets** (`priming/constants.py` allocations × dynamic-budget ratio; when dynamic budget is off, overall cap ~2000 token-equivalent):
+**Main data sources and default budgets**:
 
 | Source | Target | Default allocation (tokens) | Method | Brain analog |
 |---|---|---|---|---|
-| **A: Sender profile** | shared/users/ | 500 | Exact lookup | Recall the moment you see a face |
-| **B: Recent activity** | activity_log/ + shared/channels/ | 1300 (applied as `max(400, 1300×ratio)`) | ActivityLogger + shared channels | Short- to recent-term memory |
-| **C0: [IMPORTANT] knowledge** | knowledge / shared_common_knowledge | 500 (summary pointer) | `get_important_chunks()` | Always-on salient memory |
-| **C: Related knowledge** | knowledge + shared common_knowledge | 1000 (trusted first, remainder untrusted) | 1–3 vector queries (`build_queries`) + trust split | Semantic association |
-| **D: Skill / procedure match** | skills/, procedures/, common_skills/ | 200 | Description-based 3-stage + vector | **Names only** (channel D has **no** heartbeat/cron skip; count is trimmed later by budget) |
-| **E: Open tasks** | task_queue + parallel tasks | 500 | TaskQueueManager, etc. | “What must be done” |
-| **F: Episodes** | episodes/ | 800 | Vector search (RAG) + optional graph spread | Semantic search over past actions |
-| **Recent Outbound** | activity_log/ | Last 2 h, max 3 | `channel_post`, `message_sent` | Self-awareness of outbound behavior |
-| **Pending human notifications** | activity_log/ `human_notify` | ~500 tokens max | Last 24 h; `chat` / `heartbeat` / `message:*` only | Unprocessed `call_human` context |
+| **Sender profile** | `shared/users/` | 500 | Exact lookup | Recall the moment you recognize a person |
+| **Recent activity** | `activity_log/` + shared channels | 1300 | ActivityLogger + shared channels | Short- to recent-term memory |
+| **Important knowledge** | `knowledge/` / shared common knowledge | 500 | Summary pointers for `[IMPORTANT]` items | Always-on salient memory |
+| **Related knowledge** | `knowledge/` + shared common knowledge | 1000 | RAG queries + trust split | Semantic association |
+| **Open tasks** | TaskBoard + task queue + execution state | 500 | TaskBoard first, fallback task queue | Prospective memory |
+| **Episodes** | `episodes/` | 800 | RAG search + optional graph spread | Semantic search over past actions |
+| **Graph context** | memory backend | 500 | Community context + recent facts | Multi-hop associative activation |
+| **Recent outbound** | `activity_log/` | Last 2h, max 3 | `channel_post`, `message_sent` | Self-awareness of outbound behavior |
+| **Pending human notifications** | `activity_log/` `human_notify` | ~500 tokens max | Recent unresolved human notifications | Unprocessed `call_human` context |
 
-Channel B merges `ActivityLogger.recent(days=2, limit=100)` with `shared/channels/*.jsonl` (membership via `is_channel_member`; latest five per channel plus human posts and @mentions within 24 h). Shared-channel entries are capped at **15** after time sort (`_MAX_CHANNEL_ENTRIES`). If the activity log is empty, it falls back to `episodes/` plus legacy channel reads.
+Skills and procedures are handled through active skill context, the Skill Router, the Skill Hub, the `skill` tool, `read_memory_file`, and `search_memory(scope="skills")`. The main priming body does not inject all skill text by default; it surfaces enough context to decide what to read next.
 
-**Noise filtering (channel B)** depends on trigger.
+Related knowledge results are split into **medium** and **untrusted** from chunk `origin`, etc. Untrusted content is trimmed into a separate slice and handled in the prompt-injection defense context (see `common_knowledge/security/`).
 
-- **heartbeat**, or channel starting with `cron:`: exclude `tool_use`, `tool_result`, `heartbeat_start`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` (suppress execution detail, HB self-reference, Inbox lifecycle). **`heartbeat_end` is not excluded.**
-- **chat and other foreground**: additionally exclude `memory_write`, `cron_executed`, `heartbeat_end`, `heartbeat_start`, `heartbeat_reflection`, `inbox_*`, prioritizing messaging, errors, and tasks.
+`[IMPORTANT]` knowledge appears as a title, optional summary, and pointer to `read_memory_file`. Because it is collected separately from ordinary related-knowledge RAG, important rules are harder to miss even when the query does not match. When moving must-have business rules into knowledge, prefix them with `[IMPORTANT]`.
 
-**Priority scoring** (`channel_b.prioritize_entries`): take top 50 by score, sort chronologically, then pass to `format_for_priming`.
-
-| Factor | Score | Description |
-|---|---|---|
-| Own sends / responses | +15.0 | `message_sent`, `response_sent` |
-| `message_received` | +15.0 | When `meta.from_type != "anima"` or `origin_chain` contains `"human"` |
-| Sender relevance | +10.0 | `from_person` / `to_person` matches current sender |
-| Keywords | +3.0 each | Match between body/summary and keywords |
-| Recency | variable | `elapsed_seconds / 600` vs. first entry |
-
-**Channel C (related knowledge)**: merge personal collection and `shared_common_knowledge` with `include_shared=True`; drop hits below raw vector similarity `config.json` `rag.min_retrieval_score` (default 0.3). Resolve each chunk’s `origin` with `resolve_trust`; split into **medium** and **untrusted** strings. On injection, trusted text is taken from the head under `_BUDGET_RELATED_KNOWLEDGE`, then untrusted with remaining budget. The C0 “[IMPORTANT] Knowledge (summary pointer)” block is **prepended** to this related text (priority within the same budget pool).
-
-**Budget management**: When `enable_dynamic_budget=True`, `budget.adjust_token_budget()` sets the overall token cap from `classify_message_type()` (short greeting / question / long request / heartbeat; Inbox `intent` can override) and `context_window`; each channel allocation is scaled by `budget_ratio = token_budget / 2000`. On heartbeat, use `max(budget_heartbeat, int(context_window × heartbeat_context_pct))` (overridable in `PrimingConfig`). Channel B is first formatted with `format_for_priming(..., budget_tokens=1300)`, then finally `truncate_tail` to `budget_activity = max(400, int(_BUDGET_RECENT_ACTIVITY × budget_ratio))` character-equivalent.
-
-Channel D matches `skills/`, shared `common_skills/`, and `procedures/` with `match_skills_by_description()` (3-stage). `channel_d` returns at most **five** names; the engine further trims to `matched_skills[: max(1, budget_skills // 50)]`. **Bodies are not returned—skill names only** (details via the `skill` tool). **There is no heartbeat/cron-only skip**; empty messages can still match if `keywords` or state-derived context exist.
-
-Dynamic budget by message type (`PrimingConfig` defaults; overridable in `config.json`):
+Normal chat paths use dynamic budgets by message type (`PrimingConfig` defaults; overridable in `config.json`):
 
 | Message type | Token budget | Use case |
 |---|---|---|
@@ -236,6 +217,10 @@ Typical cases:
 - Need details of a specific past exchange
 - Following a procedure document
 - Unknown topic with no matching memory in context
+
+### Memory check before action
+
+For side-effecting actions such as external sends, channel posts, human notifications, and memory writes, the action memory gate may check whether related `[ACTION-RULE]` items and required memories have been read. If required context has not been loaded, execution stops before the action and directs the Anima to read the relevant memory first.
 
 ---
 
@@ -259,6 +244,8 @@ Early experiments paired BM25 with vectors for the main corpus; multilingual den
 `legacy` is the stable/default memory backend for AnimaWorks. It remains the production path for `search_memory`, priming, consolidation, and normal Anima operation.
 
 `neo4j` is currently an experimental opt-in backend. Use it for graph-memory research, local evaluation, and targeted per-Anima experiments only. It should be enabled explicitly with `animaworks anima set-memory-backend <name> neo4j` or `animaworks memory migrate --to neo4j --activate-global` when the operator intentionally accepts the experimental behavior. Plain migration prepares graph data but does not change the global default backend.
+
+Embedding and ChromaDB operations normally run through the vector worker so child processes do not each own fragile vector state. If ChromaDB crashes or the index becomes inconsistent, `repair-rag` can quarantine the target `vectordb` and rebuild the index from memory files.
 
 | Search signal | Method | Brain analog |
 |---|---|---|
@@ -920,12 +907,12 @@ The memory subsystem is implemented under `core/memory/`.
 | Module | Role |
 |---|---|
 | `priming/engine.py` | `PrimingEngine`, `PrimingResult` — parallel fetch orchestration |
-| `priming/budget.py` | `classify_message_type` / `adjust_token_budget` / `load_config_budgets` (`PrimingConfig` numbers; the `dynamic_budget` field itself is not read by the engine) |
+| `priming/budget.py` | `classify_message_type` / `adjust_token_budget` / `load_config_budgets` (`PrimingConfig` budgets and heartbeat context ratio) |
 | `priming/constants.py` | Per-channel default budgets, keyword constants |
 | `priming/format.py` | `format_priming_section` for prompts |
 | `priming/utils.py` | `RetrieverCache`, `build_queries`, `search_and_merge`, keywords, truncate |
 | `priming/outbound.py` | Recent Outbound, pending `human_notify` |
-| `priming/channel_a.py` … `channel_f.py` | Channels A–F (sender, activity, knowledge, skills, tasks, episodes) |
+| `priming/channel_a.py` … `channel_f.py` | Source collectors for sender, activity, knowledge, tasks, and episodes; auxiliary collectors add graph/outbound/notification context |
 
 Public API: `from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section` (re-exported from `core/memory/__init__.py`). Chat path calls `prime_memories` from `core/_agent_priming.py`.
 
@@ -952,6 +939,7 @@ Public API: `from core.memory.priming import PrimingEngine, PrimingResult, forma
 | `forgetting.py` | `ForgettingEngine` | `synaptic_downscaling` / `neurogenesis_reorganize` / `complete_forgetting` / `cleanup_procedure_archives` |
 | `streaming_journal.py` | `StreamingJournal` | WAL for streaming |
 | `task_queue.py` | `TaskQueueManager` | Persistent task queue JSONL |
+| `action_gate.py` | Functions | Memory checks before side-effecting actions |
 | `distillation.py` | `ProceduralDistiller` | Procedural distillation (auxiliary path) |
 | `reconsolidation.py` | `ReconsolidationEngine` | Reconsolidation, issue_resolved→procedure |
 | `resolution_tracker.py` | `ResolutionTracker` | `shared/resolutions.jsonl` |

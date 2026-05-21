@@ -534,11 +534,16 @@ class LifecycleMixin:
                 model_config_override=base_model_config,
             )
 
+        autolearn = self._run_autonomous_skill_learning()
+        summary = result.summary or ""
+        if autolearn is not None and autolearn.report_lines:
+            summary = (summary + "\n\n" if summary else "") + "\n".join(autolearn.report_lines)
+
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
             trigger="consolidation:daily",
             action="completed",
-            summary=result.summary or "",
+            summary=summary,
             duration_ms=elapsed_ms,
         )
 
@@ -592,11 +597,16 @@ class LifecycleMixin:
                 model_config_override=base_model_config,
             )
 
+        autolearn = self._run_autonomous_skill_learning()
+        summary = result.summary or ""
+        if autolearn is not None and autolearn.report_lines:
+            summary = (summary + "\n\n" if summary else "") + "\n".join(autolearn.report_lines)
+
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
             trigger="consolidation:weekly",
             action="completed",
-            summary=result.summary or "",
+            summary=summary,
             duration_ms=elapsed_ms,
         )
 
@@ -641,6 +651,12 @@ class LifecycleMixin:
             manager.update_status(task_id, status, summary=summary[:500] if summary else None)
         except Exception:
             logger.warning("[%s] Failed to finalize cron task_queue entry %s", self.name, task_id, exc_info=True)
+
+    def _run_autonomous_skill_learning(self):
+        """Run deterministic skill auto-learning after successful consolidation."""
+        from core.skills.autolearn_lifecycle import run_autonomous_skill_learning_for
+
+        return run_autonomous_skill_learning_for(self)
 
     async def run_cron_task(
         self,

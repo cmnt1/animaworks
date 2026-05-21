@@ -45,6 +45,7 @@ _EXPECTED_FILES = [
     "common_knowledge/communication/messaging-guide.md",
     "common_knowledge/communication/reporting-guide.md",
     "common_knowledge/communication/sending-limits.md",
+    "common_knowledge/operations/action-rules-guide.md",
     "common_knowledge/operations/background-tasks.md",
     "common_knowledge/operations/heartbeat-cron-guide.md",
     "common_knowledge/operations/machine/tool-usage.md",
@@ -271,6 +272,8 @@ _EXPECTED_FILES = [
     "reference/operations/voice-chat-guide.md",
     "reference/organization/structure.md",
     "reference/troubleshooting/gmail-credential-setup.md",
+    "roles/administration/permissions.json",
+    "roles/administration/specialty_prompt.md",
     "roles/engineer/permissions.json",
     "roles/engineer/specialty_prompt.md",
     "roles/general/permissions.json",
@@ -316,7 +319,7 @@ class TestKoTemplateFilesExist:
 
     def test_total_file_count(self):
         """File count in ko/ should match _EXPECTED_FILES."""
-        all_files = sorted(str(f.relative_to(_KO_DIR)) for f in _KO_DIR.rglob("*") if f.is_file())
+        all_files = sorted(f.relative_to(_KO_DIR).as_posix() for f in _KO_DIR.rglob("*") if f.is_file())
         assert len(all_files) == len(_EXPECTED_FILES), (
             f"Expected {len(_EXPECTED_FILES)} files, found {len(all_files)}. "
             f"Extra: {set(all_files) - set(_EXPECTED_FILES)}, "
@@ -325,8 +328,8 @@ class TestKoTemplateFilesExist:
 
     def test_no_extra_files(self):
         """ko/ should not contain files that are not in en/."""
-        en_files = {str(f.relative_to(_EN_DIR)) for f in _EN_DIR.rglob("*") if f.is_file()}
-        ko_files = {str(f.relative_to(_KO_DIR)) for f in _KO_DIR.rglob("*") if f.is_file()}
+        en_files = {f.relative_to(_EN_DIR).as_posix() for f in _EN_DIR.rglob("*") if f.is_file()}
+        ko_files = {f.relative_to(_KO_DIR).as_posix() for f in _KO_DIR.rglob("*") if f.is_file()}
         extra = ko_files - en_files
         assert not extra, f"ko/ has extra files not in en/: {extra}"
 

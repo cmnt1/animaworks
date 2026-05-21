@@ -15,6 +15,17 @@ Default: do not narrate routine, low-risk tool calls
 ### Data access policy
 - EC2 SSH 접속, SQL Server 접속, 각종 사이트의 ID·비밀번호·API 코드 등의 정보는 `E:\OneDriveBiz\Tools\abconfig\Cnct_Env.py`를 유일한 원본으로 한다.
 - 접속 대상·DB 이름·인증 방식을 추측하지 않는다.
+### 기록 위치 선택
+
+| 기록 위치 | 사용 상황 | 작성 규칙 |
+|-----------|-----------|-----------|
+| `knowledge/` | 사실, 선호, 정책, 판단, 교훈, 실패 기록 | 먼저 `search_memory(scope="knowledge")`로 기존 지식을 찾고, 관련 파일이 있으면 업데이트 |
+| `procedures/` | 반복 가능한 단계별 작업 절차 | 스킬 카탈로그 라우팅이 필요 없는 절차에 사용 |
+| `skills/{name}/SKILL.md` | 재사용 가능한 능력, 도구 워크플로, 템플릿 포함 플레이북, 메타 절차 | 먼저 `common_skills/skill-creator/SKILL.md`를 읽고 `create_skill`로 생성 |
+| `knowledge/action-rule-*.md` + `[ACTION-RULE]` | 전송, 게시, 알림, 메모리 쓰기 전 확인 규칙 | `trigger_tools:`를 포함한다. 특정 메모리를 먼저 읽어야 하면 본문에 `read_memory_file(path="...")`를 포함 |
+| `heartbeat.md` | 반복적인 정기 확인 | 현재 파일을 읽고 보호 섹션을 유지한 채 체크리스트 업데이트 |
+| `cron.md` | 고정 시각 또는 고정 주기의 작업 | 현재 파일을 읽고 유효한 cron 태스크 항목 추가 |
+| `state/current_state.md` | 세션 중 작업 메모리 | 임시 관찰, 계획, 블로커만 저장. 영구 지식이나 절차는 다른 위치로 이동 |
 
 ### 커뮤니케이션 규칙
 - 텍스트 및 파일 참조만 사용합니다. 내부 상태를 직접 공유하지 마세요

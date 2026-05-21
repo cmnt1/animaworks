@@ -2,7 +2,9 @@
 
 **No one can do anything alone. So I built an organization.**
 
-A framework that treats AI agents not as “tools” but as people who work autonomously. Each Anima has a name, personality, memory, and schedule; they coordinate by message, decide for themselves, and move as a team. Talk to the leader — the rest runs on its own.
+A framework that treats AI agents not as one-off “tools,” but as team members who keep working with persistent memory. Each Anima has a name, role, personality, memory, and schedule; they coordinate by message, make decisions, and ask humans when confirmation is needed.
+
+Humans can talk to a leader or responsible member, while task breakdown, delegation, progress checks, memory updates, and daily or weekly reflection stay inside the same organization.
 
 <p align="center">
   <img src="docs/images/workspace-dashboard.gif" alt="AnimaWorks Workspace — real-time org tree with live activity feeds" width="720">
@@ -11,7 +13,7 @@ A framework that treats AI agents not as “tools” but as people who work auto
 
 <p align="center">
   <img src="docs/images/workspace-demo.gif" alt="AnimaWorks 3D Workspace — agents collaborating autonomously" width="720">
-  <br><em>3D office: Animas sit at desks, walk around, and exchange messages on their own.</em>
+  <br><em>3D office: Animas sit at desks, walk around, and exchange messages when needed.</em>
 </p>
 
 **[日本語版 README](README_ja.md)** | **[简体中文 README](README_zh.md)** | **[한국어 README](README_ko.md)**
@@ -23,13 +25,13 @@ A framework that treats AI agents not as “tools” but as people who work auto
 |  | AnimaWorks | CrewAI | LangGraph | OpenClaw | OpenAI Agents |
 |--|-----------|--------|-----------|----------|---------------|
 | **Design philosophy** | Organization of autonomous agents | Role-based teams | Graph workflows | Personal assistant | Lightweight SDK |
-| **Memory** | Neuroscience-inspired: RAG (Chroma + graph), consolidation, three-stage forgetting, six-channel automatic priming (with trust tags) | Cognitive Memory (manual forget) | Checkpoints + cross-thread store | SuperMemory knowledge graph | Session-scoped only |
+| **Memory** | Neuroscience-inspired: RAG (Chroma + graph), consolidation, active forgetting, automatic recall, and memory checks before action | Cognitive Memory (manual forget) | Checkpoints + cross-thread store | SuperMemory knowledge graph | Session-scoped only |
 | **Autonomy** | Heartbeat (observe → plan → reflect) + Cron + TaskExec — runs 24/7 | Human-triggered | Human-triggered | Cron + heartbeat | Human-triggered |
 | **Org structure** | Supervisor → subordinate hierarchy, delegation, audit, dashboard | Flat roles in a crew | — | Single agent | Handoffs only |
 | **Process model** | One isolated OS process per agent, IPC, auto-restart | Shared process | Shared process | Single process | Shared process |
 | **Multi-model** | Six engines: Claude SDK / Codex / Cursor Agent / Gemini CLI / LiteLLM / Assisted (Anthropic SDK falls back inside Mode A when Agent SDK is not installed) | LiteLLM | LangChain models | OpenAI-compatible | OpenAI-centric |
 
-> AnimaWorks is not a task runner. It is an organization that thinks, remembers, forgets, and grows. It can support operations as a team and be run like a company. I operate it as a real AI company.
+> AnimaWorks is not a task runner. It is an organization that thinks, remembers, forgets, and gradually grows. I build it while using it as an AI team in real business operations.
 
 ---
 
@@ -148,6 +150,7 @@ Use the left sidebar to move between main screens (hash router `#/…`).
 - **Chat** — Real-time conversation with any Anima. Streaming responses (SSE), image attachments, multi-thread history, full archive. **Meeting mode** gathers multiple Animas in one room with a designated facilitator (up to five participants, dedicated API)
 - **Voice chat** — Voice in the browser only (push-to-talk or hands-free). WebSocket-based. VOICEVOX / SBV2 / ElevenLabs
 - **Board** — Slack-style shared channels where Animas discuss and coordinate
+- **TaskBoard** — A work board for tasks, processing, deferred, suppressed, background work, and results. It also feeds priming so only relevant tasks surface in conversation
 - **Dashboard (home)** — Organization overview and status
 - **Activity** — Real-time feed for the whole organization
 - **Setup** — First run uses the wizard at `http://HOST/setup/`. After setup, `/setup` in the browser redirects to the top level, but you can open the same items (language, auth, etc.) from `#/setup` inside the dashboard
@@ -164,28 +167,31 @@ Use the left sidebar to move between main screens (hash router `#/…`).
 - **Team builder / team edit** — Build and adjust multi-Anima role layouts from industry- and goal-oriented presets
 - **Settings** — Server, authentication, locale, and more
 - **Workspace** — 3D office in a separate tab at `/workspace/` (chat, Board, org tree, etc.); static app split from the main dashboard
-- **Multilingual** — **First-run setup wizard** UI copy in 17 languages. **Main dashboard** ships `ja` / `en` / `ko` JSON translations (missing keys fall back to Japanese). Anima-facing templates deploy with Japanese and English as the base
+- **Multilingual** — **First-run setup wizard** UI copy in 17 languages. **Main dashboard** ships `ja` / `en` / `ko` JSON translations (missing keys fall back to Japanese). Anima-facing templates deploy with Japanese, English, and Korean
 
 ### Build an organization and delegate
 
-Tell the leader “I need someone like this” — they infer role, personality, and hierarchy and create new members. No config files or CLI required. The org grows through conversation alone.
+Tell the leader “I need someone like this” — they infer role, personality, and hierarchy and create new members. You do not need to touch config files or the CLI; the organization can grow from conversation.
 
-Once the team is ready, it keeps moving without a human in the loop:
+Once the team is ready, Animas keep working with their own schedules and memories:
 
 - **Heartbeat** — Periodically reviews the situation and decides what to do next
 - **Cron jobs** — Daily reports, weekly digests, monitoring — per-Anima schedules
 - **Task delegation** — Managers assign work to subordinates, track progress, and receive reports
 - **Parallel task execution** — Submit many tasks at once; dependencies are resolved and independent tasks run in parallel
 - **Night consolidation** — Daytime episodic memory is distilled into knowledge while “asleep”
-- **Team coordination** — Shared channels and DMs keep everyone aligned automatically
+- **Team coordination** — Shared channels and DMs route context to the people who need it
 
 ### Memory system
 
-Typical AI agents only remember what fits in the context window. AnimaWorks Animas keep persistent memory and search it when needed — like taking a book from a shelf.
+Typical AI agents only remember what fits in the context window. AnimaWorks Animas keep file-based long-term memory and search it when needed. Instead of stuffing everything into every prompt, they retrieve only the memories related to the current conversation or action.
 
-- **Automatic priming (Priming)** — When a message arrives, six parallel searches run: sender profile, recent activity, **RAG vector search** for related knowledge and episodes, skills, pending tasks, and more. Recall happens without explicit instructions
-- **Consolidation** — Every night, daytime episodes become knowledge — analogous to sleep-dependent memory consolidation in neuroscience. Resolved issues automatically become procedures
-- **Forgetting** — Little-used memories fade in three stages: mark → merge → archive. Important procedures and skills stay protected. Like the human brain, forgetting matters
+- **Automatic recall (Priming)** — When a message arrives, the system retrieves sender profile, recent activity, important knowledge, related knowledge, tasks, episodes, graph context, and more in parallel. A deterministic gate decides whether each memory appears as body text, a pointer, evidence, or is suppressed
+- **Intentional recall** — If automatic recall is not enough, the Anima can call `search_memory` or `read_memory_file` itself. Pointer-style memories are read only when the details are needed
+- **Memory checks before action** — Before external sends, memory writes, and other side-effecting operations, related action rules and past rules are checked. If required memories have not been read, execution pauses first
+- **Consolidation** — Every night, daytime episodes and resolved events update knowledge and procedures. Weekly consolidation removes duplication and contradictions, and RAG indexes are rebuilt
+- **Forgetting** — Little-used memories move through low-activation marking, consolidation, and archiving. Important knowledge and mature procedures are protected while search noise stays under control
+- **RAG repair** — If ChromaDB or vector search inconsistency is detected, indexes can be quarantined and rebuilt through the vector worker. The stable default backend is `legacy`; the Neo4j backend is experimental and opt-in
 
 <p align="center">
   <img src="docs/images/chat-memory.png" alt="AnimaWorks Chat — multi-thread conversations with multiple Animas" width="720">
@@ -214,7 +220,7 @@ Mode resolution: `execution_mode` in `status.json` takes precedence; otherwise t
   <br><em>From personality settings: full-body, bust-up, and expression variants — auto-generated. Includes Vibe Transfer to inherit the supervisor’s art style.</em>
 </p>
 
-Supports NovelAI (anime style), fal.ai/Flux (stylized / photorealistic), and Meshy (3D). The product runs without configuring an image service — you simply skip avatars. Once they exist, you might get a little attached.
+Supports NovelAI (anime style), fal.ai/Flux (stylized / photorealistic), and Meshy (3D). The product runs without configuring an image service; you simply skip avatars. When avatars exist, it becomes easier to recognize Animas as team members.
 
 ---
 
@@ -228,7 +234,7 @@ This project sits at the intersection of three careers.
 
 **As an engineer** — I have written code for thirty years. I know the pleasure of wiring logic and the rush of automation. Packing those ideals into code lets me build the organization I want.
 
-Excellent “single AI assistant” frameworks already exist. No project had yet recreated people in code and made them function as an organization. AnimaWorks is a real organization I grow while using it in my own business.
+Excellent “single AI assistant” frameworks already exist. But projects that create human-like units in code and make them function as an organization are still rare. AnimaWorks is an AI organization I grow while using it in my own business every day.
 
 > *Imperfect individuals collaborating through structure outperform any single omniscient actor.*
 
@@ -384,6 +390,11 @@ The CLI targets power users and automation. Day-to-day work lives in the Web UI.
 | `animaworks status` | System status |
 | `animaworks logs [ANIMA] [--lines N] [--all]` | View logs |
 | `animaworks index [--reindex] [--anima NAME]` | RAG index management |
+| `animaworks repair-rag --anima NAME --full` | Quarantine and rebuild RAG indexes |
+| `animaworks memory status` / `migrate` / `backup` / `cleanup` | Operate memory backends and memory data |
+| `animaworks skills install` / `list` / `inspect` / `remove` / `quarantine` | Skill Hub operations |
+| `animaworks task ...` | TaskBoard / task execution operations |
+| `animaworks cost` / `profile` | Cost and profile inspection |
 | `animaworks models list` / `models info MODEL` | Model list / details |
 
 </details>
@@ -402,7 +413,9 @@ The CLI targets power users and automation. Day-to-day work lives in the Web UI.
 | Task scheduling | APScheduler (orphan Anima detection, asset reconciliation, Claude CLI/SDK auto-update checks, global permission consistency, etc.) |
 | Configuration & migration | Pydantic 2.0+ / JSON / Markdown, `core/migrations/` (startup migrations) |
 | Internationalization (code) | `core/i18n` `t()` (UI, tool schema strings, etc.) |
-| Memory / RAG | ChromaDB + sentence-transformers + NetworkX (child processes may use HTTP `/api/internal/embed` and `/api/internal/vector`) |
+| Memory / RAG | ChromaDB + sentence-transformers + NetworkX + optional Neo4j. ChromaDB normally runs through the vector worker and can be rebuilt by RAG repair |
+| Task management | TaskBoard + TaskExec + persistent task queue |
+| Skill system | Skill Hub, explicit skill activation, router, curator, procedure-to-skill promotion |
 | Extended tools | Auto-registration from `core/tools/*.py` plus scans of `~/.animaworks/common_tools/` and `animas/<name>/tools/` |
 | Voice chat | faster-whisper (STT) + VOICEVOX / SBV2 / ElevenLabs (TTS) |
 | Human notification | Slack, Chatwork, LINE, Telegram, ntfy |
@@ -421,6 +434,8 @@ animaworks/
 │   ├── anima.py, agent.py  # Core entities & orchestration
 │   ├── lifecycle/       # Scheduler, consolidation jobs, inbox watch, etc.
 │   ├── memory/          # Memory (priming, consolidation, forgetting, RAG, activity)
+│   ├── skills/          # Skill Hub, activation, router, curator, promotion
+│   ├── taskboard/       # TaskBoard store, state, cleanup
 │   ├── execution/       # Execution engines (S/C/D/G/A/B)
 │   ├── mcp/             # stdio MCP server for Mode S
 │   ├── platform/        # Child processes, locks, Codex/Cursor/Gemini plumbing
@@ -450,7 +465,7 @@ animaworks/
 │   ├── localhost.py        # Local trusted-request detection
 │   ├── routes/          # REST/WebSocket routes (chat, room, voice, activity_report, brainstorm, team_presets, …)
 │   └── static/          # Dashboard (modules/, pages/, styles/, i18n/), setup/ (multilingual wizard), workspace/ (3D client)
-└── templates/           # Initialization templates (ja / en)
+└── templates/           # Initialization templates (ja / en / ko)
 ```
 
 </details>
@@ -465,7 +480,7 @@ animaworks/
 |----------|-------------|
 | [Vision](docs/vision.md) | Foundational idea: imperfect individuals collaborating |
 | [Features](docs/features.md) | What AnimaWorks can do end to end |
-| [Memory system](docs/memory.md) | Episodic, semantic, and procedural memory; priming; active forgetting |
+| [Memory system](docs/memory.md) | Episodic, semantic, and procedural memory; priming, action memory gate, active forgetting |
 | [Security](docs/security.md) | Defense in depth, data provenance, adversarial threat analysis |
 | [Brain mapping](docs/brain-mapping.md) | How modules map to the human brain |
 | [Technical specification](docs/spec.md) | Execution modes, prompt construction, configuration resolution |

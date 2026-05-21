@@ -18,8 +18,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import core.execution._sanitize  # noqa: F401
 from core.tooling.handler_base import _validate_skill_format
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -67,10 +67,13 @@ class TestCommonSkillsWriteRedirect:
         content = "---\nname: test-skill\ndescription: >-\n  test 「test」\n---\n\n# test\n\n## Procedure\n\n1. step\n"
 
         with patch("core.paths.get_common_skills_dir", return_value=cs_dir):
-            result = handler.handle("write_memory_file", {
-                "path": "common_skills/test-skill/SKILL.md",
-                "content": content,
-            })
+            handler.handle(
+                "write_memory_file",
+                {
+                    "path": "common_skills/test-skill/SKILL.md",
+                    "content": content,
+                },
+            )
 
         target = cs_dir / "test-skill" / "SKILL.md"
         assert target.exists(), f"Expected {target} to be created"
@@ -83,10 +86,13 @@ class TestCommonSkillsWriteRedirect:
         handler, _ = _build_handler(tmp_path)
 
         with patch("core.paths.get_common_skills_dir", return_value=cs_dir):
-            result = handler.handle("write_memory_file", {
-                "path": "common_skills/../../etc/passwd",
-                "content": "malicious",
-            })
+            result = handler.handle(
+                "write_memory_file",
+                {
+                    "path": "common_skills/../../etc/passwd",
+                    "content": "malicious",
+                },
+            )
 
         assert "PermissionDenied" in result or "denied" in result.lower()
         assert not (cs_dir / ".." / ".." / "etc" / "passwd").exists()
@@ -100,10 +106,13 @@ class TestCommonSkillsWriteRedirect:
         content = "---\nname: flat\ndescription: >-\n  flat 「flat」\n---\n\n# flat\n"
 
         with patch("core.paths.get_common_skills_dir", return_value=cs_dir):
-            result = handler.handle("write_memory_file", {
-                "path": "common_skills/flat.md",
-                "content": content,
-            })
+            handler.handle(
+                "write_memory_file",
+                {
+                    "path": "common_skills/flat.md",
+                    "content": content,
+                },
+            )
 
         assert (cs_dir / "flat.md").exists()
 
@@ -133,13 +142,7 @@ class TestValidateSkillFormat:
         assert result == ""
 
     def test_tags_field_accepted(self) -> None:
-        content = (
-            "---\n"
-            "name: test\n"
-            'description: "test 「test」"\n'
-            "tags: [search, web]\n"
-            "---\n\n# test\n"
-        )
+        content = '---\nname: test\ndescription: "test 「test」"\ntags: [search, web]\n---\n\n# test\n'
         result = _validate_skill_format(content)
         assert result == ""
 
@@ -186,10 +189,7 @@ class TestEnglishTemplateDirectoryStructure:
         if not en_skills.exists():
             pytest.skip("English templates not present")
 
-        flat_files = [
-            f.name for f in en_skills.iterdir()
-            if f.is_file() and f.suffix == ".md"
-        ]
+        flat_files = [f.name for f in en_skills.iterdir() if f.is_file() and f.suffix == ".md"]
         assert flat_files == [], (
             f"Flat .md files found in templates/en/common_skills/: {flat_files}. "
             "All skills should be in {name}/SKILL.md format."
@@ -205,9 +205,7 @@ class TestEnglishTemplateDirectoryStructure:
             if d.is_dir():
                 if not (d / "SKILL.md").exists():
                     missing.append(d.name)
-        assert missing == [], (
-            f"Directories missing SKILL.md: {missing}"
-        )
+        assert missing == [], f"Directories missing SKILL.md: {missing}"
 
     def test_converted_skills_have_name_field(self) -> None:
         """Verify converted skills have matching name in frontmatter."""
@@ -218,8 +216,12 @@ class TestEnglishTemplateDirectoryStructure:
             pytest.skip("English templates not present")
 
         converted = [
-            "skill-creator", "image-posting", "animaworks-guide",
-            "subordinate-management", "tool-creator", "subagent-cli",
+            "skill-creator",
+            "image-posting",
+            "animaworks-guide",
+            "subordinate-management",
+            "tool-creator",
+            "subagent-cli",
             "cron-management",
         ]
         for name in converted:
@@ -229,9 +231,7 @@ class TestEnglishTemplateDirectoryStructure:
             assert content.startswith("---"), f"{name}/SKILL.md missing frontmatter"
             end = content.find("---", 3)
             fm = yaml.safe_load(content[3:end])
-            assert fm.get("name") == name, (
-                f"{name}/SKILL.md frontmatter name is '{fm.get('name')}', expected '{name}'"
-            )
+            assert fm.get("name") == name, f"{name}/SKILL.md frontmatter name is '{fm.get('name')}', expected '{name}'"
 
 
 class TestJapaneseSkillCreatorContent:
@@ -249,11 +249,13 @@ class TestJapaneseSkillCreatorContent:
         assert "write_memory_file" in content, "write_memory_file should still be mentioned"
         assert "非推奨" in content or "参照できない" in content
 
-    def test_allowed_tools_tags_mentioned(self) -> None:
+    def test_current_optional_metadata_mentioned(self) -> None:
         path = _REPO_ROOT / "templates" / "ja" / "common_skills" / "skill-creator" / "SKILL.md"
         content = path.read_text(encoding="utf-8")
         assert "allowed_tools" in content
-        assert "tags" in content
+        assert "skill_policy" in content
+        assert "trigger_phrases" in content
+        assert "source_origin" in content
 
     def test_no_exclusive_field_restriction(self) -> None:
         path = _REPO_ROOT / "templates" / "ja" / "common_skills" / "skill-creator" / "SKILL.md"
@@ -270,8 +272,8 @@ class TestJapaneseSkillCreatorContent:
         content = path.read_text(encoding="utf-8")
         assert "create_skill" in content
         lines = content.splitlines()
-        checklist_lines = [l for l in lines if l.strip().startswith("- [ ]")]
-        create_skill_items = [l for l in checklist_lines if "create_skill" in l]
+        checklist_lines = [line for line in lines if line.strip().startswith("- [ ]")]
+        create_skill_items = [line for line in checklist_lines if "create_skill" in line]
         assert len(create_skill_items) >= 1
 
 

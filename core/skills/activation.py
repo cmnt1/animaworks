@@ -6,25 +6,23 @@ from __future__ import annotations
 
 """Thread-scoped explicit skill activation for chat sessions."""
 
-import json
 import logging
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.skills.activation_render import render_active_skill_context
+from core.skills.activation_state import dedupe_refs, get_active_skill_refs, validate_thread_id, write_thread_refs
 from core.skills.index import SkillIndex
 from core.skills.loader import load_skill_body, skill_access_decision
 from core.skills.models import SkillMetadata, SkillScanVerdict, SkillUsageEventType
+from core.skills.policy import SkillActivationPolicy, policy_for_skill
 from core.skills.usage import SkillUsageTracker
-from core.time_utils import now_iso
 
 logger = logging.getLogger(__name__)
 
-ACTIVE_SKILLS_STATE_FILE = "active_skills.json"
 DEFAULT_MAX_SKILL_CHARS = 6000
 DEFAULT_MAX_TOTAL_CHARS = 12000
-_THREAD_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,36}$")
 
 
 @dataclass(slots=True)
@@ -38,9 +36,11 @@ class ActiveSkillItem:
     trust_level: str = ""
     security_verdict: str = ""
     active: bool = False
+    activation_policy: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_metadata(cls, ref: str, path: str, meta: SkillMetadata, *, active: bool = False) -> ActiveSkillItem:
+        policy = policy_for_skill(meta)
         return cls(
             ref=ref,
             name=meta.name,
@@ -51,6 +51,7 @@ class ActiveSkillItem:
             trust_level=str(meta.trust_level.value),
             security_verdict=str(meta.security.verdict.value),
             active=active,
+            activation_policy=policy.model_dump(mode="json"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,6 +65,7 @@ class ActiveSkillItem:
             "trust_level": self.trust_level,
             "security_verdict": self.security_verdict,
             "active": self.active,
+            "activation_policy": self.activation_policy,
         }
 
 
@@ -72,6 +74,8 @@ class ActiveSkillAttachment:
     name: str
     path: str
     body: str
+    description: str = ""
+    policy: SkillActivationPolicy = field(default_factory=SkillActivationPolicy)
     is_common: bool = False
     truncated: bool = False
     truncation_reason: str | None = None
@@ -118,33 +122,7 @@ class ActiveSkillContextResult:
     warnings: list[ActiveSkillWarning] = field(default_factory=list)
 
     def render(self) -> str:
-        if not self.attachments:
-            return ""
-        sections = ["## Active Skills"]
-        for item in self.attachments:
-            sections.extend(_render_attachment_lines(item))
-        return "\n".join(sections).strip()
-
-
-def validate_thread_id(thread_id: str) -> str:
-    value = str(thread_id or "default").strip() or "default"
-    if not _THREAD_ID_PATTERN.match(value):
-        raise ValueError(f"Invalid thread_id: {value!r}. Must be 1-36 alphanumeric, underscore, or hyphen characters.")
-    return value
-
-
-def get_active_skill_refs(anima_dir: Path, thread_id: str = "default") -> list[str]:
-    """Return stored active skill refs for an anima thread."""
-    thread_id = validate_thread_id(thread_id)
-    state = _read_state(anima_dir)
-    thread_entry = state.get("threads", {}).get(thread_id, {})
-    if isinstance(thread_entry, list):
-        refs = thread_entry
-    elif isinstance(thread_entry, dict):
-        refs = thread_entry.get("refs", [])
-    else:
-        refs = []
-    return _dedupe_refs([str(ref) for ref in refs])
+        return render_active_skill_context(self.attachments)
 
 
 def set_active_skill_refs(
@@ -156,9 +134,9 @@ def set_active_skill_refs(
 ) -> ActiveSkillResolution:
     """Validate and persist active skill refs for a chat thread."""
     thread_id = validate_thread_id(thread_id)
-    requested = _dedupe_refs(refs or [])
+    requested = dedupe_refs(refs or [])
     if not requested:
-        _write_thread_refs(anima_dir, thread_id, [])
+        write_thread_refs(anima_dir, thread_id, [])
         return ActiveSkillResolution()
 
     common_skills_dir = _get_common_skills_dir()
@@ -170,7 +148,7 @@ def set_active_skill_refs(
         requested,
         confirm_risk=confirm_risk,
     )
-    _write_thread_refs(anima_dir, thread_id, [item.path for item in resolution.accepted])
+    write_thread_refs(anima_dir, thread_id, [item.path for item in resolution.accepted])
     return resolution
 
 
@@ -234,6 +212,24 @@ def build_active_skill_context(
         meta = index.resolve_skill_reference(item.path)
         if meta is None or meta.path is None:
             continue
+        policy = policy_for_skill(meta)
+        if policy.blocked:
+            resolution.rejections.append(ActiveSkillRejection(item.path, policy.reason))
+            continue
+        if policy.injection == "pointer_preferred":
+            attachments.append(
+                ActiveSkillAttachment(
+                    name=meta.name,
+                    path=item.path,
+                    body="",
+                    description=meta.description,
+                    policy=policy,
+                    is_common=meta.is_common,
+                )
+            )
+            if record_usage:
+                _record_active_usage(anima_dir, meta)
+            continue
         try:
             body = load_skill_body(meta.path)
         except Exception:
@@ -245,6 +241,8 @@ def build_active_skill_context(
             name=meta.name,
             path=item.path,
             body=body,
+            description=meta.description,
+            policy=policy,
             is_common=meta.is_common,
         )
         truncated_reason = _truncation_reason(
@@ -260,6 +258,8 @@ def build_active_skill_context(
                     name=meta.name,
                     path=item.path,
                     body="",
+                    description=meta.description,
+                    policy=policy,
                     is_common=meta.is_common,
                     truncated=True,
                     truncation_reason=truncated_reason,
@@ -291,7 +291,7 @@ def _resolve_refs(
     warnings: list[ActiveSkillWarning] = []
     seen_paths: set[str] = set()
 
-    for ref in _dedupe_refs(refs):
+    for ref in dedupe_refs(refs):
         meta = index.resolve_skill_reference(ref)
         if meta is None or meta.path is None:
             rejections.append(ActiveSkillRejection(ref, "not_found"))
@@ -313,6 +313,9 @@ def _resolve_refs(
 
 
 def _active_access_decision(meta: SkillMetadata, anima_dir: Path, *, confirm_risk: bool) -> tuple[bool, str]:
+    policy = policy_for_skill(meta)
+    if policy.blocked:
+        return False, policy.reason
     allowed, reason = skill_access_decision(meta, anima_dir=anima_dir)
     if not allowed:
         return False, reason
@@ -350,6 +353,12 @@ def _risk_reasons(meta: SkillMetadata) -> list[str]:
     for risk_field, reason in (
         ("destructive", "risk_destructive"),
         ("external_send", "risk_external_send"),
+        ("handles_untrusted_data", "risk_handles_untrusted_data"),
+        ("credential", "risk_credential"),
+        ("production", "risk_production"),
+        ("billing", "risk_billing"),
+        ("private_data", "risk_private_data"),
+        ("open_world", "risk_open_world"),
         ("requires_human_approval", "risk_requires_human_approval"),
     ):
         if _risk_flag(meta, risk_field):
@@ -359,24 +368,6 @@ def _risk_reasons(meta: SkillMetadata) -> list[str]:
 
 def _risk_flag(meta: SkillMetadata, field: str) -> bool:
     return bool(getattr(meta.risk, field, False) or getattr(meta.routing.risk, field, False))
-
-
-def _render_attachment_lines(item: ActiveSkillAttachment) -> list[str]:
-    lines = [
-        f"### {item.name}",
-        f"path: {item.path}",
-    ]
-    if item.truncated:
-        lines.extend(
-            [
-                "body: omitted",
-                f"reason: {item.truncation_reason or 'truncated'}",
-                "",
-            ]
-        )
-    else:
-        lines.extend(["", item.body.strip(), ""])
-    return lines
 
 
 def _truncation_reason(
@@ -420,69 +411,19 @@ def _build_index(anima_dir: Path, common_skills_dir: Path) -> SkillIndex:
 
 def _pointer_for_path(anima_dir: Path, common_skills_dir: Path, path: Path) -> str:
     try:
-        return str(path.relative_to(anima_dir))
+        return path.relative_to(anima_dir).as_posix()
     except ValueError:
         pass
     try:
-        return str(path.relative_to(common_skills_dir.parent))
+        return path.relative_to(common_skills_dir.parent).as_posix()
     except ValueError:
-        return str(path)
+        return path.as_posix()
 
 
 def _get_common_skills_dir() -> Path:
     from core.paths import get_common_skills_dir
 
     return get_common_skills_dir()
-
-
-def _dedupe_refs(skill_refs: list[str]) -> list[str]:
-    result: list[str] = []
-    seen: set[str] = set()
-    for ref in skill_refs:
-        value = str(ref).strip()
-        if value and value not in seen:
-            result.append(value)
-            seen.add(value)
-    return result
-
-
-def _state_path(anima_dir: Path) -> Path:
-    return anima_dir / "state" / ACTIVE_SKILLS_STATE_FILE
-
-
-def _read_state(anima_dir: Path) -> dict[str, Any]:
-    path = _state_path(anima_dir)
-    if not path.is_file():
-        return {"version": 1, "threads": {}}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        logger.warning("Failed to read active skill state from %s; using empty state", path)
-        return {"version": 1, "threads": {}}
-    if not isinstance(data, dict):
-        return {"version": 1, "threads": {}}
-    threads = data.get("threads")
-    if not isinstance(threads, dict):
-        data["threads"] = {}
-    data["version"] = 1
-    return data
-
-
-def _write_thread_refs(anima_dir: Path, thread_id: str, refs: list[str]) -> None:
-    state = _read_state(anima_dir)
-    threads = state.setdefault("threads", {})
-    if refs:
-        threads[thread_id] = {
-            "refs": _dedupe_refs(refs),
-            "updated_at": now_iso(),
-        }
-    else:
-        threads.pop(thread_id, None)
-    path = _state_path(anima_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
 
 
 __all__ = [

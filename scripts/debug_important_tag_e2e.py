@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """E2E verification of [IMPORTANT] tag across RAG indexer → retriever → forgetting → priming."""
+
 from __future__ import annotations
 
 import asyncio
+import atexit
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.paths import get_animas_dir, get_anima_vectordb_dir
-from core.memory.rag.store import ChromaVectorStore
-from core.memory.rag.indexer import MemoryIndexer
-from core.memory.rag.retriever import MemoryRetriever, WEIGHT_IMPORTANCE
 from core.memory.forgetting import ForgettingEngine
 from core.memory.priming import PrimingEngine
+from core.memory.rag.indexer import MemoryIndexer
+from core.memory.rag.retriever import WEIGHT_IMPORTANCE, MemoryRetriever
+from core.memory.rag.singleton import get_vector_store
+from core.paths import get_animas_dir
 
 ANIMA_NAME = "kotoha"
 DIVIDER = "=" * 70
@@ -28,12 +30,19 @@ def step_header(n: int, title: str) -> None:
 def main() -> None:
     anima_dir = get_animas_dir() / ANIMA_NAME
     shared_dir = anima_dir.parent.parent / "shared"
-    vdb_dir = get_anima_vectordb_dir(ANIMA_NAME)
     knowledge_dir = anima_dir / "knowledge"
 
     # ── Step 1: Re-index ──
     step_header(1, "RAG Re-indexing (force=True)")
-    store = ChromaVectorStore(persist_dir=vdb_dir)
+    from core.memory.rag.vector_worker_client import start_temporary_vector_worker
+
+    worker = start_temporary_vector_worker()
+    atexit.register(worker.stop)
+    store = get_vector_store(ANIMA_NAME)
+    if store is None:
+        print("  ❌ Vector worker unavailable")
+        worker.stop()
+        return
     indexer = MemoryIndexer(store, ANIMA_NAME, anima_dir)
     total = indexer.index_directory(knowledge_dir, "knowledge", force=True)
     print(f"  Indexed {total} chunks from knowledge/")
@@ -41,8 +50,12 @@ def main() -> None:
     # ── Step 2: Verify metadata ──
     step_header(2, "Verify importance metadata on indexed chunks")
     coll_name = f"{ANIMA_NAME}_knowledge"
-    coll = store.client.get_or_create_collection(name=coll_name)
-    data = coll.get(include=["metadatas", "documents"])
+    chunks = store.get_by_metadata(coll_name, {}, limit=100000)
+    data = {
+        "ids": [chunk.document.id for chunk in chunks],
+        "documents": [chunk.document.content for chunk in chunks],
+        "metadatas": [chunk.document.metadata for chunk in chunks],
+    }
 
     important_chunks: list[tuple[str, str]] = []
     normal_chunks: list[str] = []
@@ -78,7 +91,10 @@ def main() -> None:
     print(f"  Expected WEIGHT_IMPORTANCE = {WEIGHT_IMPORTANCE}")
 
     results = retriever.search(
-        query, ANIMA_NAME, memory_type="knowledge", top_k=10,
+        query,
+        ANIMA_NAME,
+        memory_type="knowledge",
+        top_k=10,
     )
 
     print(f"\n  Top {len(results)} results:")
@@ -86,9 +102,11 @@ def main() -> None:
     for r in results:
         imp_score = r.source_scores.get("importance", 0.0)
         marker = "🔴 BOOSTED" if imp_score > 0 else ""
-        print(f"    score={r.score:.4f}  imp_boost={imp_score:.2f}  "
-              f"importance={r.metadata.get('importance', '?'):>9s}  "
-              f"{marker}")
+        print(
+            f"    score={r.score:.4f}  imp_boost={imp_score:.2f}  "
+            f"importance={r.metadata.get('importance', '?'):>9s}  "
+            f"{marker}"
+        )
         print(f"      id: {r.doc_id}")
         print(f"      preview: {r.content[:100].replace(chr(10), ' ')}...")
         if imp_score > 0:
@@ -175,7 +193,8 @@ def main() -> None:
     print(f"  Step 3 (Boost):       {'✅' if boosted_found else '❌'} +{WEIGHT_IMPORTANCE} score boost")
     print(f"  Step 4 (Forgetting):  {'✅' if protected_count > 0 else '❌'} {protected_count} protected")
     print("  Step 5 (Priming):     (see above)")
-    print()
+    atexit.unregister(worker.stop)
+    worker.stop()
 
 
 if __name__ == "__main__":

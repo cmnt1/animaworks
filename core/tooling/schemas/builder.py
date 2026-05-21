@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.skills.trust_gate import trust_skill_enabled_for_trigger
 from core.tooling.schemas.admin import _AW_CORE_NAMES, ADMIN_TOOLS, CC_TOOLS
 from core.tooling.schemas.channel import _channel_tools
 from core.tooling.schemas.converters import apply_db_descriptions
@@ -38,6 +39,7 @@ from core.tooling.schemas.supervisor import (
     _vault_tools,
 )
 from core.tooling.schemas.task import _submit_tasks_tools, _task_tools
+from core.tooling.schemas.workspace import WORKSPACE_TOOLS
 
 _CONSOLIDATION_BLOCKED_TOOLS: frozenset[str] = frozenset(
     {"delegate_task", "submit_tasks", "goal", "send_message", "post_channel"}
@@ -68,6 +70,11 @@ def submit_tasks_enabled_for_trigger(trigger: str | None) -> bool:
     """Return True only for explicit background task-authoring sessions."""
     normalized = (trigger or "").strip()
     return normalized in _SUBMIT_TASKS_ALLOWED_TRIGGERS or normalized.startswith(_SUBMIT_TASKS_ALLOWED_PREFIXES)
+
+
+def _skill_authoring_schemas_for_trigger(trigger: str) -> list[dict[str, Any]]:
+    allow_trust = trust_skill_enabled_for_trigger(trigger)
+    return [t for t in _create_skill_schemas() if allow_trust or t["name"] != "trust_skill"]
 
 
 def build_tool_list(
@@ -119,6 +126,8 @@ def build_tool_list(
     tools.extend(_channel_tools())
     tools.extend(PROCEDURE_TOOLS)
     tools.extend(KNOWLEDGE_TOOLS)
+    if not is_consolidation:
+        tools.extend(WORKSPACE_TOOLS)
     tools.extend(_check_permissions_tools())
     if include_file_tools:
         tools.extend(FILE_TOOLS)
@@ -155,7 +164,7 @@ def build_tool_list(
     tools = apply_db_descriptions(tools)
 
     if include_create_skill:
-        tools.extend(_create_skill_schemas())
+        tools.extend(_skill_authoring_schemas_for_trigger(trigger))
         tools.extend(_curator_skill_schemas())
     return tools
 
@@ -199,6 +208,7 @@ def build_unified_tool_list(
             tools.append(t)
 
     if not is_consolidation:
+        tools.extend(WORKSPACE_TOOLS)
         for t in _channel_tools():
             if t["name"] == "post_channel":
                 tools.append(t)
@@ -238,7 +248,9 @@ def build_unified_tool_list(
     tools = apply_db_descriptions(tools)
 
     if include_create_skill:
-        tools.extend(t for t in _create_skill_schemas() if t["name"] == "create_skill")
+        tools.extend(
+            t for t in _skill_authoring_schemas_for_trigger(trigger) if t["name"] in {"create_skill", "trust_skill"}
+        )
         tools.extend(_curator_skill_schemas())
 
     if compact:

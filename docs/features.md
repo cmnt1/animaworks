@@ -2,11 +2,11 @@
 
 **[日本語版](features.ja.md)**
 
-> Last updated: 2026-03-25
+> Last updated: 2026-05-21
 > See also: [Spec](spec.md) · [Memory System](memory.md) · [Brain Mapping](brain-mapping.md) · [Security](security.md) · [Vision](vision.md)
 
-AnimaWorks is a framework that treats AI agents not as tools, but as **autonomous individuals**.
-Each agent (Anima) has its own identity, memory, and standards for judgment; it plays a role inside an organization and thinks and acts on its own without waiting for human instructions. Powerful models take engineering work; lightweight models take routine tasks. Models are placed where they fit best, and everyone grows through accumulated memory.
+AnimaWorks is a framework that treats AI agents not as one-off tools, but as team members that keep working with memory.
+Each agent (Anima) has its own identity, memory, and standards for judgment, and plays a role inside an organization. It does not only respond to human requests; it uses schedules, tasks, and memory to review the situation and choose its next action. Powerful models can handle complex judgment, while lightweight models handle routine work, letting the organization balance cost and quality.
 
 ---
 
@@ -36,26 +36,29 @@ Rather than stuffing information into the context window, memory is handled with
 
 ### Automatic Recall (Priming)
 
-Depending on the message or trigger, multiple sources are searched **in parallel** and injected into the system prompt as a single “priming” block. Orchestration centers on **six channels A–F**, while auxiliary context is also composed before and after them as follows.
+Depending on the message or trigger, multiple sources are searched **in parallel** and injected into the system prompt as a single “priming” block. The current implementation combines sender, recent activity, important knowledge, related knowledge, pending tasks, episodes, graph context, recent outbound history, and pending human-facing notifications.
 
-| Channel | Content |
-|---------|---------|
-| A: Sender profile | Past information and preferences about the other party (`shared/users/`) |
-| B: Recent activity | Timeline based on the unified activity log |
-| C: Related knowledge | Learned knowledge via vector search. **[IMPORTANT]** chunks are prioritized with summary pointers, then normal related chunks are fetched. Combined after splitting by trust into **trusted / untrusted** |
-| D: Skill match | Description-based staged matching plus vector assist (**names only** at priming time) |
-| E: Task / execution state | Persistent task-queue summary plus, when applicable, **tasks running in parallel** from `submit_tasks`, `overflow_inbox` summaries on message overflow, and **task_results** previews for async tool completions |
-| F: Episodes | Vector search over episodic memory |
+| Source | Content |
+|--------|---------|
+| Sender profile | Past information and preferences about the other party (`shared/users/`) |
+| Recent activity | Timeline from the unified activity log and shared channels |
+| Important knowledge | Summary pointers for `[IMPORTANT]` knowledge |
+| Related knowledge | RAG search over personal `knowledge/` and shared `common_knowledge/`, split by trust level |
+| Task / execution state | TaskBoard, persistent task queue, running tasks, overflow inbox, and task result summaries |
+| Episodes | RAG search over episodic memory; points to `read_memory_file` when details are needed |
+| Graph context | Community context and recent facts from the memory backend |
 
-**Recent outbound** (where the Anima recently sent what) and pending **human-facing notifications** (`call_human` queue) are injected in separate sections so they align with rate limits and reply decisions.
+Retrieved memories pass through the deterministic priming gate, which decides whether each item appears as body text, a pointer, evidence, or is suppressed. The system favors reading full files with `read_memory_file` only when details are actually needed.
 
-Default per-channel token budgets (implementation constants; overall budget varies by message type) are roughly: sender 500, recent activity 1300, related knowledge 1000, skills 200, task-related 500, episodes 800. With `priming.dynamic_budget` in `config.json` (enabled by default), you get **variable budgets per trigger** (greeting, question, request, heartbeat, etc.) and heartbeat expansion via **context-window ratio** (`heartbeat_context_pct`).
+Normal chat paths use **variable budgets by trigger** such as greeting, question, request, and heartbeat. `config.json` `priming.budget_*` and `heartbeat_context_pct` tune those caps and heartbeat expansion.
 
 The Anima does not need to track what it remembers and what it forgot. The right memories are recalled when needed.
 
 ### RAG (Retrieval-Augmented Generation)
 
 Combines vector search with ChromaDB and a multilingual embedding model with spreading activation over a knowledge graph (Personalized PageRank). Instead of simple keyword matching, related concepts are activated in chains.
+
+ChromaDB and embedding work normally run through the vector worker. If a crash or index inconsistency is detected, RAG repair can quarantine the target Anima’s `vectordb` and rebuild the index from memory files.
 
 ### Memory Consolidation
 
@@ -64,6 +67,10 @@ Automatically extracts general knowledge from daily episodic memory. Failed expe
 ### Active Forgetting
 
 Unused memories fade in three stages and are eventually removed: synaptic downscaling → neurogenesis reorganization → complete forgetting. Important memories such as procedures and skills are protected. The design favors a clear mind for sound judgment rather than unlimited accumulation.
+
+### Memory Check Before Action
+
+For side-effecting actions such as external sends, channel posts, human notifications, and memory writes, the action memory gate checks related `[ACTION-RULE]` items and whether required memories have been read. If needed context has not been loaded, execution stops first and prompts the Anima to read the relevant memory.
 
 ### Shared Knowledge (`common_knowledge`)
 
@@ -150,9 +157,13 @@ Three layers to prevent infinite message loops: duplicate-send prevention to the
 
 ## Task Management
 
+### TaskBoard
+
+TaskBoard is the work board for tasks, processing items, deferred work, suppressed items, background execution, and completed results. Chat and heartbeat priming surface only the tasks that matter in the current context, avoiding repeated display of already processed or suppressed results.
+
 ### Persistent Task Queue
 
-Tasks are recorded in a persistent queue. Tasks originating from humans are always processed with highest priority.
+The persistent task queue remains for compatibility and lightweight execution paths. When TaskBoard is unavailable, or in older paths, task-queue summaries are used as a fallback. Tasks originating from humans are always processed with highest priority.
 
 ### Staleness and Deadlines
 
@@ -182,7 +193,9 @@ Per-Anima allowance is controlled in `permissions.md`. Long-running tools (e.g. 
 
 ### Skill System
 
-Skills use progressive disclosure. At priming time only names are recalled; full text loads when the Anima decides it is needed. This keeps cognitive load manageable even with many skills. Animas can also create their own skills.
+Skills use progressive disclosure. Required skills are surfaced through active skill context, the Skill Router, the `skill` tool, or explicit `read_memory_file` calls. Full text loads only when the Anima decides it is needed, keeping cognitive load manageable even with many skills.
+
+The Skill Hub manages installation, inspection, removal, quarantine, and shared availability. Successful procedures can be promoted into probation skills, and the curator reviews usage to suggest archive, merge, or cleanup actions. Animas can also create their own skills.
 
 ---
 
@@ -300,6 +313,11 @@ animaworks anima rename NAME NEWNAME       # Rename
 
 animaworks models list                     # Supported models
 animaworks models info MODEL               # Model info
+animaworks index --anima NAME              # RAG index
+animaworks repair-rag --anima NAME --full  # RAG quarantine / rebuild
+animaworks memory status                   # Memory backend status
+animaworks skills list                     # Skill Hub
+animaworks task ...                        # TaskBoard / task execution
 ```
 
 ---
@@ -316,6 +334,8 @@ animaworks models info MODEL               # Model info
 ## Operations
 
 - **Disk management**: Housekeeping rotates logs, short-term memory, and temp files automatically.
+- **TaskBoard cleanup**: Daily housekeeping cleans up stale processing, deferred, suppressed, and background states.
+- **Skill Curator**: Produces review proposals such as archive, merge, or cleanup based on skill usage.
 - **Token usage tracking**: Measures and records input/output tokens for LLM calls.
 - **API fault tolerance**: Automatic retries on LLM API failures.
 - **Write safety**: Updates use temp file + rename for atomic writes and to avoid corruption on crash.

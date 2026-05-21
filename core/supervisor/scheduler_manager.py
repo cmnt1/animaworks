@@ -30,7 +30,12 @@ from core.schemas import CronTask
 from core.time_utils import get_app_timezone, now_local
 
 _INDENTED_SCHEDULE_RE = re.compile(r"^\s+schedule:", re.MULTILINE)
-_HEALTH_CHECK_HOURS = 3
+# Cron health check:
+# - interval: how often the health job runs (kept short for timely detection)
+# - window: lookback window for "no executions" detection
+#   (widened to avoid false positives for low-frequency crons)
+_HEALTH_CHECK_INTERVAL_HOURS = 3
+_HEALTH_CHECK_WINDOW_HOURS = 24
 
 
 # Map an Anima's main-credential field value to the Governor provider key.
@@ -613,7 +618,7 @@ class SchedulerManager:
 
         self.scheduler.add_job(
             self._cron_health_tick,
-            CronTrigger(minute=0, hour=f"*/{_HEALTH_CHECK_HOURS}"),
+            CronTrigger(minute=0, hour=f"*/{_HEALTH_CHECK_INTERVAL_HOURS}"),
             id=f"{self._anima_name}_cron_health",
             name=f"{self._anima_name} cron health check",
             replace_existing=True,
@@ -674,19 +679,21 @@ class SchedulerManager:
                 return
 
             # Only treat a missing execution as unhealthy when at least one
-            # cron was actually expected to fire inside the health window.
+            # cron was actually expected to fire inside the no-execution window.
             now = now_local()
-            window_start = now - timedelta(hours=_HEALTH_CHECK_HOURS)
+            window_start = now - timedelta(hours=_HEALTH_CHECK_WINDOW_HOURS)
             expected_jobs = [job for job in cron_jobs if self._job_has_schedule_in_window(job, window_start, now)]
             if not expected_jobs:
                 return
 
             entries = self._anima._activity._load_entries(
-                hours=_HEALTH_CHECK_HOURS,
+                hours=_HEALTH_CHECK_WINDOW_HOURS,
                 types=["cron_executed"],
             )
 
             executed_names = self._extract_executed_task_names(entries)
+            if entries and not executed_names:
+                return
             last_success_by_task = self._load_last_success_by_task(days=30)
 
             missed_and_stale = []
@@ -715,7 +722,7 @@ class SchedulerManager:
                     t(
                         "scheduler.cron_health_no_execution",
                         job_count=len(missed_and_stale),
-                        hours=_HEALTH_CHECK_HOURS,
+                        hours=_HEALTH_CHECK_WINDOW_HOURS,
                     )
                 )
         except Exception:

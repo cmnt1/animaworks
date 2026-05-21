@@ -69,6 +69,7 @@ search_memory(query="Slack API connection test", scope="episodes")
 - Technical notes, response policies, decision criteria
 - Accumulated automatically via Consolidation; you can also write proactively
 - Legacy files are migrated to YAML front matter on first run (`knowledge/.migrated` marker)
+- **Reconsolidation**: knowledge with `failure_count >= 2` and `confidence < 0.6` in front matter can be revised by the LLM through the knowledge path of `ReconsolidationEngine`
 
 Examples:
 
@@ -97,6 +98,7 @@ search_memory(query="Slack API rate limit", scope="knowledge")
 - Problem-solving steps, routine workflows
 - May be auto-generated from events such as `issue_resolved` (with metadata like confidence 0.4)
 - **Not as fully protected as skills**: based on metadata, items can enter the forgetting pipeline (procedure-specific rules below)
+- **Reconsolidation**: when front matter has `failure_count >= 2` and `confidence < 0.6`, the LLM can revise the procedure. The revised file resets counters, increments version, and archives the old version
 - Version history lives under `archive/`; older versions are pruned after a cap
 
 Examples:
@@ -124,8 +126,9 @@ search_memory(query="SSL certificate renewal", scope="procedures")
 **Executable procedure guides and tool usage guides.** Corresponds to “specialties.”
 
 - Personal skills (`skills/`) and common skills (`common_skills/`)
-- The system prompt skill catalog lists paths such as `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`, and `procedures/baz.md`
-- When you need details, fetch the full text with `read_memory_file(path="...")`
+- Required skills are found through active skill context, the Skill Router, the `skill` tool, or `read_memory_file(path="...")`
+- You do not need to read every skill body up front. First use names, descriptions, or pointers; read the full text only when details are needed
+- Proven `procedures/` may be promoted into probation or quarantine skills
 - **In the vector store, skills are always outside the forgetting scope** (`skills` / `shared_users` types are protected)
 
 ### Inspecting a skill
@@ -146,20 +149,21 @@ create_skill(skill_name="deploy-procedure", description="Production deploy proce
 
 ### Priming (automatic recall)
 
-Each time a conversation starts, the Priming engine runs **five channels (A, B, C/C0, E, F)** in parallel, searches related memories, and injects them into the system prompt. In implementation, **C0 (important knowledge)** is fetched first and **concatenated with Channel C body text** at injection time (often appearing as one “related knowledge” block).
+Each time a conversation starts, the Priming engine searches related memories in parallel and injects only relevant context into the system prompt. It does not read all memories every time.
 
-| Channel | What it searches | Default per-channel budget (token guide) * |
-|---------|------------------|-------------------------------------------|
-| A: Sender profile | The other party’s user info | 500 |
-| B: Recent activity | Unified activity log (timeline) | 1300 |
-| C0: Important knowledge | **Summary pointers only** for `[IMPORTANT]`-tagged knowledge | 500 |
-| C: Related knowledge | RAG (dense): personal `knowledge` + shared `common_knowledge` | 1000 |
-| E: Pending tasks | Task queue summary + in-flight parallel tasks + delegated task status + (if any) overflow inbox file names | 500 |
-| F: Episodes | RAG search over `episodes/` | 800 |
+| Source | What it searches | Default budget guide * |
+|--------|------------------|------------------------|
+| Sender profile | The other party's user info | 500 |
+| Recent activity | Unified activity log timeline + shared channels | 1300 |
+| Important knowledge | Summary pointers for `[IMPORTANT]` knowledge | 500 |
+| Related knowledge | RAG over personal `knowledge` + shared `common_knowledge` | 1000 |
+| Pending tasks | TaskBoard + task queue + running tasks + overflow inbox + task results | 500 |
+| Episodes | RAG search over `episodes/` | 800 |
+| Graph context | Community context and recent facts from the memory backend | 500 |
 
-Skill and procedure bodies are listed in the system prompt skill catalog (`<available_skills>`, injected into Group 4) and loaded with `read_memory_file`. Semantic skill discovery is also available via `search_memory(scope="skills")`.
+Skills and procedures are read when needed through the `skill` tool, active skill context, `read_memory_file`, or `search_memory(scope="skills")`. Skill bodies are not automatically injected in full.
 
-\* You can change greeting / question / request / heartbeat caps and `heartbeat_context_pct` under `priming` in `config.json`. When `dynamic_budget` is enabled, overall token limits for message types and heartbeat use expressions such as `max(budget_heartbeat, context_window × heartbeat_context_pct)`, and each channel scales by ratio.
+\* In normal paths, the overall cap changes by message type such as greeting, question, request, and heartbeat. You can adjust `priming.budget_*` and `heartbeat_context_pct` in `config.json`.
 
 Also injected:
 
@@ -171,6 +175,10 @@ Also injected:
 **`[IMPORTANT]` and C0**: `[IMPORTANT]` knowledge appears in C0 as “title + one-line summary + pointer to `read_memory_file`.” Because it is on a path separate from ordinary RAG (C), important rules are harder to miss even when the query does not match. When moving must-have business rules into knowledge, prefix with `[IMPORTANT]`.
 
 Priming runs automatically; no explicit action is required.
+
+### Memory check before action
+
+For side-effecting actions such as external sends, channel posts, human notifications, and memory writes, related `[ACTION-RULE]` items and required memories may be checked before execution. If you are stopped, read the indicated memory with `read_memory_file`, then run the action again.
 
 ### Consolidation (memory integration)
 
@@ -199,7 +207,7 @@ If memories accumulate without bound, search quality drops; forgetting is applie
 | Target | Protection |
 |--------|------------|
 | `skills/`, `shared/users/` (as types) | Always protected (never in forgetting scope) |
-| `[IMPORTANT]` (`importance == important`) | Protected in principle. **However**, if there is **no access for 365 days** since last access or update, a safety net lifts protection and normal forgetting applies (weekly integration is assumed to have absorbed content into knowledge) |
+| `[IMPORTANT]` (`importance == important`) | Protected, especially for knowledge and procedures |
 | Knowledge: `success_count >= 2` | Protected |
 | Procedures: `importance == "important"` / `protected == True` / `version >= 3` | Protected (procedure-specific checks) |
 
@@ -235,10 +243,11 @@ If memories accumulate without bound, search quality drops; forgetting is applie
 Memory search uses RAG (Retrieval-Augmented Generation):
 
 1. **Indexing**: `knowledge/`, `episodes/`, `procedures/`, shared `common_knowledge/`, etc. are chunked, embedded, and stored in a vector store (default Chroma, persistent per-Anima directory). Summaries in `state/conversation.json` may also be indexed.
-2. **Embedding model**: `rag.embedding_model` in `config.json` (default `intfloat/multilingual-e5-small`). If `ANIMAWORKS_VECTOR_URL` / `ANIMAWORKS_EMBED_URL` are set, child processes can delegate vector ops and embedding generation via the server.
+2. **Embedding model**: `rag.embedding_model` in `config.json` (default `intfloat/multilingual-e5-small`). Child processes normally use the vector worker to delegate vector ops and embedding generation.
 3. **Search**: The query is embedded; ranking combines similarity with **time decay**, reference frequency, etc. `rag.min_retrieval_score` in `config.json` can floor results.
 4. **Graph spreading**: `rag.enable_spreading_activation` (default true) and `rag.spreading_memory_types` control **spreading activation** on the knowledge graph.
 5. **Incremental updates**: Re-index changed files and run **full index rebuilds** after daily / weekly / monthly cycles to stay consistent.
+6. **Repair**: If ChromaDB or vector search becomes inconsistent, RAG repair can quarantine `vectordb` and rebuild the index from memory files.
 
 RAG is used automatically when you call `search_memory`. You need not think about internals, but **tips for better retrieval**:
 

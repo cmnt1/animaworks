@@ -244,7 +244,15 @@ class SkillCurator:
             failure = stats.failure_count if stats else meta.failure_count
             patch_count = stats.patch_count if stats else meta.patch_count
             total = success + failure
-            if total and failure / total >= 0.7:
+            is_probation = str(meta.promotion_status or "").lower() == "probation"
+            if is_probation and total >= 3 and failure / total >= 0.7:
+                suggestions.append(
+                    LifecycleSuggestion(
+                        meta.name, SkillLifecycleState.review, "probation_failure_rate_high", failure / total
+                    )
+                )
+                continue
+            if not is_probation and total and failure / total >= 0.7:
                 suggestions.append(
                     LifecycleSuggestion(meta.name, SkillLifecycleState.review, "failure_rate_high", failure / total)
                 )
@@ -257,9 +265,21 @@ class SkillCurator:
             if meta.pinned or meta.protected:
                 continue
             last_used = _parse_time(stats.last_used_at if stats else None) or meta.last_used_at
+            if is_probation and last_used is None:
+                created_at = _parse_time(stats.created_at if stats else None)
+                if created_at is not None and (now - created_at.astimezone(UTC)).days >= stale_days:
+                    suggestions.append(
+                        LifecycleSuggestion(meta.name, SkillLifecycleState.archived, "probation_unused_90d", "never")
+                    )
+                continue
             if last_used is None:
                 continue
             age_days = (now - last_used.astimezone(UTC)).days
+            if is_probation and age_days >= stale_days:
+                suggestions.append(
+                    LifecycleSuggestion(meta.name, SkillLifecycleState.archived, "probation_unused_90d", age_days)
+                )
+                continue
             if age_days >= archive_days:
                 suggestions.append(
                     LifecycleSuggestion(meta.name, SkillLifecycleState.archived, "unused_180d", age_days)

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -26,13 +27,9 @@ class TestMemoryManagerLazyIndexer:
     @patch("core.memory.manager.get_common_skills_dir", return_value=Path("/tmp/skills"))
     @patch("core.memory.manager.get_company_dir", return_value=Path("/tmp/company"))
     @patch("core.memory.manager.get_shared_dir", return_value=Path("/tmp/shared"))
-    def test_constructor_does_not_call_init_indexer(
-        self, mock_shared, mock_company, mock_skills, anima_dir
-    ):
+    def test_constructor_does_not_call_init_indexer(self, mock_shared, mock_company, mock_skills, anima_dir):
         """MemoryManager() should NOT call _init_indexer during construction."""
-        with patch(
-            "core.memory.manager.MemoryManager._init_indexer"
-        ) as mock_init:
+        with patch("core.memory.manager.MemoryManager._init_indexer") as mock_init:
             from core.memory.manager import MemoryManager
 
             mgr = MemoryManager(anima_dir)
@@ -47,32 +44,36 @@ class TestMemoryManagerLazyIndexer:
     @patch("core.memory.manager.get_common_skills_dir", return_value=Path("/tmp/skills"))
     @patch("core.memory.manager.get_company_dir", return_value=Path("/tmp/company"))
     @patch("core.memory.manager.get_shared_dir", return_value=Path("/tmp/shared"))
-    def test_get_indexer_triggers_init_once(
-        self, mock_shared, mock_company, mock_skills, anima_dir
-    ):
+    def test_get_indexer_triggers_init_once(self, mock_shared, mock_company, mock_skills, anima_dir):
         """_get_indexer() should call _init_indexer on first access only."""
         from core.memory.manager import MemoryManager
 
         mgr = MemoryManager(anima_dir)
         assert mgr._indexer_initialized is False
 
-        # First call triggers init
-        mgr._get_indexer()
-        assert mgr._indexer_initialized is True
+        dummy_store = object()
+        dummy_indexer = SimpleNamespace(vector_store=dummy_store, embedding_model=None)
 
-        # Record state after first init
-        indexer_after_first = mgr._indexer
+        # First call triggers init without loading real Chroma/SentenceTransformer deps.
+        with (
+            patch("core.memory.rag.singleton.get_vector_store", return_value=dummy_store),
+            patch("core.memory.rag.MemoryIndexer", return_value=dummy_indexer),
+            patch("core.memory.rag_search.RAGMemorySearch._check_shared_collections"),
+        ):
+            mgr._get_indexer()
+            assert mgr._indexer_initialized is True
 
-        # Second call does NOT re-initialize
-        mgr._get_indexer()
-        assert mgr._indexer is indexer_after_first
+            # Record state after first init
+            indexer_after_first = mgr._indexer
+
+            # Second call does NOT re-initialize
+            mgr._get_indexer()
+            assert mgr._indexer is indexer_after_first
 
     @patch("core.memory.manager.get_common_skills_dir", return_value=Path("/tmp/skills"))
     @patch("core.memory.manager.get_company_dir", return_value=Path("/tmp/company"))
     @patch("core.memory.manager.get_shared_dir", return_value=Path("/tmp/shared"))
-    def test_get_indexer_returns_none_when_deps_missing(
-        self, mock_shared, mock_company, mock_skills, anima_dir
-    ):
+    def test_get_indexer_returns_none_when_deps_missing(self, mock_shared, mock_company, mock_skills, anima_dir):
         """When RAG dependencies are missing, _get_indexer() returns None."""
         from core.memory.manager import MemoryManager
 

@@ -28,6 +28,11 @@ class ActiveSkillsRequest(BaseModel):
     confirm_risk: bool = False
 
 
+class TrustSkillRequest(BaseModel):
+    ref: str
+    trust_reason: str = "human_instruction"
+
+
 def create_skills_router() -> APIRouter:
     router = APIRouter()
 
@@ -52,6 +57,29 @@ def create_skills_router() -> APIRouter:
         return {
             "anima": name,
             "thread_id": thread_id,
+            **result.to_dict(),
+        }
+
+    @router.post("/animas/{name}/skills/trust")
+    async def trust_skill(name: str, body: TrustSkillRequest, request: Request):
+        """Promote a safe skill to trusted operating guidance."""
+        from core.skills.trust import promote_skill_to_trusted
+
+        anima_dir = _resolve_anima_dir(request, name)
+        try:
+            actor = _human_actor(request)
+            result = await asyncio.to_thread(
+                promote_skill_to_trusted,
+                anima_dir,
+                body.ref,
+                trusted_by=actor,
+                trust_reason=body.trust_reason,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        return {
+            "anima": name,
+            "status": "trusted",
             **result.to_dict(),
         }
 
@@ -93,4 +121,12 @@ def _validate_thread_or_400(thread_id: str) -> str:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
-__all__ = ["ActiveSkillsRequest", "create_skills_router"]
+def _human_actor(request: Request) -> str:
+    user = getattr(request.state, "user", None)
+    username = str(getattr(user, "username", "") or "").strip()
+    if username:
+        return username
+    return "local_user"
+
+
+__all__ = ["ActiveSkillsRequest", "TrustSkillRequest", "create_skills_router"]

@@ -132,6 +132,38 @@ class TestLoadSkillMetadata:
         assert meta.trust_level == SkillTrustLevel.trusted
         assert meta.version == 1
 
+    def test_legacy_string_source_is_normalized(self, tmp_path: Path):
+        d = tmp_path / "legacy-source-skill"
+        d.mkdir()
+        (d / "SKILL.md").write_text(
+            "---\n"
+            "name: legacy-source-skill\n"
+            "description: Legacy scalar source field\n"
+            "source: activity_log\n"
+            "---\n\n"
+            "# Legacy Source Skill\n",
+            encoding="utf-8",
+        )
+        meta = load_skill_metadata(d / "SKILL.md")
+        assert meta.source.type == "activity_log"
+        assert meta.source.identifier is None
+
+    def test_scalar_source_is_coerced_to_source_object(self, tmp_path: Path):
+        d = tmp_path / "activity-skill"
+        d.mkdir()
+        (d / "SKILL.md").write_text(
+            "---\n"
+            "name: activity-skill\n"
+            "description: Legacy activity source\n"
+            'source: "activity_log"\n'
+            "---\n\n"
+            "# Activity Skill\n",
+            encoding="utf-8",
+        )
+        meta = load_skill_metadata(d / "SKILL.md")
+        assert meta.source.type == "activity_log"
+        assert meta.source.identifier is None
+
     def test_no_frontmatter_infers_name_from_directory(self, no_frontmatter_skill: Path):
         meta = load_skill_metadata(no_frontmatter_skill / "SKILL.md")
         assert meta.name == "bare-skill"
