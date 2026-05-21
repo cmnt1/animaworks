@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,9 +15,10 @@ Install with: pip install 'animaworks[rag]'
 import asyncio
 import os
 from datetime import timedelta
-from core.time_utils import now_jst, today_local
 
 import pytest
+
+from core.time_utils import now_jst, today_local
 
 # Skip all tests if required dependencies are not installed
 chromadb = pytest.importorskip(
@@ -270,7 +272,6 @@ def test_e2e_spreading_activation(anima_dir, vector_store, indexer):
     # Either via direct search or via graph expansion
     has_api = any("api-design" in d for d in all_doc_ids)
     has_error = any("error-handling" in d for d in all_doc_ids) or "エラー" in all_content
-    has_logging = any("logging-policy" in d for d in all_doc_ids) or "ログ" in all_content
 
     # At minimum, the directly relevant files should be found
     assert has_api or has_error, (
@@ -400,13 +401,12 @@ def test_e2e_incremental_index_and_graph(anima_dir, vector_store, indexer, retri
     assert initial_nodes == 2
 
     # Verify initial search works
-    results_before = retriever.search(
+    assert retriever.search(
         query="クエリ最適化",
         anima_name="test_anima",
         memory_type="knowledge",
         top_k=5,
     )
-    initial_doc_ids = {r.doc_id for r in results_before}
 
     # Add a new file
     new_file = knowledge_dir / "query-optimization.md"
@@ -485,7 +485,9 @@ def test_e2e_priming_integration(anima_dir, vector_store, indexer):
     )
 
     # Create skill file
-    (skills_dir / "react-development.md").write_text(
+    skill_file = skills_dir / "react-development" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text(
         "# React開発\n\n"
         "## 概要\n\nReactを使ったフロントエンド開発スキル。\n"
         "TypeScript, Next.js, Tailwind CSS を使用。\n",

@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from tests.helpers.filesystem import create_anima_dir
+import pytest
 
+from tests.helpers.filesystem import create_anima_dir
 
 # ── Hiring Rules Removed from System Prompt ──────────────────────
 
@@ -41,7 +41,8 @@ class TestHiringRulesRemovedFromSystemPrompt:
             injection="## Role\nManage the team.",
             permissions="## Permissions\nAll permissions granted.",
         )
-        skill_file = anima_dir / "skills" / "newstaff.md"
+        skill_file = anima_dir / "skills" / "newstaff" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True, exist_ok=True)
         skill_file.write_text(
             "# newstaff\n\n## 概要\n新しいAnimaを雇用するスキル\n\n## 手順\n...\n",
             encoding="utf-8",
@@ -82,9 +83,9 @@ class TestReconciliationStatusJsonGuard:
     def supervisor(self, temp_dirs):
         """Create a ProcessSupervisor instance."""
         from core.supervisor.manager import (
+            HealthConfig,
             ProcessSupervisor,
             RestartPolicy,
-            HealthConfig,
         )
 
         return ProcessSupervisor(

@@ -246,6 +246,7 @@ class TestBaseToolCount:
         assert "search_memory" in names
         assert "read_memory_file" in names
         assert "write_memory_file" in names
+        assert "grant_workspace_access" in names
         assert "send_message" in names
         assert "post_channel" in names
         assert "grant_workspace_access" in names

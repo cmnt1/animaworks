@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from cli.commands.import_cmd import cmd_import_hermes, register_import_command
+from core.skills.loader import load_skill_metadata
 from core.skills.migration.hermes import HermesImportOptions, import_hermes, parse_hermes_usage
 from core.skills.migration.hermes_format import (
     coerce_lock_entries,
@@ -14,6 +15,7 @@ from core.skills.migration.hermes_format import (
     convert_cron_skills_field,
     task_status,
 )
+from core.skills.models import SkillTrustLevel
 
 
 def _write_skill(root: Path, name: str, *, body: str = "Use safely.") -> Path:
@@ -145,7 +147,9 @@ def test_hermes_apply_imports_safe_skill_usage_hub_lock_tasks_and_is_idempotent(
     report = import_hermes(options)
     second = import_hermes(options)
 
-    assert (data_dir / "animas" / "mei" / "skills" / "safe-skill" / "SKILL.md").is_file()
+    imported_skill = data_dir / "animas" / "mei" / "skills" / "safe-skill" / "SKILL.md"
+    assert imported_skill.is_file()
+    assert load_skill_metadata(imported_skill).trust_level == SkillTrustLevel.community
     assert not (data_dir / "animas" / "mei" / "skills" / "danger-skill").exists()
     usage_lines = (data_dir / "animas" / "mei" / "state" / "skill_usage.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(usage_lines) == 3

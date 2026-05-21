@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -9,11 +10,13 @@ These tests require ChromaDB and sentence-transformers.
 Install with: pip install 'animaworks[rag]'
 """
 
-import pytest
-from pathlib import Path
-from core.time_utils import now_jst
-import tempfile
 import shutil
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from core.time_utils import now_jst
 
 # Skip all tests in this module if ChromaDB is not available
 chromadb = pytest.importorskip("chromadb", reason="ChromaDB not installed. Install with: pip install 'animaworks[rag]'")
@@ -95,7 +98,9 @@ Chatworkで新規プロジェクトの見積もり依頼を受けた。
     )
 
     # Sample skill
-    (skills_dir / "python-coding.md").write_text(
+    skill_file = skills_dir / "python-coding" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text(
         """# Python coding
 
 ## 概要
@@ -365,6 +370,7 @@ def test_memory_retriever_vector_search(temp_anima_dir, temp_vector_store):
 def test_temporal_decay(temp_anima_dir, temp_vector_store):
     """Test temporal decay scoring."""
     from datetime import timedelta
+
     from core.memory.rag.retriever import MemoryRetriever, RetrievalResult
 
     indexer = None

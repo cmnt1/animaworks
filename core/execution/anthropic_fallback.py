@@ -190,7 +190,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
             include_search_tools=True,
             include_use_tool=False,
             include_notification_tools=self._tool_handler._human_notifier is not None,
-            include_admin_tools=(self._anima_dir / "skills" / "newstaff.md").exists(),
+            include_admin_tools=self._has_newstaff_skill(),
             include_supervisor_tools=self._has_subordinates(),
             include_tool_management=True,
             include_task_tools=True,
@@ -201,6 +201,10 @@ class AnthropicFallbackExecutor(BaseExecutor):
             trigger=trigger,
         )
         return to_anthropic_format(canonical)
+
+    def _has_newstaff_skill(self) -> bool:
+        skills_dir = self._anima_dir / "skills"
+        return (skills_dir / "newstaff" / "SKILL.md").is_file() or (skills_dir / "newstaff.md").is_file()
 
     def _build_client(self):
         """Create an AsyncAnthropic client with resolved credentials."""

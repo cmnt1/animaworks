@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ── Helpers ────────────────────────────────────────────────────────
 
 
@@ -219,7 +218,6 @@ class TestGetEmbeddingModel:
         assert m1 is m2
         mock_sentence_transformers.assert_called_once()
 
-
 # ── get_embedding_dimension ──────────────────────────────────────
 
 
@@ -354,11 +352,11 @@ class TestResetForTesting:
         mock_model = MagicMock()
         mock_sentence_transformers.return_value = mock_model
 
+        import core.memory.rag.singleton as singleton_mod
         from core.memory.rag.singleton import (
             _reset_for_testing,
             get_embedding_model,
         )
-        import core.memory.rag.singleton as singleton_mod
 
         get_embedding_model("test-model")
         assert singleton_mod._embedding_model_name == "test-model"

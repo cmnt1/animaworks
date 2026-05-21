@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.skills.pointer_rewriter import normalize_pointer_map
+from core.skills.pointer_rewriter import rewrite_skill_pointers_in_text as _rewrite_pointers
 from core.time_utils import now_iso
 
 
@@ -76,6 +78,31 @@ def collect_reference_rewrite_changes(
     return changes
 
 
+def apply_skill_pointer_rewrites(anima_dir: Path, pointer_map: dict[str, str]) -> list[ReferenceRewriteChange]:
+    """Rewrite exact legacy skill pointers in known state/reference files."""
+    normalized = normalize_pointer_map(pointer_map)
+    if not normalized:
+        return []
+
+    changes: list[ReferenceRewriteChange] = []
+    for path in _candidate_files(anima_dir):
+        if not path.is_file():
+            continue
+        before = path.read_text(encoding="utf-8")
+        after = rewrite_skill_pointers_in_text(before, normalized)
+        if after == before:
+            continue
+        path.write_text(after, encoding="utf-8")
+        changes.append(
+            ReferenceRewriteChange(
+                path=str(path.relative_to(anima_dir)),
+                before=before,
+                after=after,
+            )
+        )
+    return changes
+
+
 def rewrite_skill_references_in_text(text: str, skill_name: str, *, absorbed_into: str | None = None) -> str:
     """Rewrite YAML-ish and JSON skill references in a text blob."""
     stripped = text.lstrip()
@@ -105,6 +132,11 @@ def rewrite_skill_references_in_text(text: str, skill_name: str, *, absorbed_int
     return _rewrite_yamlish_text(text, skill_name, absorbed_into=absorbed_into)
 
 
+def rewrite_skill_pointers_in_text(text: str, pointer_map: dict[str, str]) -> str:
+    """Rewrite exact skill pointer strings without changing skill-name refs."""
+    return _rewrite_pointers(text, pointer_map)
+
+
 def _candidate_files(anima_dir: Path) -> list[Path]:
     candidates = [anima_dir / "cron.md"]
     goals_dir = anima_dir / "goals"
@@ -122,6 +154,7 @@ def _candidate_files(anima_dir: Path) -> list[Path]:
             state_dir / "taskboard.jsonl",
             state_dir / "taskboard.yaml",
             state_dir / "taskboard.yml",
+            state_dir / "active_skills.json",
         ]
         if path.is_file()
     )
@@ -177,7 +210,7 @@ def _rewrite_json_value(value: Any, skill_name: str, *, absorbed_into: str | Non
         changed = False
         result: dict[str, Any] = {}
         for key, item in value.items():
-            if key in {"skill", "skill_name", "skill_pointer"} and item == skill_name:
+            if key in {"skill", "skill_name", "skill_pointer"} and isinstance(item, str) and _skill_ref_matches(item, skill_name):
                 changed = True
                 if absorbed_into:
                     result[key] = absorbed_into
@@ -258,7 +291,7 @@ def _rewrite_skills_block(block: list[str], skill_name: str, absorbed_into: str 
 def _rewrite_scalar_skill_line(line: str, skill_name: str, absorbed_into: str | None) -> str:
     prefix, value = line.split(":", 1)
     current = _strip_quotes(value.strip())
-    if current != skill_name:
+    if not _skill_ref_matches(current, skill_name):
         return line
     if not absorbed_into:
         return ""
@@ -293,7 +326,11 @@ def _skill_ref_matches(value: str, skill_name: str) -> bool:
     if value == skill_name:
         return True
     path = Path(value)
-    if path.name != "SKILL.md" or ".." in path.parts:
+    if ".." in path.parts:
+        return False
+    if len(path.parts) == 2 and path.parts[0] in {"skills", "common_skills"} and path.name == f"{skill_name}.md":
+        return True
+    if path.name != "SKILL.md":
         return False
     return path.parent.name == skill_name
 

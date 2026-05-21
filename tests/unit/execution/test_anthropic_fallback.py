@@ -15,11 +15,10 @@ pytestmark = pytest.mark.asyncio
 from core.execution.anthropic_fallback import AnthropicFallbackExecutor
 from core.execution.base import ExecutionResult
 from core.memory import MemoryManager
+from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
-from core.memory.shortterm import ShortTermMemory
 from core.tooling.handler import ToolHandler
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -135,6 +134,16 @@ class TestBuildTools:
         assert "web_fetch" in names
         assert "search_code" in names
         assert "list_directory" in names
+
+    def test_newstaff_bundle_enables_admin_tools(self, executor: AnthropicFallbackExecutor, anima_dir: Path):
+        skill_path = anima_dir / "skills" / "newstaff" / "SKILL.md"
+        skill_path.parent.mkdir(parents=True)
+        skill_path.write_text("---\nname: newstaff\n---\n\n# Newstaff\n", encoding="utf-8")
+
+        with patch("core.tooling.schemas.load_external_schemas", return_value=[]):
+            tools = executor._build_tools()
+
+        assert "create_anima" in [t["name"] for t in tools]
 
 
 

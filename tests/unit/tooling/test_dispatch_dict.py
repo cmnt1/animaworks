@@ -115,6 +115,7 @@ EXPECTED_BUILTIN_TOOLS = frozenset(
         "vault_list",
         "todo_write",
         "completion_gate",
+        "grant_workspace_access",
     }
 )
 

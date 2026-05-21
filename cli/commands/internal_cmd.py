@@ -152,21 +152,23 @@ def _cmd_create_skill(args: argparse.Namespace, anima_dir: Path) -> None:
         content = sys.stdin.read()
 
     skills_dir = anima_dir / "skills"
-    skills_dir.mkdir(parents=True, exist_ok=True)
 
     if ".." in name or "/" in name or "\\" in name:
         print("Error: invalid name (directory traversal not allowed)", file=sys.stderr)
         sys.exit(1)
 
-    if name.endswith(".md"):
-        skill_path = skills_dir / name
-    else:
-        skill_path = skills_dir / f"{name}.md"
+    skill_name = name[:-3] if name.endswith(".md") else name
+    if not skill_name:
+        print("Error: invalid name", file=sys.stderr)
+        sys.exit(1)
+
+    skill_path = skills_dir / skill_name / "SKILL.md"
 
     if not str(skill_path.resolve()).startswith(str(skills_dir.resolve())):
         print("Error: invalid name (path traversal not allowed)", file=sys.stderr)
         sys.exit(1)
 
+    skill_path.parent.mkdir(parents=True, exist_ok=True)
     skill_path.write_text(content, encoding="utf-8")
     rel_path = skill_path.relative_to(anima_dir)
     print(

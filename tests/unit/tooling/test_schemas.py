@@ -290,6 +290,7 @@ class TestBuildToolList:
         assert len(result) == 24
         assert "search_code" in names
         assert "list_directory" in names
+        assert "grant_workspace_access" in names
         assert "use_tool" in names
         assert "refresh_tools" in names
         assert "share_tool" in names

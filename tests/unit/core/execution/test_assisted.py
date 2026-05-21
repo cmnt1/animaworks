@@ -293,7 +293,9 @@ class TestBuildToolSchemas:
         from core.tooling.handler import ToolHandler
 
         if has_newstaff:
-            (anima_dir / "skills" / "newstaff.md").write_text("---\ndescription: hire\n---\n", encoding="utf-8")
+            skill_path = anima_dir / "skills" / "newstaff" / "SKILL.md"
+            skill_path.parent.mkdir(parents=True, exist_ok=True)
+            skill_path.write_text("---\ndescription: hire\n---\n", encoding="utf-8")
 
         model_config = ModelConfig(model="ollama/gemma3:27b", max_tokens=4096, max_turns=5)
         memory = MemoryManager(anima_dir)

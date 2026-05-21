@@ -216,7 +216,7 @@ class TestSkillCatalogE2E:
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
 
-        skill_path = tmp_path / "skills" / "cron-management.md"
+        skill_path = tmp_path / "skills" / "cron-management" / "SKILL.md"
         skill_path.parent.mkdir(parents=True)
         skill_path.write_text(
             "---\nname: cron-management\ndescription: x\n---\n\n## Body\nSECRET",
