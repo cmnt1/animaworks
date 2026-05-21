@@ -14,6 +14,7 @@ explicitly call ``slack_channel_post``.
 
 import logging
 import os
+import re
 from typing import Any
 
 import httpx
@@ -26,6 +27,55 @@ logger = logging.getLogger("animaworks.outbound_auto")
 _SLACK_POST_URL = "https://slack.com/api/chat.postMessage"
 _SLACK_TIMEOUT = 30.0
 _MAX_SLACK_TEXT = 40000
+
+_OPERATIONAL_LOOP_MARKERS = (
+    "まずは全体像",
+    "全体像を見",
+    "全体像を再確認",
+    "中断前",
+    "必要な確認だけ",
+    "最終回答テキスト",
+    "この最終回答",
+    "Discord送信ツール",
+    "外部DMやチャンネル投稿は使わず",
+    "I'll first",
+    "I will first",
+    "let me first",
+    "final response text",
+)
+
+
+def _compact_for_loop_detection(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+def _looks_like_operational_loop(text: str) -> bool:
+    compact = _compact_for_loop_detection(text)
+    if len(compact) < 160:
+        return False
+
+    marker_hits = 0
+    for marker in _OPERATIONAL_LOOP_MARKERS:
+        marker_hits += compact.lower().count(_compact_for_loop_detection(marker).lower())
+
+    return marker_hits >= 6 or compact.count("まずは") >= 4
+
+
+def prepare_auto_response_text(response_text: str) -> str:
+    """Return text safe to auto-post to an external platform.
+
+    Auto-response posts the model's full output. If a resumed agent repeatedly
+    emits operational progress notes instead of a final answer, posting that
+    text creates noisy Discord/Slack loops. Suppress only strong loop signals;
+    normal reports are left untouched.
+    """
+    text = response_text.strip()
+    if not text:
+        return ""
+    if _looks_like_operational_loop(text):
+        logger.warning("External auto-response suppressed repetitive operational text")
+        return ""
+    return text
 
 
 def _resolve_avatar_url(anima_name: str) -> str:
@@ -87,7 +137,8 @@ class SlackAutoResponder:
         Returns:
             List of Slack message ``ts`` values for successfully posted messages.
         """
-        if not response_text or not response_text.strip():
+        response_text = prepare_auto_response_text(response_text)
+        if not response_text:
             return []
 
         posted_keys = already_posted or set()
@@ -228,7 +279,8 @@ class DiscordAutoResponder:
 
         Returns list of Discord message IDs for successfully posted messages.
         """
-        if not response_text or not response_text.strip():
+        response_text = prepare_auto_response_text(response_text)
+        if not response_text:
             return []
 
         posted_keys = already_posted or set()

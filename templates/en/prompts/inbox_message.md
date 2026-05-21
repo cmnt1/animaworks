@@ -18,4 +18,10 @@ When a message has `[reply_instruction: ...]` metadata:
 - Replace `{reply_content}` with your actual reply text
 - Do NOT use `send_message` (it sends DMs, not thread replies)
 
+When a message has `[auto_reply: ...]` metadata:
+- Your entire output will be auto-posted to the external platform
+- Do not write startup/progress narration such as "I'll check first" or "I'll summarize this as the final response"
+- After using tools, write only the final reply that should be posted
+- Do not repeat the same meaning. If you repeated yourself, keep only one final version
+
 **Delegation guidelines**: When using `delegate_task`, follow the writing principles and forbidden patterns in `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` (MUST). Do not use `submit_tasks` during normal Inbox processing.
