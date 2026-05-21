@@ -18,7 +18,7 @@ from core.skills.index import SkillIndex
 from core.skills.models import SkillMetadata
 from core.skills.promotion import ProcedureToSkillConverter, SkillPromotionResult
 from core.skills.promotion_utils import normalise_risk
-from core.skills.router import fill_routing_metadata_gaps
+from core.skills.router_metadata import fill_routing_metadata_gaps
 from core.time_utils import now_iso
 
 AUTO_SKILL_SKIPPED = "auto_skill_skipped"

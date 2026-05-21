@@ -16,9 +16,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from core.memory.frontmatter import strip_frontmatter
 from core.skills.models import SkillMetadata, SkillRiskMetadata
 from core.skills.policy import SkillActivationPolicy, policy_for_skill
+from core.skills.router_metadata import dedupe, has_strong_signal, merged_risk, read_body
 
 _ASCII_WORD_RE = re.compile(r"[a-z0-9][a-z0-9_+.-]*", re.IGNORECASE)
 _JP_SEGMENT_RE = re.compile(r"[ぁ-んァ-ヶー一-龯々]{2,}")
@@ -178,10 +178,10 @@ class SkillRouter:
                     path=record.pointer_path,
                     score=score,
                     confidence=self._confidence(score, record.reasons),
-                    reasons=_dedupe(record.reasons),
+                    reasons=dedupe(record.reasons),
                     is_common=record.meta.is_common,
                     is_procedure=record.meta.is_procedure,
-                    risk=_merged_risk(record.meta),
+                    risk=merged_risk(record.meta),
                     activation_policy=policy_for_skill(record.meta),
                 )
             )
@@ -206,7 +206,7 @@ class SkillRouter:
         return gaps
 
     def _confidence(self, score: float, reasons: Sequence[str]) -> Literal["high", "medium", "low"]:
-        if score >= self.high_score and _has_strong_signal(reasons):
+        if score >= self.high_score and has_strong_signal(reasons):
             return "high"
         if score >= self.medium_score:
             return "medium"
@@ -344,7 +344,7 @@ class _SkillRecord(BaseModel):
             " ".join(_merged_list(meta.routing_examples, meta.routing.routing_examples)),
         ]
         if include_body:
-            text_parts.append(_read_body(meta.path))
+            text_parts.append(read_body(meta.path))
         return cls(
             meta=meta,
             key=str(meta.path or meta.name),
@@ -458,34 +458,6 @@ def _merged_list(*values: Sequence[str]) -> list[str]:
     return merged
 
 
-def _merged_risk(meta: SkillMetadata) -> SkillRiskMetadata:
-    base = meta.risk
-    nested = meta.routing.risk
-    return SkillRiskMetadata(
-        read_only=base.read_only or nested.read_only,
-        destructive=base.destructive or nested.destructive,
-        external_send=base.external_send or nested.external_send,
-        handles_untrusted_data=base.handles_untrusted_data or nested.handles_untrusted_data,
-        credential=base.credential or nested.credential,
-        production=base.production or nested.production,
-        billing=base.billing or nested.billing,
-        private_data=base.private_data or nested.private_data,
-        requires_human_approval=base.requires_human_approval or nested.requires_human_approval,
-        open_world=base.open_world or nested.open_world,
-    )
-
-
-def _dedupe(values: Sequence[str]) -> list[str]:
-    result: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        result.append(value)
-    return result
-
-
 def _router_visible(meta: SkillMetadata) -> bool:
     if policy_for_skill(meta).blocked:
         return False
@@ -495,41 +467,6 @@ def _router_visible(meta: SkillMetadata) -> bool:
         return not is_unloadable_lifecycle_state(meta.lifecycle_state)
     except Exception:
         return True
-
-
-def fill_routing_metadata_gaps(meta: dict, *, skill_name: str, description: str, body: str = "") -> dict:
-    """Return deterministic routing metadata for auto-created skills."""
-    result = dict(meta)
-    text = body.strip()
-    trigger = skill_name.replace("-", " ").strip()
-    if not result.get("trigger_phrases"):
-        result["trigger_phrases"] = [trigger] if trigger else []
-    if not result.get("use_when"):
-        result["use_when"] = [description] if description else result.get("trigger_phrases", [])
-    if not result.get("domains") and not result.get("tags"):
-        result["domains"] = ["general"]
-    if not result.get("routing_examples"):
-        first_line = next((line.strip("# ").strip() for line in text.splitlines() if line.strip()), "")
-        example = first_line or description or trigger
-        result["routing_examples"] = [example] if example else []
-    return result
-
-
-def _has_strong_signal(reasons: Sequence[str]) -> bool:
-    strong_prefixes = (
-        "trigger:",
-        "use_when:",
-        "tag:",
-        "tool:",
-        "platform:",
-        "example:",
-        "dense:",
-        "name:exact:",
-        "name:identifier:",
-        "path:exact:",
-        "path:identifier:",
-    )
-    return any(reason.startswith(strong_prefixes) for reason in reasons)
 
 
 def _pointer_path(meta: SkillMetadata) -> str:
@@ -554,11 +491,3 @@ def _pointer_path(meta: SkillMetadata) -> str:
         return f"skills/{path.parent.name}/SKILL.md"
     return str(path)
 
-
-def _read_body(path: Path | None, *, max_chars: int = 8000) -> str:
-    if path is None or not path.is_file():
-        return ""
-    try:
-        return strip_frontmatter(path.read_text(encoding="utf-8"))[:max_chars]
-    except OSError:
-        return ""
