@@ -84,6 +84,7 @@ EXPECTED_BUILTIN_TOOLS = frozenset(
         "ping_subordinate",
         "read_subordinate_state",
         "check_permissions",
+        "grant_workspace_access",
         "delegate_task",
         "task_tracker",
         "refresh_tools",
@@ -134,8 +135,8 @@ class TestDispatchDictCompleteness:
         assert extra == set(), f"Unexpected tools in dispatch dict: {extra}"
 
     def test_dispatch_count(self, handler: ToolHandler):
-        """Dispatch dict should have exactly 66 entries (58 + 8 CC aliases)."""
-        assert len(handler._dispatch) == 66
+        """Dispatch dict should have exactly 67 entries (59 + 8 CC aliases)."""
+        assert len(handler._dispatch) == 67
 
     def test_all_dispatch_values_are_callable(self, handler: ToolHandler):
         """Every value in the dispatch dict must be callable."""

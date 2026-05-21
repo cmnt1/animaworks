@@ -186,8 +186,8 @@ def get_embedding_model(model_name: str | None = None) -> SentenceTransformer:
         try:
             _embedding_model = SentenceTransformer(resolved_name, cache_folder=str(cache_dir), device=device)
         except Exception as e:
-            if device == "cuda" and "out of memory" in str(e).lower():
-                logger.warning("GPU OOM loading embedding model, falling back to CPU: %s", e)
+            if device == "cuda":
+                logger.warning("GPU embedding model load failed, falling back to CPU: %s", e)
                 _embedding_model = SentenceTransformer(resolved_name, cache_folder=str(cache_dir), device="cpu")
             else:
                 raise

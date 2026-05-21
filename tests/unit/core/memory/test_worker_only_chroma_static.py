@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 
@@ -14,14 +15,29 @@ def test_production_chroma_construction_has_no_unapproved_call_sites() -> None:
         ".git",
         ".mypy_cache",
         ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
         "__pycache__",
         "docs",
         "tests",
+        "tmp",
     }
     needles = ("ChromaVectorStore(", "chromadb.PersistentClient(")
     offenders: list[str] = []
 
-    for path in repo.rglob("*.py"):
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.py"],
+            check=True,
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        )
+        paths = [repo / line for line in result.stdout.splitlines() if line]
+    except (OSError, subprocess.CalledProcessError):
+        paths = list(repo.rglob("*.py"))
+
+    for path in paths:
         if any(part in ignored_parts for part in path.relative_to(repo).parts):
             continue
         if path in allowed:

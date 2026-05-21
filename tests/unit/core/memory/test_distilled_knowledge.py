@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,7 +17,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-
 
 # ── Fixtures ─────────────────────────────────────────────
 
@@ -49,6 +49,7 @@ def data_dir(tmp_path, monkeypatch):
     (d / "shared" / "users").mkdir(parents=True)
 
     import json
+
     config = {
         "version": 1,
         "system": {"mode": "server", "log_level": "DEBUG"},
@@ -75,6 +76,7 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
 
     from core.memory.rag.singleton import _reset_for_testing
+
     _reset_for_testing()
 
     invalidate_cache()
@@ -98,17 +100,13 @@ def memory(anima_dir, data_dir):
 
 def _write_knowledge(anima_dir: Path, name: str, body: str, confidence: float = 0.5):
     """Write a knowledge file with frontmatter."""
-    content = (
-        f"---\nconfidence: {confidence}\ncreated_at: '2026-01-01'\n---\n\n{body}"
-    )
+    content = f"---\nconfidence: {confidence}\ncreated_at: '2026-01-01'\n---\n\n{body}"
     (anima_dir / "knowledge" / f"{name}.md").write_text(content, encoding="utf-8")
 
 
 def _write_procedure(anima_dir: Path, name: str, body: str, confidence: float = 0.5):
     """Write a procedure file with frontmatter."""
-    content = (
-        f"---\ndescription: {name}\nconfidence: {confidence}\n---\n\n{body}"
-    )
+    content = f"---\ndescription: {name}\nconfidence: {confidence}\n---\n\n{body}"
     (anima_dir / "procedures" / f"{name}.md").write_text(content, encoding="utf-8")
 
 
@@ -162,7 +160,8 @@ class TestCollectDistilledKnowledge:
     def test_default_confidence_when_missing(self, memory, anima_dir):
         """Files without confidence metadata get default 0.5."""
         (anima_dir / "knowledge" / "no-meta.md").write_text(
-            "No frontmatter content", encoding="utf-8",
+            "No frontmatter content",
+            encoding="utf-8",
         )
 
         result = memory.collect_distilled_knowledge()
@@ -173,7 +172,8 @@ class TestCollectDistilledKnowledge:
     def test_empty_body_skipped(self, memory, anima_dir):
         """Files with empty body after frontmatter stripping are skipped."""
         (anima_dir / "knowledge" / "empty.md").write_text(
-            "---\nconfidence: 0.8\n---\n\n   \n", encoding="utf-8",
+            "---\nconfidence: 0.8\n---\n\n   \n",
+            encoding="utf-8",
         )
 
         result = memory.collect_distilled_knowledge()
@@ -276,12 +276,9 @@ class TestPrimingConditionalChannelC:
 
         engine = PrimingEngine(anima_dir)
         # Disable retriever to avoid RAG dependency
-        engine._retriever_initialized = True
-        engine._retriever = None
+        engine._get_retriever = lambda: None
 
-        result = asyncio.run(
-            engine.prime_memories("test query", overflow_files=None)
-        )
+        result = asyncio.run(engine.prime_memories("test query", overflow_files=None))
         # Channel C returns empty (no retriever), but it should have been called
         assert isinstance(result.related_knowledge, str)
 
@@ -290,12 +287,9 @@ class TestPrimingConditionalChannelC:
         from core.memory.priming import PrimingEngine
 
         engine = PrimingEngine(anima_dir)
-        engine._retriever_initialized = True
-        engine._retriever = None
+        engine._get_retriever = lambda: None
 
-        result = asyncio.run(
-            engine.prime_memories("test query", overflow_files=[])
-        )
+        result = asyncio.run(engine.prime_memories("test query", overflow_files=[]))
         assert result.related_knowledge == ""
 
     def test_overflow_with_files_runs_restricted_channel_c(self, anima_dir):
@@ -303,8 +297,7 @@ class TestPrimingConditionalChannelC:
         from core.memory.priming import PrimingEngine
 
         engine = PrimingEngine(anima_dir)
-        engine._retriever_initialized = True
-        engine._retriever = None
+        engine._get_retriever = lambda: None
 
         result = asyncio.run(
             engine.prime_memories(
@@ -360,6 +353,8 @@ class TestRAGProceduresSearch:
             get_common_knowledge_dir(),
             get_common_skills_dir(),
         )
+        rag._indexer_initialized = True
+        rag._indexer = None
 
         results = rag.search_memory_text(
             "deploy",

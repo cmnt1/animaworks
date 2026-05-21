@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+
+from core.memory.action_gate import ActionMemoryGateDecision
 from core.tooling.handler import ToolHandler
 
 
@@ -31,6 +33,16 @@ def handler(anima_dir):
     memory.anima_dir = anima_dir
     h = ToolHandler(anima_dir=anima_dir, memory=memory)
     return h
+
+
+@pytest.fixture(autouse=True)
+def allow_action_gate(monkeypatch):
+    """Keep these file-guard tests independent from RAG-backed action rules."""
+
+    def _allow(_anima_dir, tool_name, _args, **_kwargs):
+        return ActionMemoryGateDecision(allowed=True, tool=tool_name)
+
+    monkeypatch.setattr("core.memory.action_gate.check_action", _allow)
 
 
 # ── Read-before-write guard ─────────────────────────────
@@ -218,7 +230,7 @@ class TestFilenameTokenHint:
         )
 
         assert "Written" in result
-        lines = [l for l in result.split("\n") if l.strip().startswith("- topic_sub_")]
+        lines = [line for line in result.split("\n") if line.strip().startswith("- topic_sub_")]
         assert len(lines) <= 10
 
     def test_no_hint_for_non_knowledge(self, handler, anima_dir):

@@ -6,9 +6,8 @@ from __future__ import annotations
 
 """Runtime gates for human-driven trusted skill promotion."""
 
-from core.execution._sanitize import ORIGIN_HUMAN
-
 _HUMAN_TRUST_TRIGGERS: frozenset[str] = frozenset({"", "manual", "chat", "greet:user"})
+_ORIGIN_HUMAN = "human"
 
 
 def trust_skill_enabled_for_trigger(trigger: str | None) -> bool:
@@ -19,5 +18,5 @@ def trust_skill_enabled_for_trigger(trigger: str | None) -> bool:
 def trust_skill_enabled_for_context(trigger: str | None, origin: str | None = "") -> bool:
     normalized_origin = (origin or "").strip()
     if normalized_origin:
-        return normalized_origin == ORIGIN_HUMAN
+        return normalized_origin == _ORIGIN_HUMAN
     return trust_skill_enabled_for_trigger(trigger)
