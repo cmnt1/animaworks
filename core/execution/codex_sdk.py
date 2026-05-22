@@ -743,6 +743,23 @@ def _patch_codex_exec_stream_limit(exec_: Any) -> None:
 
 # ── Executor ─────────────────────────────────────────────────
 
+def _patch_codex_sdk_command_execution_statuses() -> None:
+    """Allow newer Codex command_execution statuses in older SDK parsers."""
+    try:
+        from openai_codex_sdk import parsing
+        from openai_codex_sdk.types import UnknownThreadItem
+    except Exception as exc:  # pragma: no cover - defensive import guard
+        logger.debug("Unable to patch Codex SDK command_execution parser: %s", exc)
+        return
+
+    item_models = getattr(parsing, "_ITEM_MODELS", None)
+    if not isinstance(item_models, dict):
+        return
+    if item_models.get("command_execution") is UnknownThreadItem:
+        return
+    item_models["command_execution"] = UnknownThreadItem
+    logger.info("Patched Codex SDK parser for flexible command_execution statuses")
+
 
 class CodexSDKExecutor(BaseExecutor):
     """Execute via Codex SDK (Mode C).
@@ -1104,6 +1121,8 @@ class CodexSDKExecutor(BaseExecutor):
             from openai_codex_sdk import Codex
         except ModuleNotFoundError as e:
             raise ImportError("openai_codex_sdk is required for Mode C (install openai-codex-sdk).") from e
+
+        _patch_codex_sdk_command_execution_statuses()
 
         options: dict[str, Any] = {"env": self._build_env()}
         executable = get_codex_executable()

@@ -33,6 +33,7 @@ from core.execution.codex_sdk import (
     _item_to_tool_record,
     _load_thread_id,
     _patch_codex_exec_stream_limit,
+    _patch_codex_sdk_command_execution_statuses,
     _resolve_codex_model,
     _save_thread_id,
     _should_cli_exec_fallback,
@@ -234,6 +235,31 @@ class TestHelpers:
         assert _should_prefer_cli_exec("inbox")
         assert _should_prefer_cli_exec("task:demo")
         assert not _should_prefer_cli_exec("manual")
+
+    def test_patch_codex_sdk_parser_accepts_declined_command_execution(self):
+        from openai_codex_sdk.parsing import parse_thread_event_line
+
+        _patch_codex_sdk_command_execution_statuses()
+        line = json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "cmd-1",
+                    "type": "command_execution",
+                    "command": "rtk proxy Get-Content",
+                    "aggregated_output": "blocked by policy",
+                    "exit_code": None,
+                    "status": "declined",
+                },
+            }
+        )
+
+        event = parse_thread_event_line(line)
+
+        assert event.type == "item.completed"
+        assert event.item.type == "command_execution"
+        assert event.item.status == "declined"
+        assert event.item.aggregated_output == "blocked by policy"
 
     @pytest.mark.asyncio
     async def test_patch_codex_exec_stream_limit_fails_fast_on_fatal_stderr(self):
