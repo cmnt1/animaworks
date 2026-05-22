@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ── Helpers ────────────────────────────────────────────────────────
 
 
@@ -94,9 +93,7 @@ class TestGetVectorStore:
 
 
 class TestGetEmbeddingModel:
-    def test_returns_same_instance(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_returns_same_instance(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """get_embedding_model() should return the same instance on repeated calls."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
@@ -111,9 +108,7 @@ class TestGetEmbeddingModel:
         assert model1 is model2
         assert model1 is mock_model
 
-    def test_creates_only_once(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_creates_only_once(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """SentenceTransformer constructor should be called exactly once."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
@@ -125,9 +120,7 @@ class TestGetEmbeddingModel:
 
         mock_sentence_transformers.assert_called_once()
 
-    def test_creates_cache_dir(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_creates_cache_dir(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """get_embedding_model() should create the models cache directory."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
@@ -137,9 +130,7 @@ class TestGetEmbeddingModel:
 
         assert (tmp_path / "models").is_dir()
 
-    def test_reads_model_from_config(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_reads_model_from_config(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """get_embedding_model() with no args should read model from config."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
@@ -160,9 +151,7 @@ class TestGetEmbeddingModel:
             device="cpu",
         )
 
-    def test_explicit_model_name_overrides_config(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_explicit_model_name_overrides_config(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """Explicit model_name parameter should override config value."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
@@ -183,9 +172,7 @@ class TestGetEmbeddingModel:
             device="cpu",
         )
 
-    def test_model_switch_reloads(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_model_switch_reloads(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """Requesting a different model name should discard cache and reload."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
@@ -202,9 +189,7 @@ class TestGetEmbeddingModel:
         assert result_b is model_b
         assert mock_sentence_transformers.call_count == 2
 
-    def test_same_model_does_not_reload(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_same_model_does_not_reload(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """Requesting the same model name should return cached instance."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
@@ -224,9 +209,7 @@ class TestGetEmbeddingModel:
 
 
 class TestGetEmbeddingDimension:
-    def test_returns_model_dimension(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_returns_model_dimension(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """get_embedding_dimension() should return model's embedding dimension."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
@@ -245,9 +228,7 @@ class TestGetEmbeddingDimension:
 
 
 class TestGetEmbeddingModelName:
-    def test_returns_loaded_model_name(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_returns_loaded_model_name(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """After loading, get_embedding_model_name() returns the loaded model name."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
@@ -284,13 +265,16 @@ class TestGetConfiguredModelName:
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "rag": {"embedding_model": "cl-nagoya/ruri-small"},
-            }),
+            json.dumps(
+                {
+                    "rag": {"embedding_model": "cl-nagoya/ruri-small"},
+                }
+            ),
             encoding="utf-8",
         )
         # Invalidate config cache
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.memory.rag.singleton import _get_configured_model_name
@@ -303,6 +287,7 @@ class TestGetConfiguredModelName:
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         # No config.json exists → load_config returns defaults
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.memory.rag.singleton import _get_configured_model_name
@@ -345,20 +330,18 @@ class TestResetForTesting:
         assert store1 is mock_store_1
         assert store2 is mock_store_2
 
-    def test_reset_clears_model_name(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_reset_clears_model_name(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """_reset_for_testing() should clear _embedding_model_name."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
         mock_model = MagicMock()
         mock_sentence_transformers.return_value = mock_model
 
+        import core.memory.rag.singleton as singleton_mod
         from core.memory.rag.singleton import (
             _reset_for_testing,
             get_embedding_model,
         )
-        import core.memory.rag.singleton as singleton_mod
 
         get_embedding_model("test-model")
         assert singleton_mod._embedding_model_name == "test-model"
@@ -401,9 +384,7 @@ class TestThreadSafety:
         assert len(results) == 10
         assert all(r is mock_store for r in results)
 
-    def test_concurrent_get_embedding_model(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_concurrent_get_embedding_model(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """Multiple threads calling get_embedding_model() concurrently
         should all receive the same instance."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
@@ -465,9 +446,7 @@ class TestMemoryIndexerEmbeddingInjection:
         anima_dir = tmp_path / "test-anima"
         anima_dir.mkdir(parents=True)
 
-        with patch(
-            "core.memory.rag.indexer.MemoryIndexer._init_embedding_model"
-        ) as mock_init:
+        with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model") as mock_init:
             from core.memory.rag.indexer import MemoryIndexer
 
             MemoryIndexer(

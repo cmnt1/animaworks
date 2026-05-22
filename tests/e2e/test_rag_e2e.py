@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,9 +15,10 @@ Install with: pip install 'animaworks[rag]'
 import asyncio
 import os
 from datetime import timedelta
-from core.time_utils import now_jst, today_local
 
 import pytest
+
+from core.time_utils import now_jst, today_local
 
 # Skip all tests if required dependencies are not installed
 chromadb = pytest.importorskip(
@@ -50,6 +52,7 @@ def anima_dir(tmp_path, monkeypatch):
 
     # Invalidate cached paths/config so the monkeypatch takes effect
     from core.paths import _prompt_cache
+
     _prompt_cache.clear()
 
     anima_dir = data_dir / "animas" / "test_anima"
@@ -270,23 +273,15 @@ def test_e2e_spreading_activation(anima_dir, vector_store, indexer):
     # Either via direct search or via graph expansion
     has_api = any("api-design" in d for d in all_doc_ids)
     has_error = any("error-handling" in d for d in all_doc_ids) or "エラー" in all_content
-    has_logging = any("logging-policy" in d for d in all_doc_ids) or "ログ" in all_content
 
     # At minimum, the directly relevant files should be found
-    assert has_api or has_error, (
-        "Search should find api-design or error-handling content"
-    )
+    assert has_api or has_error, "Search should find api-design or error-handling content"
 
     # Spreading activation should bring in at least one linked neighbor
     # (either error-handling via api-design's link, or logging-policy via error-handling's link)
-    total_unique_files = len({
-        d.split("/")[-1].split("#")[0]
-        for d in all_doc_ids
-        if "/" in d
-    })
+    total_unique_files = len({d.split("/")[-1].split("#")[0] for d in all_doc_ids if "/" in d})
     assert total_unique_files >= 2, (
-        f"Spreading activation should expand results beyond a single file "
-        f"(found {total_unique_files} unique files)"
+        f"Spreading activation should expand results beyond a single file (found {total_unique_files} unique files)"
     )
 
 
@@ -400,13 +395,12 @@ def test_e2e_incremental_index_and_graph(anima_dir, vector_store, indexer, retri
     assert initial_nodes == 2
 
     # Verify initial search works
-    results_before = retriever.search(
+    assert retriever.search(
         query="クエリ最適化",
         anima_name="test_anima",
         memory_type="knowledge",
         top_k=5,
     )
-    initial_doc_ids = {r.doc_id for r in results_before}
 
     # Add a new file
     new_file = knowledge_dir / "query-optimization.md"
@@ -423,8 +417,10 @@ def test_e2e_incremental_index_and_graph(anima_dir, vector_store, indexer, retri
 
     # Incremental graph update
     graph.graph.add_node(
-        "query-optimization", path=str(new_file),
-        memory_type="knowledge", stem="query-optimization",
+        "query-optimization",
+        path=str(new_file),
+        memory_type="knowledge",
+        stem="query-optimization",
     )
     graph.update_graph_incremental([new_file], "test_anima")
 
@@ -444,9 +440,7 @@ def test_e2e_incremental_index_and_graph(anima_dir, vector_store, indexer, retri
 
     # The new file should be found
     has_new_file = any("query-optimization" in doc_id for doc_id in after_doc_ids)
-    assert has_new_file, (
-        f"New file should appear in search results. Found: {after_doc_ids}"
-    )
+    assert has_new_file, f"New file should appear in search results. Found: {after_doc_ids}"
 
 
 # ── Test 6: Priming Integration ──────────────────────────────────
@@ -485,7 +479,9 @@ def test_e2e_priming_integration(anima_dir, vector_store, indexer):
     )
 
     # Create skill file
-    (skills_dir / "react-development.md").write_text(
+    skill_file = skills_dir / "react-development" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text(
         "# React開発\n\n"
         "## 概要\n\nReactを使ったフロントエンド開発スキル。\n"
         "TypeScript, Next.js, Tailwind CSS を使用。\n",
@@ -512,17 +508,13 @@ def test_e2e_priming_integration(anima_dir, vector_store, indexer):
     has_activity = bool(result.recent_activity)
     has_knowledge = bool(result.related_knowledge)
 
-    assert has_activity or has_knowledge, (
-        "At least one priming channel should return content"
-    )
+    assert has_activity or has_knowledge, "At least one priming channel should return content"
 
     # Format for system prompt injection
     formatted = format_priming_section(result, sender_name="yamada")
 
     assert formatted, "Formatted priming section should not be empty"
-    assert "あなたが思い出していること" in formatted, (
-        "Formatted section should contain the standard header"
-    )
+    assert "あなたが思い出していること" in formatted, "Formatted section should contain the standard header"
 
     # Verify structural sections exist based on what was primed
     if has_activity:
@@ -588,9 +580,7 @@ def test_e2e_multi_memory_type(anima_dir, vector_store, indexer):
     assert len(knowledge_results) > 0, "Knowledge search should return results"
     # All results should be from the knowledge collection
     for r in knowledge_results:
-        assert "knowledge" in r.doc_id, (
-            f"Knowledge search result should be from knowledge collection: {r.doc_id}"
-        )
+        assert "knowledge" in r.doc_id, f"Knowledge search result should be from knowledge collection: {r.doc_id}"
 
     # Search episodes type
     episodes_results = retriever.search(
@@ -603,9 +593,7 @@ def test_e2e_multi_memory_type(anima_dir, vector_store, indexer):
     assert len(episodes_results) > 0, "Episodes search should return results"
     # All results should be from the episodes collection
     for r in episodes_results:
-        assert "episodes" in r.doc_id, (
-            f"Episodes search result should be from episodes collection: {r.doc_id}"
-        )
+        assert "episodes" in r.doc_id, f"Episodes search result should be from episodes collection: {r.doc_id}"
 
     # Verify content isolation: knowledge results should contain policy content
     knowledge_content = " ".join(r.content for r in knowledge_results)

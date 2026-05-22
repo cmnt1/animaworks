@@ -113,7 +113,7 @@ audit_subordinate(name="dave", since="13:00")  # dave의 오늘 13시 이후
 
 ### 조직 확장 (신규 Anima 생성)
 
-`skills/newstaff.md`를 보유한 Anima는 `create_anima` 도구로 신규 Anima를 생성할 수 있습니다.
+`skills/newstaff/SKILL.md`를 보유한 Anima는 `create_anima` 도구로 신규 Anima를 생성할 수 있습니다.
 캐릭터 시트(`character_sheet_content` 또는 `character_sheet_path`)를 지정하세요.
 생성 후 config.json에 자동 등록되며 서버 리로드 시 활성화됩니다.
 `supervisor`를 생략하면 호출한 Anima가 상사로 설정됩니다.

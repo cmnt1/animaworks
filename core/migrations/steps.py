@@ -204,6 +204,13 @@ def _iter_anima_dirs(data_dir: Path) -> list[Path]:
     return [d for d in sorted(animas_dir.iterdir()) if d.is_dir() and (d / "identity.md").exists()]
 
 
+def step_legacy_flat_skill_migration(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Convert legacy flat local skill files to trusted SKILL.md bundles."""
+    from core.migrations.legacy_flat_skills import migrate_legacy_flat_skills
+
+    return migrate_legacy_flat_skills(data_dir, dry_run=dry_run, verbose=verbose)
+
+
 def step_current_task_rename(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Rename current_task.md to current_state.md for each anima."""
     details: list[str] = []
@@ -1173,6 +1180,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.6.3: Behavior/action rules + skill docs runtime sync",
             "template_sync",
             step_v063_behavior_rules_action_rules_skill_sync,
+        ),
+        MigrationStep(
+            "legacy_flat_skill_migration",
+            "Convert legacy flat skills to trusted SKILL.md bundles",
+            "structural",
+            step_legacy_flat_skill_migration,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

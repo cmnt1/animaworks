@@ -113,7 +113,7 @@ When `name` is omitted and multiple Animas are targeted, `report` mode generates
 
 ### Organization Expansion (Creating New Anima)
 
-Anima that hold `skills/newstaff.md` can create new Anima with the `create_anima` tool.
+Anima that hold `skills/newstaff/SKILL.md` can create new Anima with the `create_anima` tool.
 Specify a character sheet (`character_sheet_content` or `character_sheet_path`).
 After creation, the new Anima is automatically registered in config.json and activated on server reload.
 If `supervisor` is omitted, the calling Anima is set as the supervisor.

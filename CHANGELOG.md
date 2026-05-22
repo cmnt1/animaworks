@@ -7,6 +7,133 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-22
+
+### Added
+
+#### Memory & Neo4j
+- Neo4j memory backend foundation: entities, facts, temporal attributes, graph schema, search, and backend abstraction
+- Hybrid memory search with BM25, vector search, graph BFS, RRF, reranking, and all-scope search
+- Bi-temporal memory search using `valid_at` filters and boosts
+- Fact/entity extraction pipeline with contradiction-based invalidation and entity resolution
+- Community detection and graph context injection for Priming
+- Memory migration CLI with backup, checkpoint, and rollback support
+- LoCoMo benchmark adapter and evaluation tooling for memory quality comparisons
+- Per-Anima memory backend switching
+
+#### RAG Reliability
+- RAG auto-repair and supervised repair lifecycle
+- Worker-only ChromaDB access through the vector worker to avoid unsafe multi-process native access
+- Recovery for missing ChromaDB collections and wiped vectordb
+- CPU fallback when CUDA probing fails during embedding model load
+- Serialized native vector operations to reduce ChromaDB HNSW corruption risk
+
+#### Skills
+- Enhanced `SKILL.md` loader/index compatible with Hermes-style skills
+- Skill usage tracking and metrics
+- SkillIndex integration into the prompt builder and ToolHandler
+- Skill hub importer, skill curator lifecycle, quarantine, trust gates, and promotion pipeline
+- Explicit skill activation backend and activation rendering
+- Procedure skill promotion pipeline and autonomous skill lifecycle
+- Skill-backed cron context
+- Legacy flat skill migration into trusted skill bundles
+- Hermes and OpenClaw skill migration importers
+
+#### TaskBoard & Work Management
+- TaskBoard SQLite projection foundation
+- TaskBoard API, dashboard UI, summary projection, stale housekeeping, and attention resolver
+- Task execution gating with TaskBoard attention
+- Persistent goal loop and goal judgment
+- Workspace access grant tool
+
+#### Workspace Replay
+- Workspace replay foundation, semantic events, and replay narrative UI
+- Semantic replay support for the activity timeline and workspace visualization
+
+#### Execution & Runtime Isolation
+- Runtime session isolation for chat, non-chat, consolidation, and execution lanes
+- Agent session lane isolation and duplicate `submit_tasks` guard
+- Auto-approval for AnimaWorks MCP tools in Mode C
+- Action-aware priming for Mode S and action memory gate for Mode C
+- PreCompact hook to block unsafe SDK auto-compaction
+- Azure OpenAI support for Codex mode
+- Config-level default model fallback and smarter credential/mode resolution
+
+#### Supervisor & Bootstrap
+- Bootstrap lifecycle repair and complete bootstrap repair command
+- Better scheduler/cron health detection, including expected-fire gating and a 24h no-execution window
+- Inbox TTL hygiene and failed-message retry/skip protection
+- Board outbound sync whitelist
+- Reverse-proxy sub-path deployment via `base_path`
+
+#### Community Contributions
+- Merged external contributor fixes:
+  - #167: schedule parser day-of-week wraparound handling
+  - #177: base-path template literal fix
+  - #185: cron health no-execution window widened to 24h
+  - #186: PPC reference guidance for automation projects
+
+### Changed
+- Memory architecture now supports both legacy and Neo4j-backed operation
+- Priming can now include graph/community context and memory pointers
+- Skill handling moved toward explicit activation, trust, quarantine, promotion, and bundled `SKILL.md` structures
+- `submit_tasks` is gated to explicit background sessions to prevent duplicate work
+- Tool and action behavior rules are synchronized across behavior templates, action memory, and skill rules
+- Cron health warnings are softer for low-frequency daily/weekly crons
+- Documentation and README content updated for the current memory architecture
+
+### Fixed
+
+#### Stability
+- Fixed Claude/Codex subprocess cleanup and SDK drift handling
+- Fixed chat cache directory configuration
+- Fixed Agent SDK missing session ID guard
+- Fixed consolidation credential resolution and session contamination
+- Fixed startup idle compression blocking readiness
+- Fixed heartbeat crash recovery polluting conversation state
+- Fixed repeated chat session responses
+- Fixed multiple silent `except: pass` paths by logging debug details
+
+#### Memory & RAG
+- Fixed Neo4j schema inconsistencies, Cypher group scope, idempotent ingest, and query-aware retrieval
+- Fixed vector collection recovery and ChromaDB access safety
+- Fixed graph retrieval and all-scope search edge cases
+- Fixed stable defaults for the legacy memory backend
+- Fixed RAG repair recovery and vector worker isolation
+
+#### Skills
+- Restored flat skill compatibility
+- Fixed skill usage event recording
+- Fixed skill hub source fetching, staging bounds, HTTPS enforcement, and lock rollback
+- Fixed skill curator and autonomous skill lifecycle review gaps
+- Fixed trusted skill actor derivation in tool paths
+- Fixed legacy scalar skill source metadata handling
+
+#### Task & Supervisor
+- Fixed TaskBoard execution gate review issues
+- Fixed snoozed batch task suppression behavior
+- Fixed task completion notification limits
+- Fixed scheduler cron health false positives and no-execution false alarms
+- Fixed pending task and attention handling regressions
+
+#### UI / API
+- Fixed base-path TaskBoard access
+- Fixed workspace replay hardening issues
+- Fixed setup wizard shared assets
+- Fixed Slack send whitelist policy and outbound routing feedback
+- Fixed media proxy and frontend test regressions
+
+### Documentation
+- Updated memory docs in Japanese and synchronized foreign-language memory documentation
+- Added implemented issue/review documents for major lifecycle changes
+- Added common knowledge updates for action rules, task delegation, memory, and PPC handling guidance
+- Updated README files and feature/API/CLI documentation
+
+### Internal
+- Added CI workflow updates and broad test coverage for memory, skills, TaskBoard, replay, runtime isolation, and RAG repair
+- Added benchmark artifacts and LoCoMo evaluation results
+- Large refactors across memory, skills, prompt building, ToolHandler, supervisor, and server routes
+
 ## [0.7.0] - 2026-04-21
 
 ### Added
@@ -1394,7 +1521,10 @@ memory, and decision-making criteria.
 - Moved model mode patterns from config.json to models.json
 - Tool permissions changed from whitelist to default-allow (blacklist) model
 
-[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/xuiltul/animaworks/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/xuiltul/animaworks/compare/v0.6.3...v0.7.0
+[0.6.3]: https://github.com/xuiltul/animaworks/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/xuiltul/animaworks/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/xuiltul/animaworks/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/xuiltul/animaworks/compare/v0.5.5...v0.6.0

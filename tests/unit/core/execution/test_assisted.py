@@ -24,6 +24,7 @@ def _has_json_repair() -> bool:
     """Check if the json_repair library is available."""
     try:
         import json_repair  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -84,19 +85,13 @@ class TestExtractToolCall:
         assert result["arguments"]["path"] == "test.md"
 
     def test_thinking_before_code_block(self):
-        text = (
-            "記憶を検索してみます。\n\n"
-            '```json\n{"tool": "search_memory", "arguments": {"query": "hello"}}\n```'
-        )
+        text = '記憶を検索してみます。\n\n```json\n{"tool": "search_memory", "arguments": {"query": "hello"}}\n```'
         result = extract_tool_call(text)
         assert result is not None
         assert result["tool"] == "search_memory"
 
     def test_thinking_after_code_block(self):
-        text = (
-            '```json\n{"tool": "search_memory", "arguments": {"query": "hello"}}\n```'
-            "\n\nこれで記憶を検索します。"
-        )
+        text = '```json\n{"tool": "search_memory", "arguments": {"query": "hello"}}\n```\n\nこれで記憶を検索します。'
         result = extract_tool_call(text)
         assert result is not None
         assert result["tool"] == "search_memory"
@@ -141,18 +136,20 @@ class TestToTextFormat:
         assert "- **" not in tool_list_section
 
     def test_single_tool_with_required_args(self):
-        schemas = [{
-            "name": "search_memory",
-            "description": "Search memory",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "scope": {"type": "string"},
+        schemas = [
+            {
+                "name": "search_memory",
+                "description": "Search memory",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "scope": {"type": "string"},
+                    },
+                    "required": ["query"],
                 },
-                "required": ["query"],
-            },
-        }]
+            }
+        ]
         result = to_text_format(schemas)
         assert "**search_memory**" in result
         assert "query: string (必須)" in result
@@ -160,11 +157,13 @@ class TestToTextFormat:
         assert "(必須)" not in result.split("scope")[0].split("query")[-1] or True
 
     def test_tool_without_parameters(self):
-        schemas = [{
-            "name": "refresh_tools",
-            "description": "Refresh tools",
-            "parameters": {"type": "object", "properties": {}},
-        }]
+        schemas = [
+            {
+                "name": "refresh_tools",
+                "description": "Refresh tools",
+                "parameters": {"type": "object", "properties": {}},
+            }
+        ]
         result = to_text_format(schemas)
         assert "**refresh_tools**" in result
         # No args line for parameterless tool
@@ -278,8 +277,16 @@ class TestBuildToolSchemas:
     @pytest.fixture
     def _anima_dir(self, tmp_path: Path):
         anima_dir = tmp_path / "animas" / "test-tools"
-        for sub in ("state", "episodes", "knowledge", "procedures", "skills",
-                    "shortterm", "transcripts", "activity_log"):
+        for sub in (
+            "state",
+            "episodes",
+            "knowledge",
+            "procedures",
+            "skills",
+            "shortterm",
+            "transcripts",
+            "activity_log",
+        ):
             (anima_dir / sub).mkdir(parents=True)
         (anima_dir / "identity.md").write_text("# Test", encoding="utf-8")
         (anima_dir / "injection.md").write_text("", encoding="utf-8")
@@ -293,7 +300,9 @@ class TestBuildToolSchemas:
         from core.tooling.handler import ToolHandler
 
         if has_newstaff:
-            (anima_dir / "skills" / "newstaff.md").write_text("---\ndescription: hire\n---\n", encoding="utf-8")
+            skill_path = anima_dir / "skills" / "newstaff" / "SKILL.md"
+            skill_path.parent.mkdir(parents=True, exist_ok=True)
+            skill_path.write_text("---\ndescription: hire\n---\n", encoding="utf-8")
 
         model_config = ModelConfig(model="ollama/gemma3:27b", max_tokens=4096, max_turns=5)
         memory = MemoryManager(anima_dir)
@@ -335,8 +344,14 @@ class TestBuildToolSchemas:
     def test_core_tools_always_present(self, _anima_dir):
         executor = self._make_executor(_anima_dir)
         names = executor._known_tools
-        for tool in ("search_memory", "read_memory_file", "write_memory_file",
-                     "send_message", "post_channel", "create_skill"):
+        for tool in (
+            "search_memory",
+            "read_memory_file",
+            "write_memory_file",
+            "send_message",
+            "post_channel",
+            "create_skill",
+        ):
             assert tool in names, f"{tool} missing from Mode B known_tools"
 
 
@@ -355,8 +370,16 @@ class TestPreflightCheck:
 
         # Create minimal anima directory structure
         anima_dir = tmp_path / "animas" / "test-preflight"
-        for sub in ("state", "episodes", "knowledge", "procedures", "skills",
-                    "shortterm", "transcripts", "activity_log"):
+        for sub in (
+            "state",
+            "episodes",
+            "knowledge",
+            "procedures",
+            "skills",
+            "shortterm",
+            "transcripts",
+            "activity_log",
+        ):
             (anima_dir / sub).mkdir(parents=True)
         (anima_dir / "identity.md").write_text("# Test", encoding="utf-8")
         (anima_dir / "injection.md").write_text("", encoding="utf-8")
@@ -381,8 +404,10 @@ class TestPreflightCheck:
             {"role": "system", "content": "short"},
             {"role": "user", "content": "hi"},
         ]
-        with patch("litellm.token_counter", return_value=500), \
-             patch("core.config.model_mode._match_models_json", return_value=None):
+        with (
+            patch("litellm.token_counter", return_value=500),
+            patch("core.config.model_mode._match_models_json", return_value=None),
+        ):
             result = assisted_executor._preflight_check(messages)
         assert result is not None
         assert result["max_tokens"] == 4096
@@ -393,8 +418,10 @@ class TestPreflightCheck:
             {"role": "system", "content": "x"},
             {"role": "user", "content": "y"},
         ]
-        with patch("litellm.token_counter", return_value=126000), \
-             patch("core.config.model_mode._match_models_json", return_value=None):
+        with (
+            patch("litellm.token_counter", return_value=126000),
+            patch("core.config.model_mode._match_models_json", return_value=None),
+        ):
             result = assisted_executor._preflight_check(messages)
         assert result is not None
         # available = 128000 - 126000 = 2000; clamped = 2000 - 128 = 1872
@@ -405,8 +432,10 @@ class TestPreflightCheck:
             {"role": "system", "content": "x"},
             {"role": "user", "content": "y"},
         ]
-        with patch("litellm.token_counter", return_value=127700), \
-             patch("core.config.model_mode._match_models_json", return_value=None):
+        with (
+            patch("litellm.token_counter", return_value=127700),
+            patch("core.config.model_mode._match_models_json", return_value=None),
+        ):
             result = assisted_executor._preflight_check(messages)
         assert result is None
 
@@ -418,8 +447,10 @@ class TestPreflightCheck:
             {"role": "system", "content": "short"},
             {"role": "user", "content": "hi"},
         ]
-        with patch("litellm.token_counter", side_effect=Exception("model not found")), \
-             patch("core.config.model_mode._match_models_json", return_value=None):
+        with (
+            patch("litellm.token_counter", side_effect=Exception("model not found")),
+            patch("core.config.model_mode._match_models_json", return_value=None),
+        ):
             result = assisted_executor._preflight_check(messages)
         assert result is not None
         assert result["max_tokens"] == 4096
