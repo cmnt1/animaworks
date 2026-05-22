@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from core.platform.process import (
-    find_first_matching_pid,
+    find_matching_pids,
     subprocess_session_kwargs,
     terminate_matching_processes,
     terminate_pid,
@@ -26,11 +26,18 @@ from core.platform.process import (
 
 logger = logging.getLogger("animaworks")
 
-# Command patterns used to identify the animaworks server process.
-# Matches both direct invocation (main.py start) and entry point (animaworks start).
-_SERVER_CMD_MARKERS = ("main.py start", "animaworks start", "-m cli start")
+# Command patterns used to identify the real foreground server process.
+# The daemon launcher also runs ``cli start`` briefly, so require the
+# foreground flag to avoid mistaking the launcher or restart helper for a
+# running server while it is still spawning the child process.
+_SERVER_CMD_MARKERS = ("main.py start", "animaworks start --foreground", "-m cli start --foreground")
+_RESTART_HELPER_CMD_MARKERS = (
+    "restart-helper",
+    "restart_helper_result.json",
+    "_ANIMAWORKS_RESTART_HELPER_PID",
+)
 
-_DAEMON_STARTUP_TIMEOUT = 10
+_DAEMON_STARTUP_TIMEOUT = 120
 _DAEMON_POLL_INTERVAL = 0.3
 
 
@@ -97,11 +104,25 @@ def _find_server_pid_by_process(
             excluded.add(int(helper_pid_str))
         except ValueError:
             pass
-    return find_first_matching_pid(
+    matches = find_matching_pids(
         _SERVER_CMD_MARKERS,
         exclude_pids=excluded,
         require_python=True,
     )
+    for pid in matches:
+        if not _is_restart_helper_process(pid):
+            return pid
+    return None
+
+
+def _is_restart_helper_process(pid: int) -> bool:
+    try:
+        import psutil
+
+        cmdline = " ".join(psutil.Process(pid).cmdline())
+    except psutil.Error:
+        return False
+    return any(marker in cmdline for marker in _RESTART_HELPER_CMD_MARKERS)
 
 
 def _stop_server(
@@ -594,7 +615,7 @@ import json, os, socket, sys, time, subprocess, traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from core.platform.process import (
-    find_first_matching_pid,
+    find_matching_pids,
     is_process_alive,
     subprocess_session_kwargs,
     terminate_pid,
@@ -612,9 +633,10 @@ old_pid = {old_pid!r}
 host = {host!r}
 port = {port!r}
 _SERVER_CMD_MARKERS = {_SERVER_CMD_MARKERS!r}
+_RESTART_HELPER_CMD_MARKERS = {_RESTART_HELPER_CMD_MARKERS!r}
 MAX_RETRIES = 3
 RETRY_DELAY = 5
-PORT_WAIT_TIMEOUT = 15
+PORT_WAIT_TIMEOUT = 180
 
 def _log(msg):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -641,11 +663,21 @@ def _alive(pid):
     return is_process_alive(pid)
 
 def _find_server_process():
-    return find_first_matching_pid(
+    matches = find_matching_pids(
         _SERVER_CMD_MARKERS,
         exclude_pids={{os.getpid(), os.getppid()}},
         require_python=True,
     )
+    for pid in matches:
+        try:
+            import psutil
+            cmdline = " ".join(psutil.Process(pid).cmdline())
+        except Exception:
+            continue
+        if any(marker in cmdline for marker in _RESTART_HELPER_CMD_MARKERS):
+            continue
+        return pid
+    return None
 
 def _is_port_listening(h, p):
     try:
@@ -659,7 +691,7 @@ _log(f"Started (pid={{os.getpid()}}, old_pid={{old_pid}})")
 # Phase 1: Wait for old server to exit
 if old_pid is not None:
     _log(f"Waiting for old server (pid={{old_pid}}) to exit...")
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 180
     while time.monotonic() < deadline and _alive(old_pid):
         time.sleep(0.3)
     if _alive(old_pid):
@@ -682,13 +714,22 @@ time.sleep(0.5)
 
 # Phase 3: Start new server with retries
 check_host = "127.0.0.1" if host == "0.0.0.0" else host
-cmd = [sys.executable, "-m", "cli", "start", "--host", host, "--port", str(port)]
+cmd = [sys.executable, "-m", "cli", "start", "--foreground", "--host", host, "--port", str(port)]
+DAEMON_LOG = LOG_DIR / "server-daemon.log"
 os.environ["_ANIMAWORKS_RESTART_HELPER_PID"] = str(os.getpid())
 
 for attempt in range(1, MAX_RETRIES + 1):
     _log(f"Starting server (attempt {{attempt}}/{{MAX_RETRIES}})...")
     try:
-        proc = subprocess.Popen(cmd, cwd={project_root!r}, **subprocess_session_kwargs())
+        daemon_log = open(DAEMON_LOG, "a", encoding="utf-8")
+        proc = subprocess.Popen(
+            cmd,
+            cwd={project_root!r},
+            stdout=daemon_log,
+            stderr=subprocess.STDOUT,
+            **subprocess_session_kwargs(),
+        )
+        daemon_log.close()
         _log(f"Spawned server process pid={{proc.pid}}")
     except Exception as e:
         _log(f"Failed to spawn server: {{e}}")
@@ -784,7 +825,7 @@ def cmd_restart(args: argparse.Namespace) -> None:
     daemon_log = _get_daemon_log_path()
 
     print("Waiting for server to start...")
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 180
     started = False
     while time.monotonic() < deadline:
         if _is_port_listening(check_host, port):
@@ -812,7 +853,7 @@ def cmd_restart(args: argparse.Namespace) -> None:
         print(f"  Dashboard: http://{display_host}:{port}/")
         print(f"  Logs:      {daemon_log}")
     else:
-        print("Error: Server did not start within 30 seconds.")
+        print("Error: Server did not start within 180 seconds.")
         print(f"  Helper log: {helper_log}")
         print(f"  Daemon log: {daemon_log}")
         sys.exit(1)

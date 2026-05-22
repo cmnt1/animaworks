@@ -96,7 +96,7 @@ class TestPidHelpers:
 
 
 class TestFindServerPidByProcess:
-    @patch("cli.commands.server.find_first_matching_pid", return_value=None)
+    @patch("cli.commands.server.find_matching_pids", return_value=[])
     def test_returns_none_when_no_match(self, mock_find):
         """Returns None when no matching process is found."""
         from cli.commands.server import _find_server_pid_by_process
@@ -106,15 +106,27 @@ class TestFindServerPidByProcess:
         assert result is None
         mock_find.assert_called_once()
 
-    @patch("cli.commands.server.find_first_matching_pid", return_value=12345)
-    def test_finds_matching_process(self, mock_find):
+    @patch("cli.commands.server._is_restart_helper_process", return_value=False)
+    @patch("cli.commands.server.find_matching_pids", return_value=[12345])
+    def test_finds_matching_process(self, mock_find, mock_is_helper):
         """Delegates process lookup to the adapter."""
         from cli.commands.server import _find_server_pid_by_process
 
         assert _find_server_pid_by_process() == 12345
         mock_find.assert_called_once()
+        mock_is_helper.assert_called_once_with(12345)
 
-    @patch("cli.commands.server.find_first_matching_pid", return_value=None)
+    @patch("cli.commands.server._is_restart_helper_process", side_effect=[True, False])
+    @patch("cli.commands.server.find_matching_pids", return_value=[111, 222])
+    def test_skips_restart_helper_processes(self, mock_find, mock_is_helper):
+        """Restart helper code contains server markers but must not block start."""
+        from cli.commands.server import _find_server_pid_by_process
+
+        assert _find_server_pid_by_process() == 222
+        mock_find.assert_called_once()
+        assert mock_is_helper.call_count == 2
+
+    @patch("cli.commands.server.find_matching_pids", return_value=[])
     def test_excludes_restart_helper_pid_from_env(self, mock_find, monkeypatch):
         """Restart helper PID from env var is added to exclude set."""
         from cli.commands.server import _find_server_pid_by_process
@@ -125,7 +137,7 @@ class TestFindServerPidByProcess:
         _, kwargs = mock_find.call_args
         assert 77777 in kwargs["exclude_pids"]
 
-    @patch("cli.commands.server.find_first_matching_pid", return_value=None)
+    @patch("cli.commands.server.find_matching_pids", return_value=[])
     def test_ignores_invalid_restart_helper_pid(self, mock_find, monkeypatch):
         """Invalid env var value is silently ignored."""
         from cli.commands.server import _find_server_pid_by_process
@@ -668,7 +680,8 @@ class TestSpawnRestartHelper:
         for key, value in subprocess_session_kwargs().items():
             assert call_kwargs.kwargs[key] == value
         helper_code = mock_popen.call_args.args[0][2]
-        assert "find_first_matching_pid" in helper_code
+        assert "find_matching_pids" in helper_code
+        assert "_RESTART_HELPER_CMD_MARKERS" in helper_code
         assert "terminate_pid" in helper_code
         assert "/proc" not in helper_code
         assert "os.killpg" not in helper_code

@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+
+import json
+from datetime import timedelta
+from pathlib import Path
+from unittest.mock import MagicMock
+
+from core.memory.task_queue import TaskQueueManager
+from core.time_utils import now_local
+from core.tooling.handler import ToolHandler
+from core.tooling.heartbeat_snapshot import build_heartbeat_observe_snapshot
+
+
+def test_heartbeat_observe_snapshot_returns_fixed_health_sections(data_dir: Path, make_anima) -> None:
+    hikaru = make_anima("hikaru")
+    kanna = make_anima("kanna")
+
+    inbox_dir = data_dir / "shared" / "inbox" / "hikaru"
+    inbox_dir.mkdir(parents=True)
+    (inbox_dir / "msg1.json").write_text("{}", encoding="utf-8")
+
+    (hikaru / "state" / "background_notifications").mkdir()
+    (hikaru / "state" / "background_notifications" / "bg1.md").write_text("done", encoding="utf-8")
+    (hikaru / "state" / "pending").mkdir(exist_ok=True)
+    (hikaru / "state" / "pending" / "stale.md").write_text("pending", encoding="utf-8")
+
+    deadline = (now_local() - timedelta(minutes=5)).isoformat()
+    manager = TaskQueueManager(hikaru)
+    task = manager.add_task(
+        source="human",
+        original_instruction="Check report",
+        assignee="hikaru",
+        summary="Owner check",
+        deadline=deadline,
+    )
+    manager.update_status(task.task_id, "blocked", summary="Waiting for evidence")
+
+    activity_dir = kanna / "activity_log"
+    activity_dir.mkdir()
+    (activity_dir / "2026-05-23.jsonl").write_text(
+        json.dumps({"ts": "2026-05-23T05:00:00+09:00", "type": "heartbeat_end", "summary": "OK"})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    snapshot = build_heartbeat_observe_snapshot(
+        hikaru,
+        peers=["kanna", "../bad"],
+        recent_minutes=120,
+        max_items=3,
+    )
+
+    assert snapshot["status"] == "ok"
+    assert snapshot["scope"]["mutates"] is False
+    assert snapshot["scope"]["arbitrary_paths"] is False
+    assert snapshot["inbox"]["unread_count"] == 1
+    assert snapshot["background_notifications"]["count"] == 1
+    assert snapshot["pending_files"]["direct_count"] == 1
+    assert snapshot["task_queue"]["active_count"] == 1
+    assert snapshot["task_queue"]["active_by_status"] == {"blocked": 1}
+    assert snapshot["task_queue"]["overdue_count"] == 1
+    assert set(snapshot["peer_activity"]["peers"]) == {"kanna"}
+    assert snapshot["peer_activity"]["peers"]["kanna"]["latest_event"]["type"] == "heartbeat_end"
+
+
+def test_tool_handler_exposes_heartbeat_snapshot(data_dir: Path, make_anima) -> None:
+    hikaru = make_anima("hikaru")
+    handler = ToolHandler(anima_dir=hikaru, memory=MagicMock(), tool_registry=[])
+
+    result = json.loads(handler.handle("heartbeat_observe_snapshot", {"max_items": 2}))
+
+    assert result["status"] == "ok"
+    assert result["anima"] == "hikaru"
+    assert "task_queue" in result
+    assert "inbox" in result

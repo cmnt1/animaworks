@@ -247,6 +247,7 @@ class ToolHandler(
         self._dispatch: dict[str, Callable[[dict[str, Any]], str]] = {
             "search_memory": self._handle_search_memory,
             "read_memory_file": self._handle_read_memory_file,
+            "heartbeat_observe_snapshot": self._handle_heartbeat_observe_snapshot,
             "write_memory_file": self._handle_write_memory_file,
             "archive_memory_file": self._handle_archive_memory_file,
             "send_message": self._handle_send_message,
@@ -314,6 +315,22 @@ class ToolHandler(
             "WebSearch": self._handle_web_search,
             "WebFetch": self._handle_web_fetch,
         }
+
+    # ── Heartbeat observation ──────────────────────────────
+
+    def _handle_heartbeat_observe_snapshot(self, args: dict[str, Any]) -> str:
+        """Return a read-only heartbeat observation snapshot."""
+        from core.tooling.heartbeat_snapshot import build_heartbeat_observe_snapshot
+
+        peers_raw = args.get("peers")
+        peers = peers_raw if isinstance(peers_raw, list) else None
+        snapshot = build_heartbeat_observe_snapshot(
+            self._anima_dir,
+            peers=[str(peer) for peer in peers] if peers is not None else None,
+            recent_minutes=args.get("recent_minutes", 60),
+            max_items=args.get("max_items", 5),
+        )
+        return _json.dumps(snapshot, ensure_ascii=False)
 
     # ── Session TodoWrite (planning tool) ──────────────────
 

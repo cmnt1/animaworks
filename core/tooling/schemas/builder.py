@@ -55,6 +55,7 @@ _COMPACT_COMM_TOOLS: frozenset[str] = frozenset(
         "Glob",
         "search_memory",
         "read_memory_file",
+        "heartbeat_observe_snapshot",
         "write_memory_file",
         "send_message",
         "post_channel",

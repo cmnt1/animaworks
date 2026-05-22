@@ -71,6 +71,21 @@ class TestSetupLogging:
         assert "StreamHandler" in handler_types
         assert "WindowsSafeRotatingFileHandler" in handler_types
 
+    def test_file_handler_open_is_delayed(self, tmp_path):
+        """CLI setup must not fail when the server currently owns the log file."""
+        with patch.object(
+            WindowsSafeRotatingFileHandler,
+            "_open",
+            side_effect=PermissionError("locked"),
+        ) as open_log:
+            setup_logging(level="INFO", log_dir=tmp_path, json_file=True)
+
+        file_handler = next(
+            handler for handler in logging.getLogger().handlers if isinstance(handler, WindowsSafeRotatingFileHandler)
+        )
+        assert file_handler.stream is None
+        open_log.assert_not_called()
+
     def test_with_file_handler_plain(self, tmp_path):
         setup_logging(level="WARNING", log_dir=tmp_path, json_file=False)
         root = logging.getLogger()
@@ -198,3 +213,25 @@ class TestWindowsSafeRotatingFileHandler:
             "first",
             "second",
         ]
+
+    def test_blocked_initial_open_drops_record_without_logging_error(self, tmp_path):
+        handler = WindowsSafeRotatingFileHandler(
+            tmp_path / "animaworks.log",
+            maxBytes=1,
+            backupCount=1,
+            encoding="utf-8",
+            delay=True,
+        )
+
+        try:
+            with (
+                patch.object(handler, "_open", side_effect=PermissionError("locked")) as open_log,
+                patch.object(handler, "handleError") as handle_error,
+            ):
+                handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "first", (), None))
+        finally:
+            handler.close()
+
+        open_log.assert_called()
+        handle_error.assert_not_called()
+        assert not (tmp_path / "animaworks.log").exists()

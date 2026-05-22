@@ -77,6 +77,36 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "heartbeat_observe_snapshot",
+        "description": (
+            "Return a compact read-only heartbeat observation snapshot without shell/Bash. "
+            "It summarizes only fixed AnimaWorks locations: this anima's inbox, task_queue, "
+            "pending files, background notifications, peer activity timestamps, and recent own files. "
+            "Use this instead of shell commands during Heartbeat Observe."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "peers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Optional peer anima names to observe. Names only, not paths. "
+                        "If omitted, peers/subordinates are inferred from config."
+                    ),
+                },
+                "recent_minutes": {
+                    "type": "integer",
+                    "description": "Recent own-file window in minutes. Clamped to 1..1440. Default: 60.",
+                },
+                "max_items": {
+                    "type": "integer",
+                    "description": "Maximum sample items per section. Clamped to 1..20. Default: 5.",
+                },
+            },
+        },
+    },
+    {
         "name": "write_memory_file",
         "description": "Write or append to a file in the anima's memory directory.",
         "parameters": {

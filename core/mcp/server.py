@@ -58,6 +58,7 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
         # AW-essential: memory
         "search_memory",
         "read_memory_file",
+        "heartbeat_observe_snapshot",
         "write_memory_file",
         "archive_memory_file",
         # AW-essential: messaging

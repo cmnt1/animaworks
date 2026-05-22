@@ -16,6 +16,7 @@ _AW_CORE_NAMES: frozenset[str] = frozenset(
     {
         "search_memory",
         "read_memory_file",
+        "heartbeat_observe_snapshot",
         "write_memory_file",
         "send_message",
         "post_channel",

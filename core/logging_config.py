@@ -64,11 +64,12 @@ def _build_shared_processors() -> list:
 class WindowsSafeRotatingFileHandler(RotatingFileHandler):
     """RotatingFileHandler that keeps logging if Windows blocks rollover.
 
-    On Windows, renaming the active log file fails while another process is
-    reading it (for example, a log tailer or the web log stream). The standard
-    handler reports that as a logging error on every emit once the size limit is
-    reached. This handler backs off rollover retries and appends to the active
-    file until rotation can succeed.
+    On Windows, opening or renaming the active log file can fail while another
+    process owns it (for example, the server process, a log tailer, or the web
+    log stream). Use this handler with ``delay=True`` for short-lived CLI
+    commands so startup never depends on taking the file handle immediately.
+    During writes, the handler backs off rollover retries and appends to the
+    active file until rotation can succeed.
     """
 
     def __init__(
@@ -85,10 +86,16 @@ class WindowsSafeRotatingFileHandler(RotatingFileHandler):
     def _is_windows_file_lock(exc: OSError) -> bool:
         return isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 32
 
-    def _recover_after_blocked_rollover(self) -> None:
+    def _recover_after_blocked_rollover(self) -> bool:
         self._rollover_blocked_until = time.monotonic() + self.rollover_retry_interval
         if self.stream is None:
-            self.stream = self._open()
+            try:
+                self.stream = self._open()
+            except OSError as exc:
+                if self._is_windows_file_lock(exc):
+                    return False
+                raise
+        return True
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -100,9 +107,15 @@ class WindowsSafeRotatingFileHandler(RotatingFileHandler):
                     except OSError as exc:
                         if not self._is_windows_file_lock(exc):
                             raise
-                        self._recover_after_blocked_rollover()
+                        if not self._recover_after_blocked_rollover():
+                            return
 
             logging.FileHandler.emit(self, record)
+        except OSError as exc:
+            if self._is_windows_file_lock(exc):
+                self._rollover_blocked_until = time.monotonic() + self.rollover_retry_interval
+                return
+            self.handleError(record)
         except Exception:
             self.handleError(record)
 
@@ -203,6 +216,7 @@ def setup_logging(
             maxBytes=10 * 1024 * 1024,  # 10 MB
             backupCount=5,
             encoding="utf-8",
+            delay=True,
         )
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(file_formatter)

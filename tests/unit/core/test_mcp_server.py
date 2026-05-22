@@ -19,6 +19,7 @@ EXPECTED_INTERNAL_TOOL_NAMES: frozenset[str] = frozenset(
         # AW-essential tools (unified architecture)
         "search_memory",
         "read_memory_file",
+        "heartbeat_observe_snapshot",
         "write_memory_file",
         "send_message",
         "post_channel",
