@@ -19,11 +19,7 @@ class RetrievalCandidate:
     @classmethod
     def from_dict(cls, item: dict[str, Any]) -> RetrievalCandidate:
         """Build from legacy search result dict."""
-        meta = {
-            k: v
-            for k, v in item.items()
-            if k not in ("content", "score", "source_file")
-        }
+        meta = {k: v for k, v in item.items() if k not in ("content", "score", "source_file")}
         return cls(
             content=str(item.get("content", "") or ""),
             score=float(item.get("score", 0.0) or 0.0),
