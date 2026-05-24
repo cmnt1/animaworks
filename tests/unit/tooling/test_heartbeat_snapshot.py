@@ -3,7 +3,6 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
 import json
 from datetime import timedelta
 from pathlib import Path
@@ -21,7 +20,24 @@ def test_heartbeat_observe_snapshot_returns_fixed_health_sections(data_dir: Path
 
     inbox_dir = data_dir / "shared" / "inbox" / "hikaru"
     inbox_dir.mkdir(parents=True)
-    (inbox_dir / "msg1.json").write_text("{}", encoding="utf-8")
+    (inbox_dir / "msg1.json").write_text(
+        json.dumps(
+            {
+                "id": "msg1",
+                "thread_id": "thread-1",
+                "from_person": "sakura",
+                "to_person": "hikaru",
+                "type": "message",
+                "intent": "report",
+                "source": "anima",
+                "priority": "high",
+                "timestamp": "2026-05-24T20:34:00+09:00",
+                "content": "Owner instruction body preview test",
+                "meta": {"task_id": "task-1"},
+            }
+        ),
+        encoding="utf-8",
+    )
 
     (hikaru / "state" / "background_notifications").mkdir()
     (hikaru / "state" / "background_notifications" / "bg1.md").write_text("done", encoding="utf-8")
@@ -58,6 +74,26 @@ def test_heartbeat_observe_snapshot_returns_fixed_health_sections(data_dir: Path
     assert snapshot["scope"]["mutates"] is False
     assert snapshot["scope"]["arbitrary_paths"] is False
     assert snapshot["inbox"]["unread_count"] == 1
+    assert snapshot["inbox"]["message_previews"] == [
+        {
+            "file": "msg1.json",
+            "mtime": snapshot["inbox"]["message_previews"][0]["mtime"],
+            "size_bytes": snapshot["inbox"]["message_previews"][0]["size_bytes"],
+            "status": "ok",
+            "id": "msg1",
+            "thread_id": "thread-1",
+            "from": "sakura",
+            "to": "hikaru",
+            "type": "message",
+            "intent": "report",
+            "source": "anima",
+            "priority": "high",
+            "timestamp": "2026-05-24T20:34:00+09:00",
+            "routing_hint": "human_or_owner",
+            "content_preview": "Owner instruction body preview test",
+            "meta_keys": ["task_id"],
+        }
+    ]
     assert snapshot["background_notifications"]["count"] == 1
     assert snapshot["pending_files"]["direct_count"] == 1
     assert snapshot["task_queue"]["active_count"] == 1

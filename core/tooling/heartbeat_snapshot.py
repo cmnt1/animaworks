@@ -20,6 +20,7 @@ from core.time_utils import get_app_timezone, now_local
 _SAFE_ANIMA_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _RECENT_EXCLUDED_DIRS = {".claude", "activity_log", "run", "shortterm", "vectordb", "__pycache__"}
 _ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
+_INBOX_PREVIEW_CHARS = 500
 
 
 def build_heartbeat_observe_snapshot(
@@ -49,7 +50,7 @@ def build_heartbeat_observe_snapshot(
         "observed_at": observed_at.isoformat(),
         "anima": anima_name,
         "scope": {
-            "data": "counts, timestamps, latest status summaries only",
+            "data": "counts, timestamps, bounded inbox previews, latest status summaries only",
             "mutates": False,
             "arbitrary_paths": False,
         },
@@ -124,14 +125,88 @@ def _snapshot_inbox(anima_name: str, *, max_items: int) -> dict[str, Any]:
     inbox_dir = get_shared_dir() / "inbox" / anima_name
     files = _list_files(inbox_dir, "*.json")
     files.sort(key=lambda p: _safe_stat_mtime(p) or 0)
+    sample_files = files[:max_items]
     return {
         "path_kind": "shared/inbox/{anima}",
         "exists": inbox_dir.is_dir(),
         "unread_count": len(files),
         "oldest_mtime": _mtime_iso(files[0]) if files else None,
         "newest_mtime": _mtime_iso(files[-1]) if files else None,
-        "sample_files": [p.name for p in files[:max_items]],
+        "sample_files": [p.name for p in sample_files],
+        "message_previews": [_snapshot_inbox_message(path) for path in sample_files],
     }
+
+
+def _snapshot_inbox_message(path: Path) -> dict[str, Any]:
+    preview: dict[str, Any] = {
+        "file": path.name,
+        "mtime": _mtime_iso(path),
+        "size_bytes": _safe_size(path),
+    }
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError) as exc:
+        preview.update({"status": "error", "error": f"{type(exc).__name__}: {exc}"})
+        return preview
+
+    if not isinstance(data, dict):
+        preview.update({"status": "unsupported", "json_type": type(data).__name__})
+        return preview
+
+    content = _first_text(data, "content", "message", "text", "body", "summary", "original_instruction")
+    meta = data.get("meta")
+    if not isinstance(meta, dict):
+        meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+
+    preview.update(
+        {
+            "status": "ok",
+            "id": _first_text(data, "id", "message_id", "source_message_id"),
+            "thread_id": _first_text(data, "thread_id"),
+            "from": _first_text(data, "from_person", "from", "sender", "source"),
+            "to": _first_text(data, "to_person", "to", "recipient", "target"),
+            "type": _first_text(data, "type", "kind", "message_type"),
+            "intent": _first_text(data, "intent"),
+            "source": _first_text(data, "source"),
+            "priority": _first_text(data, "priority", "urgency"),
+            "timestamp": _first_text(data, "timestamp", "ts", "created_at", "sent_at"),
+            "routing_hint": _inbox_routing_hint(data, content),
+            "content_preview": _trim(content, _INBOX_PREVIEW_CHARS),
+            "meta_keys": sorted(str(key) for key in meta)[:20],
+        }
+    )
+    return preview
+
+
+def _first_text(data: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = data.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _inbox_routing_hint(data: dict[str, Any], content: str) -> str:
+    haystack = " ".join(
+        [
+            _first_text(data, "from_person", "from", "sender", "source"),
+            _first_text(data, "type", "kind", "message_type"),
+            _first_text(data, "intent"),
+            content,
+        ]
+    ).lower()
+    if "governor" in haystack:
+        return "governor"
+    if "changelog" in haystack:
+        return "changelog"
+    if any(token in haystack for token in ("owner", "human", "<@")):
+        return "human_or_owner"
+    if _first_text(data, "from_person", "from", "sender"):
+        return "anima_or_external"
+    return "unknown"
 
 
 def _snapshot_task_queue(anima_dir: Path, *, observed_at: datetime, max_items: int) -> dict[str, Any]:
