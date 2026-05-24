@@ -17,6 +17,15 @@ everything at a glance**. `shared/task-board.md` solves this as a human-facing d
 | `state/task_results/` | Task execution results | System auto |
 | **`shared/task-board.md`** | **All-task overview** | **Human (owner)** |
 
+## What Does Not Belong On TaskBoard
+
+TaskBoard is for items where someone must work or make a decision next. Heartbeat or monitoring snapshots MUST NOT be surfaced as work cards.
+
+- Observation results such as Inbox unread 0, state/pending 0, background_notifications 0, or no emergency notification belong in Heartbeat/monitoring logs or an Evidence Ledger.
+- `evidence-only monitoring` and "no explicit restart instruction, so no reminder/requeue" are not resumed work, so they must not become blocked/overdue/stale TaskBoard cards.
+- If a monitoring snapshot must remain in the task queue for traceability, treat it as archived/suppressed on TaskBoard.
+- If `submit_tasks` must enqueue a non-work observation record, set `taskboard_kind: "monitoring_snapshot"`.
+
 ## Format
 
 ```markdown

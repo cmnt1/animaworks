@@ -17,6 +17,15 @@ AnimaWorks のタスク管理は `task_queue.jsonl` + `current_state.md` + `dele
 | `state/task_results/` | タスク実行結果 | システム自動 |
 | **`shared/task-board.md`** | **全タスク俯瞰** | **人間（オーナー）** |
 
+## TaskBoard に載せないもの
+
+TaskBoard は「次に誰かが作業・判断する項目」の盤面であり、Heartbeat や監視のスナップショットを作業カードとして並べない（MUST）。
+
+- Inbox未読0、state/pending0、background_notifications0、緊急通知不要などの観察結果は、Heartbeat/監視ログまたは Evidence Ledger に記録する。
+- `evidence-only monitoring` や「明示再開指示なしのため催促・再投入なし」は作業再開ではないため、TaskBoard の blocked/overdue/stale カードにしない。
+- 監視スナップショットをタスクキューに残す必要がある場合は、TaskBoard では archived/suppressed 扱いにする。
+- `submit_tasks` で非作業の観察記録を投入する必要がある場合は `taskboard_kind: "monitoring_snapshot"` を付ける。
+
 ## フォーマット
 
 ```markdown

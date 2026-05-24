@@ -108,6 +108,43 @@ class TestTaskBoardList:
 
         assert [task["task_id"] for task in query_resp.json()["tasks"]] == ["task-active"]
 
+    async def test_monitoring_snapshot_is_hidden_from_default_board(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["sakura"])
+        queue = _queue(app, "sakura")
+        queue.add_task(
+            source="anima",
+            original_instruction=(
+                "Inbox未読0、Governor/Usage Governor未読滞留なし、state/pending0、"
+                "background_notifications0。緊急通知不要。次回も固定観察範囲で確認継続。"
+            ),
+            assignee="sakura",
+            summary="2026-05-24 08:13 JST Heartbeat: Inbox未読0、background_notifications0。",
+            task_id="hb-snapshot",
+            status="in_progress",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            default_resp = await client.get("/api/task-board", params={"assignee": "sakura"})
+            full_resp = await client.get(
+                "/api/task-board",
+                params={"assignee": "sakura", "include_archived": "true"},
+            )
+            summary_resp = await client.get("/api/task-board/summary")
+
+        assert default_resp.status_code == 200
+        assert default_resp.json()["tasks"] == []
+
+        full_data = full_resp.json()
+        assert full_data["tasks"][0]["task_id"] == "hb-snapshot"
+        assert full_data["tasks"][0]["visibility"] == "archived"
+        assert full_data["tasks"][0]["column"] == "suppressed"
+
+        summary = summary_resp.json()
+        assert summary["in_progress"] == 0
+        assert summary["suppressed"] == 1
+        assert summary["total_active"] == 0
+
     async def test_unknown_assignee_returns_404(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
         transport = ASGITransport(app=app)

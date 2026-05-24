@@ -23,6 +23,51 @@ QUEUE_STATUS_TO_COLUMN: dict[str, BoardColumn] = {
 ARCHIVED_QUEUE_STATUSES = {"done", "cancelled"}
 
 _COLUMN_ORDER = {column: index for index, column in enumerate(BoardColumn)}
+_MONITORING_SNAPSHOT_KINDS = {
+    "monitoring_snapshot",
+    "heartbeat_snapshot",
+    "status_snapshot",
+    "evidence_snapshot",
+}
+_MONITORING_SNAPSHOT_MARKERS = (
+    "inbox未読",
+    "governor",
+    "usage governor",
+    "state/pending",
+    "background_notifications",
+    "未読滞留なし",
+    "緊急通知不要",
+    "追加催促",
+    "再投入なし",
+    "固定観察範囲",
+    "evidence-only monitoring",
+    "task_results",
+)
+
+
+def is_monitoring_snapshot_task(task: TaskEntry, *, anima_name: str | None = None) -> bool:
+    """Return True for non-actionable heartbeat/status observation snapshots."""
+    meta = task.meta or {}
+    raw_kind = meta.get("taskboard_kind") or meta.get("task_kind") or meta.get("kind")
+    if isinstance(raw_kind, str) and raw_kind.strip().lower() in _MONITORING_SNAPSHOT_KINDS:
+        return True
+    if bool(meta.get("monitoring_snapshot")) or bool(meta.get("non_actionable_monitoring")):
+        return True
+
+    task_desc = meta.get("task_desc") if isinstance(meta.get("task_desc"), dict) else {}
+    title = str(task_desc.get("title") or task.summary or "")
+    description = str(task_desc.get("description") or task.original_instruction or "")
+    text = f"{title}\n{description}".casefold()
+    marker_count = sum(1 for marker in _MONITORING_SNAPSHOT_MARKERS if marker.casefold() in text)
+    if marker_count < 3:
+        return False
+
+    if "heartbeat:" in text or "heartbeat：" in text:
+        return True
+
+    if anima_name and task.assignee != anima_name:
+        return False
+    return "監視" in text or "観察" in text or "monitoring" in text
 
 
 def project_anima(
@@ -115,9 +160,14 @@ def _project_queue_task(
     metadata: TaskBoardMetadata | None,
 ) -> BoardTask:
     default_column = QUEUE_STATUS_TO_COLUMN.get(task.status, BoardColumn.TODO)
-    default_visibility = (
-        AttentionVisibility.ARCHIVED if task.status in ARCHIVED_QUEUE_STATUSES else AttentionVisibility.ACTIVE
-    )
+    is_monitoring_snapshot = is_monitoring_snapshot_task(task, anima_name=anima_name)
+    if is_monitoring_snapshot:
+        default_visibility = AttentionVisibility.ARCHIVED
+        default_column = BoardColumn.SUPPRESSED
+    else:
+        default_visibility = (
+            AttentionVisibility.ARCHIVED if task.status in ARCHIVED_QUEUE_STATUSES else AttentionVisibility.ACTIVE
+        )
     visibility = metadata.visibility if metadata is not None else default_visibility
     column = metadata.column if metadata is not None and metadata.column is not None else default_column
 

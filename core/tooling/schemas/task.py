@@ -70,6 +70,15 @@ def _submit_tasks_tools() -> list[dict[str, Any]]:
                                     "description": "Workspace alias or alias#hash for the task's working directory",
                                     "default": "",
                                 },
+                                "taskboard_kind": {
+                                    "type": "string",
+                                    "enum": ["work", "monitoring_snapshot"],
+                                    "description": (
+                                        "TaskBoard classification. Use 'work' for actionable tasks. "
+                                        "Use 'monitoring_snapshot' only for non-actionable observation records."
+                                    ),
+                                    "default": "work",
+                                },
                             },
                             "required": ["task_id", "title", "description"],
                         },

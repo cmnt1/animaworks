@@ -4,7 +4,7 @@ from pathlib import Path
 
 from core.memory.task_queue import TaskQueueManager
 from core.taskboard.models import AttentionVisibility, BoardColumn
-from core.taskboard.projector import QUEUE_STATUS_TO_COLUMN, project_all, project_anima
+from core.taskboard.projector import QUEUE_STATUS_TO_COLUMN, is_monitoring_snapshot_task, project_all, project_anima
 from core.taskboard.store import TaskBoardStore
 
 
@@ -145,6 +145,80 @@ def test_missing_queue_metadata_is_hidden_unless_requested(tmp_path: Path) -> No
     projected = project_anima(anima_dir, store, include_missing=True)
     assert len(projected) == 1
     assert projected[0].queue_missing is True
+    assert projected[0].column == BoardColumn.REVIEW
+
+
+def test_monitoring_snapshot_task_is_archived_by_default(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    manager.add_task(
+        source="anima",
+        original_instruction=(
+            "Inbox未読0、Governor/Usage Governor未読滞留なし、state/pending0、"
+            "background_notifications0。緊急通知不要。次回も固定観察範囲で確認継続。"
+        ),
+        assignee="sakura",
+        summary=(
+            "2026-05-24 08:13 JST Heartbeat: Inbox未読0、"
+            "background_notifications0、緊急通知不要。"
+        ),
+        task_id="hb-snapshot",
+        status="in_progress",
+    )
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    assert project_anima(manager.anima_dir, store) == []
+
+    projected = project_anima(manager.anima_dir, store, include_archived=True)
+    assert len(projected) == 1
+    assert projected[0].visibility == AttentionVisibility.ARCHIVED
+    assert projected[0].column == BoardColumn.SUPPRESSED
+
+
+def test_monitoring_snapshot_explicit_metadata_is_archived_by_default(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    task = manager.add_task(
+        source="anima",
+        original_instruction="daily observation snapshot",
+        assignee="sakura",
+        summary="Daily observation snapshot",
+        task_id="snapshot-meta",
+        meta={"taskboard_kind": "monitoring_snapshot"},
+    )
+
+    assert is_monitoring_snapshot_task(task, anima_name="sakura") is True
+
+    projected = project_anima(
+        manager.anima_dir,
+        TaskBoardStore(tmp_path / "taskboard.sqlite3"),
+        include_archived=True,
+    )
+    assert projected[0].visibility == AttentionVisibility.ARCHIVED
+    assert projected[0].column == BoardColumn.SUPPRESSED
+
+
+def test_monitoring_snapshot_metadata_can_be_overridden_visible(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    manager.add_task(
+        source="anima",
+        original_instruction="observation snapshot",
+        assignee="sakura",
+        summary="Heartbeat: Inbox未読0 state/pending0 background_notifications0",
+        task_id="snapshot-visible",
+        meta={"taskboard_kind": "monitoring_snapshot"},
+    )
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id="snapshot-visible",
+        actor="owner",
+        visibility="active",
+        column="review",
+    )
+
+    projected = project_anima(manager.anima_dir, store)
+
+    assert len(projected) == 1
+    assert projected[0].visibility == AttentionVisibility.ACTIVE
     assert projected[0].column == BoardColumn.REVIEW
 
 
