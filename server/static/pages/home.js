@@ -61,15 +61,6 @@ export function render(container) {
           <div class="usage-loading">${t("common.loading")}</div>
         </div>
       </div>
-      <div class="usage-card usage-card--compact" id="usageCardOpencodeGo">
-        <div class="usage-card-header">
-          <span class="usage-provider-name">OpenCode Go</span>
-          <span class="usage-sub-type" id="usageOpencodeGoSub"></span>
-        </div>
-        <div class="usage-card-body" id="usageOpencodeGoBody">
-          <div class="usage-loading">${t("common.loading")}</div>
-        </div>
-      </div>
     </div>
     <div id="usageAuthAlerts" style="display:none;"></div>
     <div id="usageGovernorBar" style="display:none;"></div>
@@ -1004,7 +995,7 @@ async function _loadUsage(forceRefresh = false) {
     if (data.openai) _renderOpenaiUsage(data.openai);
     if (data.gemini) _renderGeminiUsage(data.gemini);
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
-    if (data.opencode_go) _renderOpencodeGoUsage(data.opencode_go);
+    // OpenCode Go usage bar removed from dashboard (governor monitoring kept).
     _renderAuthAlerts(data.auth_alerts);
     _renderGovernor(data.governor);
     const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;
@@ -1014,13 +1005,11 @@ async function _loadUsage(forceRefresh = false) {
     const openaiEl = document.getElementById("usageOpenaiBody");
     const geminiEl = document.getElementById("usageGeminiBody");
     const nanogptEl = document.getElementById("usageNanogptBody");
-    const opencodeGoEl = document.getElementById("usageOpencodeGoBody");
     const msg = `<div class="usage-error">${escapeHtml(err.message)}</div>`;
     if (claudeEl) claudeEl.innerHTML = msg;
     if (openaiEl) openaiEl.innerHTML = msg;
     if (geminiEl) geminiEl.innerHTML = msg;
     if (nanogptEl) nanogptEl.innerHTML = msg;
-    if (opencodeGoEl) opencodeGoEl.innerHTML = msg;
   }
 }
 
