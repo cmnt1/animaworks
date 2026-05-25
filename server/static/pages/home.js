@@ -42,6 +42,15 @@ export function render(container) {
           <div class="usage-loading">${t("common.loading")}</div>
         </div>
       </div>
+      <div class="usage-card" id="usageCardGemini">
+        <div class="usage-card-header">
+          <span class="usage-provider-name">Gemini</span>
+          <span class="usage-sub-type" id="usageGeminiSub"></span>
+        </div>
+        <div class="usage-card-body" id="usageGeminiBody">
+          <div class="usage-loading">${t("common.loading")}</div>
+        </div>
+      </div>
       <div class="usage-card" id="usageCardNanogpt">
         <div class="usage-card-header">
           <span class="usage-provider-name">nanoGPT</span>
@@ -572,6 +581,30 @@ function _renderOpenaiUsage(data) {
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
+function _renderGeminiUsage(data) {
+  const el = document.getElementById("usageGeminiBody");
+  if (!el) return;
+
+  if (data.error) {
+    const msg = data.error === "no_credentials"
+      ? (data.message || t("home.usage_no_credentials"))
+      : data.message || data.error;
+    el.innerHTML = _renderUsageError("gemini", data, msg);
+    return;
+  }
+
+  // Order windows: 5h → daily (Free tier) → Week
+  const order = ["five_hour", "daily", "Week"];
+  const labels = { five_hour: "5h", daily: "Daily", Week: "Week" };
+  let html = "";
+  for (const key of order) {
+    const win = data[key];
+    if (!win || typeof win !== "object" || win.utilization === undefined) continue;
+    html += _renderUsageBar(labels[key] || key, win.utilization, win.resets_at, win.window_seconds);
+  }
+  el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
+}
+
 function _renderNanogptUsage(data) {
   const el = document.getElementById("usageNanogptBody");
   if (!el) return;
@@ -963,6 +996,7 @@ async function _loadUsage(forceRefresh = false) {
 
     if (data.claude) _renderClaudeUsage(data.claude);
     if (data.openai) _renderOpenaiUsage(data.openai);
+    if (data.gemini) _renderGeminiUsage(data.gemini);
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
     if (data.opencode_go) _renderOpencodeGoUsage(data.opencode_go);
     _renderAuthAlerts(data.auth_alerts);
@@ -972,11 +1006,13 @@ async function _loadUsage(forceRefresh = false) {
   } catch (err) {
     const claudeEl = document.getElementById("usageClaudeBody");
     const openaiEl = document.getElementById("usageOpenaiBody");
+    const geminiEl = document.getElementById("usageGeminiBody");
     const nanogptEl = document.getElementById("usageNanogptBody");
     const opencodeGoEl = document.getElementById("usageOpencodeGoBody");
     const msg = `<div class="usage-error">${escapeHtml(err.message)}</div>`;
     if (claudeEl) claudeEl.innerHTML = msg;
     if (openaiEl) openaiEl.innerHTML = msg;
+    if (geminiEl) geminiEl.innerHTML = msg;
     if (nanogptEl) nanogptEl.innerHTML = msg;
     if (opencodeGoEl) opencodeGoEl.innerHTML = msg;
   }

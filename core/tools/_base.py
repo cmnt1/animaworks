@@ -29,6 +29,8 @@ _ABCONFIG_KEY_MAP = {
     "OPENCODE_API_KEY": "opencode_api",
     "OPENCODE_GO_WORKSPACE_ID": "opencode_go_workspace_id",
     "OPENCODE_GO_AUTH_COOKIE": "opencode_go_auth_cookie",
+    "ANTIGRAVITY_OAUTH_CLIENT_ID": "antigravity_oauth_client_id",
+    "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "antigravity_oauth_client_secret",
 }
 
 

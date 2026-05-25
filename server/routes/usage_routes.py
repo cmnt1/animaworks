@@ -93,7 +93,7 @@ def _merge_usage_snapshot(live_payload: dict[str, Any]) -> dict[str, Any]:
 
     used: list[str] = []
     merged = dict(live_payload)
-    for provider_key in ("claude", "openai", "nanogpt", "opencode_go"):
+    for provider_key in ("claude", "openai", "gemini", "nanogpt", "opencode_go"):
         if not _provider_has_error(merged, provider_key):
             continue
         snapshot_provider = snapshot.get(provider_key)
@@ -1054,6 +1054,175 @@ def _fetch_opencode_go_usage(skip_cache: bool = False) -> dict[str, Any]:
         return result
 
 
+# ── Gemini (Google AI Pro / Antigravity CLI OAuth) ──────────────────────────
+
+# Same private Cloud Code API as Gemini CLI uses; quota response shape is
+# identical. Credentials are read from the Antigravity CLI keyring
+# (Windows Credential Manager on Windows).
+_GEMINI_QUOTA_ENDPOINT = (
+    "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
+)
+
+
+def _classify_gemini_bucket_window(delta_sec: float) -> tuple[str, int] | None:
+    """Classify a bucket by ``resetTime - now`` seconds.
+
+    Returns ``(label, window_seconds)`` or ``None`` for out-of-range deltas.
+    Three labels are recognized to cover both free tier (daily ~24h) and
+    Google AI Pro (5h + Week).
+    """
+    if delta_sec <= 0:
+        return None
+    if delta_sec <= 6 * 3600:
+        return ("five_hour", 5 * 3600)
+    if delta_sec <= 36 * 3600:
+        return ("daily", 24 * 3600)
+    if delta_sec <= 8 * 86400:
+        return ("Week", 7 * 86400)
+    return None
+
+
+def _parse_gemini_buckets(
+    data: dict[str, Any], now: float | None = None
+) -> dict[str, Any]:
+    """Convert the ``retrieveUserQuota`` response into Animaworks window dicts.
+
+    Multiple model-specific buckets may share the same window label; the
+    tightest (smallest ``remainingFraction``) wins so the governor sees
+    the real provider-wide bottleneck.
+    """
+    if now is None:
+        now = time.time()
+    result: dict[str, Any] = {"provider": "gemini"}
+    buckets = data.get("buckets") or []
+    if not isinstance(buckets, list):
+        return result
+    per_window: dict[str, dict[str, Any]] = {}
+    for bucket in buckets:
+        if not isinstance(bucket, dict):
+            continue
+        reset_iso = bucket.get("resetTime")
+        if not reset_iso:
+            continue
+        try:
+            reset_dt = datetime.fromisoformat(str(reset_iso).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        reset_ts = reset_dt.timestamp()
+        classified = _classify_gemini_bucket_window(reset_ts - now)
+        if classified is None:
+            continue
+        label, window_sec = classified
+        try:
+            frac = float(bucket.get("remainingFraction", 1.0))
+        except (ValueError, TypeError):
+            continue
+        existing = per_window.get(label)
+        if existing is None or frac < existing["_frac"]:
+            per_window[label] = {
+                "_frac": frac,
+                "utilization": max(0.0, (1.0 - frac) * 100.0),
+                "remaining": max(0.0, frac * 100.0),
+                "resets_at": reset_ts,
+                "window_seconds": window_sec,
+                "model_id": str(bucket.get("modelId", "")),
+            }
+    for entry in per_window.values():
+        entry.pop("_frac", None)
+    result.update(per_window)
+    return result
+
+
+def _fetch_gemini_usage(skip_cache: bool = False) -> dict[str, Any]:
+    """Fetch Google AI Pro / Gemini quota via the Code Assist private API.
+
+    Authenticates with the OAuth credentials stored by ``gemini`` CLI in
+    ``~/.gemini/oauth_creds.json`` (Pro account, separate from Workspace).
+    """
+    if not skip_cache:
+        cached = _cached("gemini")
+        if cached is not None:
+            return cached
+
+    from core.config.antigravity_oauth import get_valid_access_token
+
+    token_tuple = get_valid_access_token()
+    if token_tuple is None:
+        result: dict[str, Any] = {
+            "error": "no_credentials",
+            "message": "Antigravity CLI で OAuth 認証が必要 (agy コマンドでログイン)",
+            "provider": "gemini",
+        }
+        _set_cache("gemini", result)
+        return result
+
+    access_token, project_id = token_tuple
+
+    body = json.dumps({"project": project_id}).encode("utf-8")
+    req = urllib.request.Request(
+        _GEMINI_QUOTA_ENDPOINT,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            err_body = exc.read().decode("utf-8", errors="replace")[:300]
+        except Exception:
+            err_body = ""
+        if exc.code == 403 and "SERVICE_DISABLED" in err_body:
+            result = {
+                "error": "service_disabled",
+                "message": (
+                    f"Cloud Code Private API が project {project_id} で無効化されています"
+                ),
+                "provider": "gemini",
+            }
+        elif exc.code in (401, 403):
+            result = {
+                "error": "unauthorized",
+                "message": f"Gemini OAuth credential が拒否されました (HTTP {exc.code})",
+                "provider": "gemini",
+            }
+        else:
+            result = {
+                "error": "fetch_failed",
+                "message": f"HTTP {exc.code}: {err_body[:200]}",
+                "provider": "gemini",
+            }
+        _set_cache("gemini", result)
+        return result
+    except (urllib.error.URLError, OSError) as exc:
+        result = {
+            "error": "fetch_failed",
+            "message": str(exc)[:200],
+            "provider": "gemini",
+        }
+        _set_cache("gemini", result)
+        return result
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Gemini usage response was not valid JSON: %s", exc)
+        result = {
+            "error": "fetch_failed",
+            "message": f"invalid response: {exc}",
+            "provider": "gemini",
+        }
+        _set_cache("gemini", result)
+        return result
+
+    parsed = _parse_gemini_buckets(raw)
+    _set_cache("gemini", parsed)
+    return parsed
+
+
 def create_usage_router() -> APIRouter:
     router = APIRouter()
 
@@ -1137,6 +1306,7 @@ def create_usage_router() -> APIRouter:
         payload = {
             "claude": _fetch_claude_usage(skip_cache=skip_cache),
             "openai": _fetch_openai_usage(skip_cache=skip_cache),
+            "gemini": _fetch_gemini_usage(skip_cache=skip_cache),
             "nanogpt": _fetch_nanogpt_usage(skip_cache=skip_cache),
             "opencode_go": _fetch_opencode_go_usage(skip_cache=skip_cache),
             "cached_at": time.time(),
