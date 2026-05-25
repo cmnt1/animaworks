@@ -719,6 +719,7 @@ function _renderGovernor(gov) {
   const PROVIDERS = [
     ["claude", "Claude"],
     ["openai", "OpenAI"],
+    ["gemini", "Gemini"],
     ["nanogpt", "NanoGPT"],
     ["opencode_go", "OpenCode Go"],
   ];
@@ -769,13 +770,16 @@ function _renderGovernor(gov) {
     const bg = bgByProv[prov];
     const samples = calib.samples || 0;
 
-    // Skip providers with absolutely nothing to show
+    // Show the row whenever the provider is configured in the governor —
+    // i.e. its key appears in any of activity_level / calibration / suspended
+    // dicts.  This keeps healthy providers visible alongside active ones so
+    // the user can confirm the governor is tracking them.
+    const inActivity = Object.prototype.hasOwnProperty.call(frontByProv, prov)
+      || Object.prototype.hasOwnProperty.call(bgByProv, prov);
+    const inCalibration = Object.prototype.hasOwnProperty.call(calibByProv, prov);
+    const inSuspended = Object.prototype.hasOwnProperty.call(perSuspended, prov);
     const hasAnything =
-      samples > 0 ||
-      suspended.length > 0 ||
-      reasons.length > 0 ||
-      (front !== null && front !== undefined && front < 100) ||
-      (bg !== null && bg !== undefined && bg < 100);
+      inActivity || inCalibration || inSuspended || reasons.length > 0;
     if (!hasAnything) continue;
 
     if (prov === "claude" && _reloginPat.test(reasons.join(" "))) {
