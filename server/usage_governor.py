@@ -565,9 +565,23 @@ def ensure_policy_file(data_dir: Path) -> None:
                 if _migrate_time_proportional_to_burn_rate(win_config):
                     changed = True
 
+        # Backfill providers that are in DEFAULT_POLICY but missing from the
+        # persisted file (e.g. ``gemini`` added after the user's policy file
+        # was originally written).  Existing providers are preserved verbatim.
+        providers_section = policy.setdefault("providers", {})
+        default_providers = DEFAULT_POLICY.get("providers", {})
+        for prov_key, prov_windows in default_providers.items():
+            if prov_key not in providers_section:
+                providers_section[prov_key] = prov_windows
+                changed = True
+                logger.info(
+                    "Backfilled usage_policy.json: added missing provider %s",
+                    prov_key,
+                )
+
         if changed:
             save_policy(data_dir, policy)
-            logger.info("Migrated usage_policy.json: deficit_rules → throttle_rules")
+            logger.info("Migrated usage_policy.json (deficit/burn-rate/providers)")
     except Exception:
         logger.debug("Policy migration check failed", exc_info=True)
 
