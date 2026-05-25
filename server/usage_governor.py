@@ -116,6 +116,15 @@ DEFAULT_POLICY: dict[str, Any] = {
             "Week": _default_window_policy(),
             "Month": _default_window_policy(),
         },
+        # Google AI Pro / Antigravity OAuth route.  Free-tier accounts
+        # only return a ``daily`` (~24h) bucket; AI Pro returns ``five_hour``
+        # and ``Week`` buckets.  All three are listed so the governor can
+        # evaluate whichever the upstream usage feed actually provides.
+        "gemini": {
+            "five_hour": _default_window_policy(),
+            "daily": _default_window_policy(),
+            "Week": _default_window_policy(),
+        },
     },
     "suspend_thresholds": {
         "non_essential_below": 30,
@@ -1213,6 +1222,7 @@ class UsageGovernor:
         """Single governor check cycle."""
         from server.routes.usage_routes import (
             _fetch_claude_usage,
+            _fetch_gemini_usage,
             _fetch_nanogpt_usage,
             _fetch_openai_usage,
             _fetch_opencode_go_usage,
@@ -1222,6 +1232,7 @@ class UsageGovernor:
         usage_data = {
             "claude": _fetch_claude_usage(),
             "openai": _fetch_openai_usage(),
+            "gemini": _fetch_gemini_usage(),
             "nanogpt": _fetch_nanogpt_usage(),
             "opencode_go": _fetch_opencode_go_usage(),
         }
@@ -1262,7 +1273,7 @@ class UsageGovernor:
         calibration_enabled = bool(calib_config.get("enabled", True))
         # Evaluate all cloud providers, including providers with no currently
         # running animas so their activity level remains visible to readers.
-        for provider_key in ("claude", "openai", "nanogpt", "opencode_go"):
+        for provider_key in ("claude", "openai", "gemini", "nanogpt", "opencode_go"):
             provider_animas = groups.get(provider_key, [])
 
             if _provider_usage_fetch_failed(usage_data, provider_key):
