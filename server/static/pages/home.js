@@ -749,11 +749,12 @@ function _renderGovernor(gov) {
   const fmtInt = (v) =>
     v === null || v === undefined || Number.isNaN(v) ? "—" : String(Math.round(Number(v)));
   const fmtActivity = (front, bg) => {
-    const f = front === null || front === undefined ? null : Math.round(Number(front));
-    const b = bg === null || bg === undefined ? null : Math.round(Number(bg));
-    if (f === null && b === null) return "—";
-    if (f === b || b === null) return `${f}%`;
-    if (f === null) return `—/${b}%`;
+    // ``null`` from the governor means "no throttle decision" = full activity.
+    // Render as 100% so APPLIED is always a concrete number, matching the
+    // semantics that drives heartbeat/max_turns scaling.
+    const f = front === null || front === undefined ? 100 : Math.round(Number(front));
+    const b = bg === null || bg === undefined ? 100 : Math.round(Number(bg));
+    if (f === b) return `${f}%`;
     return `${f}/${b}%`;
   };
 
