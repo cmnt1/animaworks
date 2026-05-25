@@ -49,6 +49,21 @@ from core.execution.assisted import AssistedExecutor
 from core.execution.base import BaseExecutor, ExecutionResult
 from core.execution.litellm_loop import LiteLLMExecutor
 
+# Register the Antigravity custom provider so model names of the form
+# ``antigravity/<model_id>`` route through the Google AI Pro OAuth flow
+# (cloudcode-pa.googleapis.com) rather than LiteLLM's default Gemini /
+# AI Studio path.  Idempotent and safe to import multiple times.
+try:
+    from core.execution._antigravity_llm import register_antigravity_provider
+
+    register_antigravity_provider()
+except Exception:  # pragma: no cover — never block startup on this
+    import logging as _logging
+
+    _logging.getLogger("animaworks.execution").warning(
+        "Failed to register Antigravity LiteLLM provider", exc_info=True
+    )
+
 __all__ = [
     "AgentSDKExecutor",
     "AnthropicFallbackExecutor",

@@ -55,6 +55,26 @@ logger = logging.getLogger("animaworks.config.antigravity_oauth")
 
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
+# Cloud Code Assist project discovery (loadCodeAssist endpoint).  Free-tier
+# users receive a per-account managed project (e.g. ``circular-verve-0h50h``)
+# that differs from the fixed AI Pro common id.  We discover and cache the
+# right one at first use.
+_LOAD_CODE_ASSIST_URL = (
+    "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+)
+
+# Minimal client metadata accepted by loadCodeAssist.  Values are
+# informational only; the API does not enforce specific values.
+_CLIENT_METADATA = {
+    "ideType": "IDE_UNSPECIFIED",
+    "ideVersion": "0.0.0",
+    "pluginVersion": "0.0.0",
+    "platform": "PLATFORM_UNSPECIFIED",
+    "pluginType": "GEMINI",
+    "ideName": "animaworks",
+    "updateChannel": "stable",
+}
+
 # Windows Credential Manager target name written by agy.
 _WIN_TARGET = "gemini:antigravity"
 
@@ -349,8 +369,64 @@ def refresh_access_token(
     return updated
 
 
+_PROJECT_CACHE: dict[str, str] = {}
+
+
+def discover_project_id(access_token: str) -> str | None:
+    """Call ``loadCodeAssist`` to fetch the user's managed project id.
+
+    Free-tier and Pro users receive different project ids (e.g. free tier
+    gets a per-account managed slug like ``circular-verve-0h50h``); the
+    fixed default is correct only for some account types.  Caches the
+    result keyed by access_token prefix so repeated calls within the same
+    session are cheap.
+    """
+    cache_key = access_token[:16]
+    if cache_key in _PROJECT_CACHE:
+        return _PROJECT_CACHE[cache_key]
+
+    body = json.dumps({"metadata": _CLIENT_METADATA}).encode("utf-8")
+    req = urllib.request.Request(
+        _LOAD_CODE_ASSIST_URL,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            body_text = exc.read().decode("utf-8", errors="replace")[:200]
+        except Exception:
+            body_text = "<unreadable>"
+        logger.warning(
+            "loadCodeAssist failed (HTTP %s): %s", exc.code, body_text
+        )
+        return None
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        logger.warning("loadCodeAssist error: %s", exc)
+        return None
+
+    project_id = payload.get("cloudaicompanionProject")
+    if isinstance(project_id, str) and project_id:
+        _PROJECT_CACHE[cache_key] = project_id
+        return project_id
+    return None
+
+
 def get_valid_access_token() -> tuple[str, str] | None:
     """Return ``(access_token, project_id)`` ready for API use.
+
+    Loads credentials, refreshes if expired, and resolves the project id
+    in this priority order:
+      1. ``GEMINI_PRO_PROJECT_ID`` env var (explicit override)
+      2. ``loadCodeAssist`` discovery (per-account managed project)
+      3. ``DEFAULT_PROJECT_ID`` fallback (AI Pro common project)
 
     Returns ``None`` when credentials are missing or refresh fails.
     """
@@ -362,7 +438,10 @@ def get_valid_access_token() -> tuple[str, str] | None:
         if refreshed is None:
             return None
         creds = refreshed
-    project_id = (
-        os.environ.get("GEMINI_PRO_PROJECT_ID", "").strip() or DEFAULT_PROJECT_ID
-    )
-    return creds.access_token, project_id
+    override = os.environ.get("GEMINI_PRO_PROJECT_ID", "").strip()
+    if override:
+        return creds.access_token, override
+    discovered = discover_project_id(creds.access_token)
+    if discovered:
+        return creds.access_token, discovered
+    return creds.access_token, DEFAULT_PROJECT_ID

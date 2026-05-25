@@ -50,6 +50,9 @@ _CREDENTIAL_TO_PROVIDER: dict[str, str] = {
     "openai": "openai",
     "nanogpt": "nanogpt",
     "opencode-go": "opencode_go",
+    # Antigravity-routed Anima execution consumes the same Google AI Pro
+    # quota that the dashboard's Gemini bar tracks.
+    "antigravity": "gemini",
 }
 
 # ── Policy schema ────────────────────────────────────────────────────────────
@@ -575,6 +578,11 @@ def _model_to_provider(model_name: str | None) -> str | None:
         return "nanogpt"
     if model_name.startswith("opencode-go/"):
         return "opencode_go"
+    if model_name.startswith("antigravity/") or model_name.startswith("gemini/"):
+        # Antigravity routes through Google AI Pro quota (same bar as the
+        # dashboard's Gemini provider).  Gemini/* models historically used
+        # the Gemini CLI quota — also Google AI Pro post-2026-06-18.
+        return "gemini"
     return None
 
 
