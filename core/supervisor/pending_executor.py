@@ -46,6 +46,7 @@ _SENTINEL_DEFERRED = "(deferred)"
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
 _QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
 _TASKBOARD_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
+_RUNNER_START_SUFFIX = "-runner-start"
 
 
 def _detect_task_auth_failure(result: str) -> str | None:
@@ -83,6 +84,20 @@ def _classify_task_result(result: str) -> tuple[str, str]:
     if auth_failure:
         return "failed", f"FAILED: {auth_failure}"
     return "done", (result or "")[:200]
+
+
+def _command_queue_link(task_id: str, tool_name: str, subcommand: str) -> tuple[str, str, str] | None:
+    """Return (queue_task_id, success_status, failure_status) for command tasks.
+
+    Dashboard runner-start commands are child pending tasks. Their success only
+    means the external runner was launched, so the parent queue task should move
+    to in_progress rather than done.
+    """
+    if not task_id:
+        return None
+    if tool_name == "daily_ops_runner" and subcommand == "start" and task_id.endswith(_RUNNER_START_SUFFIX):
+        return task_id[: -len(_RUNNER_START_SUFFIX)], "in_progress", "blocked"
+    return task_id, "done", "blocked"
 
 
 def _resolve_default_workspace(anima_dir: Path) -> str:
@@ -1372,6 +1387,21 @@ class PendingTaskExecutor:
         }
 
         task_id = task_desc.get("task_id", "")
+        queue_link = _command_queue_link(task_id, tool_name, subcommand)
+        if queue_link is not None:
+            queue_task_id, success_status, failure_status = queue_link
+            tool_args.update(
+                {
+                    "queue_task_id": queue_task_id,
+                    "queue_success_status": success_status,
+                    "queue_failure_status": failure_status,
+                }
+            )
+            self._sync_task_queue(
+                queue_task_id,
+                "in_progress",
+                summary=f"started command: {tool_name} {subcommand}".strip(),
+            )
 
         logger.info(
             "Submitting pending task to BackgroundTaskManager: id=%s tool=%s subcmd=%s",
@@ -1383,42 +1413,105 @@ class PendingTaskExecutor:
         def _dispatch_fn(name: str, args: dict[str, Any]) -> str:
             """Execute the tool via CLI subprocess (same as direct execution)."""
             import os
+            import shutil
             import subprocess
+            import sys
+            from pathlib import Path
 
             # name may be composite (e.g. "transcribe:audio"); extract module name
             module_name = name.split(":")[0] if ":" in name else name
-            cmd = ["animaworks-tool", module_name]
+            project_root = Path(__file__).resolve().parents[2]
+            scripts_dir = project_root / ".venv" / "Scripts"
+            executable_name = "animaworks-tool.exe" if os.name == "nt" else "animaworks-tool"
+            tool_exe = (
+                scripts_dir / executable_name
+                if (scripts_dir / executable_name).exists()
+                else None
+            )
+            tool_cmd = (
+                str(tool_exe)
+                if tool_exe
+                else (shutil.which("animaworks-tool") or "animaworks-tool")
+            )
+            cmd = [tool_cmd, module_name]
             subcmd = args.get("subcommand", "")
             if subcmd:
                 cmd.append(subcmd)
             cmd.extend(args.get("raw_args", []))
             # Remove subcommand from raw_args if it's already the first element
             if subcmd and args.get("raw_args") and args["raw_args"][0] == subcmd:
-                cmd = ["animaworks-tool", module_name] + args["raw_args"]
+                cmd = [tool_cmd, module_name] + args["raw_args"]
             cmd.append("-j")
 
             env = {
                 **os.environ,
                 "ANIMAWORKS_ANIMA_DIR": args.get("anima_dir", ""),
             }
+            if scripts_dir.exists():
+                env["PATH"] = f"{scripts_dir}{os.pathsep}{env.get('PATH', '')}"
             # ANIMAWORKS_EMBED_URL and ANIMAWORKS_VECTOR_URL are inherited from runner env
             # (set by ProcessHandle.child_env_urls) and passed through via **os.environ
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=_PENDING_TASK_SUBPROCESS_TIMEOUT,
-                env=env,
-            )
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=_PENDING_TASK_SUBPROCESS_TIMEOUT,
+                    env=env,
+                )
+            except FileNotFoundError:
+                # Last-resort fallback: run the dispatcher through this Python.
+                fallback_cmd = [
+                    sys.executable,
+                    "-c",
+                    "from core.tools import cli_dispatch; cli_dispatch()",
+                    module_name,
+                    *cmd[2:],
+                ]
+                result = subprocess.run(
+                    fallback_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=_PENDING_TASK_SUBPROCESS_TIMEOUT,
+                    env=env,
+                    cwd=str(project_root),
+                )
             if result.returncode != 0:
                 error_msg = result.stderr.strip() or f"Exit code {result.returncode}"
                 raise ToolExecutionError(f"Tool {name} failed: {error_msg}")
-            return result.stdout.strip()
+            stdout = result.stdout.strip()
+            try:
+                payload = json.loads(stdout) if stdout else {}
+            except json.JSONDecodeError:
+                payload = {}
+            if isinstance(payload, dict) and payload.get("ok") is False:
+                error_msg = payload.get("error") or payload.get("message") or stdout[:500]
+                raise ToolExecutionError(f"Tool {name} reported ok=false: {error_msg}")
+            return stdout
 
         # Submit to BackgroundTaskManager
         composite_name = f"{tool_name}:{subcommand}" if subcommand else tool_name
-        bg_mgr.submit(composite_name, tool_args, _dispatch_fn)
+        bg_task_id = bg_mgr.submit(composite_name, tool_args, _dispatch_fn)
+        if queue_link is not None:
+            try:
+                from core.memory.task_queue import TaskQueueManager
+
+                TaskQueueManager(self._anima_dir).update_meta(
+                    queue_link[0],
+                    {
+                        "background_task_id": bg_task_id,
+                        "background_tool": composite_name,
+                    },
+                )
+            except Exception:
+                logger.debug(
+                    "[%s] Failed to attach background task metadata: queue=%s bg=%s",
+                    self._anima_name,
+                    queue_link[0],
+                    bg_task_id,
+                    exc_info=True,
+                )
 
     async def _execute_llm_task(self, task_desc: dict[str, Any]) -> None:
         """Execute an LLM task under _background_lock.

@@ -346,6 +346,32 @@ class DigitalAnima(
             task.status.value,
         )
 
+        # Command-type pending tasks can be thin wrappers around a durable
+        # task_queue entry. Keep that entry visible instead of leaving it in
+        # Todo when the background wrapper exits quickly.
+        try:
+            queue_task_id = str(task.tool_args.get("queue_task_id") or "")
+            if queue_task_id:
+                from core.memory.task_queue import TaskQueueManager
+
+                success_status = str(task.tool_args.get("queue_success_status") or "done")
+                failure_status = str(task.tool_args.get("queue_failure_status") or "blocked")
+                queue_status = success_status if task.status.value == "completed" else failure_status
+                summary = task.summary()
+                if task.status.value == "failed" and not summary.startswith("FAILED:"):
+                    summary = f"FAILED: {summary}"
+                TaskQueueManager(self.agent.anima_dir).update_status(
+                    queue_task_id,
+                    queue_status,
+                    summary=summary[:500],
+                )
+        except Exception:
+            logger.exception(
+                "[%s] Failed to sync bg task completion to task_queue: %s",
+                self.name,
+                task.task_id,
+            )
+
         # Broadcast via WebSocket
         if self._ws_broadcast:
             try:

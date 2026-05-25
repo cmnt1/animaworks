@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from core.memory.task_queue import TaskEntry, TaskQueueManager
+from core.memory.task_queue import _STALE_TASK_THRESHOLD_SEC, _elapsed_seconds, TaskEntry, TaskQueueManager
 from core.paths import get_animas_dir
 from core.taskboard.models import AttentionVisibility, BoardColumn, BoardTask, TaskBoardMetadata
 from core.taskboard.store import TaskBoardStore
+from core.time_utils import now_local
 
 QUEUE_STATUS_TO_COLUMN: dict[str, BoardColumn] = {
     "pending": BoardColumn.TODO,
@@ -158,6 +159,12 @@ def _project_queue_task(
     )
     visibility = metadata.visibility if metadata is not None else default_visibility
     column = metadata.column if metadata is not None and metadata.column is not None else default_column
+    if (
+        task.status in {"pending", "in_progress"}
+        and column in {BoardColumn.TODO, BoardColumn.RUNNING}
+        and _is_stale_queue_task(task)
+    ):
+        column = BoardColumn.BLOCKED
 
     needs_human, needs_human_reason = compute_needs_human(
         assignee=task.assignee,
@@ -201,6 +208,11 @@ def _project_queue_task(
         is_from_cron=is_from_cron,
         cron_task_name=cron_task_name if isinstance(cron_task_name, str) else None,
     )
+
+
+def _is_stale_queue_task(task: TaskEntry) -> bool:
+    elapsed_sec = _elapsed_seconds(task.updated_at or "", now_local())
+    return elapsed_sec is not None and elapsed_sec >= _STALE_TASK_THRESHOLD_SEC
 
 
 def _project_missing_task(metadata: TaskBoardMetadata) -> BoardTask:
