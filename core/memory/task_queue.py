@@ -307,6 +307,9 @@ class TaskQueueManager:
             update["summary"] = summary
         self._append(update)
 
+        if status == "cancelled":
+            self._cancel_delegated_child(task, summary=summary)
+
         # Return reconstructed entry
         task.status = status
         task.updated_at = now
@@ -314,6 +317,37 @@ class TaskQueueManager:
             task.summary = summary
         logger.info("Task updated: id=%s status=%s", task_id, status)
         return task
+
+    def _cancel_delegated_child(self, task: TaskEntry, *, summary: str | None = None) -> bool:
+        """Cancel the active subordinate task for a cancelled delegated entry."""
+        meta = task.meta or {}
+        target = meta.get("delegated_to")
+        child_id = meta.get("delegated_task_id")
+        if not isinstance(target, str) or not target:
+            return False
+        if not isinstance(child_id, str) or not child_id:
+            return False
+
+        target_dir = self.anima_dir.parent / target
+        if not target_dir.is_dir():
+            logger.debug("cancel_delegated_child: target dir missing for %s", target)
+            return False
+
+        try:
+            child_manager = TaskQueueManager(target_dir)
+            child = child_manager.get_task_by_id(child_id)
+            if child is None or child.status in _TERMINAL_STATUSES:
+                return False
+            child_summary = summary or f"Cancelled because upstream delegated task {task.task_id} was cancelled"
+            return child_manager.update_status(child_id, "cancelled", summary=child_summary) is not None
+        except Exception:
+            logger.debug(
+                "cancel_delegated_child: failed to cancel subordinate task %s/%s",
+                target,
+                child_id,
+                exc_info=True,
+            )
+            return False
 
     def update_meta(
         self,

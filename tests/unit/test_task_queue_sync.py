@@ -166,6 +166,42 @@ class TestSyncDelegated:
         assert sup_tqm.get_task_by_id(sup_id2).status == "delegated"
 
 
+class TestCancelDelegatedChild:
+    """Tests for cancelling child tasks when a delegated parent is cancelled."""
+
+    def test_parent_cancel_cancels_active_child(self, tmp_path):
+        animas_dir = _make_animas_dir(tmp_path)
+        sup_tqm = TaskQueueManager(animas_dir / "supervisor")
+        sub_tqm = TaskQueueManager(animas_dir / "subordinate")
+
+        sup_id, sub_id = _add_delegated(sup_tqm, sub_tqm, "subordinate")
+
+        sup_tqm.update_status(sup_id, "cancelled", summary="No longer needed")
+
+        parent = sup_tqm.get_task_by_id(sup_id)
+        child = sub_tqm.get_task_by_id(sub_id)
+        assert parent is not None
+        assert child is not None
+        assert parent.status == "cancelled"
+        assert child.status == "cancelled"
+        assert child.summary == "No longer needed"
+
+    def test_parent_cancel_does_not_overwrite_terminal_child(self, tmp_path):
+        animas_dir = _make_animas_dir(tmp_path)
+        sup_tqm = TaskQueueManager(animas_dir / "supervisor")
+        sub_tqm = TaskQueueManager(animas_dir / "subordinate")
+
+        sup_id, sub_id = _add_delegated(sup_tqm, sub_tqm, "subordinate")
+        sub_tqm.update_status(sub_id, "done", summary="Already completed")
+
+        sup_tqm.update_status(sup_id, "cancelled", summary="No longer needed")
+
+        child = sub_tqm.get_task_by_id(sub_id)
+        assert child is not None
+        assert child.status == "done"
+        assert child.summary == "Already completed"
+
+
 class TestFormatDelegatedForPriming:
     """Tests for TaskQueueManager.format_delegated_for_priming()."""
 
