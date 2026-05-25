@@ -1,7 +1,0 @@
-{
-  "instance_id": "test__calculator-001",
-  "model_name_or_path": "animaworks-team",
-  "model_patch": "diff --git a/calculator.py b/calculator.py\nindex f59e0c2..5662d14 100644\n--- a/calculator.py\n+++ b/calculator.py\n@@ -7,6 +7,8 @@ def divide(a, b):\n     Should return a float result and handle division by zero\n     by raising a ValueError with a descriptive message.\n     \"\"\"\n+    if b == 0:\n+        raise ValueError('Cannot divide by zero')\n     return a / b\n \n \n@@ -15,5 +17,7 @@ def average(numbers):\n \n     Should handle empty lists by raising a ValueError.\n     \"\"\"\n+    if not numbers:\n+        raise ValueError('Cannot compute average of empty list')\n     total = sum(numbers)\n     return total / len(numbers)\n",
-  "_test_passed": true,
-  "_review": "APPROVE — the patch correctly handles both edge cases and raises the required `ValueError` messages without affecting normal behavior.\n\n<!-- emotion: {\"emotion\": \"thinking\"} -->"
-}

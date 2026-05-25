@@ -696,6 +696,11 @@ def cli_main() -> None:
 
     register_migrate_command(sub)
 
+    # ── Tmp ───────────────────────────────────────────────────
+    from cli.commands.tmp_cmd import register_tmp_command
+
+    register_tmp_command(sub)
+
     # ── Optimize Assets ──────────────────────────────────────
     from cli.commands import optimize_assets
 

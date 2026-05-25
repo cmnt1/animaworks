@@ -138,8 +138,11 @@ class TestAdapterIngestAndRetrieve:
 class TestAdapterAnswer:
     """Test answer generation with mocked LLM."""
 
-    def test_answer_calls_litellm(self):
+    def test_answer_calls_litellm(self, monkeypatch: pytest.MonkeyPatch):
         from benchmarks.locomo.adapter import AnimaWorksLoCoMoAdapter
+
+        monkeypatch.setenv("OPENAI_API_BASE", "http://proxy.example/v1")
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
         with (
             patch("benchmarks.locomo.adapter._ensure_rag_stack"),
@@ -172,8 +175,27 @@ class TestAdapterAnswer:
             assert result == "Paris"
             mock_comp.assert_called_once()
 
-    def test_answer_empty_context(self):
+    def test_answer_abstain_skips_llm(self):
         from benchmarks.locomo.adapter import AnimaWorksLoCoMoAdapter
+
+        with (
+            patch("benchmarks.locomo.adapter._ensure_rag_stack"),
+            patch("benchmarks.locomo.adapter.AnimaWorksLoCoMoAdapter._init_isolated_rag"),
+        ):
+            adapter = AnimaWorksLoCoMoAdapter.__new__(AnimaWorksLoCoMoAdapter)
+            adapter._last_abstain = True
+            adapter._last_abstain_reason = "low_confidence"
+
+        with patch("litellm.completion") as mock_comp:
+            result = adapter.answer("Where?", [], model="test-model")
+            assert result == "No information available."
+            mock_comp.assert_not_called()
+
+    def test_answer_empty_context(self, monkeypatch: pytest.MonkeyPatch):
+        from benchmarks.locomo.adapter import AnimaWorksLoCoMoAdapter
+
+        monkeypatch.setenv("OPENAI_API_BASE", "http://proxy.example/v1")
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
         with (
             patch("benchmarks.locomo.adapter._ensure_rag_stack"),

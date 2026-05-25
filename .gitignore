@@ -26,6 +26,7 @@ htmlcov/
 
 # Tool caches
 .pytest_cache/
+.pytest_tmp/
 .ruff_cache/
 
 # Evaluation framework - generated data (excluded from repo)
@@ -45,7 +46,8 @@ CLA.md
 CLAUDE.md
 mkdocs.yml
 uv.lock
-plan.md
+/plan.md
+/*.plan.md
 
 # Archive (deprecated code)
 archive/
@@ -121,7 +123,9 @@ scripts/benchmark/results/
 
 # Benchmark data and results (large/generated)
 benchmarks/locomo/data/
+benchmarks/results/
 benchmarks/locomo/results/
+tests/performance/BENCHMARK_RESULTS.md
 
 # SWE-bench evaluation
 swe/runtime/
