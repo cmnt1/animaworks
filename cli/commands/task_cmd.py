@@ -79,6 +79,7 @@ def _cmd_update(args: argparse.Namespace, manager) -> None:
     task_id = getattr(args, "task_id", "")
     status = getattr(args, "status", "")
     summary = getattr(args, "summary", None)
+    note = getattr(args, "note", None)
 
     if not task_id:
         print("Error: --task-id is required", file=sys.stderr)
@@ -87,7 +88,7 @@ def _cmd_update(args: argparse.Namespace, manager) -> None:
         print("Error: --status is required", file=sys.stderr)
         sys.exit(1)
 
-    entry = manager.update_status(task_id, status, summary=summary)
+    entry = manager.update_status(task_id, status, summary=summary, note=note)
     if entry is None:
         print(f"Error: task not found or invalid status: {task_id}", file=sys.stderr)
         sys.exit(1)
@@ -121,7 +122,8 @@ def register_task_command(subparsers) -> None:
     p_update = task_sub.add_parser("update", help="Update task status")
     p_update.add_argument("--task-id", required=True, help="Task ID")
     p_update.add_argument("--status", required=True, choices=["pending", "in_progress", "done", "cancelled", "blocked"])
-    p_update.add_argument("--summary", default=None, help="Updated summary")
+    p_update.add_argument("--summary", default=None, help="Rename the task summary/title")
+    p_update.add_argument("--note", default=None, help="Append progress/status detail without renaming the task")
 
     # task list
     p_list = task_sub.add_parser("list", help="List tasks")

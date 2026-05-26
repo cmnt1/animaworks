@@ -42,6 +42,24 @@ _STALE_TASK_THRESHOLD_SEC = 1800
 _RELATIVE_DEADLINE_RE = re.compile(r"^(\d+)([mhd])$")
 _HEARTBEAT_OBSERVATION_PREFIX_RE = re.compile(r"^\s*(?:\d{1,2}:\d{2}\s*(?:jst)?\s*)?(?:hb|heartbeat)\s*:", re.I)
 _TIMED_OBSERVATION_PREFIX_RE = re.compile(r"^\s*\d{1,2}:\d{2}\s*jst\b", re.I)
+_STATUS_REPORT_SUMMARY_MAX_CHARS = 120
+_STATUS_REPORT_MARKERS = (
+    "原因",
+    "修正済み",
+    "実装",
+    "テスト済み",
+    "登録済み",
+    "記録済み",
+    "対応済み",
+    "確認済み",
+    "再起動済み",
+    "恒久対応",
+    "検証済み",
+    "root cause",
+    "fixed",
+    "implemented",
+    "verified",
+)
 _OBSERVATION_LOG_MARKERS = (
     "inbox",
     "未読",
@@ -79,6 +97,37 @@ def _reject_observation_log_summary(summary: str) -> None:
             "Task summary must describe actionable work, not a heartbeat observation log. "
             "Put observations in context, task_results, or activity_log."
         )
+
+
+def _is_status_report_summary(summary: str | None) -> bool:
+    """Return True when an update summary is report text, not a task title."""
+    if not summary:
+        return False
+    text = summary.strip()
+    if len(text) <= _STATUS_REPORT_SUMMARY_MAX_CHARS:
+        return False
+    lowered = text.lower()
+    marker_count = sum(1 for marker in _STATUS_REPORT_MARKERS if marker.lower() in lowered)
+    sentence_count = sum(text.count(sep) for sep in ("。", ".", "\n", "；", ";"))
+    return marker_count >= 2 or (marker_count >= 1 and sentence_count >= 2)
+
+
+def _append_status_note(meta: dict[str, Any], *, note: str, status: str, ts: str) -> dict[str, Any]:
+    """Return metadata with a bounded status_notes history appended."""
+    if not note:
+        return meta
+    merged = dict(meta)
+    notes_raw = merged.get("status_notes")
+    notes = list(notes_raw) if isinstance(notes_raw, list) else []
+    notes.append(
+        {
+            "ts": ts,
+            "status": status,
+            "note": note,
+        }
+    )
+    merged["status_notes"] = notes[-20:]
+    return merged
 
 
 def _parse_deadline(value: str) -> str:
@@ -321,6 +370,7 @@ class TaskQueueManager:
         status: str,
         *,
         summary: str | None = None,
+        note: str | None = None,
     ) -> TaskEntry | None:
         """Update the status of an existing task.
 
@@ -341,8 +391,15 @@ class TaskQueueManager:
         if _is_observation_log_summary(summary):
             clean_summary = None
             logger.warning("Ignoring heartbeat observation log summary for task %s", task_id)
+        elif _is_status_report_summary(summary):
+            clean_summary = None
+            note = summary if not note else f"{note}\n{summary}"
+            logger.warning("Storing report-like update summary as status note for task %s", task_id)
 
         now = now_iso()
+        merged_meta: dict[str, Any] | None = None
+        if note:
+            merged_meta = _append_status_note(task.meta or {}, note=note, status=status, ts=now)
         update: dict[str, Any] = {
             "task_id": task_id,
             "status": status,
@@ -351,6 +408,8 @@ class TaskQueueManager:
         }
         if clean_summary is not None:
             update["summary"] = clean_summary
+        if merged_meta is not None:
+            update["meta"] = merged_meta
         self._append(update)
 
         if status == "cancelled":
@@ -361,6 +420,8 @@ class TaskQueueManager:
         task.updated_at = now
         if clean_summary is not None:
             task.summary = clean_summary
+        if merged_meta is not None:
+            task.meta = merged_meta
         logger.info("Task updated: id=%s status=%s", task_id, status)
         return task
 

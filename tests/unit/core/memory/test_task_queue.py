@@ -124,6 +124,58 @@ def test_update_status_ignores_heartbeat_observation_summary(tmp_path: Path) -> 
     assert reloaded.summary == "Hikaru正式証跡を検収する"
 
 
+def test_update_status_stores_report_like_summary_as_note(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True, exist_ok=True)
+    tqm = TaskQueueManager(anima_dir)
+    entry = tqm.add_task(
+        source="anima",
+        original_instruction="Wait for formal evidence",
+        assignee="sakura",
+        summary="Hikaru正式証跡4点の再提出待ち",
+        deadline="1h",
+    )
+
+    report = (
+        "GlobalOutboundLimitExceeded原因はdashboard仮想宛message_sentの送信枠混入。"
+        "除外修正済み。さらに内部DMの期限付き再提出/証跡依頼を受信側task_queueと"
+        "state/pendingへ自動捕捉する恒久対応を実装・テスト済み。"
+        "Hikaru側対応task 073be14e7eac 登録済み。"
+    )
+    result = tqm.update_status(entry.task_id, "blocked", summary=report)
+
+    assert result is not None
+    assert result.status == "blocked"
+    assert result.summary == "Hikaru正式証跡4点の再提出待ち"
+    notes = result.meta.get("status_notes")
+    assert isinstance(notes, list)
+    assert notes[-1]["status"] == "blocked"
+    assert notes[-1]["note"] == report
+
+    reloaded = TaskQueueManager(anima_dir).get_task_by_id(entry.task_id)
+    assert reloaded is not None
+    assert reloaded.summary == "Hikaru正式証跡4点の再提出待ち"
+    assert reloaded.meta["status_notes"][-1]["note"] == report
+
+
+def test_update_status_note_does_not_rename_task(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True, exist_ok=True)
+    tqm = TaskQueueManager(anima_dir)
+    entry = tqm.add_task(
+        source="human",
+        original_instruction="Do the work",
+        assignee="anima",
+        summary="Original task title",
+    )
+
+    result = tqm.update_status(entry.task_id, "in_progress", note="Started investigation")
+
+    assert result is not None
+    assert result.summary == "Original task title"
+    assert result.meta["status_notes"][-1]["note"] == "Started investigation"
+
+
 def test_update_meta_is_durable_and_preserves_status(tmp_path: Path) -> None:
     anima_dir = tmp_path / "anima"
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
