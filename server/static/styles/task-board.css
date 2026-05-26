@@ -160,7 +160,7 @@
   grid-auto-columns: minmax(260px, 1fr);
   grid-auto-flow: column;
   gap: 12px;
-  min-height: 520px;
+  min-height: 480px;
   overflow-x: auto;
   padding-bottom: 8px;
 }
@@ -169,7 +169,7 @@
   display: flex;
   flex-direction: column;
   min-width: 260px;
-  max-height: calc(100svh - 245px);
+  max-height: calc(100svh - 285px);
   border: 1px solid var(--aw-color-border);
   border-radius: 8px;
   background: var(--aw-color-bg-subtle);
