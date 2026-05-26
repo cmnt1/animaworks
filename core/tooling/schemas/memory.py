@@ -81,7 +81,8 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Return a compact read-only heartbeat observation snapshot without shell/Bash. "
             "It summarizes only fixed AnimaWorks locations: this anima's inbox, task_queue, "
-            "pending files, background notifications, peer activity timestamps, and recent own files. "
+            "current_state, pending files, task results, background notifications, "
+            "peer activity timestamps, and recent own files. "
             "Use this instead of shell commands during Heartbeat Observe."
         ),
         "parameters": {

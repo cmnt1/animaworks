@@ -1,10 +1,11 @@
+- **MUST**: Observeの最初に `heartbeat_observe_snapshot` を呼び、固定スコープ（Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files）はその結果を根拠に確認すること
 - **MUST**: current_state.mdに進行中タスクがあるか確認し、確認結果を根拠として述べること。「idle」「待機中」と判定する前に必ず確認
-- **MUST**: タスクキューのSTALEタスク（⚠️ STALE表示）を確認。`list_tasks()` の結果を根拠として示すこと。STALEタスクを放置してHEARTBEAT_OKとしてはならない
+- **MUST**: タスクキューのSTALEタスク（⚠️ STALE表示）を確認。`heartbeat_observe_snapshot` の task_queue を根拠として示すこと。STALEタスクを放置してHEARTBEAT_OKとしてはならない
 - **MUST**: 待機タスクが24時間以上経過していないか確認。長期停滞があれば状況確認やリマインドを行う
 - **MUST**: ボード確認 — 自分がメンバーになっているチャネルを**すべて** `read_channel(...)` で読むこと。最低でも `general` と所属する部門チャネル（`property` / `finance` / `affiliate` / `administration` のうち該当するもの）。`ops` のメンバーなら `ops` も。メンション無しの投稿はここで拾う（メンション付きは既に Inbox に届いている）。他者の報告への称賛・承認応答は**投稿禁止**。判断基準は `common_knowledge/communication/broadcasting-guide.md`
 - 利用すべき外部ツールにアクセスできるか（不可なら上司に報告）
 - 進行中タスクにブロッカーがないか
-- state/pending/ に未実行のタスクがないか確認
+- state/pending/ に未実行のタスクがないか `heartbeat_observe_snapshot` の pending_files を根拠に確認
 
 ### ブロッカー報告（MUST）
 
@@ -22,5 +23,6 @@
 - `read_channel` 実行済みで自分宛メンションなし
 - STALE / OVERDUEタスクが0件
 - current_state.md に未対応の自分担当タスクなし
+- `heartbeat_observe_snapshot` 実行済み
 
 いずれかが満たされなければ、対応アクションを記述すること。

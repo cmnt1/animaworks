@@ -1,6 +1,12 @@
 ハートビートです。以下のプロセスに従って行動してください。
 
 ## Observe（観察）
+**最初に `heartbeat_observe_snapshot` を呼び、固定スコープ観測の一次根拠にしてください。**
+
+- `heartbeat_observe_snapshot` の結果を Inbox、task_queue、current_state、state/pending、state/task_results、background_notifications、peer_activity、recent_own_files の確認根拠として扱うこと。
+- 通常の Heartbeat Observe では、上記固定スコープを確認するために Bash / shell / `rtk proxy` / `Get-Content` / `ls` / `read_file` / `list_directory` を使わないこと。
+- snapshot が使えない、または error を返す場合は、同じ blocked 経路を繰り返さず、ブロッカーとして `state/current_state.md` への記録または報告に切り替えること。
+
 {checklist}
 
 ## Plan（計画）
@@ -15,7 +21,7 @@
 - 即座にフォローアップ → `send_message` / `call_human`
 
 ### チェック項目
-- バックグラウンドタスク結果: state/task_results/ に完了タスクがあれば内容を確認し、必要に応じてフォローアップ
+- バックグラウンドタスク結果: `heartbeat_observe_snapshot` の task_results / background_notifications に完了タスクがあれば内容を確認し、必要に応じてフォローアップ
 - **MUST**: 直近のチャット・Inboxで人間やAnimaから受けた指示が未処理であれば、直接対応・`delegate_task`・`send_message`・`call_human`・`state/current_state.md` のいずれかに具体化する
 - STALEタスク・期限間近タスク: 担当者にフォローアップ（send_message）、必要なら上司にエスカレーション
 - 長期待機中タスク（24h超）: 状況確認・リマインド

@@ -1,6 +1,12 @@
 Heartbeat입니다. 아래 프로세스에 따라 행동하세요.
 
 ## Observe (관찰)
+**먼저 `heartbeat_observe_snapshot`을 호출하고, 고정 범위 관찰의 1차 근거로 사용하세요.**
+
+- Inbox, task_queue, current_state, state/pending, state/task_results, background_notifications, peer_activity, recent_own_files 확인 근거는 `heartbeat_observe_snapshot` 결과를 사용하세요.
+- 일반 Heartbeat Observe에서는 위 고정 위치를 확인하기 위해 Bash / shell / `rtk proxy` / `Get-Content` / `ls` / `read_file` / `list_directory`를 사용하지 마세요.
+- snapshot 도구를 사용할 수 없거나 error가 반환되면 같은 blocked 경로를 반복하지 말고, `state/current_state.md` 기록 또는 적절한 보고로 블로커를 처리하세요.
+
 {checklist}
 
 ## Plan (계획)
@@ -13,7 +19,7 @@ Heartbeat입니다. 아래 프로세스에 따라 행동하세요.
 - 즉시 후속 조치 → `send_message` / `call_human`
 
 ### 체크 항목
-- 백그라운드 작업 결과: state/task_results/에 완료된 작업이 있으면 내용을 확인하고 필요에 따라 후속 조치
+- 백그라운드 작업 결과: `heartbeat_observe_snapshot`의 task_results / background_notifications에 완료된 작업이 있으면 내용을 확인하고 필요에 따라 후속 조치
 - **MUST**: 최근 채팅/inbox 메시지에서 사람이나 Anima의 미처리 지시가 있으면 직접 처리, `delegate_task`, `send_message`, `call_human`, 또는 `state/current_state.md` 중 하나로 구체화하세요
 - STALE / 기한 임박 작업: 담당자에게 후속 조치(send_message), 필요 시 상사에게 에스컬레이션
 - 장기 대기 중 작업 (24시간 이상): 상태 확인 또는 리마인드 전송

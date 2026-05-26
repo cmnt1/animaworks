@@ -53,6 +53,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | 完了前検証（completion_gate）の仕組みを知りたい | `operations/completion-gate-guide.md` |
 | タスクボード（人間向けダッシュボード）を使いたい | `operations/task-board-guide.md` |
 | ハートビートやcronの設定がわからない | `operations/heartbeat-cron-guide.md` |
+| Heartbeatの観測経路・policy blocked回避を確認したい | `operations/heartbeat-observe-guide.md` |
 | 送信・投稿・記憶書き込み前に確認ルールを入れたい | `operations/action-rules-guide.md` |
 | 長時間ツールの実行方法がわからない | `operations/background-tasks.md` |
 | ワークスペースの登録・使い方がわからない | `operations/workspace-guide.md` |

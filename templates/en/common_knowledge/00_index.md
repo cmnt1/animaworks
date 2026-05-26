@@ -53,6 +53,7 @@ After reading, use the index below to find details on each topic.
 | Want to know how completion_gate verification works | `operations/completion-gate-guide.md` |
 | Want to use the task board (human-facing dashboard) | `operations/task-board-guide.md` |
 | Don't know how to configure Heartbeat or cron | `operations/heartbeat-cron-guide.md` |
+| Want to confirm Heartbeat observation path / policy-block avoidance | `operations/heartbeat-observe-guide.md` |
 | Want pre-action checks before sending, posting, or memory writes | `operations/action-rules-guide.md` |
 | Don't know how to run long-running tools | `operations/background-tasks.md` |
 | Don't know how to register or use workspaces | `operations/workspace-guide.md` |

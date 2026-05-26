@@ -50,6 +50,7 @@ Heartbeat / Cron / machine / 팀 설계 / 메모리 / 비용 최적화의 핵심
 | 태스크 관리 방법을 모르겠다 | `operations/task-management.md` |
 | 태스크 보드(사람용 대시보드)를 사용하고 싶다 | `operations/task-board-guide.md` |
 | heartbeat이나 cron 설정을 모르겠다 | `operations/heartbeat-cron-guide.md` |
+| Heartbeat 관찰 경로 / policy blocked 회피를 확인하고 싶다 | `operations/heartbeat-observe-guide.md` |
 | 전송·게시·메모리 쓰기 전에 확인 규칙을 넣고 싶다 | `operations/action-rules-guide.md` |
 | 장시간 실행 도구 사용법을 모르겠다 | `operations/background-tasks.md` |
 | 워크스페이스 등록이나 사용법을 모르겠다 | `operations/workspace-guide.md` |

@@ -56,7 +56,9 @@ def build_heartbeat_observe_snapshot(
         },
         "inbox": _snapshot_inbox(anima_name, max_items=max_items),
         "task_queue": _snapshot_task_queue(anima_dir, observed_at=observed_at, max_items=max_items),
+        "current_state": _snapshot_current_state(anima_dir),
         "pending_files": _snapshot_pending_files(anima_dir, max_items=max_items),
+        "task_results": _snapshot_task_results(anima_dir, max_items=max_items),
         "background_notifications": _snapshot_background_notifications(anima_dir, max_items=max_items),
         "peer_activity": _snapshot_peer_activity(peer_names, max_items=max_items),
         "recent_own_files": _snapshot_recent_own_files(
@@ -272,6 +274,24 @@ def _snapshot_task_queue(anima_dir: Path, *, observed_at: datetime, max_items: i
     return result
 
 
+def _snapshot_current_state(anima_dir: Path) -> dict[str, Any]:
+    state_path = anima_dir / "state" / "current_state.md"
+    result: dict[str, Any] = {
+        "path_kind": "state/current_state.md",
+        "exists": state_path.is_file(),
+        "size_bytes": _safe_size(state_path),
+        "mtime": _mtime_iso(state_path),
+        "content_preview": "",
+    }
+    try:
+        result["content_preview"] = _trim(state_path.read_text(encoding="utf-8"), 1000)
+    except OSError:
+        pass
+    except UnicodeError as exc:
+        result.update({"status": "error", "error": f"{type(exc).__name__}: {exc}"})
+    return result
+
+
 def _snapshot_pending_files(anima_dir: Path, *, max_items: int) -> dict[str, Any]:
     pending_dir = anima_dir / "state" / "pending"
     direct = _list_files(pending_dir, "*.md")
@@ -283,6 +303,19 @@ def _snapshot_pending_files(anima_dir: Path, *, max_items: int) -> dict[str, Any
         "direct_count": len(direct),
         "recursive_count": len(recursive),
         "sample_files": [_rel(p, pending_dir) for p in direct[:max_items]],
+    }
+
+
+def _snapshot_task_results(anima_dir: Path, *, max_items: int) -> dict[str, Any]:
+    results_dir = anima_dir / "state" / "task_results"
+    files = _list_files(results_dir, "*.md")
+    files.sort(key=lambda p: _safe_stat_mtime(p) or 0, reverse=True)
+    return {
+        "path_kind": "state/task_results",
+        "exists": results_dir.is_dir(),
+        "count": len(files),
+        "newest_mtime": _mtime_iso(files[0]) if files else None,
+        "samples": [_snapshot_text_file(p, results_dir, preview_chars=500) for p in files[:max_items]],
     }
 
 
@@ -305,6 +338,22 @@ def _snapshot_peer_activity(peer_names: list[str], *, max_items: int) -> dict[st
     for name in peer_names[:20]:
         peers[name] = _snapshot_one_peer_activity(animas_dir / name, max_items=max_items)
     return {"count": len(peers), "peers": peers}
+
+
+def _snapshot_text_file(path: Path, root: Path, *, preview_chars: int) -> dict[str, Any]:
+    sample: dict[str, Any] = {
+        "path": _rel(path, root),
+        "mtime": _mtime_iso(path),
+        "size_bytes": _safe_size(path),
+        "content_preview": "",
+    }
+    try:
+        sample["content_preview"] = _trim(path.read_text(encoding="utf-8"), preview_chars)
+    except OSError as exc:
+        sample.update({"status": "error", "error": f"{type(exc).__name__}: {exc}"})
+    except UnicodeError as exc:
+        sample.update({"status": "error", "error": f"{type(exc).__name__}: {exc}"})
+    return sample
 
 
 def _snapshot_one_peer_activity(peer_dir: Path, *, max_items: int) -> dict[str, Any]:

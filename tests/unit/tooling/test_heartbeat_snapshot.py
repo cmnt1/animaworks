@@ -41,8 +41,11 @@ def test_heartbeat_observe_snapshot_returns_fixed_health_sections(data_dir: Path
 
     (hikaru / "state" / "background_notifications").mkdir()
     (hikaru / "state" / "background_notifications" / "bg1.md").write_text("done", encoding="utf-8")
+    (hikaru / "state" / "current_state.md").write_text("Working on owner check", encoding="utf-8")
     (hikaru / "state" / "pending").mkdir(exist_ok=True)
     (hikaru / "state" / "pending" / "stale.md").write_text("pending", encoding="utf-8")
+    (hikaru / "state" / "task_results").mkdir()
+    (hikaru / "state" / "task_results" / "done.md").write_text("Task result preview", encoding="utf-8")
 
     deadline = (now_local() - timedelta(minutes=5)).isoformat()
     manager = TaskQueueManager(hikaru)
@@ -95,7 +98,10 @@ def test_heartbeat_observe_snapshot_returns_fixed_health_sections(data_dir: Path
         }
     ]
     assert snapshot["background_notifications"]["count"] == 1
+    assert snapshot["current_state"]["content_preview"] == "Working on owner check"
     assert snapshot["pending_files"]["direct_count"] == 1
+    assert snapshot["task_results"]["count"] == 1
+    assert snapshot["task_results"]["samples"][0]["content_preview"] == "Task result preview"
     assert snapshot["task_queue"]["active_count"] == 1
     assert snapshot["task_queue"]["active_by_status"] == {"blocked": 1}
     assert snapshot["task_queue"]["overdue_count"] == 1
@@ -113,3 +119,5 @@ def test_tool_handler_exposes_heartbeat_snapshot(data_dir: Path, make_anima) -> 
     assert result["anima"] == "hikaru"
     assert "task_queue" in result
     assert "inbox" in result
+    assert "current_state" in result
+    assert "task_results" in result

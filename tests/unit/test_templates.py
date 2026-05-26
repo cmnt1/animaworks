@@ -110,6 +110,32 @@ class TestActionRulesGuideTemplate:
                 assert "common_skills/skill-creator/SKILL.md" in content
 
 
+class TestHeartbeatObserveTemplate:
+    def test_heartbeat_prompt_requires_snapshot_first(self):
+        for locale in LOCALES:
+            content = (TEMPLATES_ROOT / locale / "prompts" / "heartbeat.md").read_text(encoding="utf-8")
+            assert "heartbeat_observe_snapshot" in content
+            assert "rtk proxy" in content
+            assert "list_directory" in content
+
+    def test_default_checklist_uses_snapshot_as_task_queue_evidence(self):
+        for locale in LOCALES:
+            content = (TEMPLATES_ROOT / locale / "prompts" / "heartbeat_default_checklist.md").read_text(
+                encoding="utf-8"
+            )
+            assert "heartbeat_observe_snapshot" in content
+            assert "list_tasks()" not in content
+
+    def test_common_knowledge_observe_guide_indexed(self):
+        for locale in LOCALES:
+            guide = (
+                TEMPLATES_ROOT / locale / "common_knowledge" / "operations" / "heartbeat-observe-guide.md"
+            ).read_text(encoding="utf-8")
+            index = (TEMPLATES_ROOT / locale / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
+            assert "heartbeat_observe_snapshot" in guide
+            assert "heartbeat-observe-guide.md" in index
+
+
 class TestSkillCreatorTemplate:
     def test_skill_creator_docs_match_create_skill_schema_metadata(self):
         fields = [
