@@ -18,6 +18,7 @@ dictionaries.
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from core.config.models import load_config
 from core.time_utils import ensure_aware, now_local
@@ -27,6 +28,45 @@ logger = logging.getLogger("animaworks.cascade_limiter")
 # Kept for backward compatibility; authoritative values now live in HeartbeatConfig.
 _DEPTH_WINDOW_S = 600  # 10 minutes
 _MAX_DEPTH_DEFAULT = 6  # 6 turns = 3 round-trips
+
+
+def _counts_toward_global_outbound(entry: Any, sender: str, sender_anima_dir: Path) -> bool:
+    """Return whether an activity entry should consume outbound budget.
+
+    ``message_sent`` is also used for virtual/system sinks such as
+    dashboard mirrors.  Those entries are useful timeline events, but they
+    must not exhaust the DM/Board budget that protects real recipients.
+    """
+    if getattr(entry, "to_person", "") == sender:
+        return False
+
+    entry_type = getattr(entry, "type", "")
+    if entry_type == "channel_post":
+        return True
+
+    if entry_type not in ("dm_sent", "message_sent"):
+        return False
+
+    to_person = getattr(entry, "to_person", "") or ""
+    if not to_person:
+        return False
+
+    meta = getattr(entry, "meta", {}) or {}
+    if meta.get("from_type") == "external":
+        return True
+
+    # Internal Anima DMs should count.  Virtual recipients (for example
+    # board-only dashboard/system-agent sinks) have no anima directory and
+    # are excluded so they cannot starve real Anima follow-ups.  In isolated
+    # unit fixtures the sender may be the only directory created; keep those
+    # legacy/minimal logs countable.
+    try:
+        known_animas = [p for p in sender_anima_dir.parent.iterdir() if p.is_dir()]
+    except OSError:
+        known_animas = []
+    if len(known_animas) <= 1:
+        return True
+    return (sender_anima_dir.parent / to_person).is_dir()
 
 
 class ConversationDepthLimiter:
@@ -114,7 +154,7 @@ class ConversationDepthLimiter:
 
         for e in entries:
             try:
-                if e.to_person == sender:
+                if not _counts_toward_global_outbound(e, sender, sender_anima_dir):
                     continue
                 ts = ensure_aware(datetime.fromisoformat(e.ts))
                 if ts >= daily_cutoff:

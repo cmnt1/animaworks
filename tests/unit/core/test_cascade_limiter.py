@@ -398,6 +398,45 @@ class TestSelfMessageExclusion:
         result = limiter.check_global_outbound("sanae", anima_dir)
         assert result is True  # 17 real msgs < 50/day (self-msgs excluded)
 
+    def test_virtual_dashboard_messages_not_counted(self, tmp_path: Path, _patch_config):
+        """実在Animaではない dashboard sink 宛の message_sent は送信枠から除外する。"""
+        sender_dir = tmp_path / "animas" / "sakura"
+        sender_dir.mkdir(parents=True)
+        (tmp_path / "animas" / "hikaru").mkdir(parents=True)
+
+        entries = [
+            _make_dm_entry("message_sent", "sakura", "daily-ops-dashboard", f"dashboard {i}")
+            for i in range(50)
+        ] + [
+            _make_dm_entry("message_sent", "sakura", "hikaru", "real follow-up")
+        ]
+        _write_activity_entries(sender_dir, entries)
+
+        limiter = ConversationDepthLimiter(max_per_hour=3, max_per_day=5)
+        result = limiter.check_global_outbound("sakura", sender_dir)
+        assert result is True  # only the real Hikaru DM counts
+
+    def test_external_message_sent_still_counted(self, tmp_path: Path, _patch_config):
+        """外部送信として記録された message_sent は実在Animaでなくても送信枠に数える。"""
+        sender_dir = tmp_path / "animas" / "sakura"
+        sender_dir.mkdir(parents=True)
+        entries = [
+            {
+                "ts": now_jst().isoformat(),
+                "type": "message_sent",
+                "content": f"external {i}",
+                "to_person": f"slack:U0000000{i}",
+                "meta": {"from_type": "external"},
+            }
+            for i in range(5)
+        ]
+        _write_activity_entries(sender_dir, entries)
+
+        limiter = ConversationDepthLimiter(max_per_hour=10, max_per_day=5)
+        result = limiter.check_global_outbound("sakura", sender_dir)
+        assert result is not True
+        assert "GlobalOutboundLimitExceeded" in result
+
 
 class TestModuleSingleton:
     """Test the factory function returns correct type."""

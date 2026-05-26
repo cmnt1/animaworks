@@ -205,6 +205,8 @@ class Messenger:
         meta: dict[str, Any] | None = None,
     ) -> Message:
         # ── Conversation depth check (internal Anima only) ──
+        is_internal = False
+        animas_dir: Path | None = None
         if msg_type not in ("ack", "error", "system_alert"):
             from core.paths import get_animas_dir
 
@@ -263,6 +265,36 @@ class Messenger:
         if not filepath.exists():
             raise DeliveryError(f"Message delivery failed: file not created at {filepath} ({self.anima_name} -> {to})")
 
+        autocreated_task_id = ""
+        if is_internal and animas_dir is not None:
+            try:
+                from core.task_request_capture import capture_task_request_from_message
+
+                autocreated_task_id = (
+                    capture_task_request_from_message(
+                        animas_dir=animas_dir,
+                        from_person=self.anima_name,
+                        to_person=to,
+                        content=content,
+                        message_id=msg.id,
+                        thread_id=msg.thread_id,
+                        intent=intent,
+                        msg_type=msg_type,
+                        meta=msg.meta,
+                    )
+                    or ""
+                )
+                if autocreated_task_id:
+                    msg.meta = {**msg.meta, "autocreated_task_id": autocreated_task_id}
+                    filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
+            except Exception as e:
+                logger.warning(
+                    "Task request capture failed for message_sent (%s -> %s): %s",
+                    self.anima_name,
+                    to,
+                    e,
+                )
+
         logger.info("Message sent: %s -> %s (%s)", self.anima_name, to, msg.id)
 
         # Activity Log: record message_sent for all send paths (S/A/B/CLI)
@@ -276,6 +308,8 @@ class Messenger:
                     meta: dict[str, Any] = {"from_type": "anima"}
                     if intent:
                         meta["intent"] = intent
+                    if autocreated_task_id:
+                        meta["autocreated_task_id"] = autocreated_task_id
                     activity.log(
                         "message_sent",
                         content=content,

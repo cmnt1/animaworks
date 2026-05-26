@@ -154,6 +154,56 @@ class TestSend:
                 content = f.read_text(encoding="utf-8").strip()
                 assert content == ""
 
+    def test_task_like_internal_dm_creates_recipient_task(self, tmp_path: Path):
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        bob_dir = animas_dir / "bob"
+        alice_dir.mkdir(parents=True)
+        bob_dir.mkdir(parents=True)
+
+        content = (
+            "正式証跡4点を再提出してください。\n"
+            "期限: 2026-05-26 17:35 JST\n"
+            "1. 実装差分\n2. 検証コマンド"
+        )
+        with patch("core.paths.get_animas_dir", return_value=animas_dir):
+            msg = Messenger(shared, "alice").send("bob", content, intent="question")
+
+        from core.memory.task_queue import TaskQueueManager
+
+        tasks = TaskQueueManager(bob_dir).list_tasks()
+        assert len(tasks) == 1
+        assert tasks[0].assignee == "bob"
+        assert tasks[0].deadline == "2026-05-26T17:35:00+09:00"
+        assert tasks[0].meta["source_message_id"] == msg.id
+        assert msg.meta["autocreated_task_id"] == tasks[0].task_id
+
+        pending_path = bob_dir / "state" / "pending" / f"{tasks[0].task_id}.json"
+        assert pending_path.exists()
+        pending = json.loads(pending_path.read_text(encoding="utf-8"))
+        assert pending["task_id"] == tasks[0].task_id
+        assert pending["submitted_by"] == "alice"
+        assert pending["source"] == "message_request_capture"
+
+        inbox_data = json.loads((shared / "inbox" / "bob" / f"{msg.id}.json").read_text(encoding="utf-8"))
+        assert inbox_data["meta"]["autocreated_task_id"] == tasks[0].task_id
+
+    def test_report_internal_dm_does_not_create_recipient_task(self, tmp_path: Path):
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        animas_dir = tmp_path / "animas"
+        (animas_dir / "alice").mkdir(parents=True)
+        bob_dir = animas_dir / "bob"
+        bob_dir.mkdir(parents=True)
+
+        with patch("core.paths.get_animas_dir", return_value=animas_dir):
+            Messenger(shared, "alice").send("bob", "対応完了しました。", intent="report")
+
+        assert not (bob_dir / "state" / "task_queue.jsonl").exists()
+        assert not (bob_dir / "state" / "pending").exists()
+
 
 # ── reply ─────────────────────────────────────────────────
 
