@@ -40,6 +40,45 @@ _MAX_INSTRUCTION_CHARS = 10_000
 _STALE_TASK_THRESHOLD_SEC = 1800
 # Relative deadline pattern: digits + unit (m=minutes, h=hours, d=days)
 _RELATIVE_DEADLINE_RE = re.compile(r"^(\d+)([mhd])$")
+_HEARTBEAT_OBSERVATION_PREFIX_RE = re.compile(r"^\s*(?:\d{1,2}:\d{2}\s*(?:jst)?\s*)?(?:hb|heartbeat)\s*:", re.I)
+_TIMED_OBSERVATION_PREFIX_RE = re.compile(r"^\s*\d{1,2}:\d{2}\s*jst\b", re.I)
+_OBSERVATION_LOG_MARKERS = (
+    "inbox",
+    "未読",
+    "governor",
+    "pending",
+    "background",
+    "通知",
+    "直近活動",
+    "新規未着",
+    "重複通知",
+    "検収待機",
+    "待機",
+    "件",
+)
+
+
+def _is_observation_log_summary(summary: str | None) -> bool:
+    """Return True when a TaskBoard summary is a heartbeat-style observation log."""
+    if not summary:
+        return False
+    text = summary.strip()
+    lowered = text.lower()
+    if _HEARTBEAT_OBSERVATION_PREFIX_RE.search(text):
+        return True
+    if ("heartbeat" in lowered or " hb:" in lowered) and any(marker in lowered for marker in _OBSERVATION_LOG_MARKERS):
+        return True
+    if _TIMED_OBSERVATION_PREFIX_RE.search(text) and any(marker in lowered for marker in _OBSERVATION_LOG_MARKERS):
+        return True
+    return False
+
+
+def _reject_observation_log_summary(summary: str) -> None:
+    if _is_observation_log_summary(summary):
+        raise ValueError(
+            "Task summary must describe actionable work, not a heartbeat observation log. "
+            "Put observations in context, task_results, or activity_log."
+        )
 
 
 def _parse_deadline(value: str) -> str:
@@ -200,6 +239,7 @@ class TaskQueueManager:
             raise ValueError("deadline is required when provided. Use relative format ('30m', '2h', '1d') or ISO8601.")
         else:
             parsed_deadline = None
+        _reject_observation_log_summary(summary)
         if len(original_instruction) > _MAX_INSTRUCTION_CHARS:
             original_instruction = original_instruction[:_MAX_INSTRUCTION_CHARS]
             logger.warning("original_instruction truncated to %d chars", _MAX_INSTRUCTION_CHARS)
@@ -247,6 +287,7 @@ class TaskQueueManager:
         """
         if not deadline:
             raise ValueError("deadline is required")
+        _reject_observation_log_summary(summary)
         parsed_deadline = _parse_deadline(deadline)
         if len(original_instruction) > _MAX_INSTRUCTION_CHARS:
             original_instruction = original_instruction[:_MAX_INSTRUCTION_CHARS]
@@ -296,6 +337,11 @@ class TaskQueueManager:
             logger.warning("Task not found: %s", task_id)
             return None
 
+        clean_summary = summary
+        if _is_observation_log_summary(summary):
+            clean_summary = None
+            logger.warning("Ignoring heartbeat observation log summary for task %s", task_id)
+
         now = now_iso()
         update: dict[str, Any] = {
             "task_id": task_id,
@@ -303,18 +349,18 @@ class TaskQueueManager:
             "updated_at": now,
             "_event": "update",
         }
-        if summary is not None:
-            update["summary"] = summary
+        if clean_summary is not None:
+            update["summary"] = clean_summary
         self._append(update)
 
         if status == "cancelled":
-            self._cancel_delegated_child(task, summary=summary)
+            self._cancel_delegated_child(task, summary=clean_summary)
 
         # Return reconstructed entry
         task.status = status
         task.updated_at = now
-        if summary is not None:
-            task.summary = summary
+        if clean_summary is not None:
+            task.summary = clean_summary
         logger.info("Task updated: id=%s status=%s", task_id, status)
         return task
 
@@ -363,6 +409,11 @@ class TaskQueueManager:
             logger.warning("Task not found: %s", task_id)
             return None
 
+        clean_summary = summary
+        if _is_observation_log_summary(summary):
+            clean_summary = None
+            logger.warning("Ignoring heartbeat observation log summary for task metadata update %s", task_id)
+
         now = now_iso()
         merged_meta = dict(task.meta or {})
         merged_meta.update(meta_patch)
@@ -372,14 +423,14 @@ class TaskQueueManager:
             "updated_at": now,
             "_event": "update",
         }
-        if summary is not None:
-            update["summary"] = summary
+        if clean_summary is not None:
+            update["summary"] = clean_summary
         self._append(update)
 
         task.meta = merged_meta
         task.updated_at = now
-        if summary is not None:
-            task.summary = summary
+        if clean_summary is not None:
+            task.summary = clean_summary
         logger.info("Task metadata updated: id=%s keys=%s", task_id, sorted(meta_patch))
         return task
 

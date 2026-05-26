@@ -76,6 +76,54 @@ def test_update_status_failed_is_valid(tmp_path: Path) -> None:
     assert result.task_id == entry.task_id
 
 
+def test_add_task_rejects_heartbeat_observation_summary(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True, exist_ok=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    with pytest.raises(ValueError, match="heartbeat observation log"):
+        tqm.add_task(
+            source="anima",
+            original_instruction="Record the observation elsewhere",
+            assignee="sakura",
+            summary=(
+                "10:32 JST HB: Sakura Inbox未読1件は09:22 Hikaru完了通知のみ。"
+                "Governor未読0、pending/background通知0。10:40までは検収待機。"
+            ),
+            deadline="1h",
+        )
+
+
+def test_update_status_ignores_heartbeat_observation_summary(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True, exist_ok=True)
+    tqm = TaskQueueManager(anima_dir)
+    entry = tqm.add_task(
+        source="anima",
+        original_instruction="Review Hikaru evidence",
+        assignee="sakura",
+        summary="Hikaru正式証跡を検収する",
+        deadline="1h",
+    )
+
+    result = tqm.update_status(
+        entry.task_id,
+        "blocked",
+        summary=(
+            "10:32 JST HB: Sakura Inbox未読1件は09:22 Hikaru完了通知のみ。"
+            "Governor未読0、pending/background通知0。10:40までは検収待機。"
+        ),
+    )
+
+    assert result is not None
+    assert result.status == "blocked"
+    assert result.summary == "Hikaru正式証跡を検収する"
+    reloaded = TaskQueueManager(anima_dir).get_task_by_id(entry.task_id)
+    assert reloaded is not None
+    assert reloaded.status == "blocked"
+    assert reloaded.summary == "Hikaru正式証跡を検収する"
+
+
 def test_update_meta_is_durable_and_preserves_status(tmp_path: Path) -> None:
     anima_dir = tmp_path / "anima"
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
