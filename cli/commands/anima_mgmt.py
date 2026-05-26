@@ -160,7 +160,8 @@ def _print_anima_status(name: str, status: dict) -> None:
     from core.paths import get_animas_dir
 
     print(f"\n{name}:")
-    print(f"  State: {status.get('state', 'unknown')}")
+    state = status.get("state") or status.get("status", "unknown")
+    print(f"  State: {state}")
 
     model, mode = _read_model_from_status_json(get_animas_dir() / name)
     if model:

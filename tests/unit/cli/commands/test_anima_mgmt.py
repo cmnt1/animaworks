@@ -13,6 +13,34 @@ from unittest.mock import patch
 import pytest
 
 
+class TestPrintAnimaStatus:
+    """Tests for formatted anima status output."""
+
+    @patch("core.paths.get_animas_dir")
+    def test_uses_status_as_state_fallback(self, mock_animas_dir, tmp_path, capsys):
+        from cli.commands.anima_mgmt import _print_anima_status
+
+        animas_dir = tmp_path / "animas"
+        anima_dir = animas_dir / "yuri"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text(
+            json.dumps(
+                {
+                    "model": "nanogpt/qwen3-coder-30b-a3b-instruct",
+                    "execution_mode": "A",
+                }
+            ),
+            encoding="utf-8",
+        )
+        mock_animas_dir.return_value = animas_dir
+
+        _print_anima_status("yuri", {"status": "running", "pid": 123})
+
+        captured = capsys.readouterr()
+        assert "State: running" in captured.out
+        assert "Status: running" in captured.out
+
+
 class TestCmdAnimaDelete:
     """Tests for cmd_anima_delete."""
 
