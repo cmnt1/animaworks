@@ -114,6 +114,20 @@ class TestClassifyTaskResult:
         assert status == "failed"
         assert summary.startswith("FAILED: Failed to authenticate.")
 
+    def test_synthesized_tool_errors_map_to_failed(self):
+        status, summary = _classify_task_result(
+            "(completed 27 tool call(s): Read, Bash, Grep...; errors=11)"
+        )
+        assert status == "failed"
+        assert summary == "FAILED: Task produced no final response and reported 11 tool error(s)"
+
+    def test_synthesized_tool_summary_without_errors_stays_done(self):
+        status, summary = _classify_task_result(
+            "(completed 3 tool call(s): Read, Bash, Grep)"
+        )
+        assert status == "done"
+        assert summary == "(completed 3 tool call(s): Read, Bash, Grep)"
+
 
 # ── Bug B: error chunk detection ──────────────────────────
 

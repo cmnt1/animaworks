@@ -69,6 +69,24 @@ def _detect_task_auth_failure(result: str) -> str | None:
     return text[:200]
 
 
+def _detect_synthesized_tool_failure(result: str) -> str | None:
+    """Return a failure summary for SDK fallback text with tool errors only."""
+    text = (result or "").strip()
+    if not text.startswith("(completed ") or "tool call(s)" not in text:
+        return None
+    marker = "; errors="
+    if marker not in text:
+        return None
+    try:
+        errors_part = text.split(marker, 1)[1].split(")", 1)[0].strip()
+        error_count = int(errors_part)
+    except (ValueError, IndexError):
+        return "Task produced no final response and reported tool errors"
+    if error_count <= 0:
+        return None
+    return f"Task produced no final response and reported {error_count} tool error(s)"
+
+
 def _classify_task_result(result: str) -> tuple[str, str]:
     """Map _run_llm_task return value to (queue_status, summary).
 
@@ -83,6 +101,9 @@ def _classify_task_result(result: str) -> tuple[str, str]:
     auth_failure = _detect_task_auth_failure(result)
     if auth_failure:
         return "failed", f"FAILED: {auth_failure}"
+    synthesized_failure = _detect_synthesized_tool_failure(result)
+    if synthesized_failure:
+        return "failed", f"FAILED: {synthesized_failure}"
     return "done", (result or "")[:200]
 
 
