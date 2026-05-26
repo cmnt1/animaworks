@@ -51,10 +51,12 @@ class StreamDisconnectedError(ExecutionError):
         *,
         partial_text: str = "",
         immediate_retry: bool = False,
+        retry_after_s: float | None = None,
     ) -> None:
         super().__init__(message)
         self.partial_text = partial_text
         self.immediate_retry = immediate_retry
+        self.retry_after_s = retry_after_s
 
 
 # ── Tool ─────────────────────────────────────────────────────

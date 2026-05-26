@@ -35,6 +35,7 @@ logger = logging.getLogger("animaworks.agent")
 
 
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+_STREAM_RETRY_AFTER_BUFFER_S = 1.0
 
 
 def _update_tracker_from_prompt_estimate(
@@ -1115,13 +1116,22 @@ class CycleMixin:
 
                 retry_count += 1
                 skip_delay = getattr(e, "immediate_retry", False)
-                actual_delay = 0.5 if skip_delay else retry_delay
+                retry_after_s = getattr(e, "retry_after_s", None)
+                if retry_after_s is not None:
+                    actual_delay = max(retry_delay, float(retry_after_s) + _STREAM_RETRY_AFTER_BUFFER_S)
+                    retry_reason = f" (retry-after: {float(retry_after_s):.1f}s)"
+                elif skip_delay:
+                    actual_delay = 0.5
+                    retry_reason = " (immediate: buffer overflow)"
+                else:
+                    actual_delay = retry_delay
+                    retry_reason = ""
                 logger.warning(
                     "Stream disconnected, retrying %d/%d after %.1fs%s",
                     retry_count,
                     max_retries,
                     actual_delay,
-                    " (immediate: buffer overflow)" if skip_delay else "",
+                    retry_reason,
                 )
                 # リトライ1回目は必ずfresh session（壊れたセッションIDを持ち越さない）
                 if retry_count == 1:
@@ -1147,6 +1157,8 @@ class CycleMixin:
                     "type": "retry_start",
                     "retry": retry_count,
                     "max_retries": max_retries,
+                    "delay_s": actual_delay,
+                    "retry_after_s": retry_after_s,
                 }
 
                 # Load checkpoint and build retry prompt

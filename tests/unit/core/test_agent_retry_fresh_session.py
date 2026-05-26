@@ -202,6 +202,61 @@ class TestRetryFreshSession:
         assert retry_events[0]["retry"] == 1
 
     @pytest.mark.asyncio
+    async def test_retry_uses_provider_retry_after_delay(self, tmp_path: Path) -> None:
+        """Provider-advised retry_after_s overrides the fixed retry delay."""
+        agent = _make_agent(tmp_path)
+
+        call_count = [0]
+
+        async def _executor_stream(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise StreamDisconnectedError("rate limited", retry_after_s=52.0)
+            yield {
+                "type": "done",
+                "full_text": "retry ok",
+                "result_message": None,
+                "replied_to_from_transcript": set(),
+                "tool_call_records": [],
+                "force_chain": False,
+            }
+
+        agent._executor.execute_streaming = _executor_stream
+        agent._executor.supports_streaming = True
+
+        with (
+            patch("core._agent_cycle.build_system_prompt", return_value=_build_result_mock()),
+            patch("core._agent_cycle.inject_shortterm", side_effect=lambda sp, _stm: sp),
+            patch("core.agent.AgentCore._resolve_execution_mode", return_value="s"),
+            patch("core.agent.AgentCore._preflight_size_check") as mock_preflight,
+            patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,
+            patch("core._agent_cycle._save_prompt_log"),
+            patch("core.execution._sdk_session._clear_session_id"),
+            patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
+            patch("core.agent.AgentCore._compute_overflow_files", return_value=[]),
+            patch("core._agent_cycle.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
+            mock_retry_cfg.return_value = {
+                "checkpoint_enabled": False,
+                "retry_max": 2,
+                "retry_delay_s": 5.0,
+            }
+            mock_priming.return_value = ("", "")
+
+            events = []
+            async for event in agent.run_cycle_streaming(
+                "test prompt",
+                trigger="chat",
+            ):
+                events.append(event)
+
+        mock_sleep.assert_awaited_once_with(53.0)
+        retry_events = [e for e in events if e.get("type") == "retry_start"]
+        assert retry_events[0]["delay_s"] == 53.0
+        assert retry_events[0]["retry_after_s"] == 52.0
+
+    @pytest.mark.asyncio
     async def test_no_clear_session_id_on_second_retry(self, tmp_path: Path) -> None:
         """retry_count == 2 does NOT call _clear_session_id again."""
         agent = _make_agent(tmp_path)

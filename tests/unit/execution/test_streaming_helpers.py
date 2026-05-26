@@ -380,6 +380,20 @@ class TestStreamErrorBoundaryWrapsGenericError:
         # Original exception is chained
         assert isinstance(err.__cause__, RuntimeError)
 
+    @pytest.mark.asyncio
+    async def test_extracts_provider_retry_after(self) -> None:
+        parts: list[str] = []
+
+        with pytest.raises(StreamDisconnectedError) as exc_info:
+            async with stream_error_boundary(parts, executor_name="A"):
+                raise RuntimeError(
+                    "Antigravity streaming HTTP 429: "
+                    '{"error":{"message":"You have exhausted your capacity on this model. '
+                    'Your quota will reset after 52s.","status":"RESOURCE_EXHAUSTED"}}'
+                )
+
+        assert exc_info.value.retry_after_s == 52.0
+
 
 class TestStreamErrorBoundaryPassesStreamDisconnected:
     """An existing StreamDisconnectedError is re-raised without wrapping."""

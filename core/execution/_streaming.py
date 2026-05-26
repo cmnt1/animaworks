@@ -27,6 +27,46 @@ from core.execution.base import StreamDisconnectedError
 logger = logging.getLogger("animaworks.execution._streaming")
 
 
+_RETRY_AFTER_PATTERNS = (
+    re.compile(
+        r"quota\s+will\s+reset\s+after\s+"
+        r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?)?",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"quota\s+resets?\s+(?:in|after)\s+"
+        r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?)?",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"retry[-\s]*after\s*:?\s*"
+        r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?)?",
+        re.IGNORECASE,
+    ),
+)
+
+
+def extract_retry_after_seconds(message: str) -> float | None:
+    """Return provider-advised retry delay in seconds from an error message."""
+    if not message:
+        return None
+    for pattern in _RETRY_AFTER_PATTERNS:
+        match = pattern.search(message)
+        if not match:
+            continue
+        try:
+            value = float(match.group("value"))
+        except (TypeError, ValueError):
+            continue
+        unit = (match.group("unit") or "s").lower()
+        if unit.startswith("ms") or unit.startswith("millisecond"):
+            value /= 1000.0
+        elif unit.startswith("m") and not unit.startswith("ms"):
+            value *= 60.0
+        return max(0.0, value)
+    return None
+
+
 # ── LiteLLM tool-call chunk accumulation ─────────────────────
 
 
@@ -297,7 +337,9 @@ async def stream_error_boundary(
     except Exception as e:
         partial = "\n".join(partial_text_parts)
         logger.exception("%s streaming error", executor_name)
+        message = f"{executor_name} stream error: {e}"
         raise StreamDisconnectedError(
-            f"{executor_name} stream error: {e}",
+            message,
             partial_text=partial,
+            retry_after_s=extract_retry_after_seconds(message),
         ) from e

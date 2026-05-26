@@ -8,14 +8,30 @@ from __future__ import annotations
 import pytest
 
 from core.exceptions import (
+    AnimaNotFoundError,
+    AnimaNotRunningError,
     AnimaWorksError,
-    ExecutionError, LLMAPIError, LLMTimeoutError, StreamDisconnectedError,
-    ToolError, ToolConfigError, ToolExecutionError, ToolNotFoundError,
-    MemoryIOError, MemoryReadError, MemoryWriteError, MemoryCorruptedError,
+    ConfigError,
+    ConfigNotFoundError,
+    ConfigValidationError,
+    DeliveryError,
+    ExecutionError,
+    IPCConnectionError,
+    LLMAPIError,
+    LLMTimeoutError,
+    MemoryCorruptedError,
+    MemoryIOError,
+    MemoryReadError,
+    MemoryWriteError,
+    MessagingError,
+    ProcessError,
+    RecipientNotFoundError,
+    StreamDisconnectedError,
     TaskPersistenceError,
-    ProcessError, AnimaNotFoundError, AnimaNotRunningError, IPCConnectionError,
-    ConfigError, ConfigNotFoundError, ConfigValidationError,
-    MessagingError, RecipientNotFoundError, DeliveryError,
+    ToolConfigError,
+    ToolError,
+    ToolExecutionError,
+    ToolNotFoundError,
 )
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -155,10 +171,15 @@ class TestStreamDisconnectedPartialText:
     def test_default_partial_text(self) -> None:
         exc = StreamDisconnectedError("boom")
         assert exc.partial_text == ""
+        assert exc.retry_after_s is None
 
     def test_custom_partial_text(self) -> None:
         exc = StreamDisconnectedError("boom", partial_text="hello")
         assert exc.partial_text == "hello"
+
+    def test_custom_retry_after(self) -> None:
+        exc = StreamDisconnectedError("boom", retry_after_s=52.0)
+        assert exc.retry_after_s == 52.0
 
     def test_str_returns_message(self) -> None:
         exc = StreamDisconnectedError("boom", partial_text="hello")
