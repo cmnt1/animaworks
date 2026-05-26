@@ -164,7 +164,9 @@ def _project_queue_task(
         and column in {BoardColumn.TODO, BoardColumn.RUNNING}
         and _is_stale_queue_task(task)
     ):
-        column = BoardColumn.BLOCKED
+        # Stale active work needs triage, but it is not the same thing as a
+        # queue task explicitly marked blocked.
+        column = BoardColumn.REVIEW
 
     needs_human, needs_human_reason = compute_needs_human(
         assignee=task.assignee,

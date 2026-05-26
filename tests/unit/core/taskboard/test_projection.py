@@ -64,6 +64,39 @@ def test_projection_status_to_column_mapping(tmp_path: Path) -> None:
     assert by_status["failed"].visibility == AttentionVisibility.ACTIVE
 
 
+def test_stale_active_tasks_go_to_review_without_mutating_queue_status(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    task = manager.add_task(
+        source="human",
+        original_instruction="keep queue status",
+        assignee="sakura",
+        summary="keep queue status",
+        task_id="task-1",
+    )
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    projected = project_anima(manager.anima_dir, store)
+
+    assert projected[0].queue_status == "pending"
+    assert projected[0].column == BoardColumn.TODO
+
+    manager.update_status(task.task_id, "pending")
+    # Force the task past the TaskBoard stale threshold without changing its
+    # durable queue status.
+    manager.queue_path.write_text(
+        manager.queue_path.read_text(encoding="utf-8").replace(
+            '"updated_at": "' + manager.get_task_by_id(task.task_id).updated_at + '"',
+            '"updated_at": "2000-01-01T00:00:00+09:00"',
+        ),
+        encoding="utf-8",
+    )
+
+    projected = project_anima(manager.anima_dir, store)
+
+    assert projected[0].queue_status == "pending"
+    assert projected[0].column == BoardColumn.REVIEW
+    assert manager.get_task_by_id(task.task_id).status == "pending"
+
+
 def test_metadata_column_overrides_board_only_without_mutating_queue_status(tmp_path: Path) -> None:
     manager = _queue(tmp_path, "sakura")
     task = manager.add_task(
