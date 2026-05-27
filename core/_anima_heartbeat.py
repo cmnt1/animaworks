@@ -15,6 +15,7 @@ import logging
 import math
 import re
 import time
+import uuid
 from typing import Any
 
 from core.i18n import t
@@ -355,6 +356,56 @@ class HeartbeatMixin:
         except Exception:
             return 0
 
+    def _build_preobserved_heartbeat_snapshot_part(self) -> str:
+        """Build an authoritative read-only Observe snapshot before LLM execution.
+
+        Automatic heartbeat sessions must not depend on the model noticing or
+        successfully calling the snapshot tool.  The scheduler process can
+        compute the same fixed-scope snapshot directly and hand it to the
+        model as current evidence.
+        """
+        try:
+            from core.tooling.heartbeat_snapshot import build_heartbeat_observe_snapshot
+
+            snapshot = build_heartbeat_observe_snapshot(self.anima_dir, recent_minutes=60, max_items=5)
+            snapshot_json = json.dumps(snapshot, ensure_ascii=False, indent=2)
+            tool_use_id = f"preobserve-{uuid.uuid4().hex[:12]}"
+
+            try:
+                self._activity.log(
+                    "tool_use",
+                    tool="heartbeat_observe_snapshot",
+                    summary='{"source":"scheduler_preobserve","recent_minutes":60,"max_items":5}',
+                    meta={"tool_use_id": tool_use_id, "source": "scheduler_preobserve"},
+                    safe=True,
+                )
+                self._activity.log(
+                    "tool_result",
+                    tool="heartbeat_observe_snapshot",
+                    content=snapshot_json,
+                    summary=(
+                        '<tool_result tool="heartbeat_observe_snapshot" '
+                        'source="scheduler_preobserve" status="ok">'
+                    ),
+                    meta={"tool_use_id": tool_use_id, "is_error": False, "source": "scheduler_preobserve"},
+                    safe=True,
+                )
+            except Exception:
+                logger.debug("[%s] Failed to log pre-observed heartbeat snapshot", self.name, exc_info=True)
+
+            return (
+                "## Current Pre-Observed Heartbeat Snapshot\n\n"
+                "The scheduler already collected this read-only `heartbeat_observe_snapshot` before the LLM turn. "
+                "Use it as the authoritative current Observe evidence. Do not infer current tool unavailability "
+                "from older heartbeat history or reflections when this section is present.\n\n"
+                "```json\n"
+                f"{snapshot_json}\n"
+                "```"
+            )
+        except Exception:
+            logger.warning("[%s] Failed to build pre-observed heartbeat snapshot", self.name, exc_info=True)
+            return ""
+
     def _enforce_state_size_limit(self) -> None:
         """Hard-trim current_state.md if it exceeds the configured threshold.
 
@@ -413,6 +464,10 @@ class HeartbeatMixin:
                 )
 
         parts.extend(self._build_background_context_parts())
+
+        preobserved_snapshot = self._build_preobserved_heartbeat_snapshot_part()
+        if preobserved_snapshot:
+            parts.append(preobserved_snapshot)
 
         return parts
 

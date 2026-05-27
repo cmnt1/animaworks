@@ -161,6 +161,17 @@ def _escape_toml_string(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _format_toml_override_value(value: Any) -> str:
+    """Format a Python scalar/list as a TOML value for Codex ``-c``."""
+    if isinstance(value, str):
+        return f'"{_escape_toml_string(value)}"'
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return "[" + ", ".join(_format_toml_override_value(item) for item in value) + "]"
+    return str(value)
+
+
 def _default_home_dir() -> str:
     """Return a stable HOME value for Codex child processes across platforms."""
     return default_home_dir()
@@ -1155,18 +1166,43 @@ class CodexSDKExecutor(BaseExecutor):
             logger.debug("Failed to parse config.toml for -c overrides", exc_info=True)
             return []
 
-        # Flatten top-level scalar keys into -c flags
-        _SKIP_KEYS = {"mcp_servers"}  # MCP config uses env-based setup
+        # Flatten top-level scalar keys into -c flags.
         for key, value in data.items():
-            if key in _SKIP_KEYS or isinstance(value, dict):
+            if isinstance(value, dict):
                 continue
-            # TOML values need quoting for strings
-            if isinstance(value, str):
-                flags.extend(["-c", f'{key}="{value}"'])
-            elif isinstance(value, bool):
-                flags.extend(["-c", f"{key}={'true' if value else 'false'}"])
-            else:
-                flags.extend(["-c", f"{key}={value}"])
+            flags.extend(["-c", f"{key}={_format_toml_override_value(value)}"])
+
+        # Codex CLI accepts dotted-path config overrides.  Include the
+        # AnimaWorks MCP server when CODEX_HOME must be omitted for keychain
+        # auth; otherwise direct `codex exec` background sessions can start
+        # without mcp__aw__ tools.
+        mcp_servers = data.get("mcp_servers")
+        if isinstance(mcp_servers, dict):
+            for server_name, server_cfg in mcp_servers.items():
+                if not isinstance(server_name, str) or not isinstance(server_cfg, dict):
+                    continue
+                for key, value in server_cfg.items():
+                    if key == "env" and isinstance(value, dict):
+                        for env_key, env_value in value.items():
+                            if isinstance(env_key, str) and not isinstance(env_value, dict):
+                                flags.extend(
+                                    [
+                                        "-c",
+                                        (
+                                            f"mcp_servers.{server_name}.env.{env_key}="
+                                            f"{_format_toml_override_value(env_value)}"
+                                        ),
+                                    ]
+                                )
+                        continue
+                    if isinstance(value, dict):
+                        continue
+                    flags.extend(
+                        [
+                            "-c",
+                            f"mcp_servers.{server_name}.{key}={_format_toml_override_value(value)}",
+                        ]
+                    )
 
         return flags
 

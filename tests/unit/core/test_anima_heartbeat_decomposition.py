@@ -291,6 +291,70 @@ class TestBuildHeartbeatPrompt:
         finally:
             _stop_patches(mocks)
 
+    async def test_preobserved_snapshot_appended_after_background_context(self, data_dir, make_anima):
+        """Heartbeat prompt includes a scheduler-collected snapshot as current evidence."""
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+        dp, mocks = _create_anima(anima_dir, shared_dir)
+        try:
+            dp._load_heartbeat_history = MagicMock(return_value="- 10:00: old tool unavailable report")
+            dp.drain_background_notifications = MagicMock(return_value=[])
+
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+                patch("core.tooling.heartbeat_snapshot.build_heartbeat_observe_snapshot") as MockSnapshot,
+            ):
+                MockConv.return_value.load.return_value = MagicMock(turns=[])
+                MockCfg.return_value.animas = {}
+                MockSnapshot.return_value = {
+                    "status": "ok",
+                    "tool": "heartbeat_observe_snapshot",
+                    "observed_at": "2026-05-28T06:50:00+09:00",
+                    "anima": "alice",
+                    "inbox": {"unread_count": 0},
+                    "task_queue": {"active_count": 0},
+                }
+
+                parts = await dp._build_heartbeat_prompt()
+
+            history_idx = next(i for i, part in enumerate(parts) if "heartbeat_history" in part)
+            snapshot_idx = next(i for i, part in enumerate(parts) if "Current Pre-Observed Heartbeat Snapshot" in part)
+            snapshot_part = parts[snapshot_idx]
+            assert snapshot_idx > history_idx
+            assert '"tool": "heartbeat_observe_snapshot"' in snapshot_part
+            assert '"unread_count": 0' in snapshot_part
+            assert "Do not infer current tool unavailability" in snapshot_part
+        finally:
+            _stop_patches(mocks)
+
+    async def test_preobserved_snapshot_failure_does_not_abort_prompt(self, data_dir, make_anima):
+        """Snapshot pre-observe failure falls back to the normal heartbeat prompt."""
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+        dp, mocks = _create_anima(anima_dir, shared_dir)
+        try:
+            dp._load_heartbeat_history = MagicMock(return_value="")
+            dp.drain_background_notifications = MagicMock(return_value=[])
+
+            with (
+                patch("core._anima_heartbeat.ConversationMemory") as MockConv,
+                patch("core.config.models.load_config") as MockCfg,
+                patch(
+                    "core.tooling.heartbeat_snapshot.build_heartbeat_observe_snapshot",
+                    side_effect=RuntimeError("snapshot down"),
+                ),
+            ):
+                MockConv.return_value.load.return_value = MagicMock(turns=[])
+                MockCfg.return_value.animas = {}
+
+                parts = await dp._build_heartbeat_prompt()
+
+            assert "<heartbeat>" in parts[0]
+            assert not any("Current Pre-Observed Heartbeat Snapshot" in part for part in parts)
+        finally:
+            _stop_patches(mocks)
+
     async def test_heartbeat_history_absent(self, data_dir, make_anima):
         """Empty history string -- no heartbeat_history section."""
         anima_dir = make_anima("alice")

@@ -9,6 +9,7 @@ All tests use mocks — no Codex CLI binary or API key required.
 """
 
 import asyncio
+import json
 import os
 import tomllib
 from pathlib import Path
@@ -530,6 +531,20 @@ class TestConfigWriting:
         assert "[mcp_servers.aw]" in config_toml
         parsed = tomllib.loads(config_toml)
         assert parsed["mcp_servers"]["aw"]["default_tools_approval_mode"] == "approve"
+
+    def test_build_config_overrides_includes_mcp_server_when_using_default_home(self, executor, anima_dir):
+        """Direct codex exec fallback keeps AnimaWorks MCP tools with omitted CODEX_HOME."""
+        executor._write_codex_config("My prompt")
+        executor._use_default_codex_home = True
+
+        flags = executor._build_config_overrides()
+        pairs = list(zip(flags[0::2], flags[1::2], strict=True))
+        values = [value for flag, value in pairs if flag == "-c"]
+
+        assert "mcp_servers.aw.args=[\"-m\", \"core.mcp.server\"]" in values
+        assert "mcp_servers.aw.default_tools_approval_mode=\"approve\"" in values
+        assert any(value.startswith("mcp_servers.aw.command=") for value in values)
+        assert any(value.startswith("mcp_servers.aw.env.ANIMAWORKS_ANIMA_DIR=") for value in values)
 
     def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir):
         """Restricted file_roots produces workspace-write with writable_roots."""
