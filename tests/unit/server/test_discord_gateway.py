@@ -58,10 +58,11 @@ class TestDiscordGatewayManagerRouting:
         mock_cfg = MagicMock()
         mock_cfg.animas = {
             "sakura": MagicMock(aliases=["さくら"]),
+            "ria": MagicMock(aliases=["りあ", "リア"]),
             "kotoha": MagicMock(aliases=[]),
         }
         mock_cfg.external_messaging.discord.channel_members = {
-            "ch1": ["sakura", "kotoha"],
+            "ch1": ["sakura", "ria", "kotoha"],
             "ch2": ["kotoha"],
             "dm-sakura": ["sakura"],
             "ops-ch": ["sakura", "kotoha"],
@@ -203,6 +204,24 @@ class TestDiscordGatewayManagerRouting:
         discord_cfg = _mock_config.external_messaging.discord
         result = manager._detect_target_anima("今日はさくらに連絡", "ch1", discord_cfg)
         assert result == "sakura"
+
+    def test_short_japanese_alias_not_detected_inside_common_word(
+        self,
+        manager: DiscordGatewayManager,
+        _mock_config,
+    ):
+        discord_cfg = _mock_config.external_messaging.discord
+        result = manager._detect_target_anima("とりあえず安城市の1Kから作り始める", "ch1", discord_cfg)
+        assert result is None
+
+    def test_short_japanese_alias_detected_as_direct_address(
+        self,
+        manager: DiscordGatewayManager,
+        _mock_config,
+    ):
+        discord_cfg = _mock_config.external_messaging.discord
+        result = manager._detect_target_anima("今日はりあに連絡", "ch1", discord_cfg)
+        assert result == "ria"
 
     def test_detect_anima_single_member_channel(self, manager: DiscordGatewayManager, _mock_config):
         discord_cfg = _mock_config.external_messaging.discord

@@ -32,6 +32,44 @@ from core.tools._discord_markdown import clean_discord_markup
 logger = logging.getLogger("animaworks.discord_gateway")
 
 _BROADCAST_ONLY_BOARDS = {"ops"}
+_JA_NAME_CHARS_RE = re.compile(r"[ぁ-んァ-ン一-龯々ー]")
+_JA_NAME_SUFFIXES = (
+    "さん",
+    "ちゃん",
+    "くん",
+    "君",
+    "様",
+    "さま",
+    "殿",
+    "へ",
+    "に",
+    "と",
+    "宛",
+)
+
+
+def _is_japanese_name_char(ch: str) -> bool:
+    return bool(ch and _JA_NAME_CHARS_RE.fullmatch(ch))
+
+
+def _is_valid_anima_name_match(text: str, start: int, end: int, matched: str) -> bool:
+    """Avoid treating short Japanese aliases embedded in ordinary words as summons."""
+    if not matched or matched.isascii():
+        return True
+
+    before = text[start - 1] if start > 0 else ""
+    after = text[end:]
+    next_char = after[:1]
+
+    if before and (before.isascii() and (before.isalnum() or before == "_")):
+        return False
+    if next_char and (next_char.isascii() and (next_char.isalnum() or next_char == "_")):
+        return False
+
+    if _is_japanese_name_char(next_char):
+        return any(after.startswith(suffix) for suffix in _JA_NAME_SUFFIXES)
+
+    return True
 
 
 def _board_name_for_channel(channel_id: str, channel_name: str, discord_cfg: Any) -> str:
@@ -621,7 +659,10 @@ class DiscordGatewayManager:
         seen: set[str] = set()
         out: list[str] = []
         for m in self._anima_name_re.finditer(text):
-            canonical = self._resolve_canonical_name(m.group(1))
+            matched = m.group(1)
+            if not _is_valid_anima_name_match(text, m.start(1), m.end(1), matched):
+                continue
+            canonical = self._resolve_canonical_name(matched)
             if canonical and canonical not in seen:
                 seen.add(canonical)
                 out.append(canonical)
@@ -835,9 +876,7 @@ class DiscordGatewayManager:
 
         # Deliver to each target's inbox
         if target_animas:
-            has_mention = bot_mentioned or (
-                self._anima_name_re is not None and self._anima_name_re.search(cleaned_text) is not None
-            )
+            has_mention = bot_mentioned or bool(self._detect_all_target_animas(cleaned_text))
             annotation = _build_discord_annotation(
                 is_dm,
                 has_mention,
