@@ -44,6 +44,14 @@ _TASK_COMPLETION_NOTICE_RE = re.compile(
     r"\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f",
     re.DOTALL,
 )
+_STATUS_INQUIRY_RE = re.compile(
+    r"(?:へ)?確認です|ステータス|達成状況|進捗|対応状況|完了見込み|ブロッカー|max iterations",
+    re.IGNORECASE,
+)
+_STATUS_INQUIRY_REPLY_RE = re.compile(
+    r"(?:教えてください|知らせてください|共有してください)",
+    re.IGNORECASE,
+)
 
 
 def _is_task_completion_notice(content: str, meta: dict[str, Any]) -> bool:
@@ -51,6 +59,15 @@ def _is_task_completion_notice(content: str, meta: dict[str, Any]) -> bool:
     if meta.get("notification_type") in _NO_CAPTURE_NOTIFICATION_TYPES:
         return True
     return bool(_TASK_COMPLETION_NOTICE_RE.search(content))
+
+
+def _is_status_inquiry(content: str, intent: str) -> bool:
+    """Return True for supervisory status-check DMs, not executable work."""
+    if intent != "question":
+        return False
+    if not _STATUS_INQUIRY_RE.search(content):
+        return False
+    return bool(_STATUS_INQUIRY_REPLY_RE.search(content))
 
 
 def looks_like_task_request(*, content: str, intent: str = "", msg_type: str = "message", meta: dict[str, Any] | None = None) -> bool:
@@ -61,6 +78,8 @@ def looks_like_task_request(*, content: str, intent: str = "", msg_type: str = "
     if meta.get("task_id") or meta.get("autocreated_task_id"):
         return False
     if _is_task_completion_notice(content, meta):
+        return False
+    if _is_status_inquiry(content, intent):
         return False
     if intent == "delegation":
         return False

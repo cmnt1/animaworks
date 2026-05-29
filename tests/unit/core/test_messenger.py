@@ -190,6 +190,27 @@ class TestSend:
         inbox_data = json.loads((shared / "inbox" / "bob" / f"{msg.id}.json").read_text(encoding="utf-8"))
         assert inbox_data["meta"]["autocreated_task_id"] == tasks[0].task_id
 
+    def test_status_inquiry_question_does_not_create_recipient_task(self, tmp_path: Path):
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        animas_dir = tmp_path / "animas"
+        (animas_dir / "alice").mkdir(parents=True)
+        bob_dir = animas_dir / "bob"
+        bob_dir.mkdir(parents=True)
+
+        content = (
+            "bobへ確認です。以下2件のステータスを教えてください。\n\n"
+            "1) タスク `a078e4b69055` はin_progressのままです。現在の進捗・ブロッカー・完了見込みを教えてください。\n"
+            "2) 公開URLで画像が正常表示されているかの証跡が必要です。未完了であれば理由を教えてください。\n"
+            "期限は23:40 JSTです。"
+        )
+        with patch("core.paths.get_animas_dir", return_value=animas_dir):
+            msg = Messenger(shared, "alice").send("bob", content, intent="question")
+
+        assert not (bob_dir / "state" / "task_queue.jsonl").exists()
+        assert not (bob_dir / "state" / "pending").exists()
+        assert "autocreated_task_id" not in msg.meta
+
     def test_report_internal_dm_does_not_create_recipient_task(self, tmp_path: Path):
         shared = tmp_path / "shared"
         shared.mkdir()
