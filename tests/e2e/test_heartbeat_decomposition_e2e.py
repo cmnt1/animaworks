@@ -21,9 +21,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from core.time_utils import today_local
 
+from core.memory.streaming_journal import StreamingJournal
 from core.schemas import CycleResult
+from core.time_utils import today_local
 from core.tooling.handler import active_session_type
 
 pytestmark = pytest.mark.e2e
@@ -34,7 +35,7 @@ pytestmark = pytest.mark.e2e
 
 def _make_digital_anima(anima_dir: Path, shared_dir: Path):
     """Create a DigitalAnima with AgentCore, ConversationMemory, and load_prompt mocked."""
-    with patch("core.anima.AgentCore") as MockAgent, \
+    with patch("core.anima.AgentCore"), \
          patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
          patch("core._anima_heartbeat.load_prompt", return_value="prompt"):
         MockConv.return_value.load.return_value = MagicMock(turns=[])
@@ -157,7 +158,7 @@ class TestInboxProcessing:
 
         assert len(list(inbox_dir.glob("*.json"))) == 2
 
-        with patch("core.anima.AgentCore") as MockAgent, \
+        with patch("core.anima.AgentCore"), \
              patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
              patch("core._anima_heartbeat.load_prompt", return_value="prompt"):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
@@ -200,7 +201,7 @@ class TestInboxProcessing:
             msg.model_dump_json(indent=2), encoding="utf-8",
         )
 
-        with patch("core.anima.AgentCore") as MockAgent, \
+        with patch("core.anima.AgentCore"), \
              patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
              patch("core._anima_heartbeat.load_prompt", return_value="prompt"):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
@@ -310,8 +311,12 @@ class TestHeartbeatFailureWritesRecoveryNote:
         dp = _make_digital_anima(alice_dir, shared_dir)
         _attach_failing_stream(dp, RuntimeError("LLM timeout"))
 
-        with pytest.raises(RuntimeError, match="LLM timeout"):
-            await dp.run_heartbeat()
+        result = await dp.run_heartbeat()
+
+        assert result.trigger == "heartbeat"
+        assert result.action == "failed"
+        assert "RuntimeError" in result.summary
+        assert "LLM timeout" in result.summary
 
         # Verify recovery note was saved
         recovery_path = alice_dir / "state" / "recovery_note.md"
@@ -320,6 +325,7 @@ class TestHeartbeatFailureWritesRecoveryNote:
         content = recovery_path.read_text(encoding="utf-8")
         assert "RuntimeError" in content
         assert "LLM timeout" in content
+        assert not StreamingJournal.has_orphan(alice_dir, session_type="heartbeat")
 
     async def test_inbox_failure_crash_archives_messages(
         self, data_dir, make_anima,
@@ -339,7 +345,7 @@ class TestHeartbeatFailureWritesRecoveryNote:
 
         assert len(list(inbox_dir.glob("*.json"))) == 1
 
-        with patch("core.anima.AgentCore") as MockAgent, \
+        with patch("core.anima.AgentCore"), \
              patch("core._anima_heartbeat.ConversationMemory") as MockConv, \
              patch("core._anima_heartbeat.load_prompt", return_value="prompt"):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
@@ -380,13 +386,15 @@ class TestHeartbeatFailureWritesRecoveryNote:
         dp = _make_digital_anima(alice_dir, shared_dir)
         _attach_failing_stream(dp, RuntimeError("Agent crash"))
 
-        with pytest.raises(RuntimeError):
-            await dp.run_heartbeat()
+        result = await dp.run_heartbeat()
+
+        assert result.action == "failed"
 
         remaining = list(inbox_dir.glob("*.json"))
         assert len(remaining) == 1, (
             "Heartbeat failure should not touch inbox messages"
         )
+        assert not StreamingJournal.has_orphan(alice_dir, session_type="heartbeat")
 
 
 # ── Test 5: Recovery note injected on next run ────────────

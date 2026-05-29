@@ -739,9 +739,13 @@ class AnimaRunner:
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
 
-        await self.anima.run_heartbeat()
+        result = await self.anima.run_heartbeat()
 
-        return {"status": "completed"}
+        return {
+            "status": "failed" if result.action == "failed" else "completed",
+            "summary": result.summary,
+            "action": result.action,
+        }
 
     async def _handle_process_inbox(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle process_inbox IPC request."""

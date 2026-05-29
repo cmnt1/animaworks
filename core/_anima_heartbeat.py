@@ -750,6 +750,9 @@ class HeartbeatMixin:
             self.memory.archive_and_reset_state()
 
             return result
+        except Exception:
+            journal.discard()
+            raise
         finally:
             if original_config is not None:
                 agent.update_model_config(original_config)

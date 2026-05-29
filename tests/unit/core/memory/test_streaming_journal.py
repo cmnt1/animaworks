@@ -71,6 +71,22 @@ class TestNormalLifecycle:
         assert not journal_path.exists(), "Journal file should be deleted after finalize"
         assert StreamingJournal.has_orphan(anima_dir) is False
 
+    def test_discard_deletes_handled_failure_journal(
+        self,
+        anima_dir: Path,
+    ):
+        """discard() removes a journal when the exception was handled in-process."""
+        journal = StreamingJournal(anima_dir, session_type="heartbeat")
+        journal.open(trigger="heartbeat")
+        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+            journal.write_text("partial")
+
+        journal.discard()
+
+        journal_path = anima_dir / "shortterm" / "streaming_journal_heartbeat.jsonl"
+        assert not journal_path.exists(), "Handled failures should not look like crash orphans"
+        assert StreamingJournal.has_orphan(anima_dir, session_type="heartbeat") is False
+
 
 # ── Crash Recovery ──────────────────────────────────────────────────
 

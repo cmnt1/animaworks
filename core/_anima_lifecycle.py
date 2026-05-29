@@ -200,7 +200,11 @@ class LifecycleMixin:
                     except OSError:
                         pass
                     await self._handle_heartbeat_failure(exc, [], _unread)
-                    raise
+                    return CycleResult(
+                        trigger="heartbeat",
+                        action="failed",
+                        summary=f"[ERROR] {type(exc).__name__}: {str(exc)[:200]}",
+                    )
                 finally:
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""

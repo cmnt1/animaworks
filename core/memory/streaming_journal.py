@@ -206,6 +206,28 @@ class StreamingJournal:
             logger.warning("Failed to delete journal file: %s", self._journal_path)
         logger.debug("Streaming journal finalized and deleted")
 
+    def discard(self) -> None:
+        """Close and delete a journal for an exception handled in-process.
+
+        Crash recovery is for hard process loss.  When the caller catches the
+        exception and records its own failure event, keeping the journal would
+        produce a false crash-recovery report on the next startup.
+        """
+        if self._finalized:
+            return
+        if self._fd and self._buffer:
+            try:
+                self._flush_buffer()
+            except Exception:
+                logger.debug("Failed to flush buffer before discard", exc_info=True)
+        self._finalized = True
+        self._close_fd()
+        try:
+            self._journal_path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to discard journal file: %s", self._journal_path)
+        logger.debug("Streaming journal discarded")
+
     def close(self) -> None:
         """Close file handle without finalizing.
 
