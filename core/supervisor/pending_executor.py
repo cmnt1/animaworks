@@ -1337,6 +1337,10 @@ class PendingTaskExecutor:
                             to=reply_to,
                             content=notify_text,
                             origin_chain=[ORIGIN_ANIMA],
+                            meta={
+                                "notification_type": "task_completion",
+                                "completed_task_id": task_id,
+                            },
                         )
                         break
                     except Exception:

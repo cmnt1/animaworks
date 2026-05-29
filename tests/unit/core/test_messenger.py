@@ -208,6 +208,54 @@ class TestSend:
 # ── reply ─────────────────────────────────────────────────
 
 
+    def test_task_completion_notice_does_not_create_recipient_task(self, tmp_path: Path):
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        animas_dir = tmp_path / "animas"
+        (animas_dir / "alice").mkdir(parents=True)
+        bob_dir = animas_dir / "bob"
+        bob_dir.mkdir(parents=True)
+
+        content = (
+            "\u30bf\u30b9\u30af\u300c\u30bf\u30b9\u30af\u300cAFF-003 108498/108499"
+            "\u306e\u8a18\u4e8b\u5185\u753b\u50cf\u30a2\u30b5\u30a4\u30f3\u3092"
+            "\u5fa9\u65e7\u3057\u516c\u958b\u8a3c\u8de1\u307e\u3067\u63d0\u51fa\u3059\u308b\u300d"
+            "(ID: 705b0206f0a5) \u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002\u300d"
+            "(ID: 21d6a9eb89e7) \u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002\n\n"
+            "## Result\n"
+            "Please verify evidence by due 2026-05-29 22:00 JST. API Error 500 remains."
+        )
+        with patch("core.paths.get_animas_dir", return_value=animas_dir):
+            msg = Messenger(shared, "alice").send("bob", content)
+
+        assert not (bob_dir / "state" / "task_queue.jsonl").exists()
+        assert not (bob_dir / "state" / "pending").exists()
+        assert "autocreated_task_id" not in msg.meta
+
+    def test_task_completion_notification_meta_does_not_create_recipient_task(self, tmp_path: Path):
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        animas_dir = tmp_path / "animas"
+        (animas_dir / "alice").mkdir(parents=True)
+        bob_dir = animas_dir / "bob"
+        bob_dir.mkdir(parents=True)
+
+        content = "Please verify evidence by due 2026-05-29 22:00 JST and complete the follow-up."
+        with patch("core.paths.get_animas_dir", return_value=animas_dir):
+            msg = Messenger(shared, "alice").send(
+                "bob",
+                content,
+                meta={
+                    "notification_type": "task_completion",
+                    "completed_task_id": "abc123def456",
+                },
+            )
+
+        assert not (bob_dir / "state" / "task_queue.jsonl").exists()
+        assert not (bob_dir / "state" / "pending").exists()
+        assert msg.meta["notification_type"] == "task_completion"
+
+
 class TestReply:
     def test_reply_inherits_thread(self, shared_dir, messenger):
         original = Message(

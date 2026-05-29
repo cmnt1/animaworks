@@ -35,6 +35,22 @@ _ABS_DEADLINE_RE = re.compile(
     re.IGNORECASE,
 )
 _REL_DEADLINE_RE = re.compile(r"\b(?P<rel>\d+[mhd])\b", re.IGNORECASE)
+_NO_CAPTURE_NOTIFICATION_TYPES = {"task_completion", "task_complete_notify"}
+_TASK_COMPLETION_NOTICE_RE = re.compile(
+    r"^\s*"
+    r"(?:\[Thread context[^\]]*\].*?\[/Thread context\]\s*)?"
+    r"\u30bf\u30b9\u30af\u300c.*?\u300d\s*"
+    r"\(ID:\s*[A-Za-z0-9_-]{1,64}\)\s*"
+    r"\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f",
+    re.DOTALL,
+)
+
+
+def _is_task_completion_notice(content: str, meta: dict[str, Any]) -> bool:
+    """Return True for TaskExec completion chatter, including legacy bodies."""
+    if meta.get("notification_type") in _NO_CAPTURE_NOTIFICATION_TYPES:
+        return True
+    return bool(_TASK_COMPLETION_NOTICE_RE.search(content))
 
 
 def looks_like_task_request(*, content: str, intent: str = "", msg_type: str = "message", meta: dict[str, Any] | None = None) -> bool:
@@ -43,6 +59,8 @@ def looks_like_task_request(*, content: str, intent: str = "", msg_type: str = "
         return False
     meta = meta or {}
     if meta.get("task_id") or meta.get("autocreated_task_id"):
+        return False
+    if _is_task_completion_notice(content, meta):
         return False
     if intent == "delegation":
         return False
