@@ -1005,6 +1005,8 @@ class SchedulerManager:
         try:
             if task.type == "llm":
                 skill_kwargs = {"skills": task.skills} if task.skills else {}
+                if task.success_paths:
+                    skill_kwargs["success_paths"] = task.success_paths
                 result = await self._anima.run_cron_task(task.name, task.description, **skill_kwargs)
                 self._emit_event(
                     "anima.cron",
@@ -1021,6 +1023,7 @@ class SchedulerManager:
                     command=task.command,
                     tool=task.tool,
                     args=task.args,
+                    success_paths=task.success_paths or None,
                 )
                 self._emit_event(
                     "anima.cron",
@@ -1068,11 +1071,14 @@ class SchedulerManager:
                         task.name,
                         self._anima_name,
                     )
+                    followup_kwargs = {"skills": task.skills} if task.skills else {}
+                    if task.success_paths:
+                        followup_kwargs["success_paths"] = task.success_paths
                     await self._anima.run_cron_task(
                         task.name,
                         task.description or f"cron.mdの「{task.name}」の指示に従って処理してください。",
                         command_output=stdout,
-                        **({"skills": task.skills} if task.skills else {}),
+                        **followup_kwargs,
                     )
             else:
                 logger.warning("Unknown cron type '%s' for task '%s'", task.type, task.name)

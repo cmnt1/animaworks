@@ -94,3 +94,29 @@ class TestRunCronCommandZombieReap:
 
         mock_proc.kill.assert_not_called()
         assert result["exit_code"] == 0
+
+    @pytest.mark.asyncio
+    async def test_cron_command_fails_when_success_path_missing(self):
+        """A successful command is marked failed when required output is absent."""
+        stub = self._make_anima_stub()
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"ok", b""))
+
+        with (
+            patch("asyncio.create_subprocess_shell", return_value=mock_proc),
+            patch("core.tooling.handler.active_session_type") as mock_ast,
+        ):
+            mock_ast.reset = MagicMock()
+            from core._anima_lifecycle import LifecycleMixin
+
+            result = await LifecycleMixin.run_cron_command(
+                stub,
+                task_name="test-task",
+                command="echo hello",
+                success_paths=["Z:/definitely/missing/{YYYYMMDD}.md"],
+            )
+
+        assert result["exit_code"] == 1
+        assert "Cron success path check failed" in result["stderr"]

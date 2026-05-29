@@ -245,6 +245,8 @@ class SchedulerMixin:
             if task.type == "llm":
                 # LLM-type: invoke agent.run_cycle
                 skill_kwargs = {"skills": task.skills} if task.skills else {}
+                if task.success_paths:
+                    skill_kwargs["success_paths"] = task.success_paths
                 result = await anima.run_cron_task(task.name, task.description, **skill_kwargs)
                 broadcast_data = {
                     "type": "anima.cron",
@@ -262,6 +264,7 @@ class SchedulerMixin:
                     command=task.command,
                     tool=task.tool,
                     args=task.args,
+                    success_paths=task.success_paths or None,
                 )
                 broadcast_data = {
                     "type": "anima.cron",

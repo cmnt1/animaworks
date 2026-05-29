@@ -11,8 +11,10 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
 import asyncio
+import glob
 import logging
 import os
+import re
 import time
 from contextlib import nullcontext
 from typing import Any
@@ -25,6 +27,46 @@ from core.schemas import CycleResult
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.anima")
+
+
+class CronSuccessPathError(RuntimeError):
+    """Raised when cron postconditions are not satisfied."""
+
+
+def _expand_cron_success_path(pattern: str) -> str:
+    """Expand date placeholders and environment/user markers in a success path."""
+    today = now_local()
+
+    def replace_date(match: re.Match[str]) -> str:
+        return today.strftime(match.group(1))
+
+    expanded = pattern
+    expanded = expanded.replace("{YYYYMMDD}", today.strftime("%Y%m%d"))
+    expanded = expanded.replace("{YYYY-MM-DD}", today.strftime("%Y-%m-%d"))
+    expanded = expanded.replace("{YYMMDD}", today.strftime("%y%m%d"))
+    expanded = re.sub(r"\{date:([^}]+)\}", replace_date, expanded)
+    return os.path.expandvars(os.path.expanduser(expanded))
+
+
+def _missing_cron_success_paths(success_paths: list[str] | None) -> list[str]:
+    """Return expanded glob patterns that have no filesystem matches."""
+    missing: list[str] = []
+    for raw in success_paths or []:
+        pattern = _expand_cron_success_path(str(raw).strip())
+        if not pattern:
+            continue
+        if not glob.glob(pattern):
+            missing.append(pattern)
+    return missing
+
+
+def _assert_cron_success_paths(task_name: str, success_paths: list[str] | None) -> None:
+    missing = _missing_cron_success_paths(success_paths)
+    if missing:
+        missing_text = ", ".join(missing)
+        raise CronSuccessPathError(
+            f"Cron task '{task_name}' did not produce required success path(s): {missing_text}"
+        )
 
 
 def _agent_for_lane(owner: Any, lane: str):
@@ -668,6 +710,7 @@ class LifecycleMixin:
         description: str,
         command_output: str | None = None,
         skills: list[str] | None = None,
+        success_paths: list[str] | None = None,
     ) -> CycleResult:
         """Execute a cron LLM task with heartbeat-equivalent context.
 
@@ -721,6 +764,8 @@ class LifecycleMixin:
                                 agent.update_model_config(original_config)
                             active_session_type.reset(_session_token)
                     self._last_activity = now_local()
+
+                    _assert_cron_success_paths(task_name, success_paths)
 
                     # Record cron execution result
                     rejection_dicts = [
@@ -817,6 +862,7 @@ class LifecycleMixin:
         command: str | None = None,
         tool: str | None = None,
         args: dict[str, Any] | None = None,
+        success_paths: list[str] | None = None,
     ) -> dict[str, Any]:
         """Execute a command-type cron task (bash or internal tool).
 
@@ -971,6 +1017,16 @@ class LifecycleMixin:
                     self._cron_idle.set()
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
+
+            if exit_code == 0:
+                missing_paths = _missing_cron_success_paths(success_paths)
+                if missing_paths:
+                    stderr = (
+                        "Cron success path check failed: "
+                        + ", ".join(missing_paths)
+                        + ("\n" + stderr if stderr else "")
+                    )
+                    exit_code = 1
 
             duration_ms = (time.time_ns() // 1_000_000) - start_ms
 

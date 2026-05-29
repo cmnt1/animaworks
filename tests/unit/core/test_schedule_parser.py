@@ -104,6 +104,34 @@ tool: health_check
         assert len(tasks) == 1
         assert tasks[0].schedule == "*/5 * * * *"
 
+    def test_success_paths_block(self):
+        """success_paths YAML block is parsed as required output globs."""
+        content = """\
+## Report
+schedule: 0 6 * * *
+type: llm
+success_paths:
+  - E:\\OneDriveBiz\\Obsidian\\_products\\Property\\*anjo*{YYYYMMDD}*.md
+  - E:\\OneDriveBiz\\Tools\\Property\\anjo_1k_market_metrics_{YYYYMMDD}.json
+Create the report.
+"""
+        tasks = parse_cron_md(content)
+        assert tasks[0].success_paths == [
+            "E:\\OneDriveBiz\\Obsidian\\_products\\Property\\*anjo*{YYYYMMDD}*.md",
+            "E:\\OneDriveBiz\\Tools\\Property\\anjo_1k_market_metrics_{YYYYMMDD}.json",
+        ]
+
+    def test_success_path_single(self):
+        """success_path scalar is parsed as one required output glob."""
+        content = """\
+## Report
+schedule: 0 6 * * *
+success_path: "E:\\reports\\daily-{YYYY-MM-DD}.md"
+Create the report.
+"""
+        tasks = parse_cron_md(content)
+        assert tasks[0].success_paths == ["E:\\reports\\daily-{YYYY-MM-DD}.md"]
+
     def test_sched_alias_is_accepted(self):
         """Backward-compat: ``SCHED:`` is accepted as ``schedule:``."""
         content = """\

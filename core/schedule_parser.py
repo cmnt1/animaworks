@@ -145,6 +145,18 @@ def _normalize_skill_refs(raw_skills: object) -> list[str]:
     return []
 
 
+def _normalize_string_list(raw_value: object) -> list[str]:
+    if isinstance(raw_value, str):
+        values = raw_value.split(",") if "," in raw_value else [raw_value]
+        return [item.strip() for item in values if item.strip()]
+    if isinstance(raw_value, list):
+        result: list[str] = []
+        for item in raw_value:
+            result.extend(_normalize_string_list(item))
+        return result
+    return []
+
+
 def _parse_section(name: str, lines: list[str]) -> CronTask:
     """Parse a single cron task section from its body lines.
 
@@ -161,6 +173,7 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
     tool = None
     args = None
     skills: list[str] = []
+    success_paths: list[str] = []
     skip_pattern = None
     trigger_heartbeat = True
     description_lines: list[str] = []
@@ -202,6 +215,28 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
                     skip_pattern = val
                 except re.error as e:
                     logger.warning("Invalid skip_pattern for task %s: %s", name, e)
+        elif stripped.startswith("success_path:"):
+            val = _strip_inline_comment(stripped[len("success_path:") :].strip())
+            val = _strip_outer_quotes(val)
+            if val:
+                success_paths.append(val)
+        elif stripped.startswith("success_paths:"):
+            yaml_lines = [line]
+            i += 1
+            while i < len(lines):
+                next_line = lines[i]
+                if next_line.startswith("  ") or not next_line.strip():
+                    yaml_lines.append(next_line)
+                    i += 1
+                else:
+                    break
+            i -= 1
+            try:
+                parsed = yaml.safe_load("\n".join(yaml_lines))
+                raw_paths = parsed.get("success_paths") if isinstance(parsed, dict) else None
+                success_paths.extend(_normalize_string_list(raw_paths))
+            except yaml.YAMLError as e:
+                logger.warning("Failed to parse success_paths YAML for task %s: %s", name, e)
         elif stripped.startswith("trigger_heartbeat:"):
             val = _strip_inline_comment(stripped.split(":", 1)[1].strip()).lower()
             trigger_heartbeat = val not in ("false", "no", "0")
@@ -268,6 +303,7 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
         tool=tool,
         args=args,
         skills=skills,
+        success_paths=success_paths,
         skip_pattern=skip_pattern,
         trigger_heartbeat=trigger_heartbeat,
     )
