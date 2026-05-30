@@ -70,6 +70,13 @@ def _submit_tasks_tools() -> list[dict[str, Any]]:
                                     "description": "Workspace alias or alias#hash for the task's working directory",
                                     "default": "",
                                 },
+                                "allow_multistage": {
+                                    "type": "boolean",
+                                    "description": (
+                                        "Override model-based task granularity guardrails for this task."
+                                    ),
+                                    "default": False,
+                                },
                             },
                             "required": ["task_id", "title", "description"],
                         },

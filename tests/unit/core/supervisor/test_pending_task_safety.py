@@ -19,8 +19,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.schemas import ModelConfig
 from core.supervisor.pending_executor import PendingTaskExecutor
-
+from core.taskboard.models import AttentionDecision
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
 
     mock_anima = MagicMock()
     mock_anima.agent.background_manager = MagicMock()
+    mock_anima.agent.model_config = ModelConfig(model="openai/gpt-5.4")
     mock_anima._background_lock = asyncio.Lock()
     mock_anima._status_slots = {"background": "idle"}
     mock_anima._task_slots = {"background": ""}
@@ -89,8 +91,6 @@ class TestCommandPendingFileLifecycle:
         task = {"task_id": "cmd-fail", "tool_name": "bad_tool", "subcommand": "", "raw_args": []}
         (pending_dir / "cmd-fail.json").write_text(json.dumps(task))
 
-        original_execute = executor.execute_pending_task
-
         async def failing_execute(task_desc):
             raise RuntimeError("Simulated failure")
 
@@ -134,9 +134,11 @@ class TestLLMPendingFileLifecycle:
         task = {"task_type": "llm", "task_id": "llm-1", "description": "test"}
         (llm_dir / "llm-1.json").write_text(json.dumps(task))
 
-        with patch.object(executor, "execute_pending_task", new_callable=AsyncMock):
-            with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
-                await executor.watcher_loop()
+        with (
+            patch.object(executor, "execute_pending_task", new_callable=AsyncMock),
+            patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)),
+        ):
+            await executor.watcher_loop()
 
         assert not (llm_dir / "llm-1.json").exists()
         assert not (llm_dir / "processing" / "llm-1.json").exists()
@@ -260,14 +262,16 @@ class TestExecuteLLMTaskFailureHandling:
         """When reply_to is a dict with 'name', sends failure notification."""
         executor = _make_executor(tmp_path)
 
-        with patch.object(executor, "_run_llm_task", side_effect=RuntimeError("oops")):
-            with patch("core.i18n.t", return_value="failure msg"):
-                task_desc = {
-                    "task_id": "fail-notify",
-                    "description": "failing task",
-                    "reply_to": {"name": "manager-anima", "content": "please notify"},
-                }
-                await executor._execute_llm_task(task_desc)
+        with (
+            patch.object(executor, "_run_llm_task", side_effect=RuntimeError("oops")),
+            patch("core.i18n.t", return_value="failure msg"),
+        ):
+            task_desc = {
+                "task_id": "fail-notify",
+                "description": "failing task",
+                "reply_to": {"name": "manager-anima", "content": "please notify"},
+            }
+            await executor._execute_llm_task(task_desc)
 
         executor._anima.messenger.send.assert_called_once()
         call_kwargs = executor._anima.messenger.send.call_args
@@ -278,14 +282,16 @@ class TestExecuteLLMTaskFailureHandling:
         """When reply_to is a string, uses it as the recipient."""
         executor = _make_executor(tmp_path)
 
-        with patch.object(executor, "_run_llm_task", side_effect=RuntimeError("oops")):
-            with patch("core.i18n.t", return_value="failure msg"):
-                task_desc = {
-                    "task_id": "fail-str",
-                    "description": "task",
-                    "reply_to": "some-anima",
-                }
-                await executor._execute_llm_task(task_desc)
+        with (
+            patch.object(executor, "_run_llm_task", side_effect=RuntimeError("oops")),
+            patch("core.i18n.t", return_value="failure msg"),
+        ):
+            task_desc = {
+                "task_id": "fail-str",
+                "description": "task",
+                "reply_to": "some-anima",
+            }
+            await executor._execute_llm_task(task_desc)
 
         executor._anima.messenger.send.assert_called_once()
         call_kwargs = executor._anima.messenger.send.call_args
@@ -310,14 +316,16 @@ class TestExecuteLLMTaskFailureHandling:
         executor = _make_executor(tmp_path)
         executor._anima.messenger.send.side_effect = ConnectionError("network error")
 
-        with patch.object(executor, "_run_llm_task", side_effect=RuntimeError("boom")):
-            with patch("core.i18n.t", return_value="msg"):
-                task_desc = {
-                    "task_id": "fail-notif-err",
-                    "description": "task",
-                    "reply_to": {"name": "boss"},
-                }
-                await executor._execute_llm_task(task_desc)
+        with (
+            patch.object(executor, "_run_llm_task", side_effect=RuntimeError("boom")),
+            patch("core.i18n.t", return_value="msg"),
+        ):
+            task_desc = {
+                "task_id": "fail-notif-err",
+                "description": "task",
+                "reply_to": {"name": "boss"},
+            }
+            await executor._execute_llm_task(task_desc)
 
         result_path = executor._anima_dir / "state" / "task_results" / "fail-notif-err.md"
         assert result_path.exists()
@@ -333,6 +341,25 @@ class TestExecuteLLMTaskFailureHandling:
 
         assert executor._anima._status_slots["background"] == "idle"
         assert executor._anima._task_slots["background"] == ""
+
+    @pytest.mark.asyncio
+    async def test_model_granularity_guard_fails_broad_task_before_execution(self, tmp_path: Path) -> None:
+        """Medium-profile models fail broad multi-phase tasks before spending an execution loop."""
+        executor = _make_executor(tmp_path)
+        executor._anima.agent.model_config = ModelConfig(model="qwen3-coder-30b")
+
+        with patch.object(executor, "_attention_decision_for_task_desc", return_value=AttentionDecision(reason="active")):
+            task_desc = {
+                "task_id": "broad-task",
+                "title": "Image recovery",
+                "description": "Repair DB records -> sync -> deploy -> verify public URL -> report status",
+            }
+            await executor._execute_llm_task(task_desc)
+
+        result_path = executor._anima_dir / "state" / "task_results" / "broad-task.md"
+        content = result_path.read_text()
+        assert "FAILED:" in content
+        assert "task_too_broad_for_model" in content
 
 
 # ── TestI18nTemplate ─────────────────────────────────────────

@@ -74,6 +74,33 @@ class DelegationMixin(OrgHelpersMixin):
 
         target_dir = get_animas_dir() / target_name
 
+        try:
+            from core.config.model_config import load_model_config
+            from core.task_granularity import assess_task_granularity
+
+            target_config = load_model_config(target_dir)
+            target_model = target_config.background_model or target_config.model
+            decision = assess_task_granularity(
+                model_name=target_model,
+                title=summary,
+                description=instruction,
+                allow_multistage=bool(args.get("allow_multistage")),
+            )
+            if not decision.allowed:
+                return _error_result(
+                    "TaskTooBroadForModel",
+                    (
+                        f"{decision.guidance} "
+                        f"Target={target_name}, model={decision.model_name}, capability={decision.capability}."
+                    ),
+                )
+        except Exception:
+            logger.debug(
+                "delegate_task granularity preflight skipped for %s",
+                target_name,
+                exc_info=True,
+            )
+
         # Urgent-mode cascade (Phase C-4): if the delegator is currently in
         # urgent mode, propagate priority=urgent to the subordinate so all
         # throttles bypass there too.  This recurses via further delegation.
@@ -127,6 +154,7 @@ class DelegationMixin(OrgHelpersMixin):
             "acceptance_criteria": [],
             "constraints": [],
             "file_paths": [],
+            "allow_multistage": bool(args.get("allow_multistage")),
             "submitted_by": self._anima_name,
             "submitted_at": datetime.now(UTC).isoformat(),
             "reply_to": self._anima_name,

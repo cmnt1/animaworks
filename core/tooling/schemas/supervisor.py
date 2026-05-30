@@ -175,6 +175,14 @@ def _supervisor_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": _t("schema.delegate_task.workspace"),
                     },
+                    "allow_multistage": {
+                        "type": "boolean",
+                        "description": (
+                            "Override model-based task granularity guardrails. "
+                            "Use only when the target model is explicitly trusted for this multi-step task."
+                        ),
+                        "default": False,
+                    },
                 },
                 "required": ["name", "instruction", "deadline"],
             },

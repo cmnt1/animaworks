@@ -759,6 +759,32 @@ class SkillsToolsMixin:
         except ValueError:
             return _error_result("InvalidArguments", "Cycle detected in depends_on references")
 
+        try:
+            from core.config.model_config import load_model_config
+            from core.task_granularity import assess_task_granularity
+
+            config = load_model_config(self._anima_dir)
+            model_name = config.background_model or config.model
+            for t in tasks:
+                decision = assess_task_granularity(
+                    model_name=model_name,
+                    title=t.get("title", ""),
+                    description=t.get("description", ""),
+                    context=t.get("context", ""),
+                    allow_multistage=bool(t.get("allow_multistage")),
+                )
+                if not decision.allowed:
+                    return _error_result(
+                        "TaskTooBroadForModel",
+                        (
+                            f"{decision.guidance} "
+                            f"task_id={t.get('task_id', '?')}, model={decision.model_name}, "
+                            f"capability={decision.capability}."
+                        ),
+                    )
+        except Exception:
+            logger.debug("submit_tasks granularity preflight skipped", exc_info=True)
+
         # Write task files to state/pending/ AND register in task_queue.jsonl
         pending_dir = self._anima_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
@@ -792,6 +818,7 @@ class SkillsToolsMixin:
                 "acceptance_criteria": t.get("acceptance_criteria", []),
                 "constraints": t.get("constraints", []),
                 "file_paths": t.get("file_paths", []),
+                "allow_multistage": t.get("allow_multistage", False),
                 "submitted_by": self._anima_name,
                 "submitted_at": submitted_at,
                 "reply_to": t.get("reply_to", self._anima_name),

@@ -1163,6 +1163,39 @@ class PendingTaskExecutor:
 
         lane_getter = getattr(type(self._anima), "_agent_for_lane", None)
         agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
+        bg_config = None
+        bg_config_getter = getattr(type(self._anima), "_resolve_background_config", None)
+        if callable(bg_config_getter):
+            try:
+                bg_config = self._anima._resolve_background_config()
+            except Exception:
+                logger.debug("[%s] Failed to resolve background model for TaskExec", self._anima_name, exc_info=True)
+
+        task_model_name = getattr(bg_config, "model", None) or getattr(agent.model_config, "model", "")
+        try:
+            from core.task_granularity import assess_task_granularity
+
+            decision = assess_task_granularity(
+                model_name=task_model_name,
+                title=title,
+                description=description,
+                context=context,
+                allow_multistage=bool(task_desc.get("allow_multistage")),
+            )
+        except Exception:
+            logger.debug("[%s] Task granularity check skipped for %s", self._anima_name, task_id, exc_info=True)
+        else:
+            if not decision.allowed:
+                raise TaskExecError(
+                    f"{decision.reason}: {decision.guidance} "
+                    f"model={decision.model_name}; capability={decision.capability}; task_id={task_id}"
+                )
+
+        original_config = None
+        if bg_config is not None:
+            original_config = agent.model_config
+            agent.update_model_config(bg_config)
+
         if working_directory:
             agent.set_task_cwd(Path(working_directory))
 
@@ -1258,6 +1291,8 @@ class PendingTaskExecutor:
         finally:
             journal.close()
             agent.set_task_cwd(None)
+            if original_config is not None:
+                agent.update_model_config(original_config)
             if _urgent_registered:
                 try:
                     from core.urgent import remove_urgent
