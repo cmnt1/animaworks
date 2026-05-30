@@ -41,6 +41,16 @@ _DAEMON_STARTUP_TIMEOUT = 120
 _DAEMON_POLL_INTERVAL = 0.3
 
 
+def _maybe_log_rag_preflight_blocked(result: object) -> None:
+    status = getattr(result, "status", None)
+    if status in {"cooldown", "locked", "disabled", "active"}:
+        logger.info(
+            "RAG startup preflight skipped for %s: status=%s",
+            getattr(result, "anima_name", "<unknown>"),
+            status,
+        )
+
+
 # ── PID helpers ───────────────────────────────────────────
 
 
@@ -453,14 +463,105 @@ def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
         logger.exception("RAG startup preflight failed unexpectedly; continuing server startup")
 
 
+def _discover_rag_startup_preflight_targets(
+    *,
+    force_all_vectordb: bool = False,
+) -> tuple[object, list[str], str] | None:
+    """Discover startup RAG repair targets without starting a vector worker."""
+    try:
+        from core.config import load_config
+        from core.paths import get_animas_dir
+
+        config = load_config()
+        rag = config.rag
+        if not config.setup_complete:
+            return None
+        if not bool(getattr(rag, "repair_enabled", True)):
+            return None
+        if not bool(getattr(rag, "startup_repair_preflight_enabled", True)):
+            return None
+
+        from core.memory.rag.repair import get_repair_service
+
+        service = get_repair_service()
+        window_minutes = int(getattr(rag, "startup_repair_window_minutes", 1440))
+        suspects = service.discover_suspect_animas(window_minutes=window_minutes)
+        reason = "startup_chroma_crash_preflight"
+        if not suspects and force_all_vectordb:
+            animas_dir = get_animas_dir()
+            suspects = [
+                name
+                for name in service.list_repairable_animas(animas_dir=animas_dir)
+                if (animas_dir / name / "vectordb").exists()
+            ]
+            reason = "startup_unclean_exit_preflight"
+        if not suspects:
+            logger.info("RAG startup preflight: no suspect DBs found")
+            return None
+        return service, suspects, reason
+    except Exception:
+        logger.exception("RAG startup preflight discovery failed unexpectedly; continuing server startup")
+        return None
+
+
+def _repair_rag_startup_preflight_targets(
+    service: object,
+    suspects: list[str],
+    *,
+    reason: str,
+) -> None:
+    joined = ", ".join(suspects)
+    print(f"RAG startup preflight: repairing suspected vector DB(s): {joined}")
+    results = service.repair_animas_if_allowed(  # type: ignore[attr-defined]
+        suspects,
+        reason=reason,
+        source="startup_preflight",
+        include_shared=True,
+    )
+    for result in results.values():
+        if result.ok:
+            logger.warning(
+                "RAG startup preflight repaired %s: chunks=%s quarantine=%s",
+                result.anima_name,
+                result.chunks_indexed,
+                result.quarantine_path,
+            )
+        else:
+            logger.error(
+                "RAG startup preflight failed for %s: status=%s stage=%s error=%s",
+                result.anima_name,
+                result.status,
+                result.stage,
+                result.error,
+            )
+
+
 def _run_rag_startup_preflight_via_worker(*, force_all_vectordb: bool = False) -> None:
     """Run startup RAG repair with ChromaDB isolated in a temporary worker."""
+    discovered = _discover_rag_startup_preflight_targets(force_all_vectordb=force_all_vectordb)
+    if discovered is None:
+        return
+    service, suspects, reason = discovered
+
+    runnable: list[str] = []
+    repair_blocker = getattr(service, "repair_blocker", None)
+    for anima_name in suspects:
+        blocked = repair_blocker(anima_name, reason=reason) if callable(repair_blocker) else None
+        if blocked is None:
+            runnable.append(anima_name)
+        else:
+            _maybe_log_rag_preflight_blocked(blocked)
+
+    if not runnable:
+        logger.info("RAG startup preflight: all suspect DBs are currently blocked")
+        return
+
     try:
         from core.config import load_config
 
         config = load_config()
         if not config.setup_complete:
-            _run_rag_startup_preflight(force_all_vectordb=force_all_vectordb)
+            _repair_rag_startup_preflight_targets(service, runnable, reason=reason)
             return
 
         rag = config.rag
@@ -481,7 +582,7 @@ def _run_rag_startup_preflight_via_worker(*, force_all_vectordb: bool = False) -
         return
 
     try:
-        _run_rag_startup_preflight(force_all_vectordb=force_all_vectordb)
+        _repair_rag_startup_preflight_targets(service, runnable, reason=reason)
     finally:
         worker.stop()
 

@@ -394,6 +394,21 @@ async def _startup_animas_background(app: FastAPI) -> None:
         logger.exception("Background anima startup failed")
 
 
+async def _start_vector_worker_background(app: FastAPI) -> None:
+    """Start the RAG vector worker after ASGI startup has become ready."""
+    vector_worker = getattr(app.state, "vector_worker", None)
+    try:
+        await _call_optional_async(vector_worker, "start")
+        vector_worker_url = getattr(vector_worker, "base_url", None)
+        if isinstance(vector_worker_url, str) and vector_worker_url:
+            os.environ["ANIMAWORKS_VECTOR_URL"] = vector_worker_url
+            logger.info("Server RAG vector access routed through vector worker: %s", vector_worker_url)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Vector worker background startup failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Only start anima processes when setup is complete
@@ -547,11 +562,9 @@ async def lifespan(app: FastAPI):
         previous_vector_url = os.environ.get("ANIMAWORKS_VECTOR_URL")
         app.state._previous_vector_url_present = previous_vector_url_present
         app.state._previous_vector_url = previous_vector_url
-        await _call_optional_async(vector_worker, "start")
-        vector_worker_url = getattr(vector_worker, "base_url", None)
-        if isinstance(vector_worker_url, str) and vector_worker_url:
-            os.environ["ANIMAWORKS_VECTOR_URL"] = vector_worker_url
-            logger.info("Server RAG vector access routed through vector worker: %s", vector_worker_url)
+        app.state._vector_worker_start_task = asyncio.create_task(
+            _start_vector_worker_background(app),
+        )
 
         # ── URLs for child processes ─
         # ProcessSupervisor passes these to child processes via subprocess.Popen(env=).
@@ -596,6 +609,13 @@ async def lifespan(app: FastAPI):
             startup_task.cancel()
             try:
                 await startup_task
+            except asyncio.CancelledError:
+                pass
+        vector_start_task = getattr(app.state, "_vector_worker_start_task", None)
+        if vector_start_task and not vector_start_task.done():
+            vector_start_task.cancel()
+            try:
+                await vector_start_task
             except asyncio.CancelledError:
                 pass
 

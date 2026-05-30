@@ -263,6 +263,10 @@ class RAGRepairService:
             )
         return results
 
+    def repair_blocker(self, anima_name: str, *, reason: str) -> RepairResult | None:
+        """Return why a repair would be skipped, without reserving it."""
+        return self._request_blocked(anima_name, reason=reason)
+
     @staticmethod
     def _contains_recent_signal(signals: list[dict[str, Any]], cutoff: datetime, *, include_shared: bool) -> bool:
         for signal in signals:

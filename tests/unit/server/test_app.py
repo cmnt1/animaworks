@@ -197,6 +197,50 @@ class TestLifespan:
 
         mock_supervisor.shutdown_all.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    @patch("server.app.AsyncIOScheduler")
+    async def test_lifespan_does_not_wait_for_vector_worker_start(self, mock_scheduler_cls):
+        from server.app import lifespan
+
+        mock_app = MagicMock()
+        mock_supervisor = AsyncMock()
+        mock_ws_manager = AsyncMock()
+        mock_vector_worker = AsyncMock()
+        vector_started = asyncio.Event()
+        release_vector_start = asyncio.Event()
+
+        async def slow_vector_start():
+            vector_started.set()
+            await release_vector_start.wait()
+
+        mock_vector_worker.start.side_effect = slow_vector_start
+        mock_app.state.setup_complete = True
+        mock_app.state.supervisor = mock_supervisor
+        mock_app.state.ws_manager = mock_ws_manager
+        mock_app.state.anima_names = []
+        mock_app.state.animas_dir = MagicMock()
+        mock_app.state.shared_dir = MagicMock()
+        mock_app.state.stream_registry = StreamRegistry()
+        mock_app.state.vector_worker = mock_vector_worker
+        mock_app.state.slack_socket_manager = None
+        mock_app.state.discord_gateway_manager = None
+        mock_app.state.usage_governor = None
+
+        mock_scheduler = MagicMock()
+        mock_scheduler_cls.return_value = mock_scheduler
+
+        with (
+            patch("core.org_sync.detect_orphan_animas"),
+            patch("core.config.global_permissions.GlobalPermissionsCache.get") as mock_gp,
+        ):
+            mock_gp.return_value = MagicMock(loaded=True, check_integrity=MagicMock(return_value=True))
+            async with asyncio.timeout(1.0):
+                async with lifespan(mock_app):
+                    await asyncio.wait_for(vector_started.wait(), timeout=1.0)
+                    release_vector_start.set()
+
+        mock_vector_worker.start.assert_awaited_once()
+
 
 # ── Public icon path (auth bypass regex) ────────────
 
