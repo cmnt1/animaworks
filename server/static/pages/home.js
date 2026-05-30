@@ -230,14 +230,6 @@ function _calcTimePct(resetAt, windowSeconds) {
   return Math.min(pct, 100);
 }
 
-function _currentJstMonthSeconds() {
-  const jstNow = new Date(Date.now() + 9 * 3600000);
-  const year = jstNow.getUTCFullYear();
-  const month = jstNow.getUTCMonth();
-  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  return daysInMonth * 86400;
-}
-
 function _usageForecast(utilization, resetAt, windowSeconds, displayWindowSecondsOverride = null) {
   if (!resetAt || !windowSeconds) return null;
   const resetMs = (typeof resetAt === "number")
@@ -619,32 +611,6 @@ function _renderNanogptUsage(data) {
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
-function _renderOpencodeGoUsage(data) {
-  const el = document.getElementById("usageOpencodeGoBody");
-  if (!el) return;
-
-  if (data.error) {
-    const msg = data.error === "no_credentials"
-      ? data.message || t("home.usage_no_credentials")
-      : data.message || data.error;
-    el.innerHTML = _renderUsageError("opencode_go", data, msg);
-    return;
-  }
-
-  const order = ["5h", "Week", "Month"];
-  const windowSecondsByKey = { "5h": 5 * 3600, Week: 7 * 24 * 3600, Month: 30 * 24 * 3600 };
-  let html = "";
-  for (const key of order) {
-    const win = data[key];
-    if (!win || typeof win !== "object" || win.utilization === undefined) continue;
-    const resetAt = win.resets_at ?? (typeof win.reset_in_sec === "number" ? (Date.now() / 1000) + win.reset_in_sec : null);
-    const windowSeconds = win.window_seconds ?? windowSecondsByKey[key];
-    const displayWindowSeconds = key === "Month" ? _currentJstMonthSeconds() : null;
-    html += _renderUsageBar(key, win.utilization, resetAt, windowSeconds, displayWindowSeconds);
-  }
-  el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
-}
-
 function _renderAuthAlerts(alerts) {
   const el = document.getElementById("usageAuthAlerts");
   if (!el) return;
@@ -653,7 +619,7 @@ function _renderAuthAlerts(alerts) {
     return;
   }
 
-  const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "nanoGPT", opencode_go: "OpenCode Go" };
+  const LABELS = { claude: "Claude", openai: "OpenAI", nanogpt: "nanoGPT" };
   const RELOGIN_PATHS = {
     claude: "/api/usage/claude/relogin",
     openai: "/api/usage/openai/relogin",
@@ -713,7 +679,6 @@ function _renderGovernor(gov) {
     ["openai", "OpenAI"],
     ["gemini", "Gemini"],
     ["nanogpt", "NanoGPT"],
-    ["opencode_go", "OpenCode Go"],
   ];
   const frontByProv = gov.front_activity_level_by_provider || gov.activity_level_by_provider || {};
   const bgByProv = gov.background_activity_level_by_provider || {};
@@ -995,7 +960,6 @@ async function _loadUsage(forceRefresh = false) {
     if (data.openai) _renderOpenaiUsage(data.openai);
     if (data.gemini) _renderGeminiUsage(data.gemini);
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
-    // OpenCode Go usage bar removed from dashboard (governor monitoring kept).
     _renderAuthAlerts(data.auth_alerts);
     _renderGovernor(data.governor);
     const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;

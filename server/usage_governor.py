@@ -49,7 +49,6 @@ _CREDENTIAL_TO_PROVIDER: dict[str, str] = {
     "anthropic": "claude",
     "openai": "openai",
     "nanogpt": "nanogpt",
-    "opencode-go": "opencode_go",
     # Antigravity-routed Anima execution consumes the same Google AI Pro
     # quota that the dashboard's Gemini bar tracks.
     "antigravity": "gemini",
@@ -110,11 +109,6 @@ DEFAULT_POLICY: dict[str, Any] = {
         },
         "nanogpt": {
             "Week": _default_window_policy(),
-        },
-        "opencode_go": {
-            "5h": _default_window_policy(),
-            "Week": _default_window_policy(),
-            "Month": _default_window_policy(),
         },
         # Google AI Pro / Antigravity OAuth route.  Free-tier accounts
         # only return a ``daily`` (~24h) bucket; AI Pro returns ``five_hour``
@@ -233,7 +227,6 @@ class GovernorState:
                         "claude": legacy,
                         "openai": legacy,
                         "nanogpt": legacy,
-                        "opencode_go": legacy,
                     }
                     self.front_activity_level_by_provider = dict(self.governor_activity_level_by_provider)
             if isinstance(bg_map, dict):
@@ -599,8 +592,6 @@ def _model_to_provider(model_name: str | None) -> str | None:
         return "openai"
     if model_name.startswith("nanogpt/"):
         return "nanogpt"
-    if model_name.startswith("opencode-go/"):
-        return "opencode_go"
     if model_name.startswith("antigravity/") or model_name.startswith("gemini/"):
         # Antigravity routes through Google AI Pro quota (same bar as the
         # dashboard's Gemini provider).  Gemini/* models historically used
@@ -1239,7 +1230,6 @@ class UsageGovernor:
             _fetch_gemini_usage,
             _fetch_nanogpt_usage,
             _fetch_openai_usage,
-            _fetch_opencode_go_usage,
             _relogin_claude,
         )
 
@@ -1248,7 +1238,6 @@ class UsageGovernor:
             "openai": _fetch_openai_usage(),
             "gemini": _fetch_gemini_usage(),
             "nanogpt": _fetch_nanogpt_usage(),
-            "opencode_go": _fetch_opencode_go_usage(),
         }
 
         # Auto-recovery: if Claude fetch failed with recoverable error,
@@ -1287,7 +1276,7 @@ class UsageGovernor:
         calibration_enabled = bool(calib_config.get("enabled", True))
         # Evaluate all cloud providers, including providers with no currently
         # running animas so their activity level remains visible to readers.
-        for provider_key in ("claude", "openai", "gemini", "nanogpt", "opencode_go"):
+        for provider_key in ("claude", "openai", "gemini", "nanogpt"):
             provider_animas = groups.get(provider_key, [])
 
             if _provider_usage_fetch_failed(usage_data, provider_key):
