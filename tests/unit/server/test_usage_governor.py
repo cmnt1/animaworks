@@ -246,7 +246,7 @@ def test_burn_rate_landing_boosts_when_burn_is_below_target(monkeypatch):
 def test_default_policy_uses_burn_rate_landing_mode():
     providers = DEFAULT_POLICY["providers"]
     assert providers["claude"]["seven_day"]["mode"] == "burn_rate_landing"
-    assert providers["opencode_go"]["Month"]["target_remaining_at_reset"] == 0
+    assert providers["nanogpt"]["Week"]["target_remaining_at_reset"] == 0
 
 
 def test_ensure_policy_file_migrates_time_proportional_windows(tmp_path):
@@ -273,7 +273,7 @@ def test_ensure_policy_file_migrates_time_proportional_windows(tmp_path):
     assert window["throttle_rules"] == [{"room_under": 1, "activity_level": 100}]
 
 
-def test_opencode_go_month_keeps_time_proportional_fallback_rules(monkeypatch):
+def test_time_proportional_fallback_rules(monkeypatch):
     monkeypatch.setattr(usage_governor.time, "time", lambda: 1000.0)
     window_data = {
         "remaining": 7,
@@ -284,23 +284,14 @@ def test_opencode_go_month_keeps_time_proportional_fallback_rules(monkeypatch):
     level, reason = _evaluate_time_proportional(
         7,
         window_data,
-        DEFAULT_POLICY["providers"]["opencode_go"]["Month"],
-        "opencode_go",
-        "Month",
+        DEFAULT_POLICY["providers"]["nanogpt"]["Week"],
+        "nanogpt",
+        "Week",
     )
 
     assert level == 40
-    assert "opencode_go.Month remaining 7% vs time 20%" in reason
+    assert "nanogpt.Week remaining 7% vs time 20%" in reason
     assert "activity 40%" in reason
-
-
-def test_classify_animas_maps_opencode_go(tmp_path):
-    animas_dir = tmp_path / "animas"
-    _write_status(animas_dir, "go-anima", "opencode-go")
-
-    groups = _classify_animas(animas_dir, ["go-anima"])
-
-    assert groups == {"opencode_go": ["go-anima"]}
 
 
 def test_classify_animas_includes_front_and_background_providers(tmp_path):
@@ -309,15 +300,15 @@ def test_classify_animas_includes_front_and_background_providers(tmp_path):
         animas_dir,
         "mixed-anima",
         "anthropic",
-        background_credential="opencode-go",
-        background_model="opencode-go/deepseek-v4-flash",
+        background_credential="nanogpt",
+        background_model="nanogpt/qwen3-coder-30b-a3b-instruct",
     )
 
     groups = _classify_animas(animas_dir, ["mixed-anima"])
 
     assert groups == {
         "claude": ["mixed-anima"],
-        "opencode_go": ["mixed-anima"],
+        "nanogpt": ["mixed-anima"],
     }
 
 
@@ -386,10 +377,6 @@ async def test_tick_keeps_suspended_anima_when_usage_fetch_fails(tmp_path, monke
         "server.routes.usage_routes._fetch_openai_usage",
         lambda **kwargs: {"provider": "openai"},
     )
-    monkeypatch.setattr(
-        "server.routes.usage_routes._fetch_opencode_go_usage",
-        lambda **kwargs: {"provider": "opencode_go"},
-    )
 
     await governor._tick(DEFAULT_POLICY)
 
@@ -407,8 +394,8 @@ async def test_tick_suspends_anima_when_background_provider_hits_threshold(tmp_p
         animas_dir,
         "alice",
         "anthropic",
-        background_credential="opencode-go",
-        background_model="opencode-go/deepseek-v4-flash",
+        background_credential="nanogpt",
+        background_model="nanogpt/qwen3-coder-30b-a3b-instruct",
     )
 
     supervisor = SimpleNamespace(
@@ -442,26 +429,12 @@ async def test_tick_suspends_anima_when_background_provider_hits_threshold(tmp_p
     )
     monkeypatch.setattr(
         "server.routes.usage_routes._fetch_nanogpt_usage",
-        lambda **kwargs: {"provider": "nanogpt"},
-    )
-    monkeypatch.setattr(
-        "server.routes.usage_routes._fetch_opencode_go_usage",
         lambda **kwargs: {
-            "provider": "opencode_go",
-            "5h": {
-                "remaining": 80,
-                "resets_at": 4102444800,
-                "window_seconds": 18000,
-            },
+            "provider": "nanogpt",
             "Week": {
-                "remaining": 80,
-                "resets_at": 4102444800,
-                "window_seconds": 604800,
-            },
-            "Month": {
                 "remaining": 10,
                 "resets_at": 4102444800,
-                "window_seconds": 2592000,
+                "window_seconds": 604800,
             },
         },
     )
@@ -508,10 +481,6 @@ async def test_tick_only_keeps_suspended_animas_for_provider_with_fetch_failure(
                 "window_seconds": 604800,
             },
         },
-    )
-    monkeypatch.setattr(
-        "server.routes.usage_routes._fetch_opencode_go_usage",
-        lambda **kwargs: {"provider": "opencode_go"},
     )
 
     await governor._tick(DEFAULT_POLICY)
