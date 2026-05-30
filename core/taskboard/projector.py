@@ -21,6 +21,8 @@ QUEUE_STATUS_TO_COLUMN: dict[str, BoardColumn] = {
     "cancelled": BoardColumn.DONE,
 }
 
+MACHINE_INSTRUCTION_ORIGINS = frozenset({"daily-ops-dashboard"})
+
 ARCHIVED_QUEUE_STATUSES = {"done", "cancelled"}
 
 _COLUMN_ORDER = {column: index for index, column in enumerate(BoardColumn)}
@@ -184,6 +186,7 @@ def _project_queue_task(
         task_id=task.task_id,
         queue_missing=False,
         source=task.source,
+        instruction_origin=_resolve_instruction_origin(task),
         original_instruction=task.original_instruction,
         assignee=task.assignee,
         queue_status=task.status,
@@ -210,6 +213,27 @@ def _project_queue_task(
         is_from_cron=is_from_cron,
         cron_task_name=cron_task_name if isinstance(cron_task_name, str) else None,
     )
+
+
+def _resolve_instruction_origin(task: TaskEntry) -> str | None:
+    """Return the display-level instruction origin for TaskBoard provenance."""
+    if task.source != "human":
+        return None
+
+    meta = task.meta or {}
+    explicit = meta.get("instruction_origin")
+    if explicit in {"human", "machine"}:
+        return str(explicit)
+
+    meta_origin = meta.get("origin")
+    if isinstance(meta_origin, str) and meta_origin in MACHINE_INSTRUCTION_ORIGINS:
+        return "machine"
+    if any(origin in MACHINE_INSTRUCTION_ORIGINS for origin in task.relay_chain):
+        return "machine"
+    if meta.get("daily_ops_dedup_key"):
+        return "machine"
+
+    return "human"
 
 
 def _is_stale_queue_task(task: TaskEntry) -> bool:

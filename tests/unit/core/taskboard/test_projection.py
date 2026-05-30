@@ -35,6 +35,32 @@ def test_projection_replays_latest_status_and_skips_corrupt_lines(tmp_path: Path
     assert projected[0].column == BoardColumn.RUNNING
 
 
+def test_projection_splits_human_source_by_instruction_origin(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "kanna")
+    direct = manager.add_task(
+        source="human",
+        original_instruction="direct owner request",
+        assignee="kanna",
+        summary="direct owner request",
+        task_id="human-direct",
+        meta={"instruction_origin": "human"},
+    )
+    dashboard = manager.add_task(
+        source="human",
+        original_instruction="dashboard managed request",
+        assignee="kanna",
+        summary="dashboard managed request",
+        task_id="machine-dashboard",
+        meta={"origin": "daily-ops-dashboard"},
+    )
+
+    projected = project_anima(manager.anima_dir, TaskBoardStore(tmp_path / "taskboard.sqlite3"))
+    by_id = {task.task_id: task for task in projected}
+
+    assert by_id[direct.task_id].instruction_origin == "human"
+    assert by_id[dashboard.task_id].instruction_origin == "machine"
+
+
 def test_projection_status_to_column_mapping(tmp_path: Path) -> None:
     manager = _queue(tmp_path, "sakura")
     statuses = ["pending", "in_progress", "blocked", "delegated", "failed", "done", "cancelled"]

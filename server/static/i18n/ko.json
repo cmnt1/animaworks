@@ -781,6 +781,7 @@
   "taskboard.origin_anima": "Anima 발",
   "taskboard.origin_cron": "cron",
   "taskboard.origin_human": "Human 발",
+  "taskboard.origin_machine": "Machine 발",
   "taskboard.empty_column": "No tasks in {column}.",
   "taskboard.expired": "Expired",
   "taskboard.filter_active": "Active",

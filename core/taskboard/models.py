@@ -72,6 +72,7 @@ class BoardTask(BaseModel):
     queue_missing: bool = False
 
     source: Literal["human", "anima"] | None = None
+    instruction_origin: Literal["human", "machine"] | None = None
     original_instruction: str | None = None
     assignee: str | None = None
     queue_status: str | None = None

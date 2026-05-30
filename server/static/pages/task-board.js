@@ -584,6 +584,10 @@ function _originBadgeHtml(task) {
     return `<span class="taskboard-origin-badge taskboard-origin-badge--cron" title="${escapeAttr(label)}">⏰ ${escapeHtml(label)}</span>`;
   }
   if (task.source === "human") {
+    if (task.instruction_origin === "machine") {
+      const label = t("taskboard.origin_machine");
+      return `<span class="taskboard-origin-badge taskboard-origin-badge--machine" title="${escapeAttr(label)}">${escapeHtml(label)}</span>`;
+    }
     const label = t("taskboard.origin_human");
     return `<span class="taskboard-origin-badge taskboard-origin-badge--human" title="${escapeAttr(label)}">👤 ${escapeHtml(label)}</span>`;
   }
