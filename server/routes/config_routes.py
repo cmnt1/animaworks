@@ -35,7 +35,6 @@ from core.config.opencode_go import (
     OPENCODE_GO_FALLBACK_MODELS,
     OPENCODE_GO_MODELS_URL,
     OPENCODE_GO_PROVIDER,
-    opencode_go_api_key,
     opencode_go_model_id,
 )
 from core.i18n import t
@@ -56,7 +55,7 @@ ABCONFIG_KEYS = {
     "opencode_api",
 }
 MODEL_CATALOG_CACHE_FILE = "model_catalog_cache.json"
-MODEL_CATALOG_PROVIDERS = ("claude_code", "codex", "opencode_go", "nanogpt", "google")
+MODEL_CATALOG_PROVIDERS = ("claude_code", "codex", "nanogpt", "google")
 
 
 def _known_codex_models() -> list[str]:
@@ -598,11 +597,7 @@ def _available_models_payload(config) -> list[dict[str, str]]:
         seen.add(model_id)
 
     for provider, cred in config.credentials.items():
-        if (
-            provider != OPENCODE_GO_PROVIDER
-            and not cred.api_key
-            and cred.type not in ("claude_code_login", "codex_login")
-        ):
+        if not cred.api_key and cred.type not in ("claude_code_login", "codex_login"):
             continue
         if provider == "anthropic":
             for model_id in _models_for_provider("claude_code", _known_claude_code_models()):
@@ -637,26 +632,6 @@ def _available_models_payload(config) -> list[dict[str, str]]:
         elif provider in ("google", "gemini"):
             for model_id in _models_for_provider("google", _known_google_models()):
                 add(model_id, route="A", provider_label="Google", credential="google")
-        elif provider == OPENCODE_GO_PROVIDER and (
-            cred.api_key or opencode_go_api_key() or _abconfig_value("opencode_api")
-        ):
-            fallback = _known_opencode_go_models()
-            for model_id in _models_for_provider("opencode_go", fallback):
-                add(
-                    model_id,
-                    route="A",
-                    provider_label="OpenCode Go",
-                    credential=OPENCODE_GO_PROVIDER,
-                )
-
-    if OPENCODE_GO_PROVIDER not in config.credentials and (opencode_go_api_key() or _abconfig_value("opencode_api")):
-        for model_id in _models_for_provider("opencode_go", _known_opencode_go_models()):
-            add(
-                model_id,
-                route="A",
-                provider_label="OpenCode Go",
-                credential=OPENCODE_GO_PROVIDER,
-            )
 
     if is_codex_login_available():
         for model_id in _models_for_provider("codex", _known_codex_models()):
