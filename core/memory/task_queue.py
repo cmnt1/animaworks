@@ -799,7 +799,7 @@ class TaskQueueManager:
             sub_status = self._resolve_subordinate_status(target_dir, child_id)
             if sub_status is None:
                 continue
-            if sub_status in ("done", "cancelled"):
+            if sub_status == "done":
                 self.update_status(
                     task.task_id,
                     "done",
@@ -812,6 +812,24 @@ class TaskQueueManager:
                     child_id,
                     animas_dir,
                     status="done",
+                )
+                synced += 1
+            elif sub_status == "cancelled":
+                self.update_status(
+                    task.task_id,
+                    "blocked",
+                    summary=(
+                        f"BLOCKED: delegated child {target}:{child_id} was cancelled; "
+                        "re-delegation or explicit closure required"
+                    ),
+                )
+                _post_delegation_completion_to_discord(
+                    task,
+                    self.anima_dir,
+                    target,
+                    child_id,
+                    animas_dir,
+                    status="cancelled",
                 )
                 synced += 1
             elif sub_status == "failed":

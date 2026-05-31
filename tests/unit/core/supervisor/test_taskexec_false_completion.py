@@ -128,6 +128,23 @@ class TestClassifyTaskResult:
         assert status == "done"
         assert summary == "(completed 3 tool call(s): Read, Bash, Grep)"
 
+    def test_machine_handoff_start_log_maps_to_blocked(self):
+        status, summary = _classify_task_result(
+            "状況を把握しました。複数の修正が必要です。machineエージェントに委託して修正を進めます。まず関連ファイルを確認開始します。"
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported only a machine handoff/start log")
+
+    def test_unresolved_aff003_blocker_report_maps_to_blocked(self):
+        status, summary = _classify_task_result(
+            "Multiple unresolved problems remain:\n"
+            "1. **108500/108502**: generated JSON body contains 4AXJKD+4BF3MA+5316\n"
+            "2. **108501**: image URL 404 for IMG_20260530110659_011.jpg\n"
+            "3. **108502**: public article images missing"
+        )
+        assert status == "blocked"
+        assert "AFF-003 blockers" in summary
+
 
 # ── Bug B: error chunk detection ──────────────────────────
 
@@ -262,9 +279,9 @@ class TestExecuteLlmTaskStatusMapping:
         with patch.object(executor, "_run_llm_task", return_value=_SENTINEL_CANCELLED), \
              patch.object(executor, "_sync_task_queue") as mock_sync:
             await executor._execute_llm_task(task)
-            mock_sync.assert_called_once_with(
-                "test-task-1", "cancelled", summary="cancelled before execution"
-            )
+            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
+            assert mock_sync.call_args_list[-1].args == ("test-task-1", "cancelled")
+            assert mock_sync.call_args_list[-1].kwargs["summary"] == "cancelled before execution"
 
     @pytest.mark.asyncio
     async def test_expired_maps_to_cancelled_status(self, tmp_path):
@@ -274,9 +291,9 @@ class TestExecuteLlmTaskStatusMapping:
         with patch.object(executor, "_run_llm_task", return_value=_SENTINEL_EXPIRED), \
              patch.object(executor, "_sync_task_queue") as mock_sync:
             await executor._execute_llm_task(task)
-            mock_sync.assert_called_once_with(
-                "test-task-1", "cancelled", summary="expired (TTL exceeded)"
-            )
+            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
+            assert mock_sync.call_args_list[-1].args == ("test-task-1", "cancelled")
+            assert mock_sync.call_args_list[-1].kwargs["summary"] == "expired (TTL exceeded)"
 
     @pytest.mark.asyncio
     async def test_normal_result_maps_to_done(self, tmp_path):
@@ -286,9 +303,9 @@ class TestExecuteLlmTaskStatusMapping:
         with patch.object(executor, "_run_llm_task", return_value="success"), \
              patch.object(executor, "_sync_task_queue") as mock_sync:
             await executor._execute_llm_task(task)
-            mock_sync.assert_called_once_with(
-                "test-task-1", "done", summary="success"
-            )
+            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
+            assert mock_sync.call_args_list[-1].args == ("test-task-1", "done")
+            assert mock_sync.call_args_list[-1].kwargs["summary"] == "success"
 
     @pytest.mark.asyncio
     async def test_auth_failure_result_maps_to_failed(self, tmp_path):
@@ -301,9 +318,9 @@ class TestExecuteLlmTaskStatusMapping:
         with patch.object(executor, "_run_llm_task", return_value=auth_text), \
              patch.object(executor, "_sync_task_queue") as mock_sync:
             await executor._execute_llm_task(task)
-            mock_sync.assert_called_once()
-            assert mock_sync.call_args[0][1] == "failed"
-            assert mock_sync.call_args.kwargs["summary"].startswith("FAILED: Failed to authenticate.")
+            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
+            assert mock_sync.call_args_list[-1].args[1] == "failed"
+            assert mock_sync.call_args_list[-1].kwargs["summary"].startswith("FAILED: Failed to authenticate.")
 
     @pytest.mark.asyncio
     async def test_error_exception_maps_to_failed(self, tmp_path):
@@ -315,8 +332,8 @@ class TestExecuteLlmTaskStatusMapping:
         ), patch.object(executor, "_sync_task_queue") as mock_sync, \
              patch.object(executor, "_write_failed_result"):
             await executor._execute_llm_task(task)
-            mock_sync.assert_called_once()
-            assert mock_sync.call_args[0][1] == "failed"
+            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
+            assert mock_sync.call_args_list[-1].args[1] == "failed"
 
 
 # ── Bug C: serial batch failed_dependency queue sync ────────

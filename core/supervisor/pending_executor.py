@@ -87,6 +87,123 @@ def _detect_synthesized_tool_failure(result: str) -> str | None:
     return f"Task produced no final response and reported {error_count} tool error(s)"
 
 
+def _detect_non_final_delegation_report(result: str) -> str | None:
+    """Return a failure summary when TaskExec only reports a handoff/start log."""
+    text = (result or "").strip()
+    if not text:
+        return None
+
+    folded = text.casefold()
+    has_machine_handoff = (
+        "machine" in folded
+        or "agent" in folded
+        or "エージェント" in text
+        or "委託" in text
+    ) and (
+        "委託" in text
+        or "delegat" in folded
+        or "handoff" in folded
+        or "依頼" in text
+    )
+    if not has_machine_handoff:
+        return None
+
+    has_start_only_marker = any(
+        marker in text
+        for marker in (
+            "状況把握",
+            "確認開始",
+            "着手",
+            "進めます",
+            "開始します",
+        )
+    ) or any(
+        marker in folded
+        for marker in (
+            "started",
+            "starting",
+            "will proceed",
+            "will start",
+            "checking files",
+        )
+    )
+    if not has_start_only_marker:
+        return None
+
+    final_evidence_markers = (
+        "verdict.status=\"done\"",
+        '"status": "done"',
+        '"status":"done"',
+        "verifier output",
+        "db read-after-write",
+        "http 200",
+        "image/*",
+        "deploy complete",
+    )
+    evidence_count = sum(1 for marker in final_evidence_markers if marker in folded)
+    if evidence_count >= 3:
+        return None
+    return "Task reported only a machine handoff/start log, not final evidence"
+
+
+def _completion_evidence_count(text: str) -> int:
+    folded = text.casefold()
+    final_evidence_markers = (
+        "verdict.status=\"done\"",
+        '"status": "done"',
+        '"status":"done"',
+        "verifier output",
+        "db read-after-write",
+        "http 200",
+        "image/*",
+        "deploy complete",
+    )
+    return sum(1 for marker in final_evidence_markers if marker in folded)
+
+
+def _detect_unresolved_blocker_report(result: str) -> str | None:
+    """Return a blocked summary when a report lists unresolved gates as its result."""
+    text = (result or "").strip()
+    if not text:
+        return None
+
+    folded = text.casefold()
+    if _completion_evidence_count(text) >= 3:
+        return None
+
+    unresolved_markers = (
+        "remaining blocker",
+        "still blocked",
+        "not complete",
+        "not done",
+        "cannot complete",
+        "blocked:",
+        "blockers:",
+        "current failures",
+        "failures to fix",
+        "failed gate",
+        "http 404",
+        "-> http 404",
+        " image 404",
+        "missing images",
+        "public_article_images_missing",
+        "image_url_invalid",
+        "generated_json_forbidden_token",
+        "forbidden_public_source_token_present",
+    )
+    if any(marker in folded for marker in unresolved_markers):
+        return "Task reported unresolved blockers instead of final evidence"
+
+    target_ids = ("108500", "108501", "108502")
+    known_blocker_tokens = ("404", "4axjkd+4bf3ma+5316", "coreda")
+    if any(task_id in text for task_id in target_ids) and any(
+        token in folded for token in known_blocker_tokens
+    ):
+        return "Task reported known AFF-003 blockers instead of final evidence"
+
+    return None
+
+
 def _classify_task_result(result: str) -> tuple[str, str]:
     """Map _run_llm_task return value to (queue_status, summary).
 
@@ -104,6 +221,12 @@ def _classify_task_result(result: str) -> tuple[str, str]:
     synthesized_failure = _detect_synthesized_tool_failure(result)
     if synthesized_failure:
         return "failed", f"FAILED: {synthesized_failure}"
+    non_final_delegation = _detect_non_final_delegation_report(result)
+    if non_final_delegation:
+        return "blocked", f"BLOCKED: {non_final_delegation}"
+    unresolved_blocker = _detect_unresolved_blocker_report(result)
+    if unresolved_blocker:
+        return "blocked", f"BLOCKED: {unresolved_blocker}"
     return "done", (result or "")[:200]
 
 
@@ -1594,6 +1717,7 @@ class PendingTaskExecutor:
                 self._anima._mark_busy_start()
                 self._anima._status_slots["background"] = "task_exec"
                 self._anima._task_slots["background"] = task_id
+                self._sync_task_queue(task_id, "in_progress")
                 try:
                     result = await self._run_llm_task(task_desc)
                     status, summary = _classify_task_result(result)

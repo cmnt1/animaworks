@@ -73,7 +73,7 @@ class TestSyncDelegated:
         assert task.status == "failed"
         assert "再委任" in task.summary or "re-delegation" in task.summary
 
-    def test_subordinate_cancelled_syncs_to_done(self, tmp_path):
+    def test_subordinate_cancelled_syncs_to_blocked(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)
         sup_tqm = TaskQueueManager(animas_dir / "supervisor")
         sub_tqm = TaskQueueManager(animas_dir / "subordinate")
@@ -85,7 +85,8 @@ class TestSyncDelegated:
 
         assert synced == 1
         task = sup_tqm.get_task_by_id(sup_id)
-        assert task.status == "done"
+        assert task.status == "blocked"
+        assert "cancelled" in task.summary
 
     def test_subordinate_still_pending_no_sync(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)

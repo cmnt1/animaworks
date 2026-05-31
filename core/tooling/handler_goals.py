@@ -46,6 +46,7 @@ class GoalsToolsMixin:
                     meta={"goal_id": state.goal_id},
                     safe=True,
                 )
+                self._enqueue_goal_task(manager, state, reason="goal_set")
                 return _json.dumps(state.model_dump(mode="json"), ensure_ascii=False, indent=2)
 
             if action == "status":
@@ -80,6 +81,8 @@ class GoalsToolsMixin:
                     meta={"goal_id": state.goal_id, "reason": reason},
                     safe=True,
                 )
+                if action == "resume":
+                    self._enqueue_goal_task(manager, state, reason=reason or "goal_resume")
                 return _json.dumps(state.model_dump(mode="json"), ensure_ascii=False, indent=2)
 
             if action == "judge":
@@ -127,6 +130,30 @@ class GoalsToolsMixin:
         if updated is None:
             return _error_result("GoalNotFound", f"Goal not found: {goal_id}")
         return _json.dumps(updated.model_dump(mode="json"), ensure_ascii=False, indent=2)
+
+    def _enqueue_goal_task(self, manager: GoalManager, state: Any, *, reason: str) -> None:
+        try:
+            judgment = GoalJudgment(
+                goal_id=state.goal_id,
+                verdict="continue",
+                reason=reason,
+                continuation_prompt="Start the smallest useful next step toward the persistent goal.",
+                iteration=state.iteration_count + 1,
+            )
+            entry = manager.enqueue_continuation(
+                state.goal_id,
+                judgment,
+                source_task_desc={"reply_to": self._anima_dir.name},
+                result_summary=reason,
+                respect_human_priority=True,
+            )
+            if entry is None:
+                return
+            wake_fn = getattr(self, "_pending_executor_wake", None)
+            if wake_fn:
+                wake_fn()
+        except Exception:
+            logger.warning("Failed to enqueue initial goal TaskExec: %s", state.goal_id, exc_info=True)
 
     @staticmethod
     def _resolve_goal_id(manager: GoalManager, args: dict[str, Any]) -> str:

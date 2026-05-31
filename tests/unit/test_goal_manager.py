@@ -226,6 +226,49 @@ def test_goal_tool_schema_and_handler(tmp_path: Path, monkeypatch) -> None:
     assert bad_set["status"] == "error"
 
 
+def test_goal_tool_set_enqueues_initial_taskexec(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = _anima_dir(tmp_path, monkeypatch)
+    handler = ToolHandler(anima_dir, memory=object())  # type: ignore[arg-type]
+
+    result = json.loads(
+        handler.handle(
+            "goal",
+            {
+                "action": "set",
+                "objective": "Run public evidence verifier",
+                "success_criteria": ["verifier output exists"],
+            },
+        )
+    )
+
+    active = TaskQueueManager(anima_dir).get_active_goal_task(result["goal_id"])
+    assert active is not None
+    assert active.meta["executor"] == "taskexec"
+    assert active.meta["goal_id"] == result["goal_id"]
+    pending_json = anima_dir / "state" / "pending" / f"{active.task_id}.json"
+    assert pending_json.exists()
+
+
+def test_goal_tool_resume_enqueues_without_duplicates(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = _anima_dir(tmp_path, monkeypatch)
+    handler = ToolHandler(anima_dir, memory=object())  # type: ignore[arg-type]
+    result = json.loads(handler.handle("goal", {"action": "set", "objective": "Recover evidence"}))
+    goal_id = result["goal_id"]
+    first = TaskQueueManager(anima_dir).get_active_goal_task(goal_id)
+    assert first is not None
+    TaskQueueManager(anima_dir).update_status(first.task_id, "cancelled", summary="simulate no active runner")
+
+    resumed = json.loads(handler.handle("goal", {"action": "resume", "goal_id": goal_id}))
+    assert resumed["status"] == "active"
+    second = TaskQueueManager(anima_dir).get_active_goal_task(goal_id)
+    assert second is not None
+    assert second.task_id != first.task_id
+
+    handler.handle("goal", {"action": "resume", "goal_id": goal_id})
+    tasks = [task for task in TaskQueueManager(anima_dir).list_tasks() if task.meta.get("goal_id") == goal_id]
+    assert [task.task_id for task in tasks] == [second.task_id]
+
+
 def test_goal_tool_auto_judge_path_uses_sync_runner(tmp_path: Path, monkeypatch) -> None:
     anima_dir = _anima_dir(tmp_path, monkeypatch)
     handler = ToolHandler(anima_dir, memory=object())  # type: ignore[arg-type]
