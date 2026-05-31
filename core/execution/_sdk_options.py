@@ -159,6 +159,7 @@ class SDKOptionsMixin:
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PATH": _build_sdk_path_env(self._anima_dir, PROJECT_DIR),
             "CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT": "true",
+            "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
             "ENABLE_TOOL_SEARCH": "false",
             "CLAUDECODE": "",
         }
@@ -360,6 +361,10 @@ class SDKOptionsMixin:
                 _bridge_posix = str(_bridge).replace("\\", "/")
                 _rtk_posix = _rtk_bin.replace("\\", "/")
                 _rtk_settings = {
+                    "env": {
+                        "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
+                    },
+                    "defaultShell": "powershell",
                     "hooks": {
                         "PreToolUse": [
                             {

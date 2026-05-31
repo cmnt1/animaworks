@@ -137,6 +137,15 @@ class TestAgentSDKExecutor:
             env = executor._build_env()
             assert env.get("CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT") == "true"
 
+    def test_build_env_enables_powershell_tool_on_windows(self, model_config, anima_dir):
+        with patch_agent_sdk():
+            from core.execution.agent_sdk import AgentSDKExecutor
+            executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+            env = executor._build_env()
+            if sys.platform == "win32":
+                assert env.get("CLAUDE_CODE_USE_POWERSHELL_TOOL") == "1"
+                assert "CLAUDE_CODE_SHELL" not in env
+
     def test_build_env_max_plan(self, anima_dir):
         """mode_s_auth=None (default) → Max plan regardless of api_key."""
         config = ModelConfig(model="claude-sonnet-4-6", api_key="sk-test")
