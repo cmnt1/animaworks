@@ -20,12 +20,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.memory.task_queue import TaskQueueManager
 from core.supervisor.pending_executor import (
     PendingTaskExecutor,
     TaskExecError,
     _SENTINEL_CANCELLED,
     _SENTINEL_EXPIRED,
     _classify_task_result,
+    _classify_task_result_for_desc,
 )
 
 
@@ -156,6 +158,81 @@ class TestClassifyTaskResult:
 
 
 # ── Bug B: error chunk detection ──────────────────────────
+
+
+    def test_multistage_intermediate_result_maps_to_blocked(self):
+        status, summary = _classify_task_result_for_desc(
+            "Situation cleanup complete. Mira artifact is missing, so I will proceed with "
+            "option 2 and create an instruction file for the machine retry.",
+            {"allow_multistage": True},
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Multi-stage task reported")
+
+    def test_non_multistage_intermediate_result_keeps_default_done(self):
+        status, summary = _classify_task_result_for_desc(
+            "Situation cleanup complete. I will proceed with the next action.",
+            {"allow_multistage": False},
+        )
+        assert status == "done"
+        assert summary.startswith("Situation cleanup complete")
+
+
+class TestBlockedAutoRetry:
+    def test_multistage_blocked_task_is_requeued(self, tmp_path: Path):
+        executor = _make_executor(tmp_path)
+        manager = TaskQueueManager(executor._anima_dir)
+        entry = manager.add_task(
+            source="anima",
+            original_instruction="Finish verifier",
+            assignee="test-anima",
+            summary="Verifier",
+            task_id="retry-blocked",
+            meta={
+                "task_desc": {
+                    "task_type": "llm",
+                    "title": "Finish verifier",
+                    "description": "Produce final evidence",
+                    "allow_multistage": True,
+                    "reply_to": "sakura",
+                }
+            },
+        )
+        manager.update_status(entry.task_id, "blocked", summary="BLOCKED: missing final evidence")
+
+        retried = executor._auto_retry_blocked_llm_task(
+            {
+                "task_id": entry.task_id,
+                "task_type": "llm",
+                "allow_multistage": True,
+                "submitted_by": "sakura",
+            }
+        )
+
+        updated = manager.get_task_by_id(entry.task_id)
+        assert retried is True
+        assert updated is not None
+        assert updated.status == "in_progress"
+        assert updated.meta["retry_count"] == 1
+        assert (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
+
+    def test_blocked_task_without_multistage_flag_is_not_requeued(self, tmp_path: Path):
+        executor = _make_executor(tmp_path)
+        manager = TaskQueueManager(executor._anima_dir)
+        entry = manager.add_task(
+            source="anima",
+            original_instruction="Ask a human",
+            assignee="test-anima",
+            summary="Human blocked",
+            task_id="human-blocked",
+        )
+        manager.update_status(entry.task_id, "blocked", summary="BLOCKED: waiting for user")
+
+        retried = executor._auto_retry_blocked_llm_task({"task_id": entry.task_id, "task_type": "llm"})
+
+        assert retried is False
+        assert manager.get_task_by_id(entry.task_id).status == "blocked"
+        assert not (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
 
 
 class TestRunLlmTaskErrorDetection:

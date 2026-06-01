@@ -44,6 +44,7 @@ _TASK_COMPLETION_NOTICE_RE = re.compile(
     r"\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f",
     re.DOTALL,
 )
+_TASK_FAILURE_NOTICE_RE = re.compile(r"^\s*\[\u30bf\u30b9\u30af\u5931\u6557\u901a\u77e5\]", re.IGNORECASE)
 _STATUS_INQUIRY_RE = re.compile(
     r"(?:へ)?確認です|ステータス|達成状況|進捗|対応状況|完了見込み|ブロッカー|max iterations",
     re.IGNORECASE,
@@ -59,6 +60,11 @@ def _is_task_completion_notice(content: str, meta: dict[str, Any]) -> bool:
     if meta.get("notification_type") in _NO_CAPTURE_NOTIFICATION_TYPES:
         return True
     return bool(_TASK_COMPLETION_NOTICE_RE.search(content))
+
+
+def _is_task_failure_notice(content: str) -> bool:
+    """Return True for TaskExec failure notifications routed as messages."""
+    return bool(_TASK_FAILURE_NOTICE_RE.search(content))
 
 
 def _is_status_inquiry(content: str, intent: str) -> bool:
@@ -79,7 +85,11 @@ def looks_like_task_request(*, content: str, intent: str = "", msg_type: str = "
         return False
     if _is_task_completion_notice(content, meta):
         return False
+    if _is_task_failure_notice(content):
+        return False
     if _is_status_inquiry(content, intent):
+        return False
+    if intent == "report":
         return False
     if intent == "delegation":
         return False

@@ -243,15 +243,23 @@ def _attach_related_tasks(
         target = meta.get("delegated_to")
         child_id = meta.get("delegated_task_id")
         if isinstance(target, str) and target and isinstance(child_id, str) and child_id:
+            related_child = index.get((target, child_id))
             _append_link(
                 links,
                 seen,
                 kind="delegates_to",
-                related=index.get((target, child_id)),
+                related=related_child,
                 fallback_anima_name=target,
                 fallback_task_id=child_id,
                 peer_name=target,
             )
+            if (
+                task.queue_status == "blocked"
+                and task.column == BoardColumn.BLOCKED
+                and related_child is not None
+                and related_child.queue_status not in _TERMINAL_QUEUE_STATUSES
+            ):
+                task.column = BoardColumn.WAITING
 
         parent = delegated_parent_by_child.get((task.anima_name, task.task_id))
         if parent is not None:

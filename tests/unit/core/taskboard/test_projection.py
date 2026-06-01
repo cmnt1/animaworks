@@ -358,6 +358,37 @@ def test_projected_task_surfaces_delegation_and_response_links(tmp_path: Path) -
     assert response_links[0].title == "AFF-003 repair"
 
 
+def test_blocked_delegated_parent_waits_when_child_is_active(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    sora = _queue(tmp_path, "sora")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = sora.add_task(
+        source="anima",
+        original_instruction="finish verifier",
+        assignee="sora",
+        summary="finish verifier",
+        task_id="child-blocked",
+    )
+    sora.update_status(child.task_id, "blocked", summary="missing evidence")
+    parent = sakura.add_delegated_task(
+        original_instruction="track verifier",
+        assignee="sora",
+        summary="track verifier",
+        deadline="1h",
+        meta={"delegated_to": "sora", "delegated_task_id": child.task_id},
+    )
+    sakura.update_status(parent.task_id, "blocked", summary="waiting for child evidence")
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert by_key[("sakura", parent.task_id)].queue_status == "blocked"
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.WAITING
+    assert by_key[("sora", child.task_id)].queue_status == "blocked"
+    assert by_key[("sora", child.task_id)].column == BoardColumn.BLOCKED
+
+
 def test_same_task_id_is_scoped_per_anima(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     hinata = _queue(tmp_path, "hinata")

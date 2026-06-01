@@ -225,6 +225,47 @@ class TestSend:
         assert not (bob_dir / "state" / "task_queue.jsonl").exists()
         assert not (bob_dir / "state" / "pending").exists()
 
+    def test_report_with_evidence_and_deadline_does_not_create_recipient_task(self, tmp_path: Path):
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        animas_dir = tmp_path / "animas"
+        (animas_dir / "alice").mkdir(parents=True)
+        bob_dir = animas_dir / "bob"
+        bob_dir.mkdir(parents=True)
+
+        content = (
+            "【AFF-003 現状サマリー】\n"
+            "未解決の証跡があります。次アクションの判断期限は16:59 JSTです。\n"
+            "成果物パスとPASS/FAIL表を確認してください。"
+        )
+        with patch("core.paths.get_animas_dir", return_value=animas_dir):
+            msg = Messenger(shared, "alice").send("bob", content, intent="report")
+
+        assert not (bob_dir / "state" / "task_queue.jsonl").exists()
+        assert not (bob_dir / "state" / "pending").exists()
+        assert "autocreated_task_id" not in msg.meta
+
+    def test_task_failure_notice_does_not_create_recipient_task(self, tmp_path: Path):
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        animas_dir = tmp_path / "animas"
+        (animas_dir / "alice").mkdir(parents=True)
+        bob_dir = animas_dir / "bob"
+        bob_dir.mkdir(parents=True)
+
+        content = (
+            "[タスク失敗通知]\n"
+            "タスクID: a479b3d81cfc\n"
+            "目的: 期限までに証跡を確認してください。\n"
+            "エラー: TaskExecError: ストリームが5回切断されました。"
+        )
+        with patch("core.paths.get_animas_dir", return_value=animas_dir):
+            msg = Messenger(shared, "alice").send("bob", content)
+
+        assert not (bob_dir / "state" / "task_queue.jsonl").exists()
+        assert not (bob_dir / "state" / "pending").exists()
+        assert "autocreated_task_id" not in msg.meta
+
 
 # ── reply ─────────────────────────────────────────────────
 

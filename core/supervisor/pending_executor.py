@@ -221,6 +221,43 @@ def _detect_unresolved_blocker_report(result: str) -> str | None:
     return None
 
 
+def _detect_non_final_multistage_result(result: str) -> str | None:
+    """Return a blocked summary when a multi-stage task reports a next step."""
+    text = (result or "").strip()
+    if not text or _completion_evidence_count(text) >= 3:
+        return None
+
+    folded = text.casefold()
+    non_final_markers = (
+        "will proceed",
+        "will continue",
+        "will start",
+        "next action",
+        "next step",
+        "retry",
+        "re-run",
+        "rerun",
+        "instruction file",
+        "handoff",
+        "partial",
+        "missing final",
+        "no final",
+        "not final",
+        "not complete",
+        "machine",
+        "進みます",
+        "再試行",
+        "指示ファイル",
+        "未作成",
+        "不足",
+        "中間ログ",
+        "これから",
+    )
+    if any(marker in folded for marker in non_final_markers):
+        return "Multi-stage task reported an intermediate/next-step result, not final evidence"
+    return None
+
+
 def _classify_task_result(result: str) -> tuple[str, str]:
     """Map _run_llm_task return value to (queue_status, summary).
 
@@ -245,6 +282,19 @@ def _classify_task_result(result: str) -> tuple[str, str]:
     if unresolved_blocker:
         return "blocked", f"BLOCKED: {unresolved_blocker}"
     return "done", (result or "")[:200]
+
+
+def _classify_task_result_for_desc(result: str, task_desc: dict[str, Any]) -> tuple[str, str]:
+    """Classify a task result with task descriptor context."""
+    status, summary = _classify_task_result(result)
+    if status != "done":
+        return status, summary
+    if not bool(task_desc.get("allow_multistage")):
+        return status, summary
+    non_final = _detect_non_final_multistage_result(result)
+    if non_final:
+        return "blocked", f"BLOCKED: {non_final}"
+    return status, summary
 
 
 def _command_queue_link(task_id: str, tool_name: str, subcommand: str) -> tuple[str, str, str] | None:
@@ -405,6 +455,52 @@ class PendingTaskExecutor:
                 status,
                 exc_info=True,
             )
+
+    def _auto_retry_blocked_llm_task(self, task_desc: dict[str, Any]) -> bool:
+        """Requeue executable multi-stage tasks that ended in a blocked report."""
+        task_id = task_desc.get("task_id", "")
+        if not task_id:
+            return False
+
+        entry = self._get_task_queue_entry(task_id)
+        if entry is None or entry.status != "blocked":
+            return False
+
+        meta = entry.meta or {}
+        task_desc_meta = meta.get("task_desc") if isinstance(meta.get("task_desc"), dict) else {}
+        if not (
+            bool(task_desc.get("allow_multistage"))
+            or bool(task_desc_meta.get("allow_multistage"))
+            or bool(meta.get("auto_retry_on_blocked"))
+        ):
+            return False
+
+        if bool(meta.get("needs_human")):
+            logger.info("[%s] Blocked task requires human input; not auto-retrying: %s", self._anima_name, task_id)
+            return False
+
+        submitted_by = task_desc.get("submitted_by")
+        if not isinstance(submitted_by, str) or not submitted_by:
+            submitted_by = self._anima_name
+
+        try:
+            from core.supervisor.task_retry import TaskRetryError, retry_task
+
+            retry_task(
+                self._anima_dir,
+                task_id,
+                summary="auto retry queued after blocked TaskExec result",
+                submitted_by=submitted_by,
+            )
+            self.wake()
+            logger.info("[%s] Auto-requeued blocked multi-stage task: %s", self._anima_name, task_id)
+            return True
+        except TaskRetryError:
+            logger.info("[%s] Blocked task not auto-requeued: %s", self._anima_name, task_id, exc_info=True)
+            return False
+        except Exception:
+            logger.warning("[%s] Failed to auto-requeue blocked task: %s", self._anima_name, task_id, exc_info=True)
+            return False
 
     def _get_task_queue_entry(self, task_id: str) -> Any | None:
         if not task_id:
@@ -846,6 +942,7 @@ class PendingTaskExecutor:
                             )
                             await self.execute_pending_task(task_desc)
                         processing_path.unlink(missing_ok=True)
+                        self._auto_retry_blocked_llm_task(task_desc)
                     except Exception:
                         logger.exception(
                             "Error processing LLM pending task file: %s",
@@ -1157,7 +1254,7 @@ class PendingTaskExecutor:
             try:
                 result = await self._run_llm_task(task_desc, completed_results)
                 self._save_task_result(task_id, result)
-                status, summary = _classify_task_result(result)
+                status, summary = _classify_task_result_for_desc(result, task_desc)
                 self._sync_task_queue(task_id, status, summary=summary)
                 if status == "done":
                     await self._handle_goal_completion(task_desc, result)
@@ -1175,7 +1272,7 @@ class PendingTaskExecutor:
         task_id = task_desc.get("task_id", "unknown")
         result = await self._run_llm_task(task_desc, completed_results)
         self._save_task_result(task_id, result)
-        status, summary = _classify_task_result(result)
+        status, summary = _classify_task_result_for_desc(result, task_desc)
         self._sync_task_queue(task_id, status, summary=summary)
         if status == "done":
             await self._handle_goal_completion(task_desc, result)
@@ -1737,7 +1834,7 @@ class PendingTaskExecutor:
                 self._sync_task_queue(task_id, "in_progress")
                 try:
                     result = await self._run_llm_task(task_desc)
-                    status, summary = _classify_task_result(result)
+                    status, summary = _classify_task_result_for_desc(result, task_desc)
                     self._sync_task_queue(task_id, status, summary=summary)
                     if status == "done":
                         await self._handle_goal_completion(task_desc, result)

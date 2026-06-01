@@ -354,13 +354,22 @@ class DigitalAnima(
             if queue_task_id:
                 from core.memory.task_queue import TaskQueueManager
 
+                manager = TaskQueueManager(self.agent.anima_dir)
+                entry = manager.get_task_by_id(queue_task_id)
+                if task.status.value == "failed" and entry and entry.status == "done":
+                    logger.info(
+                        "[%s] Skipping failed background wrapper status for already-done queue task: %s",
+                        self.name,
+                        queue_task_id,
+                    )
+                    return
                 success_status = str(task.tool_args.get("queue_success_status") or "done")
                 failure_status = str(task.tool_args.get("queue_failure_status") or "blocked")
                 queue_status = success_status if task.status.value == "completed" else failure_status
                 summary = task.summary()
                 if task.status.value == "failed" and not summary.startswith("FAILED:"):
                     summary = f"FAILED: {summary}"
-                TaskQueueManager(self.agent.anima_dir).update_status(
+                manager.update_status(
                     queue_task_id,
                     queue_status,
                     summary=summary[:500],
