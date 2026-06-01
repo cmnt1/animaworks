@@ -117,7 +117,11 @@ def project_anima(
             projected,
             _build_task_index(resolved_anima_dir.parent, [resolved_anima_name], resolved_store),
         )
-    return sorted(projected, key=_sort_key)
+    _suppress_duplicate_delegated_parents(projected)
+    return sorted(
+        [task for task in projected if _should_include(task, include_archived=include_archived)],
+        key=_sort_key,
+    )
 
 
 def project_all(
@@ -151,7 +155,11 @@ def project_all(
         )
     relation_names = set(relation_anima_names) if relation_anima_names is not None else names
     _attach_related_tasks(projected, _build_task_index(resolved_animas_dir, relation_names, resolved_store))
-    return sorted(projected, key=_sort_key)
+    _suppress_duplicate_delegated_parents(projected)
+    return sorted(
+        [task for task in projected if _should_include(task, include_archived=include_archived)],
+        key=_sort_key,
+    )
 
 
 def _discover_anima_names(animas_dir: Path) -> set[str]:
@@ -291,6 +299,38 @@ def _attach_related_tasks(
             task.column = BoardColumn.WAITING
 
         task.related_tasks = links
+
+
+def _suppress_duplicate_delegated_parents(tasks: list[BoardTask]) -> None:
+    groups: dict[tuple[str, str, str], list[BoardTask]] = {}
+    for task in tasks:
+        if task.visibility != AttentionVisibility.ACTIVE or task.queue_status != "delegated":
+            continue
+        meta = task.meta or {}
+        target = meta.get("delegated_to")
+        child_id = meta.get("delegated_task_id")
+        if not isinstance(target, str) or not target or not isinstance(child_id, str) or not child_id:
+            continue
+        groups.setdefault((task.anima_name, target, child_id), []).append(task)
+
+    for duplicates in groups.values():
+        if len(duplicates) <= 1:
+            continue
+        keeper = max(duplicates, key=_delegated_parent_precedence)
+        for task in duplicates:
+            if task is keeper:
+                continue
+            task.visibility = AttentionVisibility.ARCHIVED
+            task.column = BoardColumn.SUPPRESSED
+            task.replaced_by = f"{keeper.anima_name}:{keeper.task_id}"
+            task.tombstone_reason = "duplicate_delegated_parent"
+
+
+def _delegated_parent_precedence(task: BoardTask) -> tuple[int, str, str]:
+    summary = (task.summary or "").strip().casefold()
+    is_superseded = summary.startswith("superseded by")
+    updated_at = task.queue_updated_at or task.board_updated_at or ""
+    return (0 if is_superseded else 1, updated_at, task.task_id)
 
 
 def _append_link(
