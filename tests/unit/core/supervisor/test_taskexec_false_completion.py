@@ -192,6 +192,15 @@ class TestClassifyTaskResult:
         assert status == "blocked"
         assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
 
+    def test_english_full_picture_start_result_maps_to_blocked(self):
+        status, summary = _classify_task_result_for_desc(
+            "Now I have the full picture. Let me check the generated JSON to understand "
+            "the 4AXJKD issue in 108502, then run a comprehensive pipeline.",
+            {"allow_multistage": True},
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
+
     def test_japanese_evidence_collection_start_result_maps_to_blocked(self):
         status, summary = _classify_task_result_for_desc(
             "状況を確認しました。miyuが22:08 JSTにタスク実行開始したところです。"

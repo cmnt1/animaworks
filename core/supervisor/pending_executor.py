@@ -271,9 +271,11 @@ def _detect_strong_non_final_followup(result: str) -> str | None:
     folded = text.casefold()
     strong_markers = (
         "now i understand",
+        "now i have the full picture",
         "let me write",
         "let me create",
         "let me prepare",
+        "let me check",
         "let me run",
         "i will write",
         "i will create",
