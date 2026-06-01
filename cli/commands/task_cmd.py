@@ -40,10 +40,12 @@ def cmd_task(args: argparse.Namespace) -> None:
         _cmd_add(args, manager)
     elif sub == "update":
         _cmd_update(args, manager)
+    elif sub == "retry":
+        _cmd_retry(args, anima_dir)
     elif sub == "list":
         _cmd_list(args, manager)
     else:
-        print("Usage: animaworks-tool task {add|update|list}", file=sys.stderr)
+        print("Usage: animaworks-tool task {add|update|retry|list}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -97,6 +99,31 @@ def _cmd_update(args: argparse.Namespace, manager) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+def _cmd_retry(args: argparse.Namespace, anima_dir: Path) -> None:
+    task_id = getattr(args, "task_id", "")
+    summary = getattr(args, "summary", None)
+
+    if not task_id:
+        print("Error: --task-id is required", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        from core.supervisor.task_retry import TaskRetryError, retry_task
+
+        entry = retry_task(
+            anima_dir,
+            task_id,
+            summary=summary,
+            submitted_by=anima_dir.name,
+        )
+    except TaskRetryError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    result = entry.model_dump()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def _cmd_list(args: argparse.Namespace, manager) -> None:
     status_filter = getattr(args, "status", None)
     tasks = manager.list_tasks(status=status_filter)
@@ -124,6 +151,11 @@ def register_task_command(subparsers) -> None:
     p_update.add_argument("--status", required=True, choices=["pending", "in_progress", "done", "cancelled", "blocked"])
     p_update.add_argument("--summary", default=None, help="Rename the task summary/title")
     p_update.add_argument("--note", default=None, help="Append progress/status detail without renaming the task")
+
+    # task retry
+    p_retry = task_sub.add_parser("retry", help="Requeue a TaskExec task from task_queue metadata")
+    p_retry.add_argument("--task-id", required=True, help="Task ID")
+    p_retry.add_argument("--summary", default=None, help="Optional summary/title after retry")
 
     # task list
     p_list = task_sub.add_parser("list", help="List tasks")

@@ -585,6 +585,21 @@ animaworks-tool task update --task-id abc123 --status done --summary "Completed"
 
 ---
 
+### `animaworks-tool task retry` - Retry TaskExec Task
+
+```bash
+animaworks-tool task retry --task-id abc123 --summary "Retry queued"
+```
+
+Regenerates `state/pending/{task_id}.json` from task metadata or the queue instruction, then marks the task `in_progress` for TaskExec pickup.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--task-id` | string | Task ID |
+| `--summary` | string | Optional summary after retry |
+
+---
+
 ### `animaworks-tool task list` — List Tasks
 
 ```bash

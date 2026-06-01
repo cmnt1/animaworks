@@ -162,6 +162,14 @@ class DelegationMixin(OrgHelpersMixin):
             "working_directory": resolved_wd,
             "priority": cascade_priority,
         }
+        try:
+            sub_tqm.update_meta(sub_entry.task_id, {"task_desc": task_desc})
+        except Exception:
+            logger.warning(
+                "Failed to persist retry metadata for delegated task %s",
+                sub_entry.task_id,
+                exc_info=True,
+            )
         pending_dir = target_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
         (pending_dir / f"{sub_entry.task_id}.json").write_text(

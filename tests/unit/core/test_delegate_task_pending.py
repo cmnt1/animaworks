@@ -137,6 +137,29 @@ class TestDelegateTaskWritesPending:
         assert len(tasks) >= 1
         assert tasks[0].task_id == pending_task["task_id"]
 
+    def test_delegated_task_persists_task_desc_for_retry(self, handler_with_sub):
+        handler, animas_dir, cfg = handler_with_sub
+        alice_dir = animas_dir / "alice"
+
+        with patch("core.paths.get_animas_dir", return_value=animas_dir), \
+             patch("core.config.models.load_config", return_value=cfg), \
+             patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]):
+            handler.handle("delegate_task", {
+                "name": "alice",
+                "instruction": "Fix the blocked Obsidian reflection",
+                "summary": "Obsidian reflection retry",
+                "deadline": "2h",
+            })
+
+        pending_task = json.loads(
+            next((alice_dir / "state" / "pending").glob("*.json")).read_text(encoding="utf-8")
+        )
+        task = TaskQueueManager(alice_dir).get_task_by_id(pending_task["task_id"])
+        assert task is not None
+        assert task.meta["task_desc"]["task_id"] == pending_task["task_id"]
+        assert task.meta["task_desc"]["description"] == "Fix the blocked Obsidian reflection"
+        assert task.meta["task_desc"]["working_directory"] == pending_task.get("working_directory", "")
+
     def test_pending_file_has_required_fields(self, handler_with_sub):
         """All fields required by PendingTaskExecutor are present."""
         handler, animas_dir, cfg = handler_with_sub

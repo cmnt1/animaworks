@@ -145,6 +145,15 @@ class TestClassifyTaskResult:
         assert status == "blocked"
         assert "AFF-003 blockers" in summary
 
+    def test_policy_blocked_partial_completion_maps_to_blocked(self):
+        status, summary = _classify_task_result(
+            "Review judgment is complete. Remaining work is Obsidian reflection only, "
+            "but the filesystem sandbox is read-only and Remove-Item was rejected: blocked by policy. "
+            "The file operation remains not applied."
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported unresolved blockers")
+
 
 # ── Bug B: error chunk detection ──────────────────────────
 
