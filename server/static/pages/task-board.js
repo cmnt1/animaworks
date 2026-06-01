@@ -319,7 +319,7 @@ function _cardHtml(task) {
       ${_relatedTasksHtml(task)}
       <div class="taskboard-meta-row">
         <span class="taskboard-badge taskboard-badge--${statusClassSuffix(task.queue_status)}">
-          ${escapeHtml(task.queue_status || t("taskboard.queue_missing"))}
+          ${escapeHtml(_queueStatusLabel(task.queue_status))}
         </span>
         <span class="taskboard-visibility">${escapeHtml(visibilityLabel(task.visibility))}</span>
       </div>
@@ -334,6 +334,13 @@ function _cardHtml(task) {
       </div>
     </article>
   `;
+}
+
+function _queueStatusLabel(status) {
+  if (!status) return t("taskboard.queue_missing");
+  const key = `taskboard.queue_status_${status}`;
+  const label = t(key);
+  return label === key ? status : label;
 }
 
 function _taskTitle(task) {

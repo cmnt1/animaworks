@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -467,11 +468,96 @@ def _column_response(tasks: list[BoardTask]) -> list[dict[str, Any]]:
 
 def _task_to_response(task: BoardTask) -> dict[str, Any]:
     data = task.model_dump(mode="json")
+    data["summary"] = _task_display_text(data.get("summary"))
+    related_tasks = data.get("related_tasks")
+    if isinstance(related_tasks, list):
+        for related_task in related_tasks:
+            if isinstance(related_task, dict):
+                related_task["title"] = _task_display_text(related_task.get("title"))
     timestamps = [value for value in (task.queue_updated_at, task.board_updated_at) if value]
     data["updated_at"] = (
         max(timestamps, key=lambda value: datetime.fromisoformat(value.replace("Z", "+00:00"))) if timestamps else None
     )
     return data
+
+
+def _task_display_text(value: Any) -> Any:
+    if not isinstance(value, str) or not value.strip():
+        return value
+
+    text = value.strip()
+    exact = {
+        "BLOCKED: Task reported an explicit follow-up/start step, not final evidence": (
+            "停止: 開始・次アクションのみで、最終証跡ではありません"
+        ),
+        "BLOCKED: Task reported unresolved blockers instead of final evidence": (
+            "停止: 未解決ブロッカーの報告で、最終証跡ではありません"
+        ),
+        "auto retry queued after blocked TaskExec result": "非最終報告のため自動再実行待ち",
+        "Recovered orphaned processing task; retry queued.": "中断された処理を回収し、再実行待ちにしました。",
+    }
+    if text in exact:
+        return exact[text]
+
+    failed_match = re.fullmatch(
+        r"FAILED: Task produced no final response and reported (\d+) tool error\(s\)",
+        text,
+    )
+    if failed_match:
+        return f"失敗: 最終応答がなく、ツールエラー {failed_match.group(1)} 件で終了"
+
+    superseded_retry = re.fullmatch(
+        r"Superseded by active Kanna retry ([0-9a-f]+)\. Await final six-gate evidence or saved BLOCKED table\.",
+        text,
+    )
+    if superseded_retry:
+        return (
+            f"最新のKanna再実行 {superseded_retry.group(1)} に引き継ぎ済み。"
+            "最終6ゲート証跡または保存済みBLOCKED表を待機中。"
+        )
+
+    active_retry = re.fullmatch(
+        r"Active Kanna retry running(?: after db-connection-note non-final fix)?: ([0-9a-f]+)\. "
+        r"Await final six-gate evidence or saved BLOCKED table\.",
+        text,
+    )
+    if active_retry:
+        return (
+            f"Kanna再実行 {active_retry.group(1)} が進行中。"
+            "最終6ゲート証跡または保存済みBLOCKED表を待機中。"
+        )
+
+    restarted = re.fullmatch(
+        r"Restarted after db-connection-note non-final fix: complete "
+        r"sync/deploy/public/image/ForbiddenAd six-gate evidence or saved BLOCKED table only\.",
+        text,
+    )
+    if restarted:
+        return (
+            "再実行中: sync/deploy・公開URL・画像URL・禁止広告を含む6ゲート証跡、"
+            "または保存済みBLOCKED表のみ提出。"
+        )
+
+    rewritten = text
+    replacements = (
+        ("FAILED: TaskExecError:", "失敗: TaskExecエラー:"),
+        ("FAILED:", "失敗:"),
+        ("BLOCKED:", "停止:"),
+        ("Superseded by", "引き継ぎ先:"),
+        ("final-evidence retry", "最終証跡の再実行"),
+        ("Await final six-gate evidence or saved BLOCKED table", "最終6ゲート証跡または保存済みBLOCKED表を待機中"),
+        ("db-connection-note non-final fix", "DB接続メモを非最終扱いにする修正"),
+        (
+            "complete sync/deploy/public/image/ForbiddenAd six-gate evidence or saved BLOCKED table only",
+            "sync/deploy・公開URL・画像URL・禁止広告を含む6ゲート証跡、または保存済みBLOCKED表のみ提出",
+        ),
+        ("Active Kanna retry running", "Kanna再実行中"),
+        ("Restarted after", "修正後に再実行"),
+        ("blocked継続", "停止継続"),
+    )
+    for source, target in replacements:
+        rewritten = rewritten.replace(source, target)
+    return rewritten
 
 
 def _count_corrupt_task_queue_lines(animas_dir: Path, anima_names: list[str]) -> int:

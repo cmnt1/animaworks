@@ -127,6 +127,32 @@ class TestTaskBoardList:
         assert visibility_resp.status_code == 422
         assert column_resp.status_code == 422
 
+    async def test_operational_task_titles_are_localized_for_display(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["alice"])
+        queue = _queue(app, "alice")
+        queue.add_task(
+            source="human",
+            original_instruction="追跡してください",
+            assignee="alice",
+            summary=(
+                "Superseded by active Kanna retry 68db788caef8. "
+                "Await final six-gate evidence or saved BLOCKED table."
+            ),
+            task_id="task-localized",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/task-board", params={"q": "Superseded"})
+
+        assert resp.status_code == 200
+        tasks = resp.json()["tasks"]
+        assert [task["task_id"] for task in tasks] == ["task-localized"]
+        assert tasks[0]["summary"] == (
+            "最新のKanna再実行 68db788caef8 に引き継ぎ済み。"
+            "最終6ゲート証跡または保存済みBLOCKED表を待機中。"
+        )
+
     async def test_include_missing_returns_metadata_only_tasks(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
         _store(app).upsert_metadata(
