@@ -202,6 +202,15 @@ class TestClassifyTaskResult:
         assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
 
 
+    def test_db_connection_only_result_maps_to_blocked(self):
+        status, summary = _classify_task_result_for_desc(
+            "DB接続できた。stdin pipeを使う。",
+            {"allow_multistage": False},
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
+
+
 class TestBlockedAutoRetry:
     def test_multistage_blocked_task_is_requeued(self, tmp_path: Path):
         executor = _make_executor(tmp_path)
