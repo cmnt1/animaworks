@@ -6,6 +6,7 @@ from core.taskboard.models import (
     AttentionVisibility,
     BoardColumn,
     BoardTask,
+    BoardTaskLink,
     TaskBoardMetadata,
     TaskQueueRef,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "AttentionVisibility",
     "BoardColumn",
     "BoardTask",
+    "BoardTaskLink",
     "TaskBoardMetadata",
     "TaskBoardStore",
     "TaskQueueRef",

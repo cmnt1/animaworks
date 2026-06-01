@@ -297,6 +297,67 @@ def test_projected_task_surfaces_cron_metadata(tmp_path: Path) -> None:
     assert regular.cron_task_name is None
 
 
+def test_projected_task_surfaces_delegation_and_response_links(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    mira = _queue(tmp_path, "mira")
+    kanna = _queue(tmp_path, "kanna")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    mira.add_task(
+        source="anima",
+        original_instruction="verify public evidence",
+        assignee="mira",
+        summary="verify evidence",
+        task_id="b1a58e0e84ae",
+    )
+    parent = sakura.add_delegated_task(
+        original_instruction="delegate verification",
+        assignee="mira",
+        summary="[委譲] verify evidence",
+        deadline="1h",
+        meta={"delegated_to": "mira", "delegated_task_id": "b1a58e0e84ae"},
+    )
+    original = kanna.add_task(
+        source="anima",
+        original_instruction="repair article",
+        assignee="kanna",
+        summary="AFF-003 repair",
+        task_id="051f9900fce4",
+    )
+    kanna.update_status(original.task_id, "done")
+    kanna.compact()
+    response = kanna.add_task(
+        source="anima",
+        original_instruction="【確認結果】051f9900fce4 は承認できません",
+        assignee="kanna",
+        summary="【確認結果】051f9900fce4 は承認できません",
+        task_id="a3d97372f90f",
+        meta={"source_from": "sakura", "source_intent": "report"},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    child_links = by_key[("mira", "b1a58e0e84ae")].related_tasks
+    assert child_links[0].kind == "delegated_from"
+    assert child_links[0].anima_name == "sakura"
+    assert child_links[0].task_id == parent.task_id
+    assert child_links[0].title == "[委譲] verify evidence"
+
+    parent_links = by_key[("sakura", parent.task_id)].related_tasks
+    assert parent_links[0].kind == "delegates_to"
+    assert parent_links[0].anima_name == "mira"
+    assert parent_links[0].task_id == "b1a58e0e84ae"
+    assert parent_links[0].title == "verify evidence"
+
+    response_links = by_key[("kanna", response.task_id)].related_tasks
+    assert response_links[0].kind == "responds_to"
+    assert response_links[0].anima_name == "kanna"
+    assert response_links[0].task_id == original.task_id
+    assert response_links[0].peer_name == "sakura"
+    assert response_links[0].title == "AFF-003 repair"
+
+
 def test_same_task_id_is_scoped_per_anima(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     hinata = _queue(tmp_path, "hinata")

@@ -413,6 +413,49 @@
   overflow-wrap: anywhere;
 }
 
+.taskboard-related-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.taskboard-related-item {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 7px;
+  padding: 7px 8px;
+  border-left: 3px solid var(--aw-color-accent, #2563eb);
+  border-radius: 6px;
+  background: var(--aw-color-bg-secondary);
+  color: var(--aw-color-text-secondary);
+  font-size: 0.73rem;
+  line-height: 1.25;
+}
+
+.taskboard-related-item span {
+  color: var(--aw-color-text-muted);
+  font-weight: 700;
+}
+
+.taskboard-related-item strong {
+  min-width: 0;
+  color: var(--aw-color-text-primary);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.taskboard-related-item em,
+.taskboard-related-item small {
+  grid-column: 1 / -1;
+  min-width: 0;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.taskboard-related-item small {
+  color: var(--aw-color-text-primary);
+}
+
 .taskboard-card-facts {
   color: var(--aw-color-text-secondary);
   font-size: 0.76rem;

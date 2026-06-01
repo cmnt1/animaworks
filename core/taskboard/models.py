@@ -39,6 +39,16 @@ class TaskQueueRef(BaseModel):
     task_id: str
 
 
+class BoardTaskLink(BaseModel):
+    """Display relationship between projected TaskBoard tasks."""
+
+    kind: Literal["delegates_to", "delegated_from", "responds_to"]
+    anima_name: str
+    task_id: str
+    title: str | None = None
+    peer_name: str | None = None
+
+
 class TaskBoardMetadata(BaseModel):
     """TaskBoard-only metadata layered over task_queue.jsonl entries."""
 
@@ -99,6 +109,7 @@ class BoardTask(BaseModel):
     needs_human_reason: str | None = None
     is_from_cron: bool = False
     cron_task_name: str | None = None
+    related_tasks: list[BoardTaskLink] = Field(default_factory=list)
 
 
 class AttentionDecision(BaseModel):

@@ -316,6 +316,7 @@ function _cardHtml(task) {
       </div>
       <h4>${escapeHtml(title)}</h4>
       <div class="taskboard-task-ref">${escapeHtml(ref)}</div>
+      ${_relatedTasksHtml(task)}
       <div class="taskboard-meta-row">
         <span class="taskboard-badge taskboard-badge--${statusClassSuffix(task.queue_status)}">
           ${escapeHtml(task.queue_status || t("taskboard.queue_missing"))}
@@ -345,10 +346,14 @@ function _taskReference(task) {
 }
 
 function _taskReferenceText(task) {
-  return [
+  const lines = [
     `${t("taskboard.copy_ref_label")}: ${_taskReference(task)}`,
     `${t("taskboard.copy_name_label")}: ${_taskTitle(task)}`,
-  ].join("\n");
+  ];
+  for (const link of task?.related_tasks || []) {
+    lines.push(`${_taskLinkLabel(link)}: ${_taskLinkText(link)}`);
+  }
+  return lines.join("\n");
 }
 
 function _copyTextWithSelection(text) {
@@ -596,6 +601,36 @@ function _originBadgeHtml(task) {
     return `<span class="taskboard-origin-badge taskboard-origin-badge--anima" title="${escapeAttr(label)}">🤖 ${escapeHtml(label)}</span>`;
   }
   return "";
+}
+
+function _relatedTasksHtml(task) {
+  const links = Array.isArray(task.related_tasks) ? task.related_tasks : [];
+  if (!links.length) return "";
+  return `<div class="taskboard-related-list">
+    ${links.slice(0, 3).map((link) => `
+      <div class="taskboard-related-item" title="${escapeAttr(_taskLinkText(link))}">
+        <span>${escapeHtml(_taskLinkLabel(link))}</span>
+        <strong>${escapeHtml(_taskLinkRef(link))}</strong>
+        ${link.peer_name ? `<em>${escapeHtml(t("taskboard.related_peer", { name: link.peer_name }))}</em>` : ""}
+        ${link.title ? `<small>${escapeHtml(link.title)}</small>` : ""}
+      </div>
+    `).join("")}
+  </div>`;
+}
+
+function _taskLinkLabel(link) {
+  return t(`taskboard.related_${link?.kind || "responds_to"}`);
+}
+
+function _taskLinkRef(link) {
+  return `${link?.anima_name || "--"}:${link?.task_id || "--"}`;
+}
+
+function _taskLinkText(link) {
+  const parts = [_taskLinkRef(link)];
+  if (link?.peer_name) parts.push(t("taskboard.related_peer", { name: link.peer_name }));
+  if (link?.title) parts.push(link.title);
+  return parts.join(" / ");
 }
 
 function _renderNeedsHumanPin() {

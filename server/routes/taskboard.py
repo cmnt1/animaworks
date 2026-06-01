@@ -238,6 +238,7 @@ def _list_task_board(
         animas_dir,
         store,
         anima_names=selected_names,
+        relation_anima_names=anima_names,
         include_missing=include_missing,
         include_archived=True,
     )

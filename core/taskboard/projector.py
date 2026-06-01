@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Iterable
 from pathlib import Path
 
-from core.memory.task_queue import _STALE_TASK_THRESHOLD_SEC, _elapsed_seconds, TaskEntry, TaskQueueManager
+from core.memory.task_queue import (
+    _STALE_TASK_THRESHOLD_SEC,
+    TaskEntry,
+    TaskQueueManager,
+    _elapsed_seconds,
+)
 from core.paths import get_animas_dir
-from core.taskboard.models import AttentionVisibility, BoardColumn, BoardTask, TaskBoardMetadata
+from core.taskboard.models import AttentionVisibility, BoardColumn, BoardTask, BoardTaskLink, TaskBoardMetadata
 from core.taskboard.store import TaskBoardStore
 from core.time_utils import now_local
 
@@ -31,6 +38,7 @@ _COLUMN_ORDER = {column: index for index, column in enumerate(BoardColumn)}
 _TERMINAL_QUEUE_STATUSES = {"done", "cancelled", "failed"}
 _HUMAN_BLOCKER_VALUES = {"human", "user", "owner"}
 _HUMAN_BLOCKER_KEYS = ("blocker", "blocked_on", "waiting_for", "waiting_on")
+_TASK_ID_RE = re.compile(r"\b[0-9a-f]{8,16}\b", re.IGNORECASE)
 
 
 def compute_needs_human(
@@ -73,6 +81,7 @@ def project_anima(
     anima_name: str | None = None,
     include_missing: bool = False,
     include_archived: bool = False,
+    attach_relations: bool = True,
 ) -> list[BoardTask]:
     """Project one Anima's task_queue.jsonl into BoardTask rows."""
     resolved_anima_dir = Path(anima_dir)
@@ -103,6 +112,11 @@ def project_anima(
             if _should_include(board_task, include_archived=include_archived):
                 projected.append(board_task)
 
+    if attach_relations:
+        _attach_related_tasks(
+            projected,
+            _build_task_index(resolved_anima_dir.parent, [resolved_anima_name], resolved_store),
+        )
     return sorted(projected, key=_sort_key)
 
 
@@ -111,6 +125,7 @@ def project_all(
     store: TaskBoardStore | None = None,
     *,
     anima_names: Iterable[str] | None = None,
+    relation_anima_names: Iterable[str] | None = None,
     include_missing: bool = False,
     include_archived: bool = False,
 ) -> list[BoardTask]:
@@ -131,8 +146,11 @@ def project_all(
                 anima_name=name,
                 include_missing=include_missing,
                 include_archived=include_archived,
+                attach_relations=False,
             )
         )
+    relation_names = set(relation_anima_names) if relation_anima_names is not None else names
+    _attach_related_tasks(projected, _build_task_index(resolved_animas_dir, relation_names, resolved_store))
     return sorted(projected, key=_sort_key)
 
 
@@ -147,6 +165,191 @@ def _load_queue_tasks(anima_dir: Path) -> list[TaskEntry]:
     # list_tasks() intentionally hides terminal tasks; TaskBoard needs a full
     # replay to decide whether those entries should be archived.
     return list(manager._load_all().values())
+
+
+def _load_archived_queue_tasks(anima_dir: Path) -> list[TaskEntry]:
+    archive_path = anima_dir / "state" / "task_queue_archive.jsonl"
+    if not archive_path.exists():
+        return []
+    tasks: dict[str, TaskEntry] = {}
+    try:
+        raw_text = archive_path.read_bytes().decode("utf-8", errors="replace")
+    except OSError:
+        return []
+    for line in raw_text.splitlines():
+        raw_line = line.strip()
+        if not raw_line:
+            continue
+        try:
+            raw = json.loads(raw_line)
+            task = TaskEntry(**raw)
+        except Exception:
+            continue
+        tasks[task.task_id] = task
+    return list(tasks.values())
+
+
+def _build_task_index(
+    animas_dir: Path,
+    anima_names: Iterable[str],
+    store: TaskBoardStore,
+) -> dict[tuple[str, str], BoardTask]:
+    """Build a broad task lookup for relation labels, including archived rows."""
+    index: dict[tuple[str, str], BoardTask] = {}
+    for name in sorted(set(anima_names)):
+        metadata_rows = {metadata.task_id: metadata for metadata in store.list_metadata(anima_name=name)}
+        anima_dir = animas_dir / name
+        if anima_dir.is_dir():
+            for task in _load_queue_tasks(anima_dir):
+                index[(name, task.task_id)] = _project_queue_task(
+                    task=task,
+                    anima_name=name,
+                    metadata=metadata_rows.get(task.task_id),
+                )
+            for task in _load_archived_queue_tasks(anima_dir):
+                index.setdefault(
+                    (name, task.task_id),
+                    _project_queue_task(
+                        task=task,
+                        anima_name=name,
+                        metadata=metadata_rows.get(task.task_id),
+                    ),
+                )
+        for metadata in metadata_rows.values():
+            index.setdefault((name, metadata.task_id), _project_missing_task(metadata))
+    return index
+
+
+def _attach_related_tasks(
+    tasks: list[BoardTask],
+    index: dict[tuple[str, str], BoardTask],
+) -> None:
+    if not tasks or not index:
+        return
+
+    delegated_parent_by_child: dict[tuple[str, str], BoardTask] = {}
+    for candidate in index.values():
+        meta = candidate.meta or {}
+        target = meta.get("delegated_to")
+        child_id = meta.get("delegated_task_id")
+        if isinstance(target, str) and target and isinstance(child_id, str) and child_id:
+            delegated_parent_by_child[(target, child_id)] = candidate
+
+    for task in tasks:
+        links: list[BoardTaskLink] = []
+        seen: set[tuple[str, str, str]] = set()
+
+        meta = task.meta or {}
+        target = meta.get("delegated_to")
+        child_id = meta.get("delegated_task_id")
+        if isinstance(target, str) and target and isinstance(child_id, str) and child_id:
+            _append_link(
+                links,
+                seen,
+                kind="delegates_to",
+                related=index.get((target, child_id)),
+                fallback_anima_name=target,
+                fallback_task_id=child_id,
+                peer_name=target,
+            )
+
+        parent = delegated_parent_by_child.get((task.anima_name, task.task_id))
+        if parent is not None:
+            _append_link(
+                links,
+                seen,
+                kind="delegated_from",
+                related=parent,
+                fallback_anima_name=parent.anima_name,
+                fallback_task_id=parent.task_id,
+                peer_name=parent.anima_name,
+            )
+
+        source_from = meta.get("source_from")
+        for related in _find_referenced_tasks(task, index):
+            _append_link(
+                links,
+                seen,
+                kind="responds_to",
+                related=related,
+                fallback_anima_name=related.anima_name,
+                fallback_task_id=related.task_id,
+                peer_name=source_from if isinstance(source_from, str) and source_from else related.anima_name,
+            )
+
+        task.related_tasks = links
+
+
+def _append_link(
+    links: list[BoardTaskLink],
+    seen: set[tuple[str, str, str]],
+    *,
+    kind: str,
+    related: BoardTask | None,
+    fallback_anima_name: str,
+    fallback_task_id: str,
+    peer_name: str | None,
+) -> None:
+    key = (kind, fallback_anima_name, fallback_task_id)
+    if key in seen:
+        return
+    seen.add(key)
+    links.append(
+        BoardTaskLink(
+            kind=kind,
+            anima_name=related.anima_name if related is not None else fallback_anima_name,
+            task_id=related.task_id if related is not None else fallback_task_id,
+            title=_title_for_link(related) if related is not None else None,
+            peer_name=peer_name,
+        )
+    )
+
+
+def _find_referenced_tasks(
+    task: BoardTask,
+    index: dict[tuple[str, str], BoardTask],
+) -> list[BoardTask]:
+    text_parts = [
+        task.summary,
+        task.original_instruction,
+        str((task.meta or {}).get("source_task_id") or ""),
+        str((task.meta or {}).get("reply_to_task_id") or ""),
+    ]
+    ids = []
+    for text in text_parts:
+        if not text:
+            continue
+        ids.extend(match.group(0) for match in _TASK_ID_RE.finditer(text))
+
+    found: list[BoardTask] = []
+    seen: set[tuple[str, str]] = set()
+    for task_id in ids:
+        for key, candidate in index.items():
+            if candidate.task_id != task_id or key == (task.anima_name, task.task_id):
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append(candidate)
+    return found
+
+
+def _title_for_link(task: BoardTask | None) -> str | None:
+    if task is None:
+        return None
+    summary = _compact_relation_title(task.summary)
+    if summary and "\n" not in (task.summary or "") and len(task.summary or "") <= 160:
+        return summary
+    return _compact_relation_title(task.original_instruction) or summary
+
+
+def _compact_relation_title(value: str | None) -> str | None:
+    if not value:
+        return None
+    line = " ".join(value.strip().split())
+    if not line:
+        return None
+    return line[:180]
 
 
 def _project_queue_task(
