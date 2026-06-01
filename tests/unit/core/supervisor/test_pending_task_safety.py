@@ -6,7 +6,8 @@
 Validates:
 - File lifecycle: pending/ → processing/ → success: delete | fail: failed/
 - _execute_llm_task writes FAILED result and sends reply_to notification on error
-- Orphaned processing/ files are recovered to failed/ on startup
+- Orphaned command processing/ files are recovered to failed/ on startup
+- Orphaned LLM processing/ files are returned to pending/ on startup
 - i18n template for task_fail_notify
 """
 
@@ -19,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.memory.task_queue import TaskQueueManager
 from core.schemas import ModelConfig
 from core.supervisor.pending_executor import PendingTaskExecutor
 from core.taskboard.models import AttentionDecision
@@ -170,7 +172,7 @@ class TestLLMPendingFileLifecycle:
 
 
 class TestRecoverProcessing:
-    """Orphaned files in processing/ are moved to failed/ on startup."""
+    """Orphaned files in processing/ are moved to a recovery directory on startup."""
 
     def test_recovers_orphaned_files(self, tmp_path: Path) -> None:
         processing_dir = tmp_path / "processing"
@@ -181,11 +183,12 @@ class TestRecoverProcessing:
         (processing_dir / "orphan1.json").write_text('{"task_id":"o1"}')
         (processing_dir / "orphan2.json").write_text('{"task_id":"o2"}')
 
-        PendingTaskExecutor._recover_processing(processing_dir, failed_dir)
+        recovered = PendingTaskExecutor._recover_processing(processing_dir, failed_dir)
 
         assert not list(processing_dir.glob("*.json"))
         assert (failed_dir / "orphan1.json").exists()
         assert (failed_dir / "orphan2.json").exists()
+        assert recovered == ["o1", "o2"]
 
     def test_recovers_orphaned_file_when_failed_target_exists(self, tmp_path: Path) -> None:
         processing_dir = tmp_path / "processing"
@@ -226,14 +229,25 @@ class TestRecoverProcessing:
         llm_failed = executor._anima_dir / "state" / "pending" / "failed"
         llm_failed.mkdir(parents=True)
         (llm_processing / "orphan-llm.json").write_text('{"task_id":"ol"}')
+        queue = TaskQueueManager(executor._anima_dir)
+        queue.add_task(
+            source="anima",
+            original_instruction="orphaned llm",
+            assignee="test-anima",
+            summary="orphaned llm",
+            task_id="ol",
+            status="in_progress",
+        )
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
-            await executor.watcher_loop()
+        executor._shutdown_event.set()
+        await executor.watcher_loop()
 
         assert (cmd_failed / "orphan-cmd.json").exists()
-        assert (llm_failed / "orphan-llm.json").exists()
+        assert (llm_processing.parent / "orphan-llm.json").exists()
+        assert not (llm_failed / "orphan-llm.json").exists()
         assert not list(cmd_processing.glob("*.json"))
         assert not list(llm_processing.glob("*.json"))
+        assert queue.get_task_by_id("ol").status == "pending"
 
 
 # ── TestExecuteLLMTaskFailureHandling ────────────────────────

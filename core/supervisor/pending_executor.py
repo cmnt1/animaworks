@@ -850,24 +850,42 @@ class PendingTaskExecutor:
     # ── Watcher loop ─────────────────────────────────────────
 
     @staticmethod
-    def _recover_processing(processing_dir: Path, failed_dir: Path) -> None:
-        """Move orphaned files from processing/ to failed/ on startup."""
+    def _recover_processing(
+        processing_dir: Path,
+        destination_dir: Path,
+        *,
+        conflict_dir: Path | None = None,
+    ) -> list[str]:
+        """Move orphaned files from processing/ on startup and return task IDs."""
+        recovered_task_ids: list[str] = []
         if not processing_dir.exists():
-            return
+            return recovered_task_ids
         for orphan in processing_dir.glob("*.json"):
+            task_id = orphan.stem
             try:
-                target = failed_dir / orphan.name
+                task_desc = json.loads(orphan.read_text(encoding="utf-8"))
+                raw_task_id = task_desc.get("task_id")
+                if isinstance(raw_task_id, str) and raw_task_id:
+                    task_id = raw_task_id
+            except Exception:
+                logger.debug("Failed to read orphaned processing task id: %s", orphan.name, exc_info=True)
+            try:
+                target = destination_dir / orphan.name
                 if target.exists():
+                    collision_dir = conflict_dir or destination_dir
+                    collision_dir.mkdir(parents=True, exist_ok=True)
                     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-                    target = failed_dir / f"{orphan.stem}.orphan-{stamp}{orphan.suffix}"
+                    target = collision_dir / f"{orphan.stem}.orphan-{stamp}{orphan.suffix}"
                     counter = 1
                     while target.exists():
-                        target = failed_dir / f"{orphan.stem}.orphan-{stamp}-{counter}{orphan.suffix}"
+                        target = collision_dir / f"{orphan.stem}.orphan-{stamp}-{counter}{orphan.suffix}"
                         counter += 1
                 orphan.rename(target)
+                recovered_task_ids.append(task_id)
                 logger.warning("Recovered orphaned processing task: %s -> %s", orphan.name, target.name)
             except OSError:
                 logger.exception("Failed to recover orphaned task: %s", orphan.name)
+        return recovered_task_ids
 
     async def watcher_loop(self) -> None:
         """Watch state/background_tasks/pending/ for submitted tasks.
@@ -898,7 +916,13 @@ class PendingTaskExecutor:
         llm_suppressed_dir.mkdir(exist_ok=True)
 
         self._recover_processing(cmd_processing_dir, cmd_failed_dir)
-        self._recover_processing(llm_processing_dir, llm_failed_dir)
+        recovered_llm_task_ids = self._recover_processing(
+            llm_processing_dir,
+            llm_pending_dir,
+            conflict_dir=llm_failed_dir,
+        )
+        for task_id in recovered_llm_task_ids:
+            self._sync_task_queue(task_id, "pending", summary="Recovered orphaned processing task; retry queued.")
 
         logger.info("Pending task watcher started for %s", self._anima_name)
 
