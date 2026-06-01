@@ -255,7 +255,8 @@ def _attach_related_tasks(
             )
             if related_child is not None and task.queue_status not in _TERMINAL_QUEUE_STATUSES:
                 if related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
-                    task.column = BoardColumn.REVIEW
+                    if task.column != BoardColumn.BLOCKED:
+                        task.column = BoardColumn.REVIEW
                 elif task.column == BoardColumn.BLOCKED:
                     task.column = BoardColumn.WAITING
 
