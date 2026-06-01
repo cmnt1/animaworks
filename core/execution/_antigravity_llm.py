@@ -555,11 +555,17 @@ def _sse_event_to_chunk(
                 delta_text += str(part["text"])
             if "functionCall" in part:
                 fc = part["functionCall"] or {}
+                name = fc.get("name", "")
+                arguments = json.dumps(fc.get("args", {}), ensure_ascii=False)
                 tool_use_obj = {
                     "id": f"call_{uuid.uuid4().hex[:24]}",
                     "type": "function",
-                    "name": fc.get("name", ""),
-                    "arguments": json.dumps(fc.get("args", {}), ensure_ascii=False),
+                    "name": name,
+                    "arguments": arguments,
+                    "function": {
+                        "name": name,
+                        "arguments": arguments,
+                    },
                     "index": 0,
                 }
         if cand.get("finishReason"):

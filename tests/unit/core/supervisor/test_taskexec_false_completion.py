@@ -184,6 +184,23 @@ class TestClassifyTaskResult:
         assert status == "blocked"
         assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
 
+    def test_english_fix_script_start_result_maps_to_blocked_without_multistage_flag(self):
+        status, summary = _classify_task_result_for_desc(
+            "Now I understand the exact issues. Let me write the fix script:",
+            {"allow_multistage": False},
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
+
+    def test_japanese_evidence_collection_start_result_maps_to_blocked(self):
+        status, summary = _classify_task_result_for_desc(
+            "状況を確認しました。miyuが22:08 JSTにタスク実行開始したところです。"
+            "まずDB現状確認と公開URL確認を実施し、証跡を収集します。",
+            {"allow_multistage": False},
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
+
 
 class TestBlockedAutoRetry:
     def test_multistage_blocked_task_is_requeued(self, tmp_path: Path):

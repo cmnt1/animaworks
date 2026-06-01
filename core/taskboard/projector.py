@@ -272,7 +272,8 @@ def _attach_related_tasks(
             )
 
         source_from = meta.get("source_from")
-        for related in _find_referenced_tasks(task, index):
+        referenced_tasks = _find_referenced_tasks(task, index)
+        for related in referenced_tasks:
             _append_link(
                 links,
                 seen,
@@ -282,6 +283,10 @@ def _attach_related_tasks(
                 fallback_task_id=related.task_id,
                 peer_name=source_from if isinstance(source_from, str) and source_from else related.anima_name,
             )
+        if task.column == BoardColumn.BLOCKED and any(
+            related.queue_status not in _TERMINAL_QUEUE_STATUSES for related in referenced_tasks
+        ):
+            task.column = BoardColumn.WAITING
 
         task.related_tasks = links
 
