@@ -427,6 +427,35 @@ def test_blocked_task_waits_when_summary_references_active_tracking_task(tmp_pat
     assert {link.task_id for link in links} == {tracking.task_id, child.task_id}
 
 
+def test_blocked_task_does_not_wait_on_historical_reference_in_original_instruction(tmp_path: Path) -> None:
+    kanna = _queue(tmp_path, "kanna")
+    sakura = _queue(tmp_path, "sakura")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    parent = sakura.add_delegated_task(
+        original_instruction="track final evidence",
+        assignee="kanna",
+        summary="waiting for retry",
+        deadline="1h",
+        meta={"delegated_to": "kanna", "delegated_task_id": "de432f83bbc1"},
+    )
+    child = kanna.add_task(
+        source="anima",
+        original_instruction=f"Retry old completion notice from {parent.task_id}; produce final evidence.",
+        assignee="kanna",
+        summary="retry evidence",
+        task_id="de432f83bbc1",
+    )
+    kanna.update_status(child.task_id, "blocked", summary="BLOCKED: not final evidence")
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert by_key[("kanna", child.task_id)].queue_status == "blocked"
+    assert by_key[("kanna", child.task_id)].column == BoardColumn.BLOCKED
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.WAITING
+
+
 def test_delegated_parent_moves_to_review_when_child_is_terminal(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     kanna = _queue(tmp_path, "kanna")

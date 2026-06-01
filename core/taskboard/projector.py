@@ -283,8 +283,9 @@ def _attach_related_tasks(
                 fallback_task_id=related.task_id,
                 peer_name=source_from if isinstance(source_from, str) and source_from else related.anima_name,
             )
+        summary_referenced_tasks = _find_referenced_tasks(task, index, include_original_instruction=False)
         if task.column == BoardColumn.BLOCKED and any(
-            related.queue_status not in _TERMINAL_QUEUE_STATUSES for related in referenced_tasks
+            related.queue_status not in _TERMINAL_QUEUE_STATUSES for related in summary_referenced_tasks
         ):
             task.column = BoardColumn.WAITING
 
@@ -319,13 +320,16 @@ def _append_link(
 def _find_referenced_tasks(
     task: BoardTask,
     index: dict[tuple[str, str], BoardTask],
+    *,
+    include_original_instruction: bool = True,
 ) -> list[BoardTask]:
     text_parts = [
         task.summary,
-        task.original_instruction,
         str((task.meta or {}).get("source_task_id") or ""),
         str((task.meta or {}).get("reply_to_task_id") or ""),
     ]
+    if include_original_instruction:
+        text_parts.append(task.original_instruction)
     ids = []
     for text in text_parts:
         if not text:
