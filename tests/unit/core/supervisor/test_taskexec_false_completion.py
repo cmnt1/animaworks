@@ -359,6 +359,48 @@ class TestBlockedAutoRetry:
         assert updated.meta["retry_count"] == 7
         assert (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
 
+    def test_unresolved_nonfinal_blocked_task_uses_extended_retry_limit(self, tmp_path: Path):
+        executor = _make_executor(tmp_path)
+        manager = TaskQueueManager(executor._anima_dir)
+        entry = manager.add_task(
+            source="anima",
+            original_instruction="Finish six-gate evidence",
+            assignee="test-anima",
+            summary="Verifier",
+            task_id="retry-unresolved-high-count",
+            meta={
+                "retry_count": 6,
+                "task_desc": {
+                    "task_type": "llm",
+                    "title": "Finish six-gate evidence",
+                    "description": "Produce final evidence or a saved BLOCKED table",
+                    "allow_multistage": True,
+                    "reply_to": "sakura",
+                },
+            },
+        )
+        manager.update_status(
+            entry.task_id,
+            "blocked",
+            summary="BLOCKED: Task reported unresolved blockers instead of final evidence",
+        )
+
+        retried = executor._auto_retry_blocked_llm_task(
+            {
+                "task_id": entry.task_id,
+                "task_type": "llm",
+                "allow_multistage": True,
+                "submitted_by": "sakura",
+            }
+        )
+
+        updated = manager.get_task_by_id(entry.task_id)
+        assert retried is True
+        assert updated is not None
+        assert updated.status == "in_progress"
+        assert updated.meta["retry_count"] == 7
+        assert (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
+
 
 class TestRunLlmTaskErrorDetection:
     @pytest.mark.asyncio

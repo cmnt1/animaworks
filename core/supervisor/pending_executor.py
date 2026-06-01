@@ -49,6 +49,9 @@ _TASKBOARD_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
 _RUNNER_START_SUFFIX = "-runner-start"
 _AUTO_RETRY_BLOCKED_SUMMARY_PREFIXES = (
     "BLOCKED: Task reported an explicit follow-up/start step",
+    "BLOCKED: Task reported unresolved blockers instead of final evidence",
+    "BLOCKED: Task reported known AFF-003 blockers instead of final evidence",
+    "BLOCKED: Multi-stage task reported an intermediate/next-step result",
 )
 _AUTO_RETRY_NON_FINAL_MAX_RETRIES = 20
 
