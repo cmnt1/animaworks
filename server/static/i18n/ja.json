@@ -911,7 +911,7 @@
   "taskboard.related_delegated_from": "委譲元",
   "taskboard.related_delegates_to": "委譲先",
   "taskboard.related_peer": "相手: {name}",
-  "taskboard.related_responds_to": "反応先",
+  "taskboard.related_responds_to": "参照先",
   "taskboard.refresh": "更新",
   "taskboard.reorder_failed": "並び替えに失敗しました",
   "taskboard.reordered": "並び順を保存しました。",
