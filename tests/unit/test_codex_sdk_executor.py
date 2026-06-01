@@ -564,6 +564,51 @@ class TestConfigWriting:
         assert "workspace-write" in config_toml
         assert "writable_roots" in config_toml
 
+    def test_restricted_file_roots_become_additional_directories(self, model_config, anima_dir, tmp_path):
+        """Granted writable roots are passed to Codex runtime options."""
+        workspace = tmp_path / "workspace"
+        obsidian = tmp_path / "Obsidian"
+        workspace.mkdir()
+        obsidian.mkdir()
+        perms = {
+            "version": 1,
+            "file_roots": [str(workspace), str(obsidian)],
+            "commands": {"allow_all": True, "allow": [], "deny": []},
+            "external_tools": {"allow_all": True, "allow": [], "deny": []},
+            "tool_creation": {"personal": True, "shared": False},
+        }
+        (anima_dir / "permissions.json").write_text(json.dumps(perms), encoding="utf-8")
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        exc.set_task_cwd(workspace)
+
+        options = exc._build_thread_options()
+
+        assert options["working_directory"] == str(workspace)
+        assert options["additional_directories"] == [str(obsidian.resolve())]
+
+    def test_cli_exec_command_includes_add_dir_for_granted_roots(self, model_config, anima_dir, tmp_path):
+        workspace = tmp_path / "workspace"
+        obsidian = tmp_path / "Obsidian"
+        workspace.mkdir()
+        obsidian.mkdir()
+        perms = {
+            "version": 1,
+            "file_roots": [str(workspace), str(obsidian)],
+            "commands": {"allow_all": True, "allow": [], "deny": []},
+            "external_tools": {"allow_all": True, "allow": [], "deny": []},
+            "tool_creation": {"personal": True, "shared": False},
+        }
+        (anima_dir / "permissions.json").write_text(json.dumps(perms), encoding="utf-8")
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        exc.set_task_cwd(workspace)
+
+        with patch("core.execution.codex_sdk.get_codex_executable", return_value=r"C:\Tools\codex.exe"):
+            cmd = exc._build_cli_exec_command()
+
+        assert "--add-dir" in cmd
+        idx = cmd.index("--add-dir")
+        assert cmd[idx + 1] == str(obsidian.resolve())
+
     def test_write_codex_config_includes_model_name(self, executor, anima_dir):
         """config.toml must include model = "o4-mini" (stripped prefix)."""
         executor._write_codex_config("prompt")

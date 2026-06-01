@@ -1206,6 +1206,47 @@ class CodexSDKExecutor(BaseExecutor):
 
         return flags
 
+    def _resolve_additional_directories(self) -> list[str]:
+        """Return Codex ``--add-dir`` / ``additionalDirectories`` values.
+
+        Codex CLI 0.135+ treats ``--cd`` as the primary writable workspace and
+        expects extra writable roots to be supplied as additional directories.
+        Keep writing ``config.toml`` for backwards compatibility, but also pass
+        these roots through the SDK/CLI runtime path so TaskExec sessions can
+        write to granted workspaces such as the Obsidian vault.
+        """
+        from core.config.models import load_permissions
+
+        permissions_config = load_permissions(self._anima_dir)
+        if "/" in permissions_config.file_roots:
+            return []
+
+        cwd = Path(self._task_cwd or self._anima_dir).resolve()
+        seen = {str(cwd)}
+        roots: list[str] = []
+        for root in permissions_config.file_roots:
+            try:
+                resolved = Path(root).resolve()
+            except OSError:
+                continue
+            resolved_str = str(resolved)
+            if resolved_str in seen:
+                continue
+            seen.add(resolved_str)
+            roots.append(resolved_str)
+        return roots
+
+    def _build_thread_options(self) -> dict[str, Any]:
+        """Build Codex SDK thread options with explicit writable roots."""
+        options: dict[str, Any] = {
+            "working_directory": str(self._task_cwd or self._anima_dir),
+            "skip_git_repo_check": True,
+        }
+        additional_directories = self._resolve_additional_directories()
+        if additional_directories:
+            options["additional_directories"] = additional_directories
+        return options
+
     def _build_cli_exec_command(self) -> list[str]:
         """Build the `codex exec --json` command used as a runtime fallback."""
         executable = get_codex_executable()
@@ -1219,6 +1260,8 @@ class CodexSDKExecutor(BaseExecutor):
             "--skip-git-repo-check",
             "--json",
         ]
+        for directory in self._resolve_additional_directories():
+            cmd.extend(["--add-dir", directory])
         cmd.extend(self._build_config_overrides())
         cmd.append("-")
         return cmd
@@ -1484,7 +1527,7 @@ class CodexSDKExecutor(BaseExecutor):
         """Start a new thread or attempt to resume an existing one."""
         if thread_id:
             try:
-                thread = codex.resume_thread(thread_id)
+                thread = codex.resume_thread(thread_id, self._build_thread_options())
                 logger.info("Resumed Codex thread %s", thread_id)
                 return thread
             except Exception as e:
@@ -1495,12 +1538,7 @@ class CodexSDKExecutor(BaseExecutor):
                 )
                 if persist_thread:
                     _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
-        thread = codex.start_thread(
-            {
-                "working_directory": str(self._task_cwd or self._anima_dir),
-                "skip_git_repo_check": True,
-            }
-        )
+        thread = codex.start_thread(self._build_thread_options())
         logger.info("Started fresh Codex thread")
         return thread
 
@@ -1579,12 +1617,7 @@ class CodexSDKExecutor(BaseExecutor):
                 )
                 if persist_thread:
                     _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
-                thread = codex.start_thread(
-                    {
-                        "working_directory": str(self._task_cwd or self._anima_dir),
-                        "skip_git_repo_check": True,
-                    }
-                )
+                thread = codex.start_thread(self._build_thread_options())
                 try:
                     turn = await thread.run(prompt)
                 except Exception as retry_exc:
