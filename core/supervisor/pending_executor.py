@@ -50,6 +50,7 @@ _RUNNER_START_SUFFIX = "-runner-start"
 _AUTO_RETRY_BLOCKED_SUMMARY_PREFIXES = (
     "BLOCKED: Task reported an explicit follow-up/start step",
 )
+_AUTO_RETRY_NON_FINAL_MAX_RETRIES = 20
 
 
 def _detect_task_auth_failure(result: str) -> str | None:
@@ -550,11 +551,21 @@ class PendingTaskExecutor:
         try:
             from core.supervisor.task_retry import TaskRetryError, retry_task
 
+            max_retries = (
+                _AUTO_RETRY_NON_FINAL_MAX_RETRIES
+                if _blocked_summary_allows_retry(entry.summary)
+                else None
+            )
+            retry_kwargs: dict[str, Any] = {
+                "summary": "auto retry queued after blocked TaskExec result",
+                "submitted_by": submitted_by,
+            }
+            if max_retries is not None:
+                retry_kwargs["max_retries"] = max_retries
             retry_task(
                 self._anima_dir,
                 task_id,
-                summary="auto retry queued after blocked TaskExec result",
-                submitted_by=submitted_by,
+                **retry_kwargs,
             )
             self.wake()
             logger.info("[%s] Auto-requeued blocked multi-stage task: %s", self._anima_name, task_id)
