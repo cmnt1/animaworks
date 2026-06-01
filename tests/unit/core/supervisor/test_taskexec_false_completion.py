@@ -14,22 +14,20 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.memory.task_queue import TaskQueueManager
 from core.supervisor.pending_executor import (
-    PendingTaskExecutor,
-    TaskExecError,
     _SENTINEL_CANCELLED,
     _SENTINEL_EXPIRED,
+    PendingTaskExecutor,
+    TaskExecError,
     _classify_task_result,
     _classify_task_result_for_desc,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -171,11 +169,20 @@ class TestClassifyTaskResult:
 
     def test_non_multistage_intermediate_result_keeps_default_done(self):
         status, summary = _classify_task_result_for_desc(
-            "Situation cleanup complete. I will proceed with the next action.",
+            "Situation cleanup complete. Follow-up is available if needed.",
             {"allow_multistage": False},
         )
         assert status == "done"
         assert summary.startswith("Situation cleanup complete")
+
+    def test_explicit_followup_result_maps_to_blocked_without_multistage_flag(self):
+        status, summary = _classify_task_result_for_desc(
+            "全エンジンがexit 255。machineが使えないため、直接実行経路（PowerShell/Python）で対応します。"
+            "Smoke test通過。次にID_Articles=111655の現在値を確認します。",
+            {"allow_multistage": False},
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
 
 
 class TestBlockedAutoRetry:
@@ -258,11 +265,13 @@ class TestRunLlmTaskErrorDetection:
         executor._anima.agent.set_task_cwd = MagicMock()
         executor._anima.agent.set_interrupt_event = MagicMock()
 
-        with patch("core.paths.load_prompt", return_value="prompt"), \
-             patch("core.memory.activity.ActivityLogger"), \
-             patch("core.memory.streaming_journal.StreamingJournal"):
-            with pytest.raises(TaskExecError, match="Agent SDK timeout"):
-                await executor._run_llm_task(task)
+        with (
+            patch("core.paths.load_prompt", return_value="prompt"),
+            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.streaming_journal.StreamingJournal"),
+            pytest.raises(TaskExecError, match="Agent SDK timeout"),
+        ):
+            await executor._run_llm_task(task)
 
     @pytest.mark.asyncio
     async def test_retry_start_resets_error(self, tmp_path):
@@ -346,11 +355,13 @@ class TestRunLlmTaskErrorDetection:
         executor._anima.agent.set_task_cwd = MagicMock()
         executor._anima.agent.set_interrupt_event = MagicMock()
 
-        with patch("core.paths.load_prompt", return_value="prompt"), \
-             patch("core.memory.activity.ActivityLogger"), \
-             patch("core.memory.streaming_journal.StreamingJournal"):
-            with pytest.raises(TaskExecError, match="Failed to authenticate"):
-                await executor._run_llm_task(task)
+        with (
+            patch("core.paths.load_prompt", return_value="prompt"),
+            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.streaming_journal.StreamingJournal"),
+            pytest.raises(TaskExecError, match="Failed to authenticate"),
+        ):
+            await executor._run_llm_task(task)
 
 
 # ── Bug A: cancelled/expired in _execute_llm_task ──────────

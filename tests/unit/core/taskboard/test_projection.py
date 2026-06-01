@@ -389,6 +389,40 @@ def test_blocked_delegated_parent_waits_when_child_is_active(tmp_path: Path) -> 
     assert by_key[("sora", child.task_id)].column == BoardColumn.BLOCKED
 
 
+def test_delegated_parent_moves_to_review_when_child_is_terminal(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    kanna = _queue(tmp_path, "kanna")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = kanna.add_task(
+        source="anima",
+        original_instruction="fix ad evidence",
+        assignee="kanna",
+        summary="fix ad evidence",
+        task_id="child-done",
+    )
+    kanna.update_status(child.task_id, "done", summary="submitted evidence")
+    parent = sakura.add_delegated_task(
+        original_instruction="track ad evidence",
+        assignee="kanna",
+        summary="[委譲] track ad evidence",
+        deadline="1h",
+        meta={"delegated_to": "kanna", "delegated_task_id": child.task_id},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("kanna", child.task_id) not in by_key
+    assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.REVIEW
+    links = by_key[("sakura", parent.task_id)].related_tasks
+    assert links[0].kind == "delegates_to"
+    assert links[0].anima_name == "kanna"
+    assert links[0].task_id == child.task_id
+    assert links[0].title == "submitted evidence"
+
+
 def test_same_task_id_is_scoped_per_anima(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     hinata = _queue(tmp_path, "hinata")

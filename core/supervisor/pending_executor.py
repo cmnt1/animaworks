@@ -258,6 +258,39 @@ def _detect_non_final_multistage_result(result: str) -> str | None:
     return None
 
 
+def _detect_strong_non_final_followup(result: str) -> str | None:
+    """Return a blocked summary for explicit follow-up/start reports."""
+    text = (result or "").strip()
+    if not text or _completion_evidence_count(text) >= 3:
+        return None
+
+    folded = text.casefold()
+    strong_markers = (
+        "next i will",
+        "i will now",
+        "i'll now",
+        "will proceed",
+        "will continue",
+        "will start",
+        "moving to",
+        "switching to direct",
+        "machine is unavailable",
+        "machine unavailable",
+        "次に",
+        "これから",
+        "進みます",
+        "確認します",
+        "実行します",
+        "移行します",
+        "machineが使えない",
+        "machine起動不可",
+        "直接実行経路",
+    )
+    if any(marker in folded for marker in strong_markers):
+        return "Task reported an explicit follow-up/start step, not final evidence"
+    return None
+
+
 def _classify_task_result(result: str) -> tuple[str, str]:
     """Map _run_llm_task return value to (queue_status, summary).
 
@@ -289,11 +322,12 @@ def _classify_task_result_for_desc(result: str, task_desc: dict[str, Any]) -> tu
     status, summary = _classify_task_result(result)
     if status != "done":
         return status, summary
-    if not bool(task_desc.get("allow_multistage")):
-        return status, summary
     non_final = _detect_non_final_multistage_result(result)
-    if non_final:
+    if non_final and bool(task_desc.get("allow_multistage")):
         return "blocked", f"BLOCKED: {non_final}"
+    strong_followup = _detect_strong_non_final_followup(result)
+    if strong_followup:
+        return "blocked", f"BLOCKED: {strong_followup}"
     return status, summary
 
 

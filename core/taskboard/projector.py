@@ -253,13 +253,11 @@ def _attach_related_tasks(
                 fallback_task_id=child_id,
                 peer_name=target,
             )
-            if (
-                task.queue_status == "blocked"
-                and task.column == BoardColumn.BLOCKED
-                and related_child is not None
-                and related_child.queue_status not in _TERMINAL_QUEUE_STATUSES
-            ):
-                task.column = BoardColumn.WAITING
+            if related_child is not None and task.queue_status not in _TERMINAL_QUEUE_STATUSES:
+                if related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
+                    task.column = BoardColumn.REVIEW
+                elif task.column == BoardColumn.BLOCKED:
+                    task.column = BoardColumn.WAITING
 
         parent = delegated_parent_by_child.get((task.anima_name, task.task_id))
         if parent is not None:
