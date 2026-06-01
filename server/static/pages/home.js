@@ -567,9 +567,11 @@ function _renderOpenaiUsage(data) {
 
 function _renderGeminiUsage(data) {
   const el = document.getElementById("usageGeminiBody");
+  const subEl = document.getElementById("usageGeminiSub");
   if (!el) return;
 
   if (data.error) {
+    if (subEl) subEl.textContent = "";
     const msg = data.error === "no_credentials"
       ? (data.message || t("home.usage_no_credentials"))
       : data.message || data.error;
@@ -581,11 +583,16 @@ function _renderGeminiUsage(data) {
   const order = ["five_hour", "daily", "Week"];
   const labels = { five_hour: "5h", daily: "Daily", Week: "Week" };
   let html = "";
+  const modelIds = [];
   for (const key of order) {
     const win = data[key];
     if (!win || typeof win !== "object" || win.utilization === undefined) continue;
+    if (win.model_id && !modelIds.includes(win.model_id)) modelIds.push(win.model_id);
     html += _renderUsageBar(labels[key] || key, win.utilization, win.resets_at, win.window_seconds);
   }
+  // Surface which model's quota is being displayed (the provider API returns
+  // the tightest per-model bucket, so this can differ from the configured model).
+  if (subEl) subEl.textContent = modelIds.map(m => m.replace(/^gemini-/, "")).join(" / ");
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
