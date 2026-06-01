@@ -70,6 +70,40 @@ def test_stale_processing_moves_to_failed_syncs_queue_and_appends_event(tmp_path
     assert events[-1]["payload"]["queue_synced"] is True
 
 
+def test_recent_terminal_processing_orphan_moves_without_waiting_for_stale_age(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = _anima_dir(data_dir)
+    queue = TaskQueueManager(anima_dir)
+    queue.add_task(
+        source="human",
+        original_instruction="already finished",
+        assignee="sakura",
+        summary="already finished",
+        status="in_progress",
+        task_id="task-terminal",
+    )
+    queue.update_status("task-terminal", "done", summary="done elsewhere")
+    processing = _write_json(
+        anima_dir / "state" / "pending" / "processing" / "task-terminal.json",
+        {"task_id": "task-terminal"},
+    )
+
+    result = cleanup_taskboard_stale_artifacts(data_dir, 24, 48, 24, 30)
+
+    assert result["processing_recovered"] == 1
+    assert result["processing_orphan_recovered"] == 1
+    assert result["processing_queue_synced"] == 0
+    assert not processing.exists()
+    assert (anima_dir / "state" / "pending" / "failed" / "task-terminal.json").exists()
+    assert queue.get_task_by_id("task-terminal").status == "done"
+
+    events = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3").list_events(
+        anima_name="sakura",
+        task_id="task-terminal",
+    )
+    assert events[-1]["payload"]["terminal_orphan"] is True
+
+
 def test_unreadable_processing_file_is_moved_without_queue_sync(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = _anima_dir(data_dir)

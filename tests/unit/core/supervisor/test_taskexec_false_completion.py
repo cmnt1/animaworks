@@ -241,6 +241,47 @@ class TestBlockedAutoRetry:
         assert manager.get_task_by_id(entry.task_id).status == "blocked"
         assert not (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
 
+    def test_explicit_followup_blocked_task_is_requeued_without_multistage_flag(self, tmp_path: Path):
+        executor = _make_executor(tmp_path)
+        manager = TaskQueueManager(executor._anima_dir)
+        entry = manager.add_task(
+            source="anima",
+            original_instruction="Finish verifier",
+            assignee="test-anima",
+            summary="Verifier",
+            task_id="retry-followup",
+            meta={
+                "task_desc": {
+                    "task_type": "llm",
+                    "title": "Finish verifier",
+                    "description": "Produce final evidence",
+                    "allow_multistage": False,
+                    "reply_to": "sakura",
+                }
+            },
+        )
+        manager.update_status(
+            entry.task_id,
+            "blocked",
+            summary="BLOCKED: Task reported an explicit follow-up/start step, not final evidence",
+        )
+
+        retried = executor._auto_retry_blocked_llm_task(
+            {
+                "task_id": entry.task_id,
+                "task_type": "llm",
+                "allow_multistage": False,
+                "submitted_by": "sakura",
+            }
+        )
+
+        updated = manager.get_task_by_id(entry.task_id)
+        assert retried is True
+        assert updated is not None
+        assert updated.status == "in_progress"
+        assert updated.meta["retry_count"] == 1
+        assert (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
+
 
 class TestRunLlmTaskErrorDetection:
     @pytest.mark.asyncio

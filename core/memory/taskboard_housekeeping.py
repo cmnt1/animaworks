@@ -58,6 +58,7 @@ def _cleanup_pending_processing(
 ) -> dict[str, int]:
     cutoff_ts = time.time() - (stale_hours * 3600)
     recovered = 0
+    orphan_recovered = 0
     queue_synced = 0
     queue_missing = 0
     unreadable = 0
@@ -70,23 +71,32 @@ def _cleanup_pending_processing(
         failed_dir = anima_dir / "state" / "pending" / "failed"
         for path in sorted(processing_dir.glob("*.json")):
             try:
-                if path.stat().st_mtime >= cutoff_ts:
-                    continue
                 payload, valid_json = _read_json_object(path)
                 if not valid_json:
                     unreadable += 1
                 task_id = _task_id_from_payload(payload, path) if valid_json else ""
-                target = _move_with_collision(path, failed_dir, collision_label="recovered")
+                is_stale = path.stat().st_mtime < cutoff_ts
+                is_terminal_orphan = bool(task_id) and _is_terminal_processing_orphan(anima_dir, task_id)
+                if not is_stale and not is_terminal_orphan:
+                    continue
+                collision_label = "orphan" if is_terminal_orphan else "recovered"
+                target = _move_with_collision(path, failed_dir, collision_label=collision_label)
                 recovered += 1
+                if is_terminal_orphan:
+                    orphan_recovered += 1
                 synced = False
                 missing = False
-                if task_id:
+                if task_id and not is_terminal_orphan:
                     synced = _mark_queue_task_failed(anima_dir, task_id)
                     missing = not synced
                     if synced:
                         queue_synced += 1
                     else:
                         queue_missing += 1
+                elif task_id:
+                    missing = False
+                    synced = False
+                if task_id:
                     _append_stale_processing_event(
                         store,
                         anima_name=anima_dir.name,
@@ -97,6 +107,7 @@ def _cleanup_pending_processing(
                             "queue_missing": missing,
                             "queue_synced": synced,
                             "valid_json": valid_json,
+                            "terminal_orphan": is_terminal_orphan,
                         },
                     )
             except OSError:
@@ -107,6 +118,7 @@ def _cleanup_pending_processing(
         logger.info("TaskBoard stale processing cleanup: recovered %d files", recovered)
     return {
         "recovered": recovered,
+        "orphan_recovered": orphan_recovered,
         "queue_synced": queue_synced,
         "queue_missing": queue_missing,
         "unreadable": unreadable,
@@ -321,6 +333,42 @@ def _mark_queue_task_failed(anima_dir: Path, task_id: str) -> bool:
     except Exception:
         logger.debug("Failed to sync stale processing task to queue: %s/%s", anima_dir.name, task_id, exc_info=True)
         return False
+
+
+def _is_terminal_processing_orphan(anima_dir: Path, task_id: str) -> bool:
+    """Return True when a processing file only mirrors terminal queue state."""
+    terminal_statuses = {"done", "cancelled", "failed"}
+    try:
+        from core.memory.task_queue import TaskQueueManager
+
+        entry = TaskQueueManager(anima_dir).get_task_by_id(task_id)
+        if entry is not None:
+            return entry.status in terminal_statuses
+        return _archive_has_terminal_task(anima_dir, task_id, terminal_statuses)
+    except Exception:
+        logger.debug("Failed to inspect processing orphan state: %s/%s", anima_dir.name, task_id, exc_info=True)
+        return False
+
+
+def _archive_has_terminal_task(anima_dir: Path, task_id: str, terminal_statuses: set[str]) -> bool:
+    archive = anima_dir / "state" / "task_queue_archive.jsonl"
+    if not archive.exists():
+        return False
+    try:
+        for line in reversed(archive.read_text(encoding="utf-8").splitlines()):
+            raw_line = line.strip()
+            if not raw_line or task_id not in raw_line:
+                continue
+            try:
+                payload = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+            if payload.get("task_id") == task_id:
+                status = payload.get("status")
+                return isinstance(status, str) and status in terminal_statuses
+    except OSError:
+        logger.debug("Failed to inspect task archive for processing orphan: %s/%s", anima_dir.name, task_id)
+    return False
 
 
 def _append_stale_processing_event(

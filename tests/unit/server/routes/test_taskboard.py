@@ -289,3 +289,30 @@ class TestTaskSummaryCompatibility:
         assert board_data["in_progress"] == 1
         assert board_data["snoozed"] == 1
         assert board_data["total_active"] == 1
+
+    async def test_summary_counts_review_column_as_review_not_blocked(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["alice"])
+        queue = _queue(app, "alice")
+        review = queue.add_task(
+            source="human",
+            original_instruction="needs review",
+            assignee="alice",
+            summary="needs review",
+            task_id="task-review",
+        )
+        queue.update_status(review.task_id, "blocked")
+        _store(app).upsert_metadata(
+            anima_name="alice",
+            task_id=review.task_id,
+            actor="planner",
+            column="review",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            board_resp = await client.get("/api/task-board/summary")
+
+        board_data = board_resp.json()
+        assert board_data["blocked"] == 0
+        assert board_data["failed_review"] == 1
+        assert board_data["total_active"] == 1

@@ -195,16 +195,16 @@ def summarize_task_board(
         if task.needs_human:
             summary["needs_human"] += 1
 
-        status = task.queue_status
-        if status == "pending":
+        column = task.column
+        if column == BoardColumn.TODO:
             summary["pending"] += 1
-        elif status == "in_progress":
+        elif column == BoardColumn.RUNNING:
             summary["in_progress"] += 1
-        elif status == "blocked":
+        elif column == BoardColumn.BLOCKED:
             summary["blocked"] += 1
-        elif status == "delegated":
+        elif column == BoardColumn.WAITING:
             summary["delegated"] += 1
-        elif status == "failed" or task.column == BoardColumn.REVIEW:
+        elif column == BoardColumn.REVIEW:
             summary["failed_review"] += 1
 
     summary["total_active"] = (

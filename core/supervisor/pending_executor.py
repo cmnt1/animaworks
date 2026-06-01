@@ -47,6 +47,9 @@ _QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
 _QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
 _TASKBOARD_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
 _RUNNER_START_SUFFIX = "-runner-start"
+_AUTO_RETRY_BLOCKED_SUMMARY_PREFIXES = (
+    "BLOCKED: Task reported an explicit follow-up/start step",
+)
 
 
 def _detect_task_auth_failure(result: str) -> str | None:
@@ -331,6 +334,11 @@ def _classify_task_result_for_desc(result: str, task_desc: dict[str, Any]) -> tu
     return status, summary
 
 
+def _blocked_summary_allows_retry(summary: str | None) -> bool:
+    text = (summary or "").strip()
+    return any(text.startswith(prefix) for prefix in _AUTO_RETRY_BLOCKED_SUMMARY_PREFIXES)
+
+
 def _command_queue_link(task_id: str, tool_name: str, subcommand: str) -> tuple[str, str, str] | None:
     """Return (queue_task_id, success_status, failure_status) for command tasks.
 
@@ -506,6 +514,7 @@ class PendingTaskExecutor:
             bool(task_desc.get("allow_multistage"))
             or bool(task_desc_meta.get("allow_multistage"))
             or bool(meta.get("auto_retry_on_blocked"))
+            or _blocked_summary_allows_retry(entry.summary)
         ):
             return False
 
