@@ -458,6 +458,7 @@ async def one_shot_completion(
     *,
     system_prompt: str = "",
     model: str = "",
+    credential: str = "",
     max_tokens: int = 2048,
 ) -> str | None:
     """Execute a one-shot LLM completion with automatic backend selection.
@@ -471,12 +472,13 @@ async def one_shot_completion(
         prompt: User message content.
         system_prompt: Optional system prompt (used by conversation compression).
         model: LLM model identifier. Defaults to config.consolidation.llm_model.
+        credential: Optional credential name to use for the LiteLLM call.
         max_tokens: Maximum tokens for the response.
 
     Returns:
         Generated text, or None if all backends fail.
     """
-    llm_kwargs = get_llm_kwargs_for_model(model)
+    llm_kwargs = get_llm_kwargs_for_model(model, credential=credential)
     resolved_model = llm_kwargs["model"]
 
     # 1. Try LiteLLM

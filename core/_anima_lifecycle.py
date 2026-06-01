@@ -408,6 +408,8 @@ class LifecycleMixin:
 
         cfg = load_config()
         consolidation_model = cfg.consolidation.llm_model
+        _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
+        consolidation_credential = _llm_cred if isinstance(_llm_cred, str) else ""
         start_mono = _time.monotonic()
 
         # ── Phase A: Episode extraction ─────────────────────────
@@ -435,6 +437,7 @@ class LifecycleMixin:
                 raw = await one_shot_completion(
                     ep_prompt,
                     model=consolidation_model,
+                    credential=consolidation_credential,
                     max_tokens=8192,
                 )
                 if raw:
