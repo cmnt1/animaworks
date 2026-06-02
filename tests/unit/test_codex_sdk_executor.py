@@ -37,6 +37,7 @@ from core.execution.codex_sdk import (
     _patch_codex_sdk_command_execution_statuses,
     _resolve_codex_model,
     _save_thread_id,
+    _set_process_path_env,
     _should_cli_exec_fallback,
     _should_prefer_cli_exec,
     _stderr_contains_fatal_signal,
@@ -494,6 +495,46 @@ class TestExecutorInit:
         parts = value.split(os.pathsep)
         assert str(Path(py_exe).resolve().parent) in parts
 
+    def test_default_path_env_reads_windows_path_key(self):
+        with (
+            patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
+            patch("core.execution.codex_sdk.sys.executable", r"C:\Proj\.venv\Scripts\python.exe"),
+            patch.dict("os.environ", {"Path": r"C:\Windows\System32"}, clear=True),
+        ):
+            value = _default_path_env()
+
+        assert r"C:\Windows\System32" in value.split(os.pathsep)
+
+    def test_set_process_path_env_normalizes_windows_key(self):
+        env = {"Path": r"C:\Old", "PATH": r"C:\AlsoOld", "OTHER": "x"}
+
+        with patch("core.execution.codex_sdk.sys.platform", "win32"):
+            _set_process_path_env(env, r"C:\New")
+
+        assert env["Path"] == r"C:\New"
+        assert "PATH" not in env
+        assert env["OTHER"] == "x"
+
+    def test_build_env_normalizes_windows_path_key(self, model_config, anima_dir):
+        model_config.credential_type = "codex_login"
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with (
+            patch("core.execution.codex_sdk.sys.platform", "win32"),
+            patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
+            patch(
+                "core.execution.codex_sdk.sys.executable",
+                r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts\python.exe",
+            ),
+            patch.dict("os.environ", {"Path": r"C:\Windows\System32", "USERPROFILE": r"C:\Users\Tester"}, clear=True),
+        ):
+            env = exc._build_env()
+
+        parts = env["Path"].split(os.pathsep)
+        assert r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts" in parts
+        assert r"C:\Windows\System32" in parts
+        assert "PATH" not in env
+
     def test_create_codex_client_passes_executable_override(self, executor):
         fake_client = MagicMock()
         fake_client._exec = MagicMock()
@@ -541,8 +582,8 @@ class TestConfigWriting:
         pairs = list(zip(flags[0::2], flags[1::2], strict=True))
         values = [value for flag, value in pairs if flag == "-c"]
 
-        assert "mcp_servers.aw.args=[\"-m\", \"core.mcp.server\"]" in values
-        assert "mcp_servers.aw.default_tools_approval_mode=\"approve\"" in values
+        assert 'mcp_servers.aw.args=["-m", "core.mcp.server"]' in values
+        assert 'mcp_servers.aw.default_tools_approval_mode="approve"' in values
         assert any(value.startswith("mcp_servers.aw.command=") for value in values)
         assert any(value.startswith("mcp_servers.aw.env.ANIMAWORKS_ANIMA_DIR=") for value in values)
 

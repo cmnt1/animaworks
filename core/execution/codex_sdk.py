@@ -202,9 +202,25 @@ def _default_path_env() -> str:
         logger.debug("Failed to resolve project venv bin for Codex PATH", exc_info=True)
 
     existing = os.environ.get("PATH")
+    if not existing and sys.platform == "win32":
+        existing = next(
+            (value for key, value in os.environ.items() if key.casefold() == "path"),
+            None,
+        )
     if existing:
         path_parts.append(existing)
     return os.pathsep.join(dict.fromkeys(part for part in path_parts if part))
+
+
+def _set_process_path_env(env: dict[str, str], value: str) -> None:
+    """Set the effective PATH entry, avoiding Windows PATH/Path duplicates."""
+    if sys.platform == "win32":
+        for key in list(env):
+            if key.casefold() == "path":
+                env.pop(key, None)
+        env["Path"] = value
+        return
+    env["PATH"] = value
 
 
 # ── Session (thread) ID persistence ──────────────────────────
@@ -644,6 +660,7 @@ def _patch_codex_exec_stream_limit(exec_: Any) -> None:
     async def _patched_run(args: CodexExecArgs):  # type: ignore[override]
         command_args = exec_._build_command_args(args)
         env = exec_._build_env(args)
+        _set_process_path_env(env, _default_path_env())
 
         proc = await asyncio.create_subprocess_exec(
             exec_.executable_path,
@@ -754,6 +771,7 @@ def _patch_codex_exec_stream_limit(exec_: Any) -> None:
 
 # ── Executor ─────────────────────────────────────────────────
 
+
 def _patch_codex_sdk_command_execution_statuses() -> None:
     """Allow newer Codex command_execution statuses in older SDK parsers."""
     try:
@@ -809,10 +827,10 @@ class CodexSDKExecutor(BaseExecutor):
             {
                 "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
                 "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-                "PATH": _default_path_env(),
                 "HOME": _default_home_dir(),
             }
         )
+        _set_process_path_env(env, _default_path_env())
         # When per-anima auth.json is absent, use the system CODEX_HOME
         # (from env var) or omit entirely for default ~/.codex/ keychain.
         if not self._use_default_codex_home:
@@ -884,8 +902,8 @@ class CodexSDKExecutor(BaseExecutor):
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PYTHONPATH": str(PROJECT_DIR),
-            "PATH": _default_path_env(),
         }
+        _set_process_path_env(env, _default_path_env())
         ctx = current_runtime_session()
         if ctx is not None:
             env.update(ctx.to_env())
