@@ -210,6 +210,13 @@ class TestClassifyTaskResult:
         assert status == "blocked"
         assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
 
+    def test_japanese_schema_then_fix_script_result_maps_to_blocked(self):
+        status, summary = _classify_task_result_for_desc(
+            "スキーマが確認できました。列名の正確な情報が得られたので、修正版スクリプトを作成します。",
+            {"allow_multistage": True},
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
 
     def test_db_connection_only_result_maps_to_blocked(self):
         status, summary = _classify_task_result_for_desc(

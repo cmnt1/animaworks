@@ -525,6 +525,67 @@ def test_delegated_parent_moves_to_review_when_child_is_terminal(tmp_path: Path)
     assert links[0].title == "submitted evidence"
 
 
+def test_delegated_parent_blocks_when_child_failed_without_parent_status_update(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    kanna = _queue(tmp_path, "kanna")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = kanna.add_task(
+        source="anima",
+        original_instruction="produce final evidence",
+        assignee="kanna",
+        summary="produce final evidence",
+        task_id="child-failed",
+    )
+    kanna.update_status(child.task_id, "failed", summary="FAILED: Task produced no final response")
+    parent = sakura.add_delegated_task(
+        original_instruction="track final evidence",
+        assignee="kanna",
+        summary="[delegate] track final evidence",
+        deadline="1h",
+        meta={"delegated_to": "kanna", "delegated_task_id": child.task_id},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+
+
+def test_delegated_parent_blocks_when_child_done_is_non_final_progress(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    kanna = _queue(tmp_path, "kanna")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = kanna.add_task(
+        source="anima",
+        original_instruction="produce final evidence",
+        assignee="kanna",
+        summary="produce final evidence",
+        task_id="child-progress",
+    )
+    kanna.update_status(
+        child.task_id,
+        "done",
+        summary="スキーマが確認できました。列名の正確な情報が得られたので、修正版スクリプトを作成します。",
+    )
+    parent = sakura.add_delegated_task(
+        original_instruction="track final evidence",
+        assignee="kanna",
+        summary="[delegate] track final evidence",
+        deadline="1h",
+        meta={"delegated_to": "kanna", "delegated_task_id": child.task_id},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("kanna", child.task_id) not in by_key
+    assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+
+
 def test_duplicate_delegated_parents_to_same_active_child_are_suppressed(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     kanna = _queue(tmp_path, "kanna")

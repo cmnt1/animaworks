@@ -263,7 +263,9 @@ def _attach_related_tasks(
             )
             if related_child is not None and task.queue_status not in _TERMINAL_QUEUE_STATUSES:
                 if related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
-                    if task.column != BoardColumn.BLOCKED:
+                    if _delegated_child_needs_followup(related_child):
+                        task.column = BoardColumn.BLOCKED
+                    elif task.column != BoardColumn.BLOCKED:
                         task.column = BoardColumn.REVIEW
                 elif task.column == BoardColumn.BLOCKED:
                     task.column = BoardColumn.WAITING
@@ -333,6 +335,52 @@ def _suppress_duplicate_delegated_parents(tasks: list[BoardTask]) -> None:
 
 def _is_cancelled_or_tombstoned_parent(parent: BoardTask) -> bool:
     return parent.queue_status == "cancelled" or parent.visibility == AttentionVisibility.TOMBSTONED
+
+
+def _delegated_child_needs_followup(child: BoardTask) -> bool:
+    if child.queue_status in {"failed", "cancelled"}:
+        return True
+    if child.queue_status != "done":
+        return False
+
+    text = " ".join(
+        part
+        for part in (
+            child.summary or "",
+            child.original_instruction or "",
+        )
+        if part
+    ).casefold()
+    followup_markers = (
+        "failed:",
+        "blocked:",
+        " fail",
+        "| fail",
+        "fail (",
+        "not final",
+        "not final evidence",
+        "not final completion",
+        "no final response",
+        "tool error",
+        "errors=",
+        "next step",
+        "next action",
+        "will proceed",
+        "will create",
+        "will write",
+        "will run",
+        "let me",
+        "schema confirmation",
+        "checking schema",
+        "creating a script",
+        "create a fixed script",
+        "スキーマが確認できました",
+        "修正版スクリプトを作成します",
+        "machineで",
+        "調査します",
+        "実施します",
+    )
+    return any(marker in text for marker in followup_markers)
 
 
 def _delegated_parent_precedence(task: BoardTask) -> tuple[int, str, str]:

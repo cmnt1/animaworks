@@ -18,6 +18,7 @@ from core.time_utils import now_iso
 logger = logging.getLogger("animaworks.task_retry")
 
 MAX_TASK_RETRY = 3
+_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
 
 
 class TaskRetryError(RuntimeError):
@@ -46,6 +47,11 @@ def retry_task(
     entry = manager.get_task_by_id(task_id)
     if entry is None:
         raise TaskRetryError(f"Task not found: {task_id}")
+    if entry.status in _TERMINAL_STATUSES:
+        raise TaskRetryError(f"Task {task_id} is terminal ({entry.status}); not retrying")
+    suppression_reason = _retry_suppression_reason(entry)
+    if suppression_reason:
+        raise TaskRetryError(f"Task {task_id} is not retryable: {suppression_reason}")
 
     regenerated = regenerate_pending_json(
         anima_dir,
@@ -56,8 +62,9 @@ def retry_task(
     if not regenerated:
         raise TaskRetryError(f"Task {task_id} could not be regenerated for retry")
 
-    manager.update_status(task_id, "pending", summary=summary)
-    updated = manager.update_status(task_id, "in_progress", summary=summary or "retry queued")
+    display_summary = _retry_display_summary(manager.queue_path, entry)
+    manager.update_status(task_id, "pending", summary=display_summary, note=summary)
+    updated = manager.update_status(task_id, "in_progress", summary=display_summary)
     if updated is None:
         raise TaskRetryError(f"Task not found after retry regeneration: {task_id}")
     return updated
@@ -75,6 +82,10 @@ def regenerate_pending_json(
     pending_dir = anima_dir / "state" / "pending"
     processing_dir = pending_dir / "processing"
     task_file = f"{entry.task_id}.json"
+
+    suppression_reason = _retry_suppression_reason(entry)
+    if suppression_reason:
+        raise TaskRetryError(f"Task {entry.task_id} is not retryable: {suppression_reason}")
 
     if (pending_dir / task_file).exists() or (processing_dir / task_file).exists():
         logger.warning("Task %s already in pipeline, skip regeneration", entry.task_id)
@@ -156,6 +167,74 @@ def _coerce_retry_count(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _retry_suppression_reason(entry: TaskEntry) -> str | None:
+    meta = entry.meta or {}
+    if bool(meta.get("needs_human")):
+        return "needs_human"
+    reason = meta.get("do_not_retry_reason")
+    if isinstance(reason, str) and reason.strip():
+        return reason.strip()
+    superseded_by = meta.get("superseded_by")
+    if isinstance(superseded_by, str) and superseded_by.strip():
+        return f"superseded_by {superseded_by.strip()}"
+    return None
+
+
+def _retry_display_summary(queue_path: Path, entry: TaskEntry) -> str:
+    """Return a human task title for a retried card, not retry plumbing text."""
+    historical_summary = _last_human_summary(queue_path, entry.task_id)
+    if historical_summary:
+        return historical_summary
+
+    meta = entry.meta or {}
+    task_desc = meta.get("task_desc")
+    if isinstance(task_desc, dict):
+        title = task_desc.get("title")
+        if isinstance(title, str) and title.strip() and not _is_retry_plumbing_summary(title):
+            return title.strip()
+
+    return _retry_title(entry)
+
+
+def _last_human_summary(queue_path: Path, task_id: str) -> str | None:
+    if not queue_path.exists():
+        return None
+
+    candidate: str | None = None
+    raw_text = queue_path.read_bytes().decode("utf-8", errors="replace")
+    for line in raw_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if raw.get("task_id") != task_id:
+            continue
+        summary = raw.get("summary")
+        if isinstance(summary, str) and summary.strip() and not _is_retry_plumbing_summary(summary):
+            candidate = summary.strip()
+    return candidate
+
+
+def _is_retry_plumbing_summary(summary: str) -> bool:
+    text = summary.strip()
+    lowered = text.casefold()
+    if lowered.startswith(("blocked:", "failed:")):
+        return True
+    return any(
+        marker in lowered
+        for marker in (
+            "retry queued",
+            "auto retry queued",
+            "recovered orphaned processing task",
+            "自動再実行待ち",
+            "再実行待ち",
+        )
+    )
 
 
 def _retry_title(entry: TaskEntry) -> str:

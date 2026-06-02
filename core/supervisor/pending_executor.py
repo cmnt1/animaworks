@@ -272,6 +272,14 @@ def _detect_strong_non_final_followup(result: str) -> str | None:
         return None
 
     folded = text.casefold()
+    if any(
+        marker in text
+        for marker in (
+            "スキーマが確認できました",
+            "修正版スクリプトを作成します",
+        )
+    ):
+        return "Task reported an explicit follow-up/start step, not final evidence"
     strong_markers = (
         "now i understand",
         "now i have the full picture",
@@ -513,6 +521,7 @@ class PendingTaskExecutor:
         status: str,
         *,
         summary: str | None = None,
+        note: str | None = None,
     ) -> None:
         """Sync task status to task_queue.jsonl (Layer 2).
 
@@ -524,9 +533,17 @@ class PendingTaskExecutor:
 
             manager = TaskQueueManager(self._anima_dir)
             entry = manager.get_task_by_id(task_id)
-            if entry and status == "cancelled" and entry.status in _QUEUE_TERMINAL_STATUSES:
+            if entry and entry.status in _QUEUE_TERMINAL_STATUSES:
+                if status != entry.status:
+                    logger.info(
+                        "[%s] Skipping task_queue sync for terminal task %s: current=%s incoming=%s",
+                        self._anima_name,
+                        task_id,
+                        entry.status,
+                        status,
+                    )
                 return
-            manager.update_status(task_id, status, summary=summary)
+            manager.update_status(task_id, status, summary=summary, note=note)
         except Exception:
             logger.warning(
                 "[%s] Failed to sync task %s status=%s to task_queue",
@@ -949,7 +966,7 @@ class PendingTaskExecutor:
             conflict_dir=llm_failed_dir,
         )
         for task_id in recovered_llm_task_ids:
-            self._sync_task_queue(task_id, "pending", summary="Recovered orphaned processing task; retry queued.")
+            self._sync_task_queue(task_id, "pending", note="Recovered orphaned processing task; retry queued.")
 
         logger.info("Pending task watcher started for %s", self._anima_name)
 

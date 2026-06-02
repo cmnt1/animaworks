@@ -41,6 +41,7 @@ def test_retry_task_regenerates_pending_json_from_task_desc(anima_dir: Path):
     retried = retry_task(anima_dir, entry.task_id, summary="retry queued", submitted_by="sakura")
 
     assert retried.status == "in_progress"
+    assert retried.summary == "Obsidian reflection"
     assert retried.meta["retry_count"] == 1
 
     pending_path = anima_dir / "state" / "pending" / f"{entry.task_id}.json"
@@ -86,3 +87,62 @@ def test_retry_task_respects_retry_limit(anima_dir: Path):
 
     with pytest.raises(TaskRetryError, match="could not be regenerated"):
         retry_task(anima_dir, entry.task_id, submitted_by="sakura")
+
+
+def test_retry_task_refuses_cancelled_task_even_with_processing_json(anima_dir: Path):
+    manager = TaskQueueManager(anima_dir)
+    entry = manager.add_task(
+        source="anima",
+        original_instruction="Old task",
+        assignee="sakura",
+        summary="Old task",
+        deadline="1h",
+    )
+    manager.update_status(entry.task_id, "cancelled", summary="superseded")
+    processing_dir = anima_dir / "state" / "pending" / "processing"
+    processing_dir.mkdir(parents=True)
+    (processing_dir / f"{entry.task_id}.json").write_text(
+        json.dumps({"task_id": entry.task_id}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TaskRetryError, match="terminal"):
+        retry_task(anima_dir, entry.task_id, submitted_by="sakura")
+
+    assert manager.get_task_by_id(entry.task_id).status == "cancelled"
+
+
+@pytest.mark.parametrize(
+    ("meta", "expected"),
+    [
+        ({"needs_human": True}, "needs_human"),
+        ({"superseded_by": "kanna:replacement"}, "superseded_by"),
+        ({"do_not_retry_reason": "replaced by clean task"}, "replaced by clean task"),
+    ],
+)
+def test_retry_task_refuses_suppressed_retry_even_with_processing_json(
+    anima_dir: Path,
+    meta: dict[str, object],
+    expected: str,
+):
+    manager = TaskQueueManager(anima_dir)
+    entry = manager.add_task(
+        source="anima",
+        original_instruction="Blocked task",
+        assignee="sakura",
+        summary="Blocked task",
+        deadline="1h",
+        meta=meta,
+    )
+    manager.update_status(entry.task_id, "blocked", summary="BLOCKED: not final")
+    processing_dir = anima_dir / "state" / "pending" / "processing"
+    processing_dir.mkdir(parents=True)
+    (processing_dir / f"{entry.task_id}.json").write_text(
+        json.dumps({"task_id": entry.task_id}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TaskRetryError, match=expected):
+        retry_task(anima_dir, entry.task_id, submitted_by="sakura")
+
+    assert manager.get_task_by_id(entry.task_id).status == "blocked"

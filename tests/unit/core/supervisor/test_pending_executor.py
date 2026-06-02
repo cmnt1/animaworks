@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.i18n import t
+from core.memory.task_queue import TaskQueueManager
 from core.supervisor.pending_executor import PendingTaskExecutor
 
 
@@ -81,6 +82,48 @@ class TestPendingTaskExecutorInit:
             shutdown_event=asyncio.Event(),
         )
         assert executor._anima_name == "standalone"
+
+    def test_sync_task_queue_does_not_resurrect_terminal_task(self, tmp_path):
+        executor = _make_executor(tmp_path)
+        manager = TaskQueueManager(executor._anima_dir)
+        entry = manager.add_task(
+            source="anima",
+            original_instruction="Cancelled while TaskExec was still running",
+            assignee="test-anima",
+            summary="Cancelled task",
+            deadline="1h",
+        )
+        manager.update_status(entry.task_id, "cancelled", summary="superseded")
+
+        executor._sync_task_queue(entry.task_id, "blocked", summary="BLOCKED: stale result")
+
+        updated = manager.get_task_by_id(entry.task_id)
+        assert updated is not None
+        assert updated.status == "cancelled"
+        assert updated.summary == "superseded"
+
+    def test_sync_task_queue_keeps_internal_retry_note_out_of_summary(self, tmp_path):
+        executor = _make_executor(tmp_path)
+        manager = TaskQueueManager(executor._anima_dir)
+        entry = manager.add_task(
+            source="anima",
+            original_instruction="Submit final public evidence",
+            assignee="test-anima",
+            summary="AFF-003 final public evidence",
+            deadline="1h",
+        )
+
+        executor._sync_task_queue(
+            entry.task_id,
+            "pending",
+            note="Recovered orphaned processing task; retry queued.",
+        )
+
+        updated = manager.get_task_by_id(entry.task_id)
+        assert updated is not None
+        assert updated.status == "pending"
+        assert updated.summary == "AFF-003 final public evidence"
+        assert updated.meta["status_notes"][-1]["note"] == "Recovered orphaned processing task; retry queued."
 
 
 class TestTaskExecLaneIsolation:
