@@ -187,6 +187,41 @@ def test_failed_tasks_stay_visible_for_review_by_default(tmp_path: Path) -> None
     assert projected[0].column == BoardColumn.REVIEW
 
 
+def test_failed_delegated_child_is_hidden_when_parent_was_cancelled(tmp_path: Path) -> None:
+    ayane = _queue(tmp_path, "ayane")
+    momoka = _queue(tmp_path, "momoka")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = momoka.add_task(
+        source="anima",
+        original_instruction="verify upstream note",
+        assignee="momoka",
+        summary="verify upstream note",
+        task_id="child-failed",
+    )
+    momoka.update_status(child.task_id, "failed", summary="FAILED: stream disconnected")
+    parent = ayane.add_delegated_task(
+        original_instruction="delegate note verification",
+        assignee="momoka",
+        summary="delegate note verification",
+        deadline="1h",
+        meta={"delegated_to": "momoka", "delegated_task_id": child.task_id},
+    )
+    ayane.update_status(parent.task_id, "cancelled", summary="tombstoned by TaskBoard")
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("momoka", child.task_id) not in by_key
+
+    archived = project_all(tmp_path / "animas", store, include_archived=True)
+    archived_by_key = {(task.anima_name, task.task_id): task for task in archived}
+    archived_child = archived_by_key[("momoka", child.task_id)]
+    assert archived_child.visibility == AttentionVisibility.ARCHIVED
+    assert archived_child.column == BoardColumn.SUPPRESSED
+    assert archived_child.replaced_by == f"ayane:{parent.task_id}"
+
+
 def test_missing_queue_metadata_is_hidden_unless_requested(tmp_path: Path) -> None:
     store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
     store.upsert_metadata(

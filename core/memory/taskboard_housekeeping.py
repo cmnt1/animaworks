@@ -45,6 +45,9 @@ def cleanup_taskboard_stale_artifacts(
     background = _cleanup_background_running(animas_dir, background_running_stale_hours)
     results.update({f"background_{key}": value for key, value in background.items()})
 
+    cron_queue = _cleanup_stale_cron_queue_tasks(animas_dir, background_running_stale_hours)
+    results.update({f"cron_queue_{key}": value for key, value in cron_queue.items()})
+
     current_state = _cleanup_current_state(animas_dir, current_state_stale_hours, store)
     results.update({f"current_state_{key}": value for key, value in current_state.items()})
 
@@ -215,6 +218,68 @@ def _cleanup_background_running(animas_dir: Path, stale_hours: int) -> dict[str,
                 logger.warning("Failed to delete stale background task: %s", path, exc_info=True)
 
     return {"running_deleted": deleted, "errors": errors}
+
+
+def _cleanup_stale_cron_queue_tasks(animas_dir: Path, stale_hours: int) -> dict[str, int]:
+    cutoff = now_local().timestamp() - (stale_hours * 3600)
+    cancelled = 0
+    finalized = 0
+    active_artifact = 0
+    errors = 0
+
+    for anima_dir in _iter_anima_dirs(animas_dir):
+        try:
+            from core.memory.task_queue import TaskQueueManager
+
+            manager = TaskQueueManager(anima_dir)
+            for task in manager._load_all().values():
+                if task.status not in {"pending", "in_progress"}:
+                    continue
+                meta = task.meta or {}
+                if not bool(meta.get("from_cron")):
+                    continue
+                updated_at = _parse_datetime_value(task.updated_at or "")
+                if updated_at is None or updated_at.timestamp() >= cutoff:
+                    continue
+                if _has_runtime_task_artifact(anima_dir, task.task_id):
+                    active_artifact += 1
+                    continue
+                result_path = anima_dir / "state" / "task_results" / f"{task.task_id}.md"
+                if result_path.exists():
+                    manager.update_status(
+                        task.task_id,
+                        "done",
+                        summary=f"cron tracker finalized from task_result artifact: {result_path}",
+                    )
+                    finalized += 1
+                else:
+                    manager.update_status(
+                        task.task_id,
+                        "cancelled",
+                        summary="Cancelled: stale cron tracker without pending/result artifact; next schedule will retry.",
+                    )
+                    cancelled += 1
+        except Exception:
+            errors += 1
+            logger.warning("Failed to cleanup stale cron queue tasks: %s", anima_dir, exc_info=True)
+
+    return {
+        "cancelled": cancelled,
+        "finalized": finalized,
+        "active_artifact": active_artifact,
+        "errors": errors,
+    }
+
+
+def _has_runtime_task_artifact(anima_dir: Path, task_id: str) -> bool:
+    state_dir = anima_dir / "state"
+    artifact_dirs = [
+        state_dir / "pending",
+        state_dir / "pending" / "processing",
+        state_dir / "background_tasks" / "pending",
+        state_dir / "background_tasks" / "pending" / "processing",
+    ]
+    return any((artifact_dir / f"{task_id}.json").exists() for artifact_dir in artifact_dirs)
 
 
 def _cleanup_current_state(

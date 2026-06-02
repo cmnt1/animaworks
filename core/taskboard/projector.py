@@ -279,6 +279,11 @@ def _attach_related_tasks(
                 fallback_task_id=parent.task_id,
                 peer_name=parent.anima_name,
             )
+            if task.queue_status == "failed" and _is_cancelled_or_tombstoned_parent(parent):
+                task.visibility = AttentionVisibility.ARCHIVED
+                task.column = BoardColumn.SUPPRESSED
+                task.replaced_by = f"{parent.anima_name}:{parent.task_id}"
+                task.tombstone_reason = "delegated_parent_cancelled"
 
         source_from = meta.get("source_from")
         referenced_tasks = _find_referenced_tasks(task, index)
@@ -324,6 +329,10 @@ def _suppress_duplicate_delegated_parents(tasks: list[BoardTask]) -> None:
             task.column = BoardColumn.SUPPRESSED
             task.replaced_by = f"{keeper.anima_name}:{keeper.task_id}"
             task.tombstone_reason = "duplicate_delegated_parent"
+
+
+def _is_cancelled_or_tombstoned_parent(parent: BoardTask) -> bool:
+    return parent.queue_status == "cancelled" or parent.visibility == AttentionVisibility.TOMBSTONED
 
 
 def _delegated_parent_precedence(task: BoardTask) -> tuple[int, str, str]:

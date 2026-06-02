@@ -42,6 +42,22 @@ async def test_taskboard_housekeeping_remediates_stale_runtime_artifacts_end_to_
         status="in_progress",
         task_id="recover-task",
     )
+    cron_task = queue.add_task(
+        source="anima",
+        original_instruction="stale cron tracker",
+        assignee="sakura",
+        summary="stale cron tracker",
+        status="in_progress",
+        task_id="stale-cron",
+        meta={"from_cron": True, "cron_task_name": "stale cron", "cron_type": "llm"},
+    )
+    queue.queue_path.write_text(
+        queue.queue_path.read_text(encoding="utf-8").replace(
+            '"updated_at": "' + cron_task.updated_at + '"',
+            '"updated_at": "2000-01-01T00:00:00+09:00"',
+        ),
+        encoding="utf-8",
+    )
     _write_json(
         anima_dir / "state" / "pending" / "processing" / "recover-task.json",
         {"task_id": "recover-task"},
@@ -84,6 +100,7 @@ async def test_taskboard_housekeeping_remediates_stale_runtime_artifacts_end_to_
     assert taskboard["deferred_woken"] == 1
     assert taskboard["suppressed_deleted"] == 1
     assert taskboard["background_running_deleted"] == 1
+    assert taskboard["cron_queue_cancelled"] == 1
     assert taskboard["current_state_archived"] == 1
 
     assert (anima_dir / "state" / "pending" / "failed" / "recover-task.json").exists()
@@ -91,6 +108,7 @@ async def test_taskboard_housekeeping_remediates_stale_runtime_artifacts_end_to_
     assert not (anima_dir / "state" / "pending" / "suppressed" / "old-hidden.json").exists()
     assert not (anima_dir / "state" / "background_tasks" / "stale-running.json").exists()
     assert queue.get_task_by_id("recover-task").status == "failed"
+    assert queue.get_task_by_id("stale-cron").status == "cancelled"
     assert state_path.read_text(encoding="utf-8") == "status: idle\n"
     assert "stale idle notes" in next((idle_anima_dir / "episodes").glob("*.md")).read_text(encoding="utf-8")
 
