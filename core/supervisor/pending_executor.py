@@ -218,7 +218,15 @@ class PendingTaskExecutor:
 
             manager = TaskQueueManager(self._anima_dir)
             entry = manager.get_task_by_id(task_id)
-            if entry and status == "cancelled" and entry.status in _QUEUE_TERMINAL_STATUSES:
+            if entry and entry.status in _QUEUE_TERMINAL_STATUSES:
+                if status != entry.status:
+                    logger.info(
+                        "[%s] Skipping task_queue sync for terminal task %s: current=%s incoming=%s",
+                        self._anima_name,
+                        task_id,
+                        entry.status,
+                        status,
+                    )
                 return
             manager.update_status(task_id, status, summary=summary)
         except Exception:
