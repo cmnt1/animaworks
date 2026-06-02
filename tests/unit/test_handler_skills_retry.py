@@ -103,3 +103,33 @@ class TestRegeneratePendingJsonGuard:
         handler._regenerate_pending_json(entry_at_3)
         pending2 = handler._anima_dir / "state" / "pending" / "task-006b.json"
         assert not pending2.exists()
+
+    def test_retry_display_summary_restores_human_title_from_history(self, handler):
+        from core.memory.task_queue import TaskQueueManager
+
+        manager = TaskQueueManager(handler._anima_dir)
+        entry = manager.add_task(
+            source="anima",
+            original_instruction="Submit final public evidence",
+            assignee="test",
+            summary="AFF-003 final public evidence",
+            deadline="1h",
+            meta={"task_desc": {"title": "Fallback title"}},
+        )
+        manager.update_status(entry.task_id, "blocked", summary="BLOCKED: not final")
+        manager.update_status(entry.task_id, "pending", summary="auto retry queued after blocked TaskExec result")
+        queued = manager.get_task_by_id(entry.task_id)
+
+        assert handler._retry_display_summary(queued) == "AFF-003 final public evidence"
+
+    @pytest.mark.parametrize(
+        "summary",
+        [
+            "auto retry queued after blocked TaskExec result",
+            "非最終報告のため自動再実行待ち",
+            "BLOCKED: not final",
+            "FAILED: tool errors",
+        ],
+    )
+    def test_retry_plumbing_summary_detection(self, handler, summary):
+        assert handler._is_retry_plumbing_summary(summary)

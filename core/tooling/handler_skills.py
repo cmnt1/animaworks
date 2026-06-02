@@ -592,7 +592,8 @@ class SkillsToolsMixin:
                 regenerated = self._regenerate_pending_json(entry)
                 if regenerated:
                     # Immediately set to in_progress since TaskExec will pick it up
-                    entry = manager.update_status(task_id, "in_progress") or entry
+                    display_summary = self._retry_display_summary(entry)
+                    entry = manager.update_status(task_id, "in_progress", summary=display_summary) or entry
             except TaskSuppressedError as e:
                 return _error_result("TaskSuppressed", str(e))
             except Exception:
@@ -696,6 +697,62 @@ class SkillsToolsMixin:
 
         logger.info("Regenerated pending JSON for retry: %s", entry.task_id)
         return True
+
+    def _retry_display_summary(self, entry: TaskEntry) -> str:
+        """Return a human task title for a retried card, not retry plumbing text."""
+        historical_summary = self._last_human_summary(entry.task_id)
+        if historical_summary:
+            return historical_summary
+
+        task_desc_meta = entry.meta.get("task_desc", {})
+        if isinstance(task_desc_meta, dict):
+            title = task_desc_meta.get("title")
+            if isinstance(title, str) and title.strip() and not self._is_retry_plumbing_summary(title):
+                return title.strip()
+
+        summary = (entry.summary or "").strip()
+        if summary and not self._is_retry_plumbing_summary(summary):
+            return summary
+        return (entry.original_instruction or entry.task_id)[:100]
+
+    def _last_human_summary(self, task_id: str) -> str | None:
+        queue_path = self._anima_dir / "state" / "task_queue.jsonl"
+        if not queue_path.exists():
+            return None
+
+        candidate: str | None = None
+        raw_text = queue_path.read_bytes().decode("utf-8", errors="replace")
+        for line in raw_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                raw = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            if raw.get("task_id") != task_id:
+                continue
+            summary = raw.get("summary")
+            if isinstance(summary, str) and summary.strip() and not self._is_retry_plumbing_summary(summary):
+                candidate = summary.strip()
+        return candidate
+
+    @staticmethod
+    def _is_retry_plumbing_summary(summary: str) -> bool:
+        text = summary.strip()
+        lowered = text.casefold()
+        if lowered.startswith(("blocked:", "failed:")):
+            return True
+        return any(
+            marker in lowered
+            for marker in (
+                "retry queued",
+                "auto retry queued",
+                "recovered orphaned processing task",
+                "自動再実行待ち",
+                "再実行待ち",
+            )
+        )
 
     def _handle_list_tasks(self, args: dict[str, Any]) -> str:
         from core.memory.task_queue import TaskQueueManager
