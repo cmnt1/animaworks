@@ -240,9 +240,13 @@ class TestActionAwarePrimingHook:
         assert session_stats["action_gate_denied_count"] == 3
 
     @pytest.mark.asyncio
-    async def test_session_stats_none_graceful(self, anima_dir):
+    async def test_session_stats_none_graceful(self, anima_dir, monkeypatch):
         """When session_stats is None, hook should not crash."""
         from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.memory import action_gate
+
+        # Stub RAG-backed rule search so the test does not reach HuggingFace.
+        monkeypatch.setattr(action_gate, "_search_action_rules", lambda *_a, **_k: [])
 
         hook = _build_pre_tool_hook(
             anima_dir,
