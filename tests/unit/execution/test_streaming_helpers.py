@@ -394,6 +394,24 @@ class TestStreamErrorBoundaryWrapsGenericError:
 
         assert exc_info.value.retry_after_s == 52.0
 
+    @pytest.mark.asyncio
+    async def test_marks_http_429_as_rate_limit(self) -> None:
+        parts = ["partial"]
+
+        with pytest.raises(StreamDisconnectedError) as exc_info:
+            async with stream_error_boundary(parts, executor_name="Antigravity"):
+                raise RuntimeError(
+                    "Antigravity streaming HTTP 429: "
+                    '{"error":{"reason":"RATE_LIMIT_EXCEEDED"}} retry-after: 47s'
+                )
+
+        err = exc_info.value
+        assert err.category == "rate_limit"
+        assert err.retry_after_s == 47.0
+        assert err.partial_text == "partial"
+        assert "provider rate limit" in str(err)
+        assert "RATE_LIMIT_EXCEEDED" in str(err)
+
 
 class TestStreamErrorBoundaryPassesStreamDisconnected:
     """An existing StreamDisconnectedError is re-raised without wrapping."""

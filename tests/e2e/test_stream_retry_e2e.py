@@ -88,7 +88,11 @@ def _make_streaming_executor(
     return _MockExecutor()
 
 
-def _make_always_failing_executor():
+def _make_always_failing_executor(
+    *,
+    message: str = "Persistent disconnect",
+    category: str | None = None,
+):
     """Build a mock executor that always raises StreamDisconnectedError."""
 
     async def execute_streaming(
@@ -98,8 +102,9 @@ def _make_always_failing_executor():
         **kwargs: Any,
     ) -> AsyncGenerator[dict[str, Any], None]:
         raise StreamDisconnectedError(
-            "Persistent disconnect",
+            message,
             partial_text="partial output",
+            category=category,
         )
         # Make this a generator
         yield  # pragma: no cover
@@ -257,6 +262,50 @@ class TestStreamRetryMaxExceeded:
 
         # cycle_done should still be yielded (with whatever was accumulated)
         assert "cycle_done" in event_types, "cycle_done should be yielded even after retry exhaustion"
+
+    async def test_rate_limit_retry_exhausted_is_explicit(self, make_agent_core, monkeypatch):
+        """Provider rate limits should not be reported as generic stream cuts."""
+        with patch_agent_sdk_streaming():
+            agent = make_agent_core(
+                name="retry-rate-limit",
+                model="claude-sonnet-4-6",
+            )
+            agent._sdk_available = True
+
+        agent._executor = _make_always_failing_executor(
+            message="Antigravity provider rate limit (HTTP 429/RATE_LIMIT_EXCEEDED)",
+            category="rate_limit",
+        )
+
+        monkeypatch.setattr(agent, "_run_priming", AsyncMock(return_value=("", "")))
+        monkeypatch.setattr(
+            agent,
+            "_load_stream_retry_config",
+            lambda: {
+                "checkpoint_enabled": True,
+                "retry_max": 2,
+                "retry_delay_s": 0.01,
+            },
+        )
+        monkeypatch.setattr(
+            "core._agent_cycle.build_system_prompt",
+            lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
+        )
+        monkeypatch.setattr(
+            "core._agent_cycle.inject_shortterm",
+            lambda sp, st: sp,
+        )
+
+        events: list[dict[str, Any]] = []
+        async for chunk in agent.run_cycle_streaming("Test prompt", trigger="test"):
+            events.append(chunk)
+
+        error_events = [e for e in events if e["type"] == "error"]
+        assert len(error_events) == 1
+        error_msg = error_events[0]["message"]
+        assert error_msg.startswith("RATE_LIMIT:")
+        assert "HTTP 429/RATE_LIMIT_EXCEEDED" in error_msg
+        assert "stream" not in error_msg.lower()
 
 
 class TestCheckpointClearedOnSuccess:

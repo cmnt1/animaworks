@@ -70,6 +70,16 @@ def extract_retry_after_seconds(message: str) -> float | None:
 # ── LiteLLM tool-call chunk accumulation ─────────────────────
 
 
+def _is_rate_limit_error(message: str) -> bool:
+    lowered = message.casefold()
+    return (
+        "rate_limit_exceeded" in lowered
+        or "rate limit" in lowered
+        or "http 429" in lowered
+        or "status_code=429" in lowered
+    )
+
+
 def accumulate_tool_call_chunks(
     tool_calls_acc: dict[int, dict[str, Any]],
     delta_tool_calls: list[Any],
@@ -337,9 +347,22 @@ async def stream_error_boundary(
     except Exception as e:
         partial = "\n".join(partial_text_parts)
         logger.exception("%s streaming error", executor_name)
-        message = f"{executor_name} stream error: {e}"
+        raw_message = f"{executor_name} stream error: {e}"
+        retry_after_s = extract_retry_after_seconds(raw_message)
+        is_rate_limit = _is_rate_limit_error(raw_message)
+        if is_rate_limit:
+            if retry_after_s is not None:
+                message = (
+                    f"{executor_name} provider rate limit "
+                    f"(HTTP 429/RATE_LIMIT_EXCEEDED; retry_after={retry_after_s:.1f}s)"
+                )
+            else:
+                message = f"{executor_name} provider rate limit (HTTP 429/RATE_LIMIT_EXCEEDED)"
+        else:
+            message = raw_message
         raise StreamDisconnectedError(
             message,
             partial_text=partial,
-            retry_after_s=extract_retry_after_seconds(message),
+            retry_after_s=retry_after_s,
+            category="rate_limit" if is_rate_limit else None,
         ) from e

@@ -181,6 +181,10 @@ class TestStreamDisconnectedPartialText:
         exc = StreamDisconnectedError("boom", retry_after_s=52.0)
         assert exc.retry_after_s == 52.0
 
+    def test_custom_category(self) -> None:
+        exc = StreamDisconnectedError("boom", category="rate_limit")
+        assert exc.category == "rate_limit"
+
     def test_str_returns_message(self) -> None:
         exc = StreamDisconnectedError("boom", partial_text="hello")
         assert str(exc) == "boom"

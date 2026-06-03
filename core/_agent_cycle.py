@@ -1102,7 +1102,13 @@ class CycleMixin:
                     full_text_parts.append(partial_text)
 
                 if retry_count >= max_retries:
-                    terminal_error_message = t("agent.stream_retry_exhausted", retry_count=retry_count)
+                    if getattr(e, "category", None) == "rate_limit":
+                        terminal_error_message = (
+                            f"RATE_LIMIT: provider returned HTTP 429/RATE_LIMIT_EXCEEDED "
+                            f"after {retry_count} retry attempt(s): {e}"
+                        )
+                    else:
+                        terminal_error_message = t("agent.stream_retry_exhausted", retry_count=retry_count)
                     logger.error(
                         "Stream retry exhausted (%d/%d)",
                         retry_count,
@@ -1126,13 +1132,22 @@ class CycleMixin:
                 else:
                     actual_delay = retry_delay
                     retry_reason = ""
-                logger.warning(
-                    "Stream disconnected, retrying %d/%d after %.1fs%s",
-                    retry_count,
-                    max_retries,
-                    actual_delay,
-                    retry_reason,
-                )
+                if getattr(e, "category", None) == "rate_limit":
+                    logger.warning(
+                        "Provider rate limit, retrying %d/%d after %.1fs%s",
+                        retry_count,
+                        max_retries,
+                        actual_delay,
+                        retry_reason,
+                    )
+                else:
+                    logger.warning(
+                        "Stream disconnected, retrying %d/%d after %.1fs%s",
+                        retry_count,
+                        max_retries,
+                        actual_delay,
+                        retry_reason,
+                    )
                 # リトライ1回目は必ずfresh session（壊れたセッションIDを持ち越さない）
                 if retry_count == 1:
                     try:

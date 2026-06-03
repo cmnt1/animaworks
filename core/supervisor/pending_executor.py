@@ -1636,12 +1636,20 @@ class PendingTaskExecutor:
                     elif chunk_type == "error":
                         had_error = True
                         error_message = chunk.get("message", "unknown error")
-                        logger.warning(
-                            "[%s] Streaming error during task %s: %s",
-                            self._anima_name,
-                            task_id,
-                            error_message,
-                        )
+                        if error_message.startswith("RATE_LIMIT:"):
+                            logger.warning(
+                                "[%s] Provider rate limit during task %s: %s",
+                                self._anima_name,
+                                task_id,
+                                error_message,
+                            )
+                        else:
+                            logger.warning(
+                                "[%s] Streaming error during task %s: %s",
+                                self._anima_name,
+                                task_id,
+                                error_message,
+                            )
                     elif chunk_type == "retry_start":
                         had_error = False
                         error_message = ""
@@ -1691,6 +1699,8 @@ class PendingTaskExecutor:
                 logger.debug("pending_executor: failed to check task queue for task %s: %s", task_id, e)
 
             if not _queue_done:
+                if error_message.startswith("RATE_LIMIT:"):
+                    raise TaskExecError(f"Task {task_id} encountered provider rate limit: {error_message}")
                 raise TaskExecError(f"Task {task_id} encountered streaming error: {error_message}")
         if task_failed_reason:
             raise RuntimeError(task_failed_reason)

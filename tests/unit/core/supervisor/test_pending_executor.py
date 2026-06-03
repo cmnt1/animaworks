@@ -460,6 +460,53 @@ class TestStreamErrorSuppression:
                 await executor._run_llm_task(task_desc)
 
     @pytest.mark.asyncio
+    async def test_rate_limit_error_is_not_wrapped_as_streaming_error(self, tmp_path):
+        """Rate limit terminal errors should stay diagnosable in TaskExecError."""
+        from core.supervisor.pending_executor import TaskExecError
+
+        executor = _make_executor(tmp_path)
+        bg_event = asyncio.Event()
+        executor._anima._get_interrupt_event = lambda _name: bg_event
+
+        async def _stream_with_rate_limit(*args, **kwargs):
+            yield {
+                "type": "error",
+                "message": "RATE_LIMIT: provider returned HTTP 429/RATE_LIMIT_EXCEEDED after 5 retry attempt(s)",
+            }
+
+        executor._anima.agent.run_cycle_streaming = _stream_with_rate_limit
+        executor._anima.agent.reset_reply_tracking = MagicMock()
+        executor._anima.agent.reset_read_paths = MagicMock()
+        executor._anima.agent.set_task_cwd = MagicMock()
+        executor._anima.messenger = MagicMock()
+
+        task_desc = {
+            "task_id": "task-rate-limit-1",
+            "title": "Rate limited task",
+            "description": "Task that exhausted provider quota",
+        }
+
+        mock_entry = MagicMock()
+        mock_entry.status = "in_progress"
+
+        with (
+            patch("core.paths.load_prompt", return_value="test prompt"),
+            patch("core.memory.activity.ActivityLogger") as mock_activity,
+            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+        ):
+            mock_activity.return_value.log = MagicMock()
+            mock_tqm.return_value.get_task_by_id.return_value = mock_entry
+
+            with pytest.raises(TaskExecError) as exc_info:
+                await executor._run_llm_task(task_desc)
+
+        message = str(exc_info.value)
+        assert "provider rate limit" in message
+        assert "HTTP 429/RATE_LIMIT_EXCEEDED" in message
+        assert "encountered streaming error" not in message
+
+    @pytest.mark.asyncio
     async def test_raises_when_task_not_in_queue(self, tmp_path):
         """Stream error should raise when task is not found in queue (None)."""
         from core.supervisor.pending_executor import TaskExecError
