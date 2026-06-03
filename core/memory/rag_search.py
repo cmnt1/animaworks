@@ -513,13 +513,11 @@ class RAGMemorySearch:
             episodes_dir=episodes_dir,
             procedures_dir=procedures_dir,
             common_knowledge_dir=common_knowledge_dir,
+            result_limit=pool_k,
+            entity_boost=entity_boost,
         )
         if keyword_hits:
             if not ranked_lists:
-                if entity_boost is not None:
-                    from core.memory.retrieval.entity import apply_entity_boost
-
-                    keyword_hits = apply_entity_boost(query, keyword_hits, entity_boost)
                 self._last_search_meta = {
                     "abstain": False,
                     "abstain_reason": "",
