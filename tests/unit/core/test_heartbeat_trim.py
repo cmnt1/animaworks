@@ -39,6 +39,8 @@ def mixin(anima_dir):
     m.name = "test-trim"
     m.anima_dir = anima_dir
     m.memory = MagicMock()
+    # Snapshot part is optional; default to empty so it is not appended.
+    m._build_preobserved_heartbeat_snapshot_part = MagicMock(return_value="")
     return m
 
 
