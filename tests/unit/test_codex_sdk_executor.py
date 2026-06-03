@@ -496,7 +496,10 @@ class TestExecutorInit:
         assert str(Path(py_exe).resolve().parent) in parts
 
     def test_default_path_env_reads_windows_path_key(self):
+        # The Windows ``Path`` key fallback only runs when sys.platform is
+        # win32; patch it so the behavior is exercised on any host (e.g. Linux CI).
         with (
+            patch("core.execution.codex_sdk.sys.platform", "win32"),
             patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
             patch("core.execution.codex_sdk.sys.executable", r"C:\Proj\.venv\Scripts\python.exe"),
             patch.dict("os.environ", {"Path": r"C:\Windows\System32"}, clear=True),
