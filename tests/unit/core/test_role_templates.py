@@ -166,13 +166,13 @@ class TestApplyRoleDefaults:
         assert data.get("version") == 1
 
     def test_fallback_to_general_for_unknown_role(self, tmp_path: Path) -> None:
-        """Unknown role falls back to 'general' template."""
+        """Unknown role falls back to the 'administration' template."""
         roles_root = tmp_path / "roles"
         self._make_role_dir(
             tmp_path,
-            "general",
+            "administration",
             permissions_content="dummy",
-            specialty_content="# General specialty\n",
+            specialty_content="# Administration specialty\n",
         )
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -183,12 +183,12 @@ class TestApplyRoleDefaults:
         ):
             _apply_role_defaults(anima_dir, "unknown_role")
 
-        # Should have general permissions.json, not crash
+        # Should have administration permissions.json, not crash
         perm_content = (anima_dir / "permissions.json").read_text(encoding="utf-8")
         data = json.loads(perm_content)
         assert data.get("version") == 1
         spec_content = (anima_dir / "specialty_prompt.md").read_text(encoding="utf-8")
-        assert "General specialty" in spec_content
+        assert "Administration specialty" in spec_content
 
     def test_graceful_when_role_template_dir_missing(self, tmp_path: Path) -> None:
         """Returns without error when role template directory doesn't exist."""
@@ -253,7 +253,7 @@ class TestApplyRoleDefaults:
 
     def test_valid_roles_constant(self) -> None:
         """VALID_ROLES contains all expected role names."""
-        expected = {"engineer", "researcher", "manager", "writer", "ops", "general"}
+        expected = {"engineer", "researcher", "manager", "writer", "ops", "administration"}
         assert expected == VALID_ROLES
 
 
