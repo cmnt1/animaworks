@@ -221,12 +221,35 @@ class CycleMixin:
             self._create_executor(active_model_config) if model_config_override is not None else self._executor
         )
         mode = self._resolve_execution_mode(active_model_config)
+        from core.provider_cooldown import (
+            format_cooldown_message,
+            get_provider_cooldown,
+            provider_key_for_model_config,
+        )
+
+        provider_key = provider_key_for_model_config(active_model_config)
+        provider_cooldown = get_provider_cooldown(provider_key)
         logger.info(
             "run_cycle START trigger=%s prompt_len=%d mode=%s",
             trigger,
             len(prompt),
             mode,
         )
+        if provider_cooldown is not None:
+            summary = format_cooldown_message(provider_cooldown)
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.warning(
+                "Provider cooldown preflight blocked blocking execution: provider=%s trigger=%s remaining=%.1fs",
+                provider_cooldown.provider,
+                trigger,
+                provider_cooldown.remaining_s,
+            )
+            return CycleResult(
+                trigger=trigger,
+                action="error",
+                summary=summary,
+                duration_ms=duration_ms,
+            )
 
         # ── Resolve context window and prompt tier ────────────
         from core.prompt.builder import resolve_prompt_tier
@@ -834,12 +857,41 @@ class CycleMixin:
             self._create_executor(active_model_config) if model_config_override is not None else self._executor
         )
         mode = self._resolve_execution_mode(active_model_config)
+        from core.provider_cooldown import (
+            format_cooldown_message,
+            get_provider_cooldown,
+            provider_key_for_model_config,
+            record_provider_rate_limit,
+        )
+
+        provider_key = provider_key_for_model_config(active_model_config)
+        provider_cooldown = get_provider_cooldown(provider_key)
         logger.info(
             "run_cycle_streaming START trigger=%s prompt_len=%d mode=%s",
             trigger,
             len(prompt),
             mode,
         )
+        if provider_cooldown is not None:
+            terminal_error_message = format_cooldown_message(provider_cooldown)
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.warning(
+                "Provider cooldown preflight blocked execution: provider=%s trigger=%s remaining=%.1fs",
+                provider_cooldown.provider,
+                trigger,
+                provider_cooldown.remaining_s,
+            )
+            yield {"type": "error", "message": terminal_error_message}
+            yield {
+                "type": "cycle_done",
+                "cycle_result": CycleResult(
+                    trigger=trigger,
+                    action="error",
+                    summary=terminal_error_message,
+                    duration_ms=duration_ms,
+                ).model_dump(mode="json"),
+            }
+            return
 
         # Non-streaming executors: fall back to blocking execution
         if not active_executor.supports_streaming:
@@ -1100,6 +1152,32 @@ class CycleMixin:
                 partial_text = getattr(e, "partial_text", "") or ""
                 if partial_text:
                     full_text_parts.append(partial_text)
+
+                if getattr(e, "category", None) == "rate_limit":
+                    cooldown = record_provider_rate_limit(
+                        provider_key,
+                        retry_after_s=getattr(e, "retry_after_s", None),
+                        trigger=trigger,
+                        model=active_model_config.model,
+                        reason=str(e),
+                    )
+                    if cooldown is not None:
+                        terminal_error_message = format_cooldown_message(cooldown)
+                    else:
+                        terminal_error_message = (
+                            "RATE_LIMIT_DEFERRED: provider returned HTTP 429/RATE_LIMIT_EXCEEDED"
+                        )
+                    logger.error(
+                        "Provider rate limit deferred execution: provider=%s trigger=%s retry_after=%s",
+                        provider_key,
+                        trigger,
+                        getattr(e, "retry_after_s", None),
+                    )
+                    yield {
+                        "type": "error",
+                        "message": terminal_error_message,
+                    }
+                    break
 
                 if retry_count >= max_retries:
                     if getattr(e, "category", None) == "rate_limit":

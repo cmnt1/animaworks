@@ -263,8 +263,9 @@ class TestStreamRetryMaxExceeded:
         # cycle_done should still be yielded (with whatever was accumulated)
         assert "cycle_done" in event_types, "cycle_done should be yielded even after retry exhaustion"
 
-    async def test_rate_limit_retry_exhausted_is_explicit(self, make_agent_core, monkeypatch):
-        """Provider rate limits should not be reported as generic stream cuts."""
+    async def test_rate_limit_is_deferred_without_retry_exhaustion(self, make_agent_core, monkeypatch, tmp_path):
+        """Provider rate limits should activate cooldown instead of burning retries."""
+        monkeypatch.setenv("ANIMAWORKS_PROVIDER_COOLDOWN_FILE", str(tmp_path / "provider_cooldowns.json"))
         with patch_agent_sdk_streaming():
             agent = make_agent_core(
                 name="retry-rate-limit",
@@ -303,9 +304,10 @@ class TestStreamRetryMaxExceeded:
         error_events = [e for e in events if e["type"] == "error"]
         assert len(error_events) == 1
         error_msg = error_events[0]["message"]
-        assert error_msg.startswith("RATE_LIMIT:")
-        assert "HTTP 429/RATE_LIMIT_EXCEEDED" in error_msg
+        assert error_msg.startswith("RATE_LIMIT_DEFERRED:")
+        assert "provider" in error_msg
         assert "stream" not in error_msg.lower()
+        assert not [e for e in events if e["type"] == "retry_start"]
 
 
 class TestCheckpointClearedOnSuccess:

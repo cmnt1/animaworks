@@ -460,10 +460,8 @@ class TestStreamErrorSuppression:
                 await executor._run_llm_task(task_desc)
 
     @pytest.mark.asyncio
-    async def test_rate_limit_error_is_not_wrapped_as_streaming_error(self, tmp_path):
-        """Rate limit terminal errors should stay diagnosable in TaskExecError."""
-        from core.supervisor.pending_executor import TaskExecError
-
+    async def test_rate_limit_error_is_deferred_not_wrapped_as_streaming_error(self, tmp_path):
+        """Rate limit terminal errors should defer the task instead of failing it."""
         executor = _make_executor(tmp_path)
         bg_event = asyncio.Event()
         executor._anima._get_interrupt_event = lambda _name: bg_event
@@ -471,7 +469,7 @@ class TestStreamErrorSuppression:
         async def _stream_with_rate_limit(*args, **kwargs):
             yield {
                 "type": "error",
-                "message": "RATE_LIMIT: provider returned HTTP 429/RATE_LIMIT_EXCEEDED after 5 retry attempt(s)",
+                "message": "RATE_LIMIT_DEFERRED: provider gemini is cooling down for 60s after HTTP 429/RATE_LIMIT_EXCEEDED",
             }
 
         executor._anima.agent.run_cycle_streaming = _stream_with_rate_limit
@@ -498,13 +496,41 @@ class TestStreamErrorSuppression:
             mock_activity.return_value.log = MagicMock()
             mock_tqm.return_value.get_task_by_id.return_value = mock_entry
 
-            with pytest.raises(TaskExecError) as exc_info:
-                await executor._run_llm_task(task_desc)
+            result = await executor._run_llm_task(task_desc)
 
-        message = str(exc_info.value)
-        assert "provider rate limit" in message
-        assert "HTTP 429/RATE_LIMIT_EXCEEDED" in message
-        assert "encountered streaming error" not in message
+        assert result == "(provider_rate_limit_deferred)"
+        deferred_path = executor._anima_dir / "state" / "pending" / "deferred" / "task-rate-limit-1.json"
+        assert deferred_path.exists()
+        deferred = json.loads(deferred_path.read_text(encoding="utf-8"))
+        assert "HTTP 429/RATE_LIMIT_EXCEEDED" in deferred["_provider_rate_limit_error"]
+        assert deferred["_provider_cooldown_until"]
+
+    def test_provider_rate_limit_deferred_task_is_not_restored_before_until(self, tmp_path):
+        """Provider cooldown-deferred tasks should stay deferred until their cooldown elapses."""
+        from datetime import UTC, datetime, timedelta
+
+        executor = _make_executor(tmp_path)
+        deferred_dir = executor._anima_dir / "state" / "pending" / "deferred"
+        pending_dir = executor._anima_dir / "state" / "pending"
+        suppressed_dir = pending_dir / "suppressed"
+        failed_dir = pending_dir / "failed"
+        deferred_dir.mkdir(parents=True)
+        task_path = deferred_dir / "task-rate-limit-2.json"
+        task_path.write_text(
+            json.dumps(
+                {
+                    "task_id": "task-rate-limit-2",
+                    "title": "Rate limited task",
+                    "_provider_cooldown_until": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        executor._restore_deferred_tasks(deferred_dir, pending_dir, suppressed_dir, failed_dir)
+
+        assert task_path.exists()
+        assert not (pending_dir / task_path.name).exists()
 
     @pytest.mark.asyncio
     async def test_raises_when_task_not_in_queue(self, tmp_path):

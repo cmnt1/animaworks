@@ -14,7 +14,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
+import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -42,6 +43,8 @@ _TASK_COMPLETE_NOTIFY_MAX_CHARS = 10_000
 _SENTINEL_CANCELLED = "(cancelled)"
 _SENTINEL_EXPIRED = "(expired)"
 _SENTINEL_DEFERRED = "(deferred)"
+_SENTINEL_PROVIDER_RATE_LIMIT = "(provider_rate_limit_deferred)"
+_PROVIDER_COOLDOWN_FALLBACK_S = 120
 
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
 _QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
@@ -54,6 +57,37 @@ _AUTO_RETRY_BLOCKED_SUMMARY_PREFIXES = (
     "BLOCKED: Multi-stage task reported an intermediate/next-step result",
 )
 _AUTO_RETRY_NON_FINAL_MAX_RETRIES = 20
+
+
+def _is_provider_rate_limit_error(message: str) -> bool:
+    text = (message or "").casefold()
+    return text.startswith(("rate_limit:", "rate_limit_deferred:")) or "provider rate limit" in text
+
+
+def _provider_cooldown_until_from_message(message: str) -> datetime:
+    match = re.search(r"\buntil=([^\s;]+)", message or "")
+    if match:
+        try:
+            parsed = datetime.fromisoformat(match.group(1))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC)
+        except ValueError:
+            pass
+    return datetime.now(UTC) + timedelta(seconds=_PROVIDER_COOLDOWN_FALLBACK_S)
+
+
+def _provider_cooldown_until_from_task_desc(task_desc: dict[str, Any]) -> datetime | None:
+    raw = task_desc.get("_provider_cooldown_until")
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except ValueError:
+        return None
 
 
 def _detect_task_auth_failure(result: str) -> str | None:
@@ -341,6 +375,8 @@ def _classify_task_result(result: str) -> tuple[str, str]:
         return "cancelled", "expired (TTL exceeded)"
     if result == _SENTINEL_DEFERRED:
         return "pending", "snoozed by TaskBoard"
+    if result == _SENTINEL_PROVIDER_RATE_LIMIT:
+        return "pending", "プロバイダ制限により再実行待ち"
     auth_failure = _detect_task_auth_failure(result)
     if auth_failure:
         return "failed", f"FAILED: {auth_failure}"
@@ -864,6 +900,9 @@ class PendingTaskExecutor:
                 continue
 
             task_id = task_desc.get("task_id", path.stem)
+            provider_cooldown_until = _provider_cooldown_until_from_task_desc(task_desc)
+            if provider_cooldown_until is not None and datetime.now(UTC) < provider_cooldown_until:
+                continue
             decision = self._attention_decision_for_task_desc(task_desc, source_path=path)
             if decision.executable:
                 self._move_attention_gated_file(path, pending_dir, failed_dir, task_id=task_id, reason="snooze_elapsed")
@@ -1622,7 +1661,7 @@ class PendingTaskExecutor:
                     elif chunk_type == "error":
                         had_error = True
                         error_message = chunk.get("message", "unknown error")
-                        if error_message.startswith("RATE_LIMIT:"):
+                        if _is_provider_rate_limit_error(error_message):
                             logger.warning(
                                 "[%s] Provider rate limit during task %s: %s",
                                 self._anima_name,
@@ -1685,8 +1724,19 @@ class PendingTaskExecutor:
                 logger.debug("pending_executor: failed to check task queue for task %s: %s", task_id, e)
 
             if not _queue_done:
-                if error_message.startswith("RATE_LIMIT:"):
-                    raise TaskExecError(f"Task {task_id} encountered provider rate limit: {error_message}")
+                if _is_provider_rate_limit_error(error_message):
+                    deferred_desc = dict(task_desc)
+                    provider_cooldown_until = _provider_cooldown_until_from_message(error_message)
+                    deferred_desc["_provider_rate_limit_error"] = error_message
+                    deferred_desc["_provider_cooldown_until"] = provider_cooldown_until.isoformat()
+                    self._write_deferred_task_json(deferred_desc)
+                    logger.warning(
+                        "[%s] Deferred provider-rate-limited task %s until %s",
+                        self._anima_name,
+                        task_id,
+                        provider_cooldown_until.isoformat(),
+                    )
+                    return _SENTINEL_PROVIDER_RATE_LIMIT
                 raise TaskExecError(f"Task {task_id} encountered streaming error: {error_message}")
         if task_failed_reason:
             raise RuntimeError(task_failed_reason)

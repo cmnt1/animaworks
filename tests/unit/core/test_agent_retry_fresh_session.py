@@ -18,6 +18,7 @@ import pytest
 
 from core.execution.base import StreamDisconnectedError
 from core.prompt.builder import BuildResult
+from core.provider_cooldown import get_provider_cooldown, record_provider_rate_limit
 from core.schemas import ModelConfig
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -255,6 +256,99 @@ class TestRetryFreshSession:
         retry_events = [e for e in events if e.get("type") == "retry_start"]
         assert retry_events[0]["delay_s"] == 53.0
         assert retry_events[0]["retry_after_s"] == 52.0
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_sets_provider_cooldown_without_retry_loop(self, tmp_path: Path, monkeypatch) -> None:
+        """HTTP 429 should defer the provider instead of burning all stream retries."""
+        monkeypatch.setenv("ANIMAWORKS_PROVIDER_COOLDOWN_FILE", str(tmp_path / "provider_cooldowns.json"))
+        agent = _make_agent(tmp_path, model="antigravity/gemini-2.5-flash")
+
+        async def _executor_stream(*args, **kwargs):
+            raise StreamDisconnectedError(
+                "Antigravity provider rate limit (HTTP 429/RATE_LIMIT_EXCEEDED)",
+                retry_after_s=52.0,
+                category="rate_limit",
+            )
+            yield  # pragma: no cover
+
+        agent._executor.execute_streaming = _executor_stream
+        agent._executor.supports_streaming = True
+
+        with (
+            patch("core._agent_cycle.build_system_prompt", return_value=_build_result_mock()),
+            patch("core._agent_cycle.inject_shortterm", side_effect=lambda sp, _stm: sp),
+            patch("core.agent.AgentCore._resolve_execution_mode", return_value="a"),
+            patch("core.agent.AgentCore._preflight_size_check") as mock_preflight,
+            patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,
+            patch("core._agent_cycle._save_prompt_log"),
+            patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
+            patch("core.agent.AgentCore._compute_overflow_files", return_value=[]),
+            patch("core._agent_cycle.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
+            mock_retry_cfg.return_value = {
+                "checkpoint_enabled": False,
+                "retry_max": 5,
+                "retry_delay_s": 5.0,
+            }
+            mock_priming.return_value = ("", "")
+
+            events = []
+            async for event in agent.run_cycle_streaming("test prompt", trigger="heartbeat"):
+                events.append(event)
+
+        assert not [e for e in events if e.get("type") == "retry_start"]
+        mock_sleep.assert_not_awaited()
+        error_msg = [e["message"] for e in events if e.get("type") == "error"][0]
+        assert error_msg.startswith("RATE_LIMIT_DEFERRED:")
+        assert get_provider_cooldown("gemini") is not None
+
+    @pytest.mark.asyncio
+    async def test_provider_cooldown_preflight_skips_executor(self, tmp_path: Path, monkeypatch) -> None:
+        """A live provider cooldown should stop before any executor stream call."""
+        monkeypatch.setenv("ANIMAWORKS_PROVIDER_COOLDOWN_FILE", str(tmp_path / "provider_cooldowns.json"))
+        record_provider_rate_limit(
+            "gemini",
+            retry_after_s=52.0,
+            trigger="heartbeat",
+            model="antigravity/gemini-2.5-flash",
+        )
+        agent = _make_agent(tmp_path, model="antigravity/gemini-2.5-flash")
+        agent._executor.execute_streaming = AsyncMock()
+        agent._executor.supports_streaming = True
+
+        events = []
+        async for event in agent.run_cycle_streaming("test prompt", trigger="heartbeat"):
+            events.append(event)
+
+        agent._executor.execute_streaming.assert_not_called()
+        error_msg = [e["message"] for e in events if e.get("type") == "error"][0]
+        assert error_msg.startswith("RATE_LIMIT_DEFERRED:")
+        done = [e for e in events if e.get("type") == "cycle_done"][0]
+        assert done["cycle_result"]["action"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_provider_cooldown_preflight_skips_blocking_executor(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A live provider cooldown should also stop blocking run_cycle calls."""
+        monkeypatch.setenv("ANIMAWORKS_PROVIDER_COOLDOWN_FILE", str(tmp_path / "provider_cooldowns.json"))
+        record_provider_rate_limit(
+            "gemini",
+            retry_after_s=52.0,
+            trigger="heartbeat",
+            model="antigravity/gemini-2.5-flash",
+        )
+        agent = _make_agent(tmp_path, model="antigravity/gemini-2.5-flash")
+        agent._executor.execute = AsyncMock()
+
+        with patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming:
+            result = await agent.run_cycle("test prompt", trigger="bootstrap")
+
+        agent._executor.execute.assert_not_called()
+        mock_priming.assert_not_awaited()
+        assert result.action == "error"
+        assert result.summary.startswith("RATE_LIMIT_DEFERRED:")
 
     @pytest.mark.asyncio
     async def test_no_clear_session_id_on_second_retry(self, tmp_path: Path) -> None:
