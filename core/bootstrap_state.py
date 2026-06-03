@@ -536,6 +536,39 @@ def repair_bootstrap_complete(anima_dir: Path, *, retry_counts_file: Path | None
     return get_bootstrap_status(anima_dir)
 
 
+def heal_stale_bootstrap_artifact(anima_dir: Path, *, retry_counts_file: Path | None = None) -> bool:
+    """Auto-resolve a lingering bootstrap artifact for a finished Anima.
+
+    A ``bootstrap.md.auto_resolved`` / ``bootstrap.md.failed`` file left behind
+    by an old run keeps :func:`get_bootstrap_status` reporting ``needs_repair``
+    forever even though the Anima is fully defined and operating normally.
+    When the Anima is unambiguously complete — identity and injection defined,
+    no ``character_sheet.md``, no pending ``bootstrap.md`` awaiting processing,
+    and no ``bootstrap-*`` pending tasks — the artifact is archived and the
+    state is marked completed (delegating to :func:`repair_bootstrap_complete`).
+
+    Genuinely incomplete states (undefined identity/injection, an unprocessed
+    character sheet, a bootstrap.md still present, or queued bootstrap tasks)
+    are left untouched so real failures keep surfacing for manual repair.
+
+    Returns ``True`` when an artifact was healed, ``False`` otherwise.
+    """
+    if not any(path.exists() for path in _bootstrap_artifacts(anima_dir)):
+        return False
+    if (anima_dir / "bootstrap.md").exists():
+        return False
+    if (anima_dir / "character_sheet.md").exists():
+        return False
+    if not file_is_defined(anima_dir / "identity.md"):
+        return False
+    if not file_is_defined(anima_dir / "injection.md"):
+        return False
+    if _pending_task_files(anima_dir):
+        return False
+    repair_bootstrap_complete(anima_dir, retry_counts_file=retry_counts_file)
+    return True
+
+
 def preserved_status_settings(status_data: dict[str, Any]) -> dict[str, Any]:
     preserved: dict[str, Any] = {}
     for key, value in status_data.items():

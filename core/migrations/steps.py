@@ -468,6 +468,43 @@ def step_current_task_references(data_dir: Path, dry_run: bool, verbose: bool) -
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_heal_stale_bootstrap_artifacts(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Archive lingering bootstrap.md.auto_resolved/.failed for finished animas.
+
+    Older runtimes renamed leftover ``bootstrap.md`` files to
+    ``bootstrap.md.auto_resolved`` / ``bootstrap.md.failed`` without cleaning
+    them up.  The bootstrap-artifact detection added later then flags every
+    such Anima as ``needs_repair`` on each restart even though it is fully
+    defined and running.  This step archives those artifacts and marks the
+    Anima completed when it is unambiguously finished, leaving genuinely
+    incomplete bootstraps untouched.
+    """
+    details: list[str] = []
+    changed = 0
+    try:
+        from core.bootstrap_state import _bootstrap_artifacts, heal_stale_bootstrap_artifact
+
+        animas_dir = data_dir / "animas"
+        retry_counts_file = animas_dir / ".bootstrap_retries.json"
+        for anima_dir in _iter_anima_dirs(data_dir):
+            artifacts = [p.name for p in _bootstrap_artifacts(anima_dir) if p.exists()]
+            if not artifacts:
+                continue
+            if dry_run:
+                details.append(f"{anima_dir.name}: would evaluate stale artifact(s) {', '.join(artifacts)}")
+                changed += 1
+                continue
+            if heal_stale_bootstrap_artifact(anima_dir, retry_counts_file=retry_counts_file):
+                details.append(f"{anima_dir.name}: archived stale {', '.join(artifacts)} → completed")
+                changed += 1
+            else:
+                details.append(f"{anima_dir.name}: kept needs_repair (genuinely incomplete) {', '.join(artifacts)}")
+        return StepResult(changed=changed, skipped=0, details=details)
+    except Exception as exc:
+        logger.exception("step_heal_stale_bootstrap_artifacts failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 # ── Category 3: Framework template sync ──────────────────────────
 
 
@@ -1107,6 +1144,12 @@ def register_all_steps(runner: Any) -> None:
         MigrationStep("procedure_frontmatter", "Ensure procedure frontmatter", "per_anima", step_procedure_frontmatter),
         MigrationStep(
             "current_task_references", "Replace current_task refs in config", "per_anima", step_current_task_references
+        ),
+        MigrationStep(
+            "heal_stale_bootstrap_artifacts",
+            "Archive stale bootstrap.md.auto_resolved/.failed for finished animas",
+            "per_anima",
+            step_heal_stale_bootstrap_artifacts,
         ),
         MigrationStep("prompt_resync", "Resync prompts/ from templates", "template_sync", step_prompt_resync),
         MigrationStep(

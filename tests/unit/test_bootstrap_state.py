@@ -10,10 +10,19 @@ from core.bootstrap_state import (
     STATE_PENDING_USER_INPUT,
     finalize_bootstrap_run,
     get_bootstrap_status,
+    heal_stale_bootstrap_artifact,
     repair_bootstrap_complete,
     repair_bootstrap_fresh,
     repair_bootstrap_retry,
 )
+
+
+def _make_defined_anima_with_artifact(tmp_path: Path, artifact: str, name: str = "midori") -> Path:
+    anima_dir = _make_anima_dir(tmp_path, name)
+    (anima_dir / "identity.md").write_text("# Midori\n\nDefined identity\n", encoding="utf-8")
+    (anima_dir / "injection.md").write_text("# Role\n\nDefined role\n", encoding="utf-8")
+    (anima_dir / "bootstrap.md").rename(anima_dir / artifact)
+    return anima_dir
 
 
 def _make_anima_dir(tmp_path: Path, name: str = "midori") -> Path:
@@ -194,9 +203,7 @@ def test_repair_bootstrap_status_command_is_read_only(tmp_path: Path, monkeypatc
 
     from cli.commands.anima_mgmt import cmd_anima_repair_bootstrap
 
-    cmd_anima_repair_bootstrap(
-        Namespace(anima="midori", status=True, retry=False, fresh=False, gateway_url=None)
-    )
+    cmd_anima_repair_bootstrap(Namespace(anima="midori", status=True, retry=False, fresh=False, gateway_url=None))
 
     out = capsys.readouterr().out
     assert "State: pending_user_input" in out
@@ -210,9 +217,7 @@ def test_repair_bootstrap_retry_command_restores_failed_artifact(tmp_path: Path,
 
     from cli.commands.anima_mgmt import cmd_anima_repair_bootstrap
 
-    cmd_anima_repair_bootstrap(
-        Namespace(anima="midori", status=False, retry=True, fresh=False, gateway_url=None)
-    )
+    cmd_anima_repair_bootstrap(Namespace(anima="midori", status=False, retry=True, fresh=False, gateway_url=None))
 
     out = capsys.readouterr().out
     assert "Prepared bootstrap retry" in out
@@ -237,3 +242,85 @@ def test_repair_bootstrap_complete_command_finishes_defined_runtime(tmp_path: Pa
     assert "Completed bootstrap repair" in out
     assert "State: completed" in out
     assert not (anima_dir / "bootstrap.md.failed").exists()
+
+
+def test_heal_archives_stale_auto_resolved_for_finished_anima(tmp_path: Path) -> None:
+    anima_dir = _make_defined_anima_with_artifact(tmp_path, "bootstrap.md.auto_resolved")
+
+    assert heal_stale_bootstrap_artifact(anima_dir) is True
+    assert not (anima_dir / "bootstrap.md.auto_resolved").exists()
+    archived = list((anima_dir / "state" / "bootstrap_archive").glob("bootstrap.md.auto_resolved.*"))
+    assert len(archived) == 1
+
+    status = get_bootstrap_status(anima_dir)
+    assert status["state"] == STATE_COMPLETED
+    assert status["needs_repair"] is False
+
+
+def test_heal_archives_stale_failed_for_finished_anima(tmp_path: Path) -> None:
+    anima_dir = _make_defined_anima_with_artifact(tmp_path, "bootstrap.md.failed")
+
+    assert heal_stale_bootstrap_artifact(anima_dir) is True
+    assert get_bootstrap_status(anima_dir)["state"] == STATE_COMPLETED
+
+
+def test_heal_skips_when_no_artifact(tmp_path: Path) -> None:
+    anima_dir = _make_anima_dir(tmp_path)
+    (anima_dir / "identity.md").write_text("# Midori\n\nDefined identity\n", encoding="utf-8")
+    (anima_dir / "injection.md").write_text("# Role\n\nDefined role\n", encoding="utf-8")
+
+    assert heal_stale_bootstrap_artifact(anima_dir) is False
+
+
+def test_heal_keeps_artifact_when_identity_undefined(tmp_path: Path) -> None:
+    anima_dir = _make_anima_dir(tmp_path)
+    (anima_dir / "injection.md").write_text("# Role\n\nDefined role\n", encoding="utf-8")
+    (anima_dir / "bootstrap.md").rename(anima_dir / "bootstrap.md.failed")
+
+    assert heal_stale_bootstrap_artifact(anima_dir) is False
+    assert (anima_dir / "bootstrap.md.failed").exists()
+    assert get_bootstrap_status(anima_dir)["state"] == STATE_NEEDS_REPAIR
+
+
+def test_heal_keeps_artifact_when_bootstrap_still_present(tmp_path: Path) -> None:
+    anima_dir = _make_defined_anima_with_artifact(tmp_path, "bootstrap.md.auto_resolved")
+    (anima_dir / "bootstrap.md").write_text("# Bootstrap\n", encoding="utf-8")
+
+    assert heal_stale_bootstrap_artifact(anima_dir) is False
+    assert (anima_dir / "bootstrap.md.auto_resolved").exists()
+
+
+def test_heal_keeps_artifact_when_character_sheet_unprocessed(tmp_path: Path) -> None:
+    anima_dir = _make_defined_anima_with_artifact(tmp_path, "bootstrap.md.failed")
+    (anima_dir / "character_sheet.md").write_text("# Character Sheet\n", encoding="utf-8")
+
+    assert heal_stale_bootstrap_artifact(anima_dir) is False
+    assert (anima_dir / "bootstrap.md.failed").exists()
+
+
+def test_heal_keeps_artifact_when_bootstrap_task_pending(tmp_path: Path) -> None:
+    anima_dir = _make_defined_anima_with_artifact(tmp_path, "bootstrap.md.failed")
+    pending_dir = anima_dir / "state" / "pending"
+    pending_dir.mkdir(parents=True)
+    (pending_dir / "bootstrap-midori.json").write_text('{"task_id": "bootstrap-midori"}', encoding="utf-8")
+
+    assert heal_stale_bootstrap_artifact(anima_dir) is False
+    assert (anima_dir / "bootstrap.md.failed").exists()
+
+
+def test_migration_step_heals_stale_bootstrap_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "config.json").write_text("{}\n", encoding="utf-8")
+    done = _make_defined_anima_with_artifact(tmp_path, "bootstrap.md.auto_resolved", name="done")
+    incomplete = _make_anima_dir(tmp_path, name="incomplete")
+    (incomplete / "bootstrap.md").rename(incomplete / "bootstrap.md.failed")
+
+    from core.migrations.steps import step_heal_stale_bootstrap_artifacts
+
+    result = step_heal_stale_bootstrap_artifacts(tmp_path, False, False)
+
+    assert result.error is None
+    assert result.changed == 1
+    assert not (done / "bootstrap.md.auto_resolved").exists()
+    assert get_bootstrap_status(done)["state"] == STATE_COMPLETED
+    assert (incomplete / "bootstrap.md.failed").exists()
+    assert get_bootstrap_status(incomplete)["state"] == STATE_NEEDS_REPAIR
