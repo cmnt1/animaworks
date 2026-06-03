@@ -6,9 +6,7 @@ from __future__ import annotations
 
 """Temporal reconciliation for legacy atomic facts."""
 
-import json
 import logging
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,20 +14,20 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from core.memory.fact_invalidation_llm import classify_fact_relation as _classify_fact_relation
 from core.memory.facts import (
     FactRecord,
     fact_entity_names,
     find_fact_record,
     is_fact_active,
     update_fact_record_by_id,
-    update_fact_records_by_id,
+    update_fact_records_and_append,
 )
 from core.time_utils import ensure_aware, now_iso
 
 logger = logging.getLogger("animaworks.memory.fact_invalidation")
 
 _ALLOWED_LABELS = {"CONTRADICT", "COMPLEMENT", "DUPLICATE", "ADD"}
-_LABEL_RE = re.compile(r"\b(CONTRADICT|COMPLEMENT|DUPLICATE|ADD)\b", re.IGNORECASE)
 
 
 class ReconcileAction(StrEnum):
@@ -72,6 +70,7 @@ class ReconcileResult:
     affected_fact_ids: tuple[str, ...] = ()
     affected_paths: tuple[Path, ...] = ()
     updated_records: tuple[FactRecord, ...] = ()
+    appended_records: tuple[FactRecord, ...] = ()
     error: str = ""
 
 
@@ -217,91 +216,6 @@ def _search_fact_candidates(anima_dir: Path, fact: FactRecord, top_k: int) -> li
     return candidates
 
 
-def _classify_fact_relation(new_fact: FactRecord, candidates: list[FactCandidate], anima_dir: Path) -> str:
-    import litellm
-
-    model, llm_extra, timeout = _resolve_reconcile_llm_config(anima_dir)
-    from core.memory._llm_utils import get_memory_llm_kwargs_for_model
-
-    llm_kwargs = get_memory_llm_kwargs_for_model(model, llm_extra)
-    resolved_model = llm_kwargs.pop("model", model)
-    effective_timeout = llm_kwargs.pop("timeout", timeout)
-
-    candidates_json = json.dumps(
-        [
-            {
-                "fact_id": candidate.record.fact_id,
-                "text": candidate.record.text,
-                "source_entity": candidate.record.source_entity,
-                "target_entity": candidate.record.target_entity,
-                "edge_type": candidate.record.edge_type,
-                "valid_at": candidate.record.valid_at,
-                "recorded_at": candidate.record.recorded_at,
-                "valid_until": candidate.record.valid_until,
-                "similarity": round(candidate.score, 4),
-            }
-            for candidate in candidates
-        ],
-        ensure_ascii=False,
-    )
-    new_fact_json = json.dumps(new_fact.to_dict(), ensure_ascii=False)
-
-    system_prompt = (
-        "You classify whether a new memory fact should be reconciled with existing active facts. "
-        "Return exactly one label and no other text: CONTRADICT, COMPLEMENT, DUPLICATE, or ADD."
-    )
-    user_prompt = (
-        "New fact JSON:\n"
-        f"{new_fact_json}\n\n"
-        "Existing active candidate facts JSON:\n"
-        f"{candidates_json}\n\n"
-        "Definitions:\n"
-        "- DUPLICATE: same meaning, no new durable information.\n"
-        "- CONTRADICT: cannot both be true for the same time period.\n"
-        "- COMPLEMENT: compatible additional detail should be merged into the existing fact.\n"
-        "- ADD: distinct fact that should be appended.\n\n"
-        "Label:"
-    )
-
-    response = litellm.completion(
-        model=resolved_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.0,
-        max_tokens=16,
-        timeout=effective_timeout,
-        **llm_kwargs,
-    )
-    return response.choices[0].message.content or ""
-
-
-def _resolve_reconcile_llm_config(anima_dir: Path) -> tuple[str, dict[str, object], int]:
-    timeout = 30
-    llm_extra: dict[str, object] = {}
-    try:
-        status_path = anima_dir / "status.json"
-        if status_path.is_file():
-            data = json.loads(status_path.read_text(encoding="utf-8"))
-            if data.get("extraction_timeout"):
-                timeout = int(data["extraction_timeout"])
-            if data.get("background_model"):
-                return str(data["background_model"]), llm_extra, timeout
-            if data.get("extraction_model"):
-                return str(data["extraction_model"]), llm_extra, timeout
-    except Exception:
-        logger.debug("Failed to resolve reconcile LLM config from status.json", exc_info=True)
-
-    try:
-        from core.config.models import load_config
-
-        cfg = load_config()
-        return cfg.anima_defaults.background_model or cfg.anima_defaults.model, llm_extra, timeout
-    except Exception:
-        return "claude-sonnet-4-6", llm_extra, timeout
-
-
 def _apply_contradictions(
     anima_dir: Path,
     fact: FactRecord,
@@ -321,9 +235,10 @@ def _apply_contradictions(
         return updater
 
     try:
-        updates = update_fact_records_by_id(
+        stored, updates = update_fact_records_and_append(
             anima_dir,
             {candidate.record.fact_id: make_updater(candidate) for candidate in candidates if candidate.record.fact_id},
+            [fact],
         )
     except Exception as exc:
         logger.warning("Failed to persist fact invalidation; skipping new fact append", exc_info=True)
@@ -354,12 +269,13 @@ def _apply_contradictions(
     return _result(
         ReconcileAction.INVALIDATE_OLD,
         fact,
-        should_append=True,
+        should_append=False,
         label=label,
         reason="contradiction",
         affected_fact_ids=tuple(update.record.fact_id for update in updates),
         affected_paths=tuple(sorted({update.path for update in updates})),
         updated_records=tuple(update.record for update in updates),
+        appended_records=tuple(stored),
     )
 
 
@@ -471,11 +387,8 @@ def _parse_datetime(value: str | datetime | None) -> datetime | None:
 
 
 def _parse_label(text: str) -> str:
-    clean = str(text or "").strip().upper()
-    if clean in _ALLOWED_LABELS:
-        return clean
-    match = _LABEL_RE.search(clean)
-    return match.group(1).upper() if match else ""
+    clean = str(text or "").strip().strip('"').strip("'").upper()
+    return clean if clean in _ALLOWED_LABELS else ""
 
 
 def _unique_strings(values: list[str]) -> list[str]:
@@ -503,6 +416,7 @@ def _result(
     affected_fact_ids: tuple[str, ...] = (),
     affected_paths: tuple[Path, ...] = (),
     updated_records: tuple[FactRecord, ...] = (),
+    appended_records: tuple[FactRecord, ...] = (),
     error: str = "",
 ) -> ReconcileResult:
     return ReconcileResult(
@@ -514,5 +428,6 @@ def _result(
         affected_fact_ids=affected_fact_ids,
         affected_paths=affected_paths,
         updated_records=updated_records,
+        appended_records=appended_records,
         error=error,
     )

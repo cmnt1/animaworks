@@ -186,6 +186,13 @@ class MemoryRetriever:
             vector_results = self._filter_loadable_skill_vector_results(vector_results)
         if memory_type == "facts" and not include_superseded:
             vector_results = self._filter_active_fact_vector_results(vector_results)
+            if len(vector_results) < top_k:
+                vector_results = self._refetch_active_fact_vector_results(
+                    query,
+                    anima_name,
+                    top_k,
+                    initial_fetch_k=top_k * fetch_multiplier,
+                )
 
         # 2. Convert to RetrievalResult
         results = [
@@ -414,6 +421,26 @@ class MemoryRetriever:
             valid_until = str((metadata or {}).get("valid_until", "") or "")
             if is_valid_until_active(valid_until):
                 filtered.append((doc_id, content, score, metadata))
+        return filtered
+
+    def _refetch_active_fact_vector_results(
+        self,
+        query: str,
+        anima_name: str,
+        top_k: int,
+        *,
+        initial_fetch_k: int,
+    ) -> list[tuple[str, str, float, dict]]:
+        filtered: list[tuple[str, str, float, dict]] = []
+        fetch_sizes = (
+            max(initial_fetch_k, top_k * 8, 50),
+            min(max(top_k * 16, 100), 1000),
+        )
+        for fetch_k in fetch_sizes:
+            results = self._vector_search(query, anima_name, "facts", fetch_k)
+            filtered = self._filter_active_fact_vector_results(results)
+            if len(filtered) >= top_k:
+                break
         return filtered
 
     def _resolve_skill_source_file(self, source_file: str) -> Path | None:

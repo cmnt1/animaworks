@@ -1,17 +1,16 @@
 """Unit tests for core/memory/rag_search.py — RAGMemorySearch."""
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
 
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.memory.rag_search import RAGMemorySearch
-
 
 # ── Fixtures ─────────────────────────────────────────────
 
@@ -81,6 +80,7 @@ class TestGetIndexerLazyInit:
 
     def test_get_indexer_only_inits_once(self, rag: RAGMemorySearch) -> None:
         """Second call to _get_indexer() does not call _init_indexer() again."""
+
         def _fake_init():
             rag._indexer_initialized = True
 
@@ -92,9 +92,11 @@ class TestGetIndexerLazyInit:
 
 class TestGetIndexerDependencyMissing:
     def test_get_indexer_returns_none_when_deps_missing(
-        self, rag: RAGMemorySearch,
+        self,
+        rag: RAGMemorySearch,
     ) -> None:
         """When ImportError is raised, indexer stays None."""
+
         def _simulate_import_error():
             rag._indexer_initialized = True
             # indexer stays None — no assignment
@@ -130,11 +132,11 @@ class TestSearchMemoryTextKeywordOnly:
 
         with patch.object(rag, "_get_indexer", return_value=None):
             results = rag.search_memory_text(
-            "python",
-            scope="all",
-            knowledge_dir=knowledge_dir,
-            episodes_dir=episodes_dir,
-            procedures_dir=procedures_dir,
+                "python",
+                scope="all",
+                knowledge_dir=knowledge_dir,
+                episodes_dir=episodes_dir,
+                procedures_dir=procedures_dir,
                 common_knowledge_dir=common_knowledge_dir,
             )
 
@@ -155,13 +157,16 @@ class TestSearchMemoryTextRespectsScope:
     ) -> None:
         """scope='knowledge' only searches the knowledge directory (keyword fallback)."""
         (knowledge_dir / "topic.md").write_text(
-            "keyword in knowledge", encoding="utf-8",
+            "keyword in knowledge",
+            encoding="utf-8",
         )
         (episodes_dir / "2026-02-01.md").write_text(
-            "keyword in episodes", encoding="utf-8",
+            "keyword in episodes",
+            encoding="utf-8",
         )
         (procedures_dir / "deploy.md").write_text(
-            "keyword in procedures", encoding="utf-8",
+            "keyword in procedures",
+            encoding="utf-8",
         )
 
         with patch.object(rag, "_get_indexer", return_value=None):
@@ -191,7 +196,8 @@ class TestSearchMemoryTextEmptyQuery:
     ) -> None:
         """Empty query returns no results (guard against vacuous match)."""
         (knowledge_dir / "info.md").write_text(
-            "Line one\nLine two", encoding="utf-8",
+            "Line one\nLine two",
+            encoding="utf-8",
         )
 
         with patch.object(rag, "_get_indexer", return_value=None):
@@ -266,7 +272,9 @@ class TestSearchMemoryTextOrSplit:
 
 class TestSearchKnowledgeKeyword:
     def test_search_knowledge_keyword(
-        self, rag: RAGMemorySearch, knowledge_dir: Path,
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
     ) -> None:
         """search_knowledge finds matching lines."""
         (knowledge_dir / "api-design.md").write_text(
@@ -274,7 +282,8 @@ class TestSearchKnowledgeKeyword:
             encoding="utf-8",
         )
         (knowledge_dir / "testing.md").write_text(
-            "Unit testing strategies", encoding="utf-8",
+            "Unit testing strategies",
+            encoding="utf-8",
         )
 
         results = rag.search_knowledge("api", knowledge_dir)
@@ -286,7 +295,9 @@ class TestSearchKnowledgeKeyword:
 
 class TestSearchKnowledgeOrSplit:
     def test_search_knowledge_or_split(
-        self, rag: RAGMemorySearch, knowledge_dir: Path,
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
     ) -> None:
         """search_knowledge uses OR-split for multi-word queries."""
         (knowledge_dir / "mixed.md").write_text(
@@ -302,7 +313,9 @@ class TestSearchKnowledgeOrSplit:
         assert "GraphQL overview" not in lines
 
     def test_search_knowledge_empty_returns_nothing(
-        self, rag: RAGMemorySearch, knowledge_dir: Path,
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
     ) -> None:
         """Empty query returns no results."""
         (knowledge_dir / "info.md").write_text("content", encoding="utf-8")
@@ -313,11 +326,14 @@ class TestSearchKnowledgeOrSplit:
 
 class TestSearchKnowledgeNoResults:
     def test_search_knowledge_no_results(
-        self, rag: RAGMemorySearch, knowledge_dir: Path,
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
     ) -> None:
         """Returns empty list for a non-matching query."""
         (knowledge_dir / "topic.md").write_text(
-            "Existing content here", encoding="utf-8",
+            "Existing content here",
+            encoding="utf-8",
         )
 
         results = rag.search_knowledge("nonexistent_xyz_query", knowledge_dir)
@@ -330,7 +346,9 @@ class TestSearchKnowledgeNoResults:
 
 class TestIndexFileDelegatesToIndexer:
     def test_index_file_delegates_to_indexer(
-        self, rag: RAGMemorySearch, knowledge_dir: Path,
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
     ) -> None:
         """When indexer exists, index_file calls indexer.index_file."""
         mock_indexer = MagicMock()
@@ -342,12 +360,14 @@ class TestIndexFileDelegatesToIndexer:
 
         rag.index_file(test_path, "knowledge")
 
-        mock_indexer.index_file.assert_called_once_with(test_path, "knowledge", origin="")
+        mock_indexer.index_file.assert_called_once_with(test_path, "knowledge", force=False, origin="")
 
 
 class TestIndexFileNoIndexerNoError:
     def test_index_file_no_indexer_no_error(
-        self, rag: RAGMemorySearch, knowledge_dir: Path,
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
     ) -> None:
         """When indexer is None, index_file doesn't crash."""
         rag._indexer = None

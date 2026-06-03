@@ -6,6 +6,7 @@ from __future__ import annotations
 
 """Legacy atomic-fact extraction helpers."""
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -200,7 +201,8 @@ async def extract_and_store_facts(
     if not records:
         return []
 
-    records_to_append, affected_paths, updated_records = _reconcile_extracted_facts(
+    records_to_append, reconciled_stored, affected_paths, updated_records = await asyncio.to_thread(
+        _reconcile_extracted_facts,
         anima_dir,
         records,
         as_of_time=reference_time,
@@ -209,7 +211,7 @@ async def extract_and_store_facts(
         return []
 
     try:
-        stored = append_fact_records(anima_dir, records_to_append)
+        stored = [*reconciled_stored, *append_fact_records(anima_dir, records_to_append)]
     except Exception:
         logger.warning("Failed to append atomic facts", exc_info=True)
         return []
@@ -239,11 +241,12 @@ def _reconcile_extracted_facts(
     records: list[FactRecord],
     *,
     as_of_time: str | None,
-) -> tuple[list[FactRecord], set[Path], list[FactRecord]]:
+) -> tuple[list[FactRecord], list[FactRecord], set[Path], list[FactRecord]]:
     if not _facts_reconcile_enabled():
-        return list(records), set(), []
+        return list(records), [], set(), []
 
     to_append: list[FactRecord] = []
+    stored: list[FactRecord] = []
     affected_paths: set[Path] = set()
     updated_records: list[FactRecord] = []
 
@@ -261,10 +264,11 @@ def _reconcile_extracted_facts(
 
         affected_paths.update(result.affected_paths)
         updated_records.extend(result.updated_records)
+        stored.extend(result.appended_records)
         if result.should_append:
             to_append.append(record)
 
-    return to_append, affected_paths, updated_records
+    return to_append, stored, affected_paths, updated_records
 
 
 def _upsert_fact_entities(anima_dir: Path, records: list[FactRecord]) -> dict[str, Any] | None:

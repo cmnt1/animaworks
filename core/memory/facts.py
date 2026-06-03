@@ -324,27 +324,50 @@ def find_fact_record(anima_dir: Path, fact_id: str) -> FactRecordUpdate | None:
     return None
 
 
-def update_fact_records_by_id(
+def update_fact_record_by_id(
+    anima_dir: Path,
+    fact_id: str,
+    updater: Callable[[FactRecord], FactRecord | None],
+) -> FactRecordUpdate | None:
+    _stored, updates = update_fact_records_and_append(anima_dir, {fact_id: updater}, [])
+    return updates[0] if updates else None
+
+
+def update_fact_records_and_append(
     anima_dir: Path,
     updaters: dict[str, Callable[[FactRecord], FactRecord | None]],
-) -> list[FactRecordUpdate]:
-    """Atomically rewrite facts files after applying fact_id-specific updaters."""
+    records_to_append: list[FactRecord],
+) -> tuple[list[FactRecord], list[FactRecordUpdate]]:
+    """Apply fact_id updates and append new records under the same file locks."""
     pending = {
         str(fact_id or "").strip(): updater for fact_id, updater in updaters.items() if str(fact_id or "").strip()
     }
-    if not pending:
-        return []
+    append_by_path: dict[Path, list[FactRecord]] = {}
+    for record in records_to_append:
+        if record.text:
+            append_by_path.setdefault(fact_file_for_record(anima_dir, record), []).append(record)
 
     directory = facts_dir(anima_dir)
-    if not directory.is_dir():
-        return []
+    candidate_paths = set(append_by_path)
+    if directory.is_dir():
+        candidate_paths.update(directory.glob("*.jsonl"))
+    if not candidate_paths:
+        return [], []
 
+    stored: list[FactRecord] = []
     updated: list[FactRecordUpdate] = []
-    for path in sorted(directory.glob("*.jsonl")):
-        if not pending:
-            break
-        with _locked_file(path):
+    original_by_path: dict[Path, list[FactRecord]] = {}
+    existed_by_path: dict[Path, bool] = {}
+    changed_by_path: dict[Path, list[FactRecord]] = {}
+
+    with contextlib.ExitStack() as stack:
+        for path in sorted(candidate_paths):
+            stack.enter_context(_locked_file(path))
+
+        for path in sorted(candidate_paths):
+            existed_by_path[path] = path.exists()
             records = read_fact_records(path, include_expired=True)
+            original_by_path[path] = list(records)
             changed = False
             for idx, record in enumerate(records):
                 updater = pending.get(record.fact_id)
@@ -357,18 +380,35 @@ def update_fact_records_by_id(
                 records[idx] = replacement
                 updated.append(FactRecordUpdate(path=path, line_no=idx + 1, record=replacement))
                 changed = True
+
+            additions = _appendable_records(records, append_by_path.get(path, []))
+            if additions:
+                records.extend(additions)
+                stored.extend(additions)
+                changed = True
             if changed:
-                _write_fact_records_unlocked(path, records)
-    return updated
+                changed_by_path[path] = records
 
+        if pending:
+            missing = ", ".join(sorted(pending))
+            raise KeyError(f"missing fact ids: {missing}")
 
-def update_fact_record_by_id(
-    anima_dir: Path,
-    fact_id: str,
-    updater: Callable[[FactRecord], FactRecord | None],
-) -> FactRecordUpdate | None:
-    updates = update_fact_records_by_id(anima_dir, {fact_id: updater})
-    return updates[0] if updates else None
+        try:
+            for path, records in changed_by_path.items():
+                _write_fact_records_unlocked(path, _dedup_records(records))
+        except Exception:
+            for path, records in original_by_path.items():
+                if path in changed_by_path:
+                    try:
+                        if existed_by_path.get(path, False):
+                            _write_fact_records_unlocked(path, records)
+                        elif path.exists():
+                            path.unlink()
+                    except Exception:
+                        logger.warning("Failed to roll back facts file %s", path, exc_info=True)
+            raise
+
+    return stored, updated
 
 
 def append_fact_records(anima_dir: Path, records: list[FactRecord]) -> list[FactRecord]:
@@ -382,15 +422,7 @@ def append_fact_records(anima_dir: Path, records: list[FactRecord]) -> list[Fact
     for path, new_records in by_path.items():
         with _locked_file(path):
             existing = read_fact_records(path, include_expired=True)
-            seen_ids = {record.fact_id for record in existing}
-            seen_keys = {record.dedup_key for record in existing}
-            additions: list[FactRecord] = []
-            for record in new_records:
-                if record.fact_id in seen_ids or record.dedup_key in seen_keys:
-                    continue
-                seen_ids.add(record.fact_id)
-                seen_keys.add(record.dedup_key)
-                additions.append(record)
+            additions = _appendable_records(existing, new_records)
             if not additions:
                 continue
             with open(path, "a", encoding="utf-8") as f:
@@ -400,6 +432,19 @@ def append_fact_records(anima_dir: Path, records: list[FactRecord]) -> list[Fact
                 os.fsync(f.fileno())
             stored.extend(additions)
     return stored
+
+
+def _appendable_records(existing: list[FactRecord], new_records: list[FactRecord]) -> list[FactRecord]:
+    seen_ids = {record.fact_id for record in existing}
+    seen_keys = {record.dedup_key for record in existing}
+    additions: list[FactRecord] = []
+    for record in new_records:
+        if record.fact_id in seen_ids or record.dedup_key in seen_keys:
+            continue
+        seen_ids.add(record.fact_id)
+        seen_keys.add(record.dedup_key)
+        additions.append(record)
+    return additions
 
 
 def _dedup_records(records: list[FactRecord]) -> list[FactRecord]:
