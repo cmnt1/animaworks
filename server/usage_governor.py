@@ -56,9 +56,21 @@ _CREDENTIAL_TO_PROVIDER: dict[str, str] = {
 
 # ── Policy schema ────────────────────────────────────────────────────────────
 
+# Activity ceiling for the Antigravity/Cloud Code Assist (gemini) pool.  This
+# tier is rate-limited by RPM rather than daily tokens, so heartbeat frequency
+# must not be accelerated much beyond nominal cadence regardless of headroom.
+_GEMINI_MAX_ACTIVITY_LEVEL = 120
 
-def _default_throttle_rules() -> list[dict[str, int | float]]:
-    return [
+
+def _default_throttle_rules(max_level: int = 400) -> list[dict[str, int | float]]:
+    """Room→activity throttle ladder, clamped so no tier exceeds *max_level*.
+
+    The fallback ``time_proportional`` path clamps each rule only to the
+    global 1-400 range, not to the window's ``max_activity_level`` — so for
+    RPM-constrained providers the ladder itself must be capped here to keep
+    the fallback from over-accelerating heartbeats.
+    """
+    base = [
         {"room_under": 4, "activity_level": 400},
         {"room_under": 3, "activity_level": 300},
         {"room_under": 2, "activity_level": 200},
@@ -78,18 +90,19 @@ def _default_throttle_rules() -> list[dict[str, int | float]]:
         {"room_under": 0.2, "activity_level": 20},
         {"room_under": 0.1, "activity_level": 10},
     ]
+    return [{**r, "activity_level": min(int(r["activity_level"]), max_level)} for r in base]
 
 
-def _default_window_policy() -> dict[str, Any]:
+def _default_window_policy(max_activity_level: int = 400) -> dict[str, Any]:
     return {
         "mode": "burn_rate_landing",
         "target_remaining_at_reset": 0,
         "min_elapsed_pct": 3,
         "min_used_pct": 1,
         "min_activity_level": 1,
-        "max_activity_level": 400,
+        "max_activity_level": max_activity_level,
         "fallback_mode": "time_proportional",
-        "throttle_rules": _default_throttle_rules(),
+        "throttle_rules": _default_throttle_rules(max_activity_level),
     }
 
 
@@ -114,10 +127,17 @@ DEFAULT_POLICY: dict[str, Any] = {
         # only return a ``daily`` (~24h) bucket; AI Pro returns ``five_hour``
         # and ``Week`` buckets.  All three are listed so the governor can
         # evaluate whichever the upstream usage feed actually provides.
+        #
+        # The binding constraint on the Antigravity/Cloud Code Assist free
+        # tier is per-minute request rate (RPM), not the daily token budget.
+        # Letting the governor crank activity to 400% (which quarters the
+        # heartbeat interval) bursts the shared pool past its RPM cap and
+        # produces 429 stalls even while daily usage stays low.  Cap the
+        # acceleration so frequency never exceeds ~1.2x nominal cadence.
         "gemini": {
-            "five_hour": _default_window_policy(),
-            "daily": _default_window_policy(),
-            "Week": _default_window_policy(),
+            "five_hour": _default_window_policy(_GEMINI_MAX_ACTIVITY_LEVEL),
+            "daily": _default_window_policy(_GEMINI_MAX_ACTIVITY_LEVEL),
+            "Week": _default_window_policy(_GEMINI_MAX_ACTIVITY_LEVEL),
         },
     },
     "suspend_thresholds": {

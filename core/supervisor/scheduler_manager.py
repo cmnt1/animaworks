@@ -364,8 +364,14 @@ class SchedulerManager:
             interval = max_interval
             activity_source = f"{activity_source}+cap"
 
-        # Fixed offset: crc32(anima_name) % 10 → deterministic 0-9 min spread
-        offset = zlib.crc32(self._anima_name.encode()) % 10
+        # Deterministic per-anima phase offset to de-synchronize heartbeats
+        # across the fleet.  Spread across the full interval (capped at 30 min
+        # so large idle intervals don't delay the first beat for hours) instead
+        # of a fixed 0-9 window: with many Animas sharing one provider pool, a
+        # narrow 10-slot spread piled multiple beats into the same minute and
+        # burst past the provider's per-minute (RPM) rate limit.  ``min(...)``
+        # keeps ``offset < interval`` so the cron minute-slot path stays valid.
+        offset = zlib.crc32(self._anima_name.encode()) % min(interval, 30)
 
         # Determine active hours
         if active_start is not None and active_end is not None:
