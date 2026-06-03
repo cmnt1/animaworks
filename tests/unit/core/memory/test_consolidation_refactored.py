@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from core.time_utils import now_jst
 
@@ -54,10 +56,15 @@ class TestListKnowledgeFiles:
 class TestRebuildRagIndex:
     def test_rebuild_no_error(self, engine):
         """_rebuild_rag_index should not raise even when RAG is unavailable."""
-        # In test environment, RAG might not be set up
-        # The method should handle this gracefully
+        # Mock the RAG layer so the test never loads the real embedding model
+        # (which would exceed the 30s pytest-timeout on a cold CI cache).
+        mock_vs = MagicMock()
         try:
-            engine._rebuild_rag_index()
+            with (
+                patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+                patch("core.memory.rag.MemoryIndexer"),
+            ):
+                engine._rebuild_rag_index()
         except ImportError:
             pass  # OK if RAG deps not installed
 
