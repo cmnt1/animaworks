@@ -167,7 +167,7 @@ def test_terminal_tasks_are_archived_by_default_view(tmp_path: Path) -> None:
     assert projected[0].column == BoardColumn.DONE
 
 
-def test_failed_tasks_stay_visible_for_review_by_default(tmp_path: Path) -> None:
+def test_failed_tasks_stay_visible_as_blocked_by_default(tmp_path: Path) -> None:
     manager = _queue(tmp_path, "sakura")
     task = manager.add_task(
         source="anima",
@@ -184,7 +184,46 @@ def test_failed_tasks_stay_visible_for_review_by_default(tmp_path: Path) -> None
 
     assert len(projected) == 1
     assert projected[0].visibility == AttentionVisibility.ACTIVE
-    assert projected[0].column == BoardColumn.REVIEW
+    assert projected[0].column == BoardColumn.BLOCKED
+
+
+def test_duplicate_failed_crons_keep_latest_only(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    meta = {"from_cron": True, "cron_task_name": "daily review", "cron_type": "command"}
+
+    first = manager.add_task(
+        source="anima",
+        original_instruction="run daily review",
+        assignee="sakura",
+        summary="cron running",
+        task_id="cron-failed-1",
+        meta=meta,
+    )
+    manager.update_status(first.task_id, "failed", summary="cron failed")
+    second = manager.add_task(
+        source="anima",
+        original_instruction="run daily review",
+        assignee="sakura",
+        summary="cron running",
+        task_id="cron-failed-2",
+        meta=meta,
+    )
+    manager.update_status(second.task_id, "failed", summary="cron failed again")
+
+    projected = project_anima(manager.anima_dir, store)
+    by_id = {task.task_id: task for task in projected}
+
+    assert list(by_id) == [second.task_id]
+    assert by_id[second.task_id].column == BoardColumn.BLOCKED
+
+    archived = project_anima(manager.anima_dir, store, include_archived=True)
+    archived_by_id = {task.task_id: task for task in archived}
+
+    assert archived_by_id[first.task_id].visibility == AttentionVisibility.ARCHIVED
+    assert archived_by_id[first.task_id].column == BoardColumn.SUPPRESSED
+    assert archived_by_id[first.task_id].replaced_by == f"sakura:{second.task_id}"
+    assert archived_by_id[first.task_id].tombstone_reason == "duplicate_failed_cron"
 
 
 def test_failed_delegated_child_is_hidden_when_parent_was_cancelled(tmp_path: Path) -> None:
@@ -586,6 +625,42 @@ def test_delegated_parent_blocks_when_child_done_is_non_final_progress(tmp_path:
     assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
 
 
+def test_delegated_parent_blocks_when_child_done_is_future_action_summary(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    hikaru = _queue(tmp_path, "hikaru")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = hikaru.add_task(
+        source="anima",
+        original_instruction="finalize product and post completion report to Discord",
+        assignee="hikaru",
+        summary="finalize product",
+        task_id="child-future-action",
+    )
+    hikaru.update_status(
+        child.task_id,
+        "done",
+        summary=(
+            "frontmatter確認OK（status=完了、submitted=2026-06-03、confirmed=false）。"
+            "final evidence JSONを保存してDiscordに投稿する。"
+        ),
+    )
+    parent = sakura.add_delegated_task(
+        original_instruction="track product finalization",
+        assignee="hikaru",
+        summary="[delegate] track product finalization",
+        deadline="1h",
+        meta={"delegated_to": "hikaru", "delegated_task_id": child.task_id},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("hikaru", child.task_id) not in by_key
+    assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+
+
 def test_duplicate_delegated_parents_to_same_active_child_are_suppressed(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     kanna = _queue(tmp_path, "kanna")
@@ -672,7 +747,7 @@ def test_blocked_delegated_parent_stays_blocked_when_child_failed(tmp_path: Path
     by_key = {(task.anima_name, task.task_id): task for task in projected}
 
     assert by_key[("kanna", child.task_id)].queue_status == "failed"
-    assert by_key[("kanna", child.task_id)].column == BoardColumn.REVIEW
+    assert by_key[("kanna", child.task_id)].column == BoardColumn.BLOCKED
     assert by_key[("sakura", parent.task_id)].queue_status == "blocked"
     assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
 

@@ -23,7 +23,7 @@ QUEUE_STATUS_TO_COLUMN: dict[str, BoardColumn] = {
     "in_progress": BoardColumn.RUNNING,
     "blocked": BoardColumn.BLOCKED,
     "delegated": BoardColumn.WAITING,
-    "failed": BoardColumn.REVIEW,
+    "failed": BoardColumn.BLOCKED,
     "done": BoardColumn.DONE,
     "cancelled": BoardColumn.DONE,
 }
@@ -117,6 +117,7 @@ def project_anima(
             projected,
             _build_task_index(resolved_anima_dir.parent, [resolved_anima_name], resolved_store),
         )
+    _suppress_duplicate_failed_crons(projected)
     _suppress_duplicate_delegated_parents(projected)
     return sorted(
         [task for task in projected if _should_include(task, include_archived=include_archived)],
@@ -155,6 +156,7 @@ def project_all(
         )
     relation_names = set(relation_anima_names) if relation_anima_names is not None else names
     _attach_related_tasks(projected, _build_task_index(resolved_animas_dir, relation_names, resolved_store))
+    _suppress_duplicate_failed_crons(projected)
     _suppress_duplicate_delegated_parents(projected)
     return sorted(
         [task for task in projected if _should_include(task, include_archived=include_archived)],
@@ -333,6 +335,31 @@ def _suppress_duplicate_delegated_parents(tasks: list[BoardTask]) -> None:
             task.tombstone_reason = "duplicate_delegated_parent"
 
 
+def _suppress_duplicate_failed_crons(tasks: list[BoardTask]) -> None:
+    groups: dict[tuple[str, str], list[BoardTask]] = {}
+    for task in tasks:
+        if (
+            task.visibility != AttentionVisibility.ACTIVE
+            or task.queue_status != "failed"
+            or not task.is_from_cron
+            or not task.cron_task_name
+        ):
+            continue
+        groups.setdefault((task.anima_name, task.cron_task_name), []).append(task)
+
+    for duplicates in groups.values():
+        if len(duplicates) <= 1:
+            continue
+        keeper = max(duplicates, key=_task_updated_precedence)
+        for task in duplicates:
+            if task is keeper:
+                continue
+            task.visibility = AttentionVisibility.ARCHIVED
+            task.column = BoardColumn.SUPPRESSED
+            task.replaced_by = f"{keeper.anima_name}:{keeper.task_id}"
+            task.tombstone_reason = "duplicate_failed_cron"
+
+
 def _is_cancelled_or_tombstoned_parent(parent: BoardTask) -> bool:
     return parent.queue_status == "cancelled" or parent.visibility == AttentionVisibility.TOMBSTONED
 
@@ -343,7 +370,8 @@ def _delegated_child_needs_followup(child: BoardTask) -> bool:
     if child.queue_status != "done":
         return False
 
-    text = " ".join(
+    summary_text = " ".join((child.summary or "").strip().split()).casefold()
+    combined_text = " ".join(
         part
         for part in (
             child.summary or "",
@@ -351,7 +379,7 @@ def _delegated_child_needs_followup(child: BoardTask) -> bool:
         )
         if part
     ).casefold()
-    followup_markers = (
+    failure_markers = (
         "failed:",
         "blocked:",
         " fail",
@@ -363,6 +391,8 @@ def _delegated_child_needs_followup(child: BoardTask) -> bool:
         "no final response",
         "tool error",
         "errors=",
+    )
+    progress_markers = (
         "next step",
         "next action",
         "will proceed",
@@ -379,15 +409,23 @@ def _delegated_child_needs_followup(child: BoardTask) -> bool:
         "machineで",
         "調査します",
         "実施します",
+        "更新に進む",
+        "保存してdiscordに投稿する",
     )
-    return any(marker in text for marker in followup_markers)
-
+    return any(marker in combined_text for marker in failure_markers) or any(
+        marker in summary_text for marker in progress_markers
+    )
 
 def _delegated_parent_precedence(task: BoardTask) -> tuple[int, str, str]:
     summary = (task.summary or "").strip().casefold()
     is_superseded = summary.startswith("superseded by")
     updated_at = task.queue_updated_at or task.board_updated_at or ""
     return (0 if is_superseded else 1, updated_at, task.task_id)
+
+
+def _task_updated_precedence(task: BoardTask) -> tuple[str, str]:
+    updated_at = task.queue_updated_at or task.board_updated_at or ""
+    return (updated_at, task.task_id)
 
 
 def _append_link(
