@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.entity_index import upsert_entities_from_facts
-from core.memory.facts import FactRecord
+from core.memory.facts import FactRecord, append_fact_records
 from core.memory.rag_search import RAGMemorySearch
 from core.memory.retrieval.entity import EntityBoostConfig, apply_entity_boost
 from core.memory.retrieval.pipeline import PipelineResult
@@ -181,3 +181,33 @@ def test_non_all_vector_scope_receives_entity_boost_config(rag_search: RAGMemory
 
     assert captured["entity_boost"].enabled is True
     assert captured["entity_boost"].require_query_entities is True
+
+
+@pytest.mark.unit
+def test_keyword_fallback_applies_entity_boost_to_fact_metadata(rag_search: RAGMemorySearch) -> None:
+    fact = FactRecord(
+        fact_id="fact-1",
+        text="Caroline recommended Becoming Nicole.",
+        source_entity="Caroline",
+        target_entity="Becoming Nicole",
+        recorded_at="2026-06-03T10:00:00+09:00",
+    )
+    append_fact_records(rag_search._anima_dir, [fact])
+    upsert_entities_from_facts(rag_search._anima_dir, [fact])
+
+    with (
+        patch.object(rag_search, "_get_indexer", return_value=None),
+        patch.object(rag_search, "_load_rag_pipeline_settings", return_value=_settings(enabled=True)),
+    ):
+        results = rag_search.search_memory_text(
+            "What did Caroline recommend?",
+            scope="facts",
+            knowledge_dir=rag_search._anima_dir / "knowledge",
+            episodes_dir=rag_search._anima_dir / "episodes",
+            procedures_dir=rag_search._anima_dir / "procedures",
+            common_knowledge_dir=rag_search._common_knowledge_dir,
+        )
+
+    assert results[0]["fact_id"] == "fact-1"
+    assert results[0]["entity_boost"] == 0.25
+    assert results[0]["entity_overlap"] == ["caroline"]

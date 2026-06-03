@@ -97,6 +97,7 @@ async def test_legacy_retrieve_episodes_uses_rag_search_path(
 
     legacy_backend._retriever.search.assert_not_called()
     legacy_backend._rag_search.search_memory_text.assert_called_once()
+    assert legacy_backend._rag_search.search_memory_text.call_args.kwargs["result_limit"] == 3
     assert result[0].content == "Caroline recommended Becoming Nicole."
     assert result[0].metadata["memory_type"] == "episodes"
 
@@ -121,6 +122,31 @@ async def test_stats_returns_dict(
     assert isinstance(result, dict)
     assert "total_chunks" in result
     assert "total_sources" in result
+
+
+async def test_stats_excludes_entity_helper_collection(
+    legacy_backend: LegacyRAGBackend,
+) -> None:
+    prefix = legacy_backend._anima_name
+    legacy_backend._vector_store.list_collections.return_value = [
+        f"{prefix}_knowledge",
+        f"{prefix}_entities",
+    ]
+    memory_doc = MagicMock()
+    memory_doc.document.metadata = {"source_file": "knowledge/a.md"}
+    entity_doc = MagicMock()
+    entity_doc.document.metadata = {"canonical": "Caroline"}
+
+    def fake_get_by_metadata(collection: str, where: dict, limit: int):
+        if collection.endswith("_entities"):
+            return [entity_doc]
+        return [memory_doc]
+
+    legacy_backend._vector_store.get_by_metadata.side_effect = fake_get_by_metadata
+
+    result = await legacy_backend.stats()
+
+    assert result == {"total_chunks": 1, "total_sources": 1}
 
 
 # ── Ingest ─────────────────────────────────────────────────────────────────

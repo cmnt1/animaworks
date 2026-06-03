@@ -316,6 +316,7 @@ class RAGMemorySearch:
         episodes_dir: Path,
         procedures_dir: Path,
         common_knowledge_dir: Path,
+        result_limit: int | None = None,
     ) -> list[dict]:
         """Search memory by vector similarity with keyword fallback.
 
@@ -353,6 +354,7 @@ class RAGMemorySearch:
             )
 
         primary_results: list[dict] = []
+        entity_boost = self._build_entity_boost_config(query)
         if indexer is not None:
             try:
                 primary_results = self._vector_search_primary(
@@ -360,7 +362,8 @@ class RAGMemorySearch:
                     scope,
                     offset,
                     knowledge_dir,
-                    entity_boost=self._build_entity_boost_config(query),
+                    result_limit=result_limit,
+                    entity_boost=entity_boost,
                 )
             except Exception as e:
                 logger.debug("Vector search failed, falling back to keyword: %s", e)
@@ -372,6 +375,8 @@ class RAGMemorySearch:
                     episodes_dir=episodes_dir,
                     procedures_dir=procedures_dir,
                     common_knowledge_dir=common_knowledge_dir,
+                    result_limit=result_limit,
+                    entity_boost=entity_boost,
                 )
         else:
             primary_results = self._keyword_search_fallback(
@@ -382,6 +387,8 @@ class RAGMemorySearch:
                 episodes_dir=episodes_dir,
                 procedures_dir=procedures_dir,
                 common_knowledge_dir=common_knowledge_dir,
+                result_limit=result_limit,
+                entity_boost=entity_boost,
             )
 
         return primary_results
@@ -686,6 +693,8 @@ class RAGMemorySearch:
         episodes_dir: Path,
         procedures_dir: Path,
         common_knowledge_dir: Path,
+        result_limit: int | None = None,
+        entity_boost=None,
     ) -> list[dict]:
         """Keyword OR search with scoring. Used only when vector search is unavailable."""
         dirs: list[tuple[Path, str]] = []
@@ -761,8 +770,15 @@ class RAGMemorySearch:
                 except Exception as e:
                     logger.debug("Failed to read conversation summary: %s", e)
 
-        results = sorted(file_scores.values(), key=lambda x: x["score"], reverse=True)
-        return results[offset : offset + 10]
+        results = list(file_scores.values())
+        if entity_boost is not None:
+            from core.memory.retrieval.entity import apply_entity_boost
+
+            results = apply_entity_boost(query, results, entity_boost)
+        else:
+            results.sort(key=lambda x: x["score"], reverse=True)
+        page_size = result_limit if result_limit is not None else 10
+        return results[offset : offset + page_size]
 
     @staticmethod
     def _resolve_search_types(scope: str) -> list[str]:
