@@ -219,6 +219,13 @@ class TestManagerKnowledgeAtomicWrite:
 class TestManagerEpisodeFsync:
     """Tests that MemoryManager.append_episode() calls fsync."""
 
+    @pytest.fixture(autouse=True)
+    def _stub_rag_indexing(self):
+        """Stub RAG index_file so append_episode never loads the real embedding
+        model (which would exceed the 30s timeout on a cold CI cache)."""
+        with patch("core.memory.rag_search.RAGMemorySearch.index_file"):
+            yield
+
     @pytest.fixture
     def memory_manager(self, tmp_path: Path):
         """Create a MemoryManager with mocked path dependencies."""
