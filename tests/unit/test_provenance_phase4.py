@@ -225,7 +225,7 @@ class TestRAGSearchOriginProxy:
 
         rag.index_file(test_file, "episodes", origin="external_platform")
         mock_indexer.index_file.assert_called_once_with(
-            test_file, "episodes", origin="external_platform",
+            test_file, "episodes", force=False, origin="external_platform",
         )
 
     def test_index_file_no_origin(self, tmp_path: Path) -> None:
@@ -241,7 +241,7 @@ class TestRAGSearchOriginProxy:
 
         rag.index_file(test_file, "knowledge")
         mock_indexer.index_file.assert_called_once_with(
-            test_file, "knowledge", origin="",
+            test_file, "knowledge", force=False, origin="",
         )
 
 
