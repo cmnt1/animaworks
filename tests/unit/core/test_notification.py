@@ -46,11 +46,26 @@ def _make_tool_handler(
     anima_dir.mkdir(parents=True, exist_ok=True)
     memory = MagicMock()
     memory.read_permissions.return_value = ""
-    return ToolHandler(
+    handler = ToolHandler(
         anima_dir=anima_dir,
         memory=memory,
         human_notifier=notifier,
     )
+
+    # _handle_call_human reloads the notifier from config rather than using the
+    # injected one. In the test environment there is no real config, so stub the
+    # reload to mirror what config loading would produce for the given notifier.
+    if notifier is None:
+        reload_result = (None, ("NotConfigured", "Human notification is not configured", ""))
+    elif getattr(notifier, "channel_count", 1) == 0:
+        reload_result = (
+            None,
+            ("NoNotificationChannels", "No supported notification channels configured", ""),
+        )
+    else:
+        reload_result = (notifier, None)
+    handler._reload_human_notifier_from_config = MagicMock(return_value=reload_result)
+    return handler
 
 
 # ── ToolHandler._handle_notify_human queues notification ──────
