@@ -722,6 +722,21 @@ class TestLoadExistingProcedures:
 class TestWeeklyPatternDistill:
     """Test weekly_pattern_distill() with activity_log-based detection."""
 
+    @pytest.fixture(autouse=True)
+    def _disable_vector_clustering(self):
+        """Force text-based clustering fallback.
+
+        ``_cluster_activities`` tries ``generate_embeddings`` first, which
+        loads the real embedding model. On CI that triggers HuggingFace
+        HTTP 429 retries and exceeds the pytest timeout, so we make the
+        embedding call raise to exercise the deterministic text fallback.
+        """
+        with patch(
+            "core.memory.rag.singleton.generate_embeddings",
+            side_effect=RuntimeError("embeddings unavailable"),
+        ):
+            yield
+
     @pytest.mark.asyncio
     async def test_weekly_distill_from_activity_log(
         self, distiller, anima_dir: Path,
