@@ -211,6 +211,8 @@ class TestHeartbeatPromptCleanup:
         mixin.anima_dir = anima_dir
         memory_mock = MagicMock()
         mixin.memory = memory_mock
+        # Snapshot part is optional; default to empty so it is not appended.
+        mixin._build_preobserved_heartbeat_snapshot_part = MagicMock(return_value="")
 
         return mixin
 
