@@ -353,7 +353,12 @@ class RAGMemorySearch:
                 common_knowledge_dir=common_knowledge_dir,
             )
 
-        if scope == "all" and reciprocal_rank_fusion is not None and search_activity_log is not None:
+        if (
+            scope == "all"
+            and indexer is not None
+            and reciprocal_rank_fusion is not None
+            and search_activity_log is not None
+        ):
             return self._search_scope_all_hybrid(
                 query,
                 offset=offset,
