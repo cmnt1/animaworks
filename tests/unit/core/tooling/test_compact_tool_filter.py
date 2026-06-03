@@ -13,11 +13,11 @@ def _tool_names(tools: list[dict]) -> set[str]:
 
 
 class TestCompactToolFilter:
-    """Verify compact mode returns exactly the expected 12-tool subset."""
+    """Verify compact mode returns exactly the expected tool subset."""
 
-    def test_compact_returns_12_tools(self):
+    def test_compact_returns_expected_count(self):
         tools = build_unified_tool_list(compact=True, include_create_skill=False)
-        assert len(tools) == 12
+        assert len(tools) == len(_COMPACT_COMM_TOOLS)
 
     def test_compact_tool_names_match(self):
         tools = build_unified_tool_list(compact=True, include_create_skill=False)
@@ -30,6 +30,7 @@ class TestCompactToolFilter:
         for expected in [
             "Read", "Write", "Edit", "Bash", "Grep", "Glob",
             "search_memory", "read_memory_file", "write_memory_file",
+            "heartbeat_observe_snapshot",
             "send_message", "post_channel", "completion_gate",
         ]:
             assert expected in names, f"{expected} missing from compact tools"
@@ -68,4 +69,4 @@ class TestCompactToolFilter:
         names = _tool_names(tools)
         assert "delegate_task" not in names
         assert "ping_subordinate" not in names
-        assert len(names) == 12
+        assert len(names) == len(_COMPACT_COMM_TOOLS)
