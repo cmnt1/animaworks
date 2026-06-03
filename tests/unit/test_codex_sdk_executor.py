@@ -527,21 +527,23 @@ class TestExecutorInit:
         model_config.credential_type = "codex_login"
         exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
 
+        py_exe = r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts\python.exe"
         with (
             patch("core.execution.codex_sdk.sys.platform", "win32"),
             patch("core.execution.codex_sdk.os.pathsep", ";"),
             patch("os.pathsep", ";"),
             patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
-            patch(
-                "core.execution.codex_sdk.sys.executable",
-                r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts\python.exe",
-            ),
+            patch("core.execution.codex_sdk.sys.executable", py_exe),
             patch.dict("os.environ", {"Path": r"C:\Windows\System32", "USERPROFILE": r"C:\Users\Tester"}, clear=True),
         ):
             env = exc._build_env()
 
         parts = env["Path"].split(";")
-        assert r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts" in parts
+        # Compute the launcher python dir the same way the production code does
+        # (Path(...).resolve().parent). On POSIX CI a Windows path string cannot
+        # be parsed, so comparing against a literal would fail; deriving it the
+        # same way keeps the assertion platform-agnostic.
+        assert str(Path(py_exe).resolve().parent) in parts
         assert r"C:\Windows\System32" in parts
         assert "PATH" not in env
 
