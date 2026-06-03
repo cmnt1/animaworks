@@ -12,7 +12,7 @@ class TestRoleOutboundDefaults:
     """Verify the constant table has correct structure."""
 
     def test_all_roles_present(self):
-        expected = {"manager", "engineer", "writer", "researcher", "ops", "general"}
+        expected = {"manager", "engineer", "writer", "researcher", "ops", "administration"}
         assert set(ROLE_OUTBOUND_DEFAULTS.keys()) == expected
 
     def test_all_fields_present(self):
@@ -27,7 +27,7 @@ class TestRoleOutboundDefaults:
         assert m["max_recipients_per_run"] == 10
 
     def test_general_values(self):
-        g = ROLE_OUTBOUND_DEFAULTS["general"]
+        g = ROLE_OUTBOUND_DEFAULTS["administration"]
         assert g["max_outbound_per_hour"] == 15
         assert g["max_outbound_per_day"] == 50
         assert g["max_recipients_per_run"] == 2
@@ -38,13 +38,13 @@ class TestResolveOutboundLimits:
 
     def test_no_anima_dir_returns_general(self):
         result = resolve_outbound_limits("test_anima", anima_dir=None)
-        assert result == ROLE_OUTBOUND_DEFAULTS["general"]
+        assert result == ROLE_OUTBOUND_DEFAULTS["administration"]
 
     def test_missing_status_json_returns_general(self, tmp_path: Path):
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
         result = resolve_outbound_limits("test", anima_dir)
-        assert result == ROLE_OUTBOUND_DEFAULTS["general"]
+        assert result == ROLE_OUTBOUND_DEFAULTS["administration"]
 
     def test_role_defaults_applied(self, tmp_path: Path):
         anima_dir = tmp_path / "animas" / "rin"
@@ -106,21 +106,21 @@ class TestResolveOutboundLimits:
         anima_dir.mkdir(parents=True)
         (anima_dir / "status.json").write_text(json.dumps({"role": "custom_role_xyz"}), encoding="utf-8")
         result = resolve_outbound_limits("custom", anima_dir)
-        assert result == ROLE_OUTBOUND_DEFAULTS["general"]
+        assert result == ROLE_OUTBOUND_DEFAULTS["administration"]
 
     def test_no_role_field_falls_back_to_general(self, tmp_path: Path):
         anima_dir = tmp_path / "animas" / "norole"
         anima_dir.mkdir(parents=True)
         (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
         result = resolve_outbound_limits("norole", anima_dir)
-        assert result == ROLE_OUTBOUND_DEFAULTS["general"]
+        assert result == ROLE_OUTBOUND_DEFAULTS["administration"]
 
     def test_invalid_json_returns_general(self, tmp_path: Path):
         anima_dir = tmp_path / "animas" / "broken"
         anima_dir.mkdir(parents=True)
         (anima_dir / "status.json").write_text("not valid json", encoding="utf-8")
         result = resolve_outbound_limits("broken", anima_dir)
-        assert result == ROLE_OUTBOUND_DEFAULTS["general"]
+        assert result == ROLE_OUTBOUND_DEFAULTS["administration"]
 
     def test_zero_value_ignored(self, tmp_path: Path):
         """Zero or negative values are treated as 'not set'."""
