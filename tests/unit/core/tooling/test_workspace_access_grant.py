@@ -84,8 +84,14 @@ def test_granted_workspace_is_in_next_codex_writable_roots(data_dir: Path, tmp_p
 
     model_config = ModelConfig(model="codex/o4-mini", credential="openai", api_key="test")
     executor = CodexSDKExecutor(model_config=model_config, anima_dir=top_dir)
+    # Provide per-anima auth so config.toml is written under .codex_home rather
+    # than falling back to the default keychain home (~/.codex) on machines
+    # without ~/.codex/auth.json (e.g. CI runners).
+    codex_home = top_dir / ".codex_home"
+    codex_home.mkdir(parents=True, exist_ok=True)
+    (codex_home / "auth.json").write_text('{"OPENAI_API_KEY":"test"}', encoding="utf-8")
     executor._write_codex_config("prompt")
-    config_toml = (top_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+    config_toml = (codex_home / "config.toml").read_text(encoding="utf-8")
 
     assert "workspace-write" in config_toml
     assert str(workspace.resolve()) in config_toml
