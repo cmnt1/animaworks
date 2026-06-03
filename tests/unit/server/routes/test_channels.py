@@ -169,8 +169,8 @@ class TestGetChannelMessages:
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            # Uppercase name violates ^[a-z][a-z0-9_-]{0,30}$
-            resp = await client.get("/api/channels/INVALID")
+            # Name longer than 60 chars violates ^[^\x00-\x1f/\\]{1,60}$
+            resp = await client.get("/api/channels/" + "a" * 61)
         assert resp.status_code == 400
 
     async def test_reverse_pagination_returns_newest_first(self, tmp_path: Path):
@@ -439,8 +439,9 @@ class TestPostToChannel:
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Name longer than 60 chars violates ^[^\x00-\x1f/\\]{1,60}$
             resp = await client.post(
-                "/api/channels/INVALID_NAME",
+                "/api/channels/" + "a" * 61,
                 json={"text": "test"},
             )
         assert resp.status_code == 400
