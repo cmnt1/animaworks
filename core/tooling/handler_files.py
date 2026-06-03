@@ -184,9 +184,7 @@ def _spawn_command(command: str, cwd: str) -> tuple[subprocess.Popen, bool]:
     }
     if used_shell:
         # On Windows use cmd.exe (the default); on Unix use bash.
-        proc = subprocess.Popen(
-            command, shell=True, executable=None if is_windows else "/bin/bash", **popen_kwargs
-        )
+        proc = subprocess.Popen(command, shell=True, executable=None if is_windows else "/bin/bash", **popen_kwargs)
     else:
         # posix=True (the shlex default) treats backslashes as escape characters,
         # which destroys Windows paths like C:\Users\...
