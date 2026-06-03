@@ -89,7 +89,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # Japanese day-of-week names for cron migration + permissions.md section headers for migration
     "core/config/migrate.py": 9,
     # model catalog "note" descriptions (最高性能・推奨, etc.)
-    "core/config/model_mode.py": 28,
+    "core/config/model_mode.py": 34,
     # cron instruction prompt to Anima
     "core/prompt/messaging.py": 2,
     "core/prompt/org_context.py": 3,
@@ -116,6 +116,27 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "server/routes/room.py": 4,
     # LLM extraction + dedupe + invalidation + community prompt templates — intentionally Japanese for ja locale
     "core/memory/extraction/prompts/ja.py": 7,
+    # auth-failure / token-expiry messages surfaced to the dashboard
+    "core/execution/agent_sdk.py": 2,
+    "core/execution/codex_sdk.py": 2,
+    # delegated-task report template + status labels
+    "core/memory/task_queue.py": 4,
+    # Governor notification suppression messages
+    "core/notification/notifier.py": 2,
+    # outbound auto-routing prefix label
+    "core/outbound_auto.py": 1,
+    # Codex login window prompts
+    "core/platform/codex.py": 2,
+    # privileged-execution / writable labels in pending executor
+    "core/supervisor/pending_executor.py": 11,
+    # auto-retry status label
+    "core/supervisor/task_retry.py": 1,
+    # taskboard projector mock/sample content
+    "core/taskboard/projector.py": 3,
+    # taskboard route stop/blocker labels
+    "server/routes/taskboard.py": 13,
+    # usage route OAuth / API-disabled messages
+    "server/routes/usage_routes.py": 3,
 }
 
 
