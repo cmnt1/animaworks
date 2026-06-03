@@ -529,6 +529,8 @@ class TestExecutorInit:
 
         with (
             patch("core.execution.codex_sdk.sys.platform", "win32"),
+            patch("core.execution.codex_sdk.os.pathsep", ";"),
+            patch("os.pathsep", ";"),
             patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
             patch(
                 "core.execution.codex_sdk.sys.executable",
@@ -538,7 +540,7 @@ class TestExecutorInit:
         ):
             env = exc._build_env()
 
-        parts = env["Path"].split(os.pathsep)
+        parts = env["Path"].split(";")
         assert r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts" in parts
         assert r"C:\Windows\System32" in parts
         assert "PATH" not in env
