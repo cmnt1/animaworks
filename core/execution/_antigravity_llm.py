@@ -55,12 +55,8 @@ from litellm.utils import Choices, Message, ModelResponse, Usage
 
 logger = logging.getLogger("animaworks.execution.antigravity_llm")
 
-_ENDPOINT_STREAM = (
-    "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse"
-)
-_ENDPOINT_NONSTREAM = (
-    "https://cloudcode-pa.googleapis.com/v1internal:generateContent"
-)
+_ENDPOINT_STREAM = "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse"
+_ENDPOINT_NONSTREAM = "https://cloudcode-pa.googleapis.com/v1internal:generateContent"
 
 _DEFAULT_TIMEOUT_SEC = 600.0
 
@@ -163,9 +159,7 @@ def _convert_messages_to_gemini(
                     tool_call_id_to_name[tool_call_id] = name
                 raw_args = fn.get("arguments", "")
                 try:
-                    args_obj = (
-                        json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                    )
+                    args_obj = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
                 except json.JSONDecodeError:
                     args_obj = {"_raw": raw_args}
                 parts.append({"functionCall": {"name": name, "args": args_obj or {}}})
@@ -189,7 +183,9 @@ def _convert_messages_to_gemini(
                         {
                             "functionResponse": {
                                 "name": tool_name or "tool",
-                                "response": response_obj if isinstance(response_obj, dict) else {"result": response_obj},
+                                "response": response_obj
+                                if isinstance(response_obj, dict)
+                                else {"result": response_obj},
                             }
                         }
                     ],
@@ -406,9 +402,7 @@ class AntigravityLLM(CustomLLM):
         try:
             payload = resp.json()
         except ValueError as exc:
-            raise CustomLLMError(
-                status_code=502, message=f"Invalid JSON from cloudcode-pa: {exc}"
-            ) from exc
+            raise CustomLLMError(status_code=502, message=f"Invalid JSON from cloudcode-pa: {exc}") from exc
 
         return _populate_model_response(model_response, model, payload)
 
@@ -460,17 +454,14 @@ class AntigravityLLM(CustomLLM):
 
         async with (
             httpx.AsyncClient(timeout=timeout_value) as http,
-            http.stream(
-                "POST", _ENDPOINT_STREAM, json=body, headers=req_headers
-            ) as resp,
+            http.stream("POST", _ENDPOINT_STREAM, json=body, headers=req_headers) as resp,
         ):
             if resp.status_code >= 400:
                 text = await resp.aread()
                 raise CustomLLMError(
                     status_code=resp.status_code,
                     message=(
-                        f"Antigravity streaming HTTP {resp.status_code}: "
-                        f"{text.decode('utf-8', errors='replace')[:300]}"
+                        f"Antigravity streaming HTTP {resp.status_code}: {text.decode('utf-8', errors='replace')[:300]}"
                     ),
                 )
             buffer = ""
@@ -593,9 +584,7 @@ def _sse_event_to_chunk(
     return chunk, delta_text, finish_reason, usage
 
 
-def _populate_model_response(
-    model_response: ModelResponse, model: str, payload: dict[str, Any]
-) -> ModelResponse:
+def _populate_model_response(model_response: ModelResponse, model: str, payload: dict[str, Any]) -> ModelResponse:
     """Fill in a LiteLLM ModelResponse from cloudcode-pa non-streaming payload."""
     response = payload.get("response") or {}
     candidates = response.get("candidates") or []

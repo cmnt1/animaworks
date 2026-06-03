@@ -101,16 +101,8 @@ def _detect_non_final_delegation_report(result: str) -> str | None:
         return None
 
     folded = text.casefold()
-    has_machine_handoff = (
-        "machine" in folded
-        or "agent" in folded
-        or "エージェント" in text
-        or "委託" in text
-    ) and (
-        "委託" in text
-        or "delegat" in folded
-        or "handoff" in folded
-        or "依頼" in text
+    has_machine_handoff = ("machine" in folded or "agent" in folded or "エージェント" in text or "委託" in text) and (
+        "委託" in text or "delegat" in folded or "handoff" in folded or "依頼" in text
     )
     if not has_machine_handoff:
         return None
@@ -138,7 +130,7 @@ def _detect_non_final_delegation_report(result: str) -> str | None:
         return None
 
     final_evidence_markers = (
-        "verdict.status=\"done\"",
+        'verdict.status="done"',
         '"status": "done"',
         '"status":"done"',
         "verifier output",
@@ -156,7 +148,7 @@ def _detect_non_final_delegation_report(result: str) -> str | None:
 def _completion_evidence_count(text: str) -> int:
     folded = text.casefold()
     final_evidence_markers = (
-        "verdict.status=\"done\"",
+        'verdict.status="done"',
         '"status": "done"',
         '"status":"done"',
         "verifier output",
@@ -220,9 +212,7 @@ def _detect_unresolved_blocker_report(result: str) -> str | None:
 
     target_ids = ("108500", "108501", "108502")
     known_blocker_tokens = ("404", "4axjkd+4bf3ma+5316", "coreda")
-    if any(task_id in text for task_id in target_ids) and any(
-        token in folded for token in known_blocker_tokens
-    ):
+    if any(task_id in text for task_id in target_ids) and any(token in folded for token in known_blocker_tokens):
         return "Task reported known AFF-003 blockers instead of final evidence"
 
     return None
@@ -584,11 +574,7 @@ class PendingTaskExecutor:
         try:
             from core.supervisor.task_retry import TaskRetryError, retry_task
 
-            max_retries = (
-                _AUTO_RETRY_NON_FINAL_MAX_RETRIES
-                if _blocked_summary_allows_retry(entry.summary)
-                else None
-            )
+            max_retries = _AUTO_RETRY_NON_FINAL_MAX_RETRIES if _blocked_summary_allows_retry(entry.summary) else None
             retry_kwargs: dict[str, Any] = {
                 "summary": "auto retry queued after blocked TaskExec result",
                 "submitted_by": submitted_by,
@@ -1862,16 +1848,8 @@ class PendingTaskExecutor:
             project_root = Path(__file__).resolve().parents[2]
             scripts_dir = project_root / ".venv" / "Scripts"
             executable_name = "animaworks-tool.exe" if os.name == "nt" else "animaworks-tool"
-            tool_exe = (
-                scripts_dir / executable_name
-                if (scripts_dir / executable_name).exists()
-                else None
-            )
-            tool_cmd = (
-                str(tool_exe)
-                if tool_exe
-                else (shutil.which("animaworks-tool") or "animaworks-tool")
-            )
+            tool_exe = scripts_dir / executable_name if (scripts_dir / executable_name).exists() else None
+            tool_cmd = str(tool_exe) if tool_exe else (shutil.which("animaworks-tool") or "animaworks-tool")
             cmd = [tool_cmd, module_name]
             subcmd = args.get("subcommand", "")
             if subcmd:

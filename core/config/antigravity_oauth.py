@@ -59,9 +59,7 @@ _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 # users receive a per-account managed project (e.g. ``circular-verve-0h50h``)
 # that differs from the fixed AI Pro common id.  We discover and cache the
 # right one at first use.
-_LOAD_CODE_ASSIST_URL = (
-    "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
-)
+_LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
 
 # Minimal client metadata accepted by loadCodeAssist.  Values are
 # informational only; the API does not enforce specific values.
@@ -154,23 +152,17 @@ def _win_cred_read(target: str) -> tuple[str, str] | None:
     if sys.platform != "win32":
         return None
     cred_ptr = ctypes.POINTER(_CREDENTIAL)()
-    ok = _advapi32.CredReadW(
-        target, _CRED_TYPE_GENERIC, 0, ctypes.byref(cred_ptr)
-    )
+    ok = _advapi32.CredReadW(target, _CRED_TYPE_GENERIC, 0, ctypes.byref(cred_ptr))
     if not ok:
         err = ctypes.get_last_error()
         if err == 1168:  # ERROR_NOT_FOUND
             return None
-        logger.warning(
-            "CredRead(%s) failed: error=%d", target, err
-        )
+        logger.warning("CredRead(%s) failed: error=%d", target, err)
         return None
     try:
         cred = cred_ptr.contents
         username = cred.UserName or ""
-        blob_bytes = ctypes.string_at(
-            cred.CredentialBlob, cred.CredentialBlobSize
-        )
+        blob_bytes = ctypes.string_at(cred.CredentialBlob, cred.CredentialBlobSize)
         text = blob_bytes.decode("utf-8", errors="replace")
         return username, text
     finally:
@@ -260,9 +252,7 @@ def _serialize_blob(creds: AntigravityCredentials) -> str:
 def load_credentials() -> AntigravityCredentials | None:
     """Read and parse Antigravity credentials from the OS keyring."""
     if sys.platform != "win32":
-        logger.debug(
-            "Antigravity credential reader: %s not yet implemented", sys.platform
-        )
+        logger.debug("Antigravity credential reader: %s not yet implemented", sys.platform)
         return None
     pair = _win_cred_read(_WIN_TARGET)
     if pair is None:
@@ -352,9 +342,7 @@ def refresh_access_token(
         logger.warning("Antigravity token refresh returned empty access_token")
         return None
     expires_in_sec = int(payload.get("expires_in", 3600))
-    new_expiry = datetime.fromtimestamp(
-        time.time() + expires_in_sec, tz=creds.expiry_dt.tzinfo
-    )
+    new_expiry = datetime.fromtimestamp(time.time() + expires_in_sec, tz=creds.expiry_dt.tzinfo)
 
     updated = AntigravityCredentials(
         access_token=new_access,
@@ -404,9 +392,7 @@ def discover_project_id(access_token: str) -> str | None:
             body_text = exc.read().decode("utf-8", errors="replace")[:200]
         except Exception:
             body_text = "<unreadable>"
-        logger.warning(
-            "loadCodeAssist failed (HTTP %s): %s", exc.code, body_text
-        )
+        logger.warning("loadCodeAssist failed (HTTP %s): %s", exc.code, body_text)
         return None
     except (urllib.error.URLError, OSError, ValueError) as exc:
         logger.warning("loadCodeAssist error: %s", exc)

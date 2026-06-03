@@ -378,7 +378,7 @@ class SDKOptionsMixin:
                                 ],
                             }
                         ]
-                    }
+                    },
                 }
                 # CLI only loads hooks from file-based settings sources
                 # (user/project/local), not from inline --settings JSON.

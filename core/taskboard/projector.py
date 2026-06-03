@@ -416,6 +416,7 @@ def _delegated_child_needs_followup(child: BoardTask) -> bool:
         marker in summary_text for marker in progress_markers
     )
 
+
 def _delegated_parent_precedence(task: BoardTask) -> tuple[int, str, str]:
     summary = (task.summary or "").strip().casefold()
     is_superseded = summary.startswith("superseded by")

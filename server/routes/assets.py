@@ -342,7 +342,7 @@ def _image_models_payload() -> dict[str, object]:
                 "source": source,
                 "dynamic": source == "cache",
                 "count": len(cached or known),
-            }
+            },
         ],
         "models": models,
     }
@@ -658,7 +658,7 @@ def create_assets_router() -> APIRouter:
                         "dynamic": False,
                         "count": len(cached or fallback),
                         "message": str(exc),
-                    }
+                    },
                 ],
                 "models": _unique_image_models([*openai_known, *fallback, *(cached or [])]),
             }
@@ -678,7 +678,7 @@ def create_assets_router() -> APIRouter:
                     "source": "api",
                     "dynamic": True,
                     "count": len(models),
-                }
+                },
             ],
             "models": _unique_image_models([*openai_known, *fallback, *models]),
         }
@@ -1245,7 +1245,7 @@ def create_assets_router() -> APIRouter:
             # A coarse server-side pre-crop caused partial face cut-off which made
             # IP-Adapter produce non-human faces.
 
-        # Resolve prompt (style-aware) — try cached first, then LLM synthesis, then fallback
+            # Resolve prompt (style-aware) — try cached first, then LLM synthesis, then fallback
             generation_model_for_reference = body.generation_model or DEFAULT_IMAGE_GENERATION_MODEL
             if generation_model_for_reference.startswith("openai:"):
                 try:
@@ -1271,9 +1271,7 @@ def create_assets_router() -> APIRouter:
             from core.asset_reconciler import _extract_prompt, _resolve_prompt
 
             prompt_style = "realistic" if is_realistic else "anime"
-            prompt_composition = (
-                "bustup" if (body.generation_model or "").startswith("openai:") else "fullbody"
-            )
+            prompt_composition = "bustup" if (body.generation_model or "").startswith("openai:") else "fullbody"
             prompt = _identity_appearance_prompt(
                 anima_dir,
                 name=name,

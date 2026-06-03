@@ -76,7 +76,9 @@ def _is_status_inquiry(content: str, intent: str) -> bool:
     return bool(_STATUS_INQUIRY_REPLY_RE.search(content))
 
 
-def looks_like_task_request(*, content: str, intent: str = "", msg_type: str = "message", meta: dict[str, Any] | None = None) -> bool:
+def looks_like_task_request(
+    *, content: str, intent: str = "", msg_type: str = "message", meta: dict[str, Any] | None = None
+) -> bool:
     """Return True when a DM looks like actionable work for the recipient."""
     if msg_type != "message":
         return False

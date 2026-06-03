@@ -384,8 +384,7 @@ class HeartbeatMixin:
                     tool="heartbeat_observe_snapshot",
                     content=snapshot_json,
                     summary=(
-                        '<tool_result tool="heartbeat_observe_snapshot" '
-                        'source="scheduler_preobserve" status="ok">'
+                        '<tool_result tool="heartbeat_observe_snapshot" source="scheduler_preobserve" status="ok">'
                     ),
                     meta={"tool_use_id": tool_use_id, "is_error": False, "source": "scheduler_preobserve"},
                     safe=True,

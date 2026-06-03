@@ -854,9 +854,7 @@ def _fetch_nanogpt_usage(skip_cache: bool = False) -> dict[str, Any]:
 # Same private Cloud Code API as Gemini CLI uses; quota response shape is
 # identical. Credentials are read from the Antigravity CLI keyring
 # (Windows Credential Manager on Windows).
-_GEMINI_QUOTA_ENDPOINT = (
-    "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
-)
+_GEMINI_QUOTA_ENDPOINT = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
 
 
 def _classify_gemini_bucket_window(delta_sec: float) -> tuple[str, int] | None:
@@ -877,9 +875,7 @@ def _classify_gemini_bucket_window(delta_sec: float) -> tuple[str, int] | None:
     return None
 
 
-def _parse_gemini_buckets(
-    data: dict[str, Any], now: float | None = None
-) -> dict[str, Any]:
+def _parse_gemini_buckets(data: dict[str, Any], now: float | None = None) -> dict[str, Any]:
     """Convert the ``retrieveUserQuota`` response into Animaworks window dicts.
 
     Multiple model-specific buckets may share the same window label; the
@@ -976,9 +972,7 @@ def _fetch_gemini_usage(skip_cache: bool = False) -> dict[str, Any]:
         if exc.code == 403 and "SERVICE_DISABLED" in err_body:
             result = {
                 "error": "service_disabled",
-                "message": (
-                    f"Cloud Code Private API が project {project_id} で無効化されています"
-                ),
+                "message": (f"Cloud Code Private API が project {project_id} で無効化されています"),
                 "provider": "gemini",
             }
         elif exc.code in (401, 403):
@@ -1063,15 +1057,12 @@ def create_usage_router() -> APIRouter:
                         "normalized_burn_at_100_per_day_pct": float(calib.get("norm_burn_ema", 0) or 0) * scale,
                         "samples": int(calib.get("samples", 0) or 0),
                         "last_avg_applied_pct": calib.get("last_avg_applied_pct"),
-                        "last_observed_burn_per_day_pct": float(
-                            calib.get("last_observed_burn_per_sec", 0) or 0
-                        ) * scale,
-                        "last_predicted_burn_per_day_pct": float(
-                            calib.get("last_predicted_burn_per_sec", 0) or 0
-                        ) * scale,
-                        "last_prediction_error_per_day_pct": float(
-                            calib.get("last_prediction_error_per_sec", 0) or 0
-                        ) * scale,
+                        "last_observed_burn_per_day_pct": float(calib.get("last_observed_burn_per_sec", 0) or 0)
+                        * scale,
+                        "last_predicted_burn_per_day_pct": float(calib.get("last_predicted_burn_per_sec", 0) or 0)
+                        * scale,
+                        "last_prediction_error_per_day_pct": float(calib.get("last_prediction_error_per_sec", 0) or 0)
+                        * scale,
                         "match_activity_level": calib.get("match_activity_level"),
                         "last_window_seconds": window_seconds,
                         "last_updated_ts": calib.get("last_updated_ts"),

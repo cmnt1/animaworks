@@ -72,9 +72,7 @@ def _submit_tasks_tools() -> list[dict[str, Any]]:
                                 },
                                 "allow_multistage": {
                                     "type": "boolean",
-                                    "description": (
-                                        "Override model-based task granularity guardrails for this task."
-                                    ),
+                                    "description": ("Override model-based task granularity guardrails for this task."),
                                     "default": False,
                                 },
                             },

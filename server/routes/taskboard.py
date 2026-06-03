@@ -522,10 +522,7 @@ def _task_display_text(value: Any) -> Any:
         text,
     )
     if active_retry:
-        return (
-            f"Kanna再実行 {active_retry.group(1)} が進行中。"
-            "最終6ゲート証跡または保存済みBLOCKED表を待機中。"
-        )
+        return f"Kanna再実行 {active_retry.group(1)} が進行中。最終6ゲート証跡または保存済みBLOCKED表を待機中。"
 
     restarted = re.fullmatch(
         r"Restarted after db-connection-note non-final fix: complete "
@@ -533,10 +530,7 @@ def _task_display_text(value: Any) -> Any:
         text,
     )
     if restarted:
-        return (
-            "再実行中: sync/deploy・公開URL・画像URL・禁止広告を含む6ゲート証跡、"
-            "または保存済みBLOCKED表のみ提出。"
-        )
+        return "再実行中: sync/deploy・公開URL・画像URL・禁止広告を含む6ゲート証跡、または保存済みBLOCKED表のみ提出。"
 
     rewritten = text
     replacements = (

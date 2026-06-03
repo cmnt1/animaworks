@@ -64,9 +64,7 @@ def _assert_cron_success_paths(task_name: str, success_paths: list[str] | None) 
     missing = _missing_cron_success_paths(success_paths)
     if missing:
         missing_text = ", ".join(missing)
-        raise CronSuccessPathError(
-            f"Cron task '{task_name}' did not produce required success path(s): {missing_text}"
-        )
+        raise CronSuccessPathError(f"Cron task '{task_name}' did not produce required success path(s): {missing_text}")
 
 
 def _agent_for_lane(owner: Any, lane: str):

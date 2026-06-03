@@ -143,8 +143,8 @@ DEFAULT_POLICY: dict[str, Any] = {
         # computed from the change in used-% over this interval rather
         # than the cycle-cumulative average — early-cycle spikes don't
         # drag OBR forward for the entire window length.
-        "recent_burn_window_sec": 3600,        # 1 hour
-        "min_recent_burn_window_sec": 600,     # need 10 min of samples
+        "recent_burn_window_sec": 3600,  # 1 hour
+        "min_recent_burn_window_sec": 600,  # need 10 min of samples
     },
 }
 
@@ -237,9 +237,7 @@ class GovernorState:
                 self.background_activity_level_by_provider = dict(self.governor_activity_level_by_provider)
             calib = data.get("calibration_by_provider")
             if isinstance(calib, dict):
-                self.calibration_by_provider = {
-                    k: dict(v) for k, v in calib.items() if isinstance(v, dict)
-                }
+                self.calibration_by_provider = {k: dict(v) for k, v in calib.items() if isinstance(v, dict)}
         except Exception:
             logger.debug("Failed to load governor state", exc_info=True)
 
@@ -951,12 +949,7 @@ def _evaluate_burn_rate_landing(
 
     # Prefer calibrated computation when enabled and we have usable EMAs.
     used_calibration = False
-    if (
-        calibration_enabled
-        and calibration is not None
-        and avg_activity_pct is not None
-        and avg_activity_pct >= 0.05
-    ):
+    if calibration_enabled and calibration is not None and avg_activity_pct is not None and avg_activity_pct >= 0.05:
         norm_burn = float(calibration.get("norm_burn_ema", 0) or 0)
         base_burn = float(calibration.get("base_burn_ema", 0) or 0)
         if norm_burn > 0:
@@ -968,9 +961,7 @@ def _evaluate_burn_rate_landing(
             else:
                 raw_level = (scalable_target / norm_burn) * 100.0
             level = max(min_level, min(max_level, int(round(raw_level))))
-            projected_remaining = remaining - (
-                (base_burn + norm_burn * (level / 100.0)) * reset_in
-            )
+            projected_remaining = remaining - ((base_burn + norm_burn * (level / 100.0)) * reset_in)
             reason = (
                 f"{provider_key}.{window_key} landing {projected_remaining:.0f}% "
                 f"target {target_remaining:.0f}% "
@@ -1091,10 +1082,7 @@ def _evaluate_provider_remaining(
                 # ``_update_worst`` keeps the most restrictive result, so
                 # an imminent short-window exhaustion overrides the long
                 # window's optimism.
-                is_cal_window = (
-                    calibration_window_key is None
-                    or window_key == calibration_window_key
-                )
+                is_cal_window = calibration_window_key is None or window_key == calibration_window_key
                 level, reason = _evaluate_burn_rate_landing(
                     remaining,
                     window,
@@ -1301,9 +1289,7 @@ class UsageGovernor:
                 observed_elapsed,
                 observation_window,
                 calibration_window_key,
-            ) = self._observation_for_provider(
-                usage_data, policy, provider_key, calib_config
-            )
+            ) = self._observation_for_provider(usage_data, policy, provider_key, calib_config)
             calibration = self._state.calibration_by_provider.get(provider_key)
 
             # Update calibration EMAs from this tick's observation
@@ -1313,9 +1299,7 @@ class UsageGovernor:
                 and observed_elapsed is not None
                 and observed_elapsed >= float(calib_config.get("min_observation_sec", 600))
             ):
-                window_seconds = (
-                    observation_window.get("window_seconds") if observation_window else None
-                )
+                window_seconds = observation_window.get("window_seconds") if observation_window else None
                 calibration = _update_calibration(
                     calibration,
                     observed_burn,
@@ -1326,9 +1310,7 @@ class UsageGovernor:
                     window_key=calibration_window_key,
                 )
                 self._state.calibration_by_provider[provider_key] = calibration
-                self._append_calibration_log(
-                    provider_key, calibration, calib_config
-                )
+                self._append_calibration_log(provider_key, calibration, calib_config)
 
             remaining, level, reason = _evaluate_provider_remaining(
                 usage_data,
@@ -1530,18 +1512,14 @@ class UsageGovernor:
 
         recent = None
         if recent_window_raw is not None:
-            recent = self._history.recent_burn_per_sec(
-                provider_key, float(recent_window_raw), now, used
-            )
+            recent = self._history.recent_burn_per_sec(provider_key, float(recent_window_raw), now, used)
         if recent is not None and recent[1] >= min_recent:
             observed_burn, observation_period = recent
         else:
             observed_burn = (used / elapsed) if elapsed > 0 else 0.0
             observation_period = elapsed
 
-        avg_activity = self._history.avg_activity_pct(
-            provider_key, now - observation_period, now
-        )
+        avg_activity = self._history.avg_activity_pct(provider_key, now - observation_period, now)
         return avg_activity, observed_burn, observation_period, window, window_key
 
     def _append_calibration_log(
@@ -1562,15 +1540,9 @@ class UsageGovernor:
                 "norm_burn_at_100_per_day_pct": calibration.get("norm_burn_ema", 0) * 86400.0,
                 "samples": calibration.get("samples", 0),
                 "last_avg_applied_pct": calibration.get("last_avg_applied_pct"),
-                "last_observed_burn_per_day_pct": (
-                    calibration.get("last_observed_burn_per_sec", 0) * 86400.0
-                ),
-                "last_predicted_burn_per_day_pct": (
-                    calibration.get("last_predicted_burn_per_sec", 0) * 86400.0
-                ),
-                "last_prediction_error_per_day_pct": (
-                    calibration.get("last_prediction_error_per_sec", 0) * 86400.0
-                ),
+                "last_observed_burn_per_day_pct": (calibration.get("last_observed_burn_per_sec", 0) * 86400.0),
+                "last_predicted_burn_per_day_pct": (calibration.get("last_predicted_burn_per_sec", 0) * 86400.0),
+                "last_prediction_error_per_day_pct": (calibration.get("last_prediction_error_per_sec", 0) * 86400.0),
                 "match_activity_level": calibration.get("match_activity_level"),
             }
             with log_path.open("a", encoding="utf-8") as f:

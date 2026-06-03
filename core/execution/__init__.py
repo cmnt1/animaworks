@@ -60,9 +60,7 @@ try:
 except Exception:  # pragma: no cover — never block startup on this
     import logging as _logging
 
-    _logging.getLogger("animaworks.execution").warning(
-        "Failed to register Antigravity LiteLLM provider", exc_info=True
-    )
+    _logging.getLogger("animaworks.execution").warning("Failed to register Antigravity LiteLLM provider", exc_info=True)
 
 __all__ = [
     "AgentSDKExecutor",

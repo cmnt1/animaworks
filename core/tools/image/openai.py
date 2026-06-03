@@ -182,10 +182,7 @@ def _write_reference_png(image_bytes: bytes, path: Path, label: str) -> None:
         raise RuntimeError(f"{label} reference image failed preflight: {exc}") from exc
 
     logger.info(
-        (
-            "Prepared %s reference image for Codex: %s "
-            "(source=%s %dx%d, normalized=%dx%d, %d bytes)"
-        ),
+        ("Prepared %s reference image for Codex: %s (source=%s %dx%d, normalized=%dx%d, %d bytes)"),
         label,
         path.name,
         original_format,

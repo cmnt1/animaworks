@@ -123,7 +123,7 @@ def _strip_frontmatter(text: str) -> str:
     nl_after_close = text.find("\n", close + 4)
     if nl_after_close == -1:
         return ""
-    return text[nl_after_close + 1:].lstrip("\n")
+    return text[nl_after_close + 1 :].lstrip("\n")
 
 
 def _resolve_at_imports(text: str) -> str:
