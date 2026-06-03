@@ -85,6 +85,13 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
         "set_skill_lifecycle",
         # Mode S: pre-completion verification
         "completion_gate",
+        # Mode S: native server-side command execution.
+        # The Claude Code CLI's own Bash tool spawns Git Bash, whose cygwin
+        # fork() is intermittently broken on some Windows hosts (snapshot
+        # creation fails with "couldn't create signal pipe").  This MCP tool
+        # runs commands via the server process's native subprocess (cmd.exe
+        # on Windows — no cygwin), giving a reliable shell escape hatch.
+        "execute_command",
     }
 )
 
@@ -168,6 +175,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         is the set of internal tool names.
     """
     from core.tooling.schemas import (
+        FILE_TOOLS,
         KNOWLEDGE_TOOLS,
         MEMORY_TOOLS,
         PROCEDURE_TOOLS,
@@ -188,6 +196,10 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
 
     all_schemas: list[dict[str, Any]] = [
         *MEMORY_TOOLS,
+        # FILE_TOOLS is included only so its execute_command schema is
+        # available; the exposed-name filter drops the other file tools
+        # (read_file/write_file/edit_file) which Mode S covers natively.
+        *FILE_TOOLS,
         *_channel_tools(),
         *WORKSPACE_TOOLS,
         *_completion_gate_tools(),

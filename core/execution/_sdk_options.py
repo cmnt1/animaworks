@@ -154,15 +154,23 @@ class SDKOptionsMixin:
         from core.execution.session_context import current_runtime_session
         from core.paths import PROJECT_DIR
 
-        env: dict[str, str] = {
-            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PATH": _build_sdk_path_env(self._anima_dir, PROJECT_DIR),
-            "CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT": "true",
-            "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
-            "ENABLE_TOOL_SEARCH": "false",
-            "CLAUDECODE": "",
-        }
+        # Inherit the parent environment first.  The Claude Code CLI spawns
+        # Git Bash with a shell snapshot whose init needs Windows vars
+        # (HOME/USERPROFILE/SystemRoot/TEMP/APPDATA…); a bare env makes that
+        # init abort, so every Bash command returns exit 255 ("Shell command
+        # failed").  Sibling executors (codex_sdk/gemini_cli) already inherit.
+        env: dict[str, str] = dict(os.environ)
+        env.update(
+            {
+                "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
+                "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
+                "PATH": _build_sdk_path_env(self._anima_dir, PROJECT_DIR),
+                "CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT": "true",
+                "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
+                "ENABLE_TOOL_SEARCH": "false",
+                "CLAUDECODE": "",
+            }
+        )
         ctx = current_runtime_session()
         if ctx is not None:
             env.update(ctx.to_env())
