@@ -91,12 +91,26 @@ class TestFindMergeCandidates:
 
     def test_empty_returns_empty(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
-        assert engine._find_merge_candidates() == []
+        mock_vs = MagicMock()
+        # Mock the RAG layer so the real embedding model is never loaded
+        # (avoids a multi-second model load / CI timeout for the empty path).
+        with (
+            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.MemoryIndexer"),
+            patch("core.memory.rag.retriever.MemoryRetriever"),
+        ):
+            assert engine._find_merge_candidates() == []
 
     def test_single_file_returns_empty(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         (engine.knowledge_dir / "only.md").write_text("---\n---\nContent", encoding="utf-8")
-        assert engine._find_merge_candidates() == []
+        mock_vs = MagicMock()
+        with (
+            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.MemoryIndexer"),
+            patch("core.memory.rag.retriever.MemoryRetriever"),
+        ):
+            assert engine._find_merge_candidates() == []
 
     @patch("core.memory.rag.singleton.get_vector_store", return_value=None)
     def test_rag_unavailable(self, mock_store: MagicMock, tmp_path: Path) -> None:
