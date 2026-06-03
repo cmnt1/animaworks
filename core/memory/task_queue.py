@@ -86,9 +86,9 @@ def _is_observation_log_summary(summary: str | None) -> bool:
         return True
     if ("heartbeat" in lowered or " hb:" in lowered) and any(marker in lowered for marker in _OBSERVATION_LOG_MARKERS):
         return True
-    if _TIMED_OBSERVATION_PREFIX_RE.search(text) and any(marker in lowered for marker in _OBSERVATION_LOG_MARKERS):
-        return True
-    return False
+    return bool(_TIMED_OBSERVATION_PREFIX_RE.search(text)) and any(
+        marker in lowered for marker in _OBSERVATION_LOG_MARKERS
+    )
 
 
 def _reject_observation_log_summary(summary: str) -> None:
