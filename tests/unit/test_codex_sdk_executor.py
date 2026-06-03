@@ -566,6 +566,31 @@ class TestExecutorInit:
 
 
 class TestConfigWriting:
+    @pytest.fixture(autouse=True)
+    def _provision_codex_auth(self, anima_dir, request):
+        """Provision a per-anima auth.json so _write_codex_config writes config
+        into {anima_dir}/.codex_home instead of falling back to the system
+        CODEX_HOME (~/.codex).
+
+        On a clean CI runner there is no ~/.codex/auth.json, so _propagate_auth
+        would set _use_default_codex_home=True and write config.toml to ~/.codex,
+        causing the .codex_home assertions to fail. A real (non-symlink) per-anima
+        auth.json makes _propagate_auth return early and keep the per-anima home.
+
+        Skipped for tests that exercise _propagate_auth directly — they manage
+        their own auth state and a pre-provisioned auth.json would short-circuit
+        the behavior under test.
+        """
+        if "propagate_auth" in request.node.name:
+            yield
+            return
+        codex_home = anima_dir / ".codex_home"
+        codex_home.mkdir(parents=True, exist_ok=True)
+        (codex_home / "auth.json").write_text(
+            '{"OPENAI_API_KEY": "test-key-123"}', encoding="utf-8"
+        )
+        yield
+
     def test_write_codex_config_creates_files(self, executor, anima_dir):
         executor._write_codex_config("Test system prompt")
         codex_home = anima_dir / ".codex_home"
