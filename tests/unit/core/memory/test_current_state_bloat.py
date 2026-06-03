@@ -69,6 +69,13 @@ def conv_memory(anima_dir, model_config):
 class TestArchiveAndResetState:
     """Tests for MemoryManager.archive_and_reset_state()."""
 
+    @pytest.fixture(autouse=True)
+    def _stub_rag_indexing(self):
+        """Stub RAG index_file so archiving tests never load the real embedding
+        model (which would exceed the 30s timeout on a cold CI cache)."""
+        with patch("core.memory.rag_search.RAGMemorySearch.index_file"):
+            yield
+
     def test_skip_when_idle(self, anima_dir):
         """No archive when current_state is just 'status: idle'."""
         from core.memory.manager import MemoryManager
