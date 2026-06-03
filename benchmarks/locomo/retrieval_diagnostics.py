@@ -14,7 +14,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from benchmarks.locomo.adapter import SEARCH_MODES, AnimaWorksLoCoMoAdapter, load_dataset
+from benchmarks.locomo.adapter import (
+    SEARCH_MODES,
+    AnimaWorksLoCoMoAdapter,
+    load_dataset,
+    locomo_fact_index_enabled,
+)
 from benchmarks.locomo.metrics import CATEGORY_NAMES, _stemmed_tokens
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -79,22 +84,28 @@ def run_retrieval_diagnostics(
     mode: str,
     top_k: int,
     ceiling_top_k: int,
-    temporal_boost: bool,
-    entity_boost: bool,
+    temporal_boost: bool = False,
+    entity_boost: bool = False,
+    fact_index: bool | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Run retrieval-only LoCoMo diagnostics and return results plus error count."""
     results: list[dict[str, Any]] = []
     errors = 0
     adapter = AnimaWorksLoCoMoAdapter(search_mode=mode, top_k=top_k)
     try:
-        with _temporary_ablation_boosts(temporal_boost=temporal_boost, entity_boost=entity_boost):
+        with _temporary_ablation_boosts(
+            temporal_boost=temporal_boost,
+            entity_boost=entity_boost,
+            fact_index=fact_index,
+        ):
             for sample_index, sample in enumerate(samples):
                 sample_id = str(sample.get("sample_id", f"conv-{sample_index}"))
                 print(f"\n[{sample_index + 1}/{len(samples)}] retrieval | {sample_id}")
                 try:
                     adapter.reset()
                     chunks = adapter.ingest_conversation(sample)
-                    print(f"  Ingested: {chunks} chunks")
+                    fact_count = int(getattr(adapter, "_last_fact_count", 0) or 0)
+                    print(f"  Ingested: {chunks} chunks; facts={fact_count}")
                 except Exception:
                     errors += 1
                     continue
@@ -129,6 +140,7 @@ def run_retrieval_diagnostics(
                     recall_50, all_50 = answer_token_recall(answer, ceiling_context)
                     top = _top_context(top_context)
                     top_meta = top.get("metadata") if isinstance(top.get("metadata"), dict) else {}
+                    fact_count = int(getattr(adapter, "_last_fact_count", 0) or 0)
                     excluded = category == 5
                     results.append(
                         {
@@ -140,7 +152,9 @@ def run_retrieval_diagnostics(
                             "excluded_from_recall": excluded,
                             "context_count": len(top_context),
                             "context_count_at_50": len(ceiling_context),
+                            "fact_count": fact_count,
                             "top_retrieval_score": _top_score(top_context),
+                            "top_memory_type": str(top_meta.get("memory_type", "") or ""),
                             "top_event_time_iso": str(top_meta.get("event_time_iso", "") or ""),
                             "top_entity_boost": top_meta.get("entity_boost"),
                             "top_entity_overlap": top_meta.get("entity_overlap", []),
@@ -171,6 +185,8 @@ def write_diagnostics_json(
     errors: int,
     temporal_ablation: dict[str, Any] | None = None,
     entity_ablation: dict[str, Any] | None = None,
+    fact_index: bool = False,
+    fact_ablation: dict[str, Any] | None = None,
 ) -> Path:
     """Write diagnostics JSON to a directory or explicit JSON path."""
     timestamp = datetime.now().isoformat(timespec="seconds")
@@ -183,6 +199,7 @@ def write_diagnostics_json(
             "ceiling_top_k": ceiling_top_k,
             "temporal_boost": temporal_boost,
             "entity_boost": entity_boost,
+            "fact_index": fact_index,
         },
         "summary": summary,
         "results": results,
@@ -192,6 +209,8 @@ def write_diagnostics_json(
         payload["temporal_ablation"] = temporal_ablation
     if entity_ablation is not None:
         payload["entity_ablation"] = entity_ablation
+    if fact_ablation is not None:
+        payload["fact_ablation"] = fact_ablation
 
     if output.suffix == ".json":
         path = output
@@ -280,8 +299,24 @@ def _temporary_entity_boost(enabled: bool) -> Iterator[None]:
 
 
 @contextmanager
-def _temporary_ablation_boosts(*, temporal_boost: bool, entity_boost: bool) -> Iterator[None]:
-    with _temporary_temporal_boost(temporal_boost), _temporary_entity_boost(entity_boost):
+def _temporary_fact_index(enabled: bool | None) -> Iterator[None]:
+    if enabled is None:
+        yield
+        return
+    with _temporary_env_flag("LOCOMO_FACT_INDEX", enabled):
+        yield
+
+
+@contextmanager
+def _temporary_ablation_boosts(
+    *,
+    temporal_boost: bool,
+    entity_boost: bool,
+    fact_index: bool | None,
+) -> Iterator[None]:
+    with _temporary_temporal_boost(temporal_boost), _temporary_entity_boost(entity_boost), _temporary_fact_index(
+        fact_index,
+    ):
         yield
 
 
@@ -311,6 +346,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ceiling-top-k", type=int, default=50)
     parser.add_argument("--temporal-ablation", action="store_true")
     parser.add_argument("--entity-ablation", action="store_true")
+    parser.add_argument("--fact-ablation", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -321,6 +357,9 @@ def main(argv: list[str] | None = None) -> int:
 
     data_path = args.data if args.data.is_absolute() else (_ROOT / args.data).resolve()
     samples = load_dataset(data_path)[: max(0, int(args.conversations))]
+    primary_fact_index = locomo_fact_index_enabled()
+    if args.fact_ablation:
+        primary_fact_index = False
 
     started = time.perf_counter()
     results, errors = run_retrieval_diagnostics(
@@ -330,11 +369,13 @@ def main(argv: list[str] | None = None) -> int:
         ceiling_top_k=int(args.ceiling_top_k),
         temporal_boost=False,
         entity_boost=False,
+        fact_index=primary_fact_index,
     )
     summary = summarize_results(results)
 
     temporal_ablation: dict[str, Any] | None = None
     entity_ablation: dict[str, Any] | None = None
+    fact_ablation: dict[str, Any] | None = None
     if args.temporal_ablation:
         boosted_results, boosted_errors = run_retrieval_diagnostics(
             samples=samples,
@@ -343,6 +384,7 @@ def main(argv: list[str] | None = None) -> int:
             ceiling_top_k=int(args.ceiling_top_k),
             temporal_boost=True,
             entity_boost=False,
+            fact_index=primary_fact_index,
         )
         boosted_summary = summarize_results(boosted_results)
         temporal_ablation = {
@@ -361,10 +403,30 @@ def main(argv: list[str] | None = None) -> int:
             ceiling_top_k=int(args.ceiling_top_k),
             temporal_boost=False,
             entity_boost=True,
+            fact_index=primary_fact_index,
         )
         boosted_summary = summarize_results(boosted_results)
         entity_ablation = {
             "config": {"entity_boost": True},
+            "summary": boosted_summary,
+            "results": boosted_results,
+            "errors": boosted_errors,
+            "deltas": _ablation_delta(summary, boosted_summary),
+        }
+        errors += boosted_errors
+    if args.fact_ablation:
+        boosted_results, boosted_errors = run_retrieval_diagnostics(
+            samples=samples,
+            mode=str(args.mode),
+            top_k=int(args.top_k),
+            ceiling_top_k=int(args.ceiling_top_k),
+            temporal_boost=False,
+            entity_boost=False,
+            fact_index=True,
+        )
+        boosted_summary = summarize_results(boosted_results)
+        fact_ablation = {
+            "config": {"fact_index": True},
             "summary": boosted_summary,
             "results": boosted_results,
             "errors": boosted_errors,
@@ -380,11 +442,13 @@ def main(argv: list[str] | None = None) -> int:
         ceiling_top_k=int(args.ceiling_top_k),
         temporal_boost=False,
         entity_boost=False,
+        fact_index=primary_fact_index,
         summary=summary,
         results=results,
         errors=errors,
         temporal_ablation=temporal_ablation,
         entity_ablation=entity_ablation,
+        fact_ablation=fact_ablation,
     )
     elapsed = time.perf_counter() - started
     print(f"\nWrote {out}")

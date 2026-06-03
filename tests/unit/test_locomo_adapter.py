@@ -13,6 +13,7 @@ from benchmarks.locomo.adapter import (
     _session_indices,
     load_dataset,
     locomo_entity_boost_enabled,
+    locomo_fact_index_enabled,
     locomo_temporal_boost_enabled,
 )
 
@@ -182,6 +183,32 @@ class TestEventMetadataPropagation:
         assert pipeline_item["event_time_text"] == "8:56 pm on 20 July, 2023"
         assert pipeline_item["session_index"] == 10
         assert pipeline_item["event_time_parse_error"] is False
+        assert pipeline_item["memory_type"] == "episodes"
+
+    def test_pipeline_item_preserves_fact_memory_type_and_metadata(self):
+        adapter = self._adapter_without_init()
+        item = {
+            "content": "Caroline: I recommended Becoming Nicole.",
+            "score": 0.7,
+            "metadata": {
+                "source_file": "facts/fact_abc.md",
+                "chunk_index": 0,
+                "memory_type": "facts",
+                "search_method": "fact_vector",
+                "fact_id": "abc",
+                "source_episode": "episodes/conv-26.md",
+                "speaker": "Caroline",
+                "turn_index": 3,
+                "sentence_index": 0,
+            },
+        }
+
+        pipeline_item = adapter._pipeline_item_from_adapter_hit(item)
+
+        assert pipeline_item["memory_type"] == "facts"
+        assert pipeline_item["fact_id"] == "abc"
+        assert pipeline_item["source_episode"] == "episodes/conv-26.md"
+        assert pipeline_item["speaker"] == "Caroline"
 
     def test_adapter_hit_restores_event_metadata(self):
         adapter = self._adapter_without_init()
@@ -209,6 +236,108 @@ class TestEventMetadataPropagation:
         assert hit["metadata"]["temporal_boost"] == 0.1
         assert hit["metadata"]["entity_boost"] == 0.08
         assert hit["metadata"]["entity_overlap"] == ["book", "suggestion"]
+
+    def test_adapter_hit_restores_memory_type(self):
+        adapter = self._adapter_without_init()
+        item = {
+            "content": "Fact",
+            "score": 0.9,
+            "source_file": "facts/fact_abc.md",
+            "chunk_index": 0,
+            "memory_type": "facts",
+            "search_method": "cross_encoder",
+        }
+
+        hit = adapter._adapter_hit_from_pipeline_item(item)
+
+        assert hit["metadata"]["memory_type"] == "facts"
+
+    def test_enrich_fact_metadata_uses_source_file_map(self):
+        adapter = self._adapter_without_init()
+        adapter._fact_metadata_by_source_file = {
+            "facts/fact_abc.md": {
+                "memory_type": "facts",
+                "fact_id": "abc",
+                "event_time_iso": "2023-05-07T10:00:00+00:00",
+                "valid_at": "2023-05-07T10:00:00+00:00",
+            }
+        }
+
+        meta = adapter._enrich_fact_metadata({"source_file": "facts/fact_abc.md", "valid_at": 1683453600.0})
+
+        assert meta["memory_type"] == "facts"
+        assert meta["fact_id"] == "abc"
+        assert meta["event_time_iso"] == "2023-05-07T10:00:00+00:00"
+        assert meta["valid_at"] == 1683453600.0
+
+    def test_fact_index_failure_is_nonfatal(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        from benchmarks.locomo import fact_index
+
+        adapter = self._adapter_without_init()
+        adapter._indexer = object()
+        adapter._facts_dir = tmp_path
+        adapter._last_fact_count = 42
+        adapter._fact_bm25_corpus = [("stale", {})]
+        adapter._fact_bm25_index = object()
+        adapter._fact_metadata_by_source_file = {"stale": {}}
+
+        def fail_extract(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(fact_index, "extract_locomo_fact_records", fail_extract)
+
+        adapter._ingest_fact_index("conv-26", {}, source_episode="episodes/conv-26.md")
+
+        assert adapter._last_fact_count == 0
+        assert adapter._fact_bm25_corpus == []
+        assert adapter._fact_bm25_index is None
+        assert adapter._fact_metadata_by_source_file == {}
+
+    def test_fact_index_cleanup_failure_is_nonfatal(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        adapter = self._adapter_without_init()
+        adapter._indexer = object()
+        adapter._facts_dir = tmp_path
+        adapter._last_fact_count = 42
+        adapter._fact_bm25_corpus = [("stale", {})]
+        adapter._fact_bm25_index = object()
+        adapter._fact_metadata_by_source_file = {"stale": {}}
+
+        def fail_cleanup():
+            raise OSError("cleanup failed")
+
+        monkeypatch.setattr(adapter, "_clear_fact_index_storage", fail_cleanup)
+
+        adapter._ingest_fact_index("conv-26", {}, source_episode="episodes/conv-26.md")
+
+        assert adapter._last_fact_count == 0
+        assert adapter._fact_bm25_corpus == []
+        assert adapter._fact_bm25_index is None
+        assert adapter._fact_metadata_by_source_file == {}
+
+    def test_clear_fact_index_storage_removes_stale_collection_and_files(self, tmp_path: Path):
+        adapter = self._adapter_without_init()
+        adapter._facts_dir = tmp_path
+        adapter._fact_bm25_corpus = [("stale", {})]
+        adapter._fact_bm25_index = object()
+        adapter._fact_metadata_by_source_file = {"stale": {}}
+        adapter._last_fact_count = 3
+        (tmp_path / "fact_stale.md").write_text("stale", encoding="utf-8")
+        deleted: list[str] = []
+
+        class FakeVectorStore:
+            def delete_collection(self, name: str) -> None:
+                deleted.append(name)
+
+        adapter._vector_store = FakeVectorStore()
+
+        adapter._clear_fact_index_storage()
+
+        assert deleted == ["locomo_bench_facts"]
+        assert list(tmp_path.iterdir()) == []
+        assert adapter._fact_bm25_corpus == []
+        assert adapter._fact_bm25_index is None
+        assert adapter._fact_metadata_by_source_file == {}
+        assert adapter._last_fact_count == 0
 
     def test_retrieval_diagnostics_remember_top_event_time(self):
         adapter = self._adapter_without_init()
@@ -241,3 +370,13 @@ class TestEntityBoostEnv:
     def test_entity_boost_enabled_by_explicit_env(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("LOCOMO_ENTITY_BOOST", "1")
         assert locomo_entity_boost_enabled() is True
+
+
+class TestFactIndexEnv:
+    def test_fact_index_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("LOCOMO_FACT_INDEX", raising=False)
+        assert locomo_fact_index_enabled() is False
+
+    def test_fact_index_enabled_by_explicit_env(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("LOCOMO_FACT_INDEX", "1")
+        assert locomo_fact_index_enabled() is True
