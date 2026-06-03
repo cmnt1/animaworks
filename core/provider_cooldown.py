@@ -18,7 +18,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +46,7 @@ class ProviderCooldown:
 
     @property
     def until_iso(self) -> str:
-        return datetime.fromtimestamp(self.until_ts, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(self.until_ts, tz=UTC).isoformat()
 
 
 def provider_key_for_model_config(model_config: ModelConfig) -> str | None:
@@ -55,7 +55,11 @@ def provider_key_for_model_config(model_config: ModelConfig) -> str | None:
     credential = (model_config.credential or "").strip().lower()
     api_key_env = (model_config.api_key_env or "").strip().lower()
 
-    if credential == "antigravity" or model.startswith(("antigravity/", "gemini/")) or api_key_env == "antigravity_api_key":
+    if (
+        credential == "antigravity"
+        or model.startswith(("antigravity/", "gemini/"))
+        or api_key_env == "antigravity_api_key"
+    ):
         return "gemini"
     if credential in {"anthropic", "claude"} or model.startswith(("anthropic/", "claude-")):
         return "claude"

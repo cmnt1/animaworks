@@ -1164,9 +1164,7 @@ class CycleMixin:
                     if cooldown is not None:
                         terminal_error_message = format_cooldown_message(cooldown)
                     else:
-                        terminal_error_message = (
-                            "RATE_LIMIT_DEFERRED: provider returned HTTP 429/RATE_LIMIT_EXCEEDED"
-                        )
+                        terminal_error_message = "RATE_LIMIT_DEFERRED: provider returned HTTP 429/RATE_LIMIT_EXCEEDED"
                     logger.error(
                         "Provider rate limit deferred execution: provider=%s trigger=%s retry_after=%s",
                         provider_key,
