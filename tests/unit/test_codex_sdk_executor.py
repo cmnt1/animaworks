@@ -1557,6 +1557,11 @@ class TestProgressiveStreaming:
 
         with (
             patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            # Disable the CLI-exec fallback so the SDK idle-timeout error
+            # propagates directly. Otherwise the idle timeout triggers a
+            # `codex exec` fallback, which on a CI runner without the Codex CLI
+            # installed raises "executable not available" instead of "idle timeout".
+            patch("core.execution.codex_sdk._should_cli_exec_fallback", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
             patch("core.execution.codex_sdk._BACKGROUND_EVENT_IDLE_TIMEOUT_SEC", 0.01),
         ):
