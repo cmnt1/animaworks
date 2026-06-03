@@ -57,7 +57,7 @@ class ConfigReader:
                 max_tokens=resolved.max_tokens,
                 max_turns=resolved.max_turns,
                 credential=cred_name,
-                credential_type=cred_type or credential.type or "api_key",
+                credential_type=cred_type or "api_key",
                 api_key=credential.api_key or None,
                 api_key_env=api_key_env,
                 api_base_url=credential.base_url,
