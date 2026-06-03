@@ -383,7 +383,9 @@ class TestDispatchFn:
 
             mock_run.assert_called_once()
             cmd = mock_run.call_args[0][0]
-            assert cmd == ["animaworks-tool", "image_gen", "3d", "--model", "test", "-j"]
+            # cmd[0] is the resolved animaworks-tool executable (may be an absolute path).
+            assert Path(cmd[0]).stem == "animaworks-tool"
+            assert cmd[1:] == ["image_gen", "3d", "--model", "test", "-j"]
 
     async def test_dispatch_fn_deduplicates_subcommand(self, tmp_path: Path) -> None:
         """When raw_args[0] == subcommand, subcommand does not appear twice."""
@@ -415,7 +417,8 @@ class TestDispatchFn:
             cmd = mock_run.call_args[0][0]
             # "generate" should appear only once, not twice
             assert cmd.count("generate") == 1
-            assert cmd == ["animaworks-tool", "local_llm", "generate", "hello", "-j"]
+            assert Path(cmd[0]).stem == "animaworks-tool"
+            assert cmd[1:] == ["local_llm", "generate", "hello", "-j"]
 
     async def test_dispatch_fn_no_dedup_when_different(self, tmp_path: Path) -> None:
         """When raw_args[0] != subcommand, subcommand is prepended."""
@@ -445,8 +448,8 @@ class TestDispatchFn:
             )
 
             cmd = mock_run.call_args[0][0]
-            assert cmd == [
-                "animaworks-tool",
+            assert Path(cmd[0]).stem == "animaworks-tool"
+            assert cmd[1:] == [
                 "image_gen",
                 "3d",
                 "--prompt",
