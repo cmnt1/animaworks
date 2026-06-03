@@ -11,9 +11,9 @@ from typing import Any
 from uuid import uuid4
 
 from benchmarks.locomo.adapter import (
-    _resolve_llm_kwargs,
     _session_indices,
 )
+from benchmarks.locomo.llm_config import resolve_locomo_litellm_kwargs
 
 try:
     from dateutil import parser as dateutil_parser
@@ -132,7 +132,7 @@ class Neo4jLoCoMoAdapter:
         (self._tmp_anima_dir / "episodes").mkdir(parents=True, exist_ok=True)
 
         # Write status.json so extraction pipeline can resolve model + api_base
-        llm_kwargs = _resolve_llm_kwargs(self._answer_model)
+        _, llm_kwargs = resolve_locomo_litellm_kwargs(self._answer_model)
         status: dict[str, Any] = {
             "extraction_model": self._answer_model,
         }
@@ -442,12 +442,12 @@ def _llm_complete(model: str, user_prompt: str, *, system: str | None = None) ->
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": user_prompt})
-    extra = _resolve_llm_kwargs(model)
+    litellm_model, extra = resolve_locomo_litellm_kwargs(model)
     last_err: Exception | None = None
     for attempt in range(1, 4):
         try:
             r = litellm.completion(
-                model=model,
+                model=litellm_model,
                 messages=messages,
                 temperature=0.0,
                 max_tokens=512,
