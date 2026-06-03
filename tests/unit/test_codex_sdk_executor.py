@@ -498,15 +498,20 @@ class TestExecutorInit:
     def test_default_path_env_reads_windows_path_key(self):
         # The Windows ``Path`` key fallback only runs when sys.platform is
         # win32; patch it so the behavior is exercised on any host (e.g. Linux CI).
+        # Also force the Windows path separator (``;``) so the drive-letter colon
+        # in ``C:\Windows\System32`` is not mistaken for a separator on POSIX CI,
+        # where os.pathsep would otherwise be ``:``.
         with (
             patch("core.execution.codex_sdk.sys.platform", "win32"),
+            patch("core.execution.codex_sdk.os.pathsep", ";"),
+            patch("os.pathsep", ";"),
             patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
             patch("core.execution.codex_sdk.sys.executable", r"C:\Proj\.venv\Scripts\python.exe"),
             patch.dict("os.environ", {"Path": r"C:\Windows\System32"}, clear=True),
         ):
             value = _default_path_env()
 
-        assert r"C:\Windows\System32" in value.split(os.pathsep)
+        assert r"C:\Windows\System32" in value.split(";")
 
     def test_set_process_path_env_normalizes_windows_key(self):
         env = {"Path": r"C:\Old", "PATH": r"C:\AlsoOld", "OTHER": "x"}
