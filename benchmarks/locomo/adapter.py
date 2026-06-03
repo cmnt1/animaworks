@@ -79,11 +79,18 @@ from benchmarks.locomo.llm_config import default_answer_model, resolve_locomo_li
 # ── load_dataset ──────────
 
 _EVENT_METADATA_FIELDS: tuple[str, ...] = (
+    "fact_id",
     "valid_at",
     "event_time_iso",
     "event_time_text",
     "session_index",
+    "turn_index",
+    "sentence_index",
+    "speaker",
+    "source_episode",
     "event_time_parse_error",
+    "entities",
+    "confidence",
     "base_score",
     "temporal_boost",
     "entity_boost",
@@ -106,6 +113,16 @@ def locomo_temporal_boost_enabled() -> bool:
 def locomo_entity_boost_enabled() -> bool:
     """Return True when LoCoMo entity boost ablation is explicitly enabled."""
     return os.environ.get("LOCOMO_ENTITY_BOOST", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def locomo_fact_index_enabled() -> bool:
+    """Return True when LoCoMo fact dual-index ablation is explicitly enabled."""
+    return os.environ.get("LOCOMO_FACT_INDEX", "").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -253,16 +270,22 @@ class AnimaWorksLoCoMoAdapter:
         self._own_data_env = False
         self._anima_dir: Path | None = None
         self._episodes_dir: Path | None = None
+        self._facts_dir: Path | None = None
         self._vector_store: Any = None
         self._temp_worker: Any = None
         self._indexer: Any = None
         self._retriever: Any = None
         self._bm25_corpus: list[tuple[str, dict[str, Any]]] | None = None
         self._bm25_index: Any = None
+        self._fact_bm25_corpus: list[tuple[str, dict[str, Any]]] | None = None
+        self._fact_bm25_index: Any = None
+        self._fact_metadata_by_source_file: dict[str, dict[str, Any]] = {}
+        self._last_fact_count: int = 0
         self._last_abstain: bool = False
         self._last_abstain_reason: str = ""
         self._last_top_score: float | None = None
         self._last_top_event_time_iso: str = ""
+        self._last_top_memory_type: str = ""
         self._last_raw_answer: str = ""
         self._last_normalized_answer: str = ""
         self._entity_ignored_entities: tuple[str, ...] = ()
@@ -283,8 +306,10 @@ class AnimaWorksLoCoMoAdapter:
         self._own_data_env = True
         self._anima_dir = Path(self._temp_dir) / "animas" / ANIMA_NAME
         self._episodes_dir = self._anima_dir / "episodes"
+        self._facts_dir = self._anima_dir / "facts"
         for sub in (
             "episodes",
+            "facts",
             "knowledge",
             "procedures",
             "common_knowledge",
@@ -330,15 +355,27 @@ class AnimaWorksLoCoMoAdapter:
 
     def reset(self) -> None:
         """Remove indexed vectors for this anima, episode files, and index metadata."""
-        assert self._vector_store is not None and self._anima_dir is not None and self._episodes_dir is not None
+        assert (
+            self._vector_store is not None
+            and self._anima_dir is not None
+            and self._episodes_dir is not None
+            and self._facts_dir is not None
+        )
         for name in self._vector_store.list_collections():
             if name.startswith(ANIMA_NAME):
                 self._vector_store.delete_collection(name)
         if self._episodes_dir.exists():
             shutil.rmtree(self._episodes_dir)
         self._episodes_dir.mkdir(parents=True, exist_ok=True)
+        if self._facts_dir.exists():
+            shutil.rmtree(self._facts_dir)
+        self._facts_dir.mkdir(parents=True, exist_ok=True)
         self._bm25_corpus = None
         self._bm25_index = None
+        self._fact_bm25_corpus = None
+        self._fact_bm25_index = None
+        self._fact_metadata_by_source_file = {}
+        self._last_fact_count = 0
         meta = self._index_meta_path
         if meta.exists():
             try:
@@ -355,7 +392,7 @@ class AnimaWorksLoCoMoAdapter:
         Returns:
             Number of vector chunks written for the episode file.
         """
-        assert self._indexer is not None and self._episodes_dir is not None
+        assert self._indexer is not None and self._episodes_dir is not None and self._facts_dir is not None
         sample_id = sample.get("sample_id", "unknown")
         conv = sample.get("conversation")
         if not isinstance(conv, dict):
@@ -368,7 +405,67 @@ class AnimaWorksLoCoMoAdapter:
         n = self._indexer.index_file(file_path, memory_type="episodes", force=True)
         self._bm25_corpus = None
         self._bm25_index = None
+        self._fact_bm25_corpus = None
+        self._fact_bm25_index = None
+        self._fact_metadata_by_source_file = {}
+        self._last_fact_count = 0
+        if locomo_fact_index_enabled():
+            self._ingest_fact_index(str(sample_id), conv, source_episode=f"episodes/{stem}.md")
         return n
+
+    def _clear_fact_index_storage(self) -> None:
+        """Clear optional fact files, vectors, and in-memory caches before rebuild."""
+        assert self._facts_dir is not None
+        if self._facts_dir.exists():
+            shutil.rmtree(self._facts_dir)
+        self._facts_dir.mkdir(parents=True, exist_ok=True)
+        vector_store = getattr(self, "_vector_store", None)
+        if vector_store is not None:
+            try:
+                vector_store.delete_collection(f"{ANIMA_NAME}_facts")
+            except Exception:
+                logger.debug("No LoCoMo facts collection to clear", exc_info=True)
+        self._fact_bm25_corpus = []
+        self._fact_bm25_index = None
+        self._fact_metadata_by_source_file = {}
+        self._last_fact_count = 0
+
+    def _ingest_fact_index(self, sample_id: str, conversation: dict[str, Any], *, source_episode: str) -> None:
+        """Build and index optional LoCoMo fact memories without failing episode ingest."""
+        assert self._indexer is not None and self._facts_dir is not None
+        try:
+            self._clear_fact_index_storage()
+            from benchmarks.locomo.fact_index import (  # noqa: PLC0415
+                extract_locomo_fact_records,
+                fact_bm25_documents,
+                write_fact_records,
+            )
+
+            records = extract_locomo_fact_records(sample_id, conversation, source_episode=source_episode)
+            if not records:
+                self._last_fact_count = 0
+                self._fact_bm25_corpus = []
+                self._fact_metadata_by_source_file = {}
+                return
+
+            write_fact_records(self._facts_dir, records)
+            indexed = 0
+            for fact_file in sorted(self._facts_dir.glob("fact_*.md")):
+                indexed += self._indexer.index_file(fact_file, memory_type="facts", force=True)
+            self._last_fact_count = indexed
+            self._fact_bm25_corpus = fact_bm25_documents(records)
+            self._fact_bm25_index = None
+            self._fact_metadata_by_source_file = {
+                str(meta.get("source_file", "")): dict(meta)
+                for _, meta in self._fact_bm25_corpus
+                if meta.get("source_file")
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning("LoCoMo fact index skipped after failure: %s", e)
+            self._last_fact_count = 0
+            self._fact_bm25_corpus = []
+            self._fact_bm25_index = None
+            self._fact_metadata_by_source_file = {}
 
     def _retrieval_to_dicts(self, results: list[Any]) -> list[dict[str, Any]]:
         from core.memory.rag.retriever import RetrievalResult  # noqa: PLC0415
@@ -378,14 +475,25 @@ class AnimaWorksLoCoMoAdapter:
             if not isinstance(r, RetrievalResult):
                 continue
             meta = r.metadata if isinstance(r.metadata, dict) else {}
+            enriched_meta = self._enrich_fact_metadata(dict(meta))
             out.append(
                 {
                     "content": r.content,
                     "score": float(r.score),
-                    "metadata": dict(meta),
+                    "metadata": enriched_meta,
                 },
             )
         return out
+
+    def _enrich_fact_metadata(self, meta: dict[str, Any]) -> dict[str, Any]:
+        """Attach adapter-side fact metadata omitted by the generic indexer."""
+        source_file = str(meta.get("source_file", "") or "")
+        if not source_file:
+            return meta
+        fact_meta = self._fact_metadata_by_source_file.get(source_file)
+        if not fact_meta:
+            return meta
+        return {**fact_meta, **meta, "memory_type": "facts"}
 
     def _pipeline_item_from_adapter_hit(self, item: dict[str, Any]) -> dict[str, Any]:
         """Normalize adapter retrieval dict for ``RetrievalPipeline``."""
@@ -395,7 +503,7 @@ class AnimaWorksLoCoMoAdapter:
             "score": float(item.get("score", 0.0)),
             "source_file": str(meta.get("source_file", meta.get("source", ""))),
             "chunk_index": int(meta.get("section", meta.get("chunk_index", 0))),
-            "memory_type": "episodes",
+            "memory_type": str(meta.get("memory_type", item.get("memory_type", "episodes")) or "episodes"),
             "search_method": str(meta.get("search_method", "")),
         }
         for key in _EVENT_METADATA_FIELDS:
@@ -408,6 +516,7 @@ class AnimaWorksLoCoMoAdapter:
         metadata: dict[str, Any] = {
             "source_file": item.get("source_file", ""),
             "chunk_index": item.get("chunk_index", 0),
+            "memory_type": item.get("memory_type", "episodes"),
             "search_method": item.get("search_method", "pipeline"),
         }
         for key in _EVENT_METADATA_FIELDS:
@@ -424,11 +533,13 @@ class AnimaWorksLoCoMoAdapter:
         if not items:
             self._last_top_score = None
             self._last_top_event_time_iso = ""
+            self._last_top_memory_type = ""
             return
         top = max(items, key=lambda item: float(item.get("score", 0.0) or 0.0))
         self._last_top_score = float(top.get("score", 0.0) or 0.0)
         meta = top.get("metadata") if isinstance(top.get("metadata"), dict) else {}
         self._last_top_event_time_iso = str(meta.get("event_time_iso", "") or top.get("event_time_iso", "") or "")
+        self._last_top_memory_type = str(meta.get("memory_type", "") or top.get("memory_type", "") or "")
 
     def _load_pipeline_settings(self) -> dict[str, object]:
         """Resolve RAG pipeline knobs (same defaults as ``RAGMemorySearch``)."""
@@ -480,6 +591,7 @@ class AnimaWorksLoCoMoAdapter:
         self._last_abstain_reason = ""
         self._last_top_score = None
         self._last_top_event_time_iso = ""
+        self._last_top_memory_type = ""
         assert self._retriever is not None
         if self._search_mode == "vector":
             res = self._retriever.search(
@@ -534,6 +646,15 @@ class AnimaWorksLoCoMoAdapter:
             [self._pipeline_item_from_adapter_hit(x) for x in graph_dicts],
             [self._pipeline_item_from_adapter_hit(x) for x in bm25_dicts],
         ]
+        if locomo_fact_index_enabled() and self._last_fact_count > 0:
+            fact_vec_dicts = self._search_fact_vectors(question, top_k=pool_k)
+            fact_bm25_dicts = self._fact_bm25_search(question, top_k=pool_k)
+            ranked_lists.extend(
+                [
+                    [self._pipeline_item_from_adapter_hit(x) for x in fact_vec_dicts],
+                    [self._pipeline_item_from_adapter_hit(x) for x in fact_bm25_dicts],
+                ],
+            )
 
         pipeline = RetrievalPipeline(cross_encoder_model=str(settings["cross_encoder_model"]))
         gate = merge_pipeline_gate_settings(settings, category=category)
@@ -576,7 +697,7 @@ class AnimaWorksLoCoMoAdapter:
             else:
                 segs = [raw] if raw.strip() else []
             for j, seg in enumerate(segs):
-                metadata: dict[str, Any] = {"source_file": p.name, "section": j}
+                metadata: dict[str, Any] = {"source_file": p.name, "section": j, "memory_type": "episodes"}
                 first_line = seg.splitlines()[0].strip() if seg.splitlines() else ""
                 if first_line.startswith("## Session"):
                     from core.memory.rag.episode_time import apply_episode_heading_event_time  # noqa: PLC0415
@@ -615,6 +736,69 @@ class AnimaWorksLoCoMoAdapter:
                     "content": documents[i][0],
                     "score": float(scores[i]),
                     "metadata": {**documents[i][1], "search_method": "bm25"},
+                },
+            )
+        return out
+
+    def _search_fact_vectors(self, query: str, top_k: int) -> list[dict[str, Any]]:
+        """Dense vector search over optional fact memory collection."""
+        assert self._retriever is not None
+        try:
+            res = self._retriever.search(
+                query=query,
+                anima_name=ANIMA_NAME,
+                memory_type="facts",
+                top_k=top_k,
+                enable_spreading_activation=False,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("LoCoMo fact vector retrieval skipped after failure: %s", e)
+            return []
+        out = self._retrieval_to_dicts(res)
+        for row in out:
+            meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            meta["memory_type"] = "facts"
+            meta.setdefault("search_method", "fact_vector")
+        return out
+
+    def _build_fact_bm25_cache(self) -> None:
+        """Build BM25 index from optional fact records cached at ingest."""
+        from rank_bm25 import BM25Okapi  # noqa: PLC0415
+
+        documents = self._fact_bm25_corpus or []
+        if documents:
+            tokenized = [_bm25_tokenize(doc) for doc, _ in documents]
+            self._fact_bm25_index = BM25Okapi(tokenized) if any(tokenized) else None
+        else:
+            self._fact_bm25_index = None
+
+    def _fact_bm25_search(self, query: str, top_k: int) -> list[dict[str, Any]]:
+        """BM25 keyword search using optional fact corpus."""
+        if self._fact_bm25_corpus is None:
+            self._fact_bm25_corpus = []
+        if self._fact_bm25_index is None:
+            self._build_fact_bm25_cache()
+        documents = self._fact_bm25_corpus
+        if not documents:
+            return []
+        qtok = _bm25_tokenize(query)
+        if not qtok or self._fact_bm25_index is None:
+            return [
+                {
+                    "content": documents[0][0],
+                    "score": 0.0,
+                    "metadata": {**documents[0][1], "search_method": "fact_bm25_degenerate"},
+                }
+            ][:1]
+        scores = self._fact_bm25_index.get_scores(qtok)
+        order = sorted(range(len(scores)), key=lambda i: float(scores[i]), reverse=True)[: top_k * 2]
+        out: list[dict[str, Any]] = []
+        for i in order:
+            out.append(
+                {
+                    "content": documents[i][0],
+                    "score": float(scores[i]),
+                    "metadata": {**documents[i][1], "memory_type": "facts", "search_method": "fact_bm25"},
                 },
             )
         return out
