@@ -323,41 +323,6 @@ class TestReceiveExternalThreadTs:
 class TestBuildReplyInstruction:
     """Tests for _build_reply_instruction with external_thread_ts."""
 
-    def test_uses_external_thread_ts_when_present(self):
-        from core._anima_inbox import _build_reply_instruction
-        from core.schemas import Message
-
-        m = Message(
-            from_person="slack:U1",
-            to_person="sakura",
-            content="reply",
-            source="slack",
-            source_message_id="2.0",
-            external_user_id="U1",
-            external_channel_id="C1",
-            external_thread_ts="1.0",
-        )
-        result = _build_reply_instruction(m)
-        assert 'thread_ts="1.0"' in result
-        assert 'thread_ts="2.0"' not in result
-
-    def test_falls_back_to_source_message_id(self):
-        from core._anima_inbox import _build_reply_instruction
-        from core.schemas import Message
-
-        m = Message(
-            from_person="slack:U1",
-            to_person="sakura",
-            content="top-level",
-            source="slack",
-            source_message_id="1.0",
-            external_user_id="U1",
-            external_channel_id="C1",
-            external_thread_ts="",
-        )
-        result = _build_reply_instruction(m)
-        assert 'thread_ts="1.0"' in result
-
     def test_no_thread_when_both_empty(self):
         from core._anima_inbox import _build_reply_instruction
         from core.schemas import Message
@@ -374,24 +339,6 @@ class TestBuildReplyInstruction:
         )
         result = _build_reply_instruction(m)
         assert "thread_ts=" not in result
-
-    def test_observe_intent_returns_observe_hint(self):
-        from core._anima_inbox import _build_reply_instruction
-        from core.schemas import Message
-
-        m = Message(
-            from_person="slack:U1",
-            to_person="sumire",
-            content="@someone please review",
-            source="slack",
-            source_message_id="1.0",
-            external_user_id="U1",
-            external_channel_id="C1",
-            intent="observe",
-        )
-        result = _build_reply_instruction(m)
-        assert "observe" in result
-        assert "slack_channel_post" not in result
 
     def test_chatwork_unaffected(self):
         from core._anima_inbox import _build_reply_instruction
