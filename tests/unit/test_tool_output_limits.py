@@ -55,11 +55,13 @@ class TestExecuteCommandTruncation:
         long_output = "x" * 15_000
 
         mock_proc = MagicMock()
-        mock_proc.stdout = long_output
-        mock_proc.stderr = ""
+        mock_proc.communicate.return_value = (long_output, "")
         mock_proc.returncode = 0
 
-        with patch("core.tooling.handler_files.subprocess.run", return_value=mock_proc):
+        with (
+            patch("core.tooling.handler_files._rewrite_command_with_rtk", side_effect=lambda c: (c, False)),
+            patch("core.tooling.handler_files.subprocess.Popen", return_value=mock_proc),
+        ):
             result = handler.handle("execute_command", {"command": "echo x"})
 
         assert len(result.encode("utf-8", errors="replace")) < len(long_output.encode("utf-8"))
@@ -78,11 +80,13 @@ class TestExecuteCommandTruncation:
         short_output = "hello world"
 
         mock_proc = MagicMock()
-        mock_proc.stdout = short_output
-        mock_proc.stderr = ""
+        mock_proc.communicate.return_value = (short_output, "")
         mock_proc.returncode = 0
 
-        with patch("core.tooling.handler_files.subprocess.run", return_value=mock_proc):
+        with (
+            patch("core.tooling.handler_files._rewrite_command_with_rtk", side_effect=lambda c: (c, False)),
+            patch("core.tooling.handler_files.subprocess.Popen", return_value=mock_proc),
+        ):
             result = handler.handle("execute_command", {"command": "echo hello"})
 
         assert result == short_output

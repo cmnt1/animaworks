@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -699,7 +700,17 @@ class TestExecuteCommand:
         assert "hi" in result
 
     def test_command_timeout(self, handler: ToolHandler):
-        with patch("core.tooling.handler_perms.load_permissions") as mock_load:
+        # A blocking child raises TimeoutExpired from communicate(); the handler
+        # must tear down the tree and surface a structured Timeout error.  Mock
+        # rather than rely on a real `sleep` (not a cmd.exe builtin on Windows).
+        proc = MagicMock()
+        proc.communicate.side_effect = subprocess.TimeoutExpired(cmd="sleep 999", timeout=1)
+        with (
+            patch("core.tooling.handler_perms.load_permissions") as mock_load,
+            patch("core.tooling.handler_files._rewrite_command_with_rtk", side_effect=lambda c: (c, False)),
+            patch("core.tooling.handler_files.subprocess.Popen", return_value=proc),
+            patch("core.tooling.handler_files.terminate_subprocess") as mock_terminate,
+        ):
             mock_load.return_value = _perms_config_from_md("## コマンド実行\n- sleep: OK")
             result = handler.handle(
                 "execute_command",
@@ -707,6 +718,7 @@ class TestExecuteCommand:
             )
         parsed = json.loads(result)
         assert parsed["error_type"] == "Timeout"
+        assert mock_terminate.called
 
 
 # ── File permission checks ────────────────────────────────────
@@ -1103,12 +1115,20 @@ class TestStructuredErrors:
 
     def test_command_timeout_structured(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## コマンド実行\n- sleep: OK"
-        result = handler.handle(
-            "execute_command",
-            {"command": "sleep 999", "timeout": 1},
-        )
+        proc = MagicMock()
+        proc.communicate.side_effect = subprocess.TimeoutExpired(cmd="sleep 999", timeout=1)
+        with (
+            patch("core.tooling.handler_files._rewrite_command_with_rtk", side_effect=lambda c: (c, False)),
+            patch("core.tooling.handler_files.subprocess.Popen", return_value=proc),
+            patch("core.tooling.handler_files.terminate_subprocess") as mock_terminate,
+        ):
+            result = handler.handle(
+                "execute_command",
+                {"command": "sleep 999", "timeout": 1},
+            )
         parsed = json.loads(result)
         assert parsed["error_type"] == "Timeout"
+        assert mock_terminate.called
 
     def test_permission_denied_structured(self, handler: ToolHandler):
         from core.config.models import PermissionsConfig

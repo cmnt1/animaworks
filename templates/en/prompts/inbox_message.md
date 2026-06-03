@@ -5,9 +5,10 @@ You have messages in your inbox. Review the following and reply appropriately.
 ## Response Guidelines
 - Answer questions directly
 - Reply with acknowledgment and timeline for requests
-- **[MUST] If you identify work that needs to be done, you MUST formalize it as a task. Do not just reply and forget.**
-  - Delegate to subordinates → `delegate_task`
-  - Do it yourself → execute directly in this session, and if follow-up tracking is needed, record it in `state/current_state.md` or an explicit background execution workflow
+- **[MUST] If you identify work that needs to be done, make it durable. Do not just reply and forget. Inbox is a short-lived session — multi-step work you start here is lost when the session ends.**
+  - Delegate to subordinates → `delegate_task` (if you have any)
+  - Light work that finishes in 1–2 steps → fine to execute inline in this session
+  - Multi-step / long-running work you do yourself → **do NOT attempt it inline** (it will be lost). Use `write_memory_file` to append the work and next action to `state/pending.md` (backlog) and reflect it in `state/current_state.md`. The next heartbeat will plan and execute it. In your reply, state the plan (key points and rough steps)
 - Keep replies concise (no lengthy responses)
 
 ### Replying to External Platform Messages

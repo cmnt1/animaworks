@@ -160,6 +160,41 @@ def _rewrite_command_with_rtk(command: str) -> tuple[str, bool]:
     return rewritten, True
 
 
+def _spawn_command(command: str, cwd: str) -> tuple[subprocess.Popen, bool]:
+    """Launch ``command`` via Popen in an isolated process group.
+
+    Returns ``(proc, used_shell)``. Both the background ``CommandRunner`` and
+    the foreground ``execute_command`` path use this so a timeout can tear down
+    the *whole* tree: with ``shell=True`` on Windows, ``subprocess.run``'s
+    timeout kills only cmd.exe while the child (e.g. python) keeps the inherited
+    stdout/stderr pipes open, so ``communicate()`` blocks until the child exits
+    on its own. Killing children recursively (``terminate_subprocess`` defaults
+    to ``include_children=True``) releases the pipes so the drain completes.
+
+    Raises ``ValueError`` if a non-shell command cannot be tokenized.
+    """
+    is_windows = sys.platform == "win32"
+    used_shell = bool(_NEEDS_SHELL_RE.search(command)) or is_windows
+    popen_kwargs: dict[str, Any] = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "cwd": cwd,
+        **subprocess_session_kwargs(),
+    }
+    if used_shell:
+        # On Windows use cmd.exe (the default); on Unix use bash.
+        proc = subprocess.Popen(
+            command, shell=True, executable=None if is_windows else "/bin/bash", **popen_kwargs
+        )
+    else:
+        # posix=True (the shlex default) treats backslashes as escape characters,
+        # which destroys Windows paths like C:\Users\...
+        argv = shlex.split(command, posix=not is_windows)
+        proc = subprocess.Popen(argv, shell=False, **popen_kwargs)
+    return proc, used_shell
+
+
 class CommandRunner:
     """Manage background command execution with streaming output to file.
 
@@ -195,33 +230,8 @@ class CommandRunner:
         self._output_path = output_dir / f"{self.cmd_id}.txt"
         self._start_time = time.monotonic()
 
-        _is_windows = sys.platform == "win32"
-        use_shell = bool(_NEEDS_SHELL_RE.search(self.command)) or _is_windows
         try:
-            if use_shell:
-                self.process = subprocess.Popen(
-                    self.command,
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    cwd=str(self.cwd),
-                    # On Windows use cmd.exe (the default); on Unix use bash.
-                    executable=None if _is_windows else "/bin/bash",
-                    **subprocess_session_kwargs(),
-                )
-            else:
-                # posix=True (the shlex default) treats backslashes as escape
-                # characters, which destroys Windows paths like C:\Users\...
-                argv = shlex.split(self.command, posix=not _is_windows)
-                self.process = subprocess.Popen(
-                    argv,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    cwd=str(self.cwd),
-                    **subprocess_session_kwargs(),
-                )
+            self.process, _ = _spawn_command(self.command, str(self.cwd))
         except Exception as e:
             self._write_error_file(str(e))
             raise
@@ -649,60 +659,46 @@ class FileToolsMixin:
 
         timeout = args.get("timeout", 30)
 
-        import platform as _platform
-
-        _is_windows = _platform.system() == "Windows"
-        use_shell = bool(_NEEDS_SHELL_RE.search(command)) or _is_windows
-
         try:
-            if use_shell:
-                shell_kwargs: dict[str, Any] = {}
-                if not _is_windows:
-                    shell_kwargs["executable"] = "/bin/bash"
-                proc = subprocess.run(
-                    command,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                    cwd=str(self._task_cwd or self._anima_dir),
-                    **shell_kwargs,
-                )
-            else:
+            try:
+                proc, used_shell = _spawn_command(command, str(self._task_cwd or self._anima_dir))
+            except ValueError as e:
+                return _error_result("InvalidArguments", f"Error parsing command: {e}")
+
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                terminate_subprocess(proc, force=False)
                 try:
-                    argv = shlex.split(command)
-                except ValueError as e:
-                    return _error_result("InvalidArguments", f"Error parsing command: {e}")
-                proc = subprocess.run(
-                    argv,
-                    shell=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                    cwd=str(self._task_cwd or self._anima_dir),
+                    stdout, stderr = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    terminate_subprocess(proc, force=True)
+                    try:
+                        proc.communicate(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        pass
+                return _error_result(
+                    "Timeout",
+                    f"Command timed out after {timeout}s",
+                    suggestion="Increase timeout or use background=true for long-running commands",
                 )
-            output = proc.stdout
-            if proc.stderr:
-                output += f"\n[stderr]\n{proc.stderr}"
+
+            output = stdout or ""
+            if stderr:
+                output += f"\n[stderr]\n{stderr}"
             logger.info(
                 "execute_command cmd=%s rc=%d shell=%s rtk=%s",
                 command[:80],
                 proc.returncode,
-                use_shell,
+                used_shell,
                 rtk_rewritten,
             )
-            if len(output.encode("utf-8", errors="replace")) > _CMD_TRUNCATE_BYTES:
-                encoded = output.encode("utf-8", errors="replace")
+            encoded = output.encode("utf-8", errors="replace")
+            if len(encoded) > _CMD_TRUNCATE_BYTES:
                 head = encoded[:_CMD_HEAD_BYTES].decode("utf-8", errors="ignore")
                 tail = encoded[-_CMD_TAIL_BYTES:].decode("utf-8", errors="ignore")
                 output = f"{head}\n\n... [truncated: {len(encoded)} bytes total] ...\n\n{tail}"
             return output or f"(exit code {proc.returncode})"
-        except subprocess.TimeoutExpired:
-            return _error_result(
-                "Timeout",
-                f"Command timed out after {timeout}s",
-                suggestion="Increase timeout or use background=true for long-running commands",
-            )
         except Exception as e:
             return _error_result("ExecutionError", f"Error executing command: {e}")
 

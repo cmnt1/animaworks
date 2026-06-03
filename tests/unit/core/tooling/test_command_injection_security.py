@@ -85,16 +85,18 @@ class TestRtkRewrite:
 
     def test_execute_command_runs_rewritten_command(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## Commands\nGeneral commands are allowed"
-        completed = SimpleNamespace(returncode=0, stdout="compact status", stderr="")
+        proc = MagicMock()
+        proc.communicate.return_value = ("compact status", "")
+        proc.returncode = 0
 
         with (
             patch("core.tooling.handler_files._rewrite_command_with_rtk", return_value=("rtk git status", True)),
-            patch("core.tooling.handler_files.subprocess.run", return_value=completed) as run,
+            patch("core.tooling.handler_files.subprocess.Popen", return_value=proc) as popen,
         ):
             result = handler.handle("execute_command", {"command": "git status"})
 
         assert result == "compact status"
-        executed = run.call_args.args[0]
+        executed = popen.call_args.args[0]
         assert executed == "rtk git status" or executed == ["rtk", "git", "status"]
 
 
