@@ -397,7 +397,8 @@
 }
 
 .taskboard-copy-ref:hover,
-.taskboard-copy-ref:focus-visible {
+.taskboard-copy-ref:focus-visible,
+.taskboard-copy-ref:active {
   border-color: var(--aw-color-accent, #2563eb);
   color: var(--aw-color-accent, #2563eb);
 }
