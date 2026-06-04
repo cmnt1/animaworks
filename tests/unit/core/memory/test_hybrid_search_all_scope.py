@@ -181,6 +181,7 @@ async def test_retrieve_all_scope_formats_mixed_result_types(tmp_path):
 
     with (
         patch.object(backend, "_ensure_driver", new_callable=AsyncMock),
+        patch.object(backend, "_embed_texts", AsyncMock(return_value=[[0.1] * 384])),
         patch("core.memory.graph.search.HybridSearch", return_value=mock_hs),
     ):
         result = await backend.retrieve("coffee", scope="all")
