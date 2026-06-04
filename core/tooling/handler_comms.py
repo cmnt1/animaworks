@@ -383,19 +383,22 @@ class CommsToolsMixin:
             return _error_result("InvalidArguments", "channel and text are required")
 
         fallback_from_ops = False
-        if channel == "ops" and not self._has_ops_human_escalation() and not _OPS_ESCALATION_RE.search(text):
-            if self._is_subordinate_anima():
+        if channel == "ops" and not self._has_ops_human_escalation():
+            is_subordinate = self._is_subordinate_anima()
+            is_escalation = bool(_OPS_ESCALATION_RE.search(text))
+            if is_subordinate and not is_escalation:
                 return _error_result(
                     "OpsEscalationRequired",
                     "Subordinate Animas must not post routine updates to #ops",
                     suggestion="Use #general for routine updates, or call_human before posting to #ops.",
                 )
-            channel = "general"
-            fallback_from_ops = True
-            logger.info(
-                "Redirecting non-escalation #ops post to #general: anima=%s",
-                self._anima_name,
-            )
+            if not is_subordinate:
+                channel = "general"
+                fallback_from_ops = True
+                logger.info(
+                    "Redirecting non-escalation #ops post to #general: anima=%s",
+                    self._anima_name,
+                )
 
         # ── ACL gate ──
         from core.messenger import is_channel_member
