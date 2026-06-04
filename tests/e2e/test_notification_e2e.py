@@ -6,6 +6,7 @@
 Tests the full flow: config → notifier creation → tool handler → notification dispatch.
 Uses mock HTTP to verify actual channel formatting without making real API calls.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,7 +21,6 @@ from core.config.models import (
 )
 from core.notification.notifier import HumanNotifier
 from core.tooling.handler import ToolHandler
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -68,7 +68,10 @@ class TestNotificationE2EFlow:
         assert notifier.channel_count == 1
 
     def test_config_to_handler_to_notify(
-        self, notification_config, anima_dir, memory,
+        self,
+        notification_config,
+        anima_dir,
+        memory,
     ):
         """Full flow: config → notifier → handler → notify_human tool call."""
         notifier = HumanNotifier.from_config(notification_config)
@@ -81,18 +84,25 @@ class TestNotificationE2EFlow:
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
 
-        with patch("core.notification.channels.ntfy.httpx.AsyncClient") as mock_cls:
+        with (
+            patch("core.config.models.load_config") as mock_load_config,
+            patch("core.notification.channels.ntfy.httpx.AsyncClient") as mock_cls,
+        ):
+            mock_load_config.return_value = MagicMock(human_notification=notification_config)
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_cls.return_value = mock_client
 
-            result = handler.handle("call_human", {
-                "subject": "E2E Test Alert",
-                "body": "This is a full end-to-end test",
-                "priority": "high",
-            })
+            result = handler.handle(
+                "call_human",
+                {
+                    "subject": "E2E Test Alert",
+                    "body": "This is a full end-to-end test",
+                    "priority": "high",
+                },
+            )
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
@@ -145,10 +155,13 @@ class TestNotificationE2EFlow:
         mock_response.raise_for_status = MagicMock()
 
         # Patch all three channel HTTP clients
-        with patch("core.notification.channels.slack.httpx.AsyncClient") as slack_cls, \
-             patch("core.notification.channels.ntfy.httpx.AsyncClient") as ntfy_cls, \
-             patch("core.notification.channels.chatwork.httpx.AsyncClient") as cw_cls:
-
+        with (
+            patch("core.config.models.load_config") as mock_load_config,
+            patch("core.notification.channels.slack.httpx.AsyncClient") as slack_cls,
+            patch("core.notification.channels.ntfy.httpx.AsyncClient") as ntfy_cls,
+            patch("core.notification.channels.chatwork.httpx.AsyncClient") as cw_cls,
+        ):
+            mock_load_config.return_value = MagicMock(human_notification=config)
             for cls in (slack_cls, ntfy_cls, cw_cls):
                 mock_client = AsyncMock()
                 mock_client.post.return_value = mock_response
@@ -156,11 +169,14 @@ class TestNotificationE2EFlow:
                 mock_client.__aexit__ = AsyncMock(return_value=False)
                 cls.return_value = mock_client
 
-            result = handler.handle("call_human", {
-                "subject": "Multi-channel Test",
-                "body": "Sent to all channels",
-                "priority": "urgent",
-            })
+            result = handler.handle(
+                "call_human",
+                {
+                    "subject": "Multi-channel Test",
+                    "body": "Sent to all channels",
+                    "priority": "urgent",
+                },
+            )
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
@@ -209,6 +225,7 @@ class TestNotificationPromptIntegration:
         )
 
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.memory import MemoryManager
@@ -240,6 +257,7 @@ class TestNotificationPromptIntegration:
         )
 
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.memory import MemoryManager
@@ -257,6 +275,7 @@ class TestNotificationPromptIntegration:
 
         # human_notification disabled (default)
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.memory import MemoryManager
