@@ -23,13 +23,22 @@ class TestSettingSourcesDisabled:
     """Verify ClaudeAgentOptions receives setting_sources=[] to block CLI hooks."""
 
     def test_execute_passes_empty_setting_sources(self):
-        """_build_sdk_options() should include setting_sources=[] for ClaudeAgentOptions."""
+        """_build_sdk_options() must default setting_sources to [] for ClaudeAgentOptions.
+
+        CLI hook loading is disabled by passing an empty ``setting_sources``.
+        The value is conditional — ``["local"]`` only when an RTK hook is
+        active, otherwise ``[]`` — so we assert the kwarg is present and that
+        its default branch is the empty list.
+        """
         import inspect
         from core.execution.agent_sdk import AgentSDKExecutor
         # Options construction is extracted to _build_sdk_options()
         source = inspect.getsource(AgentSDKExecutor._build_sdk_options)
-        assert "setting_sources=[]" in source, (
-            "_build_sdk_options() must pass setting_sources=[] to ClaudeAgentOptions"
+        assert "setting_sources=" in source, (
+            "_build_sdk_options() must pass setting_sources to ClaudeAgentOptions"
+        )
+        assert "setting_sources=[]" in source or "else []" in source, (
+            "_build_sdk_options() must default setting_sources to [] to block CLI hooks"
         )
 
     def test_execute_streaming_passes_empty_setting_sources(self):
