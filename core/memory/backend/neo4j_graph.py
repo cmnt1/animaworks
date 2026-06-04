@@ -581,6 +581,8 @@ class Neo4jGraphBackend(MemoryBackend):
         """Retrieve memories using hybrid search (BM25 + Vector + BFS + reranker)."""
         if scope == "community":
             return await self._retrieve_communities(query, limit, min_score)
+        if not query.strip():
+            return []
 
         driver = await self._ensure_driver()
 
