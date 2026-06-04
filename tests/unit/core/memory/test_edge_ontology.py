@@ -449,10 +449,15 @@ class TestHybridSearchEdgeTypeFilter:
         ]
 
         with (
-            patch("core.memory.graph.search.asyncio.gather", new_callable=AsyncMock) as mock_gather,
+            patch.object(search, "_vector_search", new_callable=AsyncMock, return_value=results_with_types),
+            patch.object(search, "_fulltext_search", new_callable=AsyncMock, return_value=[]),
+            patch.object(search, "_bfs_search", new_callable=AsyncMock, return_value=[]),
             patch("core.memory.graph.rrf.rrf_merge", return_value=results_with_types),
+            patch("core.memory.graph.reranker.get_reranker") as mock_get_reranker,
         ):
-            mock_gather.return_value = [results_with_types, [], []]
+            mock_get_reranker.return_value.rerank = AsyncMock(
+                side_effect=lambda _query, items, **kwargs: items[: kwargs.get("top_k", len(items))]
+            )
 
             results = await search.search(
                 "test query",
@@ -477,10 +482,15 @@ class TestHybridSearchEdgeTypeFilter:
         ]
 
         with (
-            patch("core.memory.graph.search.asyncio.gather", new_callable=AsyncMock) as mock_gather,
+            patch.object(search, "_vector_search", new_callable=AsyncMock, return_value=results_with_types),
+            patch.object(search, "_fulltext_search", new_callable=AsyncMock, return_value=[]),
+            patch.object(search, "_bfs_search", new_callable=AsyncMock, return_value=[]),
             patch("core.memory.graph.rrf.rrf_merge", return_value=results_with_types),
+            patch("core.memory.graph.reranker.get_reranker") as mock_get_reranker,
         ):
-            mock_gather.return_value = [results_with_types, [], []]
+            mock_get_reranker.return_value.rerank = AsyncMock(
+                side_effect=lambda _query, items, **kwargs: items[: kwargs.get("top_k", len(items))]
+            )
 
             results = await search.search(
                 "test query",
@@ -503,10 +513,15 @@ class TestHybridSearchEdgeTypeFilter:
         ]
 
         with (
-            patch("core.memory.graph.search.asyncio.gather", new_callable=AsyncMock) as mock_gather,
+            patch.object(search, "_vector_search", new_callable=AsyncMock, return_value=entity_results),
+            patch.object(search, "_fulltext_search", new_callable=AsyncMock, return_value=[]),
+            patch.object(search, "_bfs_search", new_callable=AsyncMock, return_value=[]),
             patch("core.memory.graph.rrf.rrf_merge", return_value=entity_results),
+            patch("core.memory.graph.reranker.get_reranker") as mock_get_reranker,
         ):
-            mock_gather.return_value = [entity_results, [], []]
+            mock_get_reranker.return_value.rerank = AsyncMock(
+                side_effect=lambda _query, items, **kwargs: items[: kwargs.get("top_k", len(items))]
+            )
 
             results = await search.search(
                 "test query",
