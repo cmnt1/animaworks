@@ -383,11 +383,7 @@ class CommsToolsMixin:
             return _error_result("InvalidArguments", "channel and text are required")
 
         fallback_from_ops = False
-        if (
-            channel == "ops"
-            and not self._has_ops_human_escalation()
-            and not _OPS_ESCALATION_RE.search(text)
-        ):
+        if channel == "ops" and not self._has_ops_human_escalation() and not _OPS_ESCALATION_RE.search(text):
             if self._is_subordinate_anima():
                 return _error_result(
                     "OpsEscalationRequired",
