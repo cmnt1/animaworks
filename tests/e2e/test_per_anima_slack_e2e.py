@@ -6,6 +6,7 @@ Tests the full flow of per-Anima token resolution across:
 - Webhook routing (api_app_id → anima_name)
 - Config backward compatibility (app_id_mapping)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -64,7 +65,7 @@ def webhook_client(webhook_app):
 
 class TestSlackToolDispatchPerAnimaToken:
     def test_dispatch_uses_per_anima_token_when_configured(self):
-        """Set up per-Anima token in vault mock; verify SlackClient gets it."""
+        """Slack tool dispatch is disabled during Discord migration."""
         with patch("core.tools.slack.SlackClient") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
@@ -85,13 +86,12 @@ class TestSlackToolDispatchPerAnimaToken:
                     },
                 )
 
-        assert result == {"ts": "1234", "channel": "C123"}
-        mock_cls.assert_called_once_with(token="xoxb-per-anima-token")
-        mock_client.resolve_channel.assert_called_once_with("C123")
-        mock_client.post_message.assert_called_once()
-        call_args = mock_client.post_message.call_args
-        assert call_args[0][0] == "C123"
-        assert "test" in call_args[0][1]
+        assert result["status"] == "disabled"
+        assert "Discord migration" in result["message"]
+        mock_resolve.assert_not_called()
+        mock_cls.assert_not_called()
+        mock_client.resolve_channel.assert_not_called()
+        mock_client.post_message.assert_not_called()
 
 
 # ── 2. Full Slack tool dispatch with shared token fallback ──
@@ -99,7 +99,7 @@ class TestSlackToolDispatchPerAnimaToken:
 
 class TestSlackToolDispatchSharedTokenFallback:
     def test_dispatch_uses_none_token_when_no_per_anima(self):
-        """No per-Anima token; SlackClient created with None (shared fallback)."""
+        """Slack tool dispatch is disabled before shared token fallback."""
         with patch("core.tools.slack.SlackClient") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
@@ -120,8 +120,10 @@ class TestSlackToolDispatchSharedTokenFallback:
                     },
                 )
 
-        assert result == {"ts": "5678", "channel": "C123"}
-        mock_cls.assert_called_once_with(token=None)
+        assert result["status"] == "disabled"
+        assert "Discord migration" in result["message"]
+        mock_resolve.assert_not_called()
+        mock_cls.assert_not_called()
 
 
 # ── 3. Outbound flow: per-Anima token skips sender prefix ───
@@ -129,7 +131,7 @@ class TestSlackToolDispatchSharedTokenFallback:
 
 class TestOutboundPerAnimaSkipsPrefix:
     def test_send_external_with_per_anima_token_no_sender_prefix(self):
-        """Per-Anima token: message text does NOT have [sender_name] prefix."""
+        """Slack outbound is disabled during Discord migration."""
         resolved = ResolvedRecipient(
             is_internal=False,
             name="user",
@@ -142,12 +144,15 @@ class TestOutboundPerAnimaSkipsPrefix:
             mock_cls.return_value = mock_client
             mock_client.post_message.return_value = {"ts": "1", "channel": "D1"}
 
-            with patch(
-                "core.tools._base._lookup_vault_credential",
-                return_value="xoxb-per-anima-token",
-            ), patch(
-                "core.tools._base._lookup_shared_credentials",
-                return_value=None,
+            with (
+                patch(
+                    "core.tools._base._lookup_vault_credential",
+                    return_value="xoxb-per-anima-token",
+                ),
+                patch(
+                    "core.tools._base._lookup_shared_credentials",
+                    return_value=None,
+                ),
             ):
                 result = send_external(
                     resolved,
@@ -157,12 +162,11 @@ class TestOutboundPerAnimaSkipsPrefix:
                 )
 
         data = json.loads(result)
-        assert data["status"] == "sent"
-        mock_client.post_message.assert_called_once()
-        text_sent = mock_client.post_message.call_args[0][1]
-        assert text_sent == "hello from sumire"
-        assert "[sakura]" not in text_sent
-        mock_cls.assert_called_once_with(token="xoxb-per-anima-token")
+        assert data["status"] == "error"
+        assert data["error_type"] == "DeliveryFailed"
+        assert "slack: disabled" in data["message"]
+        mock_cls.assert_not_called()
+        mock_client.post_message.assert_not_called()
 
 
 # ── 4. Outbound flow: shared token includes sender prefix ───
@@ -170,7 +174,7 @@ class TestOutboundPerAnimaSkipsPrefix:
 
 class TestOutboundSharedTokenIncludesPrefix:
     def test_send_external_with_shared_token_has_sender_prefix(self):
-        """No per-Anima token; message text HAS [sender_name] prefix."""
+        """Slack outbound is disabled before shared token fallback."""
         resolved = ResolvedRecipient(
             is_internal=False,
             name="user",
@@ -183,12 +187,15 @@ class TestOutboundSharedTokenIncludesPrefix:
             mock_cls.return_value = mock_client
             mock_client.post_message.return_value = {"ts": "1", "channel": "D1"}
 
-            with patch(
-                "core.tools._base._lookup_vault_credential",
-                return_value=None,
-            ), patch(
-                "core.tools._base._lookup_shared_credentials",
-                return_value=None,
+            with (
+                patch(
+                    "core.tools._base._lookup_vault_credential",
+                    return_value=None,
+                ),
+                patch(
+                    "core.tools._base._lookup_shared_credentials",
+                    return_value=None,
+                ),
             ):
                 result = send_external(
                     resolved,
@@ -198,11 +205,11 @@ class TestOutboundSharedTokenIncludesPrefix:
                 )
 
         data = json.loads(result)
-        assert data["status"] == "sent"
-        mock_client.post_message.assert_called_once()
-        text_sent = mock_client.post_message.call_args[0][1]
-        assert text_sent == "[sakura] hello"
-        mock_cls.assert_called_once_with(token=None)
+        assert data["status"] == "error"
+        assert data["error_type"] == "DeliveryFailed"
+        assert "slack: disabled" in data["message"]
+        mock_cls.assert_not_called()
+        mock_client.post_message.assert_not_called()
 
 
 # ── 5. Webhook routing: per-Anima app_id routing ────────────
@@ -237,30 +244,40 @@ class TestWebhookPerAnimaAppIdRouting:
                 return per_secret
             return None
 
-        payload = json.dumps({
-            "type": "event_callback",
-            "api_app_id": "A0PERANIMA123",
-            "event": {
-                "type": "message",
-                "channel": "C_E2E",
-                "user": "U_E2E_USER",
-                "text": "Webhook test for sumire",
-                "ts": "9999999999.000001",
-            },
-        })
+        payload = json.dumps(
+            {
+                "type": "event_callback",
+                "api_app_id": "A0PERANIMA123",
+                "event": {
+                    "type": "message",
+                    "channel": "C_E2E",
+                    "user": "U_E2E_USER",
+                    "text": "Webhook test for sumire",
+                    "ts": "9999999999.000001",
+                },
+            }
+        )
         body = payload.encode("utf-8")
         ts = str(int(time.time()))
         sig_base = f"v0:{ts}:{body.decode('utf-8')}"
-        sig = "v0=" + hmac.new(
-            per_secret.encode(), sig_base.encode(), hashlib.sha256,
-        ).hexdigest()
+        sig = (
+            "v0="
+            + hmac.new(
+                per_secret.encode(),
+                sig_base.encode(),
+                hashlib.sha256,
+            ).hexdigest()
+        )
 
-        with patch(
-            "core.tools._base._lookup_vault_credential",
-            side_effect=_mock_vault,
-        ), patch(
-            "core.tools._base._lookup_shared_credentials",
-            return_value=None,
+        with (
+            patch(
+                "core.tools._base._lookup_vault_credential",
+                side_effect=_mock_vault,
+            ),
+            patch(
+                "core.tools._base._lookup_shared_credentials",
+                return_value=None,
+            ),
         ):
             resp = webhook_client.post(
                 "/api/webhooks/slack/events",
