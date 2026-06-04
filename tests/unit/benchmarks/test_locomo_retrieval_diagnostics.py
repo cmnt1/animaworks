@@ -8,6 +8,7 @@ import pytest
 
 import benchmarks.locomo.retrieval_diagnostics as retrieval_diagnostics
 from benchmarks.locomo.retrieval_diagnostics import (
+    _per_question_deltas,
     _temporary_entity_aware_graph,
     _temporary_entity_boost,
     _temporary_fact_index,
@@ -152,6 +153,32 @@ class TestWriteDiagnosticsJson:
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert payload["entity_aware_graph_ablation"]["config"] == {"entity_aware_graph": True}
         assert payload["entity_aware_graph_ablation"]["deltas"]["answer_token_recall_at_10"] == 0.2
+
+    def test_write_json_can_include_feature_on_ablation(self, tmp_path: Path) -> None:
+        out = write_diagnostics_json(
+            tmp_path,
+            mode="scope_all",
+            conversations=1,
+            top_k=10,
+            ceiling_top_k=10,
+            temporal_boost=False,
+            entity_boost=False,
+            summary={},
+            results=[],
+            errors=0,
+            feature_on_ablation={
+                "config": {"fact_index": True, "entity_boost": True, "entity_aware_graph": True},
+                "summary": {"answer_token_recall_at_10": 0.8},
+                "results": [],
+                "errors": 0,
+                "deltas": {"answer_token_recall_at_10": 0.3},
+                "per_question_deltas": [],
+            },
+        )
+
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert payload["feature_on_ablation"]["config"]["fact_index"] is True
+        assert payload["feature_on_ablation"]["deltas"]["answer_token_recall_at_10"] == 0.3
 
 
 class TestTemporalAblationCli:
@@ -316,3 +343,88 @@ class TestFactAblationCli:
 
         assert retrieval_diagnostics.main(["--temporal-ablation", "--output", str(tmp_path)]) == 0
         assert calls == [True, True]
+
+
+class TestFeatureOnAblationCli:
+    def test_parse_feature_on_ablation_flag(self) -> None:
+        args = parse_args(["--feature-on-ablation"])
+
+        assert args.feature_on_ablation is True
+
+    def test_feature_on_ablation_runs_baseline_then_combined(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls: list[tuple[bool, bool, bool]] = []
+        captured_write: dict[str, object] = {}
+
+        monkeypatch.setenv("LOCOMO_FACT_INDEX", "1")
+        monkeypatch.setattr(retrieval_diagnostics, "load_dataset", lambda _path: [{"qa": []}])
+        monkeypatch.setattr(retrieval_diagnostics, "summarize_results", lambda _results: {})
+        monkeypatch.setattr(retrieval_diagnostics, "_ablation_delta", lambda _base, _boosted: {})
+
+        def fake_run_retrieval_diagnostics(**kwargs):
+            calls.append((kwargs["fact_index"], kwargs["entity_boost"], kwargs["entity_aware_graph"]))
+            return [], 0
+
+        def fake_write_diagnostics_json(_output: Path, **kwargs):
+            captured_write.update(kwargs)
+            return tmp_path / "out.json"
+
+        monkeypatch.setattr(retrieval_diagnostics, "run_retrieval_diagnostics", fake_run_retrieval_diagnostics)
+        monkeypatch.setattr(retrieval_diagnostics, "write_diagnostics_json", fake_write_diagnostics_json)
+
+        assert retrieval_diagnostics.main(["--feature-on-ablation", "--output", str(tmp_path)]) == 0
+        assert calls == [(False, False, False), (True, True, True)]
+        assert captured_write["feature_on_ablation"] is not None
+        assert captured_write["fact_index"] is False
+
+
+class TestPerQuestionDeltas:
+    def test_per_question_deltas_skip_cat5_and_report_memory_type_changes(self) -> None:
+        rows = _per_question_deltas(
+            [
+                {
+                    "sample_id": "conv-1",
+                    "question_index": 0,
+                    "category": 1,
+                    "question": "Q",
+                    "reference": "A",
+                    "answer_token_recall_at_10": 0.0,
+                    "answer_token_recall_at_50": 0.5,
+                    "top_memory_type": "episodes",
+                },
+                {
+                    "sample_id": "conv-1",
+                    "question_index": 1,
+                    "category": 5,
+                    "question": "Adv",
+                    "answer_token_recall_at_10": None,
+                },
+            ],
+            [
+                {
+                    "sample_id": "conv-1",
+                    "question_index": 0,
+                    "category": 1,
+                    "question": "Q",
+                    "reference": "A",
+                    "answer_token_recall_at_10": 1.0,
+                    "answer_token_recall_at_50": 1.0,
+                    "top_memory_type": "facts",
+                },
+                {
+                    "sample_id": "conv-1",
+                    "question_index": 1,
+                    "category": 5,
+                    "question": "Adv",
+                    "answer_token_recall_at_10": None,
+                },
+            ],
+        )
+
+        assert len(rows) == 1
+        assert rows[0]["answer_token_recall_at_10_delta"] == 1.0
+        assert rows[0]["base_top_memory_type"] == "episodes"
+        assert rows[0]["boosted_top_memory_type"] == "facts"

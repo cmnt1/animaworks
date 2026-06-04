@@ -269,3 +269,74 @@ def test_pipeline_entity_boost_applies_to_category_4() -> None:
 
     assert result.items[0]["entity_boost"] > 0.0
     assert "adoption agency" in result.items[0]["entity_overlap"]
+
+
+def test_pipeline_entity_boost_strict_mode_ignores_generic_single_token_overlap() -> None:
+    ranked = [
+        [
+            {"content": "first generic result", "score": 0.5, "source_file": "a.md", "chunk_index": 0},
+            {
+                "content": "Caroline mentioned research activity during the conversation.",
+                "score": 0.4,
+                "source_file": "b.md",
+                "chunk_index": 0,
+            },
+        ],
+    ]
+    pipeline = RetrievalPipeline(reranker=MagicMock())
+
+    result = pipeline.run(
+        "What activity did Caroline research?",
+        ranked,
+        limit=2,
+        rerank_enabled=False,
+        abstain_on_low_confidence=False,
+        entity_boost=EntityBoostConfig(
+            enabled=True,
+            category=1,
+            ignored_entities=("Caroline",),
+            use_content_tokens=False,
+            require_multi_token_overlap=True,
+        ),
+    )
+
+    assert [item["content"] for item in result.items] == [
+        "first generic result",
+        "Caroline mentioned research activity during the conversation.",
+    ]
+    assert "entity_boost" not in result.items[1]
+
+
+def test_pipeline_entity_boost_strict_mode_allows_metadata_multi_token_overlap() -> None:
+    ranked = [
+        [
+            {"content": "generic", "score": 0.5, "source_file": "a.md", "chunk_index": 0},
+            {
+                "content": "Caroline researched the adoption process.",
+                "score": 0.4,
+                "source_file": "b.md",
+                "chunk_index": 0,
+                "entities": ["adoption process"],
+            },
+        ],
+    ]
+    pipeline = RetrievalPipeline(reranker=MagicMock())
+
+    result = pipeline.run(
+        "What did Caroline research?",
+        ranked,
+        limit=2,
+        rerank_enabled=False,
+        abstain_on_low_confidence=False,
+        entity_boost=EntityBoostConfig(
+            enabled=True,
+            category=1,
+            ignored_entities=("Caroline",),
+            query_entities=("adoption process",),
+            require_query_entities=True,
+            require_multi_token_overlap=True,
+        ),
+    )
+
+    assert result.items[0]["content"] == "Caroline researched the adoption process."
+    assert result.items[0]["entity_overlap"] == ["adoption process"]
