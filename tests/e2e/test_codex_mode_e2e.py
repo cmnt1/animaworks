@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -13,7 +14,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _skip_external_codex_and_rag(monkeypatch):
+    monkeypatch.setattr("core.execution.codex_sdk.CodexSDKExecutor._write_codex_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr("core.memory.rag.singleton.get_embedding_model", lambda *args, **kwargs: object())
+    monkeypatch.setattr("core.memory.rag.singleton.generate_embeddings", lambda texts: [[0.0] * 384 for _ in texts])
+    monkeypatch.setattr("core.memory.rag_search.RAGMemorySearch.index_file", lambda *args, **kwargs: 0)
+    monkeypatch.setattr("core.memory.rag_search.RAGMemorySearch.search_memory_text", lambda *args, **kwargs: [])
+    monkeypatch.setattr("core.memory.rag_search.RAGMemorySearch.search_knowledge", lambda *args, **kwargs: [])
+
+
 # ── Executor creation tests ──────────────────────────────────
+
 
 class TestExecutorCreation:
     """_create_executor() with Mode C and ImportError fallback."""
@@ -26,9 +38,7 @@ class TestExecutorCreation:
         mock_executor_instance = MagicMock()
         mock_executor_cls.return_value = mock_executor_instance
 
-        with patch(
-            "core.agent.AgentCore._create_executor"
-        ) as mock_create:
+        with patch("core.agent.AgentCore._create_executor") as mock_create:
             mock_create.return_value = mock_executor_instance
             agent._executor = agent._create_executor()
 
@@ -39,18 +49,22 @@ class TestExecutorCreation:
         """codex/* model + openai-codex-sdk missing → LiteLLMExecutor fallback."""
         agent = make_agent_core(name="codex-fallback", model="codex/o4-mini")
 
-        with patch.dict("sys.modules", {"openai_codex_sdk": None}):
-            with patch(
+        with (
+            patch.dict("sys.modules", {"openai_codex_sdk": None}),
+            patch(
                 "core.execution.codex_sdk.CodexSDKExecutor",
                 side_effect=ImportError("No module named 'openai_codex_sdk'"),
-            ):
-                executor = agent._create_executor()
+            ),
+        ):
+            executor = agent._create_executor()
 
         from core.execution.litellm_loop import LiteLLMExecutor
+
         assert isinstance(executor, LiteLLMExecutor)
 
 
 # ── Run cycle tests ──────────────────────────────────────────
+
 
 class TestRunCycle:
     """AgentCore.run_cycle() integration with Mode C."""
@@ -162,26 +176,31 @@ class TestRunCycle:
 
 # ── Context window tests ─────────────────────────────────────
 
+
 class TestContextWindow:
     """Codex model context window resolution."""
 
     def test_codex_o4_mini_context_window(self):
         from core.prompt.context import resolve_context_window
+
         size = resolve_context_window("codex/o4-mini")
         assert size == 200_000
 
     def test_codex_o3_context_window(self):
         from core.prompt.context import resolve_context_window
+
         size = resolve_context_window("codex/o3")
         assert size == 200_000
 
     def test_codex_gpt41_context_window(self):
         from core.prompt.context import resolve_context_window
+
         size = resolve_context_window("codex/gpt-4.1")
         assert size == 1_000_000
 
 
 # ── No regression tests ──────────────────────────────────────
+
 
 class TestNoRegression:
     """Verify existing modes are unaffected by C mode addition."""
@@ -200,6 +219,7 @@ class TestNoRegression:
 
     def test_known_models_include_codex(self):
         from core.config.models import KNOWN_MODELS
+
         codex_models = [m for m in KNOWN_MODELS if m["mode"] == "C"]
         assert len(codex_models) >= 1
         names = [m["name"] for m in codex_models]
