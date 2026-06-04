@@ -27,7 +27,7 @@ from core.tooling.schemas import (
 class TestMemoryTools:
     def test_memory_tools_is_list(self):
         assert isinstance(MEMORY_TOOLS, list)
-        assert len(MEMORY_TOOLS) == 5
+        assert len(MEMORY_TOOLS) == 6
 
     def test_search_memory_schema(self):
         schema = next(t for t in MEMORY_TOOLS if t["name"] == "search_memory")
@@ -283,11 +283,11 @@ class TestBuildToolList:
             include_tool_management=True,
         )
         names = [t["name"] for t in result]
-        # 5 memory + 4 channel (incl. manage_channel) + 1 report_procedure_outcome
+        # 6 memory + 4 channel (incl. manage_channel) + 1 report_procedure_outcome
         # + 1 report_knowledge_outcome + 1 workspace + 1 check_permissions + 4 file
         # + 4 search (web_search, web_fetch, search_code, list_directory)
-        # + 1 use_tool + 2 tool_management = 24
-        assert len(result) == 24
+        # + 1 use_tool + 2 tool_management = 25
+        assert len(result) == 25
         assert "search_code" in names
         assert "list_directory" in names
         assert "grant_workspace_access" in names
