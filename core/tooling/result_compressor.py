@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Minimum fraction of original content to preserve (safety floor)
 _MIN_PRESERVE_RATIO = 0.20
-_NO_COMPRESS_TOOLS = {"goal", "trust_skill"}
+_NO_COMPRESS_TOOLS = {"check_permissions", "goal", "trust_skill"}
 
 
 def compress_tool_result(tool_name: str, result: str) -> tuple[str, int]:
