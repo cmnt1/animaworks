@@ -28,6 +28,11 @@ def mm(anima_dir: Path, data_dir: Path) -> MemoryManager:
     return MemoryManager(anima_dir)
 
 
+@pytest.fixture(autouse=True)
+def _skip_rag_indexing(monkeypatch) -> None:
+    monkeypatch.setattr("core.memory.rag_search.RAGMemorySearch.index_file", lambda *args, **kwargs: 0)
+
+
 # ── Initialization ────────────────────────────────────────
 
 
@@ -381,10 +386,7 @@ class TestSearchMemoryText:
         (anima_dir / "knowledge" / "test.md").write_text("keyword here", encoding="utf-8")
         (anima_dir / "episodes" / "2026-01-01.md").write_text("keyword in episode", encoding="utf-8")
         results = mm.search_memory_text("keyword", scope="knowledge")
-        assert all(
-            "knowledge" in r["source_file"] or r["source_file"].endswith("test.md")
-            for r in results
-        )
+        assert all("knowledge" in r["source_file"] or r["source_file"].endswith("test.md") for r in results)
 
     def test_case_insensitive(self, mm, anima_dir):
         mm._rag._indexer = None
@@ -453,6 +455,8 @@ class TestSearchMemoryTextCommonKnowledge:
 
 class TestSearchKnowledge:
     def test_search(self, mm, anima_dir):
+        mm._rag._indexer = None
+        mm._rag._indexer_initialized = True
         (anima_dir / "knowledge" / "topic.md").write_text("Important info here", encoding="utf-8")
         results = mm.search_knowledge("important")
         assert len(results) == 1
@@ -461,6 +465,8 @@ class TestSearchKnowledge:
 
 class TestSearchProcedures:
     def test_search(self, mm, anima_dir):
+        mm._rag._indexer = None
+        mm._rag._indexer_initialized = True
         (anima_dir / "procedures" / "deploy.md").write_text("Deploy to production", encoding="utf-8")
         results = mm.search_procedures("deploy")
         assert len(results) == 1
