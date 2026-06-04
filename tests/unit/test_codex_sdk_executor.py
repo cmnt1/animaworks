@@ -220,6 +220,37 @@ class TestHelpers:
         assert result["input_tokens"] == 200
         assert result["output_tokens"] == 80
 
+    def test_usage_to_dict_from_app_server_total_object(self):
+        usage = SimpleNamespace(
+            total=SimpleNamespace(
+                input_tokens=123,
+                output_tokens=45,
+                cached_input_tokens=7,
+                reasoning_output_tokens=8,
+                total_tokens=176,
+            )
+        )
+
+        result = _usage_to_dict(usage)
+
+        assert result == {
+            "input_tokens": 123,
+            "output_tokens": 45,
+            "cached_input_tokens": 7,
+            "reasoning_output_tokens": 8,
+            "total_tokens": 176,
+        }
+
+    def test_item_to_tool_record_file_change(self):
+        change = SimpleNamespace(kind=SimpleNamespace(value="update"), path="core/demo.py")
+        item = SimpleNamespace(type="fileChange", id="file-1", changes=[change], status="completed")
+
+        record = _item_to_tool_record(item)
+
+        assert record is not None
+        assert record.tool_name == "file_change"
+        assert record.input_summary == "update: core/demo.py"
+
     def test_event_idle_timeout_prefers_background_triggers(self):
         assert _event_idle_timeout_seconds("heartbeat") < _event_idle_timeout_seconds("chat")
         assert _event_idle_timeout_seconds("inbox:sakura") == _event_idle_timeout_seconds("heartbeat")
@@ -1151,6 +1182,68 @@ class TestProgressiveStreaming:
         ]
         detail = next(c for c in chunks if c["type"] == "tool_detail")
         assert detail["detail"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_app_server_reasoning_mcp_file_and_usage_notifications(self, executor):
+        file_change = SimpleNamespace(kind=SimpleNamespace(value="update"), path="core/codex.py")
+        events = [
+            SimpleNamespace(
+                method="item/reasoning/textDelta",
+                payload=SimpleNamespace(item_id="reason-1", turn_id="turn-1", thread_id="thread-1", delta="thinking"),
+            ),
+            SimpleNamespace(
+                method="item/mcpToolCall/progress",
+                payload=SimpleNamespace(
+                    item_id="mcp-1",
+                    turn_id="turn-1",
+                    thread_id="thread-1",
+                    message="searching memory",
+                ),
+            ),
+            SimpleNamespace(
+                method="item/fileChange/patchUpdated",
+                payload=SimpleNamespace(
+                    item_id="file-1",
+                    turn_id="turn-1",
+                    thread_id="thread-1",
+                    changes=[file_change],
+                ),
+            ),
+            SimpleNamespace(
+                method="thread/tokenUsage/updated",
+                payload=SimpleNamespace(
+                    thread_id="thread-1",
+                    token_usage=SimpleNamespace(
+                        total=SimpleNamespace(input_tokens=15, output_tokens=9, cached_input_tokens=0)
+                    ),
+                ),
+            ),
+            SimpleNamespace(
+                method="turn/completed",
+                payload=SimpleNamespace(turn=SimpleNamespace(id="turn-1", error=None), thread_id="thread-1"),
+            ),
+        ]
+        mock_thread = _mock_stream_thread("thread-1", events)
+        mock_codex = _mock_codex(mock_thread)
+
+        chunks = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="inspect",
+                tracker=tracker,
+            ):
+                chunks.append(ev)
+
+        assert [c["text"] for c in chunks if c["type"] == "thinking_delta"] == ["thinking"]
+        tool_details = [c for c in chunks if c["type"] == "tool_detail"]
+        assert {c["tool_name"] for c in tool_details} == {"mcp_tool", "file_change"}
+        assert any(c["detail"] == "searching memory" for c in tool_details)
+        assert any(c["detail"] == "update: core/codex.py" for c in tool_details)
+        done = next(c for c in chunks if c["type"] == "done")
+        assert done["usage"]["input_tokens"] == 15
+        assert done["usage"]["output_tokens"] == 9
 
     @pytest.mark.asyncio
     async def test_reasoning_events_yield_thinking_delta(self, executor, anima_dir):
