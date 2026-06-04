@@ -59,6 +59,25 @@ def distiller(anima_dir: Path):
     return ProceduralDistiller(anima_dir=anima_dir, anima_name="test-anima")
 
 
+@pytest.fixture(autouse=True)
+def _disable_vector_clustering():
+    """Force the deterministic text-based clustering fallback.
+
+    ``_cluster_activities`` tries ``generate_embeddings`` first, which
+    loads the real embedding model. On CI that triggers HuggingFace
+    HTTP 429 retries and exceeds the 30s pytest timeout (the production
+    ``except`` only catches *raised* exceptions, not the hang). Making
+    the embedding call raise exercises the text fallback that these
+    tests actually assert on. No test in this module relies on real
+    vector clustering.
+    """
+    with patch(
+        "core.memory.rag.singleton.generate_embeddings",
+        side_effect=RuntimeError("embeddings unavailable"),
+    ):
+        yield
+
+
 # ── LLM Classification ─────────────────────────────────────────
 
 
@@ -721,21 +740,6 @@ class TestLoadExistingProcedures:
 
 class TestWeeklyPatternDistill:
     """Test weekly_pattern_distill() with activity_log-based detection."""
-
-    @pytest.fixture(autouse=True)
-    def _disable_vector_clustering(self):
-        """Force text-based clustering fallback.
-
-        ``_cluster_activities`` tries ``generate_embeddings`` first, which
-        loads the real embedding model. On CI that triggers HuggingFace
-        HTTP 429 retries and exceeds the pytest timeout, so we make the
-        embedding call raise to exercise the deterministic text fallback.
-        """
-        with patch(
-            "core.memory.rag.singleton.generate_embeddings",
-            side_effect=RuntimeError("embeddings unavailable"),
-        ):
-            yield
 
     @pytest.mark.asyncio
     async def test_weekly_distill_from_activity_log(
