@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── Problem A: setting_sources verified in source ──────────────────
 
 
@@ -23,23 +22,19 @@ class TestSettingSourcesE2E:
     def test_both_methods_have_setting_sources(self):
         """_build_sdk_options() (used by execute and execute_streaming) must set setting_sources=[]."""
         import inspect
+
         from core.execution.agent_sdk import AgentSDKExecutor
 
         # Options construction is centralized in _build_sdk_options()
         options_src = inspect.getsource(AgentSDKExecutor._build_sdk_options)
-        assert "setting_sources=[]" in options_src, (
-            "_build_sdk_options() missing setting_sources=[]"
-        )
+        assert "setting_sources=" in options_src, "_build_sdk_options() missing explicit setting_sources"
+        assert "else []" in options_src, "_build_sdk_options() must default setting_sources to []"
 
         # Verify both execute() and execute_streaming() use _build_sdk_options
         execute_src = inspect.getsource(AgentSDKExecutor.execute)
         streaming_src = inspect.getsource(AgentSDKExecutor.execute_streaming)
-        assert "_build_sdk_options" in execute_src, (
-            "execute() must call _build_sdk_options()"
-        )
-        assert "_build_sdk_options" in streaming_src, (
-            "execute_streaming() must call _build_sdk_options()"
-        )
+        assert "_build_sdk_options" in execute_src, "execute() must call _build_sdk_options()"
+        assert "_build_sdk_options" in streaming_src, "execute_streaming() must call _build_sdk_options()"
 
 
 # ── Problem B: Per-anima ChromaDB isolation ────────────────────────
@@ -60,6 +55,7 @@ class TestPerAnimaChromaDBIsolation:
         monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
         monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
         from core.memory.rag.singleton import _reset_for_testing
+
         _reset_for_testing()
         yield
         _reset_for_testing()
@@ -94,6 +90,7 @@ class TestPerAnimaChromaDBIsolation:
         # Create a collection and insert data in store_a
         store_a.create_collection("test_collection")
         from core.memory.rag.store import Document
+
         doc = Document(
             id="doc1",
             content="Hello from Alice",
