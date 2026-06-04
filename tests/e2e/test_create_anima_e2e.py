@@ -20,6 +20,7 @@ import pytest
 
 from core.anima_factory import create_from_md
 from core.memory import MemoryManager
+from core.paths import TEMPLATES_DIR
 from core.tooling.handler import ToolHandler
 
 # ── Sample character sheets ──────────────────────────────────
@@ -255,8 +256,10 @@ class TestCreateFromMdOmittedSections:
         permissions = anima_dir / "permissions.json"
         assert permissions.exists()
         data = json.loads(permissions.read_text(encoding="utf-8"))
-        assert data.get("version") == 1
-        assert data.get("file_roots") == ["/"]
+        expected = json.loads(
+            (TEMPLATES_DIR / "ja" / "roles" / "administration" / "permissions.json").read_text(encoding="utf-8")
+        )
+        assert data == expected
 
 
 class TestDuplicateAnimaNameError:
