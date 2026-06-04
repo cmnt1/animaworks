@@ -369,7 +369,6 @@ class ToolHandler(
 
     def _handle_completion_gate(self, args: dict[str, Any]) -> str:
         """Record pre-completion verification and return the checklist text."""
-        del args
         marker = self._anima_dir / "run" / "completion_gate_called"
         try:
             marker.parent.mkdir(parents=True, exist_ok=True)
@@ -377,12 +376,29 @@ class ToolHandler(
         except OSError as e:
             logger.warning("completion_gate: failed to write marker: %s", e)
 
+        usage_recorded: list[str] = []
+        usage_warnings: list[str] = []
+        try:
+            from core.tooling.completion_gate_usage import record_completion_gate_usage
+
+            usage = record_completion_gate_usage(self._anima_dir, args)
+            usage_recorded = usage.recorded
+            usage_warnings = usage.warnings
+        except Exception:
+            logger.debug("Failed to record completion_gate skill usage", exc_info=True)
+            usage_warnings.append("usage recording failed")
+
         self._activity.log(
             event_type="tool_use",
             tool="completion_gate",
             summary=t("completion_gate.activity_log_summary"),
         )
-        return t("completion_gate.checklist")
+        result = t("completion_gate.checklist")
+        if usage_recorded:
+            result += "\n\nusage recorded: " + ", ".join(usage_recorded)
+        if usage_warnings:
+            result += "\n\nwarnings: " + "; ".join(usage_warnings)
+        return result
 
     # ── Properties and session management ─────────────────────
 

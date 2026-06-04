@@ -41,6 +41,7 @@ class TestSkillUsageEventModel:
         assert event.event_type == SkillUsageEventType.view
         assert event.is_common is False
         assert event.notes is None
+        assert event.source_origin is None
 
     def test_event_with_notes(self):
         event = SkillUsageEvent(
@@ -62,6 +63,7 @@ class TestSkillUsageEventModel:
         assert data["skill_name"] == "test-skill"
         assert data["event_type"] == "failure"
         assert data["is_common"] is True
+        assert data["is_procedure"] is False
 
 
 class TestSkillUsageStatsModel:
@@ -72,6 +74,9 @@ class TestSkillUsageStatsModel:
         assert stats.failure_count == 0
         assert stats.patch_count == 0
         assert stats.last_used_at is None
+        assert stats.create_origins == {}
+        assert stats.ref is None
+        assert stats.is_procedure is False
 
     def test_populated(self):
         stats = SkillUsageStats(
@@ -114,6 +119,18 @@ class TestSkillUsageTrackerRecord:
         usage_file = anima_dir / "state" / "skill_usage.jsonl"
         data = json.loads(usage_file.read_text().strip())
         assert data["is_common"] is True
+
+    def test_record_create_source_origin(self, tracker: SkillUsageTracker, anima_dir: Path):
+        tracker.record(
+            "new-skill",
+            SkillUsageEventType.create,
+            ref="skills/new-skill/SKILL.md",
+            source_origin="manual",
+        )
+        usage_file = anima_dir / "state" / "skill_usage.jsonl"
+        data = json.loads(usage_file.read_text().strip())
+        assert data["source_origin"] == "manual"
+        assert data["ref"] == "skills/new-skill/SKILL.md"
 
 
 class TestSkillUsageTrackerDebounce:
@@ -186,10 +203,50 @@ class TestSkillUsageTrackerStats:
         assert all_stats["skill-a"].patch_count == 1
         assert all_stats["skill-b"].success_count == 1
 
+    def test_get_all_stats_uses_ref_to_disambiguate_scopes(self, tracker: SkillUsageTracker):
+        tracker.record("same", SkillUsageEventType.use, ref="skills/same/SKILL.md")
+        tracker.record("same", SkillUsageEventType.use, is_common=True, ref="common_skills/same/SKILL.md")
+        tracker.record("same", SkillUsageEventType.use, is_procedure=True, ref="procedures/same.md")
+
+        all_stats = tracker.get_all_stats()
+        assert all_stats["skills/same/SKILL.md"].use_count == 1
+        assert all_stats["common_skills/same/SKILL.md"].use_count == 1
+        assert all_stats["common_skills/same/SKILL.md"].is_common is True
+        assert all_stats["procedures/same.md"].use_count == 1
+        assert all_stats["procedures/same.md"].is_procedure is True
+
+        aggregate = tracker.get_stats("same")
+        assert aggregate.use_count == 3
+        assert aggregate.is_common is True
+        assert aggregate.is_procedure is True
+
     def test_get_stats_counts_create(self, tracker: SkillUsageTracker):
-        tracker.record("new-skill", SkillUsageEventType.create)
+        tracker.record("new-skill", SkillUsageEventType.create, source_origin="manual")
         stats = tracker.get_stats("new-skill")
         assert stats.create_count == 1
+        assert stats.create_origins == {"manual": 1}
+
+    def test_get_stats_counts_legacy_create_origin_as_unknown(self, anima_dir: Path):
+        usage_file = anima_dir / "state" / "skill_usage.jsonl"
+        usage_file.write_text(
+            '{"ts":"2026-01-01","skill_name":"legacy","event_type":"create","is_common":false}\n',
+            encoding="utf-8",
+        )
+        stats = SkillUsageTracker(anima_dir).get_stats("legacy")
+        assert stats.create_count == 1
+        assert stats.create_origins == {"unknown": 1}
+
+    def test_get_stats_counts_multiple_create_origins(self, tracker: SkillUsageTracker):
+        tracker.record("new-skill", SkillUsageEventType.create, source_origin="manual")
+        tracker.record("new-skill", SkillUsageEventType.create, source_origin="auto_created")
+        tracker.record("new-skill", SkillUsageEventType.create)
+        stats = tracker.get_stats("new-skill")
+        assert stats.create_count == 3
+        assert stats.create_origins == {
+            "manual": 1,
+            "auto_created": 1,
+            "unknown": 1,
+        }
 
     def test_malformed_lines_skipped(self, anima_dir: Path):
         usage_file = anima_dir / "state" / "skill_usage.jsonl"
