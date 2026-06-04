@@ -8,12 +8,13 @@ through to config resolution and system prompt injection.  Exercises
 create_from_md, MemoryManager, resolve_anima_config, and build_system_prompt
 with isolated filesystem fixtures.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from core.anima_factory import create_from_md
+from core.anima_factory import _get_roles_dir, create_from_md
 from core.config import (
     invalidate_cache,
     load_config,
@@ -100,9 +101,7 @@ def _write_sheet(directory: Path, content: str, filename: str = "sheet.md") -> P
 class TestCreateFromMdEngineerRole:
     """Verify that role='engineer' applies engineer template files and defaults."""
 
-    def test_specialty_prompt_created_with_engineer_content(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_specialty_prompt_created_with_engineer_content(self, data_dir: Path, tmp_path: Path):
         """specialty_prompt.md should be created with engineer-specific content."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
@@ -117,9 +116,7 @@ class TestCreateFromMdEngineerRole:
             f"Engineer specialty content not found.  Got: {content[:200]}"
         )
 
-    def test_permissions_created_with_engineer_content(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_permissions_created_with_engineer_content(self, data_dir: Path, tmp_path: Path):
         """permissions.json should be created from engineer role template."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
@@ -129,21 +126,18 @@ class TestCreateFromMdEngineerRole:
         permissions = anima_dir / "permissions.json"
         assert permissions.exists(), "permissions.json was not created"
         data = json.loads(permissions.read_text(encoding="utf-8"))
+        expected = json.loads((_get_roles_dir() / "engineer" / "permissions.json").read_text(encoding="utf-8"))
         assert data.get("version") == 1
-        assert data.get("file_roots") == ["/"]
+        assert data.get("file_roots") == expected.get("file_roots")
 
-    def test_status_json_contains_engineer_defaults(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_status_json_contains_engineer_defaults(self, data_dir: Path, tmp_path: Path):
         """status.json should contain model config values from engineer defaults.json."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
 
         anima_dir = create_from_md(animas_dir, sheet_path, role="engineer")
 
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # Engineer defaults.json specifies these values
         assert status["model"] == "claude-opus-4-6"
         assert status["max_turns"] == 10000
@@ -152,9 +146,7 @@ class TestCreateFromMdEngineerRole:
         assert status["conversation_history_threshold"] == 0.40
         assert status["role"] == "engineer"
 
-    def test_status_json_sheet_model_overrides_role_default(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_status_json_sheet_model_overrides_role_default(self, data_dir: Path, tmp_path: Path):
         """If the character sheet specifies a model, it should override the role default."""
         sheet_with_model = """\
 # Character: testeng2
@@ -181,9 +173,7 @@ class TestCreateFromMdEngineerRole:
 
         anima_dir = create_from_md(animas_dir, sheet_path, role="engineer")
 
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # Character sheet model should override role default
         assert status["model"] == "claude-sonnet-4-6"
         # But other role defaults should still be applied
@@ -191,26 +181,24 @@ class TestCreateFromMdEngineerRole:
         assert status["max_chains"] == 10
 
 
-# ── Test 2: create_from_md with role="general" (default) ───
+# ── Test 2: create_from_md with default administration role ─
 
 
 class TestCreateFromMdGeneralRole:
-    """Verify that omitting role defaults to 'general' template."""
+    """Verify that omitting role uses the default administration template."""
 
-    def test_default_role_is_general(self, data_dir: Path, tmp_path: Path):
-        """When no role is specified, role should default to 'general'."""
+    def test_default_role_is_administration(self, data_dir: Path, tmp_path: Path):
+        """When no role is specified, role should default to 'administration'."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, GENERAL_SHEET)
 
         anima_dir = create_from_md(animas_dir, sheet_path)
 
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
-        assert status["role"] == "general"
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["role"] == "administration"
 
-    def test_general_specialty_prompt_created(self, data_dir: Path, tmp_path: Path):
-        """specialty_prompt.md should contain general guidance content."""
+    def test_default_specialty_prompt_created(self, data_dir: Path, tmp_path: Path):
+        """specialty_prompt.md should contain default guidance content."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, GENERAL_SHEET)
 
@@ -219,28 +207,31 @@ class TestCreateFromMdGeneralRole:
         specialty = anima_dir / "specialty_prompt.md"
         assert specialty.exists(), "specialty_prompt.md was not created"
         content = specialty.read_text(encoding="utf-8")
-        assert "汎用" in content, (
-            f"General specialty content not found.  Got: {content[:200]}"
-        )
+        assert "汎用" in content, f"General specialty content not found.  Got: {content[:200]}"
 
-    def test_general_status_json_has_general_defaults(
-        self, data_dir: Path, tmp_path: Path
-    ):
-        """status.json should contain values from general/defaults.json."""
+    def test_default_status_json_has_administration_defaults(self, data_dir: Path, tmp_path: Path):
+        """status.json should contain values from administration/defaults.json."""
+        template_defaults_path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "templates"
+            / "_shared"
+            / "roles"
+            / "administration"
+            / "defaults.json"
+        )
+        expected = json.loads(template_defaults_path.read_text(encoding="utf-8"))
+
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, GENERAL_SHEET)
 
         anima_dir = create_from_md(animas_dir, sheet_path)
 
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
-        # general defaults.json values
-        assert status["model"] == "claude-sonnet-4-6"
-        assert status["max_turns"] == 10000
-        assert status["max_chains"] == 2
-        assert status["context_threshold"] == 0.50
-        assert status["conversation_history_threshold"] == 0.30
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["model"] == expected["model"]
+        assert status["max_turns"] == expected["max_turns"]
+        assert status["max_chains"] == expected["max_chains"]
+        assert status["context_threshold"] == expected["context_threshold"]
+        assert status["conversation_history_threshold"] == expected["conversation_history_threshold"]
 
 
 # ── Test 3: create_from_md with role="researcher" ──────────
@@ -249,16 +240,18 @@ class TestCreateFromMdGeneralRole:
 class TestCreateFromMdResearcherRole:
     """Verify researcher role defaults are applied correctly."""
 
-    def test_researcher_defaults_in_status_json(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_researcher_defaults_in_status_json(self, data_dir: Path, tmp_path: Path):
         """status.json should contain values from researcher/defaults.json."""
         from pathlib import Path as _P
 
         # Read expected values from the template itself
         template_defaults_path = (
             _P(__file__).resolve().parent.parent.parent
-            / "templates" / "_shared" / "roles" / "researcher" / "defaults.json"
+            / "templates"
+            / "_shared"
+            / "roles"
+            / "researcher"
+            / "defaults.json"
         )
         expected = json.loads(template_defaults_path.read_text(encoding="utf-8"))
 
@@ -267,9 +260,7 @@ class TestCreateFromMdResearcherRole:
 
         anima_dir = create_from_md(animas_dir, sheet_path, role="researcher")
 
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["model"] == expected["model"]
         assert status["max_turns"] == expected["max_turns"]
         assert status["max_chains"] == expected["max_chains"]
@@ -284,9 +275,7 @@ class TestCreateFromMdResearcherRole:
 class TestTwoLayerConfigResolution:
     """Verify the 2-layer config priority: status.json >> anima_defaults."""
 
-    def test_status_json_overrides_global_defaults(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_status_json_overrides_global_defaults(self, data_dir: Path, tmp_path: Path):
         """Layer 1 (status.json/role defaults) should override layer 2 (global defaults)."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
@@ -305,9 +294,7 @@ class TestTwoLayerConfigResolution:
         assert model_config.context_threshold == 0.80
         assert model_config.conversation_history_threshold == 0.40
 
-    def test_status_json_direct_edit_takes_effect(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_status_json_direct_edit_takes_effect(self, data_dir: Path, tmp_path: Path):
         """Editing status.json directly should change the resolved model."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
@@ -316,6 +303,7 @@ class TestTwoLayerConfigResolution:
 
         # Directly update status.json (simulates `anima set-model`)
         import json
+
         status_path = anima_dir / "status.json"
         status_data = json.loads(status_path.read_text(encoding="utf-8"))
         status_data["model"] = "claude-sonnet-4-6"
@@ -336,11 +324,10 @@ class TestTwoLayerConfigResolution:
         assert model_config.max_chains == 10
         assert model_config.context_threshold == 0.80
 
-    def test_resolve_anima_config_directly(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_resolve_anima_config_directly(self, data_dir: Path, tmp_path: Path):
         """Test resolve_anima_config with 2-layer merge (status.json > defaults)."""
         import json
+
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
 
@@ -355,9 +342,7 @@ class TestTwoLayerConfigResolution:
 
         config_path = data_dir / "config.json"
         config = load_config(config_path)
-        resolved, _cred = resolve_anima_config(
-            config, "testeng", anima_dir=anima_dir
-        )
+        resolved, _cred = resolve_anima_config(config, "testeng", anima_dir=anima_dir)
 
         # Layer 1: status.json (engineer role defaults + our override)
         assert resolved.max_turns == 99
@@ -374,9 +359,7 @@ class TestTwoLayerConfigResolution:
 class TestSpecialtyPromptInjection:
     """Verify specialty_prompt.md content appears in the system prompt."""
 
-    def test_specialty_prompt_appears_in_system_prompt(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_specialty_prompt_appears_in_system_prompt(self, data_dir: Path, tmp_path: Path):
         """build_system_prompt should include specialty_prompt content."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
@@ -393,9 +376,7 @@ class TestSpecialtyPromptInjection:
             "Engineer specialty content not found in system prompt"
         )
 
-    def test_specialty_prompt_between_injection_and_permissions(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_specialty_prompt_between_injection_and_permissions(self, data_dir: Path, tmp_path: Path):
         """specialty_prompt should appear after injection.md and before permissions.md."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
@@ -427,25 +408,16 @@ class TestSpecialtyPromptInjection:
         specialty_pos = prompt.find(specialty_marker)
         permissions_pos = prompt.find(permissions_marker)
 
-        assert injection_pos >= 0, (
-            f"Injection marker '{injection_marker}' not found in prompt"
-        )
-        assert specialty_pos >= 0, (
-            f"Specialty marker '{specialty_marker}' not found in prompt"
-        )
-        assert permissions_pos >= 0, (
-            f"Permissions marker '{permissions_marker}' not found in prompt"
-        )
+        assert injection_pos >= 0, f"Injection marker '{injection_marker}' not found in prompt"
+        assert specialty_pos >= 0, f"Specialty marker '{specialty_marker}' not found in prompt"
+        assert permissions_pos >= 0, f"Permissions marker '{permissions_marker}' not found in prompt"
 
         # Verify ordering: injection < specialty < permissions
         assert injection_pos < specialty_pos < permissions_pos, (
-            f"Incorrect ordering: injection@{injection_pos}, "
-            f"specialty@{specialty_pos}, permissions@{permissions_pos}"
+            f"Incorrect ordering: injection@{injection_pos}, specialty@{specialty_pos}, permissions@{permissions_pos}"
         )
 
-    def test_general_role_specialty_prompt_in_system_prompt(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_general_role_specialty_prompt_in_system_prompt(self, data_dir: Path, tmp_path: Path):
         """General role specialty prompt should also appear in system prompt."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, GENERAL_SHEET)
@@ -458,13 +430,9 @@ class TestSpecialtyPromptInjection:
         prompt = build_system_prompt(memory)
 
         # General specialty has "汎用" content
-        assert "汎用" in prompt, (
-            "General specialty content not found in system prompt"
-        )
+        assert "汎用" in prompt, "General specialty content not found in system prompt"
 
-    def test_no_specialty_prompt_when_file_missing(
-        self, data_dir: Path, tmp_path: Path, make_anima
-    ):
+    def test_no_specialty_prompt_when_file_missing(self, data_dir: Path, tmp_path: Path, make_anima):
         """If specialty_prompt.md does not exist, system prompt should still build."""
         # Use make_anima fixture which does NOT create specialty_prompt.md
         anima_dir = make_anima("no-specialty")
