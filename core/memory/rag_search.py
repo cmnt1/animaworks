@@ -455,7 +455,7 @@ class RAGMemorySearch:
 
         keyword_hits = self._keyword_search_fallback(
             query,
-            "episodes",
+            "all",
             0,
             knowledge_dir=knowledge_dir,
             episodes_dir=episodes_dir,
