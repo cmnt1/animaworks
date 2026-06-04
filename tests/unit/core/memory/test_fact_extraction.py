@@ -306,6 +306,15 @@ class TestFactExtractorExtractFacts:
 
 
 class TestNeo4jGraphBackendIngest:
+    @pytest.fixture(autouse=True)
+    def no_embedding_model_load(self, monkeypatch):
+        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+
+        async def fake_embed_texts(_self, texts):
+            return [[0.0] * 8 for _ in texts]
+
+        monkeypatch.setattr(Neo4jGraphBackend, "_embed_texts", fake_embed_texts)
+
     @pytest.mark.asyncio
     async def test_ingest_text_creates_episode_and_entities(self, tmp_path):
         from core.memory.backend.neo4j_graph import Neo4jGraphBackend
