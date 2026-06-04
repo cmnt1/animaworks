@@ -107,6 +107,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/tools/_image_schemas.py": 1,
     "core/tools/aws_collector.py": 1,
     "core/tools/github.py": 1,
+    # Japanese property portal labels, search terms, and report headings
+    "core/tools/property_portal_scraper.py": 30,
     "core/tools/_slack_cli.py": 1,
     # mock task data with Japanese titles
     "server/routes/animas.py": 24,
@@ -352,7 +354,7 @@ def scan_all_files() -> dict[str, list[tuple[int, str]]]:
         if not base.exists():
             continue
         for py_file in sorted(base.rglob("*.py")):
-            rel = str(py_file.relative_to(_PROJECT_ROOT))
+            rel = py_file.relative_to(_PROJECT_ROOT).as_posix()
             if rel in _EXCLUDED_FILES:
                 continue
             if any(part in _EXCLUDED_DIRS for part in py_file.parts):
