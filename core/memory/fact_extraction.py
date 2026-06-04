@@ -171,6 +171,7 @@ async def extract_fact_records(
             facts,
             source_episode=source_episode,
             source_session_id=source_session_id,
+            recorded_at=reference_time,
         )
     except Exception:
         logger.warning("Atomic fact extraction failed", exc_info=True)

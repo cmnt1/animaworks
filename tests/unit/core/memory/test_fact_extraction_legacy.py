@@ -103,6 +103,7 @@ async def test_extract_fact_records_uses_injected_extractor(tmp_path: Path) -> N
     assert [r.text for r in records] == ["Alice is evaluating LoCoMo memory scores."]
     assert records[0].source_entity == "Alice"
     assert records[0].target_entity == "LoCoMo"
+    assert records[0].recorded_at == "2026-06-03T10:00:00+09:00"
 
 
 @pytest.mark.asyncio
