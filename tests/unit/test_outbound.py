@@ -245,16 +245,17 @@ class TestBuildChannelOrder:
 
 
 class TestSendExternal:
-    @patch("core.outbound._send_via_slack")
-    def test_slack_success(self, mock_slack):
-        mock_slack.return_value = json.dumps({"status": "sent", "channel": "slack"})
+    @patch("core.outbound._send_via_discord")
+    def test_discord_success(self, mock_discord):
+        # Slack is disabled (Discord migration); Discord is the primary channel.
+        mock_discord.return_value = json.dumps({"status": "sent", "channel": "discord"})
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="slack", slack_user_id="U1",
+            is_internal=False, name="user", channel="discord", discord_user_id="D1",
         )
         result = send_external(r, "hello", sender_name="sakura")
         data = json.loads(result)
         assert data["status"] == "sent"
-        mock_slack.assert_called_once_with("U1", "hello", "sakura", "")
+        mock_discord.assert_called_once_with("D1", "hello", "sakura", "")
 
     @patch("core.outbound._send_via_chatwork")
     def test_chatwork_success(self, mock_cw):
@@ -291,23 +292,23 @@ class TestSendExternal:
         assert data["status"] == "error"
         assert "DeliveryFailed" in data["error_type"]
 
-    @patch("core.outbound._send_via_slack")
-    def test_sender_name_prefix(self, mock_slack):
-        mock_slack.return_value = json.dumps({"status": "sent"})
+    @patch("core.outbound._send_via_discord")
+    def test_sender_name_prefix(self, mock_discord):
+        mock_discord.return_value = json.dumps({"status": "sent"})
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="slack", slack_user_id="U1",
+            is_internal=False, name="user", channel="discord", discord_user_id="D1",
         )
         send_external(r, "hello", sender_name="sakura")
-        mock_slack.assert_called_once_with("U1", "hello", "sakura", "")
+        mock_discord.assert_called_once_with("D1", "hello", "sakura", "")
 
-    @patch("core.outbound._send_via_slack")
-    def test_sender_name_empty_no_prefix(self, mock_slack):
-        mock_slack.return_value = json.dumps({"status": "sent"})
+    @patch("core.outbound._send_via_discord")
+    def test_sender_name_empty_no_prefix(self, mock_discord):
+        mock_discord.return_value = json.dumps({"status": "sent"})
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="slack", slack_user_id="U1",
+            is_internal=False, name="user", channel="discord", discord_user_id="D1",
         )
         send_external(r, "hello", sender_name="")
-        mock_slack.assert_called_once_with("U1", "hello", "", "")
+        mock_discord.assert_called_once_with("D1", "hello", "", "")
 
 
 # ── TestUserAliasConfig ──────────────────────────────────
@@ -340,7 +341,7 @@ class TestUserAliasConfig:
 class TestExternalMessagingConfig:
     def test_default_preferred_channel(self):
         cfg = ExternalMessagingConfig()
-        assert cfg.preferred_channel == "slack"
+        assert cfg.preferred_channel == "discord"
 
     def test_default_user_aliases_empty(self):
         cfg = ExternalMessagingConfig()
@@ -357,7 +358,7 @@ class TestExternalMessagingConfig:
         """Old config without preferred_channel/user_aliases should load with defaults."""
         data = {"slack": {"enabled": True}, "chatwork": {"enabled": False}}
         cfg = ExternalMessagingConfig(**data)
-        assert cfg.preferred_channel == "slack"
+        assert cfg.preferred_channel == "discord"
         assert cfg.user_aliases == {}
         assert cfg.slack.enabled is True
 
