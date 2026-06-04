@@ -115,12 +115,10 @@ class TestDispatchChannelPost:
             },
         )
 
-        assert result["status"] == "ok"
-        assert result["ts"] == "1234567890.123456"
-        assert result["channel"] == "C123ABC"
-        mock_client.post_message.assert_called_once()
-        call_kwargs = mock_client.post_message.call_args
-        assert call_kwargs[0][0] == "C123ABC"
+        assert result["status"] == "disabled"
+        assert "Discord migration" in result["message"]
+        mock_cls.assert_not_called()
+        mock_client.post_message.assert_not_called()
 
     @patch("core.tools.slack._resolve_slack_identity", return_value=("mei", "https://cdn/mei.png"))
     @patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test")
@@ -132,11 +130,11 @@ class TestDispatchChannelPost:
         mock_client.post_message.return_value = {"ok": True, "ts": "123"}
         mock_cls.return_value = mock_client
 
-        dispatch("slack_channel_post", {"channel_id": "C1", "text": "hi"})
+        result = dispatch("slack_channel_post", {"channel_id": "C1", "text": "hi"})
 
-        _, kwargs = mock_client.post_message.call_args
-        assert kwargs["username"] == "mei"
-        assert kwargs["icon_url"] == "https://cdn/mei.png"
+        assert result["status"] == "disabled"
+        mock_cls.assert_not_called()
+        mock_client.post_message.assert_not_called()
 
     @patch("core.tools.slack._resolve_slack_identity", return_value=("mei", "https://cdn/mei.png"))
     @patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test")
@@ -148,13 +146,14 @@ class TestDispatchChannelPost:
         mock_client.post_message.return_value = {"ok": True, "ts": "123"}
         mock_cls.return_value = mock_client
 
-        dispatch(
+        result = dispatch(
             "slack_channel_post",
             {"channel_id": "C1", "text": "hi", "thread_ts": "1774610064.894259"},
         )
 
-        _, kwargs = mock_client.post_message.call_args
-        assert kwargs["thread_ts"] == "1774610064.894259"
+        assert result["status"] == "disabled"
+        mock_cls.assert_not_called()
+        mock_client.post_message.assert_not_called()
 
 
 class TestDispatchChannelUpdate:
@@ -178,13 +177,10 @@ class TestDispatchChannelUpdate:
             },
         )
 
-        assert result["status"] == "ok"
-        assert result["ts"] == "1234567890.123456"
-        mock_client.update_message.assert_called_once_with(
-            "C123ABC",
-            "1234567890.123456",
-            "Updated text",
-        )
+        assert result["status"] == "disabled"
+        assert "Discord migration" in result["message"]
+        mock_cls.assert_not_called()
+        mock_client.update_message.assert_not_called()
 
 
 # ── taskboard_md_to_slack ──────────────────────────────────
