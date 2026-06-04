@@ -165,14 +165,7 @@ def _resolve_from_alias(
         )
 
     # Preferred channel not available — fallback to any available channel
-    if alias_cfg.discord_user_id:
-        return ResolvedRecipient(
-            is_internal=False,
-            name=alias,
-            channel="discord",
-            discord_user_id=alias_cfg.discord_user_id,
-            alias_used=alias,
-        )
+    # Order: slack → chatwork → discord (Discord is last).
     if alias_cfg.slack_user_id:
         return ResolvedRecipient(
             is_internal=False,
