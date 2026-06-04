@@ -150,13 +150,17 @@ class TestSendViaSlackPerAnima:
         )
 
     @patch("core.outbound._send_via_slack")
-    def test_send_external_passes_anima_name_to_send_via_slack(self, mock_send):
+    def test_send_external_reports_slack_disabled(self, mock_send):
         mock_send.return_value = json.dumps({"status": "sent", "channel": "slack"})
         r = ResolvedRecipient(
             is_internal=False, name="user", channel="slack", slack_user_id="U1",
         )
-        send_external(r, "hello", sender_name="sumire", anima_name="sumire")
-        mock_send.assert_called_once_with("U1", "hello", "sumire", "sumire")
+        result = send_external(r, "hello", sender_name="sumire", anima_name="sumire")
+        data = json.loads(result)
+        assert data["status"] == "error"
+        assert data["error_type"] == "DeliveryFailed"
+        assert "slack: disabled" in data["message"]
+        mock_send.assert_not_called()
 
 
 # ── 3. ExternalMessagingChannelConfig.app_id_mapping tests ──────────────────

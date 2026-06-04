@@ -235,6 +235,7 @@ class TestIngestIntegration:
         mock_driver.execute_query = AsyncMock(return_value=[])
         backend._driver = mock_driver
         backend._schema_ensured = True
+        backend._embed_texts = AsyncMock(return_value=[[0.0]])
 
         mock_entity = MagicMock(name="Alice", summary="A person")
         mock_entity.name = "Alice"
@@ -282,6 +283,7 @@ class TestIngestIntegration:
         mock_driver.execute_query = AsyncMock(return_value=[])
         backend._driver = mock_driver
         backend._schema_ensured = True
+        backend._embed_texts = AsyncMock(return_value=[[0.0]])
 
         mock_entity = MagicMock()
         mock_entity.name = "Bob"
