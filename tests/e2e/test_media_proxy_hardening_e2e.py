@@ -15,8 +15,10 @@ from httpx import ASGITransport, AsyncClient
 from core.config.models import MediaProxyConfig
 
 TEST_IMAGE_URLS = (
-    "https://httpbin.org/image/png",
-    "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?fm=png",
+    "https://httpbingo.org/image/png",
+    "https://dummyimage.com/1x1/000/fff.png",
+    "https://placehold.co/1x1.png",
+    "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?fm=png&w=64&q=80",
 )
 
 
