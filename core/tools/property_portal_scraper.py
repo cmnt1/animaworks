@@ -17,7 +17,7 @@ import re
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -26,7 +26,6 @@ from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
-
 
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "run": {"expected_seconds": 45, "background_eligible": True},
@@ -605,7 +604,7 @@ def run_scan(
             http_client.close()
 
     return ScanResult(
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=datetime.now(UTC).isoformat(),
         target="投資用不動産・収益物件の売買情報（安城市中心）",
         min_gross_yield_percent=min_gross_yield_percent,
         portal_runs=portal_runs,
@@ -722,7 +721,9 @@ def cli_main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     run_parser = sub.add_parser("run", help="Fetch configured property sale portals and report likely listings")
     run_parser.add_argument("--config", help="JSON config path. Defaults to PROP-07 built-in portal list.")
-    run_parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory for JSON/Markdown/CSV outputs.")
+    run_parser.add_argument(
+        "--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory for JSON/Markdown/CSV outputs."
+    )
     run_parser.add_argument("--no-write", action="store_true", help="Print only; do not write output files.")
     run_parser.add_argument("--json", action="store_true", help="Print JSON instead of Markdown.")
     run_parser.add_argument("--min-gross-yield", type=float, help="Optional PROP-01 minimum gross yield threshold.")
