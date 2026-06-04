@@ -239,16 +239,19 @@ FILE_TOOLS: list[dict[str, Any]] = [
     {
         "name": "execute_command",
         "description": (
-            "Execute a shell command. On Windows, commands run in a PowerShell-compatible shell. "
+            "Execute a shell command. On Windows commands run in cmd.exe (NOT PowerShell), "
+            "on Unix in bash. PowerShell-only cmdlets like 'Start-Sleep' fail on Windows — "
+            "use cmd.exe builtins (e.g. 'timeout /t 5' or 'ping -n 6 127.0.0.1') to wait. "
             "Most commands are allowed by default (check your permissions with check_permissions if unsure). "
             "Use read_file/write_file/edit_file for direct file access when possible. "
-            "Set background=true for long-running commands — returns immediately "
-            "with a cmd_id and output file path. Read the output file to check progress."
+            "The foreground timeout is short (default 30s) — for anything that may run longer "
+            "(builds, DB jobs, uploads, deploys) set background=true: it returns immediately "
+            "with a cmd_id and output file path; read the output file to poll progress."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "Shell command to run (PowerShell-compatible on Windows)"},
+                "command": {"type": "string", "description": "Shell command to run (cmd.exe on Windows, bash on Unix)"},
                 "timeout": {
                     "type": "integer",
                     "description": ("Timeout in seconds. Default: 30 (foreground), 1800 (background)."),

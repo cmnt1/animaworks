@@ -542,7 +542,12 @@ _CONSOLIDATION_BLOCKED_NAMES: frozenset[str] = frozenset(
 
 
 def _submit_tasks_enabled_for_mcp() -> bool:
-    """Return True when this MCP subprocess is in an explicit background task session."""
+    """Return True when this MCP subprocess may durably enqueue executable work.
+
+    See ``submit_tasks_enabled_for_trigger``: background task-authoring sessions
+    plus the ephemeral ``heartbeat`` / ``inbox:*`` paths (which need it to hand
+    self-owned heavy work to TaskExec instead of losing it on session end).
+    """
     env_flag = os.environ.get("ANIMAWORKS_ENABLE_SUBMIT_TASKS", "").strip().lower()
     if env_flag in {"1", "true", "yes", "on"}:
         return True
@@ -603,7 +608,8 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
                         "status": "error",
                         "error_type": "ToolBlocked",
                         "message": (
-                            "Tool 'submit_tasks' is only available in explicit background task-authoring sessions"
+                            "Tool 'submit_tasks' is only available in background task-authoring, "
+                            "heartbeat, or inbox sessions"
                         ),
                     },
                     ensure_ascii=False,

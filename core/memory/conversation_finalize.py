@@ -263,8 +263,15 @@ async def finalize_session(
 
     save_fn()
 
-    new_status = parsed.current_status.strip() if parsed.current_status else "status: idle"
-    memory_mgr.archive_and_reset_state(new_status or "status: idle")
+    # Only archive+reset current_state.md when the session explicitly emitted a
+    # "### 現在の状態 / Current State" section. An observe-only session (e.g. a
+    # heartbeat that just surveys, or a light inbox reply) emits none — and
+    # unconditionally overwriting with "status: idle" in that case destroys a
+    # handoff another session wrote (a "ready_to_execute" plan). Preserve the
+    # existing state instead; stale state with no active task is later cleaned
+    # up by taskboard housekeeping, which guards on active tasks.
+    if parsed.current_status:
+        memory_mgr.archive_and_reset_state(parsed.current_status.strip() or "status: idle")
 
     logger.info(
         "Session finalized: %d new turns summarized and written to episodes/%s.md",

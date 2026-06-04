@@ -63,12 +63,22 @@ _COMPACT_COMM_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-_SUBMIT_TASKS_ALLOWED_TRIGGERS: frozenset[str] = frozenset({"background", "submit_tasks"})
-_SUBMIT_TASKS_ALLOWED_PREFIXES: tuple[str, ...] = ("background:", "submit_tasks:")
+_SUBMIT_TASKS_ALLOWED_TRIGGERS: frozenset[str] = frozenset({"background", "submit_tasks", "heartbeat"})
+_SUBMIT_TASKS_ALLOWED_PREFIXES: tuple[str, ...] = ("background:", "submit_tasks:", "inbox:")
 
 
 def submit_tasks_enabled_for_trigger(trigger: str | None) -> bool:
-    """Return True only for explicit background task-authoring sessions."""
+    """Return True for sessions that may durably enqueue executable work.
+
+    Besides the explicit background task-authoring sessions, ``heartbeat`` and
+    ``inbox:*`` are allowed: both are ephemeral, non-executing paths (heartbeat
+    only Observe→Plan; inbox is short-lived light replies). When they identify
+    heavy multi-step work the anima must do *itself*, the only durable autonomous
+    execution path is a ``state/pending/*.json`` self-task that the
+    PendingTaskExecutor (TaskExec) runs — and ``submit_tasks`` is what writes it.
+    Without this, heavy work attempted inline in those sessions is lost when the
+    session ends.
+    """
     normalized = (trigger or "").strip()
     return normalized in _SUBMIT_TASKS_ALLOWED_TRIGGERS or normalized.startswith(_SUBMIT_TASKS_ALLOWED_PREFIXES)
 

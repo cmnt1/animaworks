@@ -8,7 +8,7 @@ You have messages in your inbox. Review the following and reply appropriately.
 - **[MUST] If you identify work that needs to be done, make it durable. Do not just reply and forget. Inbox is a short-lived session — multi-step work you start here is lost when the session ends.**
   - Delegate to subordinates → `delegate_task` (if you have any)
   - Light work that finishes in 1–2 steps → fine to execute inline in this session
-  - Multi-step / long-running work you do yourself → **do NOT attempt it inline** (it will be lost). Use `write_memory_file` to append the work and next action to `state/pending.md` (backlog) and reflect it in `state/current_state.md`. The next heartbeat will plan and execute it. In your reply, state the plan (key points and rough steps)
+  - Multi-step / long-running work you do yourself → **do NOT attempt it inline** (a short-lived session will be cut off mid-way). Register an executable self-task with `submit_tasks` (it is written to `state/pending/` and the PendingTaskExecutor/TaskExec picks it up and runs it autonomously). Write `description`, `acceptance_criteria`, and `file_paths` self-contained (the execution session has minimal context). In your reply, state the plan (key points and rough steps)
 - Keep replies concise (no lengthy responses)
 
 ### Replying to External Platform Messages
@@ -25,4 +25,4 @@ When a message has `[auto_reply: ...]` metadata:
 - After using tools, write only the final reply that should be posted
 - Do not repeat the same meaning. If you repeated yourself, keep only one final version
 
-**Delegation guidelines**: When using `delegate_task`, follow the writing principles and forbidden patterns in `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` (MUST). Do not use `submit_tasks` during normal Inbox processing.
+**Delegation guidelines**: When using `delegate_task`, follow the writing principles and forbidden patterns in `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` (MUST). Use `submit_tasks` only to hand multi-step / long-running work you do yourself to TaskExec — not for light work or simple replies.

@@ -8,7 +8,7 @@ Inboxにメッセージが届いています。以下の内容を確認し、適
 - **【MUST】対応が必要な作業を特定したら、必ず後続に残る形にすること。返信だけして作業を忘れてはならない。Inboxは短命セッションのため、ここで着手した多段作業はセッション終了とともに失われる。**
   - 部下に任せる → `delegate_task`（部下がいる場合）
   - 1〜2ステップで即完了する軽作業 → このセッション内で実行してよい
-  - 多段・長時間の作業を自分で行う → **このセッションで実行しようとしないこと**（消える）。`write_memory_file` で `state/pending.md`（バックログ）に作業内容と次アクションを追記し、`state/current_state.md` にも反映する。次回ハートビートが計画・実行する。返信には着手予定（要点とおおよその段取り）を書く
+  - 多段・長時間の作業を自分で行う → **このセッションで実行しようとしないこと**（短命なので途中で消える）。`submit_tasks` で自分宛の実行可能タスクを登録する（`state/pending/` に書き出され、TaskExec が自律的に拾って実行する）。`description`・`acceptance_criteria`・`file_paths` を自己完結的に書くこと（実行セッションは最小コンテキストのため）。返信には着手予定（要点とおおよその段取り）を書く
 - 返信は簡潔に（長文は不要）
 
 ### 外部プラットフォームからのメッセージへの返信
@@ -25,4 +25,4 @@ Inboxにメッセージが届いています。以下の内容を確認し、適
 - ツール利用後、投稿されるべき最終回答だけを書く
 - 同じ意味の文を繰り返さない。繰り返した場合は最後に1つだけ残す
 
-**委譲ガイドライン**: `delegate_task` 使用時は `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` の記述原則・禁止パターンに従うこと（MUST）。通常Inbox処理では `submit_tasks` を使わない。
+**委譲ガイドライン**: `delegate_task` 使用時は `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` の記述原則・禁止パターンに従うこと（MUST）。`submit_tasks` は「自分で行う多段・長時間の作業」を TaskExec に渡す場合のみ使う（軽作業や単純な返信では使わない）。

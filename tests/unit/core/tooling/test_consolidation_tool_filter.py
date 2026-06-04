@@ -94,6 +94,33 @@ class TestConsolidationToolFilter:
         assert "submit_tasks" not in _tool_names(normal)
         assert "submit_tasks" in _tool_names(background)
 
+    def test_heartbeat_trigger_includes_submit_tasks(self):
+        """Heartbeat may enqueue a self-task for TaskExec (only durable path)."""
+        tools = build_unified_tool_list(
+            include_supervisor_tools=True,
+            include_create_skill=False,
+            trigger="heartbeat",
+        )
+        assert "submit_tasks" in _tool_names(tools)
+
+    def test_inbox_trigger_includes_submit_tasks(self):
+        """Inbox sessions are ephemeral; heavy self-work must be enqueued."""
+        tools = build_unified_tool_list(
+            include_supervisor_tools=True,
+            include_create_skill=False,
+            trigger="inbox:sakura",
+        )
+        assert "submit_tasks" in _tool_names(tools)
+
+    def test_chat_trigger_still_excludes_submit_tasks(self):
+        """Chat executes inline, so submit_tasks stays hidden there."""
+        tools = build_unified_tool_list(
+            include_supervisor_tools=True,
+            include_create_skill=False,
+            trigger="chat",
+        )
+        assert "submit_tasks" not in _tool_names(tools)
+
     def test_trust_skill_only_available_for_human_triggers(self):
         human = build_unified_tool_list(trigger="message:user")
         heartbeat = build_unified_tool_list(trigger="heartbeat")

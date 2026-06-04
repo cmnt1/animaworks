@@ -277,6 +277,61 @@ class TestFinalizeSession:
         assert loaded.turns == []
         assert not conv_memory.needs_compression()
 
+    @pytest.mark.asyncio
+    async def test_finalize_preserves_state_when_no_status_section(self, conv_memory, anima_dir):
+        """Observe-only summary (no '### 現在の状態') must NOT clobber current_state.md.
+
+        Regression: an inbox/heartbeat that surveys but emits no state section
+        used to overwrite a prior 'ready_to_execute' handoff with 'status: idle'.
+        """
+        from core.memory.manager import MemoryManager
+
+        mm = MemoryManager(anima_dir)
+        handoff = "status: ready_to_execute\nplan: deploy AFF-003 fix"
+        mm.update_state(handoff)
+
+        state = conv_memory.load()
+        state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(4)]
+        state.last_finalized_turn_index = 0
+        conv_memory.save()
+
+        # Summary WITHOUT a "### 現在の状態" section -> current_status == ""
+        summary_resp = make_litellm_response(
+            content="## エピソード要約\n要約\n\n## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし"
+        )
+        compress_resp = make_litellm_response(content="圧縮")
+
+        with patch_litellm(summary_resp, compress_resp):
+            result = await conv_memory.finalize_session(min_turns=3)
+
+        assert result is True
+        # Handoff state preserved, not reset to idle
+        assert MemoryManager(anima_dir).read_current_state() == handoff
+
+    @pytest.mark.asyncio
+    async def test_finalize_resets_state_when_status_section_present(self, conv_memory, anima_dir):
+        """A summary that emits '### 現在の状態' archives+resets current_state.md."""
+        from core.memory.manager import MemoryManager
+
+        mm = MemoryManager(anima_dir)
+        mm.update_state("status: in_progress\nplan: old work")
+
+        state = conv_memory.load()
+        state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(4)]
+        state.last_finalized_turn_index = 0
+        conv_memory.save()
+
+        summary_resp = make_litellm_response(
+            content="## エピソード要約\n要約\n\n## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし\n### 現在の状態\nstatus: idle"
+        )
+        compress_resp = make_litellm_response(content="圧縮")
+
+        with patch_litellm(summary_resp, compress_resp):
+            result = await conv_memory.finalize_session(min_turns=3)
+
+        assert result is True
+        assert MemoryManager(anima_dir).read_current_state() == "status: idle"
+
 
 # ── finalize_if_session_ended tests ───────────────────────────
 
