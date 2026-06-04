@@ -48,6 +48,7 @@ _EXPECTED_FILES = [
     "common_knowledge/operations/action-rules-guide.md",
     "common_knowledge/operations/background-tasks.md",
     "common_knowledge/operations/heartbeat-cron-guide.md",
+    "common_knowledge/operations/heartbeat-observe-guide.md",
     "common_knowledge/operations/machine/tool-usage.md",
     "common_knowledge/operations/machine/workflow-engineer.md",
     "common_knowledge/operations/machine/workflow-pdm.md",
