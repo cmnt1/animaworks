@@ -3,6 +3,7 @@
 Tests the full flow through HumanNotifier with vault credential fallback,
 partial failure reporting, and chatwork/telegram robustness fixes.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,7 +20,6 @@ from core.config.models import (
 )
 from core.notification.notifier import HumanNotifier
 from core.tooling.handler import ToolHandler
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -79,13 +79,20 @@ class TestVaultCredentialE2E:
             human_notifier=notifier,
         )
 
-        with patch("core.notification.channels.chatwork.httpx.AsyncClient") as mock_cls:
+        with (
+            patch("core.config.models.load_config") as mock_load_config,
+            patch("core.notification.channels.chatwork.httpx.AsyncClient") as mock_cls,
+        ):
+            mock_load_config.return_value = MagicMock(human_notification=config)
             _mock_http(mock_cls)
-            result = handler.handle("call_human", {
-                "subject": "Room ID Test",
-                "body": "int room_id should work",
-                "priority": "normal",
-            })
+            result = handler.handle(
+                "call_human",
+                {
+                    "subject": "Room ID Test",
+                    "body": "int room_id should work",
+                    "priority": "normal",
+                },
+            )
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
@@ -123,7 +130,11 @@ class TestVaultCredentialE2E:
             resp.raise_for_status = MagicMock()
             return resp
 
-        with patch("core.notification.channels.telegram.httpx.AsyncClient") as mock_cls:
+        with (
+            patch("core.config.models.load_config") as mock_load_config,
+            patch("core.notification.channels.telegram.httpx.AsyncClient") as mock_cls,
+        ):
+            mock_load_config.return_value = MagicMock(human_notification=config)
             mock_client = AsyncMock()
             mock_client.post = capture_post
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -131,11 +142,14 @@ class TestVaultCredentialE2E:
             mock_cls.return_value = mock_client
 
             long_body = "Check A & B situation! " * 500
-            result = handler.handle("call_human", {
-                "subject": "Telegram Truncate Test",
-                "body": long_body,
-                "priority": "high",
-            })
+            result = handler.handle(
+                "call_human",
+                {
+                    "subject": "Telegram Truncate Test",
+                    "body": long_body,
+                    "priority": "high",
+                },
+            )
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
@@ -151,12 +165,16 @@ class TestVaultCredentialE2E:
                     or rest.startswith("&gt;")
                     or rest.startswith("&quot;")
                     or rest.startswith("&#")
-                ), f"Broken entity at position {i}: {text[i:i+10]}"
+                ), f"Broken entity at position {i}: {text[i : i + 10]}"
 
 
 class TestPartialFailureE2E:
     def test_mixed_success_failure_reports_correctly(
-        self, anima_dir, memory, monkeypatch, caplog,
+        self,
+        anima_dir,
+        memory,
+        monkeypatch,
+        caplog,
     ):
         """When one channel succeeds and another fails, notifier logs warning."""
         config = HumanNotificationConfig(
@@ -197,7 +215,11 @@ class TestPartialFailureE2E:
                 return resp
             raise ConnectionError("network down")
 
-        with patch("httpx.AsyncClient") as mock_cls:
+        with (
+            patch("core.config.models.load_config") as mock_load_config,
+            patch("httpx.AsyncClient") as mock_cls,
+        ):
+            mock_load_config.return_value = MagicMock(human_notification=config)
             mock_client = AsyncMock()
             mock_client.post = _alternating_post
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -205,10 +227,13 @@ class TestPartialFailureE2E:
             mock_cls.return_value = mock_client
 
             with caplog.at_level(logging.WARNING, logger="animaworks.notification"):
-                result = handler.handle("call_human", {
-                    "subject": "Partial Fail",
-                    "body": "One channel fails",
-                })
+                result = handler.handle(
+                    "call_human",
+                    {
+                        "subject": "Partial Fail",
+                        "body": "One channel fails",
+                    },
+                )
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
