@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from benchmarks.locomo.fact_index import (
@@ -70,6 +71,12 @@ def test_write_fact_records_creates_markdown_and_skips_existing(tmp_path: Path) 
     assert text.startswith("---\n")
     assert "source_episode: \"episodes/conv-26.md\"" in text
     assert "Caroline: I recommended Becoming Nicole." in text
+    jsonl = tmp_path / "locomo_facts.jsonl"
+    payload = json.loads(jsonl.read_text(encoding="utf-8").strip())
+    assert payload["fact_id"] == records[0].fact_id
+    assert payload["text"] == "Caroline: I recommended Becoming Nicole."
+    assert payload["source_entity"] == "Caroline"
+    assert payload["source_episode"] == "episodes/conv-26.md"
 
 
 def test_fact_bm25_documents_use_fact_memory_type_and_numeric_valid_at() -> None:

@@ -103,9 +103,16 @@ class EntityBoostConfig:
     query_entities: tuple[str, ...] = ()
     require_query_entities: bool = False
     prefer_candidate_metadata: bool = True
+    use_content_tokens: bool = True
+    require_multi_token_overlap: bool = False
 
 
-def extract_entities(text: str, *, ignored_entities: tuple[str, ...] = ()) -> set[str]:
+def extract_entities(
+    text: str,
+    *,
+    ignored_entities: tuple[str, ...] = (),
+    use_content_tokens: bool = True,
+) -> set[str]:
     """Extract deterministic entity-like phrases without external NLP dependencies."""
     ignored = {_normalize_entity(value) for value in ignored_entities}
     ignored.discard("")
@@ -118,12 +125,13 @@ def extract_entities(text: str, *, ignored_entities: tuple[str, ...] = ()) -> se
     for match in _CJK_RE.finditer(text):
         _add_entity(entities, match.group(0), ignored)
 
-    tokens = _content_tokens(text, ignored)
-    entities.update(tokens)
-    for size in (2, 3):
-        for index in range(0, max(0, len(tokens) - size + 1)):
-            phrase = " ".join(tokens[index : index + size])
-            _add_entity(entities, phrase, ignored)
+    if use_content_tokens:
+        tokens = _content_tokens(text, ignored)
+        entities.update(tokens)
+        for size in (2, 3):
+            for index in range(0, max(0, len(tokens) - size + 1)):
+                phrase = " ".join(tokens[index : index + size])
+                _add_entity(entities, phrase, ignored)
     return entities
 
 
@@ -146,7 +154,13 @@ def apply_entity_boost(
     if config.require_query_entities and not query_entities:
         return candidates
     if not config.require_query_entities:
-        query_entities.update(extract_entities(query, ignored_entities=config.ignored_entities))
+        query_entities.update(
+            extract_entities(
+                query,
+                ignored_entities=config.ignored_entities,
+                use_content_tokens=config.use_content_tokens,
+            ),
+        )
     if not query_entities:
         return candidates
 
@@ -154,6 +168,8 @@ def apply_entity_boost(
     for candidate in candidates:
         candidate_entities = _candidate_entities(candidate, config)
         overlap = query_entities & candidate_entities
+        if config.require_multi_token_overlap:
+            overlap = {entity for entity in overlap if len(entity.split()) > 1}
         if not overlap:
             boosted.append(candidate)
             continue
@@ -181,6 +197,7 @@ def _candidate_entities(candidate: dict[str, Any], config: EntityBoostConfig) ->
     return extract_entities(
         str(candidate.get("content", "") or ""),
         ignored_entities=config.ignored_entities,
+        use_content_tokens=config.use_content_tokens,
     )
 
 

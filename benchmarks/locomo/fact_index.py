@@ -103,7 +103,7 @@ def extract_locomo_fact_records(sample_id: str, conversation: dict[str, Any], *,
 
 
 def write_fact_records(facts_dir: Path, records: list[LocomoFactRecord]) -> int:
-    """Write fact records as one markdown file per fact and return newly written count."""
+    """Write fact records as markdown plus indexable JSONL and return newly written count."""
     facts_dir.mkdir(parents=True, exist_ok=True)
     written = 0
     for record in records:
@@ -112,6 +112,13 @@ def write_fact_records(facts_dir: Path, records: list[LocomoFactRecord]) -> int:
             continue
         path.write_text(_render_fact_markdown(record), encoding="utf-8")
         written += 1
+    jsonl_path = facts_dir / "locomo_facts.jsonl"
+    if not jsonl_path.exists():
+        jsonl_path.write_text(
+            "\n".join(_to_core_fact_json_line(record) for record in records) + ("\n" if records else ""),
+            encoding="utf-8",
+        )
+        written = max(written, len(records))
     return written
 
 
@@ -244,6 +251,29 @@ def _render_fact_markdown(record: LocomoFactRecord) -> str:
         "",
     ]
     return "\n".join(frontmatter)
+
+
+def _to_core_fact_json_line(record: LocomoFactRecord) -> str:
+    from core.memory.facts import FactRecord
+
+    entities = list(record.entities)
+    speaker_key = record.speaker.casefold()
+    target_entity = next((entity for entity in entities if entity.casefold() != speaker_key), "")
+    fact = FactRecord(
+        fact_id=record.fact_id,
+        text=record.text,
+        source_entity=record.speaker,
+        target_entity=target_entity,
+        edge_type="MENTIONS",
+        raw_edge_type="locomo_sentence_fact",
+        valid_at=record.valid_at,
+        recorded_at=record.valid_at,
+        entities=entities,
+        source_episode=record.source_episode,
+        source_session_id=str(record.session_index),
+        confidence=record.confidence,
+    )
+    return fact.to_json_line()
 
 
 def _yaml_scalar(value: str) -> str:

@@ -264,17 +264,28 @@ class AnimaWorksLoCoMoAdapter:
         process at a time.  For parallel benchmark runs, use separate processes.
     """
 
-    def __init__(self, search_mode: str = "vector", *, top_k: int = 5) -> None:
+    def __init__(
+        self,
+        search_mode: str = "vector",
+        *,
+        top_k: int = 5,
+        answer_timeout: float | None = None,
+        answer_max_retries: int = 2,
+    ) -> None:
         """
         Args:
             search_mode: ``vector`` | ``vector_graph`` | ``scope_all``
             top_k: Number of hits to return from retrieval
+            answer_timeout: Optional LiteLLM timeout for answer generation.
+            answer_max_retries: Number of retries after the first answer attempt.
         """
         if search_mode not in SEARCH_MODES:
             raise ValueError(f"search_mode must be one of {SEARCH_MODES}, got {search_mode!r}")
         _ensure_rag_stack()
         self._search_mode = search_mode
         self._top_k = top_k
+        self._answer_timeout = answer_timeout
+        self._answer_max_retries = max(0, int(answer_max_retries))
         self._temp_dir: str | None = None
         self._previous_animaworks_data: str | None = None
         self._own_data_env = False
@@ -469,7 +480,7 @@ class AnimaWorksLoCoMoAdapter:
 
             write_fact_records(self._facts_dir, records)
             indexed = 0
-            for fact_file in sorted(self._facts_dir.glob("fact_*.md")):
+            for fact_file in sorted(self._facts_dir.glob("*.jsonl")):
                 indexed += self._indexer.index_file(fact_file, memory_type="facts", force=True)
             self._last_fact_count = indexed
             self._fact_bm25_corpus = fact_bm25_documents(records)
@@ -635,7 +646,6 @@ class AnimaWorksLoCoMoAdapter:
             self._remember_retrieval_diagnostics(items)
             return items
         # scope_all: production-compatible Legacy unified search with benchmark ablations.
-        from core.memory.retrieval.entity import EntityBoostConfig  # noqa: PLC0415
         from core.memory.retrieval.temporal import TemporalBoostConfig  # noqa: PLC0415
         from core.memory.retrieval.unified_search import UnifiedMemorySearch  # noqa: PLC0415
 
@@ -666,11 +676,7 @@ class AnimaWorksLoCoMoAdapter:
                 enabled=locomo_temporal_boost_enabled(),
                 category=category,
             ),
-            entity_boost=EntityBoostConfig(
-                enabled=locomo_entity_boost_enabled(),
-                category=category,
-                ignored_entities=self._entity_ignored_entities,
-            ),
+            entity_boost=self._entity_boost_config(category),
         )
         meta = searcher.last_search_meta
         self._last_abstain = bool(meta.get("abstain", False))
@@ -838,27 +844,52 @@ class AnimaWorksLoCoMoAdapter:
             merged.append(row)
         return merged
 
-    def _complete_sync(self, messages: list[dict[str, str]], model: str) -> str:
+    def _entity_boost_config(self, category: int | None) -> Any:
+        from core.memory.retrieval.entity import EntityBoostConfig  # noqa: PLC0415
+
+        stricter_multi_hop = category == 1
+        return EntityBoostConfig(
+            enabled=locomo_entity_boost_enabled(),
+            category=category,
+            ignored_entities=self._entity_ignored_entities,
+            use_content_tokens=not stricter_multi_hop,
+            require_multi_token_overlap=stricter_multi_hop,
+        )
+
+    def _complete_sync(
+        self,
+        messages: list[dict[str, str]],
+        model: str,
+        *,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> str:
         """Synchronous LLM call with retries (used inside running event loop)."""
         import litellm  # noqa: PLC0415
 
         litellm_model, extra = resolve_locomo_litellm_kwargs(model)
         last: Exception | None = None
-        for attempt in range(1, 4):
+        use_timeout = self._answer_timeout if timeout is None else timeout
+        retry_count = self._answer_max_retries if max_retries is None else max(0, int(max_retries))
+        attempts = retry_count + 1
+        call_kwargs = {
+            "model": litellm_model,
+            "messages": messages,
+            "temperature": 0.0,
+            "max_tokens": LOCOMO_ANSWER_MAX_TOKENS,
+            **extra,
+        }
+        if use_timeout is not None:
+            call_kwargs["timeout"] = float(use_timeout)
+        for attempt in range(1, attempts + 1):
             try:
-                r = litellm.completion(
-                    model=litellm_model,
-                    messages=messages,
-                    temperature=0.0,
-                    max_tokens=LOCOMO_ANSWER_MAX_TOKENS,
-                    **extra,
-                )
+                r = litellm.completion(**call_kwargs)
                 ch = r.choices[0].message
                 return (ch.content or "").strip()
             except Exception as e:  # noqa: BLE001
                 last = e
-                logger.warning("litellm.completion attempt %s/3 failed: %s", attempt, e)
-                if attempt < 3:
+                logger.warning("litellm.completion attempt %s/%s failed: %s", attempt, attempts, e)
+                if attempt < attempts:
                     time.sleep(0.5 * (2 ** (attempt - 1)))
         assert last is not None
         raise last

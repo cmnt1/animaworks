@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -165,6 +166,33 @@ def _write_result_json(
     return path
 
 
+def _write_checkpoint_json(
+    out_dir: Path,
+    file_ts: str,
+    mode: str,
+    *,
+    timestamp_iso: str,
+    config: dict[str, Any],
+    results: list[dict[str, Any]],
+    errors: int,
+) -> Path:
+    """Write an incremental checkpoint for long-running LoCoMo runs."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{file_ts}_{mode}.partial.json"
+    payload: dict[str, Any] = {
+        "mode": mode,
+        "timestamp": timestamp_iso,
+        "checkpoint": True,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "config": config,
+        "summary": compute_summary(results),
+        "results": results,
+        "errors": errors,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
 # ── Core ──────────
 
 
@@ -174,6 +202,7 @@ def _run_qa_loop(
     samples: list[dict[str, Any]],
     args: argparse.Namespace,
     mode_label: str = "",
+    checkpoint_writer: Callable[[list[dict[str, Any]], int], None] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Run ingest → retrieve → answer → score loop for each sample/question.
 
@@ -311,6 +340,13 @@ def _run_qa_loop(
                 if isinstance(top_event_time_iso, str) and top_event_time_iso:
                     result["top_event_time_iso"] = top_event_time_iso
                 results.append(result)
+                checkpoint_every = int(getattr(args, "checkpoint_every", 0) or 0)
+                if checkpoint_writer is not None and checkpoint_every > 0 and len(results) % checkpoint_every == 0:
+                    try:
+                        checkpoint_writer(results, errors)
+                    except Exception as exc:  # noqa: BLE001
+                        errors += 1
+                        logger.exception("checkpoint write failed: %s", exc)
                 if (j + 1) % 50 == 0:
                     print(f"  Questions: {j + 1}/{len(qa_list)}")
             except Exception as exc:
@@ -377,18 +413,44 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             "search_mode": mode,
             "top_k": int(args.top_k),
             "answer_model": str(args.answer_model),
+            "answer_timeout": getattr(args, "answer_timeout", None),
+            "answer_max_retries": int(getattr(args, "answer_max_retries", 2) or 0),
+            "checkpoint_every": int(getattr(args, "checkpoint_every", 0) or 0),
             "judge_model": str(args.judge_model),
             "judge_enabled": bool(args.judge),
             "conversations": n_conv,
             "embedding_model": EMBEDDING_MODEL_DEFAULT,
         }
         try:
-            with AnimaWorksLoCoMoAdapter(search_mode=mode, top_k=int(args.top_k)) as adapter:
+            def checkpoint_writer(
+                current_results: list[dict[str, Any]],
+                current_errors: int,
+                *,
+                checkpoint_mode: str = mode,
+                checkpoint_config: dict[str, Any] = config_block,
+            ) -> None:
+                _write_checkpoint_json(
+                    out_dir,
+                    file_ts,
+                    checkpoint_mode,
+                    timestamp_iso=timestamp_iso,
+                    config=checkpoint_config,
+                    results=current_results,
+                    errors=current_errors,
+                )
+
+            with AnimaWorksLoCoMoAdapter(
+                search_mode=mode,
+                top_k=int(args.top_k),
+                answer_timeout=getattr(args, "answer_timeout", None),
+                answer_max_retries=int(getattr(args, "answer_max_retries", 2) or 0),
+            ) as adapter:
                 mode_results, mode_errors = _run_qa_loop(
                     adapter=adapter,
                     samples=samples,
                     args=args,
                     mode_label=mode,
+                    checkpoint_writer=checkpoint_writer,
                 )
                 error_count += mode_errors
         except Exception as exc:
@@ -481,6 +543,28 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=default_answer_model(),
         dest="answer_model",
         help=f"answer generation model (default: {default_answer_model()} via LiteLLM proxy)",
+    )
+    p.add_argument(
+        "--answer-timeout",
+        type=float,
+        default=None,
+        dest="answer_timeout",
+        help="optional answer generation timeout in seconds (default: provider/client default)",
+    )
+    p.add_argument(
+        "--answer-max-retries",
+        type=int,
+        default=2,
+        dest="answer_max_retries",
+        help="answer retries after the first attempt (default: 2 = 3 total attempts)",
+    )
+    p.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=0,
+        dest="checkpoint_every",
+        metavar="N",
+        help="write a .partial.json checkpoint every N answered questions (default: disabled)",
     )
     p.add_argument(
         "--output",

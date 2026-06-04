@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -315,6 +317,34 @@ class TestEventMetadataPropagation:
         assert adapter._fact_bm25_index is None
         assert adapter._fact_metadata_by_source_file == {}
 
+    def test_fact_index_ingest_indexes_jsonl_for_facts_collection(self, tmp_path: Path):
+        adapter = self._adapter_without_init()
+        indexed: list[tuple[Path, str, bool]] = []
+
+        class FakeIndexer:
+            def index_file(self, path: Path, *, memory_type: str, force: bool) -> int:
+                indexed.append((path, memory_type, force))
+                return 1
+
+        adapter._indexer = FakeIndexer()
+        adapter._facts_dir = tmp_path
+        adapter._vector_store = None
+        adapter._last_fact_count = 0
+        adapter._fact_bm25_corpus = []
+        adapter._fact_bm25_index = None
+        adapter._fact_metadata_by_source_file = {}
+        conversation = {
+            "session_1_date_time": "7 May 2023, 10:00 AM",
+            "session_1": [{"speaker": "Caroline", "text": "I recommended Becoming Nicole."}],
+        }
+
+        adapter._ingest_fact_index("conv-26", conversation, source_episode="episodes/conv-26.md")
+
+        assert indexed == [(tmp_path / "locomo_facts.jsonl", "facts", True)]
+        assert (tmp_path / "locomo_facts.jsonl").is_file()
+        assert adapter._last_fact_count == 1
+        assert adapter._fact_bm25_corpus
+
     def test_clear_fact_index_storage_removes_stale_collection_and_files(self, tmp_path: Path):
         adapter = self._adapter_without_init()
         adapter._facts_dir = tmp_path
@@ -351,6 +381,53 @@ class TestEventMetadataPropagation:
 
         assert adapter._last_top_score == 0.9
         assert adapter._last_top_event_time_iso == "2023-02-01T00:00:00+09:00"
+
+
+class TestAnswerCompletionKnobs:
+    def _adapter_without_init(self):
+        from benchmarks.locomo.adapter import AnimaWorksLoCoMoAdapter
+
+        adapter = object.__new__(AnimaWorksLoCoMoAdapter)
+        adapter._answer_timeout = 60.0
+        adapter._answer_max_retries = 0
+        return adapter
+
+    def test_complete_sync_passes_timeout(self, monkeypatch: pytest.MonkeyPatch):
+        import benchmarks.locomo.adapter as adapter_module
+
+        adapter = self._adapter_without_init()
+        calls: list[dict] = []
+
+        def fake_completion(**kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Answer"))])
+
+        monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(completion=fake_completion))
+        monkeypatch.setattr(adapter_module, "resolve_locomo_litellm_kwargs", lambda model: (model, {}))
+
+        assert adapter._complete_sync([{"role": "user", "content": "Q"}], "gpt-test") == "Answer"
+
+        assert calls[0]["timeout"] == 60.0
+        assert calls[0]["max_tokens"] == 512
+
+    def test_complete_sync_retry_zero_means_one_attempt(self, monkeypatch: pytest.MonkeyPatch):
+        import benchmarks.locomo.adapter as adapter_module
+
+        adapter = self._adapter_without_init()
+        calls = 0
+
+        def fake_completion(**_kwargs):
+            nonlocal calls
+            calls += 1
+            raise RuntimeError("boom")
+
+        monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(completion=fake_completion))
+        monkeypatch.setattr(adapter_module, "resolve_locomo_litellm_kwargs", lambda model: (model, {}))
+
+        with pytest.raises(RuntimeError, match="boom"):
+            adapter._complete_sync([{"role": "user", "content": "Q"}], "gpt-test")
+
+        assert calls == 1
 
 
 class TestTemporalBoostEnv:

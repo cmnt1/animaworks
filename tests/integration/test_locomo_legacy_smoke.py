@@ -99,6 +99,9 @@ def test_legacy_scope_all_within_baseline() -> None:
         judge=False,
         judge_model="gpt-4o",
         answer_model=os.environ.get("LOCOMO_ANSWER_MODEL", default_answer_model()),
+        answer_timeout=60.0,
+        answer_max_retries=0,
+        checkpoint_every=0,
         exclude_cat5=False,
     )
     args.output.mkdir(parents=True, exist_ok=True)
