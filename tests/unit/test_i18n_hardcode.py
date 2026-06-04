@@ -77,7 +77,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # bilingual empty-state placeholders for prompt injection (ja/en)
     "core/_anima_lifecycle.py": 2,
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)
-    "core/_anima_inbox.py": 4,
+    "core/_anima_inbox.py": 3,
     # MD section names used for parsing (基本情報, 人格, etc.)
     "core/anima_factory.py": 8,
     # label "コマンド:" in audit output
