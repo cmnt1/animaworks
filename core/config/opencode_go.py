@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Shared constants and helpers for the OpenCode Go provider."""
 
+import logging
 import os
 from typing import Any
 
@@ -9,6 +10,8 @@ OPENCODE_GO_PROVIDER = "opencode-go"
 OPENCODE_GO_API_BASE_URL = "https://opencode.ai/zen/go/v1"
 OPENCODE_GO_MODELS_URL = f"{OPENCODE_GO_API_BASE_URL}/models"
 OPENCODE_GO_API_KEY_ENV = "OPENCODE_API_KEY"
+
+logger = logging.getLogger(__name__)
 
 OPENCODE_GO_FALLBACK_MODELS: tuple[str, ...] = (
     "opencode-go/glm-5.1",
@@ -62,7 +65,7 @@ def opencode_go_api_key(configured: str | None = None) -> str:
         if value:
             return value
     except Exception:
-        pass
+        logger.debug("Failed to resolve OpenCode Go API key via credential helper", exc_info=True)
     return os.environ.get(OPENCODE_GO_API_KEY_ENV, "")
 
 

@@ -180,7 +180,11 @@ class ToolProcessingMixin:
                 if capability in ("medium", "low", "none"):
                     compact = True
             except Exception:
-                pass
+                logger.debug(
+                    "Failed to resolve tool-use capability for %s; using context-window default",
+                    self._model_config.model,
+                    exc_info=True,
+                )
         canonical = build_unified_tool_list(
             include_notification_tools=self._tool_handler._human_notifier is not None,
             include_supervisor_tools=self._has_subordinates(),
