@@ -279,6 +279,15 @@ class TestHybridSearch:
 class TestNeo4jRetrieve:
     """Tests for Neo4jGraphBackend.retrieve() with mocked search."""
 
+    @pytest.fixture(autouse=True)
+    def no_embedding_model_load(self, monkeypatch):
+        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+
+        async def fake_embed_texts(_self, texts):
+            return [[0.0] * 8 for _ in texts]
+
+        monkeypatch.setattr(Neo4jGraphBackend, "_embed_texts", fake_embed_texts)
+
     def _make_backend(self, tmp_path):
         from core.memory.backend.neo4j_graph import Neo4jGraphBackend
 
