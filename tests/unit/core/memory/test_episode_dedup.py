@@ -66,6 +66,13 @@ def conv_memory(anima_dir, model_config):
     return ConversationMemory(anima_dir, model_config)
 
 
+@pytest.fixture(autouse=True)
+def no_rag_indexing():
+    """Episode dedup tests do not exercise RAG indexing."""
+    with patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None):
+        yield
+
+
 # ── ConversationState tests ──────────────────────────────────
 
 
