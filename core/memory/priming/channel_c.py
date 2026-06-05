@@ -193,16 +193,17 @@ async def channel_c_related_knowledge(
         logger.debug("Channel C: No knowledge dir")
         return ("", "")
 
+    queries = build_queries(message, keywords, recent_human_messages)
+    if not queries:
+        logger.debug("Channel C: No keywords and no message")
+        return ("", "")
+
     try:
         retriever = get_retriever()
         if retriever is None:
             logger.debug("Channel C: Retriever unavailable")
             return ("", "")
 
-        queries = build_queries(message, keywords, recent_human_messages)
-        if not queries:
-            logger.debug("Channel C: No keywords and no message")
-            return ("", "")
         anima_name = anima_dir.name
 
         _min_score: float | None = None
