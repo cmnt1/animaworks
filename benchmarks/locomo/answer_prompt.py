@@ -8,6 +8,8 @@ from typing import Any
 
 LOCOMO_CONFIDENCE_DEFAULT = 0.35
 LOCOMO_RRF_CONFIDENCE_DEFAULT = 0.02
+LOCOMO_CONFIDENCE_MULTI_HOP_FACT = 0.05
+LOCOMO_RRF_CONFIDENCE_MULTI_HOP_FACT = 0.005
 LOCOMO_CONFIDENCE_ADVERSARIAL = LOCOMO_CONFIDENCE_DEFAULT
 LOCOMO_RRF_CONFIDENCE_ADVERSARIAL = LOCOMO_RRF_CONFIDENCE_DEFAULT
 
@@ -159,9 +161,20 @@ def merge_pipeline_gate_settings(
     settings: dict[str, Any],
     *,
     category: int | None,
+    fact_evidence: bool = False,
 ) -> dict[str, float]:
-    """Return configured pipeline gate thresholds without category relaxation."""
-    _ = category
+    """Return configured pipeline gate thresholds with category-safe LoCoMo relaxations."""
+    if category == 1 and fact_evidence:
+        return {
+            "confidence_threshold": min(
+                float(settings.get("confidence_threshold", LOCOMO_CONFIDENCE_DEFAULT)),
+                LOCOMO_CONFIDENCE_MULTI_HOP_FACT,
+            ),
+            "rrf_confidence_threshold": min(
+                float(settings.get("rrf_confidence_threshold", LOCOMO_RRF_CONFIDENCE_DEFAULT)),
+                LOCOMO_RRF_CONFIDENCE_MULTI_HOP_FACT,
+            ),
+        }
     return {
         "confidence_threshold": float(
             settings.get("confidence_threshold", LOCOMO_CONFIDENCE_DEFAULT),

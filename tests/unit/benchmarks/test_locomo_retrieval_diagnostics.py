@@ -45,6 +45,12 @@ class TestAnswerTokenRecall:
         assert recall is None
         assert all_present is None
 
+    def test_empty_context_tokens_return_zero(self) -> None:
+        recall, all_present = answer_token_recall("Becoming Nicole", [])
+
+        assert recall == 0.0
+        assert all_present == 0.0
+
 
 class TestSummarizeResults:
     def test_category_5_excluded_from_aggregates(self) -> None:
@@ -73,6 +79,38 @@ class TestSummarizeResults:
         assert summary["answer_token_recall_at_50"] == 1.0
         assert summary["by_category"]["temporal"]["count"] == 1
         assert "adversarial" not in summary["by_category"]
+
+    def test_multi_hop_helper_metrics_are_summarized(self) -> None:
+        summary = summarize_results(
+            [
+                {
+                    "category": 1,
+                    "context_count": 0,
+                    "locomo_multihop_helpers": {"fact_fallback": 1},
+                    "answer_token_recall_at_10": 0.0,
+                    "answer_token_recall_at_50": 0.5,
+                    "all_answer_tokens_present_at_10": 0.0,
+                    "all_answer_tokens_present_at_50": 0.0,
+                },
+                {
+                    "category": 1,
+                    "context_count": 2,
+                    "locomo_multihop_helpers": {"profile": 2, "alias": 1},
+                    "answer_token_recall_at_10": 1.0,
+                    "answer_token_recall_at_50": 1.0,
+                    "all_answer_tokens_present_at_10": 1.0,
+                    "all_answer_tokens_present_at_50": 1.0,
+                },
+            ],
+        )
+
+        assert summary["multi_hop_zero_context_count"] == 1
+        assert summary["multi_hop_helper_hit_counts"] == {
+            "alias": 1,
+            "fact_fallback": 1,
+            "profile": 2,
+        }
+        assert summary["multi_hop_feature_recall_at_10"] == 0.5
 
 
 class TestWriteDiagnosticsJson:
@@ -179,6 +217,54 @@ class TestWriteDiagnosticsJson:
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert payload["feature_on_ablation"]["config"]["fact_index"] is True
         assert payload["feature_on_ablation"]["deltas"]["answer_token_recall_at_10"] == 0.3
+
+    def test_write_json_path_can_include_temporal_and_entity_ablation(self, tmp_path: Path) -> None:
+        out = write_diagnostics_json(
+            tmp_path / "diagnostics.json",
+            mode="scope_all",
+            conversations=1,
+            top_k=10,
+            ceiling_top_k=10,
+            temporal_boost=False,
+            entity_boost=False,
+            summary={},
+            results=[],
+            errors=0,
+            temporal_ablation={"config": {"temporal_boost": True}},
+            entity_ablation={"config": {"entity_boost": True}},
+        )
+
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert out.name == "diagnostics.json"
+        assert payload["temporal_ablation"]["config"]["temporal_boost"] is True
+        assert payload["entity_ablation"]["config"]["entity_boost"] is True
+
+
+class TestRetrievalHelpers:
+    def test_retrieve_at_k_restores_adapter_top_k(self) -> None:
+        class FakeAdapter:
+            def __init__(self) -> None:
+                self._top_k = 3
+
+            def retrieve(self, question: str, *, category: int):
+                return [{"content": question, "score": float(self._top_k), "category": category}]
+
+        adapter = FakeAdapter()
+
+        rows = retrieval_diagnostics._retrieve_at_k(adapter, "Q", category=1, top_k=7)
+
+        assert rows[0]["score"] == 7.0
+        assert adapter._top_k == 3
+        assert retrieval_diagnostics._top_score(rows) == 7.0
+        assert retrieval_diagnostics._top_score([]) is None
+
+    def test_temporary_fact_index_none_preserves_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LOCOMO_FACT_INDEX", "1")
+
+        with _temporary_fact_index(None):
+            assert os.environ["LOCOMO_FACT_INDEX"] == "1"
+
+        assert os.environ["LOCOMO_FACT_INDEX"] == "1"
 
 
 class TestTemporalAblationCli:

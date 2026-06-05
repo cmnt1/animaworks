@@ -3,8 +3,11 @@ from __future__ import annotations
 from benchmarks.locomo.answer_prompt import (
     LOCOMO_CONFIDENCE_ADVERSARIAL,
     LOCOMO_CONFIDENCE_DEFAULT,
+    LOCOMO_CONFIDENCE_MULTI_HOP_FACT,
+    LOCOMO_RRF_CONFIDENCE_MULTI_HOP_FACT,
     build_answer_user_content,
     confidence_gate_for_category,
+    merge_pipeline_gate_settings,
     normalize_locomo_answer,
 )
 
@@ -57,6 +60,28 @@ class TestConfidenceGateForCategory:
     def test_adversarial_uses_same_default_threshold(self) -> None:
         gate = confidence_gate_for_category(5)
         assert gate["confidence_threshold"] == LOCOMO_CONFIDENCE_ADVERSARIAL
+
+
+class TestMergePipelineGateSettings:
+    def test_category_1_fact_evidence_relaxes_multihop_gate(self) -> None:
+        gate = merge_pipeline_gate_settings(
+            {"confidence_threshold": 0.35, "rrf_confidence_threshold": 0.02},
+            category=1,
+            fact_evidence=True,
+        )
+
+        assert gate["confidence_threshold"] == LOCOMO_CONFIDENCE_MULTI_HOP_FACT
+        assert gate["rrf_confidence_threshold"] == LOCOMO_RRF_CONFIDENCE_MULTI_HOP_FACT
+
+    def test_other_categories_keep_configured_gate_even_with_fact_evidence(self) -> None:
+        gate = merge_pipeline_gate_settings(
+            {"confidence_threshold": 0.35, "rrf_confidence_threshold": 0.02},
+            category=5,
+            fact_evidence=True,
+        )
+
+        assert gate["confidence_threshold"] == 0.35
+        assert gate["rrf_confidence_threshold"] == 0.02
 
 
 class TestBuildAnswerUserContent:

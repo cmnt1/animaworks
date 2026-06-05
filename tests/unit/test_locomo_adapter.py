@@ -9,6 +9,7 @@ import pytest
 
 from benchmarks.locomo.adapter import (
     SEARCH_MODES,
+    AnimaWorksLoCoMoAdapter,
     _build_episode_markdown,
     _conversation_speaker_names,
     _episode_stem_for_sample,
@@ -185,8 +186,6 @@ class TestSearchModes:
 
 class TestEventMetadataPropagation:
     def _adapter_without_init(self):
-        from benchmarks.locomo.adapter import AnimaWorksLoCoMoAdapter
-
         return object.__new__(AnimaWorksLoCoMoAdapter)
 
     def test_pipeline_item_preserves_event_metadata(self):
@@ -437,8 +436,6 @@ class TestEventMetadataPropagation:
 
 class TestAnswerCompletionKnobs:
     def _adapter_without_init(self):
-        from benchmarks.locomo.adapter import AnimaWorksLoCoMoAdapter
-
         adapter = object.__new__(AnimaWorksLoCoMoAdapter)
         adapter._answer_timeout = 60.0
         adapter._answer_max_retries = 0

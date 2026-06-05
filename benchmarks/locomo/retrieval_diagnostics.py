@@ -75,6 +75,18 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             "all_answer_tokens_present_at_10": _mean(cat_rows, "all_answer_tokens_present_at_10"),
             "all_answer_tokens_present_at_50": _mean(cat_rows, "all_answer_tokens_present_at_50"),
         }
+    multi_hop_rows = by_cat.get(1, [])
+    helper_counts: Counter[str] = Counter()
+    for row in multi_hop_rows:
+        helpers = row.get("locomo_multihop_helpers", {})
+        if isinstance(helpers, dict):
+            helper_counts.update({str(key): int(value) for key, value in helpers.items()})
+    multi_hop_summary = summary["by_category"].get("multi_hop", {})
+    summary["multi_hop_zero_context_count"] = sum(1 for row in multi_hop_rows if int(row.get("context_count", 0) or 0) == 0)
+    summary["multi_hop_helper_hit_counts"] = dict(sorted(helper_counts.items()))
+    summary["multi_hop_feature_recall_at_10"] = (
+        multi_hop_summary.get("answer_token_recall_at_10") if isinstance(multi_hop_summary, dict) else None
+    )
     return summary
 
 
@@ -128,6 +140,7 @@ def run_retrieval_diagnostics(
                         continue
                     try:
                         top_context = _retrieve_at_k(adapter, question, category=category, top_k=top_k)
+                        multihop_meta = dict(getattr(adapter, "_last_multihop_meta", {}) or {})
                         ceiling_context = (
                             top_context
                             if ceiling_top_k == top_k
@@ -137,6 +150,7 @@ def run_retrieval_diagnostics(
                         errors += 1
                         top_context = []
                         ceiling_context = []
+                        multihop_meta = {}
 
                     recall_10, all_10 = answer_token_recall(answer, top_context)
                     recall_50, all_50 = answer_token_recall(answer, ceiling_context)
@@ -160,6 +174,14 @@ def run_retrieval_diagnostics(
                             "top_event_time_iso": str(top_meta.get("event_time_iso", "") or ""),
                             "top_entity_boost": top_meta.get("entity_boost"),
                             "top_entity_overlap": top_meta.get("entity_overlap", []),
+                            "top_locomo_multihop_helper": str(top_meta.get("locomo_multihop_helper", "") or ""),
+                            "top_locomo_multihop_query": str(top_meta.get("locomo_multihop_query", "") or ""),
+                            "locomo_multihop_enabled": bool(multihop_meta.get("enabled", False)),
+                            "locomo_multihop_query_count": int(multihop_meta.get("query_count", 0) or 0),
+                            "locomo_multihop_fallback_used": bool(multihop_meta.get("fallback_used", False)),
+                            "locomo_multihop_helpers": dict(multihop_meta.get("helper_hit_counts", {}) or {}),
+                            "locomo_multihop_queries": list(multihop_meta.get("queries", []) or []),
+                            "locomo_multihop_aliases": list(multihop_meta.get("aliases", []) or []),
                             "answer_token_recall_at_10": None if excluded else recall_10,
                             "answer_token_recall_at_50": None if excluded else recall_50,
                             "all_answer_tokens_present_at_10": None if excluded else all_10,

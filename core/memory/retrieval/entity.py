@@ -135,6 +135,32 @@ def extract_entities(
     return entities
 
 
+def expand_alias_terms(
+    text: str,
+    alias_map: dict[str, tuple[str, ...]],
+    *,
+    limit: int = 8,
+) -> tuple[str, ...]:
+    """Return deterministic alias terms whose trigger phrases appear in text."""
+    normalized = _normalize_entity(text)
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for trigger, values in alias_map.items():
+        clean_trigger = _normalize_entity(trigger)
+        if not clean_trigger or clean_trigger not in normalized:
+            continue
+        for value in values:
+            alias = str(value or "").strip()
+            key = alias.casefold()
+            if not alias or key in seen:
+                continue
+            aliases.append(alias)
+            seen.add(key)
+            if len(aliases) >= limit:
+                return tuple(aliases)
+    return tuple(aliases)
+
+
 def apply_entity_boost(
     query: str,
     candidates: list[dict[str, Any]],

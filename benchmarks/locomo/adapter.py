@@ -75,6 +75,11 @@ except ImportError:
 # ── LLM helpers ──────────
 
 from benchmarks.locomo.llm_config import default_answer_model, resolve_locomo_litellm_kwargs
+from benchmarks.locomo.multihop import (
+    MULTIHOP_METADATA_FIELDS,
+    LocomoMultiHopOrchestrator,
+    empty_multihop_meta,
+)
 
 # ── load_dataset ──────────
 
@@ -97,47 +102,33 @@ _EVENT_METADATA_FIELDS: tuple[str, ...] = (
     "entity_overlap",
     "query_entities",
     "candidate_entities",
+    *MULTIHOP_METADATA_FIELDS,
 )
+_ENV_TRUE = {"1", "true", "yes", "on"}
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in _ENV_TRUE
 
 
 def locomo_temporal_boost_enabled() -> bool:
     """Return True when LoCoMo temporal boost ablation is explicitly enabled."""
-    return os.environ.get("LOCOMO_TEMPORAL_BOOST", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_flag("LOCOMO_TEMPORAL_BOOST")
 
 
 def locomo_entity_boost_enabled() -> bool:
     """Return True when LoCoMo entity boost ablation is explicitly enabled."""
-    return os.environ.get("LOCOMO_ENTITY_BOOST", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_flag("LOCOMO_ENTITY_BOOST")
 
 
 def locomo_fact_index_enabled() -> bool:
     """Return True when LoCoMo fact dual-index ablation is explicitly enabled."""
-    return os.environ.get("LOCOMO_FACT_INDEX", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_flag("LOCOMO_FACT_INDEX")
 
 
 def locomo_entity_aware_graph_enabled() -> bool:
     """Return True when LoCoMo entity-aware graph ablation is explicitly enabled."""
-    return os.environ.get("LOCOMO_ENTITY_AWARE_GRAPH", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_flag("LOCOMO_ENTITY_AWARE_GRAPH")
 
 
 def load_dataset(path: Path) -> list[dict[str, Any]]:
@@ -335,6 +326,7 @@ class AnimaWorksLoCoMoAdapter:
         self._last_top_score: float | None = None
         self._last_top_event_time_iso: str = ""
         self._last_top_memory_type: str = ""
+        self._last_multihop_meta: dict[str, Any] = empty_multihop_meta()
         self._last_raw_answer: str = ""
         self._last_normalized_answer: str = ""
         self._entity_ignored_entities: tuple[str, ...] = ()
@@ -428,6 +420,7 @@ class AnimaWorksLoCoMoAdapter:
         self._fact_metadata_by_fact_id = {}
         self._last_fact_count = 0
         self._query_reference_time = ""
+        self._last_multihop_meta = empty_multihop_meta()
         if self._retriever is not None:
             self._retriever._knowledge_graph = None
             self._retriever._knowledge_graph_signature = None
@@ -681,6 +674,7 @@ class AnimaWorksLoCoMoAdapter:
         self._last_top_score = None
         self._last_top_event_time_iso = ""
         self._last_top_memory_type = ""
+        self._last_multihop_meta = empty_multihop_meta()
         assert self._retriever is not None
         if self._search_mode == "vector":
             res = self._retriever.search(
@@ -704,21 +698,25 @@ class AnimaWorksLoCoMoAdapter:
             items = self._retrieval_to_dicts(res)
             self._remember_retrieval_diagnostics(items)
             return items
-        # scope_all: production-compatible Legacy unified search with benchmark ablations.
+        items = self._retrieve_scope_all(question, category=category)
+        self._remember_retrieval_diagnostics(items)
+        return items
+
+    def _retrieve_scope_all(self, question: str, *, category: int | None) -> list[dict[str, Any]]:
+        """Production-compatible Legacy unified search with benchmark ablations."""
         from core.memory.retrieval.temporal import TemporalBoostConfig  # noqa: PLC0415
         from core.memory.retrieval.unified_search import UnifiedMemorySearch  # noqa: PLC0415
 
         assert self._anima_dir is not None
         settings = self._load_pipeline_settings()
-        gate = merge_pipeline_gate_settings(settings, category=category)
+        fact_evidence = locomo_fact_index_enabled() and self._last_fact_count > 0
+        gate = merge_pipeline_gate_settings(settings, category=category, fact_evidence=category == 1 and fact_evidence)
         search_settings = {
             **settings,
             "confidence_threshold": gate["confidence_threshold"],
             "rrf_confidence_threshold": gate["rrf_confidence_threshold"],
         }
-        scope_override = (
-            ("episodes", "facts") if locomo_fact_index_enabled() and self._last_fact_count > 0 else ("episodes",)
-        )
+        scope_override = ("episodes", "facts") if fact_evidence else ("episodes",)
         searcher = UnifiedMemorySearch(
             self._anima_dir,
             common_knowledge_dir=self._anima_dir / "common_knowledge",
@@ -742,7 +740,9 @@ class AnimaWorksLoCoMoAdapter:
         self._last_abstain = bool(meta.get("abstain", False))
         self._last_abstain_reason = str(meta.get("abstain_reason", "") or "")
         items = [self._adapter_hit_from_pipeline_item(x) for x in result_items]
-        self._remember_retrieval_diagnostics(items)
+        multihop = LocomoMultiHopOrchestrator(self)
+        if multihop.feature_enabled(category):
+            items = multihop.augment(question, items, top_k=self._top_k)
         return items
 
     def _build_bm25_cache(self) -> None:
