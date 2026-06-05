@@ -313,7 +313,7 @@ def _attach_related_tasks(
 def _suppress_duplicate_delegated_parents(tasks: list[BoardTask]) -> None:
     groups: dict[tuple[str, str, str], list[BoardTask]] = {}
     for task in tasks:
-        if task.visibility != AttentionVisibility.ACTIVE or task.queue_status != "delegated":
+        if task.visibility != AttentionVisibility.ACTIVE or task.queue_status not in {"delegated", "blocked"}:
             continue
         meta = task.meta or {}
         target = meta.get("delegated_to")

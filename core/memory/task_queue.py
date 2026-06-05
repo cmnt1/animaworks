@@ -31,6 +31,7 @@ logger = logging.getLogger("animaworks.task_queue")
 _VALID_STATUSES = frozenset({"pending", "in_progress", "done", "cancelled", "blocked", "delegated", "failed"})
 _TERMINAL_STATUSES = frozenset({"done", "cancelled", "failed"})
 _ACTIVE_STATUSES = frozenset({"pending", "in_progress", "blocked", "delegated"})
+_DELEGATION_TRACKING_STATUSES = frozenset({"delegated", "blocked"})
 
 # Valid task sources
 _VALID_SOURCES = frozenset({"human", "anima"})
@@ -599,6 +600,18 @@ class TaskQueueManager:
         tasks = self._load_all()
         return [t for t in tasks.values() if t.status == "delegated"]
 
+    def get_delegation_tracking_tasks(self) -> list[TaskEntry]:
+        """Return active parent tasks that track a delegated child."""
+        tasks = self._load_all()
+        result: list[TaskEntry] = []
+        for task in tasks.values():
+            if task.status not in _DELEGATION_TRACKING_STATUSES:
+                continue
+            meta = task.meta or {}
+            if meta.get("delegated_to") and meta.get("delegated_task_id"):
+                result.append(task)
+        return result
+
     def get_failed_taskexec(self) -> list[TaskEntry]:
         """Return failed tasks executed by TaskExec (meta.executor == 'taskexec').
 
@@ -784,7 +797,7 @@ class TaskQueueManager:
 
         Returns the number of tasks synced.
         """
-        delegated = self.get_delegated_tasks()
+        delegated = self.get_delegation_tracking_tasks()
         synced = 0
         for task in delegated:
             meta = task.meta or {}
@@ -796,8 +809,17 @@ class TaskQueueManager:
             if not target_dir.is_dir():
                 logger.debug("sync_delegated: target dir missing for %s", target)
                 continue
-            sub_status = self._resolve_subordinate_status(target_dir, child_id)
+            sub_status = self._resolve_subordinate_status(target_dir, child_id, include_active=True)
             if sub_status is None:
+                continue
+            if sub_status in _ACTIVE_STATUSES:
+                if task.status == "blocked":
+                    self.update_status(
+                        task.task_id,
+                        "delegated",
+                        summary=f"Delegated child {target}:{child_id} is {sub_status}; tracking continues",
+                    )
+                    synced += 1
                 continue
             if sub_status == "done":
                 self.update_status(
@@ -849,13 +871,17 @@ class TaskQueueManager:
                 synced += 1
         return synced
 
-    def _resolve_subordinate_status(self, target_dir: Path, child_id: str) -> str | None:
+    def _resolve_subordinate_status(
+        self, target_dir: Path, child_id: str, *, include_active: bool = False
+    ) -> str | None:
         """Look up subordinate task status, falling back to archive."""
         try:
             sub_tqm = TaskQueueManager(target_dir)
             sub_task = sub_tqm.get_task_by_id(child_id)
             if sub_task:
-                return sub_task.status if sub_task.status in _TERMINAL_STATUSES else None
+                if sub_task.status in _TERMINAL_STATUSES or include_active:
+                    return sub_task.status
+                return None
             return self._search_archive(target_dir, child_id)
         except Exception:
             logger.debug(

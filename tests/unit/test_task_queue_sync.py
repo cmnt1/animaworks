@@ -101,6 +101,23 @@ class TestSyncDelegated:
         task = sup_tqm.get_task_by_id(sup_id)
         assert task.status == "delegated"
 
+    def test_blocked_parent_returns_to_delegated_when_child_is_active(self, tmp_path):
+        animas_dir = _make_animas_dir(tmp_path)
+        sup_tqm = TaskQueueManager(animas_dir / "supervisor")
+        sub_tqm = TaskQueueManager(animas_dir / "subordinate")
+
+        sup_id, sub_id = _add_delegated(sup_tqm, sub_tqm, "subordinate")
+        sub_tqm.update_status(sub_id, "in_progress", summary="still running")
+        sup_tqm.update_status(sup_id, "blocked", summary="waiting for child evidence")
+
+        synced = sup_tqm.sync_delegated(animas_dir)
+
+        assert synced == 1
+        task = sup_tqm.get_task_by_id(sup_id)
+        assert task is not None
+        assert task.status == "delegated"
+        assert f"subordinate:{sub_id}" in task.summary
+
     def test_subordinate_dir_missing_no_error(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)
         sup_tqm = TaskQueueManager(animas_dir / "supervisor")

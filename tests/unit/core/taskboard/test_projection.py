@@ -721,6 +721,50 @@ def test_duplicate_delegated_parents_to_same_active_child_are_suppressed(tmp_pat
     assert archived_by_key[("sakura", first.task_id)].replaced_by == f"sakura:{latest.task_id}"
 
 
+def test_duplicate_blocked_delegated_parents_to_same_active_child_are_suppressed(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    kanna = _queue(tmp_path, "kanna")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = kanna.add_task(
+        source="anima",
+        original_instruction="produce final six-gate evidence",
+        assignee="kanna",
+        summary="produce final six-gate evidence",
+        task_id="child-running",
+    )
+    kanna.update_status(child.task_id, "in_progress", summary="running final evidence")
+    first = sakura.add_delegated_task(
+        original_instruction="old tracking parent",
+        assignee="kanna",
+        summary="[delegate] old tracking parent",
+        deadline="1h",
+        meta={"delegated_to": "kanna", "delegated_task_id": child.task_id},
+    )
+    latest = sakura.add_delegated_task(
+        original_instruction="latest tracking parent",
+        assignee="kanna",
+        summary="[delegate] latest tracking parent",
+        deadline="1h",
+        meta={"delegated_to": "kanna", "delegated_task_id": child.task_id},
+    )
+    sakura.update_status(first.task_id, "blocked", summary="old stopped wrapper")
+    sakura.update_status(latest.task_id, "blocked", summary="latest stopped wrapper")
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert by_key[("kanna", child.task_id)].column == BoardColumn.RUNNING
+    assert by_key[("sakura", latest.task_id)].column == BoardColumn.WAITING
+    assert ("sakura", first.task_id) not in by_key
+
+    archived = project_all(tmp_path / "animas", store, include_archived=True)
+    archived_by_key = {(task.anima_name, task.task_id): task for task in archived}
+    assert archived_by_key[("sakura", first.task_id)].visibility == AttentionVisibility.ARCHIVED
+    assert archived_by_key[("sakura", first.task_id)].column == BoardColumn.SUPPRESSED
+    assert archived_by_key[("sakura", first.task_id)].replaced_by == f"sakura:{latest.task_id}"
+
+
 def test_blocked_delegated_parent_stays_blocked_when_child_failed(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     kanna = _queue(tmp_path, "kanna")
