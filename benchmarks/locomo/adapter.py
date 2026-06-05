@@ -395,23 +395,29 @@ class AnimaWorksLoCoMoAdapter:
         assert self._anima_dir is not None
         return self._anima_dir / INDEX_META_FILE
 
+    def _ensure_facts_dir(self) -> Path:
+        """Return the facts directory, backfilling older partial test instances."""
+        facts_dir = getattr(self, "_facts_dir", None)
+        if facts_dir is None:
+            assert self._anima_dir is not None
+            facts_dir = self._anima_dir / "facts"
+            self._facts_dir = facts_dir
+        facts_dir.mkdir(parents=True, exist_ok=True)
+        return facts_dir
+
     def reset(self) -> None:
         """Remove indexed vectors for this anima, episode files, and index metadata."""
-        assert (
-            self._vector_store is not None
-            and self._anima_dir is not None
-            and self._episodes_dir is not None
-            and self._facts_dir is not None
-        )
+        assert self._vector_store is not None and self._anima_dir is not None and self._episodes_dir is not None
+        facts_dir = self._ensure_facts_dir()
         for name in self._vector_store.list_collections():
             if name.startswith(ANIMA_NAME):
                 self._vector_store.delete_collection(name)
         if self._episodes_dir.exists():
             shutil.rmtree(self._episodes_dir)
         self._episodes_dir.mkdir(parents=True, exist_ok=True)
-        if self._facts_dir.exists():
-            shutil.rmtree(self._facts_dir)
-        self._facts_dir.mkdir(parents=True, exist_ok=True)
+        if facts_dir.exists():
+            shutil.rmtree(facts_dir)
+        facts_dir.mkdir(parents=True, exist_ok=True)
         self._bm25_corpus = None
         self._bm25_index = None
         self._fact_bm25_corpus = None
@@ -446,7 +452,8 @@ class AnimaWorksLoCoMoAdapter:
         Returns:
             Number of vector chunks written for the episode file.
         """
-        assert self._indexer is not None and self._episodes_dir is not None and self._facts_dir is not None
+        assert self._indexer is not None and self._episodes_dir is not None
+        self._ensure_facts_dir()
         sample_id = sample.get("sample_id", "unknown")
         conv = sample.get("conversation")
         if not isinstance(conv, dict):
@@ -471,10 +478,10 @@ class AnimaWorksLoCoMoAdapter:
 
     def _clear_fact_index_storage(self) -> None:
         """Clear optional fact files, vectors, and in-memory caches before rebuild."""
-        assert self._facts_dir is not None
-        if self._facts_dir.exists():
-            shutil.rmtree(self._facts_dir)
-        self._facts_dir.mkdir(parents=True, exist_ok=True)
+        facts_dir = self._ensure_facts_dir()
+        if facts_dir.exists():
+            shutil.rmtree(facts_dir)
+        facts_dir.mkdir(parents=True, exist_ok=True)
         vector_store = getattr(self, "_vector_store", None)
         if vector_store is not None:
             try:
@@ -489,7 +496,8 @@ class AnimaWorksLoCoMoAdapter:
 
     def _ingest_fact_index(self, sample_id: str, conversation: dict[str, Any], *, source_episode: str) -> None:
         """Build and index optional LoCoMo fact memories without failing episode ingest."""
-        assert self._indexer is not None and self._facts_dir is not None
+        assert self._indexer is not None
+        facts_dir = self._ensure_facts_dir()
         try:
             self._clear_fact_index_storage()
             from benchmarks.locomo.fact_index import (  # noqa: PLC0415
@@ -505,9 +513,9 @@ class AnimaWorksLoCoMoAdapter:
                 self._fact_metadata_by_source_file = {}
                 return
 
-            write_fact_records(self._facts_dir, records)
+            write_fact_records(facts_dir, records)
             indexed = 0
-            for fact_file in sorted(self._facts_dir.glob("*.jsonl")):
+            for fact_file in sorted(facts_dir.glob("*.jsonl")):
                 indexed += self._indexer.index_file(fact_file, memory_type="facts", force=True)
             self._last_fact_count = indexed
             self._fact_bm25_corpus = fact_bm25_documents(records)

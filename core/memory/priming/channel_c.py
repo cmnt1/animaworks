@@ -117,6 +117,31 @@ def format_pointer_result(
     )
 
 
+def _build_unified_searcher(
+    anima_dir: Path,
+    get_retriever: Callable[[], MemoryRetriever | None],
+) -> UnifiedMemorySearch:
+    """Build UnifiedMemorySearch, preserving injected retriever state for tests/runtime caches."""
+    try:
+        retriever = get_retriever()
+        indexer = getattr(retriever, "indexer", None) if retriever is not None else None
+        if indexer is not None:
+            from core.memory.rag_search import RAGMemorySearch
+            from core.paths import get_common_knowledge_dir, get_common_skills_dir
+
+            rag_search = RAGMemorySearch(
+                anima_dir,
+                get_common_knowledge_dir(),
+                get_common_skills_dir(),
+            )
+            rag_search._indexer = indexer
+            rag_search._indexer_initialized = True
+            return UnifiedMemorySearch(anima_dir, rag_search=rag_search)
+    except Exception:
+        logger.debug("Channel C: failed to reuse injected retriever", exc_info=True)
+    return UnifiedMemorySearch(anima_dir)
+
+
 async def channel_c0_important_knowledge(
     anima_dir: Path,
     knowledge_dir: Path,
@@ -207,7 +232,7 @@ async def channel_c_related_knowledge(
         except Exception:
             logger.debug("Failed to load rag.min_retrieval_score from config, using default")
 
-        searcher = UnifiedMemorySearch(anima_dir)
+        searcher = _build_unified_searcher(anima_dir, get_retriever)
         results = searcher.search_many(
             queries,
             scope="common_knowledge",

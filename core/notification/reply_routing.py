@@ -334,12 +334,17 @@ def _fetch_thread_context_for_reply(
 def sanitize_slack_reply(text: str, max_length: int = _MAX_REPLY_LENGTH) -> str:
     """Resolve Slack markup and mrkdwn formatting, then truncate for safe inbox delivery.
 
-    User mentions are resolved to display names via the shared cache.
+    User mentions are resolved to display names via the shared cache when available.
     URLs, channels, and HTML entities are converted by clean_slack_markup().
     """
-    from server.slack_socket import _resolve_slack_mentions
+    try:
+        from server.slack_socket import _resolve_slack_mentions
 
-    text = _resolve_slack_mentions(text, "")
+        text = _resolve_slack_mentions(text, "")
+    except Exception:
+        from core.tools._slack_markdown import clean_slack_markup
+
+        text = clean_slack_markup(text)
     # Bold *text* → text, italic _text_ → text, strike ~text~ → text
     text = re.sub(r"(?<!\w)\*([^*]+)\*(?!\w)", r"\1", text)
     text = re.sub(r"(?<!\w)_([^_]+)_(?!\w)", r"\1", text)

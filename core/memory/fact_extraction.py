@@ -161,16 +161,18 @@ async def extract_fact_records(
                 anima_dir=anima_dir,
             )
         entities = await extractor.extract_entities(text)
+        resolved_reference_time = reference_time or now_iso()
         facts = await extractor.extract_facts(
             text,
             entities,
-            reference_time=reference_time or now_iso(),
+            reference_time=resolved_reference_time,
         )
         return records_from_extraction(
             entities,
             facts,
             source_episode=source_episode,
             source_session_id=source_session_id,
+            recorded_at=resolved_reference_time,
         )
     except Exception:
         logger.warning("Atomic fact extraction failed", exc_info=True)

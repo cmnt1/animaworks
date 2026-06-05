@@ -502,10 +502,7 @@ class TestUnhandledEventSuppression:
 
     async def test_error_handler_returns_200_for_unhandled(self):
         """BoltUnhandledRequestError is caught and returns 200."""
-        from slack_bolt.error import BoltUnhandledRequestError
-        from slack_bolt.response import BoltResponse
-
-        from server.slack_socket import SlackSocketModeManager
+        from server.slack_socket import BoltResponse, BoltUnhandledRequestError, SlackSocketModeManager
 
         app = MagicMock()
         captured_handler = []

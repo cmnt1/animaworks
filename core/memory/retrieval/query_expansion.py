@@ -4,9 +4,10 @@ from __future__ import annotations
 """Rule-based query expansion for Legacy memory retrieval."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Any, Callable
+from typing import Any
 
 _ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _QUOTE_RE = re.compile(r"[\"']([^\"']{2,120})[\"']")

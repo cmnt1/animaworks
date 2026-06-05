@@ -1490,7 +1490,9 @@ class CodexSDKExecutor(BaseExecutor):
         thinking_started = False
 
         def _current_full_text() -> str:
-            return "\n".join(response_text_by_item[item_id] for item_id in response_item_order if response_text_by_item[item_id])
+            return "\n".join(
+                response_text_by_item[item_id] for item_id in response_item_order if response_text_by_item[item_id]
+            )
 
         def _remember_agent_delta(item_id: str, delta: str) -> None:
             if not item_id:

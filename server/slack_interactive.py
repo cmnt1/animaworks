@@ -12,7 +12,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from slack_bolt.app.async_app import AsyncApp
+try:
+    from slack_bolt.app.async_app import AsyncApp
+except ModuleNotFoundError:
+    AsyncApp = Any  # type: ignore[misc, assignment]
 
 
 def _build_comment_modal(callback_id: str) -> dict[str, Any]:
