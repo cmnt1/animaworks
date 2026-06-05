@@ -87,7 +87,18 @@ class MemoryFileHandler(FileSystemEventHandler):
         src = str(event.src_path)
         if not event.is_directory and src.endswith(".md"):
             logger.debug("File deleted: %s", src)
-            pass
+            self.watcher.queue_file(Path(src))
+
+    def on_moved(self, event: FileSystemEvent) -> None:
+        """Handle file move/rename events."""
+        src = str(event.src_path)
+        dest = str(getattr(event, "dest_path", ""))
+        if not event.is_directory and src.endswith(".md"):
+            logger.debug("File moved from: %s", src)
+            self.watcher.queue_file(Path(src))
+        if not event.is_directory and dest.endswith(".md"):
+            logger.debug("File moved to: %s", dest)
+            self.watcher.queue_file(Path(dest))
 
 
 class FileWatcher:
@@ -260,26 +271,40 @@ class FileWatcher:
         graph_changed: dict[str, list[Path]] = {}
 
         for file_path, memory_type in files:
-            if not file_path.exists():
-                logger.debug("File no longer exists, skipping: %s", file_path)
-                continue
+            missing_file = not file_path.exists()
+            if missing_file and memory_type in self._GRAPH_MEMORY_TYPES:
+                graph_changed.setdefault(memory_type, []).append(file_path)
 
             try:
                 loop = asyncio.get_running_loop()
-                await loop.run_in_executor(
-                    None,
-                    self.indexer.index_file,
-                    file_path,
-                    memory_type,
-                    False,  # force=False (incremental)
-                )
-                logger.debug("Indexed file: %s (type=%s)", file_path, memory_type)
+                if not missing_file:
+                    await loop.run_in_executor(
+                        None,
+                        self.indexer.index_file,
+                        file_path,
+                        memory_type,
+                        False,  # force=False (incremental)
+                    )
+                    logger.debug("Indexed file: %s (type=%s)", file_path, memory_type)
+                else:
+                    deleted_count = await loop.run_in_executor(
+                        None,
+                        self.indexer.delete_indexed_file,
+                        file_path,
+                        memory_type,
+                    )
+                    logger.debug(
+                        "Deleted %d stale chunks for missing file: %s (type=%s)",
+                        deleted_count,
+                        file_path,
+                        memory_type,
+                    )
 
-                if memory_type in self._GRAPH_MEMORY_TYPES:
+                if not missing_file and memory_type in self._GRAPH_MEMORY_TYPES:
                     graph_changed.setdefault(memory_type, []).append(file_path)
 
             except Exception as e:
-                logger.error("Failed to index file %s: %s", file_path, e)
+                logger.error("Failed to process file %s: %s", file_path, e)
 
         if graph_changed and self.knowledge_graph and self.anima_name:
             try:

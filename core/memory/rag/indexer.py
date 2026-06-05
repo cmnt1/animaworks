@@ -24,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+from core.memory.rag import indexer_delete
 from core.memory.rag.episode_time import apply_episode_heading_event_time
 from core.memory.rag.facts_chunker import chunk_facts_jsonl
 from core.time_utils import ensure_aware, now_iso
@@ -260,10 +261,7 @@ class MemoryIndexer:
                 allowed, reason = curator_allows_access(meta, replay=self._skill_curator_replay)
                 if not allowed:
                     logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
-                    self._delete_indexed_file_documents(collection_name, file_key)
-                    if file_key in self.index_meta:
-                        self.index_meta.pop(file_key, None)
-                        self._save_index_meta()
+                    self.delete_indexed_file(file_path, memory_type)
                     return 0
             except Exception:
                 logger.debug("Failed to evaluate skill curator access for %s", file_path, exc_info=True)
@@ -301,6 +299,7 @@ class MemoryIndexer:
 
         if not chunks:
             logger.debug("No chunks extracted from %s", file_path)
+            self.delete_indexed_file(file_path, memory_type)
             return 0
 
         # Generate embeddings
@@ -319,12 +318,8 @@ class MemoryIndexer:
             for i, chunk in enumerate(chunks)
         ]
 
-        self.vector_store.create_collection(collection_name)
-        if not self.vector_store.upsert(collection_name, documents):
-            logger.warning("Upsert failed for %s, skipping index_meta update", file_path)
+        if not indexer_delete.upsert_file_documents(self, collection_name, file_key, file_path, documents):
             return 0
-
-        self._mark_collection_known(collection_name)
 
         self.index_meta[file_key] = {
             "hash": file_hash,
@@ -336,15 +331,11 @@ class MemoryIndexer:
         logger.info("Indexed %d chunks from %s", len(chunks), file_path)
         return len(chunks)
 
-    def _delete_indexed_file_documents(self, collection_name: str, source_file: str) -> None:
-        """Best-effort removal of stale chunks for a file that must not be indexed."""
-        try:
-            results = self.vector_store.get_by_metadata(collection_name, {"source_file": source_file}, limit=10_000)
-            ids = [result.document.id for result in results]
-            if ids:
-                self.vector_store.delete_documents(collection_name, ids)
-        except Exception:
-            logger.debug("Failed to delete indexed documents for %s/%s", collection_name, source_file, exc_info=True)
+    def delete_indexed_file(self, file_path: Path, memory_type: str) -> int:
+        return indexer_delete.delete_indexed_file(self, file_path, memory_type)
+
+    def _delete_indexed_file_documents(self, collection_name: str, source_file: str) -> int | None:
+        return indexer_delete.delete_indexed_file_documents(self, collection_name, source_file)
 
     def index_directory(
         self,
