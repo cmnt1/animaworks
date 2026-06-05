@@ -16,7 +16,7 @@ from core.config.models import MediaProxyConfig
 
 TEST_IMAGE_URLS = (
     "https://httpbin.org/image/png",
-    "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?fm=png",
+    "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?fm=png&w=32&q=80",
 )
 
 
@@ -70,6 +70,8 @@ def _skip_if_upstream_unreachable(resp) -> None:
         detail = resp.json().get("detail", "")
         if "Failed to fetch upstream image" in detail:
             pytest.skip("Network to upstream image host is unavailable in this environment.")
+    if resp.status_code == 413:
+        pytest.skip("Upstream image fixture exceeded the media proxy max_bytes limit.")
 
 
 async def _request_first_available_image(client: AsyncClient):
