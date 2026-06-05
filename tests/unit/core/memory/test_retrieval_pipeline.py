@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from core.memory.retrieval.entity import EntityBoostConfig, extract_entities
+from core.memory.retrieval.entity import EntityBoostConfig, expand_alias_terms, extract_entities
 from core.memory.retrieval.pipeline import RetrievalPipeline
 from core.memory.retrieval.temporal import TemporalBoostConfig
 
@@ -154,6 +154,15 @@ def test_extract_entities_deduplicates_phrases_and_ignores_speakers() -> None:
     assert "becoming nicole" in entities
     assert "book" in entities
     assert "suggestion" in entities
+
+
+def test_expand_alias_terms_returns_triggered_aliases_deterministically() -> None:
+    aliases = expand_alias_terms(
+        "What is Caroline's identity?",
+        {"identity": ("transgender", "woman", "transgender woman"), "pets": ("dog",)},
+    )
+
+    assert aliases == ("transgender", "woman", "transgender woman")
 
 
 def test_pipeline_entity_boost_absent_keeps_default_order() -> None:
