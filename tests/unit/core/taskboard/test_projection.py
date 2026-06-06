@@ -123,6 +123,41 @@ def test_stale_active_tasks_go_to_review_without_mutating_queue_status(tmp_path:
     assert manager.get_task_by_id(task.task_id).status == "pending"
 
 
+def test_stale_pending_task_waits_when_same_anima_has_running_task(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "kanna")
+    running = manager.add_task(
+        source="human",
+        original_instruction="active repair",
+        assignee="kanna",
+        summary="active repair",
+        task_id="running-task",
+        status="in_progress",
+    )
+    pending = manager.add_task(
+        source="human",
+        original_instruction="queued final evidence",
+        assignee="kanna",
+        summary="queued final evidence",
+        task_id="queued-task",
+    )
+    manager.update_status(pending.task_id, "pending")
+    manager.queue_path.write_text(
+        manager.queue_path.read_text(encoding="utf-8").replace(
+            '"updated_at": "' + manager.get_task_by_id(pending.task_id).updated_at + '"',
+            '"updated_at": "2000-01-01T00:00:00+09:00"',
+        ),
+        encoding="utf-8",
+    )
+
+    projected = project_anima(manager.anima_dir, TaskBoardStore(tmp_path / "taskboard.sqlite3"))
+    by_id = {task.task_id: task for task in projected}
+
+    assert by_id[running.task_id].column == BoardColumn.RUNNING
+    assert by_id[pending.task_id].queue_status == "pending"
+    assert by_id[pending.task_id].column == BoardColumn.WAITING
+    assert manager.get_task_by_id(pending.task_id).status == "pending"
+
+
 def test_metadata_column_overrides_board_only_without_mutating_queue_status(tmp_path: Path) -> None:
     manager = _queue(tmp_path, "sakura")
     task = manager.add_task(

@@ -117,6 +117,7 @@ def project_anima(
             projected,
             _build_task_index(resolved_anima_dir.parent, [resolved_anima_name], resolved_store),
         )
+    _mark_serial_pending_backlog(projected)
     _suppress_duplicate_failed_crons(projected)
     _suppress_duplicate_delegated_parents(projected)
     return sorted(
@@ -156,6 +157,7 @@ def project_all(
         )
     relation_names = set(relation_anima_names) if relation_anima_names is not None else names
     _attach_related_tasks(projected, _build_task_index(resolved_animas_dir, relation_names, resolved_store))
+    _mark_serial_pending_backlog(projected)
     _suppress_duplicate_failed_crons(projected)
     _suppress_duplicate_delegated_parents(projected)
     return sorted(
@@ -333,6 +335,25 @@ def _suppress_duplicate_delegated_parents(tasks: list[BoardTask]) -> None:
             task.column = BoardColumn.SUPPRESSED
             task.replaced_by = f"{keeper.anima_name}:{keeper.task_id}"
             task.tombstone_reason = "duplicate_delegated_parent"
+
+
+def _mark_serial_pending_backlog(tasks: list[BoardTask]) -> None:
+    running_animas = {
+        task.anima_name
+        for task in tasks
+        if task.visibility == AttentionVisibility.ACTIVE and task.queue_status == "in_progress"
+    }
+    if not running_animas:
+        return
+
+    for task in tasks:
+        if (
+            task.visibility == AttentionVisibility.ACTIVE
+            and task.queue_status == "pending"
+            and task.column == BoardColumn.REVIEW
+            and task.anima_name in running_animas
+        ):
+            task.column = BoardColumn.WAITING
 
 
 def _suppress_duplicate_failed_crons(tasks: list[BoardTask]) -> None:
