@@ -231,6 +231,7 @@ def _is_retry_plumbing_summary(summary: str) -> bool:
             "retry queued",
             "auto retry queued",
             "recovered orphaned processing task",
+            "tool call(s)",
             "自動再実行待ち",
             "再実行待ち",
         )

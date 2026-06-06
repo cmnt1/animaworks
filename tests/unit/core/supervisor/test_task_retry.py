@@ -55,6 +55,31 @@ def test_retry_task_regenerates_pending_json_from_task_desc(anima_dir: Path):
     assert payload["submitted_by"] == "sakura"
 
 
+def test_retry_task_ignores_tool_call_only_history_for_display_summary(anima_dir: Path):
+    manager = TaskQueueManager(anima_dir)
+    entry = manager.add_task(
+        source="anima",
+        original_instruction="Produce final evidence",
+        assignee="sakura",
+        summary="Final evidence task",
+        deadline="1h",
+        meta={
+            "task_desc": {
+                "task_type": "llm",
+                "title": "Meta title",
+                "description": "Produce final evidence",
+            }
+        },
+    )
+    manager.update_status(entry.task_id, "done", summary="(completed 22 tool call(s): Read, Bash, Grep)")
+    manager.update_status(entry.task_id, "blocked", summary="BLOCKED: no final evidence")
+
+    retried = retry_task(anima_dir, entry.task_id, summary="retry queued", submitted_by="sakura")
+
+    assert retried.status == "in_progress"
+    assert retried.summary == "Final evidence task"
+
+
 def test_retry_task_can_fallback_to_queue_instruction(anima_dir: Path):
     manager = TaskQueueManager(anima_dir)
     entry = manager.add_task(
