@@ -128,6 +128,16 @@ def _detect_synthesized_tool_failure(result: str) -> str | None:
     return f"Task produced no final response and reported {error_count} tool error(s)"
 
 
+def _detect_synthesized_tool_only_result(result: str) -> str | None:
+    """Return a blocked summary when TaskExec only synthesized tool-call counts."""
+    text = (result or "").strip()
+    if not text.startswith("(completed ") or "tool call(s)" not in text:
+        return None
+    if "; errors=" in text:
+        return None
+    return "Task produced only a tool-call summary, not final evidence"
+
+
 def _detect_non_final_delegation_report(result: str) -> str | None:
     """Return a failure summary when TaskExec only reports a handoff/start log."""
     text = (result or "").strip()
@@ -407,6 +417,9 @@ def _classify_task_result_for_desc(result: str, task_desc: dict[str, Any]) -> tu
     strong_followup = _detect_strong_non_final_followup(result)
     if strong_followup:
         return "blocked", f"BLOCKED: {strong_followup}"
+    tool_only = _detect_synthesized_tool_only_result(result)
+    if tool_only:
+        return "blocked", f"BLOCKED: {tool_only}"
     return status, summary
 
 

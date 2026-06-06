@@ -661,6 +661,39 @@ def test_delegated_parent_blocks_when_child_done_is_future_action_summary(tmp_pa
     assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
 
 
+def test_delegated_parent_blocks_when_child_done_is_tool_call_summary(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    kanna = _queue(tmp_path, "kanna")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = kanna.add_task(
+        source="anima",
+        original_instruction="produce final evidence",
+        assignee="kanna",
+        summary="produce final evidence",
+        task_id="child-tool-only",
+    )
+    kanna.update_status(
+        child.task_id,
+        "done",
+        summary="(completed 22 tool call(s): Read, Bash, Grep)",
+    )
+    parent = sakura.add_delegated_task(
+        original_instruction="track final evidence",
+        assignee="kanna",
+        summary="[delegate] track final evidence",
+        deadline="1h",
+        meta={"delegated_to": "kanna", "delegated_task_id": child.task_id},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("kanna", child.task_id) not in by_key
+    assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+
+
 def test_duplicate_delegated_parents_to_same_active_child_are_suppressed(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     kanna = _queue(tmp_path, "kanna")

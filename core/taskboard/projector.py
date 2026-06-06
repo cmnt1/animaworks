@@ -390,6 +390,7 @@ def _delegated_child_needs_followup(child: BoardTask) -> bool:
         "not final completion",
         "no final response",
         "tool error",
+        "tool call(s)",
         "errors=",
     )
     progress_markers = (
