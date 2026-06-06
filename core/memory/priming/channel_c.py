@@ -193,6 +193,10 @@ async def channel_c_related_knowledge(
         logger.debug("Channel C: No knowledge dir")
         return ("", "")
 
+    if restrict_to == []:
+        logger.debug("Channel C: No overflow files to search")
+        return ("", "")
+
     queries = build_queries(message, keywords, recent_human_messages)
     if not queries:
         logger.debug("Channel C: No keywords and no message")
