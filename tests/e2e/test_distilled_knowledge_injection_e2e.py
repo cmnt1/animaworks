@@ -244,6 +244,8 @@ class TestDistilledKnowledgeSummaryInjectionE2E:
         )
 
         mm = MemoryManager(anima_dir)
+        mm._rag._indexer = None
+        mm._rag._indexer_initialized = True
 
         results = mm.search_memory_text("terraform", scope="procedures")
         assert len(results) > 0
