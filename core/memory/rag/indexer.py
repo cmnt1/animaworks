@@ -24,6 +24,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+from core.memory.rag import indexer_delete
+from core.memory.rag.episode_time import apply_episode_heading_event_time
+from core.memory.rag.facts_chunker import chunk_facts_jsonl
 from core.time_utils import ensure_aware, now_iso
 
 if TYPE_CHECKING:
@@ -31,13 +34,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("animaworks.rag.indexer")
 
-# ── Configuration ───────────────────────────────────────────────────
-
-# Index metadata file
 INDEX_META_FILE = "index_meta.json"
-
-
-# ── Data structures ─────────────────────────────────────────────────
 
 
 @dataclass
@@ -46,7 +43,7 @@ class MemoryChunk:
 
     id: str
     content: str
-    metadata: dict[str, str | int | float | list[str]]
+    metadata: dict[str, str | int | float | bool | list[str]]
 
 
 # ── MemoryIndexer ───────────────────────────────────────────────────
@@ -264,10 +261,7 @@ class MemoryIndexer:
                 allowed, reason = curator_allows_access(meta, replay=self._skill_curator_replay)
                 if not allowed:
                     logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
-                    self._delete_indexed_file_documents(collection_name, file_key)
-                    if file_key in self.index_meta:
-                        self.index_meta.pop(file_key, None)
-                        self._save_index_meta()
+                    self.delete_indexed_file(file_path, memory_type)
                     return 0
             except Exception:
                 logger.debug("Failed to evaluate skill curator access for %s", file_path, exc_info=True)
@@ -305,6 +299,7 @@ class MemoryIndexer:
 
         if not chunks:
             logger.debug("No chunks extracted from %s", file_path)
+            self.delete_indexed_file(file_path, memory_type)
             return 0
 
         # Generate embeddings
@@ -323,12 +318,8 @@ class MemoryIndexer:
             for i, chunk in enumerate(chunks)
         ]
 
-        self.vector_store.create_collection(collection_name)
-        if not self.vector_store.upsert(collection_name, documents):
-            logger.warning("Upsert failed for %s, skipping index_meta update", file_path)
+        if not indexer_delete.upsert_file_documents(self, collection_name, file_key, file_path, documents):
             return 0
-
-        self._mark_collection_known(collection_name)
 
         self.index_meta[file_key] = {
             "hash": file_hash,
@@ -340,15 +331,11 @@ class MemoryIndexer:
         logger.info("Indexed %d chunks from %s", len(chunks), file_path)
         return len(chunks)
 
-    def _delete_indexed_file_documents(self, collection_name: str, source_file: str) -> None:
-        """Best-effort removal of stale chunks for a file that must not be indexed."""
-        try:
-            results = self.vector_store.get_by_metadata(collection_name, {"source_file": source_file}, limit=10_000)
-            ids = [result.document.id for result in results]
-            if ids:
-                self.vector_store.delete_documents(collection_name, ids)
-        except Exception:
-            logger.debug("Failed to delete indexed documents for %s/%s", collection_name, source_file, exc_info=True)
+    def delete_indexed_file(self, file_path: Path, memory_type: str) -> int:
+        return indexer_delete.delete_indexed_file(self, file_path, memory_type)
+
+    def _delete_indexed_file_documents(self, collection_name: str, source_file: str) -> int | None:
+        return indexer_delete.delete_indexed_file_documents(self, collection_name, source_file)
 
     def index_directory(
         self,
@@ -370,10 +357,8 @@ class MemoryIndexer:
             logger.warning("Directory not found: %s", directory)
             return 0
 
-        if memory_type in ("skills", "common_skills"):
-            md_files = sorted(directory.rglob("SKILL.md"))
-        else:
-            md_files = sorted(directory.rglob("*.md"))
+        patterns = {"facts": "*.jsonl", "skills": "SKILL.md", "common_skills": "SKILL.md"}
+        md_files = sorted(directory.rglob(patterns.get(memory_type, "*.md")))
         total_chunks = 0
         for md_file in md_files:
             total_chunks += self.index_file(md_file, memory_type, force=force)
@@ -585,13 +570,19 @@ class MemoryIndexer:
     ) -> list[MemoryChunk]:
         """Chunk file based on memory type.
 
-        Strategies:
-        - knowledge / common_knowledge: Markdown heading sections
-        - episodes: Time headings (``## HH:MM``) when present, else Markdown headings
-        - procedures: Whole file (don't split procedures)
-        - skills / common_skills: Whole file
-        - shared_users: Whole file
+        Markdown memory is split by headings/time headings; facts use JSONL
+        records; procedures, skills, and shared users are indexed whole.
         """
+        if memory_type == "facts":
+            return chunk_facts_jsonl(
+                file_path,
+                content,
+                anima_dir=self.anima_dir,
+                collection_prefix=self.collection_prefix,
+                make_chunk_id=self._make_chunk_id,
+                chunk_factory=MemoryChunk,
+                origin=origin,
+            )
         if memory_type in ("knowledge", "common_knowledge"):
             return self._chunk_by_markdown_headings(file_path, content, memory_type, origin=origin)
         if memory_type == "episodes":
@@ -624,7 +615,7 @@ class MemoryIndexer:
         frontmatter = self._parse_frontmatter(content)
         content = self._strip_frontmatter(content)
         chunks: list[MemoryChunk] = []
-        sections = re.split(r"\n(##\s+.+)", content)
+        sections = re.split(r"\n(##\s+.+)", f"\n{content}")
 
         preamble = sections[0].strip()
         chunk_idx = 0
@@ -668,6 +659,8 @@ class MemoryIndexer:
                         frontmatter=frontmatter,
                         origin=origin,
                     )
+                    if memory_type == "episodes":
+                        apply_episode_heading_event_time(metadata, heading)
                     chunks.append(
                         MemoryChunk(
                             id=chunk_id,
@@ -696,7 +689,7 @@ class MemoryIndexer:
         base_date_str = date_match.group(1) if date_match else None
 
         # Match headings like ## 09:30, ## 14:15 optional — title
-        sections = re.split(r"\n(##\s+\d{1,2}:\d{2}.*)", content)
+        sections = re.split(r"\n(##\s+\d{1,2}:\d{2}.*)", f"\n{content}")
 
         if len(sections) <= 1:
             return []
@@ -840,7 +833,7 @@ class MemoryIndexer:
         total_chunks: int,
         frontmatter: dict | None = None,
         origin: str = "",
-    ) -> dict[str, str | int | float | list[str]]:
+    ) -> dict[str, str | int | float | bool | list[str]]:
         """Extract metadata from file and content.
 
         Args:
@@ -853,7 +846,7 @@ class MemoryIndexer:
                 If provided, ``valid_until`` is extracted from it.
             origin: Provenance origin category for trust resolution.
         """
-        metadata: dict[str, str | int | float | list[str]] = {
+        metadata: dict[str, str | int | float | bool | list[str]] = {
             "anima": self.collection_prefix,
             "memory_type": memory_type,
             "source_file": str(file_path.relative_to(self.anima_dir)),

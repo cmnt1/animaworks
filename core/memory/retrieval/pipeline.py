@@ -8,9 +8,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from core.memory.retrieval.access_boost import AccessBoostConfig, apply_access_boost
 from core.memory.retrieval.confidence_gate import apply_confidence_gate
+from core.memory.retrieval.entity import EntityBoostConfig, apply_entity_boost
 from core.memory.retrieval.reranker import CrossEncoderReranker, get_reranker
 from core.memory.retrieval.rrf import legacy_result_key, rrf_merge
+from core.memory.retrieval.temporal import TemporalBoostConfig, apply_temporal_boost
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,9 @@ class RetrievalPipeline:
         abstain_on_low_confidence: bool = True,
         confidence_threshold: float = 0.35,
         rrf_confidence_threshold: float = 0.02,
+        temporal_boost: TemporalBoostConfig | None = None,
+        entity_boost: EntityBoostConfig | None = None,
+        access_boost: AccessBoostConfig | None = None,
     ) -> PipelineResult:
         """Merge, rerank, and optionally gate candidates."""
         non_empty = [lst for lst in ranked_lists if lst]
@@ -70,6 +76,10 @@ class RetrievalPipeline:
             top_k=pool_k,
         )
         candidates = merged[:pool_k]
+        if temporal_boost is not None:
+            candidates = apply_temporal_boost(query, candidates, temporal_boost)
+        if entity_boost is not None:
+            candidates = apply_entity_boost(query, candidates, entity_boost)
 
         used_rerank = False
         if rerank_enabled and len(candidates) >= min_candidates_for_rerank:
@@ -85,10 +95,18 @@ class RetrievalPipeline:
             except Exception:
                 logger.warning("Rerank stage failed; using RRF order", exc_info=True)
 
+        if temporal_boost is not None and used_rerank:
+            candidates = apply_temporal_boost(query, candidates, temporal_boost)
+        if entity_boost is not None and used_rerank:
+            candidates = apply_entity_boost(query, candidates, entity_boost)
+        if access_boost is not None:
+            candidates = apply_access_boost(candidates, access_boost)
         candidates = candidates[:limit]
 
         if abstain_on_low_confidence:
             threshold = confidence_threshold if used_rerank else rrf_confidence_threshold
+            if not used_rerank:
+                threshold = min(threshold, len(non_empty) / float(rrf_k + 1))
             gated = apply_confidence_gate(candidates, threshold=threshold)
             return PipelineResult(
                 items=gated.candidates[:limit],

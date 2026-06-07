@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,10 +9,12 @@ from __future__ import annotations
 import asyncio
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory.rag.watcher import FileWatcher
+from core.memory.rag.watcher import FileWatcher, MemoryFileHandler
 
 
 class MockIndexer:
@@ -20,11 +23,20 @@ class MockIndexer:
     def __init__(self):
         self.anima_name = "test_anima"
         self.indexed_files = []
+        self.deleted_files = []
+        self.fail_delete = False
 
     def index_file(self, file_path, memory_type, force):
         """Mock index_file method."""
         self.indexed_files.append((file_path, memory_type))
         return 1  # Return chunk count
+
+    def delete_indexed_file(self, file_path, memory_type):
+        """Mock delete_indexed_file method."""
+        if self.fail_delete:
+            raise RuntimeError("delete failed")
+        self.deleted_files.append((file_path, memory_type))
+        return 1
 
 
 @pytest.fixture
@@ -124,6 +136,118 @@ def test_queue_file(temp_anima_dir):
 
     # Check that file is in queue (resolved to match watcher's path normalization)
     assert test_file.resolve() in watcher._queue
+
+
+def test_deleted_markdown_is_queued(temp_anima_dir):
+    """Deleted Markdown files are queued for cleanup."""
+    indexer = MockIndexer()
+    watcher = FileWatcher(temp_anima_dir, indexer)
+    handler = MemoryFileHandler(watcher)
+    test_file = temp_anima_dir / "knowledge" / "deleted.md"
+
+    handler.on_deleted(SimpleNamespace(src_path=str(test_file), is_directory=False))
+
+    assert test_file.resolve() in watcher._queue
+
+
+def test_moved_markdown_queues_source_and_destination(temp_anima_dir):
+    """Move events queue old path cleanup and new path indexing."""
+    indexer = MockIndexer()
+    watcher = FileWatcher(temp_anima_dir, indexer)
+    handler = MemoryFileHandler(watcher)
+    old_file = temp_anima_dir / "knowledge" / "old.md"
+    new_file = temp_anima_dir / "knowledge" / "new.md"
+
+    handler.on_moved(
+        SimpleNamespace(
+            src_path=str(old_file),
+            dest_path=str(new_file),
+            is_directory=False,
+        )
+    )
+
+    assert old_file.resolve() in watcher._queue
+    assert new_file.resolve() in watcher._queue
+
+
+@pytest.mark.asyncio
+async def test_process_batch_deletes_missing_file(temp_anima_dir):
+    """Missing queued files are cleaned from the vector index."""
+    indexer = MockIndexer()
+    watcher = FileWatcher(temp_anima_dir, indexer)
+    missing_file = temp_anima_dir / "knowledge" / "missing.md"
+
+    await watcher._process_batch([(missing_file, "knowledge")])
+
+    assert indexer.deleted_files == [(missing_file, "knowledge")]
+    assert indexer.indexed_files == []
+
+
+@pytest.mark.asyncio
+async def test_process_batch_continues_after_delete_failure(temp_anima_dir):
+    """A cleanup failure does not prevent later files from being indexed."""
+    indexer = MockIndexer()
+    indexer.fail_delete = True
+    watcher = FileWatcher(temp_anima_dir, indexer)
+    missing_file = temp_anima_dir / "knowledge" / "missing.md"
+    existing_file = temp_anima_dir / "knowledge" / "existing.md"
+    existing_file.write_text("# Existing\n\nContent", encoding="utf-8")
+
+    await watcher._process_batch(
+        [
+            (missing_file, "knowledge"),
+            (existing_file, "knowledge"),
+        ]
+    )
+
+    assert indexer.indexed_files == [(existing_file, "knowledge")]
+
+
+@pytest.mark.asyncio
+async def test_process_batch_updates_graph_for_deleted_file(temp_anima_dir):
+    """Deleted knowledge files are passed to the graph incremental updater."""
+    indexer = MockIndexer()
+    graph = MagicMock()
+    watcher = FileWatcher(
+        temp_anima_dir,
+        indexer,
+        knowledge_graph=graph,
+        anima_name="test_anima",
+    )
+    missing_file = temp_anima_dir / "knowledge" / "missing.md"
+
+    await watcher._process_batch([(missing_file, "knowledge")])
+
+    graph.update_graph_incremental.assert_called_once_with(
+        [missing_file],
+        "test_anima",
+        "knowledge",
+    )
+    graph.save_graph.assert_called_once_with(temp_anima_dir / "vectordb")
+
+
+@pytest.mark.asyncio
+async def test_process_batch_updates_graph_when_delete_fails(temp_anima_dir):
+    """Graph cleanup still receives deleted files when vector cleanup fails."""
+    indexer = MockIndexer()
+    indexer.fail_delete = True
+    graph = MagicMock()
+    watcher = FileWatcher(
+        temp_anima_dir,
+        indexer,
+        knowledge_graph=graph,
+        anima_name="test_anima",
+    )
+    missing_file = temp_anima_dir / "knowledge" / "missing.md"
+
+    await watcher._process_batch([(missing_file, "knowledge")])
+
+    graph.update_graph_incremental.assert_called_once_with(
+        [missing_file],
+        "test_anima",
+        "knowledge",
+    )
+    graph.save_graph.assert_called_once_with(temp_anima_dir / "vectordb")
 
 
 def test_memory_type_detection(temp_anima_dir):

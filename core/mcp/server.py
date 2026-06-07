@@ -61,6 +61,8 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
         "heartbeat_observe_snapshot",
         "write_memory_file",
         "archive_memory_file",
+        "report_procedure_outcome",
+        "report_knowledge_outcome",
         # AW-essential: messaging
         "send_message",
         "post_channel",

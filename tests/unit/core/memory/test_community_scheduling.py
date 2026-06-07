@@ -53,8 +53,7 @@ class TestDynamicCommunityUpdateInIngest:
 
         backend._extractor = mock_extractor
         backend._resolver = mock_resolver
-        # Avoid loading the real embedding model (HuggingFace) during ingest_text.
-        backend._embed_texts = AsyncMock(side_effect=lambda texts: [[0.0] * 8 for _ in texts])
+        backend._embed_texts = AsyncMock(return_value=[])
 
         return backend, mock_driver
 
@@ -103,8 +102,7 @@ class TestDynamicCommunityUpdateInIngest:
 
         backend._extractor = mock_extractor
         backend._resolver = mock_resolver
-        # Avoid loading the real embedding model (HuggingFace) during ingest_text.
-        backend._embed_texts = AsyncMock(side_effect=lambda texts: [[0.0] * 8 for _ in texts])
+        backend._embed_texts = AsyncMock(return_value=[])
 
         with patch.object(backend, "_dynamic_community_update", new_callable=AsyncMock) as mock_update:
             await backend.ingest_text("Alice is a person", source="test")

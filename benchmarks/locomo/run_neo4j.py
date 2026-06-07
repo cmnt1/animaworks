@@ -139,7 +139,7 @@ def main() -> None:
                         continue
 
                     try:
-                        context = adapter.retrieve(question)
+                        context = adapter.retrieve(question, category=category)
                     except Exception as exc:
                         errors += 1
                         logger.exception("Retrieve failed: %s", exc)
@@ -147,7 +147,11 @@ def main() -> None:
 
                     prediction = ""
                     try:
-                        prediction = adapter.answer(question, context)
+                        prediction = adapter.answer(
+                            question,
+                            context,
+                            category=category,
+                        )
                     except Exception as exc:
                         errors += 1
                         logger.exception("Answer failed: %s", exc)
@@ -163,19 +167,30 @@ def main() -> None:
                             errors += 1
                             logger.exception("Judge failed: %s", exc)
 
-                    results.append(
-                        {
-                            "sample_id": str(sample_id),
-                            "question_index": j,
-                            "category": category,
-                            "question": question,
-                            "reference": answer,
-                            "prediction": prediction,
-                            "f1": f1,
-                            "judge_score": judge_score,
-                            "context_count": len(context),
-                        }
-                    )
+                    result: dict[str, Any] = {
+                        "sample_id": str(sample_id),
+                        "question_index": j,
+                        "category": category,
+                        "question": question,
+                        "reference": answer,
+                        "prediction": prediction,
+                        "f1": f1,
+                        "judge_score": judge_score,
+                        "context_count": len(context),
+                    }
+                    raw_prediction = getattr(adapter, "_last_raw_answer", None)
+                    normalized_prediction = getattr(adapter, "_last_normalized_answer", None)
+                    abstain_reason = getattr(adapter, "_last_abstain_reason", "")
+                    top_score = getattr(adapter, "_last_top_score", None)
+                    if isinstance(raw_prediction, str):
+                        result["raw_prediction"] = raw_prediction
+                    if isinstance(normalized_prediction, str):
+                        result["normalized_prediction"] = normalized_prediction
+                    if isinstance(abstain_reason, str) and abstain_reason:
+                        result["abstain_reason"] = abstain_reason
+                    if isinstance(top_score, int | float):
+                        result["top_retrieval_score"] = float(top_score)
+                    results.append(result)
 
                     if (j + 1) % 50 == 0:
                         print(f"  Questions: {j + 1}/{len(qa_list)}")

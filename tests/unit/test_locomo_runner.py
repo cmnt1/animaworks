@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 
 import pytest
 
@@ -11,6 +12,7 @@ from benchmarks.locomo.runner import (
     _build_arg_parser,
     _print_comparison,
     _print_summary,
+    _write_checkpoint_json,
     run_benchmark,
 )
 
@@ -30,6 +32,10 @@ class TestArgParser:
         # default_answer_model() (env → host config → fallback), so it is
         # environment-dependent; assert the parser wires that resolver.
         assert args.answer_model == default_answer_model()
+        assert args.answer_timeout is None
+        assert args.answer_max_retries == 2
+        assert args.checkpoint_every == 0
+        assert args.max_questions == 0
         assert args.verbose is False
 
     def test_mode_choice(self):
@@ -46,6 +52,25 @@ class TestArgParser:
         p = _build_arg_parser()
         args = p.parse_args(["--judge"])
         assert args.judge is True
+
+    def test_answer_knobs(self):
+        p = _build_arg_parser()
+        args = p.parse_args(
+            [
+                "--answer-timeout",
+                "60",
+                "--answer-max-retries",
+                "0",
+                "--checkpoint-every",
+                "25",
+                "--max-questions",
+                "20",
+            ],
+        )
+        assert args.answer_timeout == 60.0
+        assert args.answer_max_retries == 0
+        assert args.checkpoint_every == 25
+        assert args.max_questions == 20
 
 
 # ── Missing data ──────────
@@ -67,6 +92,36 @@ class TestRunBenchmarkMissingData:
         results, err = run_benchmark(args)
         assert results == {}
         assert err == 1
+
+
+class TestCheckpointJson:
+    def test_write_checkpoint_json_includes_partial_summary(self, tmp_path):
+        out = _write_checkpoint_json(
+            tmp_path,
+            "2026-06-04T00-00-00",
+            "scope_all",
+            timestamp_iso="2026-06-04T00:00:00",
+            config={"answer_timeout": 60, "answer_max_retries": 0},
+            results=[
+                {
+                    "sample_id": "conv-1",
+                    "question_index": 0,
+                    "category": 1,
+                    "question": "Q",
+                    "reference": "A",
+                    "prediction": "A",
+                    "f1": 1.0,
+                    "judge_score": None,
+                }
+            ],
+            errors=0,
+        )
+
+        assert out.name.endswith("_scope_all.partial.json")
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert payload["checkpoint"] is True
+        assert payload["summary"]["overall_f1"] == 1.0
+        assert payload["config"]["answer_max_retries"] == 0
 
 
 # ── Summary printing ──────────

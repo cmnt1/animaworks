@@ -11,7 +11,9 @@ import {
   renderLiveBubble,
   renderStreamingBubbleInner,
   updateStreamingZone,
-  renderCollapsibleSession as _sharedRenderCollapsibleSession,
+  renderCollapsibleActivityBundle as _sharedRenderCollapsibleActivityBundle,
+  getSessionActivityType as _sharedGetSessionActivityType,
+  getMessageActivityType as _sharedGetMessageActivityType,
   bindCollapsibleSessionHandlers as _sharedBindCollapsibleSessionHandlers,
 } from "../../shared/chat/render-utils.js";
 import { createScrollObserver } from "../../shared/chat/scroll-observer.js";
@@ -62,6 +64,15 @@ export function createChatRenderer(ctx) {
     escapeHtml, renderMarkdown, smartTimestamp, renderChatImages,
     animaName: state.selectedAnima,
     avatarMap: state.animaTabAvatarUrls || {},
+    knownAnimaNames: new Set((state.animas || []).map((a) => a.name).filter(Boolean)),
+    knownUserNames: new Set([
+      "human",
+      "user",
+      "guest",
+      ...(state.users || []).map((u) => u?.username).filter(Boolean),
+      document.getElementById("currentUserLabel")?.textContent || "",
+      localStorage.getItem("animaworks_user") || "",
+    ].filter(Boolean)),
     truncateLen: CONSTANTS.TOOL_RESULT_TRUNCATE,
     labels: {
       thinking: t("chat.thinking"),
@@ -269,37 +280,46 @@ export function createChatRenderer(ctx) {
     const opts = _renderOpts();
     let sessionsHtml = "";
     let si = 0;
+    let hasRenderedTimelineItem = false;
+    let activityRun = [];
 
-    const _bgOnly = (s) => s.messages?.length > 0 && s.messages.every(m => m.role === "system");
+    const flushActivityRun = () => {
+      if (activityRun.length === 0) return false;
+      sessionsHtml += _sharedRenderCollapsibleActivityBundle(activityRun, opts);
+      activityRun = [];
+      return true;
+    };
 
     while (si < hs.sessions.length) {
       const session = hs.sessions[si];
-      const trigger = session.trigger || "chat";
 
-      if (trigger === "heartbeat" && _bgOnly(session)) {
-        sessionsHtml += _sharedRenderCollapsibleSession([session], "heartbeat", opts);
-        si++;
-      } else if (trigger === "cron" && _bgOnly(session)) {
-        const cronGroup = [session];
-        while (si + 1 < hs.sessions.length
-          && (hs.sessions[si + 1].trigger || "chat") === "cron"
-          && _bgOnly(hs.sessions[si + 1])) {
-          si++;
-          cronGroup.push(hs.sessions[si]);
-        }
-        sessionsHtml += _sharedRenderCollapsibleSession(cronGroup, "cron", opts);
-        si++;
-      } else if (trigger === "task" && _bgOnly(session)) {
-        sessionsHtml += _sharedRenderCollapsibleSession([session], "task", opts);
+      const sessionActivityType = _sharedGetSessionActivityType(session, opts);
+      if (sessionActivityType) {
+        activityRun.push({ type: sessionActivityType, session });
         si++;
       } else {
-        sessionsHtml += renderSessionDivider(session, si === 0);
+        let sessionDividerRendered = false;
         if (session.messages) {
-          for (const msg of session.messages) sessionsHtml += renderHistoryMessage(msg);
+          for (const msg of session.messages) {
+            const messageActivityType = _sharedGetMessageActivityType(msg, opts);
+            if (messageActivityType) {
+              activityRun.push({ type: messageActivityType, message: msg });
+              continue;
+            }
+
+            if (flushActivityRun()) hasRenderedTimelineItem = true;
+            if (!sessionDividerRendered) {
+              sessionsHtml += renderSessionDivider(session, !hasRenderedTimelineItem);
+              sessionDividerRendered = true;
+            }
+            sessionsHtml += renderHistoryMessage(msg);
+            hasRenderedTimelineItem = true;
+          }
         }
         si++;
       }
     }
+    flushActivityRun();
 
     let liveHtml = "";
     if (history.length > 0) {
@@ -360,6 +380,7 @@ export function createChatRenderer(ctx) {
   // ── Infinite Scroll (shared scroll-observer) ──
 
   let _scrollObs = null;
+  let _loadingOlder = false;
 
   function setupChatObserver() {
     if (_scrollObs) _scrollObs.disconnect();
@@ -382,11 +403,15 @@ export function createChatRenderer(ctx) {
     const hs = mgr.getHistoryState(name, tid);
     if (!hs || !hs.hasMore || hs.loading) return;
     if (mgr.isStreamingFor(name, tid)) return;
+    if (_loadingOlder) return;
 
-    renderChat(false);
-
-    await mgr.loadMoreHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE);
-    renderChat(false);
+    _loadingOlder = true;
+    try {
+      await mgr.loadMoreHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE);
+    } finally {
+      _loadingOlder = false;
+      renderChat(false);
+    }
   }
 
   // ── Conversation History API ──

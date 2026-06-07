@@ -47,24 +47,49 @@ class TestPrimingResultEpisodesField:
 
 
 class TestChannelFEpisodes:
+    def _patch_unified_search(
+        self,
+        results: list,
+        *,
+        meta: dict | None = None,
+        side_effect: Exception | None = None,
+    ):
+        searcher = MagicMock()
+        if side_effect is None:
+            searcher.search_many.return_value = [self._to_unified_row(result) for result in results]
+        else:
+            searcher.search_many.side_effect = side_effect
+        searcher.last_search_meta = meta or {"abstain": False, "abstain_reason": ""}
+        return patch("core.memory.priming.channel_f.UnifiedMemorySearch", return_value=searcher), searcher
+
+    @staticmethod
+    def _to_unified_row(result) -> dict:
+        if isinstance(result, dict):
+            return result
+        metadata = dict(result.metadata) if isinstance(result.metadata, dict) else {}
+        row = {
+            "doc_id": result.doc_id,
+            "content": result.content,
+            "score": result.score,
+        }
+        row.update(metadata)
+        return row
+
     @pytest.mark.asyncio
-    async def test_channel_f_calls_retriever_with_episodes_type(
+    async def test_channel_f_calls_unified_search_with_episodes_scope(
         self,
         temp_anima_dir: Path,
     ) -> None:
-        """Channel F uses dual queries with memory_type='episodes' and top_k=5."""
+        """Channel F uses unified search with scope='episodes' and limit=5."""
         engine = PrimingEngine(temp_anima_dir)
 
-        mock_retriever = MagicMock()
-        mock_retriever.search.return_value = []
-
-        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+        patcher, searcher = self._patch_unified_search([])
+        with patcher:
             await engine._channel_f_episodes(["deploy", "エラー"], message="デプロイでエラーが出た")
 
-        assert mock_retriever.search.call_count == 2, "Dual query should issue 2 searches"
-        for call in mock_retriever.search.call_args_list:
-            assert call.kwargs.get("memory_type") == "episodes"
-            assert call.kwargs.get("top_k") == 5
+        searcher.search_many.assert_called_once()
+        assert searcher.search_many.call_args.kwargs["scope"] == "episodes"
+        assert searcher.search_many.call_args.kwargs["limit"] == 5
 
     @pytest.mark.asyncio
     async def test_channel_f_query_includes_message(
@@ -74,17 +99,15 @@ class TestChannelFEpisodes:
         """Channel F dual query: first is message-context, second is keyword-only."""
         engine = PrimingEngine(temp_anima_dir)
 
-        mock_retriever = MagicMock()
-        mock_retriever.search.return_value = []
-
         msg = "デプロイでエラーが出た"
-        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+        patcher, searcher = self._patch_unified_search([])
+        with patcher:
             await engine._channel_f_episodes(["deploy"], message=msg)
 
-        calls = mock_retriever.search.call_args_list
-        assert len(calls) == 2
-        q1 = calls[0].kwargs.get("query")
-        q2 = calls[1].kwargs.get("query")
+        queries = searcher.search_many.call_args.args[0]
+        assert len(queries) == 2
+        q1 = queries[0]
+        q2 = queries[1]
         assert q1.startswith(msg[:200])
         assert q2 == "deploy"
 
@@ -96,16 +119,12 @@ class TestChannelFEpisodes:
         """When keywords is empty but message exists, use message[:200] as query."""
         engine = PrimingEngine(temp_anima_dir)
 
-        mock_retriever = MagicMock()
-        mock_retriever.search.return_value = []
-
         msg = "短いメッセージ"
-        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+        patcher, searcher = self._patch_unified_search([])
+        with patcher:
             await engine._channel_f_episodes([], message=msg)
 
-        mock_retriever.search.assert_called_once()
-        call_kwargs = mock_retriever.search.call_args
-        actual_query = call_kwargs.kwargs.get("query")
+        actual_query = searcher.search_many.call_args.args[0][0]
         assert msg in actual_query
 
     @pytest.mark.asyncio
@@ -137,7 +156,8 @@ class TestChannelFEpisodes:
     ) -> None:
         engine = PrimingEngine(temp_anima_dir)
 
-        with patch.object(engine, "_get_or_create_retriever", return_value=None):
+        patcher, _searcher = self._patch_unified_search([])
+        with patcher, patch.object(engine, "_get_or_create_retriever", side_effect=AssertionError("unused")):
             result = await engine._channel_f_episodes(["test"], message="test")
 
         assert result == ""
@@ -156,10 +176,8 @@ class TestChannelFEpisodes:
         mock_result.doc_id = "test_anima/episodes/2026-03-01.md#0"
         mock_result.metadata = {"source_file": "episodes/2026-03-01.md"}
 
-        mock_retriever = MagicMock()
-        mock_retriever.search.return_value = [mock_result]
-
-        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+        patcher, _searcher = self._patch_unified_search([mock_result])
+        with patcher:
             result = await engine._channel_f_episodes(
                 ["deploy"],
                 message="デプロイでエラー",
@@ -170,7 +188,6 @@ class TestChannelFEpisodes:
         assert "episodes/2026-03-01.md" in result
         assert 'read_memory_file(path="episodes/2026-03-01.md")' in result
         assert "デプロイ手順を確認して修正した" not in result
-        mock_retriever.record_access.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_channel_f_neo4j_formats_pointer_results(
@@ -270,10 +287,8 @@ class TestChannelFEpisodes:
         mock_result.doc_id = "test_anima/episodes/weird.md#0"
         mock_result.metadata = {"source_file": 'episodes/weird"name.md'}
 
-        mock_retriever = MagicMock()
-        mock_retriever.search.return_value = [mock_result]
-
-        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+        patcher, _searcher = self._patch_unified_search([mock_result])
+        with patcher:
             result = await engine._channel_f_episodes(
                 ["deploy"],
                 message="デプロイでエラー",
@@ -303,10 +318,8 @@ class TestChannelFEpisodes:
         readable.doc_id = "test_anima/episodes/2026-03-03.md#0"
         readable.metadata = {"source_file": ""}
 
-        mock_retriever = MagicMock()
-        mock_retriever.search.return_value = [pathless, readable]
-
-        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+        patcher, _searcher = self._patch_unified_search([pathless, readable])
+        with patcher:
             result = await engine._channel_f_episodes(
                 ["deploy"],
                 message="デプロイでエラー",
@@ -316,7 +329,6 @@ class TestChannelFEpisodes:
         assert "--- Episode 2" not in result
         assert 'read_memory_file(path="episodes/2026-03-03.md")' in result
         assert "Pathless legacy body" not in result
-        mock_retriever.record_access.assert_called_once_with([readable], "test_anima")
 
     @pytest.mark.asyncio
     async def test_channel_f_handles_exception_gracefully(
@@ -325,10 +337,8 @@ class TestChannelFEpisodes:
     ) -> None:
         engine = PrimingEngine(temp_anima_dir)
 
-        mock_retriever = MagicMock()
-        mock_retriever.search.side_effect = RuntimeError("vector store error")
-
-        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+        patcher, _searcher = self._patch_unified_search([], side_effect=RuntimeError("vector store error"))
+        with patcher:
             result = await engine._channel_f_episodes(["test"], message="test")
 
         assert result == ""
@@ -338,6 +348,12 @@ class TestChannelFEpisodes:
 
 
 class TestPrimeMemoriesIncludesChannelF:
+    def _patch_unified_search(self, results: list):
+        searcher = MagicMock()
+        searcher.search_many.return_value = [TestChannelFEpisodes._to_unified_row(result) for result in results]
+        searcher.last_search_meta = {"abstain": False, "abstain_reason": ""}
+        return patch("core.memory.priming.channel_f.UnifiedMemorySearch", return_value=searcher), searcher
+
     @pytest.mark.asyncio
     async def test_prime_memories_populates_episodes(
         self,
@@ -352,10 +368,8 @@ class TestPrimeMemoriesIncludesChannelF:
         mock_result.doc_id = "test_anima/episodes/2026-02-01.md#0"
         mock_result.metadata = {"source_file": "episodes/2026-02-01.md"}
 
-        mock_retriever = MagicMock()
-        mock_retriever.search.return_value = [mock_result]
-
-        with patch.object(engine, "_get_or_create_retriever", return_value=mock_retriever):
+        patcher, _searcher = self._patch_unified_search([mock_result])
+        with patcher:
             result = await engine.prime_memories(
                 message="What happened with the deploy?",
                 sender_name="human",

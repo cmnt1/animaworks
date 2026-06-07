@@ -38,7 +38,10 @@ class SkillUsageEvent(BaseModel):
     skill_name: str
     event_type: SkillUsageEventType
     is_common: bool = False
+    is_procedure: bool = False
+    ref: str | None = None
     notes: str | None = None
+    source_origin: str | None = None
 
 
 class SkillUsageStats(BaseModel):
@@ -52,8 +55,11 @@ class SkillUsageStats(BaseModel):
     patch_count: int = 0
     create_count: int = 0
     created_at: str | None = None
+    create_origins: dict[str, int] = Field(default_factory=dict)
     last_used_at: str | None = None
     is_common: bool = False
+    is_procedure: bool = False
+    ref: str | None = None
 
 
 # ── Enumerations ────────────────────────────────────────────

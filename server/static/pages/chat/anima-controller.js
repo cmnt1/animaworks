@@ -356,8 +356,13 @@ export function createAnimaController(ctx) {
 
   async function loadAnimas() {
     try {
-      const [animas, uiState] = await Promise.all([api("/api/animas"), fetchChatUiState(ctx)]);
+      const [animas, uiState, users] = await Promise.all([
+        api("/api/animas"),
+        fetchChatUiState(ctx),
+        api("/api/users").catch(() => []),
+      ]);
       state.animas = animas || [];
+      state.users = Array.isArray(users) ? users : [];
       restoreChatUiState(uiState);
       renderAddConversationMenu();
       renderAnimaTabs();
@@ -386,11 +391,12 @@ export function createAnimaController(ctx) {
   function resolveHistoryAvatars(sessions) {
     if (!sessions || sessions.length === 0) return;
     const known = new Set(Object.keys(state.animaTabAvatarUrls));
+    const knownAnimas = new Set((state.animas || []).map(a => a.name).filter(Boolean));
     const names = new Set();
     for (const s of sessions) {
       if (!s.messages) continue;
       for (const m of s.messages) {
-        if (m.from_person && m.from_person !== "human" && !known.has(m.from_person)) {
+        if (m.from_person && knownAnimas.has(m.from_person) && !known.has(m.from_person)) {
           names.add(m.from_person);
         }
       }

@@ -514,6 +514,9 @@ def _build_pre_tool_hook(
         tool_use_id: str | None,
     ) -> SyncHookJSONOutput | None:
         del tool_use_id
+        if session_stats is None:
+            return None
+
         try:
             from core.memory.action_gate import action_tool_name_for_sdk, check_action
 

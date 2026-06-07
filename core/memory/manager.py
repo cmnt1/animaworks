@@ -63,12 +63,14 @@ class MemoryManager:
         self.episodes_dir = anima_dir / "episodes"
         self.knowledge_dir = anima_dir / "knowledge"
         self.procedures_dir = anima_dir / "procedures"
+        self.facts_dir = anima_dir / "facts"
         self.skills_dir = anima_dir / "skills"
         self.state_dir = anima_dir / "state"
         for d in (
             self.episodes_dir,
             self.knowledge_dir,
             self.procedures_dir,
+            self.facts_dir,
             self.skills_dir,
             self.state_dir,
         ):
@@ -150,6 +152,8 @@ class MemoryManager:
             self.knowledge_dir = ad / "knowledge"
         if not hasattr(self, "procedures_dir"):
             self.procedures_dir = ad / "procedures"
+        if not hasattr(self, "facts_dir"):
+            self.facts_dir = ad / "facts"
         if not hasattr(self, "skills_dir"):
             self.skills_dir = ad / "skills"
         self.__cron = CronLogger(ad)
@@ -359,6 +363,9 @@ class MemoryManager:
 
     def list_procedure_files(self) -> list[str]:
         return [f.stem for f in sorted(self.procedures_dir.glob("*.md"))]
+
+    def list_fact_files(self) -> list[str]:
+        return [f.stem for f in sorted(self.facts_dir.glob("*.jsonl"))]
 
     def list_skill_files(self) -> list[str]:
         return [f.parent.name for f in sorted(self.skills_dir.glob("*/SKILL.md"))]
@@ -661,66 +668,3 @@ class MemoryManager:
     def ensure_procedure_frontmatter(self) -> int:
         """Facade: FrontmatterService.ensure_procedure_frontmatter."""
         return self._frontmatter.ensure_procedure_frontmatter()
-
-    # ── Distilled Knowledge Collection ───────────────────
-
-    def collect_distilled_knowledge(self) -> list[dict]:
-        """Collect all knowledge/ and procedures/ files with metadata.
-
-        Returns list of dicts sorted by (confidence, mtime) descending:
-            {path, name, content, description, confidence, source_type, mtime}
-        """
-        procedures, knowledge = self.collect_distilled_knowledge_separated()
-        return procedures + knowledge
-
-    def collect_distilled_knowledge_separated(
-        self,
-    ) -> tuple[list[dict], list[dict]]:
-        """Collect knowledge and procedures as separate lists.
-
-        Returns (procedures, knowledge), each sorted by
-        (confidence desc, mtime desc).
-        Each entry includes ``description`` (from frontmatter) and ``mtime``
-        for priority ranking.
-        """
-        procedures: list[dict] = []
-        knowledge: list[dict] = []
-        source_dirs = [
-            (self.knowledge_dir, "knowledge"),
-            (self.procedures_dir, "procedures"),
-        ]
-        for directory, source_type in source_dirs:
-            if not directory.is_dir():
-                continue
-            for f in sorted(directory.glob("*.md")):
-                try:
-                    if source_type == "knowledge":
-                        meta = self._frontmatter.read_knowledge_metadata(f)
-                        body = self._frontmatter.read_knowledge_content(f)
-                    else:
-                        meta = self._frontmatter.read_procedure_metadata(f)
-                        body = self._frontmatter.read_procedure_content(f)
-                    if not body.strip():
-                        continue
-                    confidence = float(meta.get("confidence", 0.5))
-                    entry = {
-                        "path": str(f),
-                        "name": f.stem,
-                        "content": body,
-                        "description": meta.get("description", ""),
-                        "confidence": confidence,
-                        "source_type": source_type,
-                        "mtime": f.stat().st_mtime,
-                    }
-                    if source_type == "procedures":
-                        procedures.append(entry)
-                    else:
-                        knowledge.append(entry)
-                except Exception:
-                    logger.warning(
-                        "Failed to read %s for knowledge injection",
-                        f,
-                    )
-        procedures.sort(key=lambda d: (d["confidence"], d.get("mtime", 0)), reverse=True)
-        knowledge.sort(key=lambda d: (d["confidence"], d.get("mtime", 0)), reverse=True)
-        return procedures, knowledge

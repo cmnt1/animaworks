@@ -35,7 +35,16 @@ try:
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
 except ImportError:
-    raise ImportError("gmail tool requires google-api packages. Install with: pip install animaworks[gmail]") from None
+    Request = None  # type: ignore[assignment]
+    Credentials = None  # type: ignore[assignment]
+    InstalledAppFlow = None  # type: ignore[assignment]
+    build = None  # type: ignore[assignment]
+
+
+def _require_google_api() -> None:
+    if Request is None or Credentials is None or InstalledAppFlow is None or build is None:
+        raise ImportError("gmail tool requires google-api packages. Install with: pip install animaworks[gmail]")
+
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +148,7 @@ class GmailClient:
             client_secret: OAuth Client Secret.
             mcp_token_path: MCP-GSuite token file path (for reusing existing token).
         """
+        _require_google_api()
         self.credentials_path = credentials_path or (_DEFAULT_CREDENTIALS_DIR / "credentials.json")
         self.token_path = token_path or (_DEFAULT_CREDENTIALS_DIR / "token.json")
         self.client_id = client_id or os.environ.get("GMAIL_CLIENT_ID")

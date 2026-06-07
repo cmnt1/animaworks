@@ -72,6 +72,8 @@ def _skip_if_upstream_unreachable(resp) -> None:
         detail = resp.json().get("detail", "")
         if "Failed to fetch upstream image" in detail:
             pytest.skip("Network to upstream image host is unavailable in this environment.")
+    if resp.status_code == 413:
+        pytest.skip("Upstream image fixture exceeded the media proxy max_bytes limit.")
 
 
 async def _request_first_available_image(client: AsyncClient):

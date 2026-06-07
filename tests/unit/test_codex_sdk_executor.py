@@ -9,7 +9,7 @@ All tests use mocks — no Codex CLI binary or API key required.
 """
 
 import asyncio
-import json
+import logging
 import os
 import tomllib
 from pathlib import Path
@@ -33,11 +33,8 @@ from core.execution.codex_sdk import (
     _is_desktop_extension_codex,
     _item_to_tool_record,
     _load_thread_id,
-    _patch_codex_exec_stream_limit,
-    _patch_codex_sdk_command_execution_statuses,
     _resolve_codex_model,
     _save_thread_id,
-    _set_process_path_env,
     _should_cli_exec_fallback,
     _should_prefer_cli_exec,
     _stderr_contains_fatal_signal,
@@ -85,6 +82,27 @@ def executor(model_config, anima_dir):
         tool_registry=["web_search"],
         personal_tools={},
     )
+
+
+def _mock_codex(start_thread, resume_thread=None):
+    codex = MagicMock()
+    codex.thread_start = AsyncMock(return_value=start_thread)
+    codex.thread_resume = AsyncMock(return_value=resume_thread if resume_thread is not None else start_thread)
+    codex.close = AsyncMock()
+    return codex
+
+
+def _mock_stream_thread(thread_id: str, events):
+    async def fake_events():
+        for event in events:
+            yield event
+
+    turn = MagicMock()
+    turn.stream.return_value = fake_events()
+    thread = MagicMock()
+    thread.turn = AsyncMock(return_value=turn)
+    thread.id = thread_id
+    return thread
 
 
 # ── Helper function tests ────────────────────────────────────
@@ -203,6 +221,37 @@ class TestHelpers:
         assert result["input_tokens"] == 200
         assert result["output_tokens"] == 80
 
+    def test_usage_to_dict_from_app_server_total_object(self):
+        usage = SimpleNamespace(
+            total=SimpleNamespace(
+                input_tokens=123,
+                output_tokens=45,
+                cached_input_tokens=7,
+                reasoning_output_tokens=8,
+                total_tokens=176,
+            )
+        )
+
+        result = _usage_to_dict(usage)
+
+        assert result == {
+            "input_tokens": 123,
+            "output_tokens": 45,
+            "cached_input_tokens": 7,
+            "reasoning_output_tokens": 8,
+            "total_tokens": 176,
+        }
+
+    def test_item_to_tool_record_file_change(self):
+        change = SimpleNamespace(kind=SimpleNamespace(value="update"), path="core/demo.py")
+        item = SimpleNamespace(type="fileChange", id="file-1", changes=[change], status="completed")
+
+        record = _item_to_tool_record(item)
+
+        assert record is not None
+        assert record.tool_name == "file_change"
+        assert record.input_summary == "update: core/demo.py"
+
     def test_event_idle_timeout_prefers_background_triggers(self):
         assert _event_idle_timeout_seconds("heartbeat") < _event_idle_timeout_seconds("chat")
         assert _event_idle_timeout_seconds("inbox:sakura") == _event_idle_timeout_seconds("heartbeat")
@@ -237,101 +286,6 @@ class TestHelpers:
         assert _should_prefer_cli_exec("inbox")
         assert _should_prefer_cli_exec("task:demo")
         assert not _should_prefer_cli_exec("manual")
-
-    def test_patch_codex_sdk_parser_accepts_declined_command_execution(self):
-        from openai_codex_sdk.parsing import parse_thread_event_line
-
-        _patch_codex_sdk_command_execution_statuses()
-        line = json.dumps(
-            {
-                "type": "item.completed",
-                "item": {
-                    "id": "cmd-1",
-                    "type": "command_execution",
-                    "command": "rtk proxy Get-Content",
-                    "aggregated_output": "blocked by policy",
-                    "exit_code": None,
-                    "status": "declined",
-                },
-            }
-        )
-
-        event = parse_thread_event_line(line)
-
-        assert event.type == "item.completed"
-        assert event.item.type == "command_execution"
-        assert event.item.status == "declined"
-        assert event.item.aggregated_output == "blocked by policy"
-
-    @pytest.mark.asyncio
-    async def test_patch_codex_exec_stream_limit_fails_fast_on_fatal_stderr(self):
-        from openai_codex_sdk.errors import CodexExecError
-
-        class _FakeStdin:
-            def write(self, _data):
-                return None
-
-            async def drain(self):
-                return None
-
-            def close(self):
-                return None
-
-        class _SleepingStdout:
-            async def readline(self):
-                await asyncio.sleep(3600)
-                return b""
-
-        class _FatalStderr:
-            def __init__(self):
-                self._chunks = [
-                    b"Error in hook callback\nerror: Stream closed\n",
-                    b"",
-                ]
-
-            async def read(self, _size):
-                await asyncio.sleep(0)
-                return self._chunks.pop(0)
-
-        class _FakeProc:
-            def __init__(self):
-                self.stdin = _FakeStdin()
-                self.stdout = _SleepingStdout()
-                self.stderr = _FatalStderr()
-                self.returncode = None
-                self._wait_event = asyncio.Event()
-                self.kill_calls = 0
-
-            def kill(self):
-                self.kill_calls += 1
-                self.returncode = 1
-                self._wait_event.set()
-
-            async def wait(self):
-                await self._wait_event.wait()
-                return self.returncode
-
-        class _FakeExec:
-            executable_path = "codex"
-
-            def _build_command_args(self, _args):
-                return []
-
-            def _build_env(self, _args):
-                return {}
-
-        proc = _FakeProc()
-        exec_ = _FakeExec()
-        _patch_codex_exec_stream_limit(exec_)
-
-        with (
-            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
-            pytest.raises(CodexExecError, match="fatal stderr signal"),
-        ):
-            stream = exec_.run(SimpleNamespace(input="hello"))
-            await stream.__anext__()
-
-        assert proc.kill_calls == 1
 
     def test_close_subprocess_stdio_closes_writer_and_reader_transports(self):
         class _FakeClosable:
@@ -495,102 +449,54 @@ class TestExecutorInit:
         parts = value.split(os.pathsep)
         assert str(Path(py_exe).resolve().parent) in parts
 
-    def test_default_path_env_reads_windows_path_key(self):
-        # The Windows ``Path`` key fallback only runs when sys.platform is
-        # win32; patch it so the behavior is exercised on any host (e.g. Linux CI).
-        # Also force the Windows path separator (``;``) so the drive-letter colon
-        # in ``C:\Windows\System32`` is not mistaken for a separator on POSIX CI,
-        # where os.pathsep would otherwise be ``:``.
-        with (
-            patch("core.execution.codex_sdk.sys.platform", "win32"),
-            patch("core.execution.codex_sdk.os.pathsep", ";"),
-            patch("os.pathsep", ";"),
-            patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
-            patch("core.execution.codex_sdk.sys.executable", r"C:\Proj\.venv\Scripts\python.exe"),
-            patch.dict("os.environ", {"Path": r"C:\Windows\System32"}, clear=True),
-        ):
-            value = _default_path_env()
-
-        assert r"C:\Windows\System32" in value.split(";")
-
-    def test_set_process_path_env_normalizes_windows_key(self):
-        env = {"Path": r"C:\Old", "PATH": r"C:\AlsoOld", "OTHER": "x"}
-
-        with patch("core.execution.codex_sdk.sys.platform", "win32"):
-            _set_process_path_env(env, r"C:\New")
-
-        assert env["Path"] == r"C:\New"
-        assert "PATH" not in env
-        assert env["OTHER"] == "x"
-
-    def test_build_env_normalizes_windows_path_key(self, model_config, anima_dir):
-        model_config.credential_type = "codex_login"
-        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-
-        py_exe = r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts\python.exe"
-        with (
-            patch("core.execution.codex_sdk.sys.platform", "win32"),
-            patch("core.execution.codex_sdk.os.pathsep", ";"),
-            patch("os.pathsep", ";"),
-            patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
-            patch("core.execution.codex_sdk.sys.executable", py_exe),
-            patch.dict("os.environ", {"Path": r"C:\Windows\System32", "USERPROFILE": r"C:\Users\Tester"}, clear=True),
-        ):
-            env = exc._build_env()
-
-        parts = env["Path"].split(";")
-        # Compute the launcher python dir the same way the production code does
-        # (Path(...).resolve().parent). On POSIX CI a Windows path string cannot
-        # be parsed, so comparing against a literal would fail; deriving it the
-        # same way keeps the assertion platform-agnostic.
-        assert str(Path(py_exe).resolve().parent) in parts
-        assert r"C:\Windows\System32" in parts
-        assert "PATH" not in env
-
     def test_create_codex_client_passes_executable_override(self, executor):
         fake_client = MagicMock()
-        fake_client._exec = MagicMock()
+        fake_config = MagicMock()
 
         with (
             patch("core.execution.codex_sdk.get_codex_executable", return_value=r"C:\Tools\codex.exe"),
-            patch("openai_codex_sdk.Codex", return_value=fake_client) as mock_codex,
-            patch("core.execution.codex_sdk._patch_codex_exec_stream_limit"),
+            patch("openai_codex.CodexConfig", return_value=fake_config) as mock_config,
+            patch("openai_codex.AsyncCodex", return_value=fake_client) as mock_codex,
         ):
-            executor._create_codex_client()
+            client = executor._create_codex_client()
 
-        options = mock_codex.call_args.args[0]
-        assert options["codexPathOverride"] == r"C:\Tools\codex.exe"
+        assert client is fake_client
+        assert mock_config.call_args.kwargs["codex_bin"] == r"C:\Tools\codex.exe"
+        assert mock_config.call_args.kwargs["client_name"] == "animaworks"
+        mock_codex.assert_called_once_with(fake_config)
+
+    def test_codex_turn_kwargs_requests_concise_reasoning_summary_by_default(self, executor):
+        kwargs = executor._codex_turn_kwargs()
+
+        assert kwargs["summary"].root.value == "concise"
+        assert "sandbox" not in kwargs
+
+    def test_codex_turn_kwargs_can_disable_reasoning_summary(self, model_config, anima_dir):
+        model_config.extra_keys = {"codex_reasoning_summary": "none"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        kwargs = exc._codex_turn_kwargs()
+
+        assert "summary" not in kwargs
+        assert "sandbox" not in kwargs
+
+    def test_codex_turn_kwargs_invalid_reasoning_summary_falls_back_to_concise(
+        self, model_config, anima_dir, caplog
+    ):
+        caplog.set_level(logging.WARNING, logger="animaworks.execution.codex_sdk")
+        model_config.extra_keys = {"codex_reasoning_summary": "verbose"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        kwargs = exc._codex_turn_kwargs()
+
+        assert kwargs["summary"].root.value == "concise"
+        assert "Invalid codex_reasoning_summary" in caplog.text
 
 
 # ── Config writing tests ─────────────────────────────────────
 
 
 class TestConfigWriting:
-    @pytest.fixture(autouse=True)
-    def _provision_codex_auth(self, anima_dir, request):
-        """Provision a per-anima auth.json so _write_codex_config writes config
-        into {anima_dir}/.codex_home instead of falling back to the system
-        CODEX_HOME (~/.codex).
-
-        On a clean CI runner there is no ~/.codex/auth.json, so _propagate_auth
-        would set _use_default_codex_home=True and write config.toml to ~/.codex,
-        causing the .codex_home assertions to fail. A real (non-symlink) per-anima
-        auth.json makes _propagate_auth return early and keep the per-anima home.
-
-        Skipped for tests that exercise _propagate_auth directly — they manage
-        their own auth state and a pre-provisioned auth.json would short-circuit
-        the behavior under test.
-        """
-        if "propagate_auth" in request.node.name:
-            yield
-            return
-        codex_home = anima_dir / ".codex_home"
-        codex_home.mkdir(parents=True, exist_ok=True)
-        (codex_home / "auth.json").write_text(
-            '{"OPENAI_API_KEY": "test-key-123"}', encoding="utf-8"
-        )
-        yield
-
     def test_write_codex_config_creates_files(self, executor, anima_dir):
         executor._write_codex_config("Test system prompt")
         codex_home = anima_dir / ".codex_home"
@@ -610,20 +516,6 @@ class TestConfigWriting:
         parsed = tomllib.loads(config_toml)
         assert parsed["mcp_servers"]["aw"]["default_tools_approval_mode"] == "approve"
 
-    def test_build_config_overrides_includes_mcp_server_when_using_default_home(self, executor, anima_dir):
-        """Direct codex exec fallback keeps AnimaWorks MCP tools with omitted CODEX_HOME."""
-        executor._write_codex_config("My prompt")
-        executor._use_default_codex_home = True
-
-        flags = executor._build_config_overrides()
-        pairs = list(zip(flags[0::2], flags[1::2], strict=True))
-        values = [value for flag, value in pairs if flag == "-c"]
-
-        assert 'mcp_servers.aw.args=["-m", "core.mcp.server"]' in values
-        assert 'mcp_servers.aw.default_tools_approval_mode="approve"' in values
-        assert any(value.startswith("mcp_servers.aw.command=") for value in values)
-        assert any(value.startswith("mcp_servers.aw.env.ANIMAWORKS_ANIMA_DIR=") for value in values)
-
     def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir):
         """Restricted file_roots produces workspace-write with writable_roots."""
         import json
@@ -641,51 +533,8 @@ class TestConfigWriting:
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         assert "workspace-write" in config_toml
         assert "writable_roots" in config_toml
-
-    def test_restricted_file_roots_become_additional_directories(self, model_config, anima_dir, tmp_path):
-        """Granted writable roots are passed to Codex runtime options."""
-        workspace = tmp_path / "workspace"
-        obsidian = tmp_path / "Obsidian"
-        workspace.mkdir()
-        obsidian.mkdir()
-        perms = {
-            "version": 1,
-            "file_roots": [str(workspace), str(obsidian)],
-            "commands": {"allow_all": True, "allow": [], "deny": []},
-            "external_tools": {"allow_all": True, "allow": [], "deny": []},
-            "tool_creation": {"personal": True, "shared": False},
-        }
-        (anima_dir / "permissions.json").write_text(json.dumps(perms), encoding="utf-8")
-        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-        exc.set_task_cwd(workspace)
-
-        options = exc._build_thread_options()
-
-        assert options["working_directory"] == str(workspace)
-        assert options["additional_directories"] == [str(obsidian.resolve())]
-
-    def test_cli_exec_command_includes_add_dir_for_granted_roots(self, model_config, anima_dir, tmp_path):
-        workspace = tmp_path / "workspace"
-        obsidian = tmp_path / "Obsidian"
-        workspace.mkdir()
-        obsidian.mkdir()
-        perms = {
-            "version": 1,
-            "file_roots": [str(workspace), str(obsidian)],
-            "commands": {"allow_all": True, "allow": [], "deny": []},
-            "external_tools": {"allow_all": True, "allow": [], "deny": []},
-            "tool_creation": {"personal": True, "shared": False},
-        }
-        (anima_dir / "permissions.json").write_text(json.dumps(perms), encoding="utf-8")
-        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
-        exc.set_task_cwd(workspace)
-
-        with patch("core.execution.codex_sdk.get_codex_executable", return_value=r"C:\Tools\codex.exe"):
-            cmd = exc._build_cli_exec_command()
-
-        assert "--add-dir" in cmd
-        idx = cmd.index("--add-dir")
-        assert cmd[idx + 1] == str(obsidian.resolve())
+        parsed = tomllib.loads(config_toml)
+        assert parsed["sandbox_workspace_write"]["network_access"] is True
 
     def test_write_codex_config_includes_model_name(self, executor, anima_dir):
         """config.toml must include model = "o4-mini" (stripped prefix)."""
@@ -805,8 +654,7 @@ class TestBlockingExecution:
         mock_thread.run = AsyncMock(return_value=mock_turn)
         mock_thread.id = "thread-001"
 
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_codex = _mock_codex(mock_thread)
 
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
             result = await executor.execute(
@@ -816,6 +664,8 @@ class TestBlockingExecution:
 
         assert isinstance(result, ExecutionResult)
         assert result.text == "Hello from Codex!"
+        assert mock_thread.run.call_args.kwargs["summary"].root.value == "concise"
+        assert "sandbox" not in mock_thread.run.call_args.kwargs
         assert _load_thread_id(anima_dir, "chat") == "thread-001"
 
     @pytest.mark.asyncio
@@ -829,8 +679,7 @@ class TestBlockingExecution:
         mock_thread.run = AsyncMock(return_value=mock_turn)
         mock_thread.id = "tid-saved"
 
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_codex = _mock_codex(mock_thread)
 
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
             await executor.execute(prompt="test")
@@ -848,8 +697,7 @@ class TestBlockingExecution:
         mock_thread.run = AsyncMock(return_value=mock_turn)
         mock_thread.id = "tid-hb"
 
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_codex = _mock_codex(mock_thread)
 
         with (
             patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
@@ -875,8 +723,7 @@ class TestBlockingExecution:
         mock_thread.run = AsyncMock(return_value=mock_turn)
         mock_thread.id = "tid-inbox"
 
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_codex = _mock_codex(mock_thread)
 
         _save_thread_id(anima_dir, "old-chat", "chat")
         _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
@@ -891,7 +738,7 @@ class TestBlockingExecution:
             )
 
         assert result.text == "Inbox response"
-        mock_codex.resume_thread.assert_not_called()
+        mock_codex.thread_resume.assert_not_called()
         assert _load_thread_id(anima_dir, "inbox", "inbox") is None
         assert _load_thread_id(anima_dir, "chat") == "old-chat"
 
@@ -913,7 +760,8 @@ class TestBlockingExecution:
         mock_thread = MagicMock()
         mock_thread.run = AsyncMock(side_effect=RuntimeError("CLI crashed"))
         mock_thread.id = None
-        mock_codex.start_thread.return_value = mock_thread
+        mock_codex.thread_start = AsyncMock(return_value=mock_thread)
+        mock_codex.close = AsyncMock()
 
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
             result = await executor.execute(prompt="test")
@@ -926,7 +774,8 @@ class TestBlockingExecution:
         mock_thread = MagicMock()
         mock_thread.run = AsyncMock(side_effect=RuntimeError("fatal stderr signal: Reading prompt from stdin..."))
         mock_thread.id = None
-        mock_codex.start_thread.return_value = mock_thread
+        mock_codex.thread_start = AsyncMock(return_value=mock_thread)
+        mock_codex.close = AsyncMock()
         fallback = ExecutionResult(text="fallback ok")
 
         with (
@@ -969,9 +818,7 @@ class TestBlockingExecution:
         stale_thread = MagicMock()
         stale_thread.run = AsyncMock(side_effect=RuntimeError("Resume failed"))
 
-        mock_codex = MagicMock()
-        mock_codex.resume_thread.return_value = stale_thread
-        mock_codex.start_thread.return_value = fresh_thread
+        mock_codex = _mock_codex(fresh_thread, resume_thread=stale_thread)
 
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
             result = await executor.execute(prompt="retry test")
@@ -1002,19 +849,8 @@ class TestStreamingExecution:
         done_event.type = "turn.completed"
         done_event.usage = usage_obj
 
-        async def fake_events():
-            yield msg_event
-            yield done_event
-
-        mock_streamed = MagicMock()
-        mock_streamed.events = fake_events()
-
-        mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
-        mock_thread.id = "stream-thread"
-
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_thread = _mock_stream_thread("stream-thread", [msg_event, done_event])
+        mock_codex = _mock_codex(mock_thread)
 
         events = []
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
@@ -1029,6 +865,7 @@ class TestStreamingExecution:
         types = [e["type"] for e in events]
         assert "text_delta" in types
         assert "done" in types
+        assert "sandbox" not in mock_thread.turn.call_args.kwargs
         done_ev = next(e for e in events if e["type"] == "done")
         assert "Streamed text" in done_ev["full_text"]
         assert done_ev["result_message"].num_turns == 1
@@ -1040,15 +877,12 @@ class TestStreamingExecution:
             raise RuntimeError("fatal stderr signal: Reading prompt from stdin...")
             yield  # pragma: no cover
 
-        mock_streamed = MagicMock()
-        mock_streamed.events = broken_events()
-
+        mock_turn = MagicMock()
+        mock_turn.stream.return_value = broken_events()
         mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.turn = AsyncMock(return_value=mock_turn)
         mock_thread.id = "broken-thread"
-
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_codex = _mock_codex(mock_thread)
 
         async def fallback_events(*_args, **_kwargs):
             yield {"type": "text_delta", "text": "fallback"}
@@ -1103,6 +937,86 @@ class TestStreamingExecution:
         mock_client.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_cli_exec_streaming_fallback_parses_jsonl_success(self, executor):
+        class _FakeStdin:
+            def __init__(self):
+                self.written = b""
+                self.closed = False
+
+            def write(self, data):
+                self.written += data
+
+            async def drain(self):
+                return None
+
+            def close(self):
+                self.closed = True
+
+        class _FakeStdout:
+            def __init__(self):
+                self.lines = [
+                    b'{"type":"thread.started","thread_id":"thread-cli"}\n',
+                    b'{"type":"item.started","item":{"type":"command_execution","id":"cmd-1","command":"pytest"}}\n',
+                    b'{"type":"item.completed","item":{"type":"command_execution","id":"cmd-1","command":"pytest","aggregated_output":"1 passed","exit_code":0}}\n',
+                    b'{"type":"item.completed","item":{"type":"agent_message","id":"msg-1","text":"CLI response"}}\n',
+                    b'{"type":"turn.completed","usage":{"input_tokens":11,"output_tokens":5}}\n',
+                    b"",
+                ]
+
+            async def readline(self):
+                return self.lines.pop(0)
+
+        class _FakeStderr:
+            async def read(self, _size):
+                return b""
+
+        class _FakeProc:
+            def __init__(self):
+                self.stdin = _FakeStdin()
+                self.stdout = _FakeStdout()
+                self.stderr = _FakeStderr()
+                self.returncode = None
+                self.kill_calls = 0
+
+            async def wait(self):
+                self.returncode = 0
+                return 0
+
+            def kill(self):
+                self.kill_calls += 1
+                self.returncode = 1
+
+        proc = _FakeProc()
+        tracker = ContextTracker(model="codex/o4-mini")
+
+        with (
+            patch.object(executor, "_write_codex_config"),
+            patch.object(executor, "_build_cli_exec_command", return_value=["codex", "exec", "--json", "-"]),
+            patch.object(executor, "_build_env", return_value={}),
+            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
+        ):
+            events = [
+                ev
+                async for ev in executor._execute_streaming_via_cli_exec(
+                    system_prompt="sys",
+                    prompt="hello",
+                    tracker=tracker,
+                )
+            ]
+
+        assert proc.stdin.written == b"hello"
+        assert proc.stdin.closed
+        assert proc.kill_calls == 0
+        assert [e["type"] for e in events if e["type"].startswith("tool_")] == ["tool_start", "tool_end"]
+        assert [e["text"] for e in events if e["type"] == "text_delta"] == ["CLI response"]
+        done = next(e for e in events if e["type"] == "done")
+        assert done["full_text"] == "CLI response"
+        assert done["usage"]["input_tokens"] == 11
+        assert done["usage"]["output_tokens"] == 5
+        assert done["result_message"].session_id == "thread-cli"
+        assert len(done["tool_call_records"]) == 1
+
+    @pytest.mark.asyncio
     async def test_stream_inbox_trigger_clears_stale_thread_and_does_not_persist(self, executor, anima_dir):
         msg_item = MagicMock(spec=["type", "id", "text"])
         msg_item.type = "agent_message"
@@ -1117,19 +1031,8 @@ class TestStreamingExecution:
         done_event.type = "turn.completed"
         done_event.usage = None
 
-        async def fake_events():
-            yield msg_event
-            yield done_event
-
-        mock_streamed = MagicMock()
-        mock_streamed.events = fake_events()
-
-        mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
-        mock_thread.id = "new-inbox-thread"
-
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_thread = _mock_stream_thread("new-inbox-thread", [msg_event, done_event])
+        mock_codex = _mock_codex(mock_thread)
 
         _save_thread_id(anima_dir, "old-chat", "chat")
         _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
@@ -1150,7 +1053,7 @@ class TestStreamingExecution:
                 events.append(ev)
 
         assert any(e["type"] == "done" for e in events)
-        mock_codex.resume_thread.assert_not_called()
+        mock_codex.thread_resume.assert_not_called()
         assert _load_thread_id(anima_dir, "inbox", "inbox") is None
         assert _load_thread_id(anima_dir, "chat") == "old-chat"
 
@@ -1174,19 +1077,8 @@ class TestStreamingExecution:
         done_event.type = "turn.completed"
         done_event.usage = None
 
-        async def fake_events():
-            yield tool_event
-            yield done_event
-
-        mock_streamed = MagicMock()
-        mock_streamed.events = fake_events()
-
-        mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
-        mock_thread.id = "tool-thread"
-
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_thread = _mock_stream_thread("tool-thread", [tool_event, done_event])
+        mock_codex = _mock_codex(mock_thread)
 
         events = []
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
@@ -1226,15 +1118,13 @@ class TestStreamingExecution:
             interrupt.set()
             yield second_event
 
-        mock_streamed = MagicMock()
-        mock_streamed.events = fake_events()
-
+        mock_turn = MagicMock()
+        mock_turn.stream.return_value = fake_events()
         mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.turn = AsyncMock(return_value=mock_turn)
         mock_thread.id = "int-thread"
 
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_codex = _mock_codex(mock_thread)
 
         exc = CodexSDKExecutor(
             model_config=model_config,
@@ -1294,20 +1184,11 @@ class TestProgressiveStreaming:
         done_event.type = "turn.completed"
         done_event.usage = MagicMock(input_tokens=50, output_tokens=20)
 
-        async def fake_events():
-            yield started_event
-            yield updated1
-            yield updated2
-            yield completed
-            yield done_event
-
-        mock_streamed = MagicMock()
-        mock_streamed.events = fake_events()
-        mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
-        mock_thread.id = "prog-thread"
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_thread = _mock_stream_thread(
+            "prog-thread",
+            [started_event, updated1, updated2, completed, done_event],
+        )
+        mock_codex = _mock_codex(mock_thread)
 
         events = []
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
@@ -1325,6 +1206,264 @@ class TestProgressiveStreaming:
         # Reconstruct full text from deltas
         reconstructed = "".join(e["text"] for e in text_deltas)
         assert reconstructed == "Hello world!"
+
+    @pytest.mark.asyncio
+    async def test_app_server_agent_message_deltas_are_not_duplicated_on_completed(self, executor):
+        delta_1 = SimpleNamespace(
+            method="item/agentMessage/delta",
+            payload=SimpleNamespace(item_id="msg-1", turn_id="turn-1", thread_id="thread-1", delta="Hello "),
+        )
+        delta_2 = SimpleNamespace(
+            method="item/agentMessage/delta",
+            payload=SimpleNamespace(item_id="msg-1", turn_id="turn-1", thread_id="thread-1", delta="world"),
+        )
+        item = SimpleNamespace(type="agentMessage", id="msg-1", text="Hello world")
+        completed = SimpleNamespace(
+            method="item/completed",
+            payload=SimpleNamespace(item=item, turn_id="turn-1", thread_id="thread-1"),
+        )
+        done = SimpleNamespace(
+            method="turn/completed",
+            payload=SimpleNamespace(turn=SimpleNamespace(id="turn-1", error=None), thread_id="thread-1"),
+        )
+
+        mock_thread = _mock_stream_thread("thread-1", [delta_1, delta_2, completed, done])
+        mock_codex = _mock_codex(mock_thread)
+
+        events = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="Hello",
+                tracker=tracker,
+            ):
+                events.append(ev)
+
+        text_deltas = [e["text"] for e in events if e["type"] == "text_delta"]
+        assert text_deltas == ["Hello ", "world"]
+        done_ev = next(e for e in events if e["type"] == "done")
+        assert done_ev["full_text"] == "Hello world"
+
+    @pytest.mark.asyncio
+    async def test_app_server_tool_progress_maps_to_tool_detail(self, executor):
+        started_item = SimpleNamespace(type="commandExecution", id="cmd-1", command="pytest", status="inProgress")
+        completed_item = SimpleNamespace(
+            type="commandExecution",
+            id="cmd-1",
+            command="pytest",
+            aggregated_output="1 passed",
+            exit_code=0,
+            status="completed",
+        )
+        events = [
+            SimpleNamespace(
+                method="item/started",
+                payload=SimpleNamespace(item=started_item, turn_id="turn-1", thread_id="thread-1"),
+            ),
+            SimpleNamespace(
+                method="item/commandExecution/outputDelta",
+                payload=SimpleNamespace(item_id="cmd-1", turn_id="turn-1", thread_id="thread-1", delta="running"),
+            ),
+            SimpleNamespace(
+                method="item/completed",
+                payload=SimpleNamespace(item=completed_item, turn_id="turn-1", thread_id="thread-1"),
+            ),
+            SimpleNamespace(
+                method="turn/completed",
+                payload=SimpleNamespace(turn=SimpleNamespace(id="turn-1", error=None), thread_id="thread-1"),
+            ),
+        ]
+
+        mock_thread = _mock_stream_thread("thread-1", events)
+        mock_codex = _mock_codex(mock_thread)
+
+        chunks = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="run pytest",
+                tracker=tracker,
+            ):
+                chunks.append(ev)
+
+        assert [c["type"] for c in chunks if c["type"].startswith("tool_")] == [
+            "tool_start",
+            "tool_detail",
+            "tool_end",
+        ]
+        detail = next(c for c in chunks if c["type"] == "tool_detail")
+        assert detail["detail"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_app_server_reasoning_mcp_file_and_usage_notifications(self, executor):
+        file_change = SimpleNamespace(kind=SimpleNamespace(value="update"), path="core/codex.py")
+        events = [
+            SimpleNamespace(
+                method="item/reasoning/textDelta",
+                payload=SimpleNamespace(item_id="reason-1", turn_id="turn-1", thread_id="thread-1", delta="thinking"),
+            ),
+            SimpleNamespace(
+                method="item/mcpToolCall/progress",
+                payload=SimpleNamespace(
+                    item_id="mcp-1",
+                    turn_id="turn-1",
+                    thread_id="thread-1",
+                    message="searching memory",
+                ),
+            ),
+            SimpleNamespace(
+                method="item/fileChange/patchUpdated",
+                payload=SimpleNamespace(
+                    item_id="file-1",
+                    turn_id="turn-1",
+                    thread_id="thread-1",
+                    changes=[file_change],
+                ),
+            ),
+            SimpleNamespace(
+                method="thread/tokenUsage/updated",
+                payload=SimpleNamespace(
+                    thread_id="thread-1",
+                    token_usage=SimpleNamespace(
+                        total=SimpleNamespace(input_tokens=15, output_tokens=9, cached_input_tokens=0)
+                    ),
+                ),
+            ),
+            SimpleNamespace(
+                method="turn/completed",
+                payload=SimpleNamespace(turn=SimpleNamespace(id="turn-1", error=None), thread_id="thread-1"),
+            ),
+        ]
+        mock_thread = _mock_stream_thread("thread-1", events)
+        mock_codex = _mock_codex(mock_thread)
+
+        chunks = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="inspect",
+                tracker=tracker,
+            ):
+                chunks.append(ev)
+
+        assert [c["text"] for c in chunks if c["type"] == "thinking_delta"] == ["thinking"]
+        assert [c["type"] for c in chunks if c["type"].startswith("thinking")] == [
+            "thinking_start",
+            "thinking_delta",
+            "thinking_end",
+        ]
+        types = [c["type"] for c in chunks]
+        assert types.index("thinking_end") < types.index("done")
+        tool_details = [c for c in chunks if c["type"] == "tool_detail"]
+        assert {c["tool_name"] for c in tool_details} == {"mcp_tool", "file_change"}
+        assert any(c["detail"] == "searching memory" for c in tool_details)
+        assert any(c["detail"] == "update: core/codex.py" for c in tool_details)
+        done = next(c for c in chunks if c["type"] == "done")
+        assert done["usage"]["input_tokens"] == 15
+        assert done["usage"]["output_tokens"] == 9
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "method",
+        ["item/reasoning/textDelta", "item/reasoning/summaryTextDelta"],
+    )
+    async def test_app_server_reasoning_delta_notifications_yield_thinking_lifecycle(self, executor, method):
+        events = [
+            SimpleNamespace(
+                method=method,
+                payload=SimpleNamespace(item_id="reason-1", turn_id="turn-1", thread_id="thread-1", delta="thinking"),
+            ),
+            SimpleNamespace(
+                method="turn/completed",
+                payload=SimpleNamespace(turn=SimpleNamespace(id="turn-1", error=None), thread_id="thread-1"),
+            ),
+        ]
+        mock_thread = _mock_stream_thread("thread-1", events)
+        mock_codex = _mock_codex(mock_thread)
+
+        chunks = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="inspect",
+                tracker=tracker,
+            ):
+                chunks.append(ev)
+
+        assert [c["type"] for c in chunks if c["type"].startswith("thinking")] == [
+            "thinking_start",
+            "thinking_delta",
+            "thinking_end",
+        ]
+        assert [c["text"] for c in chunks if c["type"] == "thinking_delta"] == ["thinking"]
+
+    @pytest.mark.asyncio
+    async def test_app_server_plan_notifications_yield_thinking_lifecycle(self, executor):
+        events = [
+            SimpleNamespace(
+                method="item/plan/delta",
+                payload=SimpleNamespace(
+                    item_id="plan-1",
+                    turn_id="turn-1",
+                    thread_id="thread-1",
+                    delta="Inspect current Codex stream",
+                ),
+            ),
+            SimpleNamespace(
+                method="turn/plan/updated",
+                payload=SimpleNamespace(
+                    thread_id="thread-1",
+                    turn_id="turn-1",
+                    explanation="Plan updated",
+                    plan=[
+                        SimpleNamespace(
+                            status=SimpleNamespace(value="in_progress"),
+                            step="Update executor",
+                        ),
+                        SimpleNamespace(status="pending", step="Add tests"),
+                    ],
+                ),
+            ),
+            SimpleNamespace(
+                method="item/updated",
+                payload=SimpleNamespace(
+                    item=SimpleNamespace(type="plan", id="plan-2", text="Review results"),
+                    turn_id="turn-1",
+                    thread_id="thread-1",
+                ),
+            ),
+            SimpleNamespace(
+                method="turn/completed",
+                payload=SimpleNamespace(turn=SimpleNamespace(id="turn-1", error=None), thread_id="thread-1"),
+            ),
+        ]
+        mock_thread = _mock_stream_thread("thread-1", events)
+        mock_codex = _mock_codex(mock_thread)
+
+        chunks = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="inspect",
+                tracker=tracker,
+            ):
+                chunks.append(ev)
+
+        types = [c["type"] for c in chunks]
+        assert types.count("thinking_start") == 1
+        assert types.index("thinking_start") < types.index("thinking_delta")
+        assert types.index("thinking_end") < types.index("done")
+        thinking_text = "\n".join(c["text"] for c in chunks if c["type"] == "thinking_delta")
+        assert "Inspect current Codex stream" in thinking_text
+        assert "Plan updated" in thinking_text
+        assert "[in_progress] Update executor" in thinking_text
+        assert "[pending] Add tests" in thinking_text
+        assert "Review results" in thinking_text
 
     @pytest.mark.asyncio
     async def test_reasoning_events_yield_thinking_delta(self, executor, anima_dir):
@@ -1361,20 +1500,11 @@ class TestProgressiveStreaming:
         done.type = "turn.completed"
         done.usage = None
 
-        async def fake_events():
-            yield started
-            yield updated
-            yield completed
-            yield msg_completed
-            yield done
-
-        mock_streamed = MagicMock()
-        mock_streamed.events = fake_events()
-        mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
-        mock_thread.id = "think-thread"
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_thread = _mock_stream_thread(
+            "think-thread",
+            [started, updated, completed, msg_completed, done],
+        )
+        mock_codex = _mock_codex(mock_thread)
 
         events = []
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
@@ -1388,6 +1518,10 @@ class TestProgressiveStreaming:
 
         thinking = [e for e in events if e["type"] == "thinking_delta"]
         assert len(thinking) >= 2
+        types = [e["type"] for e in events]
+        assert types.count("thinking_start") == 1
+        assert types.index("thinking_start") < types.index("thinking_delta")
+        assert types.index("thinking_end") < types.index("done")
 
     @pytest.mark.asyncio
     async def test_tool_started_before_completed(self, executor, anima_dir):
@@ -1420,18 +1554,8 @@ class TestProgressiveStreaming:
         done.type = "turn.completed"
         done.usage = None
 
-        async def fake_events():
-            yield started
-            yield completed
-            yield done
-
-        mock_streamed = MagicMock()
-        mock_streamed.events = fake_events()
-        mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
-        mock_thread.id = "tool-thread"
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_thread = _mock_stream_thread("tool-thread", [started, completed, done])
+        mock_codex = _mock_codex(mock_thread)
 
         events = []
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
@@ -1460,16 +1584,8 @@ class TestProgressiveStreaming:
         err.message = "Rate limit exceeded"
         failed_event.error = err
 
-        async def fake_events():
-            yield failed_event
-
-        mock_streamed = MagicMock()
-        mock_streamed.events = fake_events()
-        mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
-        mock_thread.id = "fail-thread"
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_thread = _mock_stream_thread("fail-thread", [failed_event])
+        mock_codex = _mock_codex(mock_thread)
 
         events = []
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
@@ -1508,18 +1624,8 @@ class TestProgressiveStreaming:
         done.type = "turn.completed"
         done.usage = None
 
-        async def fake_events():
-            yield updated
-            yield completed
-            yield done
-
-        mock_streamed = MagicMock()
-        mock_streamed.events = fake_events()
-        mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
-        mock_thread.id = "dup-thread"
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_thread = _mock_stream_thread("dup-thread", [updated, completed, done])
+        mock_codex = _mock_codex(mock_thread)
 
         events = []
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
@@ -1545,23 +1651,15 @@ class TestProgressiveStreaming:
                 await asyncio.sleep(3600)
                 raise StopAsyncIteration
 
-        mock_streamed = MagicMock()
-        mock_streamed.events = NeverEvents()
-
+        mock_turn = MagicMock()
+        mock_turn.stream.return_value = NeverEvents()
         mock_thread = MagicMock()
-        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.turn = AsyncMock(return_value=mock_turn)
         mock_thread.id = "idle-thread"
-
-        mock_codex = MagicMock()
-        mock_codex.start_thread.return_value = mock_thread
+        mock_codex = _mock_codex(mock_thread)
 
         with (
             patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
-            # Disable the CLI-exec fallback so the SDK idle-timeout error
-            # propagates directly. Otherwise the idle timeout triggers a
-            # `codex exec` fallback, which on a CI runner without the Codex CLI
-            # installed raises "executable not available" instead of "idle timeout".
-            patch("core.execution.codex_sdk._should_cli_exec_fallback", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
             patch("core.execution.codex_sdk._BACKGROUND_EVENT_IDLE_TIMEOUT_SEC", 0.01),
         ):

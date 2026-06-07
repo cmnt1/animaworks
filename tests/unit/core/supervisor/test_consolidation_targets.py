@@ -13,13 +13,18 @@ which were removed from ConsolidationEngine in the consolidation refactor.
 
 Issue: docs/issues/20260217_consolidation-run-for-all-animas.md
 """
+
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
-from core.supervisor.manager import ProcessSupervisor
+import pytest
 
+from core.supervisor.ipc import IPCResponse
+from core.supervisor.manager import ProcessSupervisor
+from core.supervisor.process_handle import ProcessState
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -53,9 +58,7 @@ def _create_anima_dir(
     if has_identity:
         (d / "identity.md").write_text(f"# {name}", encoding="utf-8")
     if has_status:
-        (d / "status.json").write_text(
-            json.dumps({"enabled": enabled}), encoding="utf-8"
-        )
+        (d / "status.json").write_text(json.dumps({"enabled": enabled}), encoding="utf-8")
     return d
 
 
@@ -140,3 +143,75 @@ class TestIterConsolidationTargets:
         assert names == ["also_good", "good"]
 
 
+class _TimeoutHandle:
+    """Fake running process handle that times out consolidation IPC."""
+
+    state = ProcessState.RUNNING
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def send_request(
+        self,
+        method: str,
+        params: dict,
+        timeout: float = 60.0,
+    ) -> IPCResponse:
+        self.calls.append(method)
+        if method == "run_consolidation":
+            raise TimeoutError("consolidation timed out")
+        return IPCResponse(id="fake", result={})
+
+
+class _RecentEpisodesEngine:
+    """Minimal consolidation engine stub with work to do."""
+
+    def __init__(self, anima_dir: Path, anima_name: str) -> None:
+        self.anima_dir = anima_dir
+        self.anima_name = anima_name
+
+    def _collect_recent_episodes(self, hours: int) -> list[str]:
+        return ["episode"]
+
+
+@pytest.mark.asyncio
+async def test_daily_consolidation_timeout_logs_once_and_continues(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Timeouts should not be re-logged by the outer exception handler."""
+    sup = _make_supervisor(tmp_path)
+    _create_anima_dir(sup.animas_dir, "mio")
+    handle = _TimeoutHandle()
+    sup.processes["mio"] = handle
+    monkeypatch.setattr(
+        "core.memory.consolidation.ConsolidationEngine",
+        _RecentEpisodesEngine,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
+        await sup._run_daily_consolidation()
+
+    assert handle.calls == ["run_consolidation", "interrupt"]
+    assert "Daily consolidation timed out for mio" in caplog.text
+    assert "Daily consolidation failed for mio" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_weekly_consolidation_timeout_logs_once_and_continues(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Weekly timeout handling should mirror daily timeout handling."""
+    sup = _make_supervisor(tmp_path)
+    _create_anima_dir(sup.animas_dir, "mio")
+    handle = _TimeoutHandle()
+    sup.processes["mio"] = handle
+
+    with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
+        await sup._run_weekly_integration()
+
+    assert handle.calls == ["run_consolidation", "interrupt"]
+    assert "Weekly consolidation timed out for mio" in caplog.text
+    assert "Weekly integration failed for mio" not in caplog.text

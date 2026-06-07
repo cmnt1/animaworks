@@ -7,43 +7,44 @@ class TestAnswerPromptConstants:
     """Verify answer prompt templates contain required elements."""
 
     def test_neo4j_adapter_has_answer_system(self) -> None:
-        from benchmarks.locomo.neo4j_adapter import _ANSWER_SYSTEM
+        from benchmarks.locomo.answer_prompt import ANSWER_SYSTEM
 
-        assert "expert assistant" in _ANSWER_SYSTEM
-        assert "past conversations" in _ANSWER_SYSTEM
+        assert "expert assistant" in ANSWER_SYSTEM
+        assert "past conversations" in ANSWER_SYSTEM
 
     def test_neo4j_adapter_has_answer_template(self) -> None:
-        from benchmarks.locomo.neo4j_adapter import _ANSWER_TEMPLATE
+        from benchmarks.locomo.answer_prompt import ANSWER_TEMPLATE
 
-        assert "{context}" in _ANSWER_TEMPLATE
-        assert "{question}" in _ANSWER_TEMPLATE
-        assert "event_time" in _ANSWER_TEMPLATE
-        assert "7 May 2023" in _ANSWER_TEMPLATE
+        assert "{context}" in ANSWER_TEMPLATE
+        assert "{question}" in ANSWER_TEMPLATE
+        assert "event_time" in ANSWER_TEMPLATE
+        assert "7 May 2023" in ANSWER_TEMPLATE
 
     def test_legacy_adapter_has_answer_system(self) -> None:
-        from benchmarks.locomo.adapter import _ANSWER_SYSTEM
+        from benchmarks.locomo.answer_prompt import ANSWER_SYSTEM
 
-        assert "expert assistant" in _ANSWER_SYSTEM
+        assert "expert assistant" in ANSWER_SYSTEM
 
     def test_legacy_adapter_has_answer_template(self) -> None:
-        from benchmarks.locomo.adapter import _ANSWER_TEMPLATE
+        from benchmarks.locomo.answer_prompt import ANSWER_TEMPLATE
 
-        assert "{context}" in _ANSWER_TEMPLATE
-        assert "{question}" in _ANSWER_TEMPLATE
-        assert "event_time" in _ANSWER_TEMPLATE
+        assert "{context}" in ANSWER_TEMPLATE
+        assert "{question}" in ANSWER_TEMPLATE
+        assert "event_time" in ANSWER_TEMPLATE
 
     def test_templates_are_consistent(self) -> None:
-        from benchmarks.locomo.adapter import _ANSWER_TEMPLATE as legacy_tmpl
-        from benchmarks.locomo.neo4j_adapter import _ANSWER_TEMPLATE as neo4j_tmpl
+        from benchmarks.locomo.answer_prompt import ANSWER_TEMPLATE
 
-        assert legacy_tmpl == neo4j_tmpl
+        assert "never abstain when context exists" not in ANSWER_TEMPLATE
+        assert "No information available." in ANSWER_TEMPLATE
 
     def test_template_format_works(self) -> None:
-        from benchmarks.locomo.neo4j_adapter import _ANSWER_TEMPLATE
+        from benchmarks.locomo.answer_prompt import build_answer_user_content
 
-        result = _ANSWER_TEMPLATE.format(
-            context="[1] (event_time: 2023-05-08T13:56:00) Went to the vet",
-            question="When did I go to the vet?",
+        result = build_answer_user_content(
+            "When did I go to the vet?",
+            "[1] (event_time: 2023-05-08T13:56:00) Went to the vet",
+            category=2,
         )
         assert "When did I go to the vet?" in result
         assert "event_time: 2023-05-08T13:56:00" in result
