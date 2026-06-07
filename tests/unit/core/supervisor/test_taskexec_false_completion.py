@@ -158,6 +158,20 @@ class TestClassifyTaskResult:
 # ── Bug B: error chunk detection ──────────────────────────
 
 
+    def test_completion_gate_reminder_maps_to_blocked_without_task_desc(self):
+        status, summary = _classify_task_result(
+            "タスクの完了条件を満たす前に、completion_gate を呼び出す必要があるという通知を受け取った。"
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
+
+    def test_requirement_only_progress_maps_to_blocked_without_task_desc(self):
+        status, summary = _classify_task_result(
+            "cron.md を読み、関連する cron 定義を確認する必要がある。"
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
+
     def test_multistage_intermediate_result_maps_to_blocked(self):
         status, summary = _classify_task_result_for_desc(
             "Situation cleanup complete. Mira artifact is missing, so I will proceed with "
@@ -204,6 +218,22 @@ class TestClassifyTaskResult:
     def test_english_investigation_progress_result_maps_to_blocked(self):
         status, summary = _classify_task_result_for_desc(
             "Smoke test passed. Now let me investigate the DB state for articles 108496 and 108504.",
+            {"allow_multistage": False},
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
+
+    def test_completion_gate_reminder_result_maps_to_blocked(self):
+        status, summary = _classify_task_result_for_desc(
+            "タスクの完了条件を満たす前に、completion_gate を呼び出す必要があるという通知を受け取った。",
+            {"allow_multistage": False},
+        )
+        assert status == "blocked"
+        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
+
+    def test_requirement_only_result_maps_to_blocked(self):
+        status, summary = _classify_task_result_for_desc(
+            "sqlalchemyでtext()を使ってクエリを実行する必要がある。",
             {"allow_multistage": False},
         )
         assert status == "blocked"

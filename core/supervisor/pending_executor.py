@@ -317,6 +317,13 @@ def _detect_strong_non_final_followup(result: str) -> str | None:
     strong_markers = (
         "now i understand",
         "now i have the full picture",
+        "completion_gate",
+        "before completing",
+        "before the final answer",
+        "完了条件を満たす前",
+        "必要がある",
+        "必要があります",
+        "必要です",
         "let me write",
         "let me create",
         "let me prepare",
@@ -378,6 +385,26 @@ def _detect_strong_non_final_followup(result: str) -> str | None:
     return None
 
 
+def _detect_non_final_prerequisite_report(result: str) -> str | None:
+    text = (result or "").strip()
+    if not text or _completion_evidence_count(text) >= 3:
+        return None
+
+    folded = text.casefold()
+    prerequisite_markers = (
+        "completion_gate",
+        "before completing",
+        "before the final answer",
+        "完了条件を満たす前",
+        "必要がある",
+        "必要があります",
+        "必要です",
+    )
+    if any(marker in folded for marker in prerequisite_markers):
+        return "Task reported an explicit follow-up/start step, not final evidence"
+    return None
+
+
 def _classify_task_result(result: str) -> tuple[str, str]:
     """Map _run_llm_task return value to (queue_status, summary).
 
@@ -403,6 +430,9 @@ def _classify_task_result(result: str) -> tuple[str, str]:
     unresolved_blocker = _detect_unresolved_blocker_report(result)
     if unresolved_blocker:
         return "blocked", f"BLOCKED: {unresolved_blocker}"
+    prerequisite = _detect_non_final_prerequisite_report(result)
+    if prerequisite:
+        return "blocked", f"BLOCKED: {prerequisite}"
     return "done", (result or "")[:200]
 
 

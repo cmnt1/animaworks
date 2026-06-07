@@ -417,6 +417,13 @@ def _delegated_child_needs_followup(child: BoardTask) -> bool:
     progress_markers = (
         "next step",
         "next action",
+        "completion_gate",
+        "before completing",
+        "before the final answer",
+        "完了条件を満たす前",
+        "必要がある",
+        "必要があります",
+        "必要です",
         "will proceed",
         "will create",
         "will write",

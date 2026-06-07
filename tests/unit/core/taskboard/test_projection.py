@@ -729,6 +729,72 @@ def test_delegated_parent_blocks_when_child_done_is_tool_call_summary(tmp_path: 
     assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
 
 
+def test_delegated_parent_blocks_when_child_done_is_completion_gate_reminder(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    aoi = _queue(tmp_path, "aoi")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = aoi.add_task(
+        source="anima",
+        original_instruction="fix cron failure and report final evidence",
+        assignee="aoi",
+        summary="fix cron failure and report final evidence",
+        task_id="child-completion-gate",
+    )
+    aoi.update_status(
+        child.task_id,
+        "done",
+        summary="タスクの完了条件を満たす前に、completion_gate を呼び出す必要があるという通知を受け取った。",
+    )
+    parent = sakura.add_delegated_task(
+        original_instruction="track cron fix",
+        assignee="aoi",
+        summary="[delegate] track cron fix",
+        deadline="1h",
+        meta={"delegated_to": "aoi", "delegated_task_id": child.task_id},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("aoi", child.task_id) not in by_key
+    assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+
+
+def test_delegated_parent_blocks_when_child_done_is_requirement_only_note(tmp_path: Path) -> None:
+    kanna = _queue(tmp_path, "kanna")
+    miyu = _queue(tmp_path, "miyu")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = miyu.add_task(
+        source="anima",
+        original_instruction="run Auto_Gnr_Post_Plan and report DB evidence",
+        assignee="miyu",
+        summary="run Auto_Gnr_Post_Plan and report DB evidence",
+        task_id="child-requirement-only",
+    )
+    miyu.update_status(
+        child.task_id,
+        "done",
+        summary="sqlalchemyでtext()を使ってクエリを実行する必要がある。",
+    )
+    parent = kanna.add_delegated_task(
+        original_instruction="track Auto_Gnr_Post_Plan rerun",
+        assignee="miyu",
+        summary="[delegate] track Auto_Gnr_Post_Plan rerun",
+        deadline="1h",
+        meta={"delegated_to": "miyu", "delegated_task_id": child.task_id},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("miyu", child.task_id) not in by_key
+    assert by_key[("kanna", parent.task_id)].queue_status == "delegated"
+    assert by_key[("kanna", parent.task_id)].column == BoardColumn.BLOCKED
+
+
 def test_duplicate_delegated_parents_to_same_active_child_are_suppressed(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     kanna = _queue(tmp_path, "kanna")
