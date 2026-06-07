@@ -85,12 +85,7 @@ def _is_retryable_empty_response(exc: Exception) -> bool:
         return False
     exc_name = type(exc).__name__.lower()
     exc_module = type(exc).__module__.lower()
-    return (
-        "badrequest" in exc_name
-        or "openai" in message
-        or "litellm" in message
-        or "litellm" in exc_module
-    )
+    return "badrequest" in exc_name or "openai" in message or "litellm" in message or "litellm" in exc_module
 
 
 async def _litellm_acompletion_with_empty_response_retry(

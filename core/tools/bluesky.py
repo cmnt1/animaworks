@@ -277,7 +277,10 @@ def get_tool_schemas() -> list[dict[str, Any]]:
                 "properties": {
                     "actor": {"type": "string", "description": "Bluesky handle or DID."},
                     "limit": {"type": "integer", "description": "Maximum posts to return, 1-100. Default: 25."},
-                    "include_replies": {"type": "boolean", "description": "Include replies and threads. Default: false."},
+                    "include_replies": {
+                        "type": "boolean",
+                        "description": "Include replies and threads. Default: false.",
+                    },
                 },
                 "required": ["actor"],
             },

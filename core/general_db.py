@@ -120,15 +120,19 @@ class SnsSearchStore:
             from sqlalchemy import text
 
             with self.engine.connect() as conn:
-                rows = conn.execute(
-                    text(
-                        f"""
+                rows = (
+                    conn.execute(
+                        text(
+                            f"""
                         SELECT ID_Sns_Search, Division, Words
                         FROM {SNS_SEARCH_TABLE}
                         ORDER BY Division, ID_Sns_Search
                         """
+                        )
                     )
-                ).mappings().all()
+                    .mappings()
+                    .all()
+                )
             return [_entry_from_mapping(row) for row in rows]
 
         with self._connection() as conn:
@@ -148,16 +152,20 @@ class SnsSearchStore:
             from sqlalchemy import text
 
             with self.engine.begin() as conn:
-                row = conn.execute(
-                    text(
-                        f"""
+                row = (
+                    conn.execute(
+                        text(
+                            f"""
                         INSERT INTO {SNS_SEARCH_TABLE} (Division, Words)
                         OUTPUT INSERTED.ID_Sns_Search, INSERTED.Division, INSERTED.Words
                         VALUES (:division, :words)
                         """
-                    ),
-                    {"division": division, "words": words},
-                ).mappings().first()
+                        ),
+                        {"division": division, "words": words},
+                    )
+                    .mappings()
+                    .first()
+                )
             if row is None:
                 raise RuntimeError("Failed to read inserted T_Sns_Search row")
             return _entry_from_mapping(row)
@@ -187,17 +195,21 @@ class SnsSearchStore:
             from sqlalchemy import text
 
             with self.engine.begin() as conn:
-                row = conn.execute(
-                    text(
-                        f"""
+                row = (
+                    conn.execute(
+                        text(
+                            f"""
                         UPDATE {SNS_SEARCH_TABLE}
                         SET Division = :division, Words = :words
                         OUTPUT INSERTED.ID_Sns_Search, INSERTED.Division, INSERTED.Words
                         WHERE ID_Sns_Search = :entry_id
                         """
-                    ),
-                    {"entry_id": int(entry_id), "division": division, "words": words},
-                ).mappings().first()
+                        ),
+                        {"entry_id": int(entry_id), "division": division, "words": words},
+                    )
+                    .mappings()
+                    .first()
+                )
             return _entry_from_mapping(row) if row is not None else None
 
         with self._connection() as conn:
