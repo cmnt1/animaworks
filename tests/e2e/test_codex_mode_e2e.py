@@ -24,6 +24,7 @@ def _mock_codex(start_thread):
 
 # ── Executor creation tests ──────────────────────────────────
 
+
 class TestExecutorCreation:
     """_create_executor() with Mode C and ImportError fallback."""
 
@@ -35,9 +36,7 @@ class TestExecutorCreation:
         mock_executor_instance = MagicMock()
         mock_executor_cls.return_value = mock_executor_instance
 
-        with patch(
-            "core.agent.AgentCore._create_executor"
-        ) as mock_create:
+        with patch("core.agent.AgentCore._create_executor") as mock_create:
             mock_create.return_value = mock_executor_instance
             agent._executor = agent._create_executor()
 
@@ -58,10 +57,12 @@ class TestExecutorCreation:
             executor = agent._create_executor()
 
         from core.execution.litellm_loop import LiteLLMExecutor
+
         assert isinstance(executor, LiteLLMExecutor)
 
 
 # ── Run cycle tests ──────────────────────────────────────────
+
 
 class TestRunCycle:
     """AgentCore.run_cycle() integration with Mode C."""
@@ -82,7 +83,10 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex):
+        with (
+            patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex),
+            patch("core.execution.codex_sdk.CodexSDKExecutor._uses_codex_login_auth", return_value=False),
+        ):
             result = await agent.run_cycle(
                 prompt="Hello from test",
                 trigger="message:test-user",
@@ -107,7 +111,10 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex):
+        with (
+            patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex),
+            patch("core.execution.codex_sdk.CodexSDKExecutor._uses_codex_login_auth", return_value=False),
+        ):
             result = await agent.run_cycle(
                 prompt="Heartbeat check",
                 trigger="heartbeat",
@@ -132,7 +139,10 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex):
+        with (
+            patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex),
+            patch("core.execution.codex_sdk.CodexSDKExecutor._uses_codex_login_auth", return_value=False),
+        ):
             result = await agent.run_cycle(
                 prompt="Run daily report",
                 trigger="cron:daily_report",
@@ -157,7 +167,10 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex):
+        with (
+            patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex),
+            patch("core.execution.codex_sdk.CodexSDKExecutor._uses_codex_login_auth", return_value=False),
+        ):
             result = await agent.run_cycle(
                 prompt="Execute pending task",
                 trigger="task:task-001",
@@ -169,26 +182,31 @@ class TestRunCycle:
 
 # ── Context window tests ─────────────────────────────────────
 
+
 class TestContextWindow:
     """Codex model context window resolution."""
 
     def test_codex_o4_mini_context_window(self):
         from core.prompt.context import resolve_context_window
+
         size = resolve_context_window("codex/o4-mini")
         assert size == 200_000
 
     def test_codex_o3_context_window(self):
         from core.prompt.context import resolve_context_window
+
         size = resolve_context_window("codex/o3")
         assert size == 200_000
 
     def test_codex_gpt41_context_window(self):
         from core.prompt.context import resolve_context_window
+
         size = resolve_context_window("codex/gpt-4.1")
         assert size == 1_000_000
 
 
 # ── No regression tests ──────────────────────────────────────
+
 
 class TestNoRegression:
     """Verify existing modes are unaffected by C mode addition."""
@@ -207,6 +225,7 @@ class TestNoRegression:
 
     def test_known_models_include_codex(self):
         from core.config.models import KNOWN_MODELS
+
         codex_models = [m for m in KNOWN_MODELS if m["mode"] == "C"]
         assert len(codex_models) >= 1
         names = [m["name"] for m in codex_models]
