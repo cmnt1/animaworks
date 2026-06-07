@@ -1017,6 +1017,10 @@ class CodexSDKExecutor(BaseExecutor):
         # No auth.json anywhere — Codex ≥0.115 uses OS keychain.
         # Tell _build_env() to omit CODEX_HOME so keychain auth works.
         # Per-anima config will be passed via -c flags in the CLI command.
+        if not self._uses_codex_login_auth():
+            logger.debug("No auth.json found; keeping per-anima CODEX_HOME for non-login auth")
+            return
+
         self._use_default_codex_home = True
         logger.info(
             "No auth.json found in %s or %s; omitting CODEX_HOME for keychain auth",
