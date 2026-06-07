@@ -19,16 +19,34 @@ import threading
 import time
 from typing import Any
 
-from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
-from slack_bolt.app.async_app import AsyncApp
-from slack_bolt.error import BoltUnhandledRequestError
-from slack_bolt.response import BoltResponse
-
 from core.config.models import load_config
 from core.messenger import Messenger
 from core.paths import get_data_dir
 from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential, get_credential
 from server.slack_interactive import register_interactive_handlers
+
+try:
+    from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
+    from slack_bolt.app.async_app import AsyncApp
+    from slack_bolt.error import BoltUnhandledRequestError
+    from slack_bolt.response import BoltResponse
+except ModuleNotFoundError:
+    AsyncSocketModeHandler = None  # type: ignore[assignment]
+    AsyncApp = None  # type: ignore[assignment]
+
+    class BoltUnhandledRequestError(Exception):
+        """Fallback marker used when slack-bolt is not installed."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__("Unhandled Slack request")
+
+    class BoltResponse:
+        """Minimal fallback response for error-handler tests without slack-bolt."""
+
+        def __init__(self, status: int, body: str = "") -> None:
+            self.status = status
+            self.body = body
+
 
 logger = logging.getLogger("animaworks.slack_socket")
 
@@ -50,6 +68,13 @@ _channel_name_lock = threading.Lock()
 _channel_name_cache: dict[str, str] = {}
 
 _MENTION_RE = re.compile(r"<@(U[A-Z0-9]+)>")
+
+
+def _require_slack_bolt() -> None:
+    if AsyncApp is None or AsyncSocketModeHandler is None:
+        raise RuntimeError(
+            "Slack Socket Mode requires 'slack-bolt'. Install with: pip install 'animaworks[communication]'"
+        )
 
 
 def _is_duplicate_ts(ts: str, handler_name: str = "") -> bool:
@@ -393,6 +418,7 @@ class SlackSocketModeManager:
         if not slack_config.enabled or slack_config.mode != "socket":
             logger.info("Slack Socket Mode is disabled")
             return
+        _require_slack_bolt()
 
         # Register all per-Anima handlers without connecting yet
         for anima_name in self._discover_per_anima_bots():
@@ -508,6 +534,7 @@ class SlackSocketModeManager:
             return False
 
         try:
+            _require_slack_bolt()
             app = AsyncApp(token=bot_token, raise_error_for_unhandled_request=True)
             self._register_error_handler(app)
             bot_uid = await _resolve_bot_user_id(app)

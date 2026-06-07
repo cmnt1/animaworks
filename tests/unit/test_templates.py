@@ -136,6 +136,16 @@ class TestHeartbeatObserveTemplate:
             assert "heartbeat-observe-guide.md" in index
 
 
+class TestHeartbeatToolInstructionTemplate:
+    def test_heartbeat_mentions_lightweight_skill_authoring_all_locales(self):
+        for locale in LOCALES:
+            content = (
+                TEMPLATES_ROOT / locale / "prompts" / "builder" / "heartbeat_tool_instruction.md"
+            ).read_text(encoding="utf-8")
+            assert "create_skill" in content
+            assert "submit_tasks" in content
+
+
 class TestSkillCreatorTemplate:
     def test_skill_creator_docs_match_create_skill_schema_metadata(self):
         fields = [

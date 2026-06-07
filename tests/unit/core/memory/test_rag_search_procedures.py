@@ -1,8 +1,4 @@
 """Unit tests for procedures vector search enablement in rag_search.py."""
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.rag_search import RAGMemorySearch
-
 
 # ── Fixtures ─────────────────────────────────────────────
 
@@ -84,8 +79,9 @@ class TestResolveSearchTypesProcedures:
 
 class TestResolveSearchTypesAll:
     def test_resolve_search_types_all(self) -> None:
-        """scope='all' -> includes knowledge, episodes, procedures, skills, conversation_summary."""
+        """scope='all' -> includes facts plus existing long-term memory types."""
         assert RAGMemorySearch._resolve_search_types("all") == [
+            "facts",
             "knowledge",
             "episodes",
             "procedures",
@@ -124,7 +120,7 @@ class TestSearchMemoryTextProceduresWithVector:
         procedures_dir: Path,
         common_knowledge_dir: Path,
     ) -> None:
-        """scope='procedures' triggers vector search when indexer is available."""
+        """scope='procedures' combines vector and keyword candidates under unified search."""
         (procedures_dir / "deploy.md").write_text(
             "Deploy to production server", encoding="utf-8",
         )
@@ -145,7 +141,8 @@ class TestSearchMemoryTextProceduresWithVector:
                 common_knowledge_dir=common_knowledge_dir,
             )
 
-            assert results == []
+            assert results[0]["source_file"] == "procedures/deploy.md"
+            assert results[0]["search_method"] == "keyword_fallback"
             mock_vector.assert_called_once()
 
     def test_keyword_fallback_when_vector_unavailable(

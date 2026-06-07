@@ -378,7 +378,7 @@ class SchedulerMixin:
                         await handle.send_request("interrupt", {}, timeout=10.0)
                     except Exception:
                         logger.debug("Interrupt request after daily consolidation timeout failed", exc_info=True)
-                    raise
+                    continue
                 finally:
                     if _timed_out:
                         # Grace period: keep protection for 120s after timeout
@@ -531,7 +531,7 @@ class SchedulerMixin:
                         await handle.send_request("interrupt", {}, timeout=10.0)
                     except Exception:
                         logger.debug("Interrupt request after weekly consolidation timeout failed", exc_info=True)
-                    raise
+                    continue
                 finally:
                     if _timed_out_w:
                         _name_capture_w = anima_name

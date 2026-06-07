@@ -14,6 +14,16 @@ import time
 from pathlib import Path
 from typing import Any
 
+from benchmarks.locomo.answer_prompt import (
+    ANSWER_SYSTEM as _ANSWER_SYSTEM,
+)
+from benchmarks.locomo.answer_prompt import (
+    LOCOMO_ANSWER_MAX_TOKENS,
+    build_answer_user_content,
+    merge_pipeline_gate_settings,
+    normalize_locomo_answer,
+)
+
 # Project root (development / `python -m` from repo root)
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -26,31 +36,6 @@ logger = logging.getLogger(__name__)
 ANIMA_NAME = "locomo_bench"
 SEARCH_MODES: tuple[str, ...] = ("vector", "vector_graph", "scope_all")
 _SESSION_RE = re.compile(r"^session_(\d+)$")
-
-_ANSWER_SYSTEM = (
-    "You are an expert assistant answering questions about past conversations based on the provided context."
-)
-
-_ANSWER_TEMPLATE = """# INSTRUCTIONS:
-1. Carefully analyze all provided memories
-2. Pay special attention to timestamps (event_time) to determine when events occurred
-3. If memories contain contradictory information, prioritize the most recent memory
-4. Always convert relative time references (yesterday, last week, next month) to specific dates using the event_time timestamps
-5. Timestamps represent the actual time the event occurred, not when it was mentioned
-6. When multiple items are asked for, answer with a comma-separated list of short phrases
-7. If the context supports a reasonable inference, provide your best answer — only say "No information available." when the context has absolutely no relevant information
-8. Keep your answer as brief and direct as possible — a short phrase or sentence
-
-Example:
-Memory: (event_time: 2023-05-08T13:56:00) I went to the vet yesterday.
-Question: When did I go to the vet?
-Answer: 7 May 2023
-
-Context:
-{context}
-
-Question: {question}
-Answer:"""
 
 # ── Dependency checks ──────────
 
@@ -90,8 +75,60 @@ except ImportError:
 # ── LLM helpers ──────────
 
 from benchmarks.locomo.llm_config import default_answer_model, resolve_locomo_litellm_kwargs
+from benchmarks.locomo.multihop import (
+    MULTIHOP_METADATA_FIELDS,
+    LocomoMultiHopOrchestrator,
+    empty_multihop_meta,
+)
 
 # ── load_dataset ──────────
+
+_EVENT_METADATA_FIELDS: tuple[str, ...] = (
+    "fact_id",
+    "valid_at",
+    "event_time_iso",
+    "event_time_text",
+    "session_index",
+    "turn_index",
+    "sentence_index",
+    "speaker",
+    "source_episode",
+    "event_time_parse_error",
+    "entities",
+    "confidence",
+    "base_score",
+    "temporal_boost",
+    "entity_boost",
+    "entity_overlap",
+    "query_entities",
+    "candidate_entities",
+    *MULTIHOP_METADATA_FIELDS,
+)
+_ENV_TRUE = {"1", "true", "yes", "on"}
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in _ENV_TRUE
+
+
+def locomo_temporal_boost_enabled() -> bool:
+    """Return True when LoCoMo temporal boost ablation is explicitly enabled."""
+    return _env_flag("LOCOMO_TEMPORAL_BOOST")
+
+
+def locomo_entity_boost_enabled() -> bool:
+    """Return True when LoCoMo entity boost ablation is explicitly enabled."""
+    return _env_flag("LOCOMO_ENTITY_BOOST")
+
+
+def locomo_fact_index_enabled() -> bool:
+    """Return True when LoCoMo fact dual-index ablation is explicitly enabled."""
+    return _env_flag("LOCOMO_FACT_INDEX")
+
+
+def locomo_entity_aware_graph_enabled() -> bool:
+    """Return True when LoCoMo entity-aware graph ablation is explicitly enabled."""
+    return _env_flag("LOCOMO_ENTITY_AWARE_GRAPH")
 
 
 def load_dataset(path: Path) -> list[dict[str, Any]]:
@@ -196,6 +233,43 @@ def _episode_stem_for_sample(sample_id: str | int) -> str:
     return f"conv-{s}"
 
 
+def _conversation_speaker_names(conversation: dict[str, Any]) -> tuple[str, ...]:
+    """Return conversation speaker names to ignore in entity boost scoring."""
+    names: set[str] = set()
+    for key in ("speaker_a", "speaker_b"):
+        value = str(conversation.get(key, "") or "").strip()
+        if value:
+            names.add(value)
+    return tuple(sorted(names))
+
+
+def _latest_session_reference_time(conversation: dict[str, Any]) -> str:
+    """Return the latest parseable LoCoMo session time as an ISO string."""
+    from core.memory.rag.episode_time import apply_episode_heading_event_time
+
+    latest: str = ""
+    latest_dt: Any = None
+    for n in _session_indices(conversation):
+        when = str(conversation.get(f"session_{n}_date_time", "") or "").strip()
+        if not when:
+            continue
+        metadata: dict[str, Any] = {}
+        apply_episode_heading_event_time(metadata, f"## Session {n} - {when}")
+        iso = str(metadata.get("event_time_iso", "") or "")
+        if not iso:
+            continue
+        try:
+            from datetime import datetime
+
+            parsed = datetime.fromisoformat(iso)
+        except ValueError:
+            continue
+        if latest_dt is None or parsed > latest_dt:
+            latest_dt = parsed
+            latest = iso
+    return latest
+
+
 # ── Adapter ──────────
 
 
@@ -208,30 +282,55 @@ class AnimaWorksLoCoMoAdapter:
         process at a time.  For parallel benchmark runs, use separate processes.
     """
 
-    def __init__(self, search_mode: str = "vector", *, top_k: int = 5) -> None:
+    def __init__(
+        self,
+        search_mode: str = "vector",
+        *,
+        top_k: int = 5,
+        answer_timeout: float | None = None,
+        answer_max_retries: int = 2,
+    ) -> None:
         """
         Args:
             search_mode: ``vector`` | ``vector_graph`` | ``scope_all``
             top_k: Number of hits to return from retrieval
+            answer_timeout: Optional LiteLLM timeout for answer generation.
+            answer_max_retries: Number of retries after the first answer attempt.
         """
         if search_mode not in SEARCH_MODES:
             raise ValueError(f"search_mode must be one of {SEARCH_MODES}, got {search_mode!r}")
         _ensure_rag_stack()
         self._search_mode = search_mode
         self._top_k = top_k
+        self._answer_timeout = answer_timeout
+        self._answer_max_retries = max(0, int(answer_max_retries))
         self._temp_dir: str | None = None
         self._previous_animaworks_data: str | None = None
         self._own_data_env = False
         self._anima_dir: Path | None = None
         self._episodes_dir: Path | None = None
+        self._facts_dir: Path | None = None
         self._vector_store: Any = None
         self._temp_worker: Any = None
         self._indexer: Any = None
         self._retriever: Any = None
         self._bm25_corpus: list[tuple[str, dict[str, Any]]] | None = None
         self._bm25_index: Any = None
+        self._fact_bm25_corpus: list[tuple[str, dict[str, Any]]] | None = None
+        self._fact_bm25_index: Any = None
+        self._fact_metadata_by_source_file: dict[str, dict[str, Any]] = {}
+        self._fact_metadata_by_fact_id: dict[str, dict[str, Any]] = {}
+        self._last_fact_count: int = 0
         self._last_abstain: bool = False
         self._last_abstain_reason: str = ""
+        self._last_top_score: float | None = None
+        self._last_top_event_time_iso: str = ""
+        self._last_top_memory_type: str = ""
+        self._last_multihop_meta: dict[str, Any] = empty_multihop_meta()
+        self._last_raw_answer: str = ""
+        self._last_normalized_answer: str = ""
+        self._entity_ignored_entities: tuple[str, ...] = ()
+        self._query_reference_time: str = ""
         # Deferred heavy init
         self._init_isolated_rag()
 
@@ -249,8 +348,10 @@ class AnimaWorksLoCoMoAdapter:
         self._own_data_env = True
         self._anima_dir = Path(self._temp_dir) / "animas" / ANIMA_NAME
         self._episodes_dir = self._anima_dir / "episodes"
+        self._facts_dir = self._anima_dir / "facts"
         for sub in (
             "episodes",
+            "facts",
             "knowledge",
             "procedures",
             "common_knowledge",
@@ -294,17 +395,47 @@ class AnimaWorksLoCoMoAdapter:
         assert self._anima_dir is not None
         return self._anima_dir / INDEX_META_FILE
 
+    def _ensure_facts_dir(self) -> Path:
+        """Return the facts directory, backfilling older partial test instances."""
+        facts_dir = getattr(self, "_facts_dir", None)
+        if facts_dir is None:
+            assert self._anima_dir is not None
+            facts_dir = self._anima_dir / "facts"
+            self._facts_dir = facts_dir
+        facts_dir.mkdir(parents=True, exist_ok=True)
+        return facts_dir
+
     def reset(self) -> None:
         """Remove indexed vectors for this anima, episode files, and index metadata."""
         assert self._vector_store is not None and self._anima_dir is not None and self._episodes_dir is not None
+        facts_dir = self._ensure_facts_dir()
         for name in self._vector_store.list_collections():
             if name.startswith(ANIMA_NAME):
                 self._vector_store.delete_collection(name)
         if self._episodes_dir.exists():
             shutil.rmtree(self._episodes_dir)
         self._episodes_dir.mkdir(parents=True, exist_ok=True)
+        if facts_dir.exists():
+            shutil.rmtree(facts_dir)
+        facts_dir.mkdir(parents=True, exist_ok=True)
         self._bm25_corpus = None
         self._bm25_index = None
+        self._fact_bm25_corpus = None
+        self._fact_bm25_index = None
+        self._fact_metadata_by_source_file = {}
+        self._fact_metadata_by_fact_id = {}
+        self._last_fact_count = 0
+        self._query_reference_time = ""
+        self._last_multihop_meta = empty_multihop_meta()
+        if self._retriever is not None:
+            self._retriever._knowledge_graph = None
+            self._retriever._knowledge_graph_signature = None
+        graph_cache = self._anima_dir / "vectordb" / "knowledge_graph.json"
+        if graph_cache.exists():
+            try:
+                graph_cache.unlink()
+            except OSError as e:
+                logger.warning("Failed to remove %s: %s", graph_cache, e)
         meta = self._index_meta_path
         if meta.exists():
             try:
@@ -322,10 +453,13 @@ class AnimaWorksLoCoMoAdapter:
             Number of vector chunks written for the episode file.
         """
         assert self._indexer is not None and self._episodes_dir is not None
+        self._ensure_facts_dir()
         sample_id = sample.get("sample_id", "unknown")
         conv = sample.get("conversation")
         if not isinstance(conv, dict):
             raise TypeError("sample['conversation'] must be a dict")
+        self._entity_ignored_entities = _conversation_speaker_names(conv)
+        self._query_reference_time = _latest_session_reference_time(conv)
         stem = _episode_stem_for_sample(str(sample_id))
         md = _build_episode_markdown(str(sample_id), conv)
         file_path = self._episodes_dir / f"{stem}.md"
@@ -333,7 +467,74 @@ class AnimaWorksLoCoMoAdapter:
         n = self._indexer.index_file(file_path, memory_type="episodes", force=True)
         self._bm25_corpus = None
         self._bm25_index = None
+        self._fact_bm25_corpus = None
+        self._fact_bm25_index = None
+        self._fact_metadata_by_source_file = {}
+        self._fact_metadata_by_fact_id = {}
+        self._last_fact_count = 0
+        if locomo_fact_index_enabled():
+            self._ingest_fact_index(str(sample_id), conv, source_episode=f"episodes/{stem}.md")
         return n
+
+    def _clear_fact_index_storage(self) -> None:
+        """Clear optional fact files, vectors, and in-memory caches before rebuild."""
+        facts_dir = self._ensure_facts_dir()
+        if facts_dir.exists():
+            shutil.rmtree(facts_dir)
+        facts_dir.mkdir(parents=True, exist_ok=True)
+        vector_store = getattr(self, "_vector_store", None)
+        if vector_store is not None:
+            try:
+                vector_store.delete_collection(f"{ANIMA_NAME}_facts")
+            except Exception:
+                logger.debug("No LoCoMo facts collection to clear", exc_info=True)
+        self._fact_bm25_corpus = []
+        self._fact_bm25_index = None
+        self._fact_metadata_by_source_file = {}
+        self._fact_metadata_by_fact_id = {}
+        self._last_fact_count = 0
+
+    def _ingest_fact_index(self, sample_id: str, conversation: dict[str, Any], *, source_episode: str) -> None:
+        """Build and index optional LoCoMo fact memories without failing episode ingest."""
+        assert self._indexer is not None
+        facts_dir = self._ensure_facts_dir()
+        try:
+            self._clear_fact_index_storage()
+            from benchmarks.locomo.fact_index import (  # noqa: PLC0415
+                extract_locomo_fact_records,
+                fact_bm25_documents,
+                write_fact_records,
+            )
+
+            records = extract_locomo_fact_records(sample_id, conversation, source_episode=source_episode)
+            if not records:
+                self._last_fact_count = 0
+                self._fact_bm25_corpus = []
+                self._fact_metadata_by_source_file = {}
+                return
+
+            write_fact_records(facts_dir, records)
+            indexed = 0
+            for fact_file in sorted(facts_dir.glob("*.jsonl")):
+                indexed += self._indexer.index_file(fact_file, memory_type="facts", force=True)
+            self._last_fact_count = indexed
+            self._fact_bm25_corpus = fact_bm25_documents(records)
+            self._fact_bm25_index = None
+            self._fact_metadata_by_source_file = {
+                str(meta.get("source_file", "")): dict(meta)
+                for _, meta in self._fact_bm25_corpus
+                if meta.get("source_file")
+            }
+            self._fact_metadata_by_fact_id = {
+                str(meta.get("fact_id", "")): dict(meta) for _, meta in self._fact_bm25_corpus if meta.get("fact_id")
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning("LoCoMo fact index skipped after failure: %s", e)
+            self._last_fact_count = 0
+            self._fact_bm25_corpus = []
+            self._fact_bm25_index = None
+            self._fact_metadata_by_source_file = {}
+            self._fact_metadata_by_fact_id = {}
 
     def _retrieval_to_dicts(self, results: list[Any]) -> list[dict[str, Any]]:
         from core.memory.rag.retriever import RetrievalResult  # noqa: PLC0415
@@ -343,38 +544,72 @@ class AnimaWorksLoCoMoAdapter:
             if not isinstance(r, RetrievalResult):
                 continue
             meta = r.metadata if isinstance(r.metadata, dict) else {}
+            enriched_meta = self._enrich_fact_metadata(dict(meta))
             out.append(
                 {
                     "content": r.content,
                     "score": float(r.score),
-                    "metadata": dict(meta),
+                    "metadata": enriched_meta,
                 },
             )
         return out
 
+    def _enrich_fact_metadata(self, meta: dict[str, Any]) -> dict[str, Any]:
+        """Attach adapter-side fact metadata omitted by the generic indexer."""
+        source_file = str(meta.get("source_file", "") or "")
+        fact_id = str(meta.get("fact_id", "") or "")
+        fact_meta = self._fact_metadata_by_source_file.get(source_file) if source_file else None
+        if not fact_meta and fact_id:
+            fact_meta = self._fact_metadata_by_fact_id.get(fact_id)
+        if not fact_meta:
+            return meta
+        return {**fact_meta, **meta, "memory_type": "facts"}
+
     def _pipeline_item_from_adapter_hit(self, item: dict[str, Any]) -> dict[str, Any]:
         """Normalize adapter retrieval dict for ``RetrievalPipeline``."""
         meta = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-        return {
+        out: dict[str, Any] = {
             "content": (item.get("content") or "").strip(),
             "score": float(item.get("score", 0.0)),
             "source_file": str(meta.get("source_file", meta.get("source", ""))),
             "chunk_index": int(meta.get("section", meta.get("chunk_index", 0))),
-            "memory_type": "episodes",
+            "memory_type": str(meta.get("memory_type", item.get("memory_type", "episodes")) or "episodes"),
             "search_method": str(meta.get("search_method", "")),
         }
+        for key in _EVENT_METADATA_FIELDS:
+            if key in meta:
+                out[key] = meta[key]
+        return out
 
     def _adapter_hit_from_pipeline_item(self, item: dict[str, Any]) -> dict[str, Any]:
         """Convert pipeline output back to LoCoMo adapter context shape."""
+        metadata: dict[str, Any] = {
+            "source_file": item.get("source_file", ""),
+            "chunk_index": item.get("chunk_index", 0),
+            "memory_type": item.get("memory_type", "episodes"),
+            "search_method": item.get("search_method", "pipeline"),
+        }
+        for key in _EVENT_METADATA_FIELDS:
+            if key in item:
+                metadata[key] = item[key]
         return {
             "content": item.get("content", ""),
             "score": float(item.get("score", 0.0)),
-            "metadata": {
-                "source_file": item.get("source_file", ""),
-                "chunk_index": item.get("chunk_index", 0),
-                "search_method": item.get("search_method", "pipeline"),
-            },
+            "metadata": metadata,
         }
+
+    def _remember_retrieval_diagnostics(self, items: list[dict[str, Any]]) -> None:
+        """Store lightweight retrieval diagnostics for benchmark output."""
+        if not items:
+            self._last_top_score = None
+            self._last_top_event_time_iso = ""
+            self._last_top_memory_type = ""
+            return
+        top = max(items, key=lambda item: float(item.get("score", 0.0) or 0.0))
+        self._last_top_score = float(top.get("score", 0.0) or 0.0)
+        meta = top.get("metadata") if isinstance(top.get("metadata"), dict) else {}
+        self._last_top_event_time_iso = str(meta.get("event_time_iso", "") or top.get("event_time_iso", "") or "")
+        self._last_top_memory_type = str(meta.get("memory_type", "") or top.get("memory_type", "") or "")
 
     def _load_pipeline_settings(self) -> dict[str, object]:
         """Resolve RAG pipeline knobs (same defaults as ``RAGMemorySearch``)."""
@@ -385,6 +620,10 @@ class AnimaWorksLoCoMoAdapter:
             "abstain_on_low_confidence": True,
             "confidence_threshold": 0.35,
             "rrf_confidence_threshold": 0.02,
+            "access_boost_enabled": True,
+            "access_boost_weight": 0.05,
+            "access_boost_cap": 0.25,
+            "access_boost_half_life_days": 30.0,
         }
         try:
             cfg_path = Path("~/.animaworks/config.json").expanduser()
@@ -414,16 +653,36 @@ class AnimaWorksLoCoMoAdapter:
                             "rrf_confidence_threshold",
                             defaults["rrf_confidence_threshold"],
                         ),
+                        "access_boost_enabled": rag.get(
+                            "access_boost_enabled",
+                            defaults["access_boost_enabled"],
+                        ),
+                        "access_boost_weight": rag.get(
+                            "access_boost_weight",
+                            defaults["access_boost_weight"],
+                        ),
+                        "access_boost_cap": rag.get(
+                            "access_boost_cap",
+                            defaults["access_boost_cap"],
+                        ),
+                        "access_boost_half_life_days": rag.get(
+                            "access_boost_half_life_days",
+                            defaults["access_boost_half_life_days"],
+                        ),
                     },
                 )
         except Exception:
             logger.debug("Using default pipeline settings for LoCoMo adapter", exc_info=True)
         return defaults
 
-    def retrieve(self, question: str) -> list[dict[str, Any]]:
+    def retrieve(self, question: str, *, category: int | None = None) -> list[dict[str, Any]]:
         """Run retrieval for ``question`` following ``self._search_mode``."""
         self._last_abstain = False
         self._last_abstain_reason = ""
+        self._last_top_score = None
+        self._last_top_event_time_iso = ""
+        self._last_top_memory_type = ""
+        self._last_multihop_meta = empty_multihop_meta()
         assert self._retriever is not None
         if self._search_mode == "vector":
             res = self._retriever.search(
@@ -433,7 +692,9 @@ class AnimaWorksLoCoMoAdapter:
                 top_k=self._top_k,
                 enable_spreading_activation=False,
             )
-            return self._retrieval_to_dicts(res)
+            items = self._retrieval_to_dicts(res)
+            self._remember_retrieval_diagnostics(items)
+            return items
         if self._search_mode == "vector_graph":
             res = self._retriever.search(
                 query=question,
@@ -442,51 +703,55 @@ class AnimaWorksLoCoMoAdapter:
                 top_k=self._top_k,
                 enable_spreading_activation=True,
             )
-            return self._retrieval_to_dicts(res)
-        # scope_all: vector + graph + BM25 → shared RetrievalPipeline (prod parity)
-        from core.memory.retrieval.pipeline import RetrievalPipeline  # noqa: PLC0415
+            items = self._retrieval_to_dicts(res)
+            self._remember_retrieval_diagnostics(items)
+            return items
+        items = self._retrieve_scope_all(question, category=category)
+        self._remember_retrieval_diagnostics(items)
+        return items
 
+    def _retrieve_scope_all(self, question: str, *, category: int | None) -> list[dict[str, Any]]:
+        """Production-compatible Legacy unified search with benchmark ablations."""
+        from core.memory.retrieval.temporal import TemporalBoostConfig  # noqa: PLC0415
+        from core.memory.retrieval.unified_search import UnifiedMemorySearch  # noqa: PLC0415
+
+        assert self._anima_dir is not None
         settings = self._load_pipeline_settings()
-        pool_k = max(int(settings["rerank_candidate_pool"]), self._top_k * 4, 20)
-
-        vec_res = self._retriever.search(
-            query=question,
-            anima_name=ANIMA_NAME,
-            memory_type="episodes",
-            top_k=pool_k,
-            enable_spreading_activation=False,
+        fact_evidence = locomo_fact_index_enabled() and self._last_fact_count > 0
+        gate = merge_pipeline_gate_settings(settings, category=category, fact_evidence=category == 1 and fact_evidence)
+        search_settings = {
+            **settings,
+            "confidence_threshold": gate["confidence_threshold"],
+            "rrf_confidence_threshold": gate["rrf_confidence_threshold"],
+        }
+        scope_override = ("episodes", "facts") if fact_evidence else ("episodes",)
+        searcher = UnifiedMemorySearch(
+            self._anima_dir,
+            common_knowledge_dir=self._anima_dir / "common_knowledge",
+            common_skills_dir=self._anima_dir / "common_skills",
         )
-        graph_res = self._retriever.search(
-            query=question,
-            anima_name=ANIMA_NAME,
-            memory_type="episodes",
-            top_k=pool_k,
-            enable_spreading_activation=True,
-        )
-        vec_dicts = self._retrieval_to_dicts(vec_res)
-        graph_dicts = self._retrieval_to_dicts(graph_res)
-        bm25_dicts = self._bm25_search(question, top_k=pool_k)
-
-        ranked_lists = [
-            [self._pipeline_item_from_adapter_hit(x) for x in vec_dicts],
-            [self._pipeline_item_from_adapter_hit(x) for x in graph_dicts],
-            [self._pipeline_item_from_adapter_hit(x) for x in bm25_dicts],
-        ]
-
-        pipeline = RetrievalPipeline(cross_encoder_model=str(settings["cross_encoder_model"]))
-        result = pipeline.run(
+        result_items = searcher.search(
             question,
-            ranked_lists,
+            scope="all",
             limit=self._top_k,
-            pool_k=pool_k,
-            rerank_enabled=bool(settings["rerank_enabled"]),
-            abstain_on_low_confidence=bool(settings["abstain_on_low_confidence"]),
-            confidence_threshold=float(settings["confidence_threshold"]),
-            rrf_confidence_threshold=float(settings["rrf_confidence_threshold"]),
+            trigger="chat",
+            scope_override=scope_override,
+            pipeline_settings=search_settings,
+            temporal_boost=TemporalBoostConfig(
+                enabled=locomo_temporal_boost_enabled(),
+                category=category,
+            ),
+            entity_boost=self._entity_boost_config(category),
+            reference_time=self._query_reference_time or None,
         )
-        self._last_abstain = result.abstain
-        self._last_abstain_reason = result.abstain_reason
-        return [self._adapter_hit_from_pipeline_item(x) for x in result.items]
+        meta = searcher.last_search_meta
+        self._last_abstain = bool(meta.get("abstain", False))
+        self._last_abstain_reason = str(meta.get("abstain_reason", "") or "")
+        items = [self._adapter_hit_from_pipeline_item(x) for x in result_items]
+        multihop = LocomoMultiHopOrchestrator(self)
+        if multihop.feature_enabled(category):
+            items = multihop.augment(question, items, top_k=self._top_k)
+        return items
 
     def _build_bm25_cache(self) -> None:
         """Build BM25 index from episode files; cached until reset/ingest."""
@@ -502,7 +767,13 @@ class AnimaWorksLoCoMoAdapter:
             else:
                 segs = [raw] if raw.strip() else []
             for j, seg in enumerate(segs):
-                documents.append((seg, {"source_file": p.name, "section": j}))
+                metadata: dict[str, Any] = {"source_file": p.name, "section": j, "memory_type": "episodes"}
+                first_line = seg.splitlines()[0].strip() if seg.splitlines() else ""
+                if first_line.startswith("## Session"):
+                    from core.memory.rag.episode_time import apply_episode_heading_event_time  # noqa: PLC0415
+
+                    apply_episode_heading_event_time(metadata, first_line)
+                documents.append((seg, metadata))
         self._bm25_corpus = documents
         if documents:
             tokenized = [_bm25_tokenize(doc) for doc, _ in documents]
@@ -535,6 +806,69 @@ class AnimaWorksLoCoMoAdapter:
                     "content": documents[i][0],
                     "score": float(scores[i]),
                     "metadata": {**documents[i][1], "search_method": "bm25"},
+                },
+            )
+        return out
+
+    def _search_fact_vectors(self, query: str, top_k: int) -> list[dict[str, Any]]:
+        """Dense vector search over optional fact memory collection."""
+        assert self._retriever is not None
+        try:
+            res = self._retriever.search(
+                query=query,
+                anima_name=ANIMA_NAME,
+                memory_type="facts",
+                top_k=top_k,
+                enable_spreading_activation=False,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("LoCoMo fact vector retrieval skipped after failure: %s", e)
+            return []
+        out = self._retrieval_to_dicts(res)
+        for row in out:
+            meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            meta["memory_type"] = "facts"
+            meta.setdefault("search_method", "fact_vector")
+        return out
+
+    def _build_fact_bm25_cache(self) -> None:
+        """Build BM25 index from optional fact records cached at ingest."""
+        from rank_bm25 import BM25Okapi  # noqa: PLC0415
+
+        documents = self._fact_bm25_corpus or []
+        if documents:
+            tokenized = [_bm25_tokenize(doc) for doc, _ in documents]
+            self._fact_bm25_index = BM25Okapi(tokenized) if any(tokenized) else None
+        else:
+            self._fact_bm25_index = None
+
+    def _fact_bm25_search(self, query: str, top_k: int) -> list[dict[str, Any]]:
+        """BM25 keyword search using optional fact corpus."""
+        if self._fact_bm25_corpus is None:
+            self._fact_bm25_corpus = []
+        if self._fact_bm25_index is None:
+            self._build_fact_bm25_cache()
+        documents = self._fact_bm25_corpus
+        if not documents:
+            return []
+        qtok = _bm25_tokenize(query)
+        if not qtok or self._fact_bm25_index is None:
+            return [
+                {
+                    "content": documents[0][0],
+                    "score": 0.0,
+                    "metadata": {**documents[0][1], "search_method": "fact_bm25_degenerate"},
+                }
+            ][:1]
+        scores = self._fact_bm25_index.get_scores(qtok)
+        order = sorted(range(len(scores)), key=lambda i: float(scores[i]), reverse=True)[: top_k * 2]
+        out: list[dict[str, Any]] = []
+        for i in order:
+            out.append(
+                {
+                    "content": documents[i][0],
+                    "score": float(scores[i]),
+                    "metadata": {**documents[i][1], "memory_type": "facts", "search_method": "fact_bm25"},
                 },
             )
         return out
@@ -578,27 +912,52 @@ class AnimaWorksLoCoMoAdapter:
             merged.append(row)
         return merged
 
-    def _complete_sync(self, messages: list[dict[str, str]], model: str) -> str:
+    def _entity_boost_config(self, category: int | None) -> Any:
+        from core.memory.retrieval.entity import EntityBoostConfig  # noqa: PLC0415
+
+        stricter_multi_hop = category == 1
+        return EntityBoostConfig(
+            enabled=locomo_entity_boost_enabled(),
+            category=category,
+            ignored_entities=self._entity_ignored_entities,
+            use_content_tokens=not stricter_multi_hop,
+            require_multi_token_overlap=stricter_multi_hop,
+        )
+
+    def _complete_sync(
+        self,
+        messages: list[dict[str, str]],
+        model: str,
+        *,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> str:
         """Synchronous LLM call with retries (used inside running event loop)."""
         import litellm  # noqa: PLC0415
 
         litellm_model, extra = resolve_locomo_litellm_kwargs(model)
         last: Exception | None = None
-        for attempt in range(1, 4):
+        use_timeout = self._answer_timeout if timeout is None else timeout
+        retry_count = self._answer_max_retries if max_retries is None else max(0, int(max_retries))
+        attempts = retry_count + 1
+        call_kwargs = {
+            "model": litellm_model,
+            "messages": messages,
+            "temperature": 0.0,
+            "max_tokens": LOCOMO_ANSWER_MAX_TOKENS,
+            **extra,
+        }
+        if use_timeout is not None:
+            call_kwargs["timeout"] = float(use_timeout)
+        for attempt in range(1, attempts + 1):
             try:
-                r = litellm.completion(
-                    model=litellm_model,
-                    messages=messages,
-                    temperature=0.0,
-                    max_tokens=512,
-                    **extra,
-                )
+                r = litellm.completion(**call_kwargs)
                 ch = r.choices[0].message
                 return (ch.content or "").strip()
             except Exception as e:  # noqa: BLE001
                 last = e
-                logger.warning("litellm.completion attempt %s/3 failed: %s", attempt, e)
-                if attempt < 3:
+                logger.warning("litellm.completion attempt %s/%s failed: %s", attempt, attempts, e)
+                if attempt < attempts:
                     time.sleep(0.5 * (2 ** (attempt - 1)))
         assert last is not None
         raise last
@@ -615,7 +974,7 @@ class AnimaWorksLoCoMoAdapter:
                     model=litellm_model,
                     messages=messages,
                     temperature=0.0,
-                    max_tokens=512,
+                    max_tokens=LOCOMO_ANSWER_MAX_TOKENS,
                     **extra,
                 )
                 ch = r.choices[0].message
@@ -628,22 +987,38 @@ class AnimaWorksLoCoMoAdapter:
         assert last is not None
         raise last
 
-    def answer(self, question: str, context: list[dict], *, model: str | None = None) -> str:
+    def answer(
+        self,
+        question: str,
+        context: list[dict],
+        *,
+        model: str | None = None,
+        category: int | None = None,
+    ) -> str:
         """Generate a short answer from retrieved ``context`` using LiteLLM."""
         if getattr(self, "_last_abstain", False):
-            return "No information available."
+            self._last_raw_answer = ""
+            self._last_normalized_answer = "No information available."
+            return self._last_normalized_answer
         parts = []
         for i, c in enumerate(context, start=1):
             t = (c.get("content") or "").strip()
             if t:
                 parts.append(f"[{i}] {t}")
         ctx_joined = "\n\n".join(parts)
-        user_content = _ANSWER_TEMPLATE.format(context=ctx_joined, question=question)
+        user_content = build_answer_user_content(
+            question,
+            ctx_joined,
+            category=category,
+        )
         messages = [
             {"role": "system", "content": _ANSWER_SYSTEM},
             {"role": "user", "content": user_content},
         ]
-        return self._complete_sync(messages, model or default_answer_model())
+        raw = self._complete_sync(messages, model or default_answer_model())
+        self._last_raw_answer = raw
+        self._last_normalized_answer = normalize_locomo_answer(raw, category=category)
+        return self._last_normalized_answer
 
     def cleanup(self) -> None:
         """Remove temp data directory and restore ``ANIMAWORKS_DATA_DIR``."""

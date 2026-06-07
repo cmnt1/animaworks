@@ -1,0 +1,22 @@
+{
+  "source_run": "/tmp/locomo_smoke_20260525_131445.json",
+  "timestamp": "2026-05-25T16:23:00",
+  "mode": "legacy_scope_all",
+  "answer_model": "deepseek-v4-flash",
+  "llm_credential": "vllm-lb",
+  "conversations": 1,
+  "top_k": 10,
+  "overall_f1": 0.447015668230488,
+  "by_category": {
+    "temporal": {"f1": 0.4103399237453425, "count": 37},
+    "complex": {"f1": 0.1183535762483131, "count": 13},
+    "multi_hop": {"f1": 0.21881200396825398, "count": 32},
+    "open_domain": {"f1": 0.4033280025868177, "count": 70},
+    "adversarial": {"f1": 0.7872340425531915, "count": 47}
+  },
+  "thresholds": {
+    "overall_f1_min_delta": 0.02,
+    "open_domain_f1_min_delta": 0.03
+  },
+  "notes": "trserveru LiteLLM proxy (localhost:4000). Default smoke baseline for LOCOMO_ANSWER_MODEL=deepseek-v4-flash. Qwen397B baseline: legacy_scope_all_20260522.json"
+}

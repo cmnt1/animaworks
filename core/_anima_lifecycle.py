@@ -460,6 +460,8 @@ class LifecycleMixin:
 
         cfg = load_config()
         consolidation_model = cfg.consolidation.llm_model
+        _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
+        consolidation_credential = _llm_cred if isinstance(_llm_cred, str) else ""
         start_mono = _time.monotonic()
 
         # ── Phase A: Episode extraction ─────────────────────────
@@ -487,6 +489,7 @@ class LifecycleMixin:
                 raw = await one_shot_completion(
                     ep_prompt,
                     model=consolidation_model,
+                    credential=consolidation_credential,
                     max_tokens=8192,
                 )
                 if raw:
@@ -511,6 +514,16 @@ class LifecycleMixin:
                 len(merged_episodes),
                 episode_path.name,
             )
+            try:
+                fact_count = await engine.extract_facts_from_text(
+                    merged_episodes,
+                    source_episode=f"episodes/{episode_path.name}",
+                    source_session_id="consolidation:daily",
+                )
+                if fact_count:
+                    logger.info("[%s] Phase A: stored %d atomic fact(s)", self.name, fact_count)
+            except Exception:
+                logger.debug("[%s] Phase A atomic fact extraction failed", self.name, exc_info=True)
 
         # ── Phase B: Knowledge extraction ───────────────────────
         episodes = engine._collect_recent_episodes(hours=24)

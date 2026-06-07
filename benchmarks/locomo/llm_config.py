@@ -71,7 +71,7 @@ def resolve_locomo_litellm_kwargs(model: str) -> tuple[str, dict[str, Any]]:
 
     model_lower = model.lower()
     extras: dict[str, Any] = {}
-    if "qwen" in model_lower:
+    if "qwen" in model_lower or "deepseek" in model_lower:
         extras["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
 
     env_base = os.environ.get("OPENAI_API_BASE") or os.environ.get("OPENAI_BASE_URL")
@@ -107,3 +107,15 @@ def llm_routing_configured(model: str | None = None) -> bool:
     except Exception:
         return False
     return bool(kwargs.get("api_base"))
+
+
+def default_baseline_path(model: str | None = None) -> Path:
+    """Regression baseline JSON for the given answer model."""
+    env_path = os.environ.get("LOCOMO_BASELINE", "").strip()
+    if env_path:
+        return Path(env_path)
+    resolved = (model or default_answer_model()).lower()
+    baselines = Path(__file__).resolve().parent / "baselines"
+    if "qwen" in resolved:
+        return baselines / "legacy_scope_all_20260522.json"
+    return baselines / "legacy_scope_all_deepseek_v4_flash_20260525.json"

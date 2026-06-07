@@ -14,6 +14,7 @@ Implements:
 
 import logging
 import math
+import os
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -86,6 +87,7 @@ class MemoryRetriever:
         self.indexer = indexer
         self.knowledge_dir = knowledge_dir
         self._knowledge_graph = None  # Lazy initialization
+        self._knowledge_graph_signature: tuple[str, bool, int, bool, bool] | None = None
         self._graph_lock = threading.Lock()
 
     # ── Main search API ─────────────────────────────────────────────
@@ -150,17 +152,19 @@ class MemoryRetriever:
             include_shared,
         )
 
-        # Build metadata filter for superseded knowledge exclusion
+        # Build metadata filter for superseded knowledge exclusion.
+        # Facts need post-filtering because future valid_until values remain active.
         filter_metadata: dict[str, str | int | float] | None = None
         if not include_superseded and memory_type == "knowledge":
             filter_metadata = {"valid_until": ""}
 
         # 1. Dense Vector search (personal collection)
+        fetch_multiplier = 4 if memory_type == "facts" and not include_superseded else 2
         vector_results = self._vector_search(
             query,
             anima_name,
             memory_type,
-            top_k * 2,
+            top_k * fetch_multiplier,
             filter_metadata=filter_metadata,
         )
 
@@ -182,6 +186,15 @@ class MemoryRetriever:
 
         if memory_type == "skills":
             vector_results = self._filter_loadable_skill_vector_results(vector_results)
+        if memory_type == "facts" and not include_superseded:
+            vector_results = self._filter_active_fact_vector_results(vector_results)
+            if len(vector_results) < top_k:
+                vector_results = self._refetch_active_fact_vector_results(
+                    query,
+                    anima_name,
+                    top_k,
+                    initial_fetch_k=top_k * fetch_multiplier,
+                )
 
         # 2. Convert to RetrievalResult
         results = [
@@ -395,6 +408,43 @@ class MemoryRetriever:
                 filtered.append((doc_id, content, score, metadata))
         return filtered
 
+    def _filter_active_fact_vector_results(
+        self,
+        results: list[tuple[str, str, float, dict]],
+    ) -> list[tuple[str, str, float, dict]]:
+        try:
+            from core.memory.facts import is_valid_until_active
+        except Exception:
+            logger.debug("Failed to import fact validity helper", exc_info=True)
+            return results
+
+        filtered: list[tuple[str, str, float, dict]] = []
+        for doc_id, content, score, metadata in results:
+            valid_until = str((metadata or {}).get("valid_until", "") or "")
+            if is_valid_until_active(valid_until):
+                filtered.append((doc_id, content, score, metadata))
+        return filtered
+
+    def _refetch_active_fact_vector_results(
+        self,
+        query: str,
+        anima_name: str,
+        top_k: int,
+        *,
+        initial_fetch_k: int,
+    ) -> list[tuple[str, str, float, dict]]:
+        filtered: list[tuple[str, str, float, dict]] = []
+        fetch_sizes = (
+            max(initial_fetch_k, top_k * 8, 50),
+            min(max(top_k * 16, 100), 1000),
+        )
+        for fetch_k in fetch_sizes:
+            results = self._vector_search(query, anima_name, "facts", fetch_k)
+            filtered = self._filter_active_fact_vector_results(results)
+            if len(filtered) >= top_k:
+                break
+        return filtered
+
     def _resolve_skill_source_file(self, source_file: str) -> Path | None:
         path = Path(source_file)
         if path.parts[:1] == ("skills",):
@@ -602,6 +652,23 @@ class MemoryRetriever:
         except Exception:
             return ("knowledge", "episodes")
 
+    @staticmethod
+    def _env_flag_enabled(name: str) -> bool:
+        return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def _entity_aware_graph_settings(self, config) -> dict[str, bool | int]:
+        """Resolve optional entity-aware graph settings from config/env."""
+        rag = getattr(config, "rag", None)
+        enabled = bool(getattr(rag, "entity_aware_graph_enabled", False))
+        if self._env_flag_enabled("LOCOMO_ENTITY_AWARE_GRAPH"):
+            enabled = True
+        return {
+            "enabled": enabled,
+            "edge_cap": int(getattr(rag, "graph_entity_edge_cap", 8) or 8),
+            "inverse_fan": bool(getattr(rag, "graph_inverse_fan_enabled", True)),
+            "recency_weight": bool(getattr(rag, "graph_recency_weight_enabled", True)),
+        }
+
     # ── Spreading activation ────────────────────────────────────────
 
     def _apply_spreading_activation(
@@ -622,10 +689,23 @@ class MemoryRetriever:
         Returns:
             Expanded results with activated neighbors
         """
+        _cfg = self._safe_load_config()
+        graph_settings = self._entity_aware_graph_settings(_cfg)
+        graph_signature = (
+            anima_name,
+            bool(graph_settings["enabled"]),
+            int(graph_settings["edge_cap"]),
+            bool(graph_settings["inverse_fan"]),
+            bool(graph_settings["recency_weight"]),
+        )
+
         with self._graph_lock:
+            if self._knowledge_graph_signature != graph_signature:
+                self._knowledge_graph = None
+
             if self._knowledge_graph is None:
                 try:
-                    from core.memory.rag.graph import KnowledgeGraph
+                    from core.memory.rag.graph import GRAPH_SCHEMA_VERSION, KnowledgeGraph
 
                     self._knowledge_graph = KnowledgeGraph(
                         self.vector_store,
@@ -633,7 +713,6 @@ class MemoryRetriever:
                     )
 
                     cache_dir = self.knowledge_dir.parent / "vectordb"
-                    _cfg = self._safe_load_config()
                     threshold = (
                         getattr(
                             _cfg.rag,
@@ -643,19 +722,34 @@ class MemoryRetriever:
                         if _cfg
                         else 0.75
                     )
-                    if not self._knowledge_graph.load_graph(cache_dir):
+                    cache_enabled = bool(getattr(_cfg.rag, "graph_cache_enabled", True)) if _cfg else True
+                    loaded = False
+                    if cache_enabled:
+                        loaded = self._knowledge_graph.load_graph(
+                            cache_dir,
+                            expected_schema_version=GRAPH_SCHEMA_VERSION,
+                            entity_aware_graph_enabled=bool(graph_settings["enabled"]),
+                        )
+                    if not loaded:
                         memory_dirs = self._collect_spreading_dirs()
                         self._knowledge_graph.build_graph(
                             anima_name,
                             self.knowledge_dir,
                             memory_dirs=memory_dirs,
                             implicit_link_threshold=threshold,
+                            entity_aware_graph_enabled=bool(graph_settings["enabled"]),
+                            graph_entity_edge_cap=int(graph_settings["edge_cap"]),
+                            graph_inverse_fan_enabled=bool(graph_settings["inverse_fan"]),
+                            graph_recency_weight_enabled=bool(graph_settings["recency_weight"]),
                         )
-                        cache_dir.mkdir(parents=True, exist_ok=True)
-                        self._knowledge_graph.save_graph(cache_dir)
+                        if cache_enabled:
+                            cache_dir.mkdir(parents=True, exist_ok=True)
+                            self._knowledge_graph.save_graph(cache_dir)
+                    self._knowledge_graph_signature = graph_signature
 
                 except Exception as e:
                     logger.warning("Failed to initialize knowledge graph: %s", e)
+                    self._knowledge_graph_signature = None
                     return initial_results
 
         max_hops = self._get_config_max_hops()

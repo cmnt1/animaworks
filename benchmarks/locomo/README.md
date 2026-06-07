@@ -105,8 +105,16 @@ results/
 
 ## Legacy 回帰スモーク（Wave 1 harness）
 
-固定ベースライン: `benchmarks/locomo/baselines/legacy_scope_all_20260522.json`
-（2026-05-22 計測: overall F1 **63.7%**, open_domain **70.8%**, 1 conv / top-k=10）
+ベースライン（回答モデルで自動選択、`LOCOMO_BASELINE` で override 可）:
+
+| モデル | ファイル | overall F1 | open_domain F1 |
+|--------|----------|------------|----------------|
+| `deepseek-v4-flash`（default） | `baselines/legacy_scope_all_deepseek_v4_flash_20260525.json` | **44.7%** | **40.3%** |
+| `Qwen3.5-397B` 等 | `baselines/legacy_scope_all_20260522.json` | **63.7%** | **70.8%** |
+
+計測条件: 1 conv / top-k=10 / scope_all
+
+**2026-05-25 Phase 1–3 は棄却:** 短文回答プロンプト、category 別 gate 緩和、category 4 の年抽出は deepseek smoke を **44.7% → 37.0%** に下げたため、ベースラインへ反映しない。新しい prompt / gate 実験は、代表失敗ケースの unit test と 1 conv smoke の両方を通してから別ベースラインとして追加する。
 
 ### 環境変数
 
@@ -151,5 +159,5 @@ pytest tests/integration/test_locomo_legacy_smoke.py -m locomo
 
 1. `./scripts/locomo_legacy_smoke.sh` で新結果を取得
 2. overall / open_domain が意図的改善であることを確認
-3. `benchmarks/locomo/baselines/legacy_scope_all_20260522.json` の `overall_f1` / `by_category` を更新（ファイル名は日付サフィックスで新規作成しても可）
-
+3. adversarial が既存ベースラインから大きく悪化していないことを確認
+4. 該当モデルの `benchmarks/locomo/baselines/legacy_scope_all_<model>_YYYYMMDD.json` を更新（または新規作成して `default_baseline_path()` のマッピングを更新）

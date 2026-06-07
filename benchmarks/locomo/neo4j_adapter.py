@@ -10,8 +10,14 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from benchmarks.locomo.adapter import (
-    _session_indices,
+from benchmarks.locomo.adapter import _session_indices
+from benchmarks.locomo.answer_prompt import (
+    ANSWER_SYSTEM as _ANSWER_SYSTEM,
+)
+from benchmarks.locomo.answer_prompt import (
+    LOCOMO_ANSWER_MAX_TOKENS,
+    build_answer_user_content,
+    normalize_locomo_answer,
 )
 from benchmarks.locomo.llm_config import resolve_locomo_litellm_kwargs
 
@@ -28,31 +34,6 @@ _NEO4J_URI = "bolt://localhost:7687"
 _NEO4J_USER = "neo4j"
 _NEO4J_PASSWORD = "animaworks"
 _NEO4J_DATABASE = "neo4j"
-
-_ANSWER_SYSTEM = (
-    "You are an expert assistant answering questions about past conversations based on the provided context."
-)
-
-_ANSWER_TEMPLATE = """# INSTRUCTIONS:
-1. Carefully analyze all provided memories
-2. Pay special attention to timestamps (event_time) to determine when events occurred
-3. If memories contain contradictory information, prioritize the most recent memory
-4. Always convert relative time references (yesterday, last week, next month) to specific dates using the event_time timestamps
-5. Timestamps represent the actual time the event occurred, not when it was mentioned
-6. When multiple items are asked for, answer with a comma-separated list of short phrases
-7. If the context supports a reasonable inference, provide your best answer — only say "No information available." when the context has absolutely no relevant information
-8. Keep your answer as brief and direct as possible — a short phrase or sentence
-
-Example:
-Memory: (event_time: 2023-05-08T13:56:00) I went to the vet yesterday.
-Question: When did I go to the vet?
-Answer: 7 May 2023
-
-Context:
-{context}
-
-Question: {question}
-Answer:"""
 
 
 # ── Ablation flags ──────────
@@ -115,6 +96,11 @@ class Neo4jLoCoMoAdapter:
         self._answer_model = answer_model
         self._group_id = f"locomo_bench_{uuid4().hex[:8]}"
         self._backend: Any = None
+        self._last_abstain: bool = False
+        self._last_abstain_reason: str = ""
+        self._last_top_score: float | None = None
+        self._last_raw_answer: str = ""
+        self._last_normalized_answer: str = ""
         # Persistent event loop in a background thread for Neo4j driver
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(target=self._loop.run_forever, daemon=True)
@@ -132,7 +118,7 @@ class Neo4jLoCoMoAdapter:
         (self._tmp_anima_dir / "episodes").mkdir(parents=True, exist_ok=True)
 
         # Write status.json so extraction pipeline can resolve model + api_base
-        _, llm_kwargs = resolve_locomo_litellm_kwargs(self._answer_model)
+        llm_kwargs = _litellm_kwargs(self._answer_model)
         status: dict[str, Any] = {
             "extraction_model": self._answer_model,
         }
@@ -231,9 +217,16 @@ class Neo4jLoCoMoAdapter:
 
         return total_chunks
 
-    def retrieve(self, question: str) -> list[dict[str, Any]]:
+    def retrieve(self, question: str, *, category: int | None = None) -> list[dict[str, Any]]:
         """Retrieve relevant memories from Neo4j."""
-        return self._run(self._retrieve_async(question))
+        _ = category
+        self._last_abstain = False
+        self._last_abstain_reason = ""
+        self._last_top_score = None
+        items = self._run(self._retrieve_async(question))
+        if items:
+            self._last_top_score = max(float(item.get("score", 0.0) or 0.0) for item in items)
+        return items
 
     async def _retrieve_async(self, question: str) -> list[dict[str, Any]]:
         """Hybrid retrieval with ablation-aware patching.
@@ -387,7 +380,14 @@ class Neo4jLoCoMoAdapter:
 
         return patched_search
 
-    def answer(self, question: str, context: list[dict], *, model: str | None = None) -> str:
+    def answer(
+        self,
+        question: str,
+        context: list[dict],
+        *,
+        model: str | None = None,
+        category: int | None = None,
+    ) -> str:
         """Generate answer using LLM."""
         use_model = model or self._answer_model
         parts = []
@@ -400,8 +400,11 @@ class Neo4jLoCoMoAdapter:
                 else:
                     parts.append(f"[{i}] {t}")
         ctx_joined = "\n\n".join(parts)
-        user_prompt = _ANSWER_TEMPLATE.format(context=ctx_joined, question=question)
-        return _llm_complete(use_model, user_prompt, system=_ANSWER_SYSTEM)
+        user_prompt = build_answer_user_content(question, ctx_joined, category=category)
+        raw = _llm_complete(use_model, user_prompt, system=_ANSWER_SYSTEM)
+        self._last_raw_answer = raw
+        self._last_normalized_answer = normalize_locomo_answer(raw, category=category)
+        return self._last_normalized_answer
 
     def cleanup(self) -> None:
         """Clean up Neo4j data and temp dir."""
@@ -434,6 +437,12 @@ class Neo4jLoCoMoAdapter:
 # ── Helpers ──────────
 
 
+def _litellm_kwargs(model: str) -> dict[str, Any]:
+    """Resolve LiteLLM kwargs for Neo4j extraction / answer calls."""
+    _, kwargs = resolve_locomo_litellm_kwargs(model)
+    return kwargs
+
+
 def _llm_complete(model: str, user_prompt: str, *, system: str | None = None) -> str:
     """LiteLLM completion with auto-resolved base_url for local models."""
     import litellm
@@ -450,7 +459,7 @@ def _llm_complete(model: str, user_prompt: str, *, system: str | None = None) ->
                 model=litellm_model,
                 messages=messages,
                 temperature=0.0,
-                max_tokens=512,
+                max_tokens=LOCOMO_ANSWER_MAX_TOKENS,
                 **extra,
             )
             return (r.choices[0].message.content or "").strip()

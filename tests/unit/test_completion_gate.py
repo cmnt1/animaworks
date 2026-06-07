@@ -13,6 +13,7 @@ from core.execution._completion_gate import (
     completion_gate_marker_path,
     gate_marker_exists,
 )
+from core.skills.usage import SkillUsageTracker
 from core.tooling.handler import ToolHandler
 
 
@@ -281,6 +282,140 @@ class TestCompletionGateTool:
         assert isinstance(raw, str)
         assert len(raw) > 10
         assert "Pre-Completion" in raw or "完了前検証" in raw
+
+    def test_completion_gate_schema_accepts_usage_fields(self):
+        from core.tooling.schemas.completion_gate import _completion_gate_tools
+
+        schema = _completion_gate_tools()[0]["parameters"]
+        props = schema["properties"]
+        assert "applied_skill_refs" in props
+        assert "applied_procedure_refs" in props
+        assert "skill_creation" in props
+        assert props["skill_creation"]["properties"]["status"]["enum"] == [
+            "created",
+            "candidate_only",
+            "not_needed",
+        ]
+
+    def test_completion_gate_records_personal_skill_and_procedure_use(
+        self,
+        anima_dir: Path,
+        memory: MagicMock,
+    ):
+        skill_dir = anima_dir / "skills" / "deploy-helper"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: deploy-helper\n---\n\n# Deploy\n", encoding="utf-8")
+        proc_dir = anima_dir / "procedures"
+        proc_dir.mkdir()
+        (proc_dir / "deploy.md").write_text("# Deploy\n", encoding="utf-8")
+
+        h = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
+        raw = h.handle(
+            "completion_gate",
+            {
+                "applied_skill_refs": ["skills/deploy-helper/SKILL.md"],
+                "applied_procedure_refs": ["procedures/deploy.md"],
+            },
+        )
+
+        assert "usage recorded" in raw
+        stats = SkillUsageTracker(anima_dir).get_all_stats()
+        assert stats["skills/deploy-helper/SKILL.md"].use_count == 1
+        assert stats["procedures/deploy.md"].use_count == 1
+
+    def test_completion_gate_records_common_skill_use(
+        self,
+        anima_dir: Path,
+        memory: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        data_dir = anima_dir.parents[1]
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+        skill_dir = data_dir / "common_skills" / "shared-helper"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: shared-helper\n---\n\n# Shared\n", encoding="utf-8")
+
+        h = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
+        h.handle("completion_gate", {"applied_skill_refs": ["common_skills/shared-helper/SKILL.md"]})
+
+        stats = SkillUsageTracker(anima_dir).get_stats("shared-helper")
+        assert stats.use_count == 1
+        assert stats.is_common is True
+
+    def test_completion_gate_records_nested_common_skill_use(
+        self,
+        anima_dir: Path,
+        memory: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        data_dir = anima_dir.parents[1]
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+        skill_dir = data_dir / "common_skills" / "community" / "common-review"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: common-review\n---\n\n# Shared\n", encoding="utf-8")
+
+        h = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
+        h.handle("completion_gate", {"applied_skill_refs": ["common_skills/community/common-review/SKILL.md"]})
+
+        stats = SkillUsageTracker(anima_dir).get_all_stats()
+        assert stats["common_skills/community/common-review/SKILL.md"].use_count == 1
+        assert stats["common_skills/community/common-review/SKILL.md"].is_common is True
+
+    def test_completion_gate_records_nested_common_same_name_as_distinct_refs(
+        self,
+        anima_dir: Path,
+        memory: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        data_dir = anima_dir.parents[1]
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+        common_dir = data_dir / "common_skills"
+        for group in ("team-a", "team-b"):
+            skill_dir = common_dir / group / "review"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text("---\nname: review\n---\n\n# Review\n", encoding="utf-8")
+
+        h = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
+        h.handle(
+            "completion_gate",
+            {
+                "applied_skill_refs": [
+                    "common_skills/team-a/review/SKILL.md",
+                    "common_skills/team-b/review/SKILL.md",
+                ]
+            },
+        )
+
+        tracker = SkillUsageTracker(anima_dir)
+        stats = tracker.get_all_stats()
+        assert stats["common_skills/team-a/review/SKILL.md"].use_count == 1
+        assert stats["common_skills/team-b/review/SKILL.md"].use_count == 1
+        assert tracker.get_stats("review").use_count == 2
+
+    def test_completion_gate_deduplicates_refs(self, anima_dir: Path, memory: MagicMock):
+        skill_dir = anima_dir / "skills" / "same"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: same\n---\n\n# Same\n", encoding="utf-8")
+
+        h = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
+        h.handle("completion_gate", {"applied_skill_refs": ["skills/same", "skills/same/SKILL.md"]})
+
+        stats = SkillUsageTracker(anima_dir).get_stats("same")
+        assert stats.use_count == 1
+
+    def test_completion_gate_warns_but_keeps_marker_for_invalid_ref(self, anima_dir: Path, memory: MagicMock):
+        h = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
+        raw = h.handle(
+            "completion_gate",
+            {
+                "applied_skill_refs": ["../bad", "skills//missing/SKILL.md", "skills/./missing/SKILL.md"],
+                "skill_creation": {"status": "created", "created_skill_refs": []},
+            },
+        )
+
+        assert gate_marker_exists(anima_dir)
+        assert "warnings:" in raw
+        assert not (anima_dir / "state" / "skill_usage.jsonl").exists()
 
 
 # ── Mode A loop gate ────────────────────────────────────────

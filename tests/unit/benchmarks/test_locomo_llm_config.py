@@ -7,6 +7,7 @@ import pytest
 
 from benchmarks.locomo.llm_config import (
     default_answer_model,
+    default_baseline_path,
     default_llm_credential,
     resolve_locomo_litellm_kwargs,
 )
@@ -56,6 +57,13 @@ class TestLoCoMoLlmConfig:
 
         assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
 
+    def test_deepseek_disables_thinking(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_BASE", "http://proxy.example/v1")
+
+        _, kwargs = resolve_locomo_litellm_kwargs("deepseek-v4-flash")
+
+        assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
     def test_resolve_ignores_temp_animaworks_data_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """LoCoMo sets ANIMAWORKS_DATA_DIR to temp dir; host config must still win."""
         monkeypatch.delenv("OPENAI_API_BASE", raising=False)
@@ -73,3 +81,14 @@ class TestLoCoMoLlmConfig:
 
         assert model == "openai/deepseek-v4-flash"
         assert kwargs["api_base"] == "http://localhost:4000/v1"
+
+    def test_default_baseline_deepseek(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LOCOMO_BASELINE", raising=False)
+        path = default_baseline_path("deepseek-v4-flash")
+        assert path.name == "legacy_scope_all_deepseek_v4_flash_20260525.json"
+        assert path.is_file()
+
+    def test_default_baseline_qwen(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LOCOMO_BASELINE", raising=False)
+        path = default_baseline_path("openai/mlx-community/Qwen3.5-397B-A17B-4bit")
+        assert path.name == "legacy_scope_all_20260522.json"

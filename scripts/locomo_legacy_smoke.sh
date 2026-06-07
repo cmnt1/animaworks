@@ -61,7 +61,13 @@ fi
 cp "$LATEST" "$OUT"
 echo "Smoke complete: $OUT"
 
-BASELINE="benchmarks/locomo/baselines/legacy_scope_all_20260522.json"
+BASELINE="$("$PYTHON" - <<'PY'
+from benchmarks.locomo.llm_config import default_answer_model, default_baseline_path
+import os
+print(default_baseline_path(os.environ.get("LOCOMO_ANSWER_MODEL") or default_answer_model()))
+PY
+)"
+echo "Baseline: $BASELINE"
 "$PYTHON" - "$OUT" "$BASELINE" <<'PY'
 import json
 import sys

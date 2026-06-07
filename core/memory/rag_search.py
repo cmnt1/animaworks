@@ -135,6 +135,21 @@ class RAGMemorySearch:
                 except Exception as e:
                     logger.warning("Failed to index procedures: %s", e)
 
+            facts_dir = self._anima_dir / "facts"
+            if facts_dir.is_dir() and any(facts_dir.glob("*.jsonl")):
+                try:
+                    indexed = self._indexer.index_directory(
+                        facts_dir,
+                        "facts",
+                    )
+                    if indexed > 0:
+                        logger.debug(
+                            "Indexed %d chunks from facts/",
+                            indexed,
+                        )
+                except Exception as e:
+                    logger.warning("Failed to index facts: %s", e)
+
             # Index conversation summary (compressed_summary)
             state_dir = self._anima_dir / "state"
             conv_file = state_dir / "conversation.json"
@@ -301,12 +316,12 @@ class RAGMemorySearch:
         episodes_dir: Path,
         procedures_dir: Path,
         common_knowledge_dir: Path,
+        result_limit: int | None = None,
     ) -> list[dict]:
-        """Search memory by vector similarity with keyword fallback.
+        """Search memory through the unified Legacy retrieval policy.
 
-        Returns ranked results as dicts with score, content, and metadata.
-        Vector search is primary; keyword OR search is fallback only
-        (activated when ChromaDB is unavailable).
+        Returns ranked results as dicts with score, content, and metadata while
+        preserving the legacy tool result shape.
         """
         offset = max(0, min(offset, 50))
         self._last_search_meta = {}
@@ -321,11 +336,35 @@ class RAGMemorySearch:
                 offset=offset,
             )
 
-        indexer = self._get_indexer()
+        if scope in (
+            "all",
+            "facts",
+            "knowledge",
+            "episodes",
+            "procedures",
+            "common_knowledge",
+            "skills",
+            "conversation_summary",
+        ):
+            from core.memory.retrieval.unified_search import UnifiedMemorySearch
 
-        # scope="all" with a live indexer is served by the hybrid RRF pipeline,
-        # which runs its own vector search. Route there first to avoid a
-        # redundant _vector_search_primary call.
+            searcher = UnifiedMemorySearch(
+                self._anima_dir,
+                common_knowledge_dir=common_knowledge_dir,
+                common_skills_dir=self._common_skills_dir,
+                rag_search=self,
+            )
+            results = searcher.search(
+                query,
+                scope=scope,
+                limit=result_limit or 10,
+                trigger="tool",
+                offset=offset,
+            )
+            self._last_search_meta = searcher.last_search_meta
+            return results
+
+        indexer = self._get_indexer()
         if (
             scope == "all"
             and indexer is not None
@@ -342,6 +381,7 @@ class RAGMemorySearch:
             )
 
         primary_results: list[dict] = []
+        entity_boost = self._build_entity_boost_config(query)
         if indexer is not None:
             try:
                 primary_results = self._vector_search_primary(
@@ -349,6 +389,8 @@ class RAGMemorySearch:
                     scope,
                     offset,
                     knowledge_dir,
+                    result_limit=result_limit,
+                    entity_boost=entity_boost,
                 )
             except Exception as e:
                 logger.debug("Vector search failed, falling back to keyword: %s", e)
@@ -360,6 +402,8 @@ class RAGMemorySearch:
                     episodes_dir=episodes_dir,
                     procedures_dir=procedures_dir,
                     common_knowledge_dir=common_knowledge_dir,
+                    result_limit=result_limit,
+                    entity_boost=entity_boost,
                 )
         else:
             primary_results = self._keyword_search_fallback(
@@ -370,6 +414,8 @@ class RAGMemorySearch:
                 episodes_dir=episodes_dir,
                 procedures_dir=procedures_dir,
                 common_knowledge_dir=common_knowledge_dir,
+                result_limit=result_limit,
+                entity_boost=entity_boost,
             )
 
         return primary_results
@@ -388,6 +434,14 @@ class RAGMemorySearch:
             "abstain_on_low_confidence": True,
             "confidence_threshold": 0.35,
             "rrf_confidence_threshold": 0.02,
+            "entity_registry_enabled": True,
+            "entity_boost_enabled": False,
+            "entity_boost": 0.20,
+            "entity_boost_cap": 0.80,
+            "access_boost_enabled": True,
+            "access_boost_weight": 0.05,
+            "access_boost_cap": 0.25,
+            "access_boost_half_life_days": 30.0,
         }
         try:
             from core.config import load_config
@@ -401,11 +455,56 @@ class RAGMemorySearch:
                     "abstain_on_low_confidence": rag.abstain_on_low_confidence,
                     "confidence_threshold": rag.confidence_threshold,
                     "rrf_confidence_threshold": rag.rrf_confidence_threshold,
+                    "entity_registry_enabled": getattr(rag, "entity_registry_enabled", True),
+                    "entity_boost_enabled": getattr(rag, "entity_boost_enabled", False),
+                    "entity_boost": getattr(rag, "entity_boost", 0.20),
+                    "entity_boost_cap": getattr(rag, "entity_boost_cap", 0.80),
+                    "access_boost_enabled": getattr(rag, "access_boost_enabled", True),
+                    "access_boost_weight": getattr(rag, "access_boost_weight", 0.05),
+                    "access_boost_cap": getattr(rag, "access_boost_cap", 0.25),
+                    "access_boost_half_life_days": getattr(rag, "access_boost_half_life_days", 30.0),
                 }
             )
         except Exception:
             logger.debug("Using default RAG pipeline settings", exc_info=True)
         return defaults
+
+    def _build_entity_boost_config(self, query: str, settings: dict[str, object] | None = None):
+        settings = settings or self._load_rag_pipeline_settings()
+        if not bool(settings.get("entity_boost_enabled", False)):
+            return None
+        registry_enabled = bool(settings.get("entity_registry_enabled", True))
+        query_entities: tuple[str, ...] = ()
+        if registry_enabled:
+            try:
+                from core.memory.entity_index import match_query_entities
+
+                query_entities = tuple(sorted(match_query_entities(self._anima_dir, query)))
+            except Exception:
+                logger.debug("Failed to match query entities from registry", exc_info=True)
+        from core.memory.retrieval.entity import EntityBoostConfig
+
+        return EntityBoostConfig(
+            enabled=True,
+            boost=float(settings.get("entity_boost", 0.20) or 0.0),
+            max_boost=float(settings.get("entity_boost_cap", 0.80) or 0.0),
+            category=None,
+            query_entities=query_entities,
+            require_query_entities=registry_enabled,
+        )
+
+    def _build_access_boost_config(self, settings: dict[str, object] | None = None):
+        settings = settings or self._load_rag_pipeline_settings()
+        if not bool(settings.get("access_boost_enabled", True)):
+            return None
+        from core.memory.retrieval.access_boost import AccessBoostConfig
+
+        return AccessBoostConfig(
+            enabled=True,
+            weight=float(settings.get("access_boost_weight", 0.05) or 0.0),
+            cap=float(settings.get("access_boost_cap", 0.25) or 0.0),
+            half_life_days=float(settings.get("access_boost_half_life_days", 30.0) or 30.0),
+        )
 
     def _search_scope_all_hybrid(
         self,
@@ -421,6 +520,8 @@ class RAGMemorySearch:
         from core.memory.retrieval.pipeline import RetrievalPipeline
 
         settings = self._load_rag_pipeline_settings()
+        entity_boost = self._build_entity_boost_config(query, settings)
+        access_boost = self._build_access_boost_config(settings)
         pool_k = int(settings["rerank_candidate_pool"])
         limit = 10
 
@@ -461,8 +562,16 @@ class RAGMemorySearch:
             episodes_dir=episodes_dir,
             procedures_dir=procedures_dir,
             common_knowledge_dir=common_knowledge_dir,
+            result_limit=pool_k,
+            entity_boost=entity_boost,
         )
         if keyword_hits:
+            if not ranked_lists:
+                self._last_search_meta = {
+                    "abstain": False,
+                    "abstain_reason": "",
+                }
+                return keyword_hits[offset : offset + limit]
             ranked_lists.append(keyword_hits[:pool_k])
 
         pipeline = RetrievalPipeline(
@@ -477,6 +586,8 @@ class RAGMemorySearch:
             abstain_on_low_confidence=bool(settings["abstain_on_low_confidence"]),
             confidence_threshold=float(settings["confidence_threshold"]),
             rrf_confidence_threshold=float(settings["rrf_confidence_threshold"]),
+            entity_boost=entity_boost,
+            access_boost=access_boost,
         )
         self._last_search_meta = {
             "abstain": result.abstain,
@@ -520,17 +631,37 @@ class RAGMemorySearch:
 
         out: list[dict] = []
         for r in rag_results:
-            out.append(
-                {
-                    "source_file": r.metadata.get("source_file", r.doc_id),
-                    "content": r.content,
-                    "score": r.score,
-                    "chunk_index": int(r.metadata.get("chunk_index", 0)),
-                    "total_chunks": int(r.metadata.get("total_chunks", 1)),
-                    "memory_type": "episodes",
-                    "search_method": "vector_graph",
-                }
-            )
+            meta = r.metadata if isinstance(r.metadata, dict) else {}
+            item = {
+                "doc_id": r.doc_id,
+                "source_file": meta.get("source_file", r.doc_id),
+                "content": r.content,
+                "score": r.score,
+                "chunk_index": int(meta.get("chunk_index", 0)),
+                "total_chunks": int(meta.get("total_chunks", 1)),
+                "memory_type": str(meta.get("memory_type", "episodes") or "episodes"),
+                "search_method": "vector_graph",
+            }
+            for key in (
+                "fact_id",
+                "edge_type",
+                "source_entity",
+                "target_entity",
+                "valid_at_iso",
+                "valid_at",
+                "event_time_iso",
+                "event_time_text",
+                "event_time_parse_error",
+                "valid_until",
+                "source_episode",
+                "source_session_id",
+                "access_count",
+                "last_accessed_at",
+                "anima",
+            ):
+                if key in meta:
+                    item[key] = meta[key]
+            out.append(item)
         return out
 
     def _vector_search_primary(
@@ -541,6 +672,7 @@ class RAGMemorySearch:
         knowledge_dir: Path,
         *,
         result_limit: int | None = None,
+        entity_boost=None,
     ) -> list[dict]:
         """Perform vector search as primary result source."""
         from core.memory.rag.retriever import MemoryRetriever
@@ -586,18 +718,42 @@ class RAGMemorySearch:
                     overlap_ratio = matched / len(tokens)
                     score += WEIGHT_TOKEN_OVERLAP * overlap_ratio
 
-                all_results.append(
-                    {
-                        "source_file": r.metadata.get("source_file", r.doc_id),
-                        "content": r.content,
-                        "score": score,
-                        "chunk_index": int(r.metadata.get("chunk_index", 0)),
-                        "total_chunks": int(r.metadata.get("total_chunks", 1)),
-                        "memory_type": r.metadata.get("memory_type", memory_type),
-                        "search_method": "vector",
-                    }
-                )
+                item = {
+                    "doc_id": r.doc_id,
+                    "source_file": r.metadata.get("source_file", r.doc_id),
+                    "content": r.content,
+                    "score": score,
+                    "chunk_index": int(r.metadata.get("chunk_index", 0)),
+                    "total_chunks": int(r.metadata.get("total_chunks", 1)),
+                    "memory_type": r.metadata.get("memory_type", memory_type),
+                    "search_method": "vector",
+                }
+                for key in (
+                    "fact_id",
+                    "edge_type",
+                    "source_entity",
+                    "target_entity",
+                    "valid_at_iso",
+                    "valid_at",
+                    "event_time_iso",
+                    "event_time_text",
+                    "event_time_parse_error",
+                    "valid_until",
+                    "source_episode",
+                    "source_session_id",
+                    "entities",
+                    "access_count",
+                    "last_accessed_at",
+                    "anima",
+                ):
+                    if key in r.metadata:
+                        item[key] = r.metadata[key]
+                all_results.append(item)
 
+        if entity_boost is not None:
+            from core.memory.retrieval.entity import apply_entity_boost
+
+            all_results = apply_entity_boost(query, all_results, entity_boost)
         all_results.sort(key=lambda x: x["score"], reverse=True)
         if result_limit is not None:
             return all_results[:result_limit]
@@ -613,6 +769,8 @@ class RAGMemorySearch:
         episodes_dir: Path,
         procedures_dir: Path,
         common_knowledge_dir: Path,
+        result_limit: int | None = None,
+        entity_boost=None,
     ) -> list[dict]:
         """Keyword OR search with scoring. Used only when vector search is unavailable."""
         dirs: list[tuple[Path, str]] = []
@@ -659,6 +817,12 @@ class RAGMemorySearch:
                         "search_method": "keyword_fallback",
                     }
 
+        if scope in ("facts", "all"):
+            for hit in self._keyword_search_facts(query, tokens):
+                rel_path = f"{hit['source_file']}:{hit.get('fact_id', '')}"
+                if rel_path not in file_scores or file_scores[rel_path]["score"] < hit["score"]:
+                    file_scores[rel_path] = hit
+
         if scope in ("all", "conversation_summary"):
             conv_file = self._anima_dir / "state" / "conversation.json"
             if conv_file.is_file():
@@ -682,8 +846,15 @@ class RAGMemorySearch:
                 except Exception as e:
                     logger.debug("Failed to read conversation summary: %s", e)
 
-        results = sorted(file_scores.values(), key=lambda x: x["score"], reverse=True)
-        return results[offset : offset + 10]
+        results = list(file_scores.values())
+        if entity_boost is not None:
+            from core.memory.retrieval.entity import apply_entity_boost
+
+            results = apply_entity_boost(query, results, entity_boost)
+        else:
+            results.sort(key=lambda x: x["score"], reverse=True)
+        page_size = result_limit if result_limit is not None else 10
+        return results[offset : offset + page_size]
 
     @staticmethod
     def _resolve_search_types(scope: str) -> list[str]:
@@ -700,9 +871,80 @@ class RAGMemorySearch:
             return ["skills"]
         if scope == "conversation_summary":
             return ["conversation_summary"]
+        if scope == "facts":
+            return ["facts"]
         if scope == "all":
-            return ["knowledge", "episodes", "procedures", "skills", "conversation_summary"]
+            return ["facts", "knowledge", "episodes", "procedures", "skills", "conversation_summary"]
         return ["knowledge"]
+
+    def _keyword_search_facts(self, query: str, tokens: list[str] | None = None) -> list[dict]:
+        """Keyword search over active legacy facts JSONL records."""
+        del query
+        tokens = tokens or []
+        if not tokens:
+            return []
+
+        try:
+            from core.memory.facts import FactRecord
+        except ImportError:
+            return []
+
+        facts_dir = self._anima_dir / "facts"
+        if not facts_dir.is_dir():
+            return []
+
+        results: list[dict] = []
+        for path in sorted(facts_dir.glob("*.jsonl")):
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line_no, line in enumerate(lines, 1):
+                if not line.strip():
+                    continue
+                try:
+                    record = FactRecord.from_json_line(line)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    continue
+                if not record.is_active():
+                    continue
+                searchable = "\n".join(
+                    [
+                        record.text,
+                        record.source_entity,
+                        record.target_entity,
+                        record.edge_type,
+                        " ".join(record.entities),
+                    ]
+                ).lower()
+                matched = sum(1 for tok in tokens if tok in searchable)
+                if matched == 0:
+                    continue
+                score = matched / len(tokens)
+                results.append(
+                    {
+                        "source_file": f"facts/{path.name}",
+                        "content": record.text,
+                        "score": score,
+                        "chunk_index": line_no - 1,
+                        "total_chunks": len(lines),
+                        "memory_type": "facts",
+                        "search_method": "keyword_fallback",
+                        "fact_id": record.fact_id,
+                        "edge_type": record.edge_type,
+                        "source_entity": record.source_entity,
+                        "target_entity": record.target_entity,
+                        "valid_at_iso": record.valid_at,
+                        "event_time_iso": record.valid_at,
+                        "valid_until": record.valid_until,
+                        "source_episode": record.source_episode,
+                        "source_session_id": record.source_session_id,
+                        "entities": list(record.entities),
+                    }
+                )
+
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results
 
     def search_knowledge(self, query: str, knowledge_dir: Path) -> list[tuple[str, str]]:
         """Search knowledge/ by keyword (OR-split on whitespace tokens)."""
@@ -733,11 +975,11 @@ class RAGMemorySearch:
             common_knowledge_dir=self._common_knowledge_dir,
         )
 
-    def index_file(self, path: Path, memory_type: str, *, origin: str = "") -> None:
+    def index_file(self, path: Path, memory_type: str, *, force: bool = False, origin: str = "") -> None:
         """Index a single file if indexer is available."""
         indexer = self._get_indexer()
         if indexer:
             try:
-                indexer.index_file(path, memory_type, origin=origin)
+                indexer.index_file(path, memory_type, force=force, origin=origin)
             except Exception as e:
                 logger.warning("Failed to index %s file: %s", memory_type, e)

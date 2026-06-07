@@ -34,10 +34,12 @@ def _make_cred(api_key: str = "", base_url: str = "") -> MagicMock:
 def _make_config(
     llm_model: str = "anthropic/claude-sonnet-4-6",
     credentials: dict[str, MagicMock] | None = None,
+    llm_credential: str = "",
 ) -> MagicMock:
     """Create a config mock with consolidation and credentials."""
     cfg = MagicMock()
     cfg.consolidation.llm_model = llm_model
+    cfg.consolidation.llm_credential = llm_credential
     cfg.credentials = credentials or {}
     return cfg
 
@@ -90,6 +92,24 @@ class TestGetConsolidationLlmKwargs:
         assert result["model"] == "ollama/qwen2.5-coder:14b"
         assert result["api_base"] == "http://127.0.0.1:11434"
         assert "api_key" not in result
+
+    def test_explicit_credential_overrides_provider_for_explicit_model(self) -> None:
+        """Explicit credentials are honored even when model has another provider prefix."""
+        vllm_cred = _make_cred(api_key="vllm-key", base_url="http://vllm.example/v1")
+        cfg = _make_config(
+            llm_model="openai/deepseek-v4-flash",
+            credentials={"openai": _make_cred(api_key=""), "vllm-lb": vllm_cred},
+        )
+
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_llm_kwargs_for_model(
+                "openai/deepseek-v4-flash",
+                credential="vllm-lb",
+            )
+
+        assert result["model"] == "openai/deepseek-v4-flash"
+        assert result["api_key"] == "vllm-key"
+        assert result["api_base"] == "http://vllm.example/v1"
 
 
 # ── get_memory_llm_kwargs_for_model ─────────────────────────────────────────
@@ -301,6 +321,31 @@ class TestOneShotCompletion:
         mock_try_litellm.assert_called_once()
         call_kwargs = mock_try_litellm.call_args[1]
         assert call_kwargs["model"] == "anthropic/claude-sonnet-4-6"
+
+    @pytest.mark.asyncio
+    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
+    @patch("core.memory._llm_utils._try_litellm")
+    async def test_explicit_credential_forwarded_to_kwargs_resolver(
+        self,
+        mock_try_litellm: MagicMock,
+        mock_get_kwargs: MagicMock,
+    ) -> None:
+        """one_shot_completion forwards explicit credential to the resolver."""
+        mock_get_kwargs.return_value = {
+            "model": "openai/deepseek-v4-flash",
+            "api_key": "vllm-key",
+            "api_base": "http://vllm.example/v1",
+        }
+        mock_try_litellm.return_value = "ok"
+
+        result = await llm_utils.one_shot_completion(
+            "Hi",
+            model="openai/deepseek-v4-flash",
+            credential="vllm-lb",
+        )
+
+        assert result == "ok"
+        mock_get_kwargs.assert_called_once_with("openai/deepseek-v4-flash", credential="vllm-lb")
 
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")

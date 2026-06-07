@@ -29,7 +29,7 @@ export function createChatContext() {
   const mgr = ChatSessionManager.getInstance();
   mgr.configure({
     streamChat, streamMeetingChat, fetchActiveStream, fetchStreamProgress,
-    getUser: () => localStorage.getItem("animaworks_user") || "human",
+    getUser: () => document.getElementById("currentUserLabel")?.textContent || localStorage.getItem("animaworks_user") || "human",
     fetchHistory: async (animaName, limit, before, threadId) => {
       let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}`;
       if (before) url += `&before=${encodeURIComponent(before)}`;
@@ -42,6 +42,7 @@ export function createChatContext() {
   const state = {
     container: null,
     animas: [],
+    users: [],
     selectedAnima: null,
     animaDetail: null,
     animaTabs: [],

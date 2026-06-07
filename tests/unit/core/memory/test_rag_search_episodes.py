@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -121,6 +122,33 @@ class TestSearchMemoryTextEpisodesKeyword:
         assert any("2026-03-01.md" in s for s in sources)
         assert not any("python.md" in s for s in sources)
 
+    def test_keyword_search_honors_result_limit(
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
+        episodes_dir: Path,
+        procedures_dir: Path,
+        common_knowledge_dir: Path,
+    ) -> None:
+        for index in range(12):
+            (episodes_dir / f"2026-03-{index + 1:02d}.md").write_text(
+                f"keyword episode {index}",
+                encoding="utf-8",
+            )
+
+        with patch.object(rag, "_get_indexer", return_value=None):
+            results = rag.search_memory_text(
+                "keyword",
+                scope="episodes",
+                knowledge_dir=knowledge_dir,
+                episodes_dir=episodes_dir,
+                procedures_dir=procedures_dir,
+                common_knowledge_dir=common_knowledge_dir,
+                result_limit=12,
+            )
+
+        assert len(results) == 12
+
 
 class TestSearchMemoryTextEpisodesVector:
     def test_vector_search_augments_episodes(
@@ -191,4 +219,5 @@ class TestSearchMemoryTextEpisodesVector:
                 common_knowledge_dir=common_knowledge_dir,
             )
 
-        mock_vs.assert_called_once()
+        scopes = {call.args[1] for call in mock_vs.call_args_list}
+        assert "episodes" in scopes
