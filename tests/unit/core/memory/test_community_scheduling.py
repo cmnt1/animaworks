@@ -53,6 +53,7 @@ class TestDynamicCommunityUpdateInIngest:
 
         backend._extractor = mock_extractor
         backend._resolver = mock_resolver
+        backend._embed_texts = AsyncMock(return_value=[])
 
         return backend, mock_driver
 
@@ -101,6 +102,7 @@ class TestDynamicCommunityUpdateInIngest:
 
         backend._extractor = mock_extractor
         backend._resolver = mock_resolver
+        backend._embed_texts = AsyncMock(return_value=[])
 
         with patch.object(backend, "_dynamic_community_update", new_callable=AsyncMock) as mock_update:
             await backend.ingest_text("Alice is a person", source="test")
