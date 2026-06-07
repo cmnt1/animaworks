@@ -34,6 +34,10 @@
       <div class="ws-header-left">
         <span class="ws-title">AnimaWorks</span>
         <span class="ws-subtitle">Workspace</span>
+        <nav class="ws-tool-nav" aria-label="Workspace tools">
+          <a href="#/" class="ws-tool-nav-link active" data-workspace-route="/">Dashboard</a>
+          <a href="#/sns-search" class="ws-tool-nav-link" data-workspace-route="/sns-search">SNS Search</a>
+        </nav>
       </div>
       <div class="ws-header-center" id="wsAnimaSelector"></div>
       <div class="ws-header-right">
@@ -51,7 +55,7 @@
     </header>
 
     <!-- Main Layout -->
-    <div class="ws-layout">
+    <div class="ws-layout" id="wsLayout">
 
       <!-- 3D Office (always visible) -->
       <div class="ws-office-panel" id="wsOfficePanel">
@@ -143,6 +147,8 @@
     </div>
 
     <!-- ── Reveal Overlay (Anima Birth Animation) ── -->
+    <main class="ws-tool-page hidden" id="wsToolPage"></main>
+
     <div id="wsRevealOverlay" class="ws-reveal-overlay" aria-hidden="true">
       <div class="ws-reveal-flash"></div>
       <div class="ws-reveal-content">

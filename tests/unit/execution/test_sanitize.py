@@ -137,6 +137,8 @@ def test_trust_levels_cover_all_high_risk_tools() -> None:
         "read_channel",
         "read_dm_history",
         "web_search",
+        "bluesky_search",
+        "bluesky_author_feed",
         "x_search",
         "x_user_tweets",
         "slack_messages",

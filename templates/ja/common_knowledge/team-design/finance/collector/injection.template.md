@@ -26,6 +26,7 @@
 - 複数ソースで交差検証する（可能な場合）
 - ソース間に矛盾がある場合は全ソースの値を併記する
 - 収集完了時に件数・期間・ソースを報告する
+- Bluesky 等のSNS投稿は市場センチメント・話題検知として扱い、価格・事実・投資判断の根拠にする前に公式ソースやWeb検索で交差検証する
 
 **SHOULD（推奨）:**
 - 速度より正確性を最優先する
@@ -70,6 +71,11 @@
 
 {信頼性の高いデータソースのリスト}
 
+### SNS・市場センチメント収集
+
+Bluesky を使う場合は `common_skills/bluesky-market-scan/SKILL.md` を読み、`animaworks-tool bluesky search ...` または `use_tool` の `bluesky/search` で収集する。
+Discord に投稿する要約には、検索条件・取得日時・投稿URL・未検証情報の有無を必ず含める。
+
 ### 更新頻度
 
 {データ種別ごとの収集頻度: 例 — 日次 / 週次 / 月次}
@@ -88,3 +94,4 @@
 
 1. `team-design/finance/team.md` — チーム構成・ハンドオフ
 2. `team-design/finance/collector/checklist.md` — 品質チェックリスト
+3. 必要時: `common_skills/bluesky-market-scan/SKILL.md` — Bluesky 市場情報収集・Discord 投稿フォーマット

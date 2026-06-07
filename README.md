@@ -287,6 +287,7 @@ Three principles hold it up:
 | `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack | [Setup guide](docs/slack-socket-mode-setup.md) |
 | `CHATWORK_API_TOKEN` | Chatwork | [chatwork.com](https://www.chatwork.com/) |
 | `DISCORD_BOT_TOKEN` (or per-Anima `DISCORD_BOT_TOKEN__<name>`) | Discord | [Discord Developer Portal](https://discord.com/developers/applications) |
+| `BSKY_IDENTIFIER` + `BSKY_APP_PASSWORD` | Bluesky | Optional for authenticated AppView API fallback. Use an app password. |
 | `NOTION_API_TOKEN` (or `NOTION_API_TOKEN__<name>`) | Notion | [Notion integrations](https://www.notion.so/my-integrations) |
 
 Google Calendar, Google Tasks, Gmail, and similar are configured under `credentials` in `config.json` (OAuth or service account). See the [technical specification](docs/spec.md).

@@ -21,6 +21,7 @@ _TOOL_MODULES = {
     "local_llm": "core.tools.local_llm",
     "transcribe": "core.tools.transcribe",
     "web_search": "core.tools.web_search",
+    "bluesky": "core.tools.bluesky",
     "x_search": "core.tools.x_search",
     "slack": "core.tools.slack",
     "chatwork": "core.tools.chatwork",
@@ -118,7 +119,7 @@ class TestBackgroundEligibility:
 
     def test_short_tools_not_eligible(self):
         """Tools like web_search, github, aws_collector should have no eligible subcommands."""
-        for tool_name in ("web_search", "github", "aws_collector"):
+        for tool_name in ("web_search", "bluesky", "github", "aws_collector"):
             mod = _try_import(_TOOL_MODULES[tool_name], tool_name)
             profile = mod.EXECUTION_PROFILE
             eligible = [

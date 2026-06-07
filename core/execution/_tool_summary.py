@@ -38,6 +38,10 @@ def summarize_tool_args(tool_name: str, args: dict[str, Any]) -> str:
             return f"→ {name}: {summary}"
         case "web_search":
             return (args.get("query") or "")[:80]
+        case "bluesky_search":
+            return (args.get("query") or "")[:80]
+        case "bluesky_author_feed":
+            return args.get("actor") or ""
         case "x_search":
             return (args.get("query") or "")[:80]
         case "create_skill":

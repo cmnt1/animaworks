@@ -207,6 +207,26 @@ class TestAbconfigSlackCredentialFallback:
         assert result == "xoxb-env-test"
 
 
+class TestAbconfigBlueskyCredentialFallback:
+    def test_reads_bsky_identifier_from_abconfig_env(self):
+        fake_module = type("FakeCnctEnv", (), {"BSKY_IDENTIFIER": "finance.bsky.social"})()
+        with patch("core.tools._base._lookup_vault_credential", return_value=None), \
+             patch("core.tools._base._lookup_shared_credentials", return_value=None), \
+             patch("core.tools._base._load_abconfig_env", return_value=fake_module), \
+             patch.dict(os.environ, {}, clear=True):
+            result = resolve_env_style_credential("BSKY_IDENTIFIER")
+        assert result == "finance.bsky.social"
+
+    def test_reads_bsky_app_password_from_abconfig_env(self):
+        fake_module = type("FakeCnctEnv", (), {"BSKY_APP_PASSWORD": "abcd-efgh-ijkl-mnop"})()
+        with patch("core.tools._base._lookup_vault_credential", return_value=None), \
+             patch("core.tools._base._lookup_shared_credentials", return_value=None), \
+             patch("core.tools._base._load_abconfig_env", return_value=fake_module), \
+             patch.dict(os.environ, {}, clear=True):
+            result = resolve_env_style_credential("BSKY_APP_PASSWORD")
+        assert result == "abcd-efgh-ijkl-mnop"
+
+
 class TestResolveEnvStyleCredential:
     def test_returns_vault_first(self):
         with patch("core.tools._base._lookup_vault_credential", return_value="vault-token"), \

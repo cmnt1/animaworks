@@ -26,6 +26,7 @@ from core.schemas import ModelConfig
 
 _FAKE_TOOL_MODULES: dict[str, str] = {
     "aws_collector": "core.tools.aws_collector",
+    "bluesky": "core.tools.bluesky",
     "chatwork": "core.tools.chatwork",
     "github": "core.tools.github",
     "gmail": "core.tools.gmail",

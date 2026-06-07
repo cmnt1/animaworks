@@ -15,6 +15,7 @@ import { initActivity } from "./activity.js";
 import { initSidebar, activateRightTab } from "./sidebar.js";
 import { initBoard, initBoardTab } from "./board.js";
 import { initChatController, openConversation, closeConversation } from "./chat-controller.js";
+import { disposeSnsSearchPage, initSnsSearchPage } from "./sns-search.js";
 
 import { setupWebSocket } from "./app-websocket.js";
 import { initOfficeIfNeeded, loadSystemStatus, updateStatusDisplay } from "./app-system.js";
@@ -41,6 +42,8 @@ function cacheDom() {
   dom.paneHistory = document.getElementById("wsPaneHistory");
   dom.memoryPanel = document.getElementById("wsMemoryPanel");
   dom.logoutBtn = document.getElementById("wsLogoutBtn");
+  dom.layout = document.getElementById("wsLayout");
+  dom.toolPage = document.getElementById("wsToolPage");
 
   // 3D Office
   dom.officePanel = document.getElementById("wsOfficePanel");
@@ -79,6 +82,7 @@ function cacheDom() {
 // ── View Switching ──────────────────────
 
 let _currentView = null; // '3d' | 'org'
+let currentWorkspaceRoute = null;
 
 function getDefaultView() {
   const mode = localStorage.getItem("aw-display-mode") || "realistic";
@@ -157,6 +161,33 @@ function updateViewToggle() {
   }
 }
 
+function getWorkspaceRoute() {
+  const hash = window.location.hash || "#/";
+  const route = hash.startsWith("#") ? hash.slice(1) : hash;
+  return route === "/sns-search" ? "/sns-search" : "/";
+}
+
+async function applyWorkspaceRoute() {
+  const nextRoute = getWorkspaceRoute();
+  if (currentWorkspaceRoute === nextRoute) return;
+  currentWorkspaceRoute = nextRoute;
+
+  document.querySelectorAll("[data-workspace-route]").forEach((link) => {
+    link.classList.toggle("active", link.dataset.workspaceRoute === nextRoute);
+  });
+
+  if (nextRoute === "/sns-search") {
+    dom.layout?.classList.add("hidden");
+    dom.toolPage?.classList.remove("hidden");
+    await initSnsSearchPage(dom.toolPage);
+    return;
+  }
+
+  disposeSnsSearchPage();
+  dom.toolPage?.classList.add("hidden");
+  dom.layout?.classList.remove("hidden");
+}
+
 // ── Dashboard Bootstrap ──────────────────────
 
 let dashboardInitialized = false;
@@ -174,6 +205,7 @@ async function startDashboard() {
     await loadSystemStatus(dom);
     const initialView = getCurrentView();
     await switchView(initialView);
+    await applyWorkspaceRoute();
     return;
   }
   dashboardInitialized = true;
@@ -201,6 +233,10 @@ async function startDashboard() {
     }
   });
 
+  window.addEventListener("hashchange", () => {
+    applyWorkspaceRoute();
+  });
+
   dom.logoutBtn?.addEventListener("click", () => {
     dom.dashboard.classList.add("hidden");
     logout();
@@ -217,6 +253,7 @@ async function startDashboard() {
 
   const initialView = getCurrentView();
   await switchView(initialView);
+  await applyWorkspaceRoute();
 
   if (dom.viewToggle) {
     dom.viewToggle.addEventListener("click", () => {

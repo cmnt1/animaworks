@@ -40,6 +40,9 @@ class TestReferenceContext:
     def test_web_search_base_budget(self):
         assert tool_result_save_budget("web_search", _REF) == 1500
 
+    def test_bluesky_search_base_budget(self):
+        assert tool_result_save_budget("bluesky_search", _REF) == 1500
+
     def test_x_search_base_budget(self):
         assert tool_result_save_budget("x_search", _REF) == 1500
 
@@ -239,7 +242,7 @@ class TestFloorEnforcement:
         assert tool_input_save_budget(0) == 200
 
     @pytest.mark.parametrize("tool_name", [
-        "Read", "Grep", "Glob", "Bash", "web_search", "x_search",
+        "Read", "Grep", "Glob", "Bash", "web_search", "bluesky_search", "x_search",
         "write_file", "edit_file", "search_memory", "read_file",
     ])
     def test_all_known_tools_respect_floor(self, tool_name: str):

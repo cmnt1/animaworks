@@ -106,6 +106,8 @@ TOOL_TRUST_LEVELS: dict[str, str] = {
     "read_channel": "untrusted",
     "read_dm_history": "untrusted",
     "web_search": "untrusted",
+    "bluesky_search": "untrusted",
+    "bluesky_author_feed": "untrusted",
     "x_search": "untrusted",
     "x_user_tweets": "untrusted",
     "slack_messages": "untrusted",

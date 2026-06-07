@@ -62,6 +62,7 @@ function registerRoutes() {
   routes["/logs"] = () => import("../pages/logs.js" + _v);
   routes["/assets"] = () => import("../pages/assets.js" + _v);
   routes["/tool-prompts"] = () => import("../pages/tool-prompts.js" + _v);
+  routes["/sns-search"] = () => import("../pages/sns-search.js" + _v);
   routes["/activity-report"] = () => import("../pages/activity-report.js" + _v);
   routes["/settings"] = () => import("../pages/settings.js" + _v);
   routes["/brainstorm"] = () => import("../pages/brainstorm.js" + _v);

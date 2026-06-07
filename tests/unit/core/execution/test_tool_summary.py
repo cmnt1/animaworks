@@ -50,6 +50,12 @@ class TestSummarizeToolArgs:
     def test_web_search(self):
         assert summarize_tool_args("web_search", {"query": "test"}) == "test"
 
+    def test_bluesky_search(self):
+        assert summarize_tool_args("bluesky_search", {"query": "$TSLA"}) == "$TSLA"
+
+    def test_bluesky_author_feed(self):
+        assert summarize_tool_args("bluesky_author_feed", {"actor": "bsky.app"}) == "bsky.app"
+
     def test_x_search(self):
         assert summarize_tool_args("x_search", {"query": "tweet"}) == "tweet"
 

@@ -367,6 +367,8 @@ _TOOL_RESULT_BASE_BUDGET: dict[str, int] = {
     "Glob": 4000,
     "Bash": 2000,
     "web_search": 1500,
+    "bluesky_search": 1500,
+    "bluesky_author_feed": 1500,
     "x_search": 1500,
     "Write": 500,
     "Edit": 500,

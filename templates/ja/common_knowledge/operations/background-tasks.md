@@ -34,6 +34,7 @@ Anima 子プロセス内の **PendingTaskExecutor**（`core/supervisor/pending_e
 実行時間が短い（数十秒未満が目安）ツール:
 
 - `web_search`, `x_search`
+- `bluesky`
 - `slack`, `chatwork`, `gmail`（通常の操作）
 - `github`, `aws_collector`
 

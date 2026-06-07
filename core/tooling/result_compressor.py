@@ -106,6 +106,11 @@ def _compress_x_search(result: str) -> str | None:
     return _compress_web_search(result)
 
 
+def _compress_bluesky(result: str) -> str | None:
+    """Compress Bluesky search/feed results."""
+    return _compress_web_search(result)
+
+
 def _compress_gmail(result: str) -> str | None:
     """Compress Gmail results: summarize headers, strip quotes/signatures."""
     try:
@@ -258,6 +263,8 @@ def _strip_null_fields(d: dict[str, Any]) -> dict[str, Any]:
 
 _COMPRESSORS: dict[str, Any] = {
     "web_search": _compress_web_search,
+    "bluesky_search": _compress_bluesky,
+    "bluesky_author_feed": _compress_bluesky,
     "x_search": _compress_x_search,
 }
 

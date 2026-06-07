@@ -32,6 +32,18 @@ function post(path, body) {
   });
 }
 
+function put(path, body) {
+  return request(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function del(path) {
+  return request(path, { method: "DELETE" });
+}
+
 // ── Anima ──────────────────────
 
 export function fetchAnimas() {
@@ -129,6 +141,22 @@ export function reloadSystem() {
 
 export function triggerHeartbeat(name) {
   return post(`/api/animas/${encodeURIComponent(name)}/trigger`, {});
+}
+
+export function fetchSnsSearchEntries() {
+  return request("/api/sns-search");
+}
+
+export function createSnsSearchEntry(entry) {
+  return post("/api/sns-search", entry);
+}
+
+export function updateSnsSearchEntry(id, entry) {
+  return put(`/api/sns-search/${encodeURIComponent(id)}`, entry);
+}
+
+export function deleteSnsSearchEntry(id) {
+  return del(`/api/sns-search/${encodeURIComponent(id)}`);
 }
 
 // ── Assets ──────────────────────

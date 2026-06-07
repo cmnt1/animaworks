@@ -116,6 +116,38 @@ html, body {
   gap: 8px;
 }
 
+.ws-tool-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+}
+
+.ws-tool-nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #4b5563;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ws-tool-nav-link:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.ws-tool-nav-link.active {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+  color: #1d4ed8;
+}
+
 .ws-title {
   font-size: 1.1rem;
   font-weight: 700;
@@ -208,6 +240,237 @@ html, body {
   min-height: 0;
   overflow: hidden;
   position: relative;
+}
+
+.ws-tool-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #f8fafc;
+}
+
+.ws-sns-page {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.ws-sns-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.ws-sns-kicker {
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.ws-sns-header h1 {
+  font-size: 1.35rem;
+  line-height: 1.25;
+  color: #0f172a;
+}
+
+.ws-sns-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(260px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.ws-sns-form label,
+.ws-sns-table label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ws-sns-form span {
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ws-sns-form input,
+.ws-sns-form textarea,
+.ws-sns-cell-input,
+.ws-sns-cell-words {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.ws-sns-form input,
+.ws-sns-cell-input {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.ws-sns-form textarea,
+.ws-sns-cell-words {
+  resize: vertical;
+  padding: 9px 10px;
+}
+
+.ws-sns-primary,
+.ws-sns-secondary,
+.ws-sns-danger {
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ws-sns-primary {
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+}
+
+.ws-sns-secondary {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+}
+
+.ws-sns-danger {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.ws-sns-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.ws-sns-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.ws-sns-table th,
+.ws-sns-table td {
+  padding: 10px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ws-sns-table th {
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 800;
+  background: #f8fafc;
+}
+
+.ws-sns-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.ws-sns-id {
+  width: 120px;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-sns-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 150px;
+}
+
+.ws-sns-empty,
+.ws-sns-error {
+  color: #64748b;
+  padding: 18px;
+}
+
+.ws-sns-error {
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.ws-tool-page.is-busy {
+  cursor: progress;
+}
+
+@media (max-width: 900px) {
+  .ws-header {
+    gap: 10px;
+  }
+
+  .ws-header-left {
+    align-items: center;
+  }
+
+  .ws-subtitle {
+    display: none;
+  }
+
+  .ws-tool-nav {
+    margin-left: 4px;
+  }
+
+  .ws-sns-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .ws-header {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 52px;
+    padding: 8px 10px;
+  }
+
+  .ws-header-center {
+    order: 3;
+    flex-basis: 100%;
+    padding: 0;
+  }
+
+  .ws-header-right {
+    gap: 8px;
+  }
+
+  .ws-tool-nav-link {
+    padding-inline: 8px;
+  }
+
+  .ws-sns-page {
+    padding: 14px;
+  }
+
+  .ws-sns-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 
