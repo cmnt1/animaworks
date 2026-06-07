@@ -515,6 +515,246 @@ export function renderToolCallDetail(tc, opts) {
   return html;
 }
 
+function _knownAnimaNames(opts) {
+  const names = opts?.knownAnimaNames;
+  if (names instanceof Set) return names;
+  if (Array.isArray(names)) return new Set(names);
+  return new Set();
+}
+
+function _knownUserNames(opts) {
+  const names = opts?.knownUserNames;
+  if (names instanceof Set) return names;
+  if (Array.isArray(names)) return new Set(names);
+  return new Set();
+}
+
+function _isKnownAnimaName(name, opts) {
+  if (!name) return false;
+  return _knownAnimaNames(opts).has(name);
+}
+
+function _isKnownUserName(name, opts) {
+  if (!name) return false;
+  return _knownUserNames(opts).has(name);
+}
+
+/**
+ * Return the collapsible activity type for a single message.
+ * DMs are hidden only when the peer is known to be another Anima.
+ * Human chat messages remain visible even if a legacy event is source_key="dm".
+ *
+ * @param {object} msg
+ * @param {object} opts
+ * @returns {"dm"|null}
+ */
+export function getMessageActivityType(msg, opts = {}) {
+  if (!msg) return null;
+  const from = msg.from_person || "";
+  const to = msg.to_person || "";
+  const selfName = opts.animaName || "";
+  if (_isKnownUserName(from, opts) || _isKnownUserName(to, opts)) return null;
+  if (from && from !== selfName && _isKnownAnimaName(from, opts)) return "dm";
+  if (to && to !== selfName && _isKnownAnimaName(to, opts)) return "dm";
+  return null;
+}
+
+function _isBackgroundOnlySession(session) {
+  return session?.messages?.length > 0 && session.messages.every((m) => m.role === "system");
+}
+
+/**
+ * Return the collapsible activity type for a whole session.
+ *
+ * @param {object} session
+ * @returns {"heartbeat"|"cron"|"task"|null}
+ */
+export function getSessionActivityType(session) {
+  const trigger = session?.trigger || "chat";
+  if ((trigger === "heartbeat" || trigger === "cron" || trigger === "task")
+    && _isBackgroundOnlySession(session)) {
+    return trigger;
+  }
+  return null;
+}
+
+function _activityCountLabel(label, count) {
+  return t("chat.activity_category_count", { label, count });
+}
+
+function _activityTypeLabel(type, count) {
+  if (type === "heartbeat") return _activityCountLabel(t("chat.heartbeat_activity"), count);
+  if (type === "cron") return t("chat.bg_tasks_count", { count });
+  if (type === "task") return _activityCountLabel(t("chat.task_exec_activity"), count);
+  if (type === "dm") return _activityCountLabel(t("chat.dm_activity"), count);
+  return _activityCountLabel(type, count);
+}
+
+function _itemMessages(item) {
+  if (!item) return [];
+  if (Array.isArray(item.messages)) return item.messages;
+  if (item.message) return [item.message];
+  if (item.session) return item.session.messages || [];
+  if (Array.isArray(item.sessions)) return item.sessions.flatMap((s) => s.messages || []);
+  return [];
+}
+
+function _itemStart(item) {
+  if (item?.session?.session_start) return item.session.session_start;
+  if (item?.sessions?.[0]?.session_start) return item.sessions[0].session_start;
+  const messages = _itemMessages(item);
+  return messages[0]?.ts || "";
+}
+
+function _itemEnd(item) {
+  if (item?.session?.session_end) return item.session.session_end;
+  if (item?.sessions?.length) return item.sessions[item.sessions.length - 1]?.session_end || "";
+  const messages = _itemMessages(item);
+  return messages[messages.length - 1]?.ts || _itemStart(item);
+}
+
+function _timeRange(startTs, endTs, smartTimestamp) {
+  const start = startTs ? smartTimestamp(startTs) : "";
+  const end = endTs ? smartTimestamp(endTs) : "";
+  if (start && end && start !== end) return `${start} \u301C ${end}`;
+  return start || end;
+}
+
+function _previewText(text, maxLen = 84) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (clean.length <= maxLen) return clean;
+  return `${clean.slice(0, maxLen - 1)}…`;
+}
+
+function _dmPeerLabel(messages, opts) {
+  const msg = messages.find((m) => m?.from_person || m?.to_person) || messages[0] || {};
+  const from = msg.from_person || (msg.role === "assistant" ? opts.animaName : "");
+  const to = msg.to_person || (msg.role !== "assistant" ? opts.animaName : "");
+  if (from && to) return `${from} \u2192 ${to}`;
+  return from || to || t("chat.dm_activity");
+}
+
+function _activityEntryTitle(item, type, opts) {
+  const messages = _itemMessages(item);
+  if (type === "heartbeat") return t("chat.heartbeat_activity");
+  if (type === "dm") return `${t("chat.dm_activity")} ${_dmPeerLabel(messages, opts)}`;
+  const preview = _previewText(messages.find((m) => m.content)?.content || "");
+  if (preview) return preview;
+  if (type === "cron") return t("chat.cron_activity");
+  if (type === "task") return t("chat.task_exec_activity");
+  return type;
+}
+
+function _renderSystemActivityContent(messages, type, opts) {
+  const { escapeHtml, renderMarkdown, smartTimestamp } = opts;
+  let html = "";
+  for (const msg of messages) {
+    const content = msg.content || "";
+    if (!content) continue;
+    if (type === "cron") {
+      const ts = msg.ts ? smartTimestamp(msg.ts) : "";
+      const tsHtml = ts ? `<span class="bg-session-item-ts">${escapeHtml(ts)}</span>` : "";
+      html += `<div class="bg-session-item">${escapeHtml(content)}${tsHtml}</div>`;
+    } else {
+      html += `<div class="bg-session-message" style="white-space:normal">${renderMarkdown(escapeHtml(content))}</div>`;
+    }
+  }
+  return html || `<div class="bg-session-message">${escapeHtml(t("chat.no_content"))}</div>`;
+}
+
+function _renderDmActivityContent(messages, opts) {
+  return messages
+    .map((msg) => `<div class="bg-session-dm-message">${renderHistoryMessage(msg, opts)}</div>`)
+    .join("");
+}
+
+function _renderActivityEntry(item, type, opts, index) {
+  const { escapeHtml, smartTimestamp } = opts;
+  const messages = _itemMessages(item);
+  const timeLabel = _timeRange(_itemStart(item), _itemEnd(item), smartTimestamp);
+  const bodyHtml = type === "dm"
+    ? _renderDmActivityContent(messages, opts)
+    : _renderSystemActivityContent(messages, type, opts);
+  const label = _activityEntryTitle(item, type, opts);
+
+  return (
+    `<div class="bg-session-entry bg-session-node bg-session-entry--${type}" data-bg-node data-bg-entry="${index}">` +
+    `<div class="bg-session-header bg-session-entry-header bg-session-header--${type}" data-bg-toggle>` +
+    `<span class="bg-session-chevron">\u25B6</span>` +
+    `<span class="bg-session-label">${escapeHtml(label)}</span>` +
+    `<span class="bg-session-time">${escapeHtml(timeLabel)}</span>` +
+    `</div>` +
+    `<div class="bg-session-body bg-session-entry-body" style="display:none;">${bodyHtml}</div>` +
+    `</div>`
+  );
+}
+
+function _sortActivityTypes(types) {
+  const order = ["heartbeat", "cron", "task", "dm"];
+  return types.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+}
+
+/**
+ * Render a multi-level collapsible activity bundle.
+ *
+ * Level 1: combined collapsible activity group.
+ * Level 2: activity type (heartbeat / background task / DM).
+ * Level 3: individual session or message content.
+ *
+ * @param {Array} items - Items shaped as { type, session } or { type, message }.
+ * @param {object} opts - Same opts as renderHistoryMessage.
+ * @returns {string}
+ */
+export function renderCollapsibleActivityBundle(items, opts) {
+  const { escapeHtml, smartTimestamp } = opts;
+  const normalized = (items || []).filter((item) => item?.type && _itemMessages(item).length > 0);
+  if (normalized.length === 0) return "";
+
+  const startTs = normalized.map(_itemStart).filter(Boolean).sort()[0] || "";
+  const endTs = normalized.map(_itemEnd).filter(Boolean).sort().slice(-1)[0] || "";
+  const timeLabel = _timeRange(startTs, endTs, smartTimestamp);
+  const headerLabel = t("chat.activity_bundle_count", { count: normalized.length });
+
+  const byType = new Map();
+  for (const item of normalized) {
+    const bucket = byType.get(item.type) || [];
+    bucket.push(item);
+    byType.set(item.type, bucket);
+  }
+
+  const categoryHtml = _sortActivityTypes([...byType.keys()]).map((type) => {
+    const typeItems = byType.get(type) || [];
+    const categoryStart = typeItems.map(_itemStart).filter(Boolean).sort()[0] || "";
+    const categoryEnd = typeItems.map(_itemEnd).filter(Boolean).sort().slice(-1)[0] || "";
+    const categoryTime = _timeRange(categoryStart, categoryEnd, smartTimestamp);
+    const entriesHtml = typeItems
+      .map((item, idx) => _renderActivityEntry(item, type, opts, idx))
+      .join("");
+
+    return (
+      `<div class="bg-session-category bg-session-node bg-session-category--${type}" data-bg-node>` +
+      `<div class="bg-session-header bg-session-category-header bg-session-header--${type}" data-bg-toggle>` +
+      `<span class="bg-session-chevron">\u25B6</span>` +
+      `<span class="bg-session-label">${escapeHtml(_activityTypeLabel(type, typeItems.length))}</span>` +
+      `<span class="bg-session-time">${escapeHtml(categoryTime)}</span>` +
+      `</div>` +
+      `<div class="bg-session-body bg-session-category-body" style="display:none;">${entriesHtml}</div>` +
+      `</div>`
+    );
+  }).join("");
+
+  return (
+    `<div class="bg-session-group bg-session-bundle bg-session-node" data-bg-node>` +
+    `<div class="bg-session-header bg-session-header--bundle" data-bg-toggle>` +
+    `<span class="bg-session-chevron">\u25B6</span>` +
+    `<span class="bg-session-label">${escapeHtml(headerLabel)}</span>` +
+    `<span class="bg-session-time">${escapeHtml(timeLabel)}</span>` +
+    `</div>` +
+    `<div class="bg-session-body bg-session-bundle-body" style="display:none;">${categoryHtml}</div>` +
+    `</div>`
+  );
+}
+
 /**
  * Bind expand/collapse and "show more" event handlers for tool calls.
  * This is the only DOM-dependent function in this module.
@@ -624,11 +864,13 @@ export function renderCollapsibleSession(sessions, type, opts) {
  */
 export function bindCollapsibleSessionHandlers(container) {
   if (!container) return;
-  container.querySelectorAll(".bg-session-header").forEach((header) => {
+  container.querySelectorAll(".bg-session-header[data-bg-toggle], .bg-session-header:not([data-bg-bound])").forEach((header) => {
+    if (header.dataset.bgBound === "1") return;
+    header.dataset.bgBound = "1";
     header.addEventListener("click", () => {
-      const group = header.parentElement;
+      const group = header.closest("[data-bg-node]") || header.parentElement;
       if (!group) return;
-      const body = group.querySelector(".bg-session-body");
+      const body = Array.from(group.children).find((el) => el.classList?.contains("bg-session-body"));
       if (!body) return;
       const isExpanded = group.classList.contains("expanded");
       group.classList.toggle("expanded", !isExpanded);

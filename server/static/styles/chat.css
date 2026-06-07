@@ -2507,6 +2507,10 @@
   margin: 8px 0;
 }
 
+.bg-session-node {
+  min-width: 0;
+}
+
 .bg-session-header {
   display: flex;
   align-items: center;
@@ -2534,7 +2538,8 @@
   opacity: 0.7;
 }
 
-.bg-session-group.expanded .bg-session-chevron {
+.bg-session-node.expanded > .bg-session-header .bg-session-chevron,
+.bg-session-group.expanded > .bg-session-header .bg-session-chevron {
   transform: rotate(90deg);
 }
 
@@ -2560,9 +2565,68 @@
   color: var(--aw-color-text-muted);
 }
 
+.bg-session-bundle > .bg-session-header {
+  max-width: min(760px, 92%);
+  background: color-mix(in srgb, var(--aw-color-text-muted) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--aw-color-text-muted) 16%, transparent);
+  color: var(--aw-color-text-secondary);
+}
+
+.bg-session-bundle-body {
+  padding: 6px 0 2px 18px;
+  font-style: normal;
+}
+
+.bg-session-category {
+  margin: 5px 0;
+}
+
+.bg-session-category-header {
+  min-width: 220px;
+  max-width: min(700px, 92%);
+}
+
+.bg-session-category-body {
+  padding: 4px 0 4px 18px;
+  font-style: normal;
+}
+
+.bg-session-entry {
+  margin: 4px 0;
+}
+
+.bg-session-entry-header {
+  min-width: 240px;
+  max-width: min(680px, 94%);
+  background: color-mix(in srgb, var(--aw-color-bg-tertiary) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--aw-color-border-medium) 72%, transparent);
+  color: var(--aw-color-text-muted);
+}
+
+.bg-session-entry-body {
+  padding: 6px 0 8px 18px;
+  max-width: min(760px, 96%);
+  font-style: normal;
+}
+
+.bg-session-entry-body .chat-msg-row,
+.bg-session-entry-body .chat-bubble {
+  max-width: 100%;
+}
+
+.bg-session-entry-body .chat-msg-row + .chat-msg-row,
+.bg-session-entry-body .bg-session-dm-message + .bg-session-dm-message {
+  margin-top: 6px;
+}
+
 /* Heartbeat / Task body - markdown content */
 .bg-session-group--heartbeat .bg-session-body,
-.bg-session-group--task .bg-session-body {
+.bg-session-group--task .bg-session-body,
+.bg-session-category--heartbeat > .bg-session-body,
+.bg-session-category--task > .bg-session-body,
+.bg-session-entry--heartbeat > .bg-session-body,
+.bg-session-entry--task > .bg-session-body,
+.bg-session-entry--dm > .bg-session-body {
   max-height: 400px;
   overflow-y: auto;
 }
@@ -2609,6 +2673,12 @@
 .bg-session-header--task {
   background: color-mix(in srgb, var(--aw-color-accent, #b794f4) 5%, transparent);
   border: 1px solid color-mix(in srgb, var(--aw-color-accent, #b794f4) 15%, transparent);
+  color: var(--aw-color-text-muted);
+}
+
+.bg-session-header--dm {
+  background: color-mix(in srgb, var(--aw-color-warning-text, #d97706) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--aw-color-warning-text, #d97706) 15%, transparent);
   color: var(--aw-color-text-muted);
 }
 
