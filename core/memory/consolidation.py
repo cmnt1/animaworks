@@ -994,21 +994,6 @@ class ConsolidationEngine:
             List of (file_a, file_b, similarity) tuples, sorted by
             similarity descending.  Paths are relative to knowledge/.
         """
-        try:
-            from core.memory.rag import MemoryIndexer
-            from core.memory.rag.retriever import MemoryRetriever
-            from core.memory.rag.singleton import get_vector_store
-
-            vector_store = self._rag_store or get_vector_store(self.anima_name)
-            if vector_store is None:
-                logger.debug("RAG vector store unavailable for merge candidate search")
-                return []
-            indexer = MemoryIndexer(vector_store, self.anima_name, self.anima_dir)
-            retriever = MemoryRetriever(vector_store, indexer, self.knowledge_dir)
-        except (ImportError, Exception) as exc:
-            logger.debug("RAG not available for merge candidate search: %s", exc)
-            return []
-
         # Read all non-archived knowledge files
         from core.memory.frontmatter import parse_frontmatter
 
@@ -1026,6 +1011,21 @@ class ConsolidationEngine:
                 continue
 
         if len(file_contents) < 2:
+            return []
+
+        try:
+            from core.memory.rag import MemoryIndexer
+            from core.memory.rag.retriever import MemoryRetriever
+            from core.memory.rag.singleton import get_vector_store
+
+            vector_store = self._rag_store or get_vector_store(self.anima_name)
+            if vector_store is None:
+                logger.debug("RAG vector store unavailable for merge candidate search")
+                return []
+            indexer = MemoryIndexer(vector_store, self.anima_name, self.anima_dir)
+            retriever = MemoryRetriever(vector_store, indexer, self.knowledge_dir)
+        except (ImportError, Exception) as exc:
+            logger.debug("RAG not available for merge candidate search: %s", exc)
             return []
 
         # Query each file against RAG to find similar peers
