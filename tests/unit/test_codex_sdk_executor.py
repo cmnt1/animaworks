@@ -480,9 +480,7 @@ class TestExecutorInit:
         assert "summary" not in kwargs
         assert "sandbox" not in kwargs
 
-    def test_codex_turn_kwargs_invalid_reasoning_summary_falls_back_to_concise(
-        self, model_config, anima_dir, caplog
-    ):
+    def test_codex_turn_kwargs_invalid_reasoning_summary_falls_back_to_concise(self, model_config, anima_dir, caplog):
         caplog.set_level(logging.WARNING, logger="animaworks.execution.codex_sdk")
         model_config.extra_keys = {"codex_reasoning_summary": "verbose"}
         exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
@@ -1660,6 +1658,7 @@ class TestProgressiveStreaming:
 
         with (
             patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch("core.execution.codex_sdk._should_cli_exec_fallback", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
             patch("core.execution.codex_sdk._BACKGROUND_EVENT_IDLE_TIMEOUT_SEC", 0.01),
         ):
