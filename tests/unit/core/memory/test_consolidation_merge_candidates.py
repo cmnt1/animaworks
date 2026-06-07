@@ -91,12 +91,16 @@ class TestFindMergeCandidates:
 
     def test_empty_returns_empty(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
-        assert engine._find_merge_candidates() == []
+        with patch("core.memory.rag.singleton.get_vector_store") as mock_store:
+            assert engine._find_merge_candidates() == []
+            mock_store.assert_not_called()
 
     def test_single_file_returns_empty(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         (engine.knowledge_dir / "only.md").write_text("---\n---\nContent", encoding="utf-8")
-        assert engine._find_merge_candidates() == []
+        with patch("core.memory.rag.singleton.get_vector_store") as mock_store:
+            assert engine._find_merge_candidates() == []
+            mock_store.assert_not_called()
 
     @patch("core.memory.rag.singleton.get_vector_store", return_value=None)
     def test_rag_unavailable(self, mock_store: MagicMock, tmp_path: Path) -> None:
