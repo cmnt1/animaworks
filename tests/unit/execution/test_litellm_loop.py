@@ -15,6 +15,7 @@ import pytest
 
 pytestmark = pytest.mark.asyncio
 
+from core.exceptions import LLMAPIError
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
@@ -248,6 +249,40 @@ class TestExecuteSimple:
         with patch("litellm.acompletion", mock):
             result = await executor.execute("test prompt", system_prompt="sys")
         assert "Hello world" in result.text
+
+    async def test_retries_litellm_empty_response(self, executor):
+        class BadRequestError(Exception):
+            pass
+
+        err = BadRequestError(
+            "OpenAIException - The model returned an empty response. "
+            "This may be caused by stop sequences matching the output."
+        )
+        resp = make_litellm_response(content="retry worked", tool_calls=None)
+        mock = AsyncMock(side_effect=[err, resp])
+        _install_litellm_mock(mock)
+
+        with (
+            patch("litellm.acompletion", mock),
+            patch("core.execution.litellm_loop.asyncio.sleep", new_callable=AsyncMock) as sleep_mock,
+        ):
+            result = await executor.execute("test prompt", system_prompt="sys")
+
+        assert "retry worked" in result.text
+        assert mock.await_count == 2
+        sleep_mock.assert_awaited_once()
+
+    async def test_non_empty_litellm_error_not_retried(self, executor):
+        mock = AsyncMock(side_effect=RuntimeError("API timeout"))
+        _install_litellm_mock(mock)
+
+        with (
+            patch("litellm.acompletion", mock),
+            pytest.raises(LLMAPIError, match="API timeout"),
+        ):
+            await executor.execute("test prompt", system_prompt="sys")
+
+        assert mock.await_count == 1
 
     async def test_no_result_message(self, executor):
         resp = make_litellm_response(content="text")

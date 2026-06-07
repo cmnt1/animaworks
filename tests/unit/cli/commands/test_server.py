@@ -14,7 +14,6 @@ import pytest
 
 from core.platform.process import subprocess_session_kwargs
 
-
 # ── PID helpers ──────────────────────────────────────────
 
 
@@ -346,20 +345,90 @@ class TestStopServer:
 # ── cmd_start ────────────────────────────────────────────
 
 
+class TestUnreachableServerCleanup:
+    @patch("cli.commands.server._kill_orphan_runners", return_value=2)
+    @patch("cli.commands.server._remove_pid_file")
+    @patch("cli.commands.server._is_process_alive", side_effect=[True, False, False])
+    @patch("cli.commands.server.terminate_pid")
+    @patch("cli.commands.server._is_port_listening", return_value=False)
+    def test_cleanup_unreachable_server_process(
+        self,
+        mock_port,
+        mock_terminate,
+        mock_alive,
+        mock_remove,
+        mock_orphans,
+        capsys,
+    ):
+        from cli.commands.server import _cleanup_unreachable_server_process
+
+        result = _cleanup_unreachable_server_process(12345, host="127.0.0.1", port=18500)
+
+        assert result is True
+        assert "not listening" in capsys.readouterr().out
+        mock_terminate.assert_called_once_with(12345, force=True, include_children=True)
+        mock_remove.assert_called_once()
+        mock_orphans.assert_called_once()
+
+    @patch("cli.commands.server.terminate_pid")
+    @patch("cli.commands.server._is_port_listening", return_value=True)
+    def test_cleanup_unreachable_server_skips_reachable_process(self, mock_port, mock_terminate):
+        from cli.commands.server import _cleanup_unreachable_server_process
+
+        result = _cleanup_unreachable_server_process(12345, host="127.0.0.1", port=18500)
+
+        assert result is False
+        mock_terminate.assert_not_called()
+
+
 class TestCmdStart:
+    @patch("cli.commands.server._is_port_listening", return_value=True)
     @patch("cli.commands.server._is_process_alive", return_value=True)
     @patch("cli.commands.server._read_pid", return_value=999)
-    def test_already_running(self, mock_pid, mock_alive):
+    def test_already_running(self, mock_pid, mock_alive, mock_port):
         from cli.commands.server import cmd_start
 
         args = argparse.Namespace(host="0.0.0.0", port=18500)
         with pytest.raises(SystemExit):
             cmd_start(args)
 
+    @patch("cli.commands.server._get_daemon_log_path")
+    @patch("cli.commands.server.subprocess.Popen")
+    @patch("cli.commands.server._cleanup_unreachable_server_process", return_value=True)
+    @patch("cli.commands.server._is_port_listening", side_effect=[False, True])
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
+    @patch("cli.commands.server._is_process_alive", return_value=True)
+    @patch("cli.commands.server._read_pid", return_value=999)
+    def test_daemon_start_cleans_live_pid_without_listening_port(
+        self,
+        mock_pid,
+        mock_alive,
+        mock_find,
+        mock_port,
+        mock_cleanup,
+        mock_popen,
+        mock_log_path,
+        tmp_path,
+    ):
+        from cli.commands.server import _spawn_daemon
+
+        mock_log_path.return_value = tmp_path / "server.log"
+        mock_proc = MagicMock()
+        mock_proc.pid = 555
+        mock_proc.poll.return_value = None
+        mock_popen.return_value = mock_proc
+
+        args = argparse.Namespace(host="127.0.0.1", port=18500)
+        _spawn_daemon(args)
+
+        mock_cleanup.assert_called_once_with(999, host="127.0.0.1", port=18500)
+        mock_popen.assert_called_once()
+
+    @patch("cli.commands.server._is_port_listening", return_value=True)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=777)
     @patch("cli.commands.server._is_process_alive", side_effect=lambda pid: pid == 777)
     @patch("cli.commands.server._read_pid", return_value=None)
-    def test_already_running_orphan(self, mock_pid, mock_alive, mock_find):
+    def test_already_running_orphan(self, mock_pid, mock_alive, mock_find, mock_port):
         """Detect running orphan process (no PID file) and refuse to start."""
         from cli.commands.server import cmd_start
 

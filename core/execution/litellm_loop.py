@@ -75,6 +75,57 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("animaworks.execution.litellm_loop")
 
+_LITELLM_EMPTY_RESPONSE_RETRY_DELAYS = (0.5, 1.5)
+
+
+def _is_retryable_empty_response(exc: Exception) -> bool:
+    """Return True for transient provider empty-response failures."""
+    message = str(exc).lower()
+    if "empty response" not in message:
+        return False
+    exc_name = type(exc).__name__.lower()
+    exc_module = type(exc).__module__.lower()
+    return (
+        "badrequest" in exc_name
+        or "openai" in message
+        or "litellm" in message
+        or "litellm" in exc_module
+    )
+
+
+async def _litellm_acompletion_with_empty_response_retry(
+    litellm: Any,
+    call_kwargs: dict[str, Any],
+    *,
+    model: str,
+    iteration: int,
+) -> Any:
+    """Call LiteLLM, retrying the provider empty-response edge case."""
+    for attempt in range(len(_LITELLM_EMPTY_RESPONSE_RETRY_DELAYS) + 1):
+        try:
+            return await litellm.acompletion(**call_kwargs)
+        except LLMAPIError:
+            raise
+        except Exception as exc:
+            can_retry = attempt < len(_LITELLM_EMPTY_RESPONSE_RETRY_DELAYS) and _is_retryable_empty_response(exc)
+            if not can_retry:
+                logger.exception("LiteLLM API error")
+                raise LLMAPIError(f"LiteLLM API error: {exc}") from exc
+
+            delay = _LITELLM_EMPTY_RESPONSE_RETRY_DELAYS[attempt]
+            logger.warning(
+                "LiteLLM empty response at iteration=%d model=%s; retrying attempt=%d/%d after %.1fs: %s",
+                iteration,
+                model,
+                attempt + 1,
+                len(_LITELLM_EMPTY_RESPONSE_RETRY_DELAYS),
+                delay,
+                exc,
+            )
+            await asyncio.sleep(delay)
+
+    raise LLMAPIError("LiteLLM API error: empty response retry exhausted")
+
 
 class LiteLLMExecutor(
     ToolProcessingMixin,
@@ -213,13 +264,12 @@ class LiteLLMExecutor(
             if not is_final_iteration or _bedrock_needs_tools:
                 call_kwargs["tools"] = tools
 
-            try:
-                response = await litellm.acompletion(**call_kwargs)
-            except LLMAPIError:
-                raise
-            except Exception as e:
-                logger.exception("LiteLLM API error")
-                raise LLMAPIError(f"LiteLLM API error: {e}") from e
+            response = await _litellm_acompletion_with_empty_response_retry(
+                litellm,
+                call_kwargs,
+                model=self._model_config.model,
+                iteration=iteration,
+            )
 
             choice = response.choices[0]
             message = choice.message

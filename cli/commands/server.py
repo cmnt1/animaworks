@@ -11,6 +11,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -39,6 +40,7 @@ _RESTART_HELPER_CMD_MARKERS = (
 
 _DAEMON_STARTUP_TIMEOUT = 120
 _DAEMON_POLL_INTERVAL = 0.3
+_PID_WATCHDOG_STOP = threading.Event()
 
 
 def _maybe_log_rag_preflight_blocked(result: object) -> None:
@@ -274,6 +276,42 @@ def _is_port_listening(host: str, port: int) -> bool:
         return False
 
 
+def _check_host(host: str) -> str:
+    return "127.0.0.1" if host == "0.0.0.0" else host
+
+
+def _cleanup_unreachable_server_process(pid: int, *, host: str, port: int) -> bool:
+    """Kill a server-shaped process whose HTTP port is no longer reachable."""
+    check_host = _check_host(host)
+    if _is_port_listening(check_host, port):
+        return False
+
+    msg = f"Server process pid={pid} is alive but {check_host}:{port} is not listening. Cleaning up."
+    print(msg)
+    logger.warning(msg)
+    try:
+        terminate_pid(pid, force=True, include_children=True)
+    except ProcessLookupError:
+        pass
+    except Exception as exc:
+        print(f"Error: failed to clean up unresponsive server pid={pid}: {exc}")
+        return False
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and _is_process_alive(pid):
+        time.sleep(0.1)
+
+    if _is_process_alive(pid):
+        print(f"Error: unresponsive server pid={pid} is still alive after cleanup.")
+        return False
+
+    _remove_pid_file()
+    orphans = _kill_orphan_runners()
+    if orphans:
+        print(f"Killed {orphans} orphan runner process(es).")
+    return True
+
+
 def _get_daemon_log_path() -> Path:
     """Return path for daemon stdout/stderr redirect."""
     from core.paths import get_data_dir
@@ -287,19 +325,26 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
     """Spawn the server as a background process and verify startup."""
     from core.paths import get_data_dir
 
+    check_host = _check_host(args.host)
     existing_pid = _read_pid()
     if existing_pid is not None and _is_process_alive(existing_pid):
-        print(f"Error: Server is already running (pid={existing_pid}).")
-        print("Use 'animaworks stop' first, or 'animaworks restart'.")
-        sys.exit(1)
+        if _is_port_listening(check_host, args.port):
+            print(f"Error: Server is already running (pid={existing_pid}).")
+            print("Use 'animaworks stop' first, or 'animaworks restart'.")
+            sys.exit(1)
+        if not _cleanup_unreachable_server_process(existing_pid, host=args.host, port=args.port):
+            sys.exit(1)
     elif existing_pid is not None:
         _remove_pid_file()
 
     orphan_pid = _find_server_pid_by_process()
     if orphan_pid is not None and _is_process_alive(orphan_pid):
-        print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
-        print("Use 'animaworks stop' first, or 'animaworks restart'.")
-        sys.exit(1)
+        if _is_port_listening(check_host, args.port):
+            print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
+            print("Use 'animaworks stop' first, or 'animaworks restart'.")
+            sys.exit(1)
+        if not _cleanup_unreachable_server_process(orphan_pid, host=args.host, port=args.port):
+            sys.exit(1)
 
     cmd = [sys.executable, "-m", "cli", "start", "--foreground", "--host", args.host, "--port", str(args.port)]
 
@@ -315,7 +360,6 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
     )
     log_file.close()
 
-    check_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
     deadline = time.monotonic() + _DAEMON_STARTUP_TIMEOUT
     started = False
 
@@ -357,8 +401,7 @@ def _start_pid_watchdog() -> None:
 
     def _watchdog() -> None:
         my_pid = os.getpid()
-        while True:
-            time.sleep(30)
+        while not _PID_WATCHDOG_STOP.wait(30):
             try:
                 current = _read_pid()
                 if current == my_pid:
@@ -374,8 +417,13 @@ def _start_pid_watchdog() -> None:
                 # Don't let the watchdog crash; just log and retry next cycle
                 logger.debug("PID watchdog error", exc_info=True)
 
+    _PID_WATCHDOG_STOP.clear()
     t = threading.Thread(target=_watchdog, daemon=True, name="pid-watchdog")
     t.start()
+
+
+def _stop_pid_watchdog() -> None:
+    _PID_WATCHDOG_STOP.set()
 
 
 def cmd_start(args: argparse.Namespace) -> None:
@@ -597,12 +645,17 @@ def _start_foreground(args: argparse.Namespace) -> None:
     from core.paths import get_animas_dir, get_shared_dir
     from server.app import create_app
 
+    check_host = _check_host(args.host)
     existing_pid = _read_pid()
     unclean_previous_exit = False
     if existing_pid is not None and _is_process_alive(existing_pid):
-        print(f"Error: Server is already running (pid={existing_pid}).")
-        print("Use 'animaworks stop' first, or 'animaworks restart'.")
-        sys.exit(1)
+        if _is_port_listening(check_host, args.port):
+            print(f"Error: Server is already running (pid={existing_pid}).")
+            print("Use 'animaworks stop' first, or 'animaworks restart'.")
+            sys.exit(1)
+        if not _cleanup_unreachable_server_process(existing_pid, host=args.host, port=args.port):
+            sys.exit(1)
+        unclean_previous_exit = True
     elif existing_pid is not None:
         logger.info("Stale PID file found (pid=%d). Cleaning up.", existing_pid)
         unclean_previous_exit = True
@@ -610,9 +663,13 @@ def _start_foreground(args: argparse.Namespace) -> None:
 
     orphan_pid = _find_server_pid_by_process()
     if orphan_pid is not None and _is_process_alive(orphan_pid):
-        print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
-        print("Use 'animaworks stop' first, or 'animaworks restart'.")
-        sys.exit(1)
+        if _is_port_listening(check_host, args.port):
+            print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
+            print("Use 'animaworks stop' first, or 'animaworks restart'.")
+            sys.exit(1)
+        if not _cleanup_unreachable_server_process(orphan_pid, host=args.host, port=args.port):
+            sys.exit(1)
+        unclean_previous_exit = True
 
     orphan_count = _kill_orphan_runners()
     if orphan_count:
@@ -648,6 +705,7 @@ def _start_foreground(args: argparse.Namespace) -> None:
             ws_ping_timeout=5,
         )
     finally:
+        _stop_pid_watchdog()
         _remove_pid_file()
 
 
