@@ -42,6 +42,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": ("[タスク失敗通知]\nタスクID: {task_id}\nタスク: {title}\nエラー: {error}"),
         "en": ("[Task Failure]\nTask ID: {task_id}\nTask: {title}\nError: {error}"),
     },
+    "pending_executor.provider_rate_limit_deferred": {
+        "ja": "プロバイダ制限により再実行待ち",
+        "en": "Waiting to retry due to provider rate limit",
+    },
     "pending_executor.workspace_not_specified": {
         "ja": "(指定なし)",
         "en": "(not specified)",

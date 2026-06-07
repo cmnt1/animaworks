@@ -129,12 +129,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/outbound_auto.py": 1,
     # Codex login window prompts
     "core/platform/codex.py": 2,
-    # privileged-execution / writable labels in pending executor
-    "core/supervisor/pending_executor.py": 11,
     # auto-retry status label
     "core/supervisor/task_retry.py": 1,
-    # taskboard projector mock/sample content
-    "core/taskboard/projector.py": 3,
     # taskboard route stop/blocker labels
     "server/routes/taskboard.py": 13,
     # usage route OAuth / API-disabled messages

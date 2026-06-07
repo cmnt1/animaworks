@@ -57,6 +57,141 @@ _AUTO_RETRY_BLOCKED_SUMMARY_PREFIXES = (
     "BLOCKED: Multi-stage task reported an intermediate/next-step result",
 )
 _AUTO_RETRY_NON_FINAL_MAX_RETRIES = 20
+_NON_FINAL_MULTISTAGE_MARKERS = (
+    "will proceed",
+    "will continue",
+    "will start",
+    "next action",
+    "next step",
+    "retry",
+    "re-run",
+    "rerun",
+    "instruction file",
+    "handoff",
+    "partial",
+    "missing final",
+    "no final",
+    "not final",
+    "not complete",
+    "machine",
+    "進みます",
+    "再試行",
+    "指示ファイル",
+    "未作成",
+    "不足",
+    "中間ログ",
+    "これから",
+)
+_UNRESOLVED_BLOCKER_MARKERS = (
+    "remaining blocker",
+    "still blocked",
+    "not complete",
+    "not done",
+    "cannot complete",
+    "blocked:",
+    "blockers:",
+    "policy blocked",
+    "read-only",
+    "write not allowed",
+    "permission denied",
+    "rejected: blocked by policy",
+    "blocked by policy",
+    "filesystem sandbox",
+    "file operation remains",
+    "remaining work is",
+    "remaining work:",
+    "not reflected",
+    "not applied",
+    "未実施",
+    "未反映",
+    "残作業",
+    "権限付き実行",
+    "書き込み可能",
+    "current failures",
+    "failures to fix",
+    "failed gate",
+    "http 404",
+    "-> http 404",
+    " image 404",
+    "missing images",
+    "public_article_images_missing",
+    "image_url_invalid",
+    "generated_json_forbidden_token",
+    "forbidden_public_source_token_present",
+)
+_STRONG_NON_FINAL_EXACT_MARKERS = (
+    "スキーマが確認できました",
+    "修正版スクリプトを作成します",
+)
+_PREREQUISITE_NON_FINAL_MARKERS = (
+    "completion_gate",
+    "before completing",
+    "before the final answer",
+    "完了条件を満たす前",
+    "必要がある",
+    "必要があります",
+    "必要です",
+)
+_STRONG_NON_FINAL_MARKERS = (
+    "now i understand",
+    "now i have the full picture",
+    *_PREREQUISITE_NON_FINAL_MARKERS,
+    "let me write",
+    "let me create",
+    "let me prepare",
+    "let me check",
+    "let me look",
+    "let me inspect",
+    "let me investigate",
+    "let me run",
+    "now let me",
+    "i will write",
+    "i will create",
+    "i will prepare",
+    "i will run",
+    "i'll write",
+    "i'll create",
+    "i'll prepare",
+    "i'll run",
+    "next i will",
+    "i will now",
+    "i'll now",
+    "db connected",
+    "db connection worked",
+    "stdin pipe",
+    "use stdin pipe",
+    "using stdin pipe",
+    "db接続できた",
+    "db接続できました",
+    "stdin pipeを使う",
+    "stdin pipeを使います",
+    "pipeを使う",
+    "pipeを使います",
+    "まずdb",
+    "まず db",
+    "まず確認",
+    "まず調査",
+    "まず実施",
+    "証跡を収集します",
+    "確認を実施し",
+    "状況を確認しました",
+    "will proceed",
+    "will continue",
+    "will start",
+    "moving to",
+    "switching to direct",
+    "machine is unavailable",
+    "machine unavailable",
+    "次に",
+    "これから",
+    "進みます",
+    "確認します",
+    "実行します",
+    "移行します",
+    "machineが使えない",
+    "machine起動不可",
+    "直接実行経路",
+)
 
 
 def _is_provider_rate_limit_error(message: str) -> bool:
@@ -214,44 +349,7 @@ def _detect_unresolved_blocker_report(result: str) -> str | None:
     if _completion_evidence_count(text) >= 3:
         return None
 
-    unresolved_markers = (
-        "remaining blocker",
-        "still blocked",
-        "not complete",
-        "not done",
-        "cannot complete",
-        "blocked:",
-        "blockers:",
-        "policy blocked",
-        "read-only",
-        "write not allowed",
-        "permission denied",
-        "rejected: blocked by policy",
-        "blocked by policy",
-        "filesystem sandbox",
-        "file operation remains",
-        "remaining work is",
-        "remaining work:",
-        "not reflected",
-        "not applied",
-        "未実施",
-        "未反映",
-        "残作業",
-        "権限付き実行",
-        "書き込み可能",
-        "current failures",
-        "failures to fix",
-        "failed gate",
-        "http 404",
-        "-> http 404",
-        " image 404",
-        "missing images",
-        "public_article_images_missing",
-        "image_url_invalid",
-        "generated_json_forbidden_token",
-        "forbidden_public_source_token_present",
-    )
-    if any(marker in folded for marker in unresolved_markers):
+    if any(marker in folded for marker in _UNRESOLVED_BLOCKER_MARKERS):
         return "Task reported unresolved blockers instead of final evidence"
 
     target_ids = ("108500", "108501", "108502")
@@ -269,32 +367,7 @@ def _detect_non_final_multistage_result(result: str) -> str | None:
         return None
 
     folded = text.casefold()
-    non_final_markers = (
-        "will proceed",
-        "will continue",
-        "will start",
-        "next action",
-        "next step",
-        "retry",
-        "re-run",
-        "rerun",
-        "instruction file",
-        "handoff",
-        "partial",
-        "missing final",
-        "no final",
-        "not final",
-        "not complete",
-        "machine",
-        "進みます",
-        "再試行",
-        "指示ファイル",
-        "未作成",
-        "不足",
-        "中間ログ",
-        "これから",
-    )
-    if any(marker in folded for marker in non_final_markers):
+    if any(marker in folded for marker in _NON_FINAL_MULTISTAGE_MARKERS):
         return "Multi-stage task reported an intermediate/next-step result, not final evidence"
     return None
 
@@ -306,81 +379,9 @@ def _detect_strong_non_final_followup(result: str) -> str | None:
         return None
 
     folded = text.casefold()
-    if any(
-        marker in text
-        for marker in (
-            "スキーマが確認できました",
-            "修正版スクリプトを作成します",
-        )
-    ):
+    if any(marker in text for marker in _STRONG_NON_FINAL_EXACT_MARKERS):
         return "Task reported an explicit follow-up/start step, not final evidence"
-    strong_markers = (
-        "now i understand",
-        "now i have the full picture",
-        "completion_gate",
-        "before completing",
-        "before the final answer",
-        "完了条件を満たす前",
-        "必要がある",
-        "必要があります",
-        "必要です",
-        "let me write",
-        "let me create",
-        "let me prepare",
-        "let me check",
-        "let me look",
-        "let me inspect",
-        "let me investigate",
-        "let me run",
-        "now let me",
-        "i will write",
-        "i will create",
-        "i will prepare",
-        "i will run",
-        "i'll write",
-        "i'll create",
-        "i'll prepare",
-        "i'll run",
-        "next i will",
-        "i will now",
-        "i'll now",
-        "db connected",
-        "db connection worked",
-        "stdin pipe",
-        "use stdin pipe",
-        "using stdin pipe",
-        "db接続できた",
-        "db接続できました",
-        "stdin pipeを使う",
-        "stdin pipeを使います",
-        "pipeを使う",
-        "pipeを使います",
-        "まずdb",
-        "まず db",
-        "まず確認",
-        "まず調査",
-        "まず実施",
-        "証跡を収集します",
-        "確認を実施し",
-        "状況を確認しました",
-        "will proceed",
-        "will continue",
-        "will start",
-        "moving to",
-        "switching to direct",
-        "machine is unavailable",
-        "machine unavailable",
-        "次に",
-        "これから",
-        "進みます",
-        "確認します",
-        "実行します",
-        "移行します",
-        "machineが使えない",
-        "machine起動不可",
-        "直接実行経路",
-    )
-    if any(marker in folded for marker in strong_markers):
+    if any(marker in folded for marker in _STRONG_NON_FINAL_MARKERS):
         return "Task reported an explicit follow-up/start step, not final evidence"
     return None
 
@@ -391,16 +392,7 @@ def _detect_non_final_prerequisite_report(result: str) -> str | None:
         return None
 
     folded = text.casefold()
-    prerequisite_markers = (
-        "completion_gate",
-        "before completing",
-        "before the final answer",
-        "完了条件を満たす前",
-        "必要がある",
-        "必要があります",
-        "必要です",
-    )
-    if any(marker in folded for marker in prerequisite_markers):
+    if any(marker in folded for marker in _PREREQUISITE_NON_FINAL_MARKERS):
         return "Task reported an explicit follow-up/start step, not final evidence"
     return None
 
@@ -417,7 +409,7 @@ def _classify_task_result(result: str) -> tuple[str, str]:
     if result == _SENTINEL_DEFERRED:
         return "pending", "snoozed by TaskBoard"
     if result == _SENTINEL_PROVIDER_RATE_LIMIT:
-        return "pending", "プロバイダ制限により再実行待ち"
+        return "pending", t("pending_executor.provider_rate_limit_deferred")
     auth_failure = _detect_task_auth_failure(result)
     if auth_failure:
         return "failed", f"FAILED: {auth_failure}"

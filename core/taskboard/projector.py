@@ -39,6 +39,33 @@ _TERMINAL_QUEUE_STATUSES = {"done", "cancelled", "failed"}
 _HUMAN_BLOCKER_VALUES = {"human", "user", "owner"}
 _HUMAN_BLOCKER_KEYS = ("blocker", "blocked_on", "waiting_for", "waiting_on")
 _TASK_ID_RE = re.compile(r"\b[0-9a-f]{8,16}\b", re.IGNORECASE)
+_DELEGATED_CHILD_PROGRESS_MARKERS = (
+    "next step",
+    "next action",
+    "completion_gate",
+    "before completing",
+    "before the final answer",
+    "完了条件を満たす前",
+    "必要がある",
+    "必要があります",
+    "必要です",
+    "will proceed",
+    "will create",
+    "will write",
+    "will run",
+    "let me",
+    "schema confirmation",
+    "checking schema",
+    "creating a script",
+    "create a fixed script",
+    "スキーマが確認できました",
+    "修正版スクリプトを作成します",
+    "machineで",
+    "調査します",
+    "実施します",
+    "更新に進む",
+    "保存してdiscordに投稿する",
+)
 
 
 def compute_needs_human(
@@ -414,35 +441,8 @@ def _delegated_child_needs_followup(child: BoardTask) -> bool:
         "tool call(s)",
         "errors=",
     )
-    progress_markers = (
-        "next step",
-        "next action",
-        "completion_gate",
-        "before completing",
-        "before the final answer",
-        "完了条件を満たす前",
-        "必要がある",
-        "必要があります",
-        "必要です",
-        "will proceed",
-        "will create",
-        "will write",
-        "will run",
-        "let me",
-        "schema confirmation",
-        "checking schema",
-        "creating a script",
-        "create a fixed script",
-        "スキーマが確認できました",
-        "修正版スクリプトを作成します",
-        "machineで",
-        "調査します",
-        "実施します",
-        "更新に進む",
-        "保存してdiscordに投稿する",
-    )
     return any(marker in combined_text for marker in failure_markers) or any(
-        marker in summary_text for marker in progress_markers
+        marker in summary_text for marker in _DELEGATED_CHILD_PROGRESS_MARKERS
     )
 
 
