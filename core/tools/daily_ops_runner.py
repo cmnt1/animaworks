@@ -16,7 +16,6 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-
 EXECUTION_PROFILE = {
     "start": {"expected_seconds": 10, "background_eligible": True},
     "status": {"expected_seconds": 5, "background_eligible": True},
