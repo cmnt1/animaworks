@@ -137,7 +137,8 @@ html, body {
   white-space: nowrap;
 }
 
-.ws-tool-nav-link:hover {
+.ws-tool-nav-link:hover,
+.ws-tool-nav-link:active {
   background: #f3f4f6;
   color: #111827;
 }
