@@ -12,6 +12,7 @@ from core.lifecycle import (
     _parse_cron_md,
     _parse_schedule,
 )
+from core._anima_lifecycle import _run_cron_cycle_with_transient_retries
 from core.schemas import CronTask, Message
 
 # ── _parse_cron_md ────────────────────────────────────────
@@ -453,6 +454,38 @@ class TestOnAnimaLockReleased:
     async def test_no_action_when_anima_not_registered(self):
         lm = LifecycleManager()
         await lm._on_anima_lock_released("nobody")
+
+
+class TestCronTransientRetry:
+    async def test_transient_429_retries_and_returns_success(self):
+        result = MagicMock()
+        agent = MagicMock()
+        agent.run_cycle = AsyncMock(
+            side_effect=[
+                RuntimeError("LiteLLM API error: Antigravity API HTTP 429: quota will reset after 3s"),
+                result,
+            ]
+        )
+
+        with patch("core._anima_lifecycle._CRON_TRANSIENT_RETRY_DELAYS_SEC", (0,)):
+            actual = await _run_cron_cycle_with_transient_retries(agent, "prompt", task_name="weekly")
+
+        assert actual is result
+        assert agent.run_cycle.call_count == 2
+
+    async def test_non_transient_error_does_not_retry(self):
+        agent = MagicMock()
+        agent.run_cycle = AsyncMock(side_effect=RuntimeError("validation failed"))
+
+        with patch("core._anima_lifecycle._CRON_TRANSIENT_RETRY_DELAYS_SEC", (0,)):
+            try:
+                await _run_cron_cycle_with_transient_retries(agent, "prompt", task_name="weekly")
+            except RuntimeError as exc:
+                assert "validation failed" in str(exc)
+            else:
+                raise AssertionError("expected RuntimeError")
+
+        assert agent.run_cycle.call_count == 1
 
 
 class TestScheduleDeferredTrigger:

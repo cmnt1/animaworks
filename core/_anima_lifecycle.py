@@ -67,6 +67,49 @@ def _assert_cron_success_paths(task_name: str, success_paths: list[str] | None) 
         raise CronSuccessPathError(f"Cron task '{task_name}' did not produce required success path(s): {missing_text}")
 
 
+_CRON_TRANSIENT_RETRY_DELAYS_SEC = (5, 15)
+
+
+def _is_transient_cron_llm_error(exc: Exception) -> bool:
+    text = f"{type(exc).__name__}: {exc}".casefold()
+    transient_markers = (
+        "llmapierror",
+        "apiconnectionerror",
+        "api connection",
+        "http 429",
+        " 429",
+        "rate limit",
+        "quota will reset",
+        "exhausted your capacity",
+        "temporarily unavailable",
+        "timeout",
+        "timed out",
+    )
+    return any(marker in text for marker in transient_markers)
+
+
+async def _run_cron_cycle_with_transient_retries(agent: Any, prompt: str, *, task_name: str) -> CycleResult:
+    last_exc: Exception | None = None
+    for attempt, delay in enumerate((0, *_CRON_TRANSIENT_RETRY_DELAYS_SEC), start=1):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            return await agent.run_cycle(prompt, trigger=f"cron:{task_name}")
+        except Exception as exc:
+            last_exc = exc
+            if attempt > len(_CRON_TRANSIENT_RETRY_DELAYS_SEC) or not _is_transient_cron_llm_error(exc):
+                raise
+            logger.warning(
+                "Transient cron LLM error for task=%s; retrying attempt=%d/%d after %ss: %s",
+                task_name,
+                attempt + 1,
+                len(_CRON_TRANSIENT_RETRY_DELAYS_SEC) + 1,
+                _CRON_TRANSIENT_RETRY_DELAYS_SEC[attempt - 1],
+                exc,
+            )
+    raise RuntimeError("cron transient retry exhausted") from last_exc
+
+
 def _agent_for_lane(owner: Any, lane: str):
     getter = getattr(owner, "_agent_for_lane", None)
     if callable(getter):
@@ -769,7 +812,7 @@ class LifecycleMixin:
                             original_config = agent.model_config
                             agent.update_model_config(bg_config)
                         try:
-                            result = await agent.run_cycle(prompt, trigger=f"cron:{task_name}")
+                            result = await _run_cron_cycle_with_transient_retries(agent, prompt, task_name=task_name)
                         finally:
                             if original_config is not None:
                                 agent.update_model_config(original_config)
