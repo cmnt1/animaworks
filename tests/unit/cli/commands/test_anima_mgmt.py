@@ -392,9 +392,26 @@ class TestCmdAnimaCodexYolo:
             )
         return data_dir
 
+    def _write_test_codex_yolo_config(self, anima_dir: Path) -> Path:
+        config_path = anima_dir / ".codex_home" / "config.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            "\n".join(
+                [
+                    'sandbox_mode = "workspace-write"',
+                    'approval_policy = "never"',
+                    "[sandbox_workspace_write]",
+                    "network_access = true",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return config_path
+
     @patch("core.paths.get_data_dir")
     def test_codex_yolo_preserves_permissions_and_updates_config(self, mock_data_dir, tmp_path, capsys):
-        from cli.commands.anima_mgmt import cmd_anima_codex_yolo
+        from cli.commands import anima_mgmt
 
         data_dir = self._make_runtime(
             tmp_path,
@@ -403,7 +420,8 @@ class TestCmdAnimaCodexYolo:
         mock_data_dir.return_value = data_dir
 
         args = argparse.Namespace(anima="sakura", all=False, restart=False, gateway_url=None)
-        cmd_anima_codex_yolo(args)
+        with patch.object(anima_mgmt, "_refresh_codex_yolo_config", side_effect=self._write_test_codex_yolo_config):
+            anima_mgmt.cmd_anima_codex_yolo(args)
 
         captured = capsys.readouterr()
         assert "sakura" in captured.out
@@ -421,7 +439,7 @@ class TestCmdAnimaCodexYolo:
 
     @patch("core.paths.get_data_dir")
     def test_codex_yolo_all_skips_non_codex_animas(self, mock_data_dir, tmp_path, capsys):
-        from cli.commands.anima_mgmt import cmd_anima_codex_yolo
+        from cli.commands import anima_mgmt
 
         data_dir = self._make_runtime(
             tmp_path,
@@ -433,7 +451,8 @@ class TestCmdAnimaCodexYolo:
         mock_data_dir.return_value = data_dir
 
         args = argparse.Namespace(anima=None, all=True, restart=False, gateway_url=None)
-        cmd_anima_codex_yolo(args)
+        with patch.object(anima_mgmt, "_refresh_codex_yolo_config", side_effect=self._write_test_codex_yolo_config):
+            anima_mgmt.cmd_anima_codex_yolo(args)
 
         captured = capsys.readouterr()
         assert "sakura" in captured.out
@@ -441,9 +460,7 @@ class TestCmdAnimaCodexYolo:
         sakura_permissions = json.loads(
             (data_dir / "animas" / "sakura" / "permissions.json").read_text(encoding="utf-8")
         )
-        mei_permissions = json.loads(
-            (data_dir / "animas" / "mei" / "permissions.json").read_text(encoding="utf-8")
-        )
+        mei_permissions = json.loads((data_dir / "animas" / "mei" / "permissions.json").read_text(encoding="utf-8"))
         assert sakura_permissions["file_roots"] == [str(data_dir / "animas" / "sakura")]
         assert mei_permissions["file_roots"] == [str(data_dir / "animas" / "mei")]
         assert (data_dir / "animas" / "sakura" / ".codex_home" / "config.toml").is_file()
@@ -496,7 +513,7 @@ class TestCmdAnimaCodexYolo:
         tmp_path,
         capsys,
     ):
-        from cli.commands.anima_mgmt import cmd_anima_codex_yolo
+        from cli.commands import anima_mgmt
 
         data_dir = self._make_runtime(
             tmp_path,
@@ -514,7 +531,8 @@ class TestCmdAnimaCodexYolo:
             restart=True,
             gateway_url="http://localhost:18500",
         )
-        cmd_anima_codex_yolo(args)
+        with patch.object(anima_mgmt, "_refresh_codex_yolo_config", side_effect=self._write_test_codex_yolo_config):
+            anima_mgmt.cmd_anima_codex_yolo(args)
 
         captured = capsys.readouterr()
         assert "restarted" in captured.out
