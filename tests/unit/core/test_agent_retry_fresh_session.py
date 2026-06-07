@@ -230,7 +230,6 @@ class TestRetryFreshSession:
             patch("core._agent_cycle._save_prompt_log"),
             patch("core.execution._sdk_session._clear_session_id"),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
-            patch("core.agent.AgentCore._compute_overflow_files", return_value=[]),
             patch("core._agent_cycle.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
         ):
             mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
@@ -278,7 +277,6 @@ class TestRetryFreshSession:
             patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,
             patch("core._agent_cycle._save_prompt_log"),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
-            patch("core.agent.AgentCore._compute_overflow_files", return_value=[]),
             patch("core._agent_cycle.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
         ):
             mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
@@ -324,9 +322,7 @@ class TestRetryFreshSession:
         assert done["cycle_result"]["action"] == "error"
 
     @pytest.mark.asyncio
-    async def test_provider_cooldown_preflight_skips_blocking_executor(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    async def test_provider_cooldown_preflight_skips_blocking_executor(self, tmp_path: Path, monkeypatch) -> None:
         """A live provider cooldown should also stop blocking run_cycle calls."""
         monkeypatch.setenv("ANIMAWORKS_PROVIDER_COOLDOWN_FILE", str(tmp_path / "provider_cooldowns.json"))
         record_provider_rate_limit(
