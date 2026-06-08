@@ -758,10 +758,7 @@ class PendingTaskExecutor:
                 task_id,
                 "pending",
                 summary="Stream error retry queued",
-                note=(
-                    "TaskExec streaming error retry "
-                    f"{retry_count}/{_AUTO_RETRY_STREAM_ERROR_MAX_RETRIES}"
-                ),
+                note=(f"TaskExec streaming error retry {retry_count}/{_AUTO_RETRY_STREAM_ERROR_MAX_RETRIES}"),
             )
             self.wake()
             logger.info(
