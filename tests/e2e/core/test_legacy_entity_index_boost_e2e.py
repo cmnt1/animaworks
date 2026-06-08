@@ -40,6 +40,7 @@ async def test_fact_ingest_updates_entity_registry_and_boosts_metadata_candidate
     for subdir in ("facts", "state", "knowledge", "episodes", "procedures"):
         (anima_dir / subdir).mkdir(parents=True)
 
+    monkeypatch.setattr("core.memory.fact_extraction._facts_reconcile_enabled", lambda: False)
     monkeypatch.setattr("core.memory.fact_extraction._index_fact_records", lambda *args, **kwargs: None)
 
     stored = await extract_and_store_facts(
