@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -640,3 +640,144 @@ class TestLlmTaskFailurePropagation:
             mock_activity.return_value.log = MagicMock()
             with pytest.raises(RuntimeError, match="stream retry exhausted"):
                 await executor._run_llm_task(task_desc)
+
+
+class TestLlmTaskStreamErrorRetry:
+    @pytest.mark.asyncio
+    async def test_requeues_transient_stream_error_before_terminal_failure(self, tmp_path):
+        from core.supervisor.pending_executor import TaskExecError
+
+        executor = _make_executor(tmp_path)
+        executor._anima._background_lock = asyncio.Lock()
+        executor._anima._mark_busy_start = MagicMock()
+        executor._anima._status_slots = {"background": "idle"}
+        executor._anima._task_slots = {"background": ""}
+        executor._anima.messenger.send = MagicMock()
+        executor._run_llm_task = AsyncMock(
+            side_effect=TaskExecError(
+                "Task stream-retry encountered streaming error: stream disconnected"
+            )
+        )
+
+        manager = TaskQueueManager(executor._anima_dir)
+        manager.add_task(
+            task_id="stream-retry",
+            source="anima",
+            original_instruction="Finish the task despite a transient stream failure",
+            assignee="test-anima",
+            summary="Stream retry task",
+            deadline="1h",
+            meta={"executor": "taskexec"},
+        )
+        task_desc = {
+            "task_type": "llm",
+            "task_id": "stream-retry",
+            "title": "Retry stream",
+            "description": "Finish work",
+        }
+
+        await executor.execute_pending_task(task_desc)
+
+        updated = manager.get_task_by_id("stream-retry")
+        assert updated is not None
+        assert updated.status == "pending"
+        assert updated.summary == "Stream error retry queued"
+        assert updated.meta["stream_error_retry_count"] == 1
+        assert (executor._anima_dir / "state" / "pending" / "stream-retry.json").exists()
+        assert not (executor._anima_dir / "state" / "task_results" / "stream-retry.md").exists()
+
+    @pytest.mark.asyncio
+    async def test_stream_error_becomes_failed_after_retry_limit(self, tmp_path):
+        from core.supervisor.pending_executor import TaskExecError
+
+        executor = _make_executor(tmp_path)
+        executor._anima._background_lock = asyncio.Lock()
+        executor._anima._mark_busy_start = MagicMock()
+        executor._anima._status_slots = {"background": "idle"}
+        executor._anima._task_slots = {"background": ""}
+        executor._anima.messenger.send = MagicMock()
+        executor._run_llm_task = AsyncMock(
+            side_effect=TaskExecError(
+                "Task stream-fail encountered streaming error: stream disconnected"
+            )
+        )
+
+        manager = TaskQueueManager(executor._anima_dir)
+        manager.add_task(
+            task_id="stream-fail",
+            source="anima",
+            original_instruction="Fail after retry limit",
+            assignee="test-anima",
+            summary="Stream fail task",
+            deadline="1h",
+            meta={"executor": "taskexec", "stream_error_retry_count": 2},
+        )
+        task_desc = {
+            "task_type": "llm",
+            "task_id": "stream-fail",
+            "title": "Retry stream",
+            "description": "Finish work",
+        }
+
+        await executor.execute_pending_task(task_desc)
+
+        updated = manager.get_task_by_id("stream-fail")
+        assert updated is not None
+        assert updated.status == "failed"
+        assert updated.summary.startswith("FAILED: TaskExecError:")
+        assert (executor._anima_dir / "state" / "task_results" / "stream-fail.md").exists()
+
+
+class TestBlockedTaskAutoRetrySweep:
+    def test_sweep_requeues_retryable_stale_blocked_task(self, tmp_path):
+        executor = _make_executor(tmp_path)
+        manager = TaskQueueManager(executor._anima_dir)
+        entry = manager.add_task(
+            task_id="blocked-retry",
+            source="anima",
+            original_instruction="Finish the multi-stage task",
+            assignee="test-anima",
+            summary="Start work",
+            deadline="1h",
+            meta={"executor": "taskexec"},
+        )
+        manager.update_status(
+            entry.task_id,
+            "blocked",
+            summary="BLOCKED: Task reported an explicit follow-up/start step, not final evidence",
+        )
+
+        retried = executor._sweep_auto_retryable_blocked_llm_tasks()
+
+        updated = manager.get_task_by_id(entry.task_id)
+        assert retried == 1
+        assert updated is not None
+        assert updated.status == "in_progress"
+        assert updated.meta["retry_count"] == 1
+        assert (executor._anima_dir / "state" / "pending" / "blocked-retry.json").exists()
+
+    def test_sweep_leaves_human_blocker_stopped(self, tmp_path):
+        executor = _make_executor(tmp_path)
+        manager = TaskQueueManager(executor._anima_dir)
+        entry = manager.add_task(
+            task_id="blocked-human",
+            source="anima",
+            original_instruction="Wait for owner input",
+            assignee="test-anima",
+            summary="Start work",
+            deadline="1h",
+            meta={"executor": "taskexec", "needs_human": True},
+        )
+        manager.update_status(
+            entry.task_id,
+            "blocked",
+            summary="BLOCKED: Task reported unresolved blockers instead of final evidence",
+        )
+
+        retried = executor._sweep_auto_retryable_blocked_llm_tasks()
+
+        updated = manager.get_task_by_id(entry.task_id)
+        assert retried == 0
+        assert updated is not None
+        assert updated.status == "blocked"
+        assert not (executor._anima_dir / "state" / "pending" / "blocked-human.json").exists()

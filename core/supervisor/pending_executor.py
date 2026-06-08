@@ -57,6 +57,7 @@ _AUTO_RETRY_BLOCKED_SUMMARY_PREFIXES = (
     "BLOCKED: Multi-stage task reported an intermediate/next-step result",
 )
 _AUTO_RETRY_NON_FINAL_MAX_RETRIES = 20
+_AUTO_RETRY_STREAM_ERROR_MAX_RETRIES = 2
 _NON_FINAL_MULTISTAGE_MARKERS = (
     "will proceed",
     "will continue",
@@ -671,6 +672,38 @@ class PendingTaskExecutor:
             logger.warning("[%s] Failed to auto-requeue blocked task: %s", self._anima_name, task_id, exc_info=True)
             return False
 
+    def _sweep_auto_retryable_blocked_llm_tasks(self) -> int:
+        """Requeue stale blocked TaskExec rows that qualify for automatic retry."""
+        try:
+            from core.memory.task_queue import TaskQueueManager
+
+            manager = TaskQueueManager(self._anima_dir)
+            entries = manager.list_tasks(status="blocked")
+        except Exception:
+            logger.warning("[%s] Failed to list blocked tasks for auto-retry sweep", self._anima_name, exc_info=True)
+            return 0
+
+        retried = 0
+        for entry in entries:
+            meta = entry.meta or {}
+            task_desc_meta = meta.get("task_desc")
+            task_desc = dict(task_desc_meta) if isinstance(task_desc_meta, dict) else {}
+            if not (
+                bool(task_desc.get("allow_multistage"))
+                or bool(meta.get("allow_multistage"))
+                or bool(meta.get("auto_retry_on_blocked"))
+                or _blocked_summary_allows_retry(entry.summary)
+            ):
+                continue
+            task_desc.setdefault("task_type", "llm")
+            task_desc["task_id"] = entry.task_id
+            task_desc.setdefault("description", entry.original_instruction)
+            if self._auto_retry_blocked_llm_task(task_desc):
+                retried += 1
+        if retried:
+            logger.info("[%s] Auto-retry sweep requeued %d blocked TaskExec task(s)", self._anima_name, retried)
+        return retried
+
     def _get_task_queue_entry(self, task_id: str) -> Any | None:
         if not task_id:
             return None
@@ -685,6 +718,68 @@ class PendingTaskExecutor:
                 exc_info=True,
             )
             return None
+
+    def _auto_requeue_stream_error_llm_task(self, task_desc: dict[str, Any], exc: Exception) -> bool:
+        """Requeue transient TaskExec stream disconnects before terminal failure."""
+        task_id = task_desc.get("task_id", "")
+        if not task_id or not isinstance(exc, TaskExecError):
+            return False
+
+        reason = str(exc)
+        folded = reason.casefold()
+        if "streaming error" not in folded and "stream disconnected" not in folded:
+            return False
+
+        try:
+            from core.memory.task_queue import TaskQueueManager
+
+            manager = TaskQueueManager(self._anima_dir)
+            entry = manager.get_task_by_id(task_id)
+            if entry is None:
+                return False
+
+            meta = dict(entry.meta or {})
+            retry_count = int(meta.get("stream_error_retry_count") or 0)
+            if retry_count >= _AUTO_RETRY_STREAM_ERROR_MAX_RETRIES:
+                return False
+            retry_count += 1
+            meta["stream_error_retry_count"] = retry_count
+            manager.update_meta(task_id, meta)
+
+            pending_dir = self._anima_dir / "state" / "pending"
+            pending_dir.mkdir(parents=True, exist_ok=True)
+            retried_desc = dict(task_desc)
+            retried_desc["_stream_error_retry_count"] = retry_count
+            (pending_dir / f"{task_id}.json").write_text(
+                json.dumps(retried_desc, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            manager.update_status(
+                task_id,
+                "pending",
+                summary="Stream error retry queued",
+                note=(
+                    "TaskExec streaming error retry "
+                    f"{retry_count}/{_AUTO_RETRY_STREAM_ERROR_MAX_RETRIES}"
+                ),
+            )
+            self.wake()
+            logger.info(
+                "[%s] Requeued TaskExec stream error: id=%s retry=%d/%d",
+                self._anima_name,
+                task_id,
+                retry_count,
+                _AUTO_RETRY_STREAM_ERROR_MAX_RETRIES,
+            )
+            return True
+        except Exception:
+            logger.warning(
+                "[%s] Failed to requeue TaskExec stream error: id=%s",
+                self._anima_name,
+                task_id,
+                exc_info=True,
+            )
+            return False
 
     async def _handle_goal_completion(self, task_desc: dict[str, Any], result_summary: str) -> None:
         """Run persistent-goal judging after a TaskExec task has completed."""
@@ -1031,6 +1126,7 @@ class PendingTaskExecutor:
         )
         for task_id in recovered_llm_task_ids:
             self._sync_task_queue(task_id, "pending", note="Recovered orphaned processing task; retry queued.")
+        self._sweep_auto_retryable_blocked_llm_tasks()
 
         logger.info("Pending task watcher started for %s", self._anima_name)
 
@@ -2058,6 +2154,8 @@ class PendingTaskExecutor:
             )
             self._anima._status_slots["background"] = "idle"
             self._anima._task_slots["background"] = ""
+            if self._auto_requeue_stream_error_llm_task(task_desc, exc):
+                return
             self._write_failed_result(
                 task_id,
                 f"{type(exc).__name__}: {str(exc)[:200]}",
