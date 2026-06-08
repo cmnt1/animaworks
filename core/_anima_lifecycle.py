@@ -104,11 +104,35 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
     if cred and hasattr(cred, "keys") and cred.keys:
         extra_keys = dict(cred.keys)
     return {
+        "credential": explicit_cred or provider,
         "api_key": api_key,
         "api_base_url": api_base_url,
         "api_key_env": api_key_env,
         "extra_keys": extra_keys,
     }
+
+
+def _consolidation_model_config(base_model_config: Any, consolidation_model: str, cfg: Any) -> Any:
+    """Return a ModelConfig override for consolidation-only LLM calls.
+
+    Consolidation must not inherit a per-Anima chat model/credential mismatch
+    (for example a Bedrock main model with a vLLM credential).  Use the
+    explicit consolidation helper model and credential while preserving other
+    per-Anima limits and org metadata from the base ModelConfig.
+    """
+    from core.config import resolve_execution_mode
+
+    resolved = _resolve_consolidation_credential(consolidation_model, cfg)
+    updates = {
+        "model": consolidation_model,
+        "credential": resolved["credential"] or getattr(base_model_config, "credential", None),
+        "api_key": resolved["api_key"],
+        "api_key_env": resolved["api_key_env"],
+        "api_base_url": resolved["api_base_url"],
+        "extra_keys": resolved["extra_keys"],
+        "resolved_mode": resolve_execution_mode(cfg, consolidation_model),
+    }
+    return base_model_config.model_copy(update=updates)
 
 
 class LifecycleMixin:
@@ -300,7 +324,9 @@ class LifecycleMixin:
 
         Daily Phase A uses ``config.consolidation.llm_model`` as an isolated
         helper model for episode extraction. Phase B and weekly consolidation
-        run as the Anima and therefore use the per-Anima ``status.json`` model.
+        also use the configured consolidation helper model/credential for the
+        LLM call, while preserving the Anima-specific prompt, memory, tools,
+        max-turns, and org metadata.
 
         Args:
             consolidation_type: "daily" or "weekly"
@@ -518,10 +544,15 @@ class LifecycleMixin:
         )
 
         base_model_config = self.memory.read_model_config()
+        consolidation_model_config = _consolidation_model_config(
+            base_model_config,
+            consolidation_model,
+            cfg,
+        )
         logger.info(
-            "[%s] Phase B: knowledge extraction with status model=%s",
+            "[%s] Phase B: knowledge extraction with consolidation model=%s",
             self.name,
-            base_model_config.model,
+            consolidation_model_config.model,
         )
 
         agent = _agent_for_lane(self, "background")
@@ -536,7 +567,7 @@ class LifecycleMixin:
                 trigger="consolidation:daily",
                 message_intent="request",
                 max_turns_override=max_turns,
-                model_config_override=base_model_config,
+                model_config_override=consolidation_model_config,
             )
 
         autolearn = self._run_autonomous_skill_learning()
@@ -558,9 +589,13 @@ class LifecycleMixin:
         *,
         max_turns: int = 30,
     ) -> CycleResult:
-        """Execute weekly consolidation with the Anima's status.json model."""
+        """Execute weekly consolidation with the configured consolidation model."""
         import time as _time
 
+        from core.config import load_config
+
+        cfg = load_config()
+        consolidation_model = cfg.consolidation.llm_model
         start_mono = _time.monotonic()
 
         knowledge_files = engine._list_knowledge_files_with_meta()
@@ -582,10 +617,15 @@ class LifecycleMixin:
         )
 
         base_model_config = self.memory.read_model_config()
+        consolidation_model_config = _consolidation_model_config(
+            base_model_config,
+            consolidation_model,
+            cfg,
+        )
         logger.info(
-            "[%s] Weekly consolidation: knowledge extraction with status model=%s",
+            "[%s] Weekly consolidation: knowledge extraction with consolidation model=%s",
             self.name,
-            base_model_config.model,
+            consolidation_model_config.model,
         )
         agent = _agent_for_lane(self, "background")
         async with _agent_session_context(self, "background"):
@@ -599,7 +639,7 @@ class LifecycleMixin:
                 trigger="consolidation:weekly",
                 message_intent="request",
                 max_turns_override=max_turns,
-                model_config_override=base_model_config,
+                model_config_override=consolidation_model_config,
             )
 
         autolearn = self._run_autonomous_skill_learning()

@@ -148,13 +148,34 @@ class TestGetMemoryLlmKwargsForModel:
         assert result["model"] == "openai/deepseek-v4-flash"
         assert result["api_base"] == "http://localhost:4000/v1"
 
-    def test_leaves_bare_model_without_api_base_unchanged(self) -> None:
-        cfg = _make_config(credentials={})
+    def test_leaves_unrelated_bare_model_without_api_base_unchanged(self) -> None:
+        cfg = _make_config(
+            llm_model="openai/deepseek-v4-flash",
+            llm_credential="vllm-lb",
+            credentials={"vllm-lb": _make_cred(api_key="vllm-key", base_url="http://vllm.example/v1")},
+        )
+
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_memory_llm_kwargs_for_model("other-model")
+
+        assert result == {"model": "other-model"}
+
+    def test_bare_model_matching_consolidation_model_uses_consolidation_credential(self) -> None:
+        cfg = _make_config(
+            llm_model="openai/deepseek-v4-flash",
+            llm_credential="vllm-lb",
+            credentials={
+                "openai": _make_cred(api_key="", base_url=""),
+                "vllm-lb": _make_cred(api_key="vllm-key", base_url="http://vllm.example/v1"),
+            },
+        )
 
         with patch("core.config.load_config", return_value=cfg):
             result = llm_utils.get_memory_llm_kwargs_for_model("deepseek-v4-flash")
 
-        assert result == {"model": "deepseek-v4-flash"}
+        assert result["model"] == "openai/deepseek-v4-flash"
+        assert result["api_key"] == "vllm-key"
+        assert result["api_base"] == "http://vllm.example/v1"
 
 
 # ── ensure_credentials_in_env ─────────────────────────────────────────────────
