@@ -773,9 +773,7 @@ class InboxMixin:
                     # infinite retry loops, except transient stream-retry
                     # exhaustion with no text: those should use the inbox
                     # retry counter instead of being silently marked processed.
-                    _is_retryable_empty_error = (
-                        not accumulated_text.strip() and _is_retryable_empty_cycle_error(result)
-                    )
+                    _is_retryable_empty_error = not accumulated_text.strip() and _is_retryable_empty_cycle_error(result)
                     _is_terminal_error = (
                         result is not None and result.action == "error" and not _is_retryable_empty_error
                     )
