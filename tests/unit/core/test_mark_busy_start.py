@@ -12,6 +12,8 @@ processes at heartbeat boundaries.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -86,6 +88,24 @@ class TestMarkBusyStart:
         dp._mark_busy_start()
 
         assert dp._last_progress_at == dp._busy_since
+
+    def test_writes_and_clears_busy_sidecar(self, data_dir, make_anima):
+        """Runtime instances write an IPC-independent busy marker."""
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+        dp = _make_digital_anima(anima_dir, shared_dir)
+
+        dp._mark_busy_start()
+
+        sidecar = data_dir / "run" / "animas" / "alice.busy.json"
+        assert sidecar.exists()
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert data["anima"] == "alice"
+        assert data["pid"] == os.getpid()
+        assert data["is_busy"] is True
+
+        dp._clear_busy_status_sidecar_if_idle()
+        assert not sidecar.exists()
 
 
 class TestHeartbeatCallsMarkBusyStart:

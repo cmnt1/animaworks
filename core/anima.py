@@ -17,6 +17,7 @@ Implementation is split into Mixin sub-modules for manageability:
 import asyncio
 import json
 import logging
+import os
 import re
 import threading
 from collections.abc import Callable
@@ -87,6 +88,7 @@ class DigitalAnima(
 
     def __init__(self, anima_dir: Path, shared_dir: Path) -> None:
         self.anima_dir = anima_dir
+        self.shared_dir = shared_dir
         self.name = anima_dir.name
         self._activity = ActivityLogger(anima_dir)
 
@@ -226,6 +228,60 @@ class DigitalAnima(
         now = now_local()
         self._last_progress_at = now
         self._busy_since = now
+        self._write_busy_status_sidecar()
+
+    def _busy_status_sidecar_path(self) -> Path | None:
+        """Path used by the supervisor as an IPC-independent busy signal."""
+        shared_dir = getattr(self, "shared_dir", None)
+        if shared_dir is None:
+            return None
+        return Path(shared_dir).parent / "run" / "animas" / f"{self.name}.busy.json"
+
+    def _write_busy_status_sidecar(self) -> None:
+        """Write a small progress marker readable when IPC ping is blocked."""
+        try:
+            now = now_local()
+            last_progress = self._last_progress_at or now
+            busy_since = self._busy_since or last_progress
+            path = self._busy_status_sidecar_path()
+            if path is None:
+                return
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "anima": self.name,
+                "pid": os.getpid(),
+                "is_busy": True,
+                "busy_since": busy_since.isoformat(),
+                "last_progress_at": last_progress.isoformat(),
+                "updated_at": now.isoformat(),
+            }
+            tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+            tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            tmp_path.replace(path)
+        except OSError:
+            logger.debug("[%s] Failed to write busy status sidecar", self.name, exc_info=True)
+
+    def _clear_busy_status_sidecar_if_idle(self) -> None:
+        """Remove the busy marker once all local execution locks are idle."""
+        try:
+            any_conversation_locked = any(lock.locked() for lock in self._conversation_locks.values())
+            if any_conversation_locked or self._background_lock.locked() or self._inbox_lock.locked():
+                return
+
+            path = self._busy_status_sidecar_path()
+            if path is None:
+                return
+            if not path.exists():
+                return
+
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                data = {}
+            if data.get("pid") in (None, os.getpid()) or data.get("anima") == self.name:
+                path.unlink(missing_ok=True)
+        except OSError:
+            logger.debug("[%s] Failed to clear busy status sidecar", self.name, exc_info=True)
 
     # ── Thread lock management ──────────────────────────────────
 
@@ -460,6 +516,7 @@ class DigitalAnima(
         return [t.to_dict() for t in mgr.list_tasks()]
 
     def _notify_lock_released(self) -> None:
+        self._clear_busy_status_sidecar_if_idle()
         if self._on_lock_released:
             try:
                 self._on_lock_released()

@@ -134,6 +134,18 @@ def get_llm_kwargs_for_model(model: str, *, credential: str = "") -> dict[str, A
     if not explicit_cred and not model:
         _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
         explicit_cred = _llm_cred if isinstance(_llm_cred, str) and _llm_cred else ""
+    elif not explicit_cred and model and "/" not in model:
+        # Memory extraction historically allowed bare model names in status.json
+        # (e.g. ``deepseek-v4-flash``).  When that bare name is the same model
+        # as the configured consolidation helper, use the consolidation
+        # credential instead of falling through to provider-prefix resolution.
+        # Without this, LiteLLM treats the bare model as OpenAI-compatible but
+        # no OpenAI credential exists in vLLM-backed deployments.
+        consolidation_model = str(getattr(cfg.consolidation, "llm_model", "") or "")
+        consolidation_base = consolidation_model.split("/", 1)[-1]
+        if consolidation_base == model:
+            _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
+            explicit_cred = _llm_cred if isinstance(_llm_cred, str) and _llm_cred else ""
 
     if explicit_cred:
         cred = cfg.credentials.get(explicit_cred)

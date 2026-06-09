@@ -2212,3 +2212,5 @@ class PendingTaskExecutor:
                         reply_to,
                         exc_info=True,
                     )
+        finally:
+            self._anima._clear_busy_status_sidecar_if_idle()

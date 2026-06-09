@@ -12,6 +12,7 @@ never kills processes that are making progress.
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -38,6 +39,7 @@ def _make_handle(tmp_path: Path, *, started_minutes_ago: int = 5) -> ProcessHand
     mock_proc = MagicMock()
     mock_proc.poll.return_value = None
     mock_proc.returncode = None
+    mock_proc.pid = 12345
     h.process = mock_proc
     return h
 
@@ -227,6 +229,104 @@ class TestProgressAwareBusyHang:
 
         await sup._check_process_health("test-anima", handle)
         assert handle.stats.last_busy_since is None
+
+    @pytest.mark.asyncio
+    async def test_ping_failure_with_fresh_busy_sidecar_not_killed(self, tmp_path: Path):
+        """A fresh child busy marker should prevent false hang kills when IPC ping times out."""
+        handle = _make_handle(tmp_path)
+        handle.stats.missed_pings = 1
+        handle.ping = AsyncMock(return_value={
+            "success": False,
+        })
+
+        run_dir = tmp_path / "run"
+        sidecar = run_dir / "animas" / "test-anima.busy.json"
+        sidecar.parent.mkdir(parents=True)
+        sidecar.write_text(
+            json.dumps({
+                "anima": "test-anima",
+                "pid": handle.get_pid(),
+                "is_busy": True,
+                "busy_since": (now_jst() - timedelta(minutes=1)).isoformat(),
+                "last_progress_at": (now_jst() - timedelta(seconds=20)).isoformat(),
+                "updated_at": now_jst().isoformat(),
+            }),
+            encoding="utf-8",
+        )
+
+        sup = _make_supervisor()
+        sup.run_dir = run_dir
+        sup._handle_process_hang = AsyncMock()
+
+        await sup._check_process_health("test-anima", handle)
+
+        sup._handle_process_hang.assert_not_called()
+        assert handle.stats.missed_pings == 0
+
+    @pytest.mark.asyncio
+    async def test_ping_failure_with_stale_busy_sidecar_killed(self, tmp_path: Path):
+        """A stale busy marker still triggers progress-aware hang recovery."""
+        handle = _make_handle(tmp_path)
+        handle.ping = AsyncMock(return_value={
+            "success": False,
+        })
+
+        run_dir = tmp_path / "run"
+        sidecar = run_dir / "animas" / "test-anima.busy.json"
+        sidecar.parent.mkdir(parents=True)
+        sidecar.write_text(
+            json.dumps({
+                "anima": "test-anima",
+                "pid": handle.get_pid(),
+                "is_busy": True,
+                "busy_since": (now_jst() - timedelta(minutes=20)).isoformat(),
+                "last_progress_at": (now_jst() - timedelta(minutes=16)).isoformat(),
+                "updated_at": (now_jst() - timedelta(minutes=16)).isoformat(),
+            }),
+            encoding="utf-8",
+        )
+
+        sup = _make_supervisor()
+        sup.run_dir = run_dir
+        sup._handle_process_hang = AsyncMock()
+
+        await sup._check_process_health("test-anima", handle)
+        await asyncio.sleep(0)
+
+        sup._handle_process_hang.assert_awaited_once_with("test-anima", handle)
+
+    @pytest.mark.asyncio
+    async def test_ping_failure_ignores_busy_sidecar_for_old_pid(self, tmp_path: Path):
+        """Stale marker from a previous PID must not suppress normal missed-ping recovery."""
+        handle = _make_handle(tmp_path)
+        handle.stats.missed_pings = HealthConfig().max_missed_pings
+        handle.ping = AsyncMock(return_value={
+            "success": False,
+        })
+
+        run_dir = tmp_path / "run"
+        sidecar = run_dir / "animas" / "test-anima.busy.json"
+        sidecar.parent.mkdir(parents=True)
+        sidecar.write_text(
+            json.dumps({
+                "anima": "test-anima",
+                "pid": int(handle.get_pid()) + 1,
+                "is_busy": True,
+                "busy_since": now_jst().isoformat(),
+                "last_progress_at": now_jst().isoformat(),
+                "updated_at": now_jst().isoformat(),
+            }),
+            encoding="utf-8",
+        )
+
+        sup = _make_supervisor()
+        sup.run_dir = run_dir
+        sup._handle_process_hang = AsyncMock()
+
+        await sup._check_process_health("test-anima", handle)
+        await asyncio.sleep(0)
+
+        sup._handle_process_hang.assert_awaited_once_with("test-anima", handle)
 
     @pytest.mark.asyncio
     async def test_not_busy_recovered_log(self, tmp_path: Path):

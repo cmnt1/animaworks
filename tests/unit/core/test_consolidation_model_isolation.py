@@ -62,18 +62,34 @@ def _make_lifecycle(status_config: ModelConfig):
     return obj
 
 
-def _mock_config(consolidation_model: str = "openai/deepseek-v4-flash"):
-    return SimpleNamespace(consolidation=SimpleNamespace(llm_model=consolidation_model))
+def _mock_config(
+    consolidation_model: str = "openai/deepseek-v4-flash",
+    consolidation_credential: str = "vllm-lb",
+):
+    return SimpleNamespace(
+        consolidation=SimpleNamespace(
+            llm_model=consolidation_model,
+            llm_credential=consolidation_credential,
+        ),
+        credentials={
+            "vllm-lb": SimpleNamespace(
+                api_key="vllm-key",
+                base_url="http://vllm.example/v1",
+                keys={},
+            ),
+        },
+    )
 
 
 @pytest.mark.asyncio
-async def test_daily_phase_b_uses_status_model_without_mutating_agent_executor():
-    status_config = ModelConfig(model="claude-opus-4-6", resolved_mode="S")
+async def test_daily_phase_b_uses_consolidation_model_without_mutating_agent_executor():
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
     original_executor = anima.agent._executor
 
     with (
         patch("core.config.load_config", return_value=_mock_config()),
+        patch("core.config.resolve_execution_mode", return_value="D"),
         patch(
             "core._anima_lifecycle.load_prompt",
             return_value="daily prompt",
@@ -83,31 +99,45 @@ async def test_daily_phase_b_uses_status_model_without_mutating_agent_executor()
 
     assert result.trigger == "consolidation:daily"
     assert anima.agent._executor is original_executor
-    assert anima.agent.model_config.model == "claude-opus-4-6"
+    assert anima.agent.model_config.model == "bedrock/qwen.qwen3-next-80b-a3b"
     assert len(anima.agent.calls) == 1
     call = anima.agent.calls[0]
     assert call["trigger"] == "consolidation:daily"
     assert call["max_turns_override"] == 7
-    assert call["model_config_override"].model == "claude-opus-4-6"
+    override = call["model_config_override"]
+    assert override.model == "openai/deepseek-v4-flash"
+    assert override.credential == "vllm-lb"
+    assert override.api_key == "vllm-key"
+    assert override.api_base_url == "http://vllm.example/v1"
+    assert override.resolved_mode == "D"
 
 
 @pytest.mark.asyncio
-async def test_weekly_consolidation_uses_status_model_without_mutating_agent_executor():
-    status_config = ModelConfig(model="claude-opus-4-6", resolved_mode="S")
+async def test_weekly_consolidation_uses_consolidation_model_without_mutating_agent_executor():
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
     original_executor = anima.agent._executor
 
-    with patch("core._anima_lifecycle.load_prompt", return_value="weekly prompt"):
+    with (
+        patch("core.config.load_config", return_value=_mock_config()),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core._anima_lifecycle.load_prompt", return_value="weekly prompt"),
+    ):
         result = await anima._run_weekly_consolidation(_FakeEngine(), max_turns=11)
 
     assert result.trigger == "consolidation:weekly"
     assert anima.agent._executor is original_executor
-    assert anima.agent.model_config.model == "claude-opus-4-6"
+    assert anima.agent.model_config.model == "bedrock/qwen.qwen3-next-80b-a3b"
     assert len(anima.agent.calls) == 1
     call = anima.agent.calls[0]
     assert call["trigger"] == "consolidation:weekly"
     assert call["max_turns_override"] == 11
-    assert call["model_config_override"].model == "claude-opus-4-6"
+    override = call["model_config_override"]
+    assert override.model == "openai/deepseek-v4-flash"
+    assert override.credential == "vllm-lb"
+    assert override.api_key == "vllm-key"
+    assert override.api_base_url == "http://vllm.example/v1"
+    assert override.resolved_mode == "D"
 
 
 class _FakeExecutor:
