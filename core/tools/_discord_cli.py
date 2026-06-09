@@ -76,6 +76,8 @@ def _enrich_message_authors(msgs: list[dict]) -> None:
             uname = author.get("global_name") or author.get("username", "")
             if uname and not m.get("user_name"):
                 m["user_name"] = uname
+            if not m.get("bot"):
+                m["bot"] = bool(author.get("bot"))
 
 
 def _channel_type_label(type_id: int) -> str:
@@ -229,33 +231,30 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
                 cache.update_sync_state(channel_id)
 
             if getattr(args, "json", False):
-                cached = cache.get_recent(channel_id, limit=args.num)
                 out: list[dict] = []
-                for m in cached:
-                    text_raw = m.get("text", "")
+                for m in msgs:
+                    wid = m.get("webhook_id")
                     out.append(
                         {
                             "channel_id": m.get("channel_id", channel_id),
-                            "id": m.get("ts", m.get("id", "")),
-                            "user_id": m.get("user_id", ""),
+                            "id": str(m.get("id", "")),
+                            "user_id": str(m.get("user_id", "")),
                             "user_name": m.get("user_name", ""),
-                            "text": clean_discord_markup(text_raw),
-                            "send_time_jst": m.get("send_time_jst", ""),
+                            "text": clean_discord_markup(m.get("content", "")),
+                            "send_time_jst": m.get("timestamp", ""),
+                            "webhook_id": str(wid) if wid else None,
+                            "bot": bool(m.get("bot")),
                         }
                     )
                 print_json(out)
                 return
 
-            cached = cache.get_recent(channel_id, limit=args.num)
-            user_name_map = cache.get_user_name_cache()
-
-            if cached:
-                for m in reversed(cached):
-                    ts = m.get("send_time_jst", "")
+            if msgs:
+                user_name_map = cache.get_user_name_cache()
+                for m in reversed(msgs):
+                    ts = m.get("timestamp", "")
                     user_name = m.get("user_name", "")
-                    if not user_name and m.get("user_id"):
-                        user_name = cache.get_user_name(m["user_id"])
-                    text = clean_discord_markup(m.get("text", ""), cache=user_name_map)
+                    text = clean_discord_markup(m.get("content", ""), cache=user_name_map)
                     print(f"{ts} {user_name}")
                     for line in text.strip().split("\n"):
                         print(f"  {line}")
