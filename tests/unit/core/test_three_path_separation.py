@@ -17,6 +17,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -613,6 +614,192 @@ class TestProcessInboxMessage:
 
         assert result.action == "responded"
         assert len(list(inbox_dir.glob("*.json"))) == 0
+
+    async def test_stream_retry_exhausted_empty_response_keeps_message_for_retry(
+        self,
+        data_dir,
+        make_anima,
+    ):
+        """Transient stream failure with no text should not silently process inbox."""
+        anima_dir = make_anima("inbox_stream_retry")
+        make_anima("sender")
+        shared_dir = data_dir / "shared"
+
+        from core.messenger import Messenger
+
+        m = Messenger(shared_dir, "sender")
+        m.send("inbox_stream_retry", "Please handle this")
+
+        inbox_dir = shared_dir / "inbox" / "inbox_stream_retry"
+        assert len(list(inbox_dir.glob("*.json"))) == 1
+
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core._anima_inbox.load_prompt", return_value="prompt"),
+        ):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
+            dp.agent.replied_to = set()
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+
+            async def mock_stream(prompt, trigger="manual", **kwargs):
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": {
+                        "trigger": trigger,
+                        "action": "error",
+                        "summary": "Stream disconnected 5 time(s). Max retries reached.",
+                        "duration_ms": 50,
+                    },
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+            result = await dp.process_inbox_message()
+
+        assert result.action == "error"
+        assert len(list(inbox_dir.glob("*.json"))) == 1
+
+    async def test_japanese_stream_retry_exhausted_keeps_message_for_retry(
+        self,
+        data_dir,
+        make_anima,
+    ):
+        """Japanese localized stream retry exhaustion is also retryable."""
+        anima_dir = make_anima("inbox_stream_retry_ja")
+        make_anima("sender")
+        shared_dir = data_dir / "shared"
+
+        from core.messenger import Messenger
+
+        m = Messenger(shared_dir, "sender")
+        m.send("inbox_stream_retry_ja", "Please handle this")
+
+        inbox_dir = shared_dir / "inbox" / "inbox_stream_retry_ja"
+        assert len(list(inbox_dir.glob("*.json"))) == 1
+
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core._anima_inbox.load_prompt", return_value="prompt"),
+        ):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
+            dp.agent.replied_to = set()
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+
+            async def mock_stream(prompt, trigger="manual", **kwargs):
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": {
+                        "trigger": trigger,
+                        "action": "error",
+                        "summary": "ストリームが5回切断されました。最大リトライ回数に達しました。",
+                        "duration_ms": 50,
+                    },
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+            result = await dp.process_inbox_message()
+
+        assert result.action == "error"
+        assert len(list(inbox_dir.glob("*.json"))) == 1
+
+    async def test_terminal_empty_error_still_archives_message(self, data_dir, make_anima):
+        """Non-retryable terminal errors still archive to prevent infinite loops."""
+        anima_dir = make_anima("inbox_terminal_error")
+        make_anima("sender")
+        shared_dir = data_dir / "shared"
+
+        from core.messenger import Messenger
+
+        m = Messenger(shared_dir, "sender")
+        m.send("inbox_terminal_error", "Please handle this")
+
+        inbox_dir = shared_dir / "inbox" / "inbox_terminal_error"
+        assert len(list(inbox_dir.glob("*.json"))) == 1
+
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core._anima_inbox.load_prompt", return_value="prompt"),
+        ):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.reset_posted_channels = MagicMock()
+            dp.agent.replied_to = set()
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+
+            async def mock_stream(prompt, trigger="manual", **kwargs):
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": {
+                        "trigger": trigger,
+                        "action": "error",
+                        "summary": "Permission denied by policy.",
+                        "duration_ms": 50,
+                    },
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+            result = await dp.process_inbox_message()
+
+        assert result.action == "error"
+        assert len(list(inbox_dir.glob("*.json"))) == 0
+
+    async def test_retry_exhausted_inbox_message_is_quarantined_not_processed(
+        self,
+        data_dir,
+        make_anima,
+    ):
+        """Retry-exhausted empty inbox messages should remain recoverable."""
+        anima_dir = make_anima("inbox_retry_quarantine")
+        make_anima("sender")
+        shared_dir = data_dir / "shared"
+
+        from core.messenger import Messenger
+
+        m = Messenger(shared_dir, "sender")
+        m.send("inbox_retry_quarantine", "Please handle this")
+
+        inbox_dir = shared_dir / "inbox" / "inbox_retry_quarantine"
+        inbox_file = next(inbox_dir.glob("*.json"))
+        processed_dir = inbox_dir / "processed"
+        quarantine_dir = inbox_dir / "quarantine"
+
+        state_dir = anima_dir / "state"
+        state_dir.mkdir(exist_ok=True)
+        (state_dir / "inbox_read_counts.json").write_text(
+            json.dumps({inbox_file.name: 3}),
+            encoding="utf-8",
+        )
+
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core._anima_inbox.load_prompt", return_value="prompt"),
+        ):
+            MockConv.return_value.load.return_value = MagicMock(turns=[])
+            from core.anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            result = await dp.process_inbox_message()
+
+        assert result.action == "idle"
+        assert not inbox_file.exists()
+        assert (quarantine_dir / inbox_file.name).exists()
+        assert not (processed_dir / inbox_file.name).exists()
 
     async def test_uses_inbox_lock(self, data_dir, make_anima):
         """process_inbox_message should acquire _inbox_lock when messages exist."""

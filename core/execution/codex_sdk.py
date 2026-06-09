@@ -81,6 +81,7 @@ _WINDOWS_TASKKILL_SUCCESS_RE = re.compile(
 
 _CODEX_REASONING_SUMMARY_DEFAULT = "concise"
 _CODEX_REASONING_SUMMARY_VALUES = {"auto", "concise", "detailed", "none"}
+_CODEX_THREAD_SESSION_ID_PATCHED = False
 
 
 # ── Model name helpers ───────────────────────────────────────
@@ -103,6 +104,50 @@ def is_codex_sdk_available() -> bool:
         return True
     except Exception:
         return False
+
+
+def _normalize_codex_thread_session_ids(payload: Any) -> None:
+    """Fill missing Codex thread ``sessionId`` fields from ``id`` in-place."""
+    if isinstance(payload, dict):
+        if (
+            "sessionId" not in payload
+            and isinstance(payload.get("id"), str)
+            and "cliVersion" in payload
+            and "modelProvider" in payload
+            and "turns" in payload
+        ):
+            payload["sessionId"] = payload["id"]
+        for value in payload.values():
+            _normalize_codex_thread_session_ids(value)
+    elif isinstance(payload, list):
+        for item in payload:
+            _normalize_codex_thread_session_ids(item)
+
+
+def _patch_codex_thread_session_id_compat() -> None:
+    """Patch openai_codex 0.1.0b3 responses missing Thread.sessionId."""
+    global _CODEX_THREAD_SESSION_ID_PATCHED
+    if _CODEX_THREAD_SESSION_ID_PATCHED:
+        return
+    try:
+        from openai_codex.client import CodexClient
+    except Exception:
+        return
+
+    original_raw = CodexClient._request_raw
+    if getattr(original_raw, "_animaworks_session_id_patch", False):
+        _CODEX_THREAD_SESSION_ID_PATCHED = True
+        return
+
+    def _request_raw_with_thread_session_id(self: Any, method: str, params: Any = None) -> Any:
+        result = original_raw(self, method, params)
+        if isinstance(method, str) and method.startswith("thread/"):
+            _normalize_codex_thread_session_ids(result)
+        return result
+
+    _request_raw_with_thread_session_id._animaworks_session_id_patch = True  # type: ignore[attr-defined]
+    CodexClient._request_raw = _request_raw_with_thread_session_id
+    _CODEX_THREAD_SESSION_ID_PATCHED = True
 
 
 def _is_openai_api_key(key: str) -> bool:
@@ -1204,6 +1249,7 @@ class CodexSDKExecutor(BaseExecutor):
         except ModuleNotFoundError as e:
             raise ImportError("openai_codex is required for Mode C (install openai-codex).") from e
 
+        _patch_codex_thread_session_id_compat()
         executable = get_codex_executable()
         config = CodexConfig(
             codex_bin=executable,

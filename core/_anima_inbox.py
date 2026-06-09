@@ -56,6 +56,12 @@ _MAX_INBOX_RETRIES = 3
 _INBOX_THREAD_ID = "inbox"
 _RESCUE_QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
 _RESCUE_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
+_RETRYABLE_EMPTY_ERROR_MARKERS = (
+    "stream disconnected",
+    "stream retry exhausted",
+    "max retries reached",
+    "retry_count",
+)
 
 
 def _truncate_with_thread_ctx(
@@ -79,6 +85,18 @@ def _truncate_with_thread_ctx(
     if len(ctx_part) > ctx_budget:
         ctx_part = ctx_part[:ctx_budget].rstrip() + "...\n"
     return ctx_part + body_part[:body_budget]
+
+
+def _is_retryable_empty_cycle_error(result: CycleResult | None) -> bool:
+    """Return True when an empty inbox response came from transient stream failure."""
+    if result is None or result.action != "error":
+        return False
+    summary = (result.summary or "").lower()
+    if not summary:
+        return False
+    if any(marker in summary for marker in _RETRYABLE_EMPTY_ERROR_MARKERS):
+        return True
+    return "ストリーム" in summary and "リトライ" in summary
 
 
 def _extract_user_body(content: str) -> str:
@@ -751,9 +769,16 @@ class InboxMixin:
                     # returned nothing (e.g. SDK empty response due to API
                     # outage / rate limit).  Keeping them lets the next
                     # inbox cycle retry — up to _MAX_INBOX_RETRIES.
-                    # Terminal errors (action="error") are always archived
-                    # to prevent infinite retry loops.
-                    _is_terminal_error = result is not None and result.action == "error"
+                    # Terminal errors (action="error") are archived to prevent
+                    # infinite retry loops, except transient stream-retry
+                    # exhaustion with no text: those should use the inbox
+                    # retry counter instead of being silently marked processed.
+                    _is_retryable_empty_error = (
+                        not accumulated_text.strip() and _is_retryable_empty_cycle_error(result)
+                    )
+                    _is_terminal_error = (
+                        result is not None and result.action == "error" and not _is_retryable_empty_error
+                    )
                     if accumulated_text.strip() or agent.replied_to or _is_terminal_error:
                         await self._archive_processed_messages(
                             inbox_result.inbox_items,
@@ -778,18 +803,32 @@ class InboxMixin:
                             else False
                         )
                         if _all_exhausted:
-                            logger.warning(
-                                "[%s] Empty LLM response for inbox — all %d messages exceeded "
-                                "%d retries, force-archiving to prevent infinite loop",
-                                self.name,
-                                len(inbox_result.inbox_items),
-                                _MAX_INBOX_RETRIES,
-                            )
-                            await self._archive_processed_messages(
-                                inbox_result.inbox_items,
-                                inbox_result.senders,
-                                set(),
-                            )
+                            if _is_retryable_empty_error:
+                                quarantined = self._quarantine_inbox_messages(
+                                    inbox_result.inbox_items,
+                                    reason="retryable empty stream response exceeded retries",
+                                )
+                                logger.warning(
+                                    "[%s] Retryable empty LLM response for inbox exceeded %d retries; "
+                                    "quarantined %d/%d messages",
+                                    self.name,
+                                    _MAX_INBOX_RETRIES,
+                                    quarantined,
+                                    len(inbox_result.inbox_items),
+                                )
+                            else:
+                                logger.warning(
+                                    "[%s] Empty LLM response for inbox — all %d messages exceeded "
+                                    "%d retries, force-archiving to prevent infinite loop",
+                                    self.name,
+                                    len(inbox_result.inbox_items),
+                                    _MAX_INBOX_RETRIES,
+                                )
+                                await self._archive_processed_messages(
+                                    inbox_result.inbox_items,
+                                    inbox_result.senders,
+                                    set(),
+                                )
                         else:
                             logger.warning(
                                 "[%s] Empty LLM response for inbox — messages NOT archived (will retry)",
@@ -1047,7 +1086,7 @@ class InboxMixin:
         inbox_dir = self.anima_dir.parent.parent / "shared" / "inbox" / self.name
         _read_counts = {k: v for k, v in _read_counts.items() if (inbox_dir / k).exists()}
 
-        # ── Force-archive messages that exceeded retry limit ──
+        # ── Quarantine messages that exceeded retry limit ──
         _stale_items: list[InboxItem] = []
         _kept_items: list[InboxItem] = []
         for item in inbox_items:
@@ -1065,16 +1104,20 @@ class InboxMixin:
                 dedup_stale = MessageDeduplicator(self.anima_dir)
                 for item in _stale_items:
                     dedup_stale._write_overflow_file(item.msg)
-                self.messenger.archive_paths(_stale_items)
             except Exception:
                 logger.debug(
-                    "[%s] Failed to force-archive stale inbox messages",
+                    "[%s] Failed to write stale inbox overflow files",
                     self.name,
                     exc_info=True,
                 )
+            quarantined = self._quarantine_inbox_messages(
+                _stale_items,
+                reason=f"inbox retry count exceeded {_MAX_INBOX_RETRIES}",
+            )
             logger.warning(
-                "[%s] Force-archived %d inbox messages exceeding %d retries",
+                "[%s] Quarantined %d/%d inbox messages exceeding %d retries",
                 self.name,
+                quarantined,
                 len(_stale_items),
                 _MAX_INBOX_RETRIES,
             )
@@ -1181,6 +1224,38 @@ class InboxMixin:
             unread_count=unread_count,
             prompt_parts=prompt_parts,
         )
+
+    def _quarantine_inbox_messages(self, inbox_items: list[InboxItem], *, reason: str) -> int:
+        """Move inbox files to quarantine without marking them processed."""
+        count = 0
+        stamp = now_local().strftime("%Y%m%d_%H%M%S_%f")
+        for item in inbox_items:
+            src = item.path
+            if not src.exists():
+                continue
+            quarantine_dir = src.parent / "quarantine"
+            quarantine_dir.mkdir(exist_ok=True)
+            dest = quarantine_dir / src.name
+            if dest.exists():
+                dest = quarantine_dir / f"{src.stem}.{stamp}{src.suffix}"
+            try:
+                src.rename(dest)
+                count += 1
+                logger.warning(
+                    "[%s] Quarantined inbox message %s -> %s (%s)",
+                    self.name,
+                    src.name,
+                    dest.name,
+                    reason,
+                )
+            except OSError:
+                logger.warning(
+                    "[%s] Failed to quarantine inbox message: %s",
+                    self.name,
+                    src,
+                    exc_info=True,
+                )
+        return count
 
     async def _archive_processed_messages(
         self,

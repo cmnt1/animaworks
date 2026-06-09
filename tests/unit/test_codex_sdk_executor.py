@@ -33,6 +33,7 @@ from core.execution.codex_sdk import (
     _is_desktop_extension_codex,
     _item_to_tool_record,
     _load_thread_id,
+    _normalize_codex_thread_session_ids,
     _resolve_codex_model,
     _save_thread_id,
     _should_cli_exec_fallback,
@@ -130,6 +131,37 @@ class TestHelpers:
     def test_get_thread_id_none(self):
         obj = MagicMock(spec=[])
         assert _get_thread_id(obj) is None
+
+    def test_normalize_codex_thread_session_ids_fills_missing_session_id(self):
+        payload = {
+            "thread": {
+                "id": "019eaa7f-8952-745a-thread",
+                "cliVersion": "0.135.0",
+                "modelProvider": "openai",
+                "turns": [],
+            }
+        }
+
+        _normalize_codex_thread_session_ids(payload)
+
+        assert payload["thread"]["sessionId"] == "019eaa7f-8952-745a-thread"
+
+    def test_normalize_codex_thread_session_ids_keeps_existing_session_id(self):
+        payload = {
+            "data": [
+                {
+                    "id": "thread-id",
+                    "sessionId": "session-id",
+                    "cliVersion": "0.135.0",
+                    "modelProvider": "openai",
+                    "turns": [],
+                }
+            ]
+        }
+
+        _normalize_codex_thread_session_ids(payload)
+
+        assert payload["data"][0]["sessionId"] == "session-id"
 
     def test_extract_item_text_string_content(self):
         item = MagicMock()
