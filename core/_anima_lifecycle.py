@@ -184,7 +184,7 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
 
     api_key = cred.api_key if cred else None
     api_base_url = (cred.base_url if cred else None) or None
-    credential_type = (cred.type if cred else None) or "api_key"
+    credential_type = (getattr(cred, "type", None) if cred else None) or "api_key"
     api_key_env = _PROVIDER_ENV_MAP.get(provider, "ANTHROPIC_API_KEY")
     if provider == OPENCODE_GO_PROVIDER:
         defaults = with_opencode_go_defaults(cred)
