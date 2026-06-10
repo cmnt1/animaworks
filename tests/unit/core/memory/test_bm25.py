@@ -266,13 +266,10 @@ def test_rebuild_and_search_longterm_bm25_index(tmp_path: Path) -> None:
     assert hits
     assert hits[0]["source_file"] == "knowledge/meridian.md"
     assert hits[0]["memory_type"] == "knowledge"
-    assert hits[0]["search_method"] == ("bm25" if bm25_module._HAS_BM25 else "keyword_fallback")
+    assert hits[0]["search_method"] == "bm25"
 
 
 def test_longterm_bm25_proper_name_beats_naive_keyword_tie(tmp_path: Path) -> None:
-    if not bm25_module._HAS_BM25:
-        pytest.skip("rank_bm25 is not installed")
-
     anima_dir = tmp_path / "animas" / "alice"
     noisy = "ZephyrNova " + " ".join(f"filler{i}" for i in range(200))
     concise = "# ZephyrNova\n\nZephyrNova is the supplier codename for the launchpad audit."
@@ -296,3 +293,50 @@ def test_longterm_bm25_proper_name_beats_naive_keyword_tie(tmp_path: Path) -> No
     )
 
     assert hits[0]["source_file"] == "knowledge/bbb-concise.md"
+
+
+def test_longterm_bm25_respects_ragignore(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.memory.rag.indexer import MemoryIndexer
+
+    anima_dir = tmp_path / "animas" / "alice"
+    (tmp_path / ".ragignore").write_text("excluded.md\n", encoding="utf-8")
+    _write_longterm_memory(anima_dir, "knowledge/excluded.md", "# Secret\n\nZephyrNova hidden memo.")
+    _write_longterm_memory(anima_dir, "knowledge/included.md", "# Public\n\nZephyrNova public memo.")
+    monkeypatch.setattr("core.paths.get_data_dir", lambda: tmp_path)
+    MemoryIndexer._ragignore_cache = None
+
+    rebuild_longterm_bm25_index(anima_dir)
+    hits = search_longterm_memory_bm25(
+        anima_dir,
+        "ZephyrNova",
+        memory_types=("knowledge",),
+        top_k=10,
+    )
+
+    assert [hit["source_file"] for hit in hits] == ["knowledge/included.md"]
+
+
+def test_longterm_bm25_uses_persisted_stats_without_runtime_bm25okapi(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nZephyrNova launchpad audit.")
+    _write_longterm_memory(anima_dir, "knowledge/b.md", "# B\n\nUnrelated baseline memo.")
+    rebuild_longterm_bm25_index(anima_dir)
+
+    class FailingBM25:
+        def __init__(self, *args, **kwargs) -> None:
+            raise AssertionError("long-term BM25 search should use persisted stats")
+
+    monkeypatch.setattr(bm25_module, "BM25Okapi", FailingBM25)
+
+    hits = search_longterm_memory_bm25(
+        anima_dir,
+        "ZephyrNova",
+        memory_types=("knowledge",),
+        top_k=10,
+    )
+
+    assert hits[0]["source_file"] == "knowledge/a.md"
+    assert hits[0]["search_method"] == "bm25"

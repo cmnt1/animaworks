@@ -983,3 +983,13 @@ class RAGMemorySearch:
                 indexer.index_file(path, memory_type, force=force, origin=origin)
             except Exception as e:
                 logger.warning("Failed to index %s file: %s", memory_type, e)
+        self._refresh_longterm_bm25_index(memory_type)
+
+    def _refresh_longterm_bm25_index(self, memory_type: str) -> None:
+        try:
+            from core.memory.bm25 import LONGTERM_BM25_MEMORY_TYPES, rebuild_longterm_bm25_index
+
+            if memory_type in LONGTERM_BM25_MEMORY_TYPES:
+                rebuild_longterm_bm25_index(self._anima_dir)
+        except Exception:
+            logger.debug("Failed to refresh long-term BM25 index for %s", self._anima_dir.name, exc_info=True)

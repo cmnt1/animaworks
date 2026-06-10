@@ -15,7 +15,9 @@ Indexes recent activity entries and ranks them against a query using
 
 import json
 import logging
+import math
 import re
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -120,6 +122,7 @@ _CJK_RANGES: tuple[tuple[int, int], ...] = (
 _WORD_RE = re.compile(r"[\w]+", re.UNICODE)
 LONGTERM_BM25_INDEX_FILE = "bm25_longterm_index.json"
 LONGTERM_BM25_MEMORY_TYPES: tuple[str, ...] = ("knowledge", "episodes", "procedures")
+_LONGTERM_BM25_CACHE: dict[Path, tuple[int, int, dict[str, Any]]] = {}
 
 
 @dataclass(frozen=True)
@@ -254,14 +257,25 @@ def rebuild_longterm_bm25_index(
         for path in sorted(base_dir.rglob("*.md")):
             docs.extend(_bm25_docs_for_file(anima_dir, path, memory_type))
 
+    document_frequency: Counter[str] = Counter()
+    total_doc_len = 0
+    for doc in docs:
+        tokens = list(map(str, doc.get("tokens", [])))
+        total_doc_len += len(tokens)
+        document_frequency.update(set(tokens))
+
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "memory_types": list(memory_types),
+        "document_count": len(docs),
+        "avgdl": total_doc_len / len(docs) if docs else 0.0,
+        "document_frequency": dict(document_frequency),
         "documents": docs,
     }
     index_path = longterm_bm25_index_path(anima_dir)
     index_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(index_path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    _LONGTERM_BM25_CACHE.pop(index_path, None)
     logger.info("Rebuilt long-term BM25 index for %s: documents=%d", anima_dir.name, len(docs))
     return LongTermBM25BuildResult(documents=len(docs), path=index_path)
 
@@ -299,7 +313,7 @@ def search_longterm_memory_bm25(
         return []
 
     corpus_tokens = [list(map(str, doc.get("tokens", []))) for doc in docs]
-    scores = _bm25_scores(corpus_tokens, query_tokens)
+    scores = _longterm_bm25_scores(docs, corpus_tokens, query_tokens, payload)
     query_set = set(query_tokens)
     ranked: list[tuple[int, float]] = []
     for idx, score in enumerate(scores):
@@ -309,7 +323,7 @@ def search_longterm_memory_bm25(
         ranked.append((idx, float(score)))
     ranked.sort(key=lambda item: item[1], reverse=True)
 
-    search_method = "bm25" if _HAS_BM25 else "keyword_fallback"
+    search_method = "bm25"
     results: list[dict[str, Any]] = []
     for idx, score in ranked[offset : offset + top_k]:
         doc = docs[idx]
@@ -337,14 +351,78 @@ def _load_longterm_bm25_payload(anima_dir: Path) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     try:
+        stat = path.stat()
+    except OSError:
+        return None
+    cached = _LONGTERM_BM25_CACHE.get(path)
+    if cached is not None and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
+        return cached[2]
+    try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         logger.debug("Failed to load long-term BM25 index %s", path, exc_info=True)
         return None
-    return payload if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        return None
+    _LONGTERM_BM25_CACHE[path] = (stat.st_mtime_ns, stat.st_size, payload)
+    return payload
+
+
+def _longterm_bm25_scores(
+    docs: list[dict[str, Any]],
+    corpus_tokens: list[list[str]],
+    query_tokens: list[str],
+    payload: dict[str, Any],
+) -> list[float]:
+    """Score long-term docs from persisted BM25 stats without rebuilding BM25Okapi."""
+    if not docs or not query_tokens:
+        return [0.0] * len(docs)
+    document_count = int(payload.get("document_count") or len(docs))
+    avgdl = float(payload.get("avgdl") or 0.0)
+    if avgdl <= 0.0:
+        avgdl = sum(len(tokens) for tokens in corpus_tokens) / max(1, len(corpus_tokens))
+    df_raw = payload.get("document_frequency")
+    document_frequency = dict(df_raw) if isinstance(df_raw, dict) else _document_frequency(corpus_tokens)
+
+    k1 = 1.5
+    b = 0.75
+    scores: list[float] = []
+    for doc, tokens in zip(docs, corpus_tokens, strict=False):
+        doc_len = float(doc.get("doc_len") or len(tokens) or 1)
+        counts_raw = doc.get("token_counts")
+        token_counts = (
+            {str(k): float(v) for k, v in counts_raw.items()}
+            if isinstance(counts_raw, dict)
+            else {term: float(count) for term, count in Counter(tokens).items()}
+        )
+        score = 0.0
+        for term in query_tokens:
+            tf = token_counts.get(term, 0.0)
+            if tf <= 0.0:
+                continue
+            df = max(0.0, float(document_frequency.get(term, 0.0) or 0.0))
+            idf = math.log(1.0 + (document_count - df + 0.5) / (df + 0.5))
+            denom = tf + k1 * (1.0 - b + b * (doc_len / max(avgdl, 1e-9)))
+            score += idf * ((tf * (k1 + 1.0)) / denom)
+        scores.append(score)
+    return scores
+
+
+def _document_frequency(corpus_tokens: list[list[str]]) -> dict[str, int]:
+    df: Counter[str] = Counter()
+    for tokens in corpus_tokens:
+        df.update(set(tokens))
+    return dict(df)
 
 
 def _bm25_docs_for_file(anima_dir: Path, path: Path, memory_type: str) -> list[dict[str, Any]]:
+    try:
+        from core.memory.rag.indexer import MemoryIndexer
+
+        if MemoryIndexer.is_ragignored(path):
+            return []
+    except Exception:
+        logger.debug("Failed to evaluate .ragignore for BM25 file %s", path, exc_info=True)
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError:
@@ -361,6 +439,7 @@ def _bm25_docs_for_file(anima_dir: Path, path: Path, memory_type: str) -> list[d
         tokens = tokenize(content)
         if not tokens:
             continue
+        token_counts = Counter(tokens)
         source_file = str(path.relative_to(anima_dir))
         metadata = _file_metadata(path, memory_type, source_file, idx, total, content, frontmatter)
         docs.append(
@@ -369,6 +448,8 @@ def _bm25_docs_for_file(anima_dir: Path, path: Path, memory_type: str) -> list[d
                 "source_file": source_file,
                 "content": content,
                 "tokens": tokens,
+                "token_counts": dict(token_counts),
+                "doc_len": len(tokens),
                 "chunk_index": idx,
                 "total_chunks": total,
                 "memory_type": memory_type,

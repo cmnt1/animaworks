@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -19,6 +20,7 @@ Covers:
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,6 +28,8 @@ import pytest
 from core.memory.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig
 
+if TYPE_CHECKING:
+    from core.supervisor.runner import AnimaRunner
 
 # ── Fixtures ────────────────────────────────────────────────────────
 
@@ -127,12 +131,14 @@ class TestConversationAtomicSave:
         conv2.load()
         conv2.append_turn("assistant", "this should not persist")
 
-        with patch(
-            "core.memory.conversation.atomic_write_text",
-            side_effect=OSError("Simulated disk failure"),
+        with (
+            patch(
+                "core.memory.conversation.atomic_write_text",
+                side_effect=OSError("Simulated disk failure"),
+            ),
+            pytest.raises(OSError, match="Simulated disk failure"),
         ):
-            with pytest.raises(OSError, match="Simulated disk failure"):
-                conv2.save()
+            conv2.save()
 
         # Original data must still be intact
         preserved = json.loads(state_path.read_text(encoding="utf-8"))
@@ -249,6 +255,7 @@ class TestManagerEpisodeFsync:
 
     def test_append_episode_calls_fsync(self, memory_manager):
         """append_episode() should call os.fsync after writing."""
+        memory_manager._rag.index_file = MagicMock()
         with patch("core.memory.manager.os.fsync") as mock_fsync:
             memory_manager.append_episode("## 10:00 — Test Episode\n\nSome content.")
 
@@ -576,6 +583,7 @@ class TestStartupTmpCleanup:
         test_stale_tmp_files_actually_removed and test_memory_io.py.
         """
         import inspect
+
         from core.supervisor.runner import AnimaRunner
 
         source = inspect.getsource(AnimaRunner.run)
