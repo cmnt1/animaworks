@@ -359,6 +359,11 @@ class ConsolidationConfig(BaseModel):
     monthly_time: str = "1:04:00"  # Format: day:HH:MM (day of month)
     indexing_enabled: bool = True  # Daily RAG indexing toggle
     indexing_time: str = "04:00"  # Format: HH:MM
+    knowledge_self_correction_enabled: bool = True
+    knowledge_self_correction_max_contradiction_pairs: int = Field(default=20, ge=0)
+    knowledge_self_correction_max_reconsolidation_files: int = Field(default=5, ge=0)
+    knowledge_self_correction_timeout_seconds: int = Field(default=300, ge=1)
+    knowledge_self_correction_recent_hours: int = Field(default=24, ge=1)
 
 
 class ImageGenConfig(BaseModel):

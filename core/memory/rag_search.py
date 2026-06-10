@@ -794,6 +794,8 @@ class RAGMemorySearch:
             if not d.is_dir():
                 continue
             for f in d.glob("*.md"):
+                if memory_type == "knowledge" and self._knowledge_file_is_superseded(f):
+                    continue
                 try:
                     content = f.read_text(encoding="utf-8")
                 except OSError:
@@ -855,6 +857,17 @@ class RAGMemorySearch:
             results.sort(key=lambda x: x["score"], reverse=True)
         page_size = result_limit if result_limit is not None else 10
         return results[offset : offset + page_size]
+
+    @staticmethod
+    def _knowledge_file_is_superseded(path: Path) -> bool:
+        try:
+            from core.memory.frontmatter import parse_frontmatter
+
+            meta, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.debug("Failed to inspect knowledge validity for keyword search: %s", path, exc_info=True)
+            return False
+        return bool(meta.get("valid_until"))
 
     @staticmethod
     def _resolve_search_types(scope: str) -> list[str]:

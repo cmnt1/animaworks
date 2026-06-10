@@ -32,11 +32,13 @@ class SystemConsolidationMixin:
         enabled = True
         min_episodes = ConsolidationConfig().min_episodes_threshold
         max_turns = ConsolidationConfig().max_turns
+        model = ConsolidationConfig().llm_model
 
         if consolidation_cfg:
             enabled = getattr(consolidation_cfg, "daily_enabled", True)
             min_episodes = getattr(consolidation_cfg, "min_episodes_threshold", min_episodes)
             max_turns = getattr(consolidation_cfg, "max_turns", max_turns)
+            model = getattr(consolidation_cfg, "llm_model", model)
 
         if not enabled:
             logger.info("Daily consolidation is disabled in config")
@@ -94,6 +96,14 @@ class SystemConsolidationMixin:
                         "Synaptic downscaling failed for anima=%s",
                         anima_name,
                     )
+
+                # Post-processing: knowledge contradiction resolution and reconsolidation.
+                await self._run_knowledge_self_correction_if_enabled(
+                    anima,
+                    anima_name,
+                    consolidation_cfg,
+                    model=model,
+                )
 
                 # Post-processing: Rebuild RAG index
                 try:
@@ -294,6 +304,62 @@ class SystemConsolidationMixin:
                 logger.exception("Monthly forgetting failed for anima=%s", anima_name)
 
     # ── Community detection helper ────────────────────────────
+
+    @staticmethod
+    async def _run_knowledge_self_correction_if_enabled(
+        anima,  # noqa: ANN001
+        anima_name: str,
+        consolidation_cfg,
+        *,
+        model: str,
+    ) -> None:
+        default_cfg = ConsolidationConfig()
+        if consolidation_cfg is not None:
+            enabled = getattr(consolidation_cfg, "knowledge_self_correction_enabled", True)
+        else:
+            enabled = default_cfg.knowledge_self_correction_enabled
+        if not enabled:
+            return
+
+        try:
+            from core.lifecycle.knowledge_correction import (
+                KnowledgeCorrectionLimits,
+                run_post_consolidation_knowledge_correction,
+            )
+
+            limits = KnowledgeCorrectionLimits(
+                max_contradiction_pairs=getattr(
+                    consolidation_cfg,
+                    "knowledge_self_correction_max_contradiction_pairs",
+                    default_cfg.knowledge_self_correction_max_contradiction_pairs,
+                ),
+                max_reconsolidation_files=getattr(
+                    consolidation_cfg,
+                    "knowledge_self_correction_max_reconsolidation_files",
+                    default_cfg.knowledge_self_correction_max_reconsolidation_files,
+                ),
+                timeout_seconds=float(
+                    getattr(
+                        consolidation_cfg,
+                        "knowledge_self_correction_timeout_seconds",
+                        default_cfg.knowledge_self_correction_timeout_seconds,
+                    )
+                ),
+                recent_hours=getattr(
+                    consolidation_cfg,
+                    "knowledge_self_correction_recent_hours",
+                    default_cfg.knowledge_self_correction_recent_hours,
+                ),
+            )
+            result = await run_post_consolidation_knowledge_correction(
+                anima.memory.anima_dir,
+                anima_name,
+                model=model,
+                limits=limits,
+            )
+            logger.info("Knowledge self-correction post-processing for %s: %s", anima_name, result)
+        except Exception:
+            logger.exception("Knowledge self-correction failed for anima=%s", anima_name)
 
     @staticmethod
     async def _detect_communities_if_neo4j(anima) -> None:  # noqa: ANN001

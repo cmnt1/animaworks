@@ -187,6 +187,37 @@ class TestSearchMemoryTextKeywordOnly:
         assert any("python.md" in s for s in sources)
         assert any("2026-01-01.md" in s for s in sources)
 
+    def test_search_memory_text_keyword_excludes_superseded_knowledge(
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
+        episodes_dir: Path,
+        procedures_dir: Path,
+        common_knowledge_dir: Path,
+    ) -> None:
+        (knowledge_dir / "active.md").write_text(
+            "---\nvalid_until: ''\n---\n\nkeyword current deployment policy",
+            encoding="utf-8",
+        )
+        (knowledge_dir / "superseded.md").write_text(
+            "---\nvalid_until: '2026-06-10T00:00:00+09:00'\n---\n\nkeyword obsolete deployment policy",
+            encoding="utf-8",
+        )
+
+        with patch.object(rag, "_get_indexer", return_value=None):
+            results = rag.search_memory_text(
+                "keyword deployment",
+                scope="knowledge",
+                knowledge_dir=knowledge_dir,
+                episodes_dir=episodes_dir,
+                procedures_dir=procedures_dir,
+                common_knowledge_dir=common_knowledge_dir,
+            )
+
+        sources = [r["source_file"] for r in results]
+        assert any("active.md" in s for s in sources)
+        assert not any("superseded.md" in s for s in sources)
+
 
 class TestSearchMemoryTextRespectsScope:
     def test_search_memory_text_respects_scope(

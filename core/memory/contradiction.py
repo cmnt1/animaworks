@@ -26,7 +26,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from core.i18n import t
 from core.paths import load_prompt
@@ -88,6 +88,8 @@ class ContradictionDetector:
         anima_dir: Path,
         anima_name: str,
         activity_logger: ActivityLogger | None = None,
+        *,
+        memory_manager: Any | None = None,
     ) -> None:
         """Initialize contradiction detector.
 
@@ -95,12 +97,27 @@ class ContradictionDetector:
             anima_dir: Path to anima's directory (~/.animaworks/animas/{name})
             anima_name: Name of the anima for logging and RAG collection lookup
             activity_logger: Optional ActivityLogger for recording resolution events
+            memory_manager: Optional MemoryManager instance for callers that
+                already own one during batch post-processing.
         """
         self.anima_dir = anima_dir
         self.anima_name = anima_name
         self.knowledge_dir = anima_dir / "knowledge"
         self._nli_validator: KnowledgeValidator | None = None
         self._activity_logger = activity_logger
+        self._memory_manager = memory_manager
+        self.last_scan_stats: dict[str, int | bool] = {
+            "candidate_pairs": 0,
+            "llm_checks": 0,
+            "limit_reached": False,
+        }
+
+    def _memory(self):
+        if self._memory_manager is None:
+            from core.memory.manager import MemoryManager
+
+            self._memory_manager = MemoryManager(self.anima_dir)
+        return self._memory_manager
 
     # ── NLI validator access ────────────────────────────────────
 
@@ -138,9 +155,7 @@ class ContradictionDetector:
             List of (file_a, text_a, file_b, text_b) tuples where
             vector similarity exceeds ``VECTOR_SIMILARITY_THRESHOLD``
         """
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(self.anima_dir)
+        mm = self._memory()
 
         if target_file is not None:
             files = [target_file] if target_file.exists() else []
@@ -245,10 +260,7 @@ class ContradictionDetector:
 
                 match_text = file_contents.get(match_path, "")
                 if not match_text:
-                    from core.memory.manager import MemoryManager
-
-                    mm = MemoryManager(self.anima_dir)
-                    match_text = mm.read_knowledge_content(match_path)
+                    match_text = self._memory().read_knowledge_content(match_path)
                     if not match_text.strip():
                         continue
 
@@ -406,6 +418,8 @@ class ContradictionDetector:
         self,
         target_file: Path | None = None,
         model: str = "",
+        *,
+        max_llm_checks: int | None = None,
     ) -> list[ContradictionPair]:
         """Scan knowledge files for contradictions.
 
@@ -417,10 +431,17 @@ class ContradictionDetector:
             target_file: If specified, only check this file against others.
                 If None, scan the entire knowledge directory.
             model: LLM model for contradiction analysis
+            max_llm_checks: Maximum candidate pairs allowed to reach the LLM
+                resolution stage. NLI-only entailments do not count.
 
         Returns:
             List of detected contradiction pairs with resolution proposals
         """
+        self.last_scan_stats = {
+            "candidate_pairs": 0,
+            "llm_checks": 0,
+            "limit_reached": False,
+        }
         if not model:
             from core.memory._llm_utils import get_consolidation_llm_kwargs
 
@@ -433,6 +454,7 @@ class ContradictionDetector:
 
         # Step 1: Find candidate pairs via vector similarity
         candidates = self._find_candidate_pairs(target_file)
+        self.last_scan_stats["candidate_pairs"] = len(candidates)
         if not candidates:
             logger.info("No candidate pairs found for contradiction check")
             return []
@@ -451,6 +473,9 @@ class ContradictionDetector:
 
             if is_nli_contradiction:
                 # NLI detected contradiction - use LLM for resolution
+                if self._llm_limit_reached(max_llm_checks):
+                    break
+                self.last_scan_stats["llm_checks"] = int(self.last_scan_stats["llm_checks"]) + 1
                 llm_result = await self._check_contradiction_llm(
                     text_a,
                     text_b,
@@ -490,6 +515,9 @@ class ContradictionDetector:
             else:
                 # NLI neutral / uncertain — fall through to LLM as fallback
                 # for cases where NLI may miss semantic contradictions
+                if self._llm_limit_reached(max_llm_checks):
+                    break
+                self.last_scan_stats["llm_checks"] = int(self.last_scan_stats["llm_checks"]) + 1
                 llm_result = await self._check_contradiction_llm(
                     text_a,
                     text_b,
@@ -525,6 +553,19 @@ class ContradictionDetector:
         )
 
         return contradictions
+
+    def _llm_limit_reached(self, max_llm_checks: int | None) -> bool:
+        if max_llm_checks is None:
+            return False
+        if int(self.last_scan_stats["llm_checks"]) < max_llm_checks:
+            return False
+        self.last_scan_stats["limit_reached"] = True
+        logger.info(
+            "Contradiction scan LLM pair limit reached for anima=%s: max=%d",
+            self.anima_name,
+            max_llm_checks,
+        )
+        return True
 
     # ── Resolution execution ────────────────────────────────────
 
@@ -668,9 +709,7 @@ class ContradictionDetector:
             )
             return
 
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(self.anima_dir)
+        mm = self._memory()
 
         try:
             meta = mm.read_knowledge_metadata(file_path)
@@ -736,9 +775,7 @@ class ContradictionDetector:
         Args:
             pair: Contradiction pair to resolve
         """
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(self.anima_dir)
+        mm = self._memory()
 
         # Determine which file is newer
         meta_a = mm.read_knowledge_metadata(pair.file_a)
@@ -805,9 +842,7 @@ class ContradictionDetector:
         Returns:
             True if merge succeeded, False otherwise
         """
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(self.anima_dir)
+        mm = self._memory()
 
         merged_content = pair.merged_content
 
@@ -939,9 +974,7 @@ class ContradictionDetector:
         Args:
             pair: Contradiction pair to mark as coexisting
         """
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(self.anima_dir)
+        mm = self._memory()
 
         # Update file_a metadata
         meta_a = mm.read_knowledge_metadata(pair.file_a)

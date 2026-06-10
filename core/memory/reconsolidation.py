@@ -80,11 +80,18 @@ class ReconsolidationEngine:
 
     # ── Target Detection ───────────────────────────────────────
 
-    async def find_reconsolidation_targets(self) -> list[Path]:
+    async def find_reconsolidation_targets(
+        self,
+        *,
+        max_files: int | None = None,
+    ) -> list[Path]:
         """Find procedures with failure_count >= 2 and confidence < 0.6.
 
         Scans all ``*.md`` files in the anima's ``procedures/`` directory,
         reading YAML frontmatter to check the trigger conditions.
+
+        Args:
+            max_files: Optional cap for nightly batch processing.
 
         Returns:
             List of paths to procedure files that need reconsolidation.
@@ -93,12 +100,14 @@ class ReconsolidationEngine:
         procedures_dir = self.anima_dir / "procedures"
         if not procedures_dir.exists():
             return targets
-        for md_file in procedures_dir.glob("*.md"):
+        for md_file in sorted(procedures_dir.glob("*.md")):
             meta = self.memory_manager.read_procedure_metadata(md_file)
             failure_count = meta.get("failure_count", 0)
             confidence = meta.get("confidence", 1.0)
             if failure_count >= 2 and confidence < 0.6:
                 targets.append(md_file)
+                if max_files is not None and len(targets) >= max_files:
+                    break
         return targets
 
     # ── Reconsolidation Application ────────────────────────────
@@ -401,30 +410,50 @@ class ReconsolidationEngine:
 
     # ── Knowledge Reconsolidation ─────────────────────────────
 
-    async def find_knowledge_reconsolidation_targets(self) -> list[Path]:
+    async def find_knowledge_reconsolidation_targets(
+        self,
+        *,
+        max_files: int | None = None,
+        exclude_paths: set[Path] | None = None,
+    ) -> list[Path]:
         """Find knowledge files with failure_count >= 2 and confidence < 0.6.
 
         Scans all ``*.md`` files in the anima's ``knowledge/`` directory,
         reading YAML frontmatter to check the trigger conditions.
 
+        Args:
+            max_files: Optional cap for nightly batch processing.
+            exclude_paths: Paths to skip because an earlier post-processing
+                stage superseded, merged, or otherwise consumed them.
+
         Returns:
             List of paths to knowledge files that need reconsolidation.
         """
         targets: list[Path] = []
+        excluded = {p.resolve() for p in (exclude_paths or set())}
         knowledge_dir = self.anima_dir / "knowledge"
         if not knowledge_dir.exists():
             return targets
-        for md_file in knowledge_dir.glob("*.md"):
+        for md_file in sorted(knowledge_dir.glob("*.md")):
+            if md_file.resolve() in excluded:
+                continue
             meta = self.memory_manager.read_knowledge_metadata(md_file)
+            if meta.get("valid_until"):
+                continue
             failure_count = meta.get("failure_count", 0)
             confidence = meta.get("confidence", 1.0)
             if failure_count >= 2 and confidence < 0.6:
                 targets.append(md_file)
+                if max_files is not None and len(targets) >= max_files:
+                    break
         return targets
 
     async def reconsolidate_knowledge(
         self,
         model: str = "",
+        *,
+        max_files: int | None = None,
+        exclude_paths: set[Path] | None = None,
     ) -> dict[str, int]:
         """Revise knowledge files using LLM and reset counters.
 
@@ -434,6 +463,9 @@ class ReconsolidationEngine:
 
         Args:
             model: LLM model identifier (LiteLLM format) for revision.
+            max_files: Optional cap for nightly batch processing.
+            exclude_paths: Paths to skip because an earlier post-processing
+                stage superseded, merged, or otherwise consumed them.
 
         Returns:
             Dict with counts: "targets_found", "updated", "skipped", "errors".
@@ -442,7 +474,10 @@ class ReconsolidationEngine:
             from core.memory._llm_utils import get_consolidation_llm_kwargs
 
             model = get_consolidation_llm_kwargs()["model"]
-        targets = await self.find_knowledge_reconsolidation_targets()
+        targets = await self.find_knowledge_reconsolidation_targets(
+            max_files=max_files,
+            exclude_paths=exclude_paths,
+        )
         results: dict[str, Any] = {
             "targets_found": len(targets),
             "updated": 0,

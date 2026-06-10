@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -18,8 +19,8 @@ import yaml
 from core.memory.contradiction import (
     ContradictionDetector,
     ContradictionPair,
+    ContradictionResult,
 )
-
 
 # ── Fixtures ────────────────────────────────────────────────
 
@@ -729,6 +730,42 @@ class TestResolveContradictions:
 
 class TestScanContradictions:
     """Test the full scan pipeline with mocked NLI and LLM."""
+
+    @pytest.mark.asyncio
+    async def test_scan_respects_llm_pair_limit(
+        self,
+        detector: ContradictionDetector,
+    ) -> None:
+        candidates = [
+            (Path(f"a-{idx}.md"), f"text A {idx}", Path(f"b-{idx}.md"), f"text B {idx}")
+            for idx in range(5)
+        ]
+
+        with (
+            patch.object(detector, "_find_candidate_pairs", return_value=candidates),
+            patch.object(
+                detector,
+                "_check_contradiction_nli",
+                new_callable=AsyncMock,
+                return_value=(False, 0.0, False),
+            ),
+            patch.object(
+                detector,
+                "_check_contradiction_llm",
+                new_callable=AsyncMock,
+                return_value=ContradictionResult(False, "coexist", "none"),
+            ) as mock_llm,
+        ):
+            results = await detector.scan_contradictions(
+                model="test-model",
+                max_llm_checks=2,
+            )
+
+        assert results == []
+        assert mock_llm.await_count == 2
+        assert detector.last_scan_stats["candidate_pairs"] == 5
+        assert detector.last_scan_stats["llm_checks"] == 2
+        assert detector.last_scan_stats["limit_reached"] is True
 
     @pytest.mark.asyncio
     async def test_scan_detects_contradiction(
