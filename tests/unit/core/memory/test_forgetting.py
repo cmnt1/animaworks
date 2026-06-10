@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,9 +17,10 @@ Tests cover:
 - Integration with ConsolidationEngine (daily + weekly hooks)
 """
 
+import logging
 from datetime import timedelta
-from core.time_utils import now_jst
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -27,7 +29,7 @@ import pytest
 from core.memory.forgetting import (
     ForgettingEngine,
 )
-
+from core.time_utils import now_jst
 
 # ── Fixtures ────────────────────────────────────────────────────────
 
@@ -77,6 +79,32 @@ def _make_chunk(
             "source_file": source_file,
         },
     }
+
+
+def _make_indexed_chunk(
+    engine: ForgettingEngine,
+    path: Path,
+    *,
+    doc_id: str,
+    chunk_index: int,
+    content: str,
+    memory_type: str = "knowledge",
+) -> dict[str, Any]:
+    chunk = _make_chunk(
+        doc_id=doc_id,
+        content=content,
+        memory_type=memory_type,
+        source_file=str(path.relative_to(engine.anima_dir)),
+        activation_level="low",
+    )
+    chunk["metadata"].update(
+        {
+            "chunk_index": chunk_index,
+            "source_hash": engine._compute_source_hash(path),
+            "source_mtime_ns": path.stat().st_mtime_ns,
+        }
+    )
+    return chunk
 
 
 # ── _is_protected Tests ─────────────────────────────────────────────
@@ -312,6 +340,197 @@ class TestSynapticDownscaling:
         # Should have been called for all three collections
         assert call_count["n"] == 3
         assert result["scanned"] == 3
+
+
+# ── Neurogenesis Source Sync Tests ─────────────────────────────────
+
+
+class TestNeurogenesisSourceSync:
+    """Test chunk-level source syncing for neurogenesis merges."""
+
+    def test_find_similar_pairs_batches_embeddings(self, forgetting_engine):
+        chunks = [
+            _make_chunk(doc_id="a", content="alpha"),
+            _make_chunk(doc_id="b", content="alpha duplicate"),
+            _make_chunk(doc_id="c", content="gamma"),
+        ]
+        store = MagicMock()
+
+        def fake_query(*, collection, embedding, top_k):
+            assert collection == "test_anima_knowledge"
+            assert top_k == 5
+            if embedding == [1.0]:
+                return [
+                    SimpleNamespace(document=SimpleNamespace(id="a"), score=1.0),
+                    SimpleNamespace(document=SimpleNamespace(id="b"), score=0.86),
+                ]
+            return []
+
+        store.query.side_effect = fake_query
+
+        with patch(
+            "core.memory.rag.singleton.generate_embeddings",
+            return_value=[[1.0], [2.0], [3.0]],
+        ) as mock_embeddings:
+            pairs = forgetting_engine._find_similar_pairs(chunks, "test_anima_knowledge", store)
+
+        mock_embeddings.assert_called_once_with(["alpha", "alpha duplicate", "gamma"])
+        assert [(a["id"], b["id"], score) for a, b, score in pairs] == [("a", "b", 0.86)]
+
+    def test_sync_replaces_only_target_chunk(self, forgetting_engine, anima_dir):
+        primary = anima_dir / "knowledge" / "primary.md"
+        secondary = anima_dir / "knowledge" / "secondary.md"
+        primary.write_text(
+            "## Keep One\n\nAlpha stays.\n\n"
+            "## Merge Me\n\nOld duplicate detail.\n\n"
+            "## Keep Two\n\nGamma stays.",
+            encoding="utf-8",
+        )
+        secondary.write_text("## Merge Source\n\nNew duplicate detail.", encoding="utf-8")
+
+        chunk_a = _make_indexed_chunk(
+            forgetting_engine,
+            primary,
+            doc_id="a",
+            chunk_index=1,
+            content="## Merge Me\n\nOld duplicate detail.",
+        )
+        chunk_b = _make_indexed_chunk(
+            forgetting_engine,
+            secondary,
+            doc_id="b",
+            chunk_index=0,
+            content="## Merge Source\n\nNew duplicate detail.",
+        )
+
+        assert forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merged\n\nCombined detail.")
+
+        updated = primary.read_text(encoding="utf-8")
+        assert "## Keep One\n\nAlpha stays." in updated
+        assert "## Keep Two\n\nGamma stays." in updated
+        assert "## Merged\n\nCombined detail." in updated
+        assert "Old duplicate detail." not in updated
+        assert not secondary.exists()
+
+    def test_sync_preserves_frontmatter(self, forgetting_engine, anima_dir):
+        primary = anima_dir / "knowledge" / "frontmatter.md"
+        secondary = anima_dir / "knowledge" / "dup.md"
+        frontmatter = "---\ntitle: Deployment Notes\nconfidence: 0.8\n---"
+        primary.write_text(
+            f"{frontmatter}\n\n## Merge\n\nOld deploy detail.\n\n## Keep\n\nKeep this.",
+            encoding="utf-8",
+        )
+        secondary.write_text("## Duplicate\n\nNew deploy detail.", encoding="utf-8")
+
+        chunk_a = _make_indexed_chunk(
+            forgetting_engine,
+            primary,
+            doc_id="a",
+            chunk_index=0,
+            content="## Merge\n\nOld deploy detail.",
+        )
+        chunk_b = _make_indexed_chunk(
+            forgetting_engine,
+            secondary,
+            doc_id="b",
+            chunk_index=0,
+            content="## Duplicate\n\nNew deploy detail.",
+        )
+
+        assert forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merge\n\nMerged deploy detail.")
+
+        updated = primary.read_text(encoding="utf-8")
+        assert updated.startswith(frontmatter)
+        assert "confidence: 0.8" in updated
+        assert "Merged deploy detail." in updated
+        assert "## Keep\n\nKeep this." in updated
+
+    def test_sync_skips_when_source_changed_since_index(
+        self,
+        forgetting_engine,
+        anima_dir,
+        caplog,
+    ):
+        primary = anima_dir / "knowledge" / "changed.md"
+        secondary = anima_dir / "knowledge" / "secondary.md"
+        primary.write_text("## Merge\n\nOld indexed detail.", encoding="utf-8")
+        secondary.write_text("## Duplicate\n\nSecondary detail.", encoding="utf-8")
+
+        chunk_a = _make_indexed_chunk(
+            forgetting_engine,
+            primary,
+            doc_id="a",
+            chunk_index=0,
+            content="## Merge\n\nOld indexed detail.",
+        )
+        chunk_b = _make_indexed_chunk(
+            forgetting_engine,
+            secondary,
+            doc_id="b",
+            chunk_index=0,
+            content="## Duplicate\n\nSecondary detail.",
+        )
+        primary.write_text("## Merge\n\nUser edited after indexing.", encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING, logger="animaworks.forgetting"):
+            result = forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merged\n\nShould skip.")
+
+        assert result is False
+        assert primary.read_text(encoding="utf-8") == "## Merge\n\nUser edited after indexing."
+        assert "source file content changed since indexing" in caplog.text
+        assert not (anima_dir / "archive" / "merged").exists()
+
+    @pytest.mark.asyncio
+    async def test_merge_reject_skips_llm_merge(self, forgetting_engine):
+        with patch(
+            "core.memory._llm_utils.one_shot_completion",
+            new=AsyncMock(return_value="MERGE_REJECT\nDifferent topics."),
+        ):
+            merged = await forgetting_engine._merge_chunks_llm(
+                {"id": "a", "content": "A"},
+                {"id": "b", "content": "B"},
+                0.91,
+                "test-model",
+            )
+
+        assert merged is None
+
+    def test_secondary_partial_absorption_keeps_file_unarchived(self, forgetting_engine, anima_dir):
+        primary = anima_dir / "knowledge" / "primary.md"
+        secondary = anima_dir / "knowledge" / "secondary.md"
+        primary.write_text("## Primary\n\nPrimary duplicate.", encoding="utf-8")
+        secondary.write_text(
+            "## Keep One\n\nFirst survives.\n\n"
+            "## Remove Me\n\nDuplicate absorbed.\n\n"
+            "## Keep Two\n\nSecond survives.",
+            encoding="utf-8",
+        )
+
+        chunk_a = _make_indexed_chunk(
+            forgetting_engine,
+            primary,
+            doc_id="a",
+            chunk_index=0,
+            content="## Primary\n\nPrimary duplicate.",
+        )
+        chunk_b = _make_indexed_chunk(
+            forgetting_engine,
+            secondary,
+            doc_id="b",
+            chunk_index=1,
+            content="## Remove Me\n\nDuplicate absorbed.",
+        )
+
+        assert forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merged\n\nMerged duplicate.")
+
+        secondary_text = secondary.read_text(encoding="utf-8")
+        assert "## Keep One\n\nFirst survives." in secondary_text
+        assert "## Keep Two\n\nSecond survives." in secondary_text
+        assert "Duplicate absorbed." not in secondary_text
+
+        archive_names = [path.name for path in (anima_dir / "archive" / "merged").iterdir()]
+        assert any(name.startswith("primary_") for name in archive_names)
+        assert not any(name.startswith("secondary_") for name in archive_names)
 
 
 # ── Complete Forgetting Tests ───────────────────────────────────────

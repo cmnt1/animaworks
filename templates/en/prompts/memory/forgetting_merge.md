@@ -12,5 +12,6 @@ Task: Merge these two memories into one.
 - Consolidate duplicate information
 - Retain important information from both
 - Keep the result concise
+- If the two fragments are not about the same concrete topic, output exactly `MERGE_REJECT`
 
-Output only the merged memory (no explanation):
+Output only the merged memory, or `MERGE_REJECT` (no explanation):

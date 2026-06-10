@@ -20,12 +20,16 @@ Based on:
 - Frankland et al. (2013): Hippocampal neurogenesis and active forgetting
 """
 
+import hashlib
 import logging
+import re
 import shutil
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from core.memory._io import atomic_write_text
 from core.paths import load_prompt
 from core.time_utils import ensure_aware, now_local
 
@@ -58,6 +62,26 @@ PROCEDURE_MIN_USAGE = 3  # Minimum total usage to avoid downscaling
 PROCEDURE_LOW_UTILITY_THRESHOLD = 0.3  # Utility score below this is low
 PROCEDURE_LOW_UTILITY_MIN_FAILURES = 3  # Min failures for utility check
 PROCEDURE_ARCHIVE_KEEP_VERSIONS = 5  # Keep N most recent archive versions
+
+
+@dataclass(frozen=True)
+class _SourceSegment:
+    """Source-file segment reconstructed with indexer-compatible chunk indexes."""
+
+    chunk_index: int | None
+    content: str
+
+
+@dataclass(frozen=True)
+class _SourceWritePlan:
+    """Planned source-file mutation after vector merge succeeds."""
+
+    path: Path
+    source_file: str
+    content: str | None
+    archive: bool
+    delete: bool
+    label: str
 
 
 # ── ForgettingEngine ───────────────────────────────────────────────
@@ -416,6 +440,19 @@ class ForgettingEngine:
                         model,
                     )
                     if merged_content:
+                        source_plans = self._plan_merged_source_files(
+                            chunk_a,
+                            chunk_b,
+                            merged_content,
+                        )
+                        if source_plans is None:
+                            logger.warning(
+                                "Skipping neurogenesis merge for %s and %s because source sync was skipped",
+                                chunk_a["id"],
+                                chunk_b["id"],
+                            )
+                            continue
+
                         # Delete originals
                         store.delete_documents(
                             collection_name,
@@ -428,12 +465,14 @@ class ForgettingEngine:
                             memory_type,
                         )
                         # Sync source files on disk so next RAG re-index
-                        # reflects the merge instead of restoring originals
-                        self._sync_merged_source_files(
-                            chunk_a,
-                            chunk_b,
-                            merged_content,
-                        )
+                        # reflects the merge instead of restoring originals.
+                        if not self._apply_source_write_plans(source_plans):
+                            logger.warning(
+                                "Merged vectors for %s and %s but failed to sync source files",
+                                chunk_a["id"],
+                                chunk_b["id"],
+                            )
+                            continue
                         total_merged += 1
                         merged_pairs.append(f"{chunk_a['id']} + {chunk_b['id']}")
                 except Exception as e:
@@ -468,11 +507,19 @@ class ForgettingEngine:
         processed_ids: set[str] = set()
 
         try:
+            embeddings = generate_embeddings([chunk["content"] for chunk in chunks])
+            embeddings_by_id = {
+                chunk["id"]: embedding
+                for chunk, embedding in zip(chunks, embeddings, strict=False)
+            }
+
             for _, chunk_a in enumerate(chunks):
                 if chunk_a["id"] in processed_ids:
                     continue
 
-                embedding = generate_embeddings([chunk_a["content"]])[0]
+                embedding = embeddings_by_id.get(chunk_a["id"])
+                if embedding is None:
+                    continue
 
                 # Query for similar chunks
                 results = store.query(
@@ -525,7 +572,17 @@ class ForgettingEngine:
         try:
             from core.memory._llm_utils import one_shot_completion
 
-            return await one_shot_completion(prompt, model=model, max_tokens=1024)
+            result = await one_shot_completion(prompt, model=model, max_tokens=1024)
+            if not result:
+                return None
+            if result.strip().upper().startswith("MERGE_REJECT"):
+                logger.info(
+                    "LLM rejected neurogenesis merge for %s and %s",
+                    chunk_a["id"],
+                    chunk_b["id"],
+                )
+                return None
+            return result
         except Exception as e:
             logger.warning("LLM merge failed: %s", e)
             return None
@@ -583,7 +640,7 @@ class ForgettingEngine:
         chunk_a: dict,
         chunk_b: dict,
         merged_content: str,
-    ) -> None:
+    ) -> bool:
         """Update source .md files on disk after a neurogenesis merge.
 
         Without this step, the next ``_rebuild_rag_index()`` would re-index
@@ -591,64 +648,389 @@ class ForgettingEngine:
         as duplicates.
 
         Steps:
-          1. Archive both original source files to ``archive/merged/``.
-          2. Write the merged content to the primary source file (from chunk_a).
-          3. Remove the secondary source file (from chunk_b) if it differs
-             from the primary.
+          1. Validate source files have not changed since indexing.
+          2. Replace only the target chunk in the primary source file.
+          3. Remove only the absorbed chunk from the secondary source file.
+          4. Archive/delete the secondary only when all indexed chunks were absorbed.
 
         Args:
             chunk_a: First chunk dict (kept as primary).
             chunk_b: Second chunk dict (secondary, may be removed).
             merged_content: LLM-merged text to write.
+
+        Returns:
+            True when source files were updated or safely skipped, False when
+            the merge should be skipped because sources changed or boundaries
+            could not be matched.
         """
+        plans = self._plan_merged_source_files(chunk_a, chunk_b, merged_content)
+        if plans is None:
+            return False
+        return self._apply_source_write_plans(plans)
+
+    def _plan_merged_source_files(
+        self,
+        chunk_a: dict,
+        chunk_b: dict,
+        merged_content: str,
+    ) -> list[_SourceWritePlan] | None:
+        """Validate and plan source .md mutations for a neurogenesis merge."""
         source_a = (chunk_a.get("metadata") or {}).get("source_file", "")
         source_b = (chunk_b.get("metadata") or {}).get("source_file", "")
 
         # Guard: skip if source_file values are missing/empty or "merged"
         if not source_a or source_a == "merged":
-            return
+            return []
 
         primary_path = self.anima_dir / source_a
         secondary_path = (self.anima_dir / source_b) if source_b and source_b != "merged" else None
+        same_source = secondary_path == primary_path
 
-        # Archive directory for merged originals
+        if self._source_changed_since_index(primary_path, [chunk_a]):
+            return None
+        if secondary_path and not same_source and self._source_changed_since_index(secondary_path, [chunk_b]):
+            return None
+
+        idx_a = self._chunk_index(chunk_a)
+        if idx_a is None:
+            logger.warning("Skipping neurogenesis source sync for %s: missing chunk_index", source_a)
+            return None
+
+        memory_type_a = self._memory_type_for_source(chunk_a, source_a)
+
+        if same_source:
+            idx_b = self._chunk_index(chunk_b)
+            replacements = {idx_a: merged_content}
+            removals: set[int] = set()
+            if idx_b is not None and idx_b != idx_a:
+                keep_idx = min(idx_a, idx_b)
+                drop_idx = max(idx_a, idx_b)
+                replacements = {keep_idx: merged_content}
+                removals = {drop_idx}
+
+            primary_plan = self._build_source_update(
+                primary_path,
+                memory_type_a,
+                replacements=replacements,
+                removals=removals,
+            )
+            if primary_plan is None:
+                return None
+
+            return [
+                _SourceWritePlan(
+                    path=primary_path,
+                    source_file=source_a,
+                    content=primary_plan[0],
+                    archive=True,
+                    delete=False,
+                    label="primary",
+                )
+            ]
+
+        primary_plan = self._build_source_update(
+            primary_path,
+            memory_type_a,
+            replacements={idx_a: merged_content},
+            removals=set(),
+        )
+        if primary_plan is None:
+            return None
+
+        secondary_plan: tuple[str, int] | None = None
+        if secondary_path and secondary_path.exists():
+            idx_b = self._chunk_index(chunk_b)
+            if idx_b is None:
+                logger.warning("Skipping neurogenesis source sync for %s: missing chunk_index", source_b)
+                return None
+            secondary_plan = self._build_source_update(
+                secondary_path,
+                self._memory_type_for_source(chunk_b, source_b),
+                replacements={},
+                removals={idx_b},
+            )
+            if secondary_plan is None:
+                return None
+
+        plans = [
+            _SourceWritePlan(
+                path=primary_path,
+                source_file=source_a,
+                content=primary_plan[0],
+                archive=True,
+                delete=False,
+                label="primary",
+            )
+        ]
+        if secondary_path and secondary_plan is not None:
+            remaining_indexed_chunks = secondary_plan[1]
+            if remaining_indexed_chunks == 0:
+                plans.append(
+                    _SourceWritePlan(
+                        path=secondary_path,
+                        source_file=source_b,
+                        content=None,
+                        archive=True,
+                        delete=True,
+                        label="secondary",
+                    )
+                )
+            else:
+                plans.append(
+                    _SourceWritePlan(
+                        path=secondary_path,
+                        source_file=source_b,
+                        content=secondary_plan[0],
+                        archive=False,
+                        delete=False,
+                        label="secondary",
+                    )
+                )
+        return plans
+
+    def _apply_source_write_plans(self, plans: list[_SourceWritePlan]) -> bool:
         archive_dir = self.anima_dir / "archive" / "merged"
-        archive_dir.mkdir(parents=True, exist_ok=True)
         timestamp = now_local().strftime("%Y%m%d_%H%M%S")
+        for plan in plans:
+            if plan.archive:
+                self._archive_merged_source(plan.path, archive_dir, timestamp, plan.label)
+            if plan.delete:
+                try:
+                    plan.path.unlink()
+                    logger.debug("Removed absorbed %s source file: %s", plan.label, plan.source_file)
+                except Exception as e:
+                    logger.warning("Failed to remove %s source %s: %s", plan.label, plan.source_file, e)
+                    return False
+                continue
+            if plan.content is not None and not self._write_source_text(plan.path, plan.content, plan.source_file):
+                return False
+        return True
 
-        # Archive primary original
-        if primary_path.exists():
-            dest = archive_dir / f"{primary_path.stem}_{timestamp}{primary_path.suffix}"
-            try:
-                shutil.copy2(str(primary_path), str(dest))
-                logger.debug("Archived merged source (primary): %s -> %s", source_a, dest.name)
-            except Exception as e:
-                logger.warning("Failed to archive primary source %s: %s", source_a, e)
-
-        # Archive secondary original (if different from primary)
-        if secondary_path and secondary_path != primary_path and secondary_path.exists():
-            dest = archive_dir / f"{secondary_path.stem}_{timestamp}{secondary_path.suffix}"
-            try:
-                shutil.copy2(str(secondary_path), str(dest))
-                logger.debug("Archived merged source (secondary): %s -> %s", source_b, dest.name)
-            except Exception as e:
-                logger.warning("Failed to archive secondary source %s: %s", source_b, e)
-
-        # Write merged content to primary source file
+    @staticmethod
+    def _chunk_index(chunk: dict) -> int | None:
+        raw = (chunk.get("metadata") or {}).get("chunk_index", 0)
         try:
-            primary_path.parent.mkdir(parents=True, exist_ok=True)
-            primary_path.write_text(merged_content, encoding="utf-8")
-            logger.debug("Wrote merged content to %s", source_a)
-        except Exception as e:
-            logger.warning("Failed to write merged content to %s: %s", source_a, e)
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
 
-        # Remove secondary source file if different from primary
-        if secondary_path and secondary_path != primary_path and secondary_path.exists():
+    @staticmethod
+    def _memory_type_for_source(chunk: dict, source_file: str) -> str:
+        meta_type = (chunk.get("metadata") or {}).get("memory_type")
+        if isinstance(meta_type, str) and meta_type:
+            return meta_type
+        prefix = source_file.replace("\\", "/").split("/", 1)[0]
+        if prefix in {"knowledge", "episodes", "procedures", "skills", "shared_users"}:
+            return prefix
+        return "knowledge"
+
+    @staticmethod
+    def _compute_source_hash(path: Path) -> str:
+        sha256 = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+    def _source_changed_since_index(self, path: Path, chunks: list[dict]) -> bool:
+        """Return True when the on-disk source no longer matches index metadata."""
+        if not path.exists():
+            return False
+
+        metadata = [c.get("metadata") or {} for c in chunks]
+        expected_hash = next(
+            (
+                str(meta[key])
+                for meta in metadata
+                for key in ("source_hash", "file_hash", "content_hash")
+                if meta.get(key)
+            ),
+            "",
+        )
+        if expected_hash and self._compute_source_hash(path) != expected_hash:
+            logger.warning(
+                "Skipping neurogenesis source sync for %s: source file content changed since indexing",
+                path,
+            )
+            return True
+
+        expected_mtime_ns: int | None = None
+        for meta in metadata:
+            if meta.get("source_mtime_ns") is None:
+                continue
             try:
-                secondary_path.unlink()
-                logger.debug("Removed secondary source file: %s", source_b)
-            except Exception as e:
-                logger.warning("Failed to remove secondary source %s: %s", source_b, e)
+                expected_mtime_ns = int(meta["source_mtime_ns"])
+            except (TypeError, ValueError):
+                continue
+            break
+        if expected_mtime_ns is not None and path.stat().st_mtime_ns != expected_mtime_ns:
+            logger.warning(
+                "Skipping neurogenesis source sync for %s: source file mtime changed since indexing",
+                path,
+            )
+            return True
+
+        for meta in metadata:
+            updated_at = meta.get("updated_at")
+            if not updated_at:
+                continue
+            try:
+                expected_dt = ensure_aware(datetime.fromisoformat(str(updated_at)))
+                actual_dt = ensure_aware(datetime.fromtimestamp(path.stat().st_mtime))
+            except (TypeError, ValueError, OSError):
+                continue
+            if abs((actual_dt - expected_dt).total_seconds()) > 0.001:
+                logger.warning(
+                    "Skipping neurogenesis source sync for %s: source file mtime changed since indexing",
+                    path,
+                )
+                return True
+        return False
+
+    def _build_source_update(
+        self,
+        path: Path,
+        memory_type: str,
+        *,
+        replacements: dict[int, str],
+        removals: set[int],
+    ) -> tuple[str, int] | None:
+        """Build updated source text and return remaining indexed chunk count."""
+        if not path.exists():
+            if replacements and not removals:
+                return next(iter(replacements.values())).strip(), 1
+            logger.warning("Skipping neurogenesis source sync for %s: source file missing", path)
+            return None
+
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as e:
+            logger.warning("Skipping neurogenesis source sync for %s: %s", path, e)
+            return None
+
+        prefix, segments = self._split_source_segments(raw, memory_type)
+        indexed = {segment.chunk_index for segment in segments if segment.chunk_index is not None}
+        target_indexes = set(replacements) | removals
+
+        if not indexed and target_indexes == {0} and segments:
+            segments = [_SourceSegment(0, segment.content) for segment in segments]
+            indexed = {0}
+
+        missing = target_indexes - indexed
+        if missing:
+            logger.warning(
+                "Skipping neurogenesis source sync for %s: chunk index(es) not found: %s",
+                path,
+                sorted(missing),
+            )
+            return None
+
+        updated_segments: list[_SourceSegment] = []
+        remaining_indexed = 0
+        for segment in segments:
+            if segment.chunk_index in removals:
+                continue
+            content = replacements.get(segment.chunk_index, segment.content)
+            updated_segments.append(_SourceSegment(segment.chunk_index, content))
+            if segment.chunk_index is not None:
+                remaining_indexed += 1
+
+        return self._render_source_segments(prefix, updated_segments), remaining_indexed
+
+    @staticmethod
+    def _split_source_segments(raw: str, memory_type: str) -> tuple[str, list[_SourceSegment]]:
+        prefix, body = ForgettingEngine._split_frontmatter_prefix(raw)
+        body = body.strip()
+        if not body:
+            return prefix, []
+
+        if memory_type not in {"knowledge", "common_knowledge", "episodes"}:
+            return prefix, [_SourceSegment(0, body)]
+
+        segments: list[_SourceSegment] = []
+        sections = re.split(r"\n(##\s+.+)", f"\n{body}")
+        preamble = sections[0].strip()
+        chunk_idx = 0
+
+        if preamble:
+            indexed = chunk_idx if len(preamble) > 50 else None
+            segments.append(_SourceSegment(indexed, preamble))
+            if indexed is not None:
+                chunk_idx += 1
+
+        for i in range(1, len(sections), 2):
+            if i + 1 >= len(sections):
+                continue
+            heading = sections[i].strip()
+            section_body = sections[i + 1].strip()
+            section_content = f"{heading}\n\n{section_body}".strip()
+            if section_content:
+                segments.append(_SourceSegment(chunk_idx, section_content))
+                chunk_idx += 1
+
+        return prefix, segments
+
+    @staticmethod
+    def _split_frontmatter_prefix(raw: str) -> tuple[str, str]:
+        if not raw.startswith("---"):
+            return "", raw
+        first_newline = raw.find("\n")
+        if first_newline == -1:
+            return "", raw
+        rest = raw[first_newline + 1 :]
+        match = re.search(r"^---\s*$", rest, flags=re.MULTILINE)
+        if match is None:
+            return "", raw
+        end = first_newline + 1 + match.end()
+        body = raw[end:]
+        if body.startswith("\n\n"):
+            body = body[2:]
+        elif body.startswith("\n"):
+            body = body[1:]
+        return raw[:end].rstrip(), body
+
+    @staticmethod
+    def _render_source_segments(prefix: str, segments: list[_SourceSegment]) -> str:
+        body = "\n\n".join(segment.content.strip() for segment in segments if segment.content.strip()).strip()
+        if prefix and body:
+            return f"{prefix}\n\n{body}"
+        if prefix:
+            return prefix
+        return body
+
+    def _archive_merged_source(
+        self,
+        path: Path,
+        archive_dir: Path,
+        timestamp: str,
+        label: str,
+    ) -> Path | None:
+        if not path.exists():
+            return None
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        dest = archive_dir / f"{path.stem}_{timestamp}{path.suffix}"
+        counter = 1
+        while dest.exists():
+            dest = archive_dir / f"{path.stem}_{timestamp}_{counter}{path.suffix}"
+            counter += 1
+        try:
+            shutil.copy2(str(path), str(dest))
+            logger.debug("Archived merged source (%s): %s -> %s", label, path, dest.name)
+            return dest
+        except Exception as e:
+            logger.warning("Failed to archive %s source %s: %s", label, path, e)
+            return None
+
+    @staticmethod
+    def _write_source_text(path: Path, content: str, source_file: str) -> bool:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(path, content)
+            logger.debug("Wrote merged source content to %s", source_file)
+            return True
+        except Exception as e:
+            logger.warning("Failed to write merged content to %s: %s", source_file, e)
+            return False
 
     # ── Stage 3: Complete Forgetting (Monthly) ─────────────────────
 

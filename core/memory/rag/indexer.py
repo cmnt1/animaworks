@@ -302,6 +302,11 @@ class MemoryIndexer:
             self.delete_indexed_file(file_path, memory_type)
             return 0
 
+        source_mtime_ns = file_path.stat().st_mtime_ns
+        for chunk in chunks:
+            chunk.metadata["source_hash"] = file_hash
+            chunk.metadata["source_mtime_ns"] = source_mtime_ns
+
         # Generate embeddings
         embeddings = self._generate_embeddings([chunk.content for chunk in chunks])
 
