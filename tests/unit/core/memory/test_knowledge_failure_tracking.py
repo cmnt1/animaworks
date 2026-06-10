@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -24,7 +25,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ── Fixtures ────────────────────────────────────────────────────
 
 
@@ -32,8 +32,7 @@ import pytest
 def anima_dir(tmp_path: Path) -> Path:
     """Minimal anima directory with knowledge subdirectory."""
     d = tmp_path / "animas" / "test_anima"
-    for sub in ("knowledge", "episodes", "skills", "procedures", "state",
-                "shortterm", "activity_log", "archive"):
+    for sub in ("knowledge", "episodes", "skills", "procedures", "state", "shortterm", "activity_log", "archive"):
         (d / sub).mkdir(parents=True)
     return d
 
@@ -68,17 +67,21 @@ def _write_knowledge(
 
 
 class TestMemoryManagerKnowledgeHelpers:
-
     def test_read_knowledge_metadata_with_tracking_fields(self, anima_dir: Path) -> None:
         from core.memory.manager import MemoryManager
 
-        _write_knowledge(anima_dir, "topic.md", "body", {
-            "confidence": 0.7,
-            "success_count": 3,
-            "failure_count": 1,
-            "version": 2,
-            "last_used": "2026-02-19T10:00:00",
-        })
+        _write_knowledge(
+            anima_dir,
+            "topic.md",
+            "body",
+            {
+                "confidence": 0.7,
+                "success_count": 3,
+                "failure_count": 1,
+                "version": 2,
+                "last_used": "2026-02-19T10:00:00",
+            },
+        )
 
         mm = MemoryManager(anima_dir)
         meta = mm.read_knowledge_metadata(anima_dir / "knowledge" / "topic.md")
@@ -101,12 +104,17 @@ class TestMemoryManagerKnowledgeHelpers:
     def test_update_knowledge_metadata_merges(self, anima_dir: Path) -> None:
         from core.memory.manager import MemoryManager
 
-        _write_knowledge(anima_dir, "topic.md", "body text", {
-            "confidence": 0.7,
-            "success_count": 0,
-            "failure_count": 0,
-            "version": 1,
-        })
+        _write_knowledge(
+            anima_dir,
+            "topic.md",
+            "body text",
+            {
+                "confidence": 0.7,
+                "success_count": 0,
+                "failure_count": 0,
+                "version": 1,
+            },
+        )
         mm = MemoryManager(anima_dir)
         target = anima_dir / "knowledge" / "topic.md"
         mm.update_knowledge_metadata(target, {"success_count": 5, "last_used": "now"})
@@ -131,7 +139,6 @@ class TestMemoryManagerKnowledgeHelpers:
 
 
 class TestReportKnowledgeOutcome:
-
     def _make_handler(self, anima_dir: Path):
         """Create a minimal ToolHandler for testing."""
         from core.memory.activity import ActivityLogger
@@ -147,21 +154,30 @@ class TestReportKnowledgeOutcome:
         return handler
 
     def test_success_increments_count(self, anima_dir: Path) -> None:
-        _write_knowledge(anima_dir, "topic.md", "body", {
-            "confidence": 0.7,
-            "success_count": 0,
-            "failure_count": 0,
-            "version": 1,
-            "last_used": "",
-        })
+        _write_knowledge(
+            anima_dir,
+            "topic.md",
+            "body",
+            {
+                "confidence": 0.7,
+                "success_count": 0,
+                "failure_count": 0,
+                "version": 1,
+                "last_used": "",
+            },
+        )
         handler = self._make_handler(anima_dir)
-        result = handler._handle_report_knowledge_outcome({
-            "path": "knowledge/topic.md",
-            "success": True,
-        })
+        handler._record_memory_file_used = MagicMock()
+        result = handler._handle_report_knowledge_outcome(
+            {
+                "path": "knowledge/topic.md",
+                "success": True,
+            }
+        )
         assert "成功" in result
 
         from core.memory.manager import MemoryManager
+
         meta = MemoryManager(anima_dir).read_knowledge_metadata(
             anima_dir / "knowledge" / "topic.md",
         )
@@ -169,23 +185,32 @@ class TestReportKnowledgeOutcome:
         assert meta["failure_count"] == 0
         assert meta["confidence"] == 1.0
         assert meta["last_used"] != ""
+        handler._record_memory_file_used.assert_called_once_with("knowledge/topic.md")
 
     def test_failure_increments_and_recalculates(self, anima_dir: Path) -> None:
-        _write_knowledge(anima_dir, "topic.md", "body", {
-            "confidence": 0.7,
-            "success_count": 1,
-            "failure_count": 0,
-            "version": 1,
-            "last_used": "",
-        })
+        _write_knowledge(
+            anima_dir,
+            "topic.md",
+            "body",
+            {
+                "confidence": 0.7,
+                "success_count": 1,
+                "failure_count": 0,
+                "version": 1,
+                "last_used": "",
+            },
+        )
         handler = self._make_handler(anima_dir)
-        result = handler._handle_report_knowledge_outcome({
-            "path": "knowledge/topic.md",
-            "success": False,
-        })
+        result = handler._handle_report_knowledge_outcome(
+            {
+                "path": "knowledge/topic.md",
+                "success": False,
+            }
+        )
         assert "失敗" in result
 
         from core.memory.manager import MemoryManager
+
         meta = MemoryManager(anima_dir).read_knowledge_metadata(
             anima_dir / "knowledge" / "topic.md",
         )
@@ -200,10 +225,12 @@ class TestReportKnowledgeOutcome:
 
     def test_nonexistent_file_returns_error(self, anima_dir: Path) -> None:
         handler = self._make_handler(anima_dir)
-        result = handler._handle_report_knowledge_outcome({
-            "path": "knowledge/nonexistent.md",
-            "success": True,
-        })
+        result = handler._handle_report_knowledge_outcome(
+            {
+                "path": "knowledge/nonexistent.md",
+                "success": True,
+            }
+        )
         assert "FileNotFound" in result or "not found" in result.lower()
 
 
@@ -211,7 +238,6 @@ class TestReportKnowledgeOutcome:
 
 
 class TestKnowledgeForgettingProtection:
-
     def test_success_count_2_is_protected(self, anima_dir: Path) -> None:
         from core.memory.forgetting import ForgettingEngine
 
@@ -234,19 +260,29 @@ class TestKnowledgeForgettingProtection:
         from core.memory.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
-        assert engine._is_protected({
-            "memory_type": "knowledge",
-            "success_count": 5,
-        }) is True
+        assert (
+            engine._is_protected(
+                {
+                    "memory_type": "knowledge",
+                    "success_count": 5,
+                }
+            )
+            is True
+        )
 
     def test_knowledge_no_protection_by_default(self, anima_dir: Path) -> None:
         from core.memory.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
-        assert engine._is_protected({
-            "memory_type": "knowledge",
-            "success_count": 0,
-        }) is False
+        assert (
+            engine._is_protected(
+                {
+                    "memory_type": "knowledge",
+                    "success_count": 0,
+                }
+            )
+            is False
+        )
 
     def test_success_count_string_coercion(self, anima_dir: Path) -> None:
         """ChromaDB may return metadata values as strings."""
@@ -260,7 +296,6 @@ class TestKnowledgeForgettingProtection:
 
 
 class TestKnowledgeReconsolidation:
-
     @pytest.fixture
     def engine(self, anima_dir: Path):
         from core.memory.activity import ActivityLogger
@@ -270,26 +305,40 @@ class TestKnowledgeReconsolidation:
         mm = MemoryManager(anima_dir)
         al = ActivityLogger(anima_dir)
         return ReconsolidationEngine(
-            anima_dir, "test_anima",
-            memory_manager=mm, activity_logger=al,
+            anima_dir,
+            "test_anima",
+            memory_manager=mm,
+            activity_logger=al,
         )
 
     @pytest.mark.asyncio
     async def test_finds_targets_with_high_failure_low_confidence(
-        self, anima_dir: Path, engine,
+        self,
+        anima_dir: Path,
+        engine,
     ) -> None:
-        _write_knowledge(anima_dir, "bad.md", "bad content", {
-            "failure_count": 3,
-            "confidence": 0.3,
-            "success_count": 0,
-            "version": 1,
-        })
-        _write_knowledge(anima_dir, "good.md", "good content", {
-            "failure_count": 0,
-            "confidence": 0.9,
-            "success_count": 5,
-            "version": 1,
-        })
+        _write_knowledge(
+            anima_dir,
+            "bad.md",
+            "bad content",
+            {
+                "failure_count": 3,
+                "confidence": 0.3,
+                "success_count": 0,
+                "version": 1,
+            },
+        )
+        _write_knowledge(
+            anima_dir,
+            "good.md",
+            "good content",
+            {
+                "failure_count": 0,
+                "confidence": 0.9,
+                "success_count": 5,
+                "version": 1,
+            },
+        )
 
         targets = await engine.find_knowledge_reconsolidation_targets()
         names = [t.name for t in targets]
@@ -298,12 +347,17 @@ class TestKnowledgeReconsolidation:
 
     @pytest.mark.asyncio
     async def test_ignores_below_threshold(self, anima_dir: Path, engine) -> None:
-        _write_knowledge(anima_dir, "borderline.md", "content", {
-            "failure_count": 1,
-            "confidence": 0.5,
-            "success_count": 1,
-            "version": 1,
-        })
+        _write_knowledge(
+            anima_dir,
+            "borderline.md",
+            "content",
+            {
+                "failure_count": 1,
+                "confidence": 0.5,
+                "success_count": 1,
+                "version": 1,
+            },
+        )
 
         targets = await engine.find_knowledge_reconsolidation_targets()
         assert len(targets) == 0
@@ -321,21 +375,26 @@ class TestKnowledgeReconsolidation:
 
 
 class TestContradictionFailureIncrement:
-
     def test_increment_failure_count(self, anima_dir: Path) -> None:
         from core.memory.contradiction import ContradictionDetector
 
-        _write_knowledge(anima_dir, "old.md", "old info", {
-            "confidence": 0.7,
-            "success_count": 1,
-            "failure_count": 0,
-            "version": 1,
-        })
+        _write_knowledge(
+            anima_dir,
+            "old.md",
+            "old info",
+            {
+                "confidence": 0.7,
+                "success_count": 1,
+                "failure_count": 0,
+                "version": 1,
+            },
+        )
 
         detector = ContradictionDetector(anima_dir, "test_anima")
         detector._increment_failure_count(anima_dir / "knowledge" / "old.md")
 
         from core.memory.manager import MemoryManager
+
         meta = MemoryManager(anima_dir).read_knowledge_metadata(
             anima_dir / "knowledge" / "old.md",
         )
@@ -357,6 +416,7 @@ class TestContradictionFailureIncrement:
         detector._increment_failure_count(anima_dir / "knowledge" / "plain.md")
 
         from core.memory.manager import MemoryManager
+
         meta = MemoryManager(anima_dir).read_knowledge_metadata(
             anima_dir / "knowledge" / "plain.md",
         )
@@ -368,9 +428,11 @@ class TestContradictionFailureIncrement:
 
 
 class TestContradictionHistoryPersistence:
-
     def test_persist_creates_jsonl_entry(
-        self, anima_dir: Path, shared_dir: Path, monkeypatch,
+        self,
+        anima_dir: Path,
+        shared_dir: Path,
+        monkeypatch,
     ) -> None:
         from core.memory.contradiction import ContradictionDetector, ContradictionPair
 
@@ -410,7 +472,10 @@ class TestContradictionHistoryPersistence:
         datetime.fromisoformat(entry["ts"])
 
     def test_persist_appends_multiple_entries(
-        self, anima_dir: Path, shared_dir: Path, monkeypatch,
+        self,
+        anima_dir: Path,
+        shared_dir: Path,
+        monkeypatch,
     ) -> None:
         from core.memory.contradiction import ContradictionDetector, ContradictionPair
 
@@ -441,7 +506,6 @@ class TestContradictionHistoryPersistence:
 
 
 class TestIndexerMetadataExtraction:
-
     def test_extracts_failure_tracking_fields(self, tmp_path: Path) -> None:
         """Verify that indexing picks up the new tracking fields in ChromaDB."""
         pytest.importorskip("chromadb")
@@ -452,23 +516,30 @@ class TestIndexerMetadataExtraction:
         data_dir.mkdir()
         (data_dir / "models").mkdir()
         import os
+
         old = os.environ.get("ANIMAWORKS_DATA_DIR")
         os.environ["ANIMAWORKS_DATA_DIR"] = str(data_dir)
         try:
             from core.paths import _prompt_cache
+
             _prompt_cache.clear()
 
             a_dir = data_dir / "animas" / "idx_test"
             (a_dir / "knowledge").mkdir(parents=True)
             (a_dir / "vectordb").mkdir()
 
-            _write_knowledge(a_dir, "tracked.md", "# Topic\n\nContent body text here for indexing.\n\n## Details\n\nThis is a longer knowledge file with enough content to be indexed by the chunking algorithm. It contains multiple paragraphs and sections to ensure the text passes minimum length thresholds for embedding generation. The topic covers important policy information that should be searchable via vector similarity.\n\n## Additional Context\n\nMore information about the policy including background context and related references that provide depth to the knowledge entry.\n", {
-                "confidence": 0.8,
-                "success_count": 5,
-                "failure_count": 2,
-                "version": 3,
-                "last_used": "2026-02-19T12:00:00",
-            })
+            _write_knowledge(
+                a_dir,
+                "tracked.md",
+                "# Topic\n\nContent body text here for indexing.\n\n## Details\n\nThis is a longer knowledge file with enough content to be indexed by the chunking algorithm. It contains multiple paragraphs and sections to ensure the text passes minimum length thresholds for embedding generation. The topic covers important policy information that should be searchable via vector similarity.\n\n## Additional Context\n\nMore information about the policy including background context and related references that provide depth to the knowledge entry.\n",
+                {
+                    "confidence": 0.8,
+                    "success_count": 5,
+                    "failure_count": 2,
+                    "version": 3,
+                    "last_used": "2026-02-19T12:00:00",
+                },
+            )
 
             from core.memory.rag.indexer import MemoryIndexer
             from core.memory.rag.store import ChromaVectorStore

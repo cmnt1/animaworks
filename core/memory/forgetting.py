@@ -130,12 +130,12 @@ class ForgettingEngine:
         should have occurred by now and the raw episodic [IMPORTANT]
         can safely enter normal forgetting.
         """
-        access_count = int(metadata.get("access_count", 0))
-        if access_count > 0:
-            last_accessed_str = metadata.get("last_accessed_at", "")
-            if last_accessed_str:
+        used_count = self._used_count(metadata)
+        if used_count > 0:
+            last_used_str = self._last_used_at(metadata)
+            if last_used_str:
                 try:
-                    last_dt = ensure_aware(datetime.fromisoformat(str(last_accessed_str)))
+                    last_dt = ensure_aware(datetime.fromisoformat(str(last_used_str)))
                     days = (now_local() - last_dt).total_seconds() / 86400.0
                     return days > IMPORTANT_SAFETY_NET_DAYS
                 except (ValueError, TypeError):
@@ -151,6 +151,30 @@ class ForgettingEngine:
             except (ValueError, TypeError):
                 pass
         return False
+
+    @staticmethod
+    def _number(metadata: dict, key: str, *, default: float = 0.0) -> float:
+        try:
+            return max(0.0, float(str(metadata.get(key, default))))
+        except (TypeError, ValueError):
+            return max(0.0, default)
+
+    def _used_count(self, metadata: dict) -> float:
+        """Return explicit-use count, migrating legacy access_count as used."""
+        if "used_count" in metadata:
+            return self._number(metadata, "used_count")
+        return self._number(metadata, "access_count")
+
+    @staticmethod
+    def _last_used_at(metadata: dict) -> str:
+        """Return explicit-use timestamp, falling back only for legacy metadata."""
+        for key in ("last_used_at", "last_used"):
+            value = str(metadata.get(key, "") or "").strip()
+            if value:
+                return value
+        if "used_count" not in metadata:
+            return str(metadata.get("last_accessed_at", "") or "")
+        return ""
 
     def _is_protected_knowledge(self, metadata: dict, *, important_expired: bool = False) -> bool:
         """Knowledge-specific protection check.
@@ -208,7 +232,7 @@ class ForgettingEngine:
             True if the procedure should be marked as low-activation.
         """
         # Calculate days since last use
-        last_used_str = metadata.get("last_used") or metadata.get("last_accessed_at", "")
+        last_used_str = self._last_used_at(metadata)
         if not last_used_str:
             last_used_str = metadata.get("updated_at", "")
 
@@ -223,7 +247,7 @@ class ForgettingEngine:
 
         success_count = int(metadata.get("success_count", 0))
         failure_count = int(metadata.get("failure_count", 0))
-        total_usage = success_count + failure_count
+        total_usage = max(success_count + failure_count, int(self._used_count(metadata)))
 
         # Condition 1: Long inactivity + low total usage
         if days_since > PROCEDURE_INACTIVITY_DAYS and total_usage < PROCEDURE_MIN_USAGE:
@@ -322,17 +346,17 @@ class ForgettingEngine:
                     continue
 
                 # Check access recency
-                access_count = int(meta.get("access_count", 0))
-                last_accessed_str = meta.get("last_accessed_at", "")
+                used_count = self._used_count(meta)
+                last_used_str = self._last_used_at(meta)
 
-                if last_accessed_str:
+                if last_used_str:
                     try:
-                        last_accessed = ensure_aware(datetime.fromisoformat(str(last_accessed_str)))
-                        days_since = (now - last_accessed).total_seconds() / 86400.0
+                        last_used = ensure_aware(datetime.fromisoformat(str(last_used_str)))
+                        days_since = (now - last_used).total_seconds() / 86400.0
                     except (ValueError, TypeError):
                         days_since = float("inf")
                 else:
-                    # Never accessed — use updated_at as fallback
+                    # Never used — use updated_at as fallback
                     updated_str = meta.get("updated_at", "")
                     if updated_str:
                         try:
@@ -344,7 +368,7 @@ class ForgettingEngine:
                         days_since = float("inf")
 
                 # Apply threshold
-                if days_since > DOWNSCALING_DAYS_THRESHOLD and access_count < DOWNSCALING_ACCESS_THRESHOLD:
+                if days_since > DOWNSCALING_DAYS_THRESHOLD and used_count < DOWNSCALING_ACCESS_THRESHOLD:
                     ids_to_mark.append(chunk["id"])
                     metas_to_mark.append(
                         {
@@ -615,7 +639,7 @@ class ForgettingEngine:
     ) -> None:
         """Index a merged chunk back into the vector store."""
         try:
-            from core.memory.rag.indexer import MemoryIndexer
+            from core.memory.rag.indexer import MemoryIndexer, access_tracking_metadata
             from core.memory.rag.singleton import get_vector_store
             from core.memory.rag.store import Document
 
@@ -640,8 +664,7 @@ class ForgettingEngine:
                 "created_at": now_iso_str,
                 "updated_at": now_iso_str,
                 "importance": "normal",
-                "access_count": 0,
-                "last_accessed_at": "",
+                **access_tracking_metadata(),
                 "activation_level": "normal",
                 "low_activation_since": "",
             }
@@ -1108,8 +1131,8 @@ class ForgettingEngine:
                     continue
 
                 # Check criteria
-                access_count = int(meta.get("access_count", 0))
-                if days_low > FORGETTING_LOW_ACTIVATION_DAYS and access_count <= FORGETTING_MAX_ACCESS_COUNT:
+                used_count = self._used_count(meta)
+                if days_low > FORGETTING_LOW_ACTIVATION_DAYS and used_count <= FORGETTING_MAX_ACCESS_COUNT:
                     ids_to_delete.append(chunk["id"])
                     source_file = meta.get("source_file", "")
                     if source_file and source_file != "merged":

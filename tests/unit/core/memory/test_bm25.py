@@ -15,8 +15,11 @@ from core.memory.bm25 import (
     _MIN_CONTENT_LENGTH,
     _SEARCHABLE_TYPES,
     _should_index_entry,
+    longterm_bm25_index_path,
+    rebuild_longterm_bm25_index,
     reciprocal_rank_fusion,
     search_activity_log,
+    search_longterm_memory_bm25,
     tokenize,
 )
 from core.time_utils import today_local
@@ -39,6 +42,12 @@ def _long_tool_content(*parts: str) -> str:
     base = " ".join(parts)
     pad = "x" * max(0, _MIN_CONTENT_LENGTH - len(base))
     return f"{base} {pad}".strip()
+
+
+def _write_longterm_memory(anima_dir: Path, rel: str, content: str) -> None:
+    path = anima_dir / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
 # ── tokenize ────────────────────────────────────────────────
@@ -218,3 +227,72 @@ def test_bm25_fallback_without_library(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert results
     assert "matsuo" in results[0]["content"].lower()
     assert results[0]["search_method"] == "keyword_fallback"
+
+
+# ── long-term memory BM25 ──────────────────────────────────
+
+
+def test_rebuild_and_search_longterm_bm25_index(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(
+        anima_dir,
+        "knowledge/meridian.md",
+        "# Meridian\n\nProject Meridian calibration notes for the orbit planner and telemetry handoff.",
+    )
+    _write_longterm_memory(
+        anima_dir,
+        "episodes/2026-05-01.md",
+        "## Morning\n\nCaroline reviewed Project Meridian with the telemetry team.",
+    )
+    _write_longterm_memory(
+        anima_dir,
+        "procedures/telemetry.md",
+        "# Telemetry Procedure\n\nUse Meridian telemetry checks before release.",
+    )
+
+    result = rebuild_longterm_bm25_index(anima_dir)
+
+    assert result.documents == 3
+    assert result.path == longterm_bm25_index_path(anima_dir)
+    assert result.path.exists()
+
+    hits = search_longterm_memory_bm25(
+        anima_dir,
+        "Meridian calibration",
+        memory_types=("knowledge",),
+        top_k=3,
+    )
+
+    assert hits
+    assert hits[0]["source_file"] == "knowledge/meridian.md"
+    assert hits[0]["memory_type"] == "knowledge"
+    assert hits[0]["search_method"] == ("bm25" if bm25_module._HAS_BM25 else "keyword_fallback")
+
+
+def test_longterm_bm25_proper_name_beats_naive_keyword_tie(tmp_path: Path) -> None:
+    if not bm25_module._HAS_BM25:
+        pytest.skip("rank_bm25 is not installed")
+
+    anima_dir = tmp_path / "animas" / "alice"
+    noisy = "ZephyrNova " + " ".join(f"filler{i}" for i in range(200))
+    concise = "# ZephyrNova\n\nZephyrNova is the supplier codename for the launchpad audit."
+    _write_longterm_memory(anima_dir, "knowledge/aaa-noisy.md", noisy)
+    _write_longterm_memory(anima_dir, "knowledge/bbb-concise.md", concise)
+    _write_longterm_memory(anima_dir, "knowledge/ccc-unrelated.md", "Unrelated project notes for baseline corpus IDF.")
+    rebuild_longterm_bm25_index(anima_dir)
+
+    legacy_scores = [
+        path.name
+        for path in sorted((anima_dir / "knowledge").glob("*.md"))
+        if "zephyrnova" in path.read_text(encoding="utf-8").lower()
+    ]
+    assert legacy_scores[0] == "aaa-noisy.md"
+
+    hits = search_longterm_memory_bm25(
+        anima_dir,
+        "ZephyrNova",
+        memory_types=("knowledge",),
+        top_k=3,
+    )
+
+    assert hits[0]["source_file"] == "knowledge/bbb-concise.md"

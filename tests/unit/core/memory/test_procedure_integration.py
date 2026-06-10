@@ -61,10 +61,13 @@ class TestRAGIndexAutoUpdate:
         from core.tooling.handler import ToolHandler
 
         handler = ToolHandler(anima_dir, memory)
-        result = handler.handle("write_memory_file", {
-            "path": "skills/test-skill.md",
-            "content": "---\ndescription: test\n---\n\n# Test Skill",
-        })
+        result = handler.handle(
+            "write_memory_file",
+            {
+                "path": "skills/test-skill.md",
+                "content": "---\ndescription: test\n---\n\n# Test Skill",
+            },
+        )
 
         assert "Written to" in result
         mock_indexer.index_file.assert_called_once()
@@ -82,10 +85,13 @@ class TestRAGIndexAutoUpdate:
         from core.tooling.handler import ToolHandler
 
         handler = ToolHandler(anima_dir, memory)
-        result = handler.handle("write_memory_file", {
-            "path": "procedures/deploy.md",
-            "content": "---\ndescription: deploy\n---\n\n# Deploy",
-        })
+        result = handler.handle(
+            "write_memory_file",
+            {
+                "path": "procedures/deploy.md",
+                "content": "---\ndescription: deploy\n---\n\n# Deploy",
+            },
+        )
 
         assert "Written to" in result
         mock_indexer.index_file.assert_called_once()
@@ -101,10 +107,13 @@ class TestRAGIndexAutoUpdate:
         from core.tooling.handler import ToolHandler
 
         handler = ToolHandler(anima_dir, memory)
-        handler.handle("write_memory_file", {
-            "path": "knowledge/notes.md",
-            "content": "# Some knowledge",
-        })
+        handler.handle(
+            "write_memory_file",
+            {
+                "path": "knowledge/notes.md",
+                "content": "# Some knowledge",
+            },
+        )
 
         mock_indexer.index_file.assert_called_once()
         call_args = mock_indexer.index_file.call_args
@@ -120,10 +129,13 @@ class TestRAGIndexAutoUpdate:
         from core.tooling.handler import ToolHandler
 
         handler = ToolHandler(anima_dir, memory)
-        result = handler.handle("write_memory_file", {
-            "path": "procedures/failing.md",
-            "content": "---\ndescription: test\n---\n\n# Test",
-        })
+        result = handler.handle(
+            "write_memory_file",
+            {
+                "path": "procedures/failing.md",
+                "content": "---\ndescription: test\n---\n\n# Test",
+            },
+        )
 
         assert "Written to" in result  # write still succeeds
 
@@ -152,11 +164,15 @@ class TestReportProcedureOutcome:
         from core.tooling.handler import ToolHandler
 
         handler = ToolHandler(anima_dir, memory)
-        result = handler.handle("report_procedure_outcome", {
-            "path": "procedures/deploy.md",
-            "success": True,
-            "notes": "Deployed successfully",
-        })
+        handler._record_memory_file_used = MagicMock()
+        result = handler.handle(
+            "report_procedure_outcome",
+            {
+                "path": "procedures/deploy.md",
+                "success": True,
+                "notes": "Deployed successfully",
+            },
+        )
 
         assert "成功" in result
         assert "confidence: 0.80" in result
@@ -169,6 +185,7 @@ class TestReportProcedureOutcome:
         assert meta["failure_count"] == 1
         assert abs(meta["confidence"] - 0.8) < 0.01
         assert meta["last_used"] is not None
+        handler._record_memory_file_used.assert_called_once_with("procedures/deploy.md")
 
     def test_failure_increments_count(self, memory, anima_dir: Path) -> None:
         """Reporting failure should increment failure_count and lower confidence."""
@@ -186,11 +203,14 @@ class TestReportProcedureOutcome:
         from core.tooling.handler import ToolHandler
 
         handler = ToolHandler(anima_dir, memory)
-        result = handler.handle("report_procedure_outcome", {
-            "path": "procedures/backup.md",
-            "success": False,
-            "notes": "Backup failed due to disk full",
-        })
+        result = handler.handle(
+            "report_procedure_outcome",
+            {
+                "path": "procedures/backup.md",
+                "success": False,
+                "notes": "Backup failed due to disk full",
+            },
+        )
 
         assert "失敗" in result
         meta = memory.read_procedure_metadata(
@@ -204,20 +224,26 @@ class TestReportProcedureOutcome:
         from core.tooling.handler import ToolHandler
 
         handler = ToolHandler(anima_dir, memory)
-        result = handler.handle("report_procedure_outcome", {
-            "path": "procedures/nonexistent.md",
-            "success": True,
-        })
+        result = handler.handle(
+            "report_procedure_outcome",
+            {
+                "path": "procedures/nonexistent.md",
+                "success": True,
+            },
+        )
         assert "error" in result.lower() or "not found" in result.lower()
 
     def test_empty_path_returns_error(self, memory, anima_dir: Path) -> None:
         from core.tooling.handler import ToolHandler
 
         handler = ToolHandler(anima_dir, memory)
-        result = handler.handle("report_procedure_outcome", {
-            "path": "",
-            "success": True,
-        })
+        result = handler.handle(
+            "report_procedure_outcome",
+            {
+                "path": "",
+                "success": True,
+            },
+        )
         assert "error" in result.lower()
 
     def test_body_content_preserved(self, memory, anima_dir: Path) -> None:
@@ -232,10 +258,13 @@ class TestReportProcedureOutcome:
         from core.tooling.handler import ToolHandler
 
         handler = ToolHandler(anima_dir, memory)
-        handler.handle("report_procedure_outcome", {
-            "path": "procedures/complex.md",
-            "success": True,
-        })
+        handler.handle(
+            "report_procedure_outcome",
+            {
+                "path": "procedures/complex.md",
+                "success": True,
+            },
+        )
 
         # Read the file content and verify body is intact
         content = memory.read_procedure_content(
@@ -305,7 +334,9 @@ class TestAutoOutcomeTracking:
         ]
 
         conv._auto_track_procedure_outcomes(
-            memory, normal_turns, injected_procedures=[proc_path],
+            memory,
+            normal_turns,
+            injected_procedures=[proc_path],
         )
 
         meta = memory.read_procedure_metadata(proc_path)
@@ -333,7 +364,9 @@ class TestAutoOutcomeTracking:
         ]
 
         conv._auto_track_procedure_outcomes(
-            memory, error_turns, injected_procedures=[proc_path],
+            memory,
+            error_turns,
+            injected_procedures=[proc_path],
         )
 
         meta = memory.read_procedure_metadata(proc_path)
@@ -368,10 +401,14 @@ class TestAutoOutcomeTracking:
         )
 
         conv = ConversationMemory(anima_dir, ModelConfig())
-        conv._auto_track_procedure_outcomes(memory, [
-            ConversationTurn(role="human", content="実行してください"),
-            ConversationTurn(role="assistant", content="処理を実行しましたが失敗しました。"),
-        ], injected_procedures=[proc_path])
+        conv._auto_track_procedure_outcomes(
+            memory,
+            [
+                ConversationTurn(role="human", content="実行してください"),
+                ConversationTurn(role="assistant", content="処理を実行しましたが失敗しました。"),
+            ],
+            injected_procedures=[proc_path],
+        )
 
         meta = memory.read_procedure_metadata(proc_path)
         assert meta["failure_count"] == 1
@@ -390,13 +427,17 @@ class TestAutoOutcomeTracking:
 
         conv = ConversationMemory(anima_dir, ModelConfig())
         # "error" appears but not as a whole word boundary match in meaningful context
-        conv._auto_track_procedure_outcomes(memory, [
-            ConversationTurn(role="human", content="Tell me about error handling"),
-            ConversationTurn(
-                role="assistant",
-                content="Here's how to handle errors in Python. The error handling pattern uses try/except blocks.",
-            ),
-        ], injected_procedures=[proc_path])
+        conv._auto_track_procedure_outcomes(
+            memory,
+            [
+                ConversationTurn(role="human", content="Tell me about error handling"),
+                ConversationTurn(
+                    role="assistant",
+                    content="Here's how to handle errors in Python. The error handling pattern uses try/except blocks.",
+                ),
+            ],
+            injected_procedures=[proc_path],
+        )
 
         meta = memory.read_procedure_metadata(proc_path)
         # "error" as a standalone word DOES match \b(error)\b, so this is a failure
@@ -416,13 +457,17 @@ class TestAutoOutcomeTracking:
         )
 
         conv = ConversationMemory(anima_dir, ModelConfig())
-        conv._auto_track_procedure_outcomes(memory, [
-            ConversationTurn(role="human", content="Fix the issue"),
-            ConversationTurn(
-                role="assistant",
-                content="There was an error in the config, but I've fixed it. The issue is now resolved.",
-            ),
-        ], injected_procedures=[proc_path])
+        conv._auto_track_procedure_outcomes(
+            memory,
+            [
+                ConversationTurn(role="human", content="Fix the issue"),
+                ConversationTurn(
+                    role="assistant",
+                    content="There was an error in the config, but I've fixed it. The issue is now resolved.",
+                ),
+            ],
+            injected_procedures=[proc_path],
+        )
 
         meta = memory.read_procedure_metadata(proc_path)
         assert meta["success_count"] == 1

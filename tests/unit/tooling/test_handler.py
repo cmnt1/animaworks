@@ -180,8 +180,10 @@ class TestHandleRouting:
     def test_read_memory_file(self, handler: ToolHandler, anima_dir: Path):
         (anima_dir / "knowledge").mkdir(exist_ok=True)
         (anima_dir / "knowledge" / "test.md").write_text("content here", encoding="utf-8")
+        handler._record_memory_file_used = MagicMock()
         result = handler.handle("read_memory_file", {"path": "knowledge/test.md"})
         assert result == "content here"
+        handler._record_memory_file_used.assert_called_once_with("knowledge/test.md")
 
     def test_read_memory_file_not_found(self, handler: ToolHandler):
         result = handler.handle("read_memory_file", {"path": "nonexistent.md"})
@@ -483,10 +485,10 @@ class TestFileOperations:
         - 128K+ converges to CC's 25K token / 75K char / 937 line cap.
         """
         cases = [
-            (8_000, 60, 4_800),       # 20% scaling
-            (32_000, 240, 19_200),     # 20% scaling
-            (128_000, 937, 75_000),    # token hard cap (CC compatible)
-            (200_000, 937, 75_000),    # token hard cap (CC compatible)
+            (8_000, 60, 4_800),  # 20% scaling
+            (32_000, 240, 19_200),  # 20% scaling
+            (128_000, 937, 75_000),  # token hard cap (CC compatible)
+            (200_000, 937, 75_000),  # token hard cap (CC compatible)
             (1_000_000, 937, 75_000),  # token hard cap (CC compatible)
         ]
         for ctx, expected_lines, expected_chars in cases:

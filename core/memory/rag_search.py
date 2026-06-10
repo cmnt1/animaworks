@@ -14,10 +14,10 @@ from core.memory.fact_observability import warn_rate_limited
 logger = logging.getLogger("animaworks.memory")
 
 try:
-    from core.memory.bm25 import reciprocal_rank_fusion, search_activity_log
+    from core.memory.bm25 import search_activity_log, search_longterm_memory_bm25
 except ImportError:
     search_activity_log = None  # type: ignore[assignment,misc]
-    reciprocal_rank_fusion = None  # type: ignore[assignment,misc]
+    search_longterm_memory_bm25 = None  # type: ignore[assignment,misc]
 
 _EPISODES_TOP_K = 10
 _DEFAULT_TOP_K = 5
@@ -380,21 +380,6 @@ class RAGMemorySearch:
             return results
 
         indexer = self._get_indexer()
-        if (
-            scope == "all"
-            and indexer is not None
-            and reciprocal_rank_fusion is not None
-            and search_activity_log is not None
-        ):
-            return self._search_scope_all_hybrid(
-                query,
-                offset=offset,
-                knowledge_dir=knowledge_dir,
-                episodes_dir=episodes_dir,
-                procedures_dir=procedures_dir,
-                common_knowledge_dir=common_knowledge_dir,
-            )
-
         primary_results: list[dict] = []
         entity_boost = self._build_entity_boost_config(query)
         if indexer is not None:
@@ -521,98 +506,6 @@ class RAGMemorySearch:
             half_life_days=float(settings.get("access_boost_half_life_days", 30.0) or 30.0),
         )
 
-    def _search_scope_all_hybrid(
-        self,
-        query: str,
-        *,
-        offset: int,
-        knowledge_dir: Path,
-        episodes_dir: Path,
-        procedures_dir: Path,
-        common_knowledge_dir: Path,
-    ) -> list[dict]:
-        """Hybrid scope=all: multi-source RRF → rerank → confidence gate."""
-        from core.memory.retrieval.pipeline import RetrievalPipeline
-
-        settings = self._load_rag_pipeline_settings()
-        entity_boost = self._build_entity_boost_config(query, settings)
-        access_boost = self._build_access_boost_config(settings)
-        pool_k = int(settings["rerank_candidate_pool"])
-        limit = 10
-
-        ranked_lists: list[list[dict]] = []
-
-        vector_pool = self._vector_search_primary(
-            query,
-            "all",
-            offset=0,
-            knowledge_dir=knowledge_dir,
-            result_limit=pool_k,
-        )
-        if vector_pool:
-            ranked_lists.append(vector_pool)
-
-        graph_pool = self._graph_episodes_search(query, pool_k, knowledge_dir)
-        if graph_pool:
-            ranked_lists.append(graph_pool)
-
-        if search_activity_log is not None:
-            try:
-                activity_hits = search_activity_log(
-                    self._anima_dir,
-                    query,
-                    top_k=pool_k,
-                    offset=0,
-                )
-                if activity_hits:
-                    ranked_lists.append(activity_hits)
-            except Exception:
-                logger.debug("activity_log BM25 search failed", exc_info=True)
-
-        keyword_hits = self._keyword_search_fallback(
-            query,
-            "all",
-            0,
-            knowledge_dir=knowledge_dir,
-            episodes_dir=episodes_dir,
-            procedures_dir=procedures_dir,
-            common_knowledge_dir=common_knowledge_dir,
-            result_limit=pool_k,
-            entity_boost=entity_boost,
-        )
-        if keyword_hits:
-            if not ranked_lists:
-                self._last_search_meta = {
-                    "abstain": False,
-                    "abstain_reason": "",
-                }
-                return keyword_hits[offset : offset + limit]
-            ranked_lists.append(keyword_hits[:pool_k])
-
-        pipeline = RetrievalPipeline(
-            cross_encoder_model=str(settings["cross_encoder_model"]),
-        )
-        result = pipeline.run(
-            query,
-            ranked_lists,
-            limit=limit,
-            pool_k=pool_k,
-            rerank_enabled=bool(settings["rerank_enabled"]),
-            abstain_on_low_confidence=bool(settings["abstain_on_low_confidence"]),
-            confidence_threshold=float(settings["confidence_threshold"]),
-            rrf_confidence_threshold=float(settings["rrf_confidence_threshold"]),
-            entity_boost=entity_boost,
-            access_boost=access_boost,
-        )
-        self._last_search_meta = {
-            "abstain": result.abstain,
-            "abstain_reason": result.abstain_reason,
-        }
-
-        if offset > 0:
-            return result.items[offset : offset + limit]
-        return result.items[:limit]
-
     def _graph_episodes_search(
         self,
         query: str,
@@ -671,7 +564,11 @@ class RAGMemorySearch:
                 "source_episode",
                 "source_session_id",
                 "access_count",
+                "retrieved_count",
+                "used_count",
                 "last_accessed_at",
+                "last_retrieved_at",
+                "last_used_at",
                 "anima",
                 "created_at",
                 "updated_at",
@@ -728,7 +625,7 @@ class RAGMemorySearch:
             )
 
             if rag_results:
-                retriever.record_access(rag_results, anima_name)
+                retriever.record_access(rag_results, anima_name, kind="retrieved")
 
             for r in rag_results:
                 score = r.score
@@ -763,7 +660,11 @@ class RAGMemorySearch:
                     "source_session_id",
                     "entities",
                     "access_count",
+                    "retrieved_count",
+                    "used_count",
                     "last_accessed_at",
+                    "last_retrieved_at",
+                    "last_used_at",
                     "anima",
                     "created_at",
                     "updated_at",
@@ -797,14 +698,20 @@ class RAGMemorySearch:
         result_limit: int | None = None,
         entity_boost=None,
     ) -> list[dict]:
-        """Keyword OR search with scoring. Used only when vector search is unavailable."""
+        """Sparse keyword search used alongside vectors and as fallback.
+
+        Long-term personal memory uses the persisted BM25 corpus. Shared
+        common_knowledge, facts, and conversation summary keep the legacy file
+        scan because they are outside the per-anima long-term BM25 index.
+        """
         dirs: list[tuple[Path, str]] = []
+        longterm_types: list[str] = []
         if scope in ("knowledge", "all"):
-            dirs.append((knowledge_dir, "knowledge"))
+            longterm_types.append("knowledge")
         if scope in ("episodes", "all"):
-            dirs.append((episodes_dir, "episodes"))
+            longterm_types.append("episodes")
         if scope in ("procedures", "all"):
-            dirs.append((procedures_dir, "procedures"))
+            longterm_types.append("procedures")
         if scope in ("common_knowledge", "all"):
             if common_knowledge_dir.is_dir():
                 dirs.append((common_knowledge_dir, "common_knowledge"))
@@ -813,7 +720,37 @@ class RAGMemorySearch:
         if not tokens:
             return []
 
+        page_size = result_limit if result_limit is not None else 10
+        fetch_limit = offset + page_size
         file_scores: dict[str, dict] = {}
+
+        bm25_hits: list[dict] = []
+        if longterm_types and search_longterm_memory_bm25 is not None:
+            try:
+                bm25_hits = search_longterm_memory_bm25(
+                    self._anima_dir,
+                    query,
+                    memory_types=tuple(longterm_types),
+                    top_k=fetch_limit,
+                    offset=0,
+                )
+            except Exception:
+                logger.debug("Long-term BM25 search failed", exc_info=True)
+        for hit in bm25_hits:
+            key = f"{hit.get('source_file', '')}#{hit.get('chunk_index', '')}"
+            if key not in file_scores or float(file_scores[key].get("score", 0.0) or 0.0) < float(
+                hit.get("score", 0.0) or 0.0
+            ):
+                file_scores[key] = hit
+
+        if not bm25_hits:
+            for memory_type in longterm_types:
+                if memory_type == "knowledge":
+                    dirs.append((knowledge_dir, "knowledge"))
+                elif memory_type == "episodes":
+                    dirs.append((episodes_dir, "episodes"))
+                elif memory_type == "procedures":
+                    dirs.append((procedures_dir, "procedures"))
 
         for d, memory_type in dirs:
             if not d.is_dir():
@@ -881,7 +818,6 @@ class RAGMemorySearch:
             results = apply_entity_boost(query, results, entity_boost)
         else:
             results.sort(key=lambda x: x["score"], reverse=True)
-        page_size = result_limit if result_limit is not None else 10
         return results[offset : offset + page_size]
 
     @staticmethod

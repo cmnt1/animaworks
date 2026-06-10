@@ -1521,6 +1521,7 @@ class ConsolidationEngine:
             vector_store = self._rag_store or get_vector_store(self.anima_name)
             if vector_store is None:
                 logger.debug("RAG vector store unavailable, skipping index rebuild")
+                self._rebuild_longterm_bm25_index()
                 return
             indexer = MemoryIndexer(vector_store, self.anima_name, self.anima_dir)
 
@@ -1548,12 +1549,29 @@ class ConsolidationEngine:
                 indexer.index_file(fact_file, memory_type="facts")
                 logger.debug("Re-indexed facts: %s", fact_file.name)
 
+            self._rebuild_longterm_bm25_index()
+
             logger.info("RAG index rebuild complete for anima=%s", self.anima_name)
 
         except ImportError:
             logger.debug("RAG not available, skipping index rebuild")
         except Exception:
             logger.exception("Failed to rebuild RAG index")
+
+    def _rebuild_longterm_bm25_index(self) -> None:
+        """Rebuild the persisted long-term BM25 sparse index."""
+        try:
+            from core.memory.bm25 import rebuild_longterm_bm25_index
+
+            bm25_result = rebuild_longterm_bm25_index(self.anima_dir)
+            logger.info(
+                "Long-term BM25 index rebuild complete for anima=%s documents=%d path=%s",
+                self.anima_name,
+                bm25_result.documents,
+                bm25_result.path,
+            )
+        except Exception:
+            logger.warning("Failed to rebuild long-term BM25 index for anima=%s", self.anima_name, exc_info=True)
 
     # ── Monthly Forgetting ──────────────────────────────────────
 

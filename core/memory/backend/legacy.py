@@ -307,7 +307,7 @@ class LegacyRAGBackend(MemoryBackend):
             logger.warning("get_important_chunks failed", exc_info=True)
             return []
 
-    async def record_access(self, results: list[RetrievedMemory]) -> None:
+    async def record_access(self, results: list[RetrievedMemory], *, kind: str = "retrieved") -> None:
         """Record access for Hebbian LTP scoring."""
         retriever = self._ensure_retriever()
         if retriever is None or not results:
@@ -326,7 +326,7 @@ class LegacyRAGBackend(MemoryBackend):
                 )
                 for r in results
             ]
-            await asyncio.to_thread(retriever.record_access, rag_results, self._anima_name)
+            await asyncio.to_thread(retriever.record_access, rag_results, self._anima_name, kind=kind)
         except Exception:
             logger.debug("record_access failed", exc_info=True)
 

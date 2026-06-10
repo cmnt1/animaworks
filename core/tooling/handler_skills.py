@@ -164,6 +164,9 @@ class SkillsToolsMixin:
             )
             if notes:
                 result += f"\nnotes: {notes}"
+            recorder = getattr(self, "_record_memory_file_used", None)
+            if callable(recorder):
+                recorder(rel)
             return result
 
         # Procedures — maintain existing frontmatter behaviour
@@ -201,6 +204,9 @@ class SkillsToolsMixin:
         if notes:
             result += f"\nnotes: {notes}"
 
+        recorder = getattr(self, "_record_memory_file_used", None)
+        if callable(recorder):
+            recorder(rel)
         return result
 
     # ── Knowledge outcome tracking ────────────────────────────
@@ -268,6 +274,9 @@ class SkillsToolsMixin:
         if notes:
             result += f"\nnotes: {notes}"
 
+        recorder = getattr(self, "_record_memory_file_used", None)
+        if callable(recorder):
+            recorder(rel)
         return result
 
     def _handle_create_skill(self, args: dict[str, Any]) -> str:

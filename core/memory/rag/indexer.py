@@ -37,6 +37,18 @@ logger = logging.getLogger("animaworks.rag.indexer")
 INDEX_META_FILE = "index_meta.json"
 
 
+def access_tracking_metadata() -> dict[str, str | int | float]:
+    """Return default split access-tracking metadata for new chunks."""
+    return {
+        "access_count": 0,
+        "retrieved_count": 0,
+        "used_count": 0,
+        "last_accessed_at": "",
+        "last_retrieved_at": "",
+        "last_used_at": "",
+    }
+
+
 @dataclass
 class MemoryChunk:
     """A chunk of memory content ready for indexing."""
@@ -509,8 +521,7 @@ class MemoryIndexer:
                 "source_file": "state/conversation.json",
                 "chunk_index": chunk_idx,
                 "importance": "normal",
-                "access_count": 0,
-                "last_accessed_at": "",
+                **access_tracking_metadata(),
                 "activation_level": "normal",
                 "low_activation_since": "",
                 "valid_until": "",
@@ -534,8 +545,7 @@ class MemoryIndexer:
                         "source_file": "state/conversation.json",
                         "chunk_index": chunk_idx,
                         "importance": "normal",
-                        "access_count": 0,
-                        "last_accessed_at": "",
+                        **access_tracking_metadata(),
                         "activation_level": "normal",
                         "low_activation_since": "",
                         "valid_until": "",
@@ -553,8 +563,7 @@ class MemoryIndexer:
                 "source_file": "state/conversation.json",
                 "chunk_index": 0,
                 "importance": "normal",
-                "access_count": 0,
-                "last_accessed_at": "",
+                **access_tracking_metadata(),
                 "activation_level": "normal",
                 "low_activation_since": "",
                 "valid_until": "",
@@ -925,8 +934,7 @@ class MemoryIndexer:
             metadata["tags"] = flattened_tags[:10]  # Limit to 10 tags
 
         # Access tracking (Hebbian LTP analog)
-        metadata["access_count"] = 0
-        metadata["last_accessed_at"] = ""
+        metadata.update(access_tracking_metadata())
 
         # Activation level (for forgetting mechanism)
         metadata["activation_level"] = "normal"

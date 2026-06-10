@@ -143,7 +143,7 @@ class MemoryBackend(ABC):
         """
         return []
 
-    async def record_access(self, results: list[RetrievedMemory]) -> None:  # noqa: B027
+    async def record_access(self, results: list[RetrievedMemory], *, kind: str = "retrieved") -> None:  # noqa: B027
         """Record that *results* were accessed (for forgetting heuristics).
 
         Default implementation is a no-op.

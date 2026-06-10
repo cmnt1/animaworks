@@ -296,6 +296,40 @@ class TestSynapticDownscaling:
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
 
+    def test_synaptic_downscaling_marks_retrieved_only_chunks(self, forgetting_engine):
+        """Retrieved-only access does not count as explicit use for downscaling."""
+        old_date = (now_jst() - timedelta(days=120)).isoformat()
+        recent_retrieval = (now_jst() - timedelta(days=1)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="retrieved_only",
+                access_count=50,
+                last_accessed_at=recent_retrieval,
+                updated_at=old_date,
+                activation_level="normal",
+            ),
+        ]
+        chunks[0]["metadata"].update(
+            {
+                "retrieved_count": 250,
+                "used_count": 0,
+                "last_retrieved_at": recent_retrieval,
+                "last_used_at": "",
+            }
+        )
+
+        mock_store = MagicMock()
+        mock_store.update_metadata = MagicMock()
+
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
+
+        assert result["marked_low"] == 3
+        assert mock_store.update_metadata.call_count == 3
+
     def test_synaptic_downscaling_skips_recent(self, forgetting_engine):
         """Test that recently accessed chunks are NOT marked.
 
@@ -670,6 +704,41 @@ class TestCompleteForgetting:
         assert result["forgotten_chunks"] == 0
         assert len(result["archived_files"]) == 0
         mock_store.delete_documents.assert_not_called()
+
+    def test_complete_forgetting_deletes_retrieved_only_chunks(self, forgetting_engine, anima_dir):
+        """Retrieved-only access does not prevent complete forgetting."""
+        old_low_since = (now_jst() - timedelta(days=120)).isoformat()
+        recent_retrieval = (now_jst() - timedelta(days=1)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="retrieved_low",
+                access_count=50,
+                last_accessed_at=recent_retrieval,
+                activation_level="low",
+                low_activation_since=old_low_since,
+                source_file="knowledge/retrieved.md",
+            ),
+        ]
+        chunks[0]["metadata"].update(
+            {
+                "retrieved_count": 250,
+                "used_count": 0,
+                "last_retrieved_at": recent_retrieval,
+                "last_used_at": "",
+            }
+        )
+
+        mock_store = MagicMock()
+        mock_store.delete_documents = MagicMock()
+
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
+
+        assert result["forgotten_chunks"] == 3
+        assert mock_store.delete_documents.call_count == 3
 
     def test_complete_forgetting_skips_protected(self, forgetting_engine, anima_dir):
         """Test that protected chunks are not forgotten even if low-activation."""

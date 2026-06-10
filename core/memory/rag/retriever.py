@@ -44,6 +44,10 @@ WEIGHT_IMPORTANCE = 0.20
 
 # Metadata key prefix for per-anima access counts on shared collections.
 _PER_ANIMA_AC_PREFIX = "ac_"
+_ACCESS_WEIGHT_BY_KIND: dict[str, float] = {
+    "retrieved": 0.2,
+    "used": 1.0,
+}
 
 
 # ── Data structures ─────────────────────────────────────────────────
@@ -58,6 +62,14 @@ class RetrievalResult:
     score: float
     metadata: dict[str, str | int | float | list[str]]
     source_scores: dict[str, float]  # Debug info: individual scores
+
+
+def _metadata_number(metadata: dict[str, object], field: str, *, default: float = 0.0) -> float:
+    """Read a non-negative numeric metadata value, accepting legacy strings."""
+    try:
+        return max(0.0, float(str(metadata.get(field, default))))
+    except (TypeError, ValueError):
+        return max(0.0, default)
 
 
 # ── MemoryRetriever ────────────────────────────────────────────────
@@ -509,9 +521,9 @@ class MemoryRetriever:
             is_shared = result.metadata.get("anima") == "shared"
             if is_shared and anima_name:
                 ac_key = f"{_PER_ANIMA_AC_PREFIX}{anima_name}"
-                access_count = int(str(result.metadata.get(ac_key, 0)))
+                access_count = _metadata_number(result.metadata, ac_key)
             else:
-                access_count = int(str(result.metadata.get("access_count", 0)))
+                access_count = _metadata_number(result.metadata, "access_count")
             frequency_boost = min(WEIGHT_FREQUENCY * math.log1p(access_count), cap)
             result.score += frequency_boost
             result.source_scores["frequency"] = frequency_boost
@@ -523,16 +535,26 @@ class MemoryRetriever:
 
         return results
 
-    def record_access(self, results: list[RetrievalResult], anima_name: str) -> None:
-        """Record access for retrieved results (LTP analog).
+    def record_access(self, results: list[RetrievalResult], anima_name: str, *, kind: str = "used") -> None:
+        """Record access for results (LTP analog).
 
-        For personal collections: increments ``access_count``.
+        ``kind="retrieved"`` is used for automatic search/priming hits and
+        applies weak weight. ``kind="used"`` is explicit use
+        (``read_memory_file`` / outcome report) and applies full weight.
+        Existing legacy ``access_count`` values are migrated into
+        ``used_count`` when split counters are absent.
+
+        For personal collections: increments weighted ``access_count``.
         For shared collections: increments per-anima ``ac_{anima_name}``
         and the global ``access_count`` (debug/audit only).
         """
         if not results:
             return
 
+        if kind not in _ACCESS_WEIGHT_BY_KIND:
+            logger.debug("Unknown record_access kind=%r; defaulting to used", kind)
+            kind = "used"
+        weight = _ACCESS_WEIGHT_BY_KIND[kind]
         now_iso_str = now_iso()
 
         # Group by (collection, is_shared) so we can branch logic
@@ -551,35 +573,33 @@ class MemoryRetriever:
 
         for collection, ids in personal_batches.items():
             try:
-                current = self._read_metadata_field(collection, ids, "access_count")
+                current = self._read_metadata_fields(collection, ids)
                 metas = [
-                    {
-                        "access_count": current.get(doc_id, 0) + 1,
-                        "last_accessed_at": now_iso_str,
-                    }
-                    for doc_id in ids
+                    self._access_metadata_patch(current.get(doc_id, {}), kind, weight, now_iso_str) for doc_id in ids
                 ]
                 self.vector_store.update_metadata(collection, ids, metas)
-                logger.debug("Recorded access for %d chunks in %s", len(ids), collection)
+                logger.debug("Recorded %s access for %d chunks in %s", kind, len(ids), collection)
             except Exception as e:
                 logger.warning("Failed to record access for %s: %s", collection, e)
 
         ac_key = f"{_PER_ANIMA_AC_PREFIX}{anima_name}"
         for collection, ids in shared_batches.items():
             try:
-                current_pa = self._read_metadata_field(collection, ids, ac_key)
-                current_global = self._read_metadata_field(collection, ids, "access_count")
+                current = self._read_metadata_fields(collection, ids)
                 metas = [
-                    {
-                        ac_key: current_pa.get(doc_id, 0) + 1,
-                        "access_count": current_global.get(doc_id, 0) + 1,
-                        "last_accessed_at": now_iso_str,
-                    }
+                    self._access_metadata_patch(
+                        current.get(doc_id, {}),
+                        kind,
+                        weight,
+                        now_iso_str,
+                        per_anima_access_key=ac_key,
+                    )
                     for doc_id in ids
                 ]
                 self.vector_store.update_metadata(collection, ids, metas)
                 logger.debug(
-                    "Recorded per-anima access (%s) for %d chunks in %s",
+                    "Recorded per-anima %s access (%s) for %d chunks in %s",
+                    kind,
                     ac_key,
                     len(ids),
                     collection,
@@ -592,13 +612,57 @@ class MemoryRetriever:
         collection: str,
         ids: list[str],
         field: str = "access_count",
-    ) -> dict[str, int]:
-        """Read an integer metadata field from the vector store."""
+    ) -> dict[str, float]:
+        """Read a numeric metadata field from the vector store."""
+        return {
+            doc_id: _metadata_number(meta, field)
+            for doc_id, meta in self._read_metadata_fields(collection, ids).items()
+        }
+
+    def _read_metadata_fields(
+        self,
+        collection: str,
+        ids: list[str],
+    ) -> dict[str, dict[str, object]]:
+        """Read metadata for documents from the vector store."""
         try:
             docs = self.vector_store.get_by_ids(collection, ids)
-            return {doc.id: int(str(doc.metadata.get(field, 0))) for doc in docs}
+            return {doc.id: dict(doc.metadata) for doc in docs}
         except Exception:
             return {}
+
+    @staticmethod
+    def _access_metadata_patch(
+        current: dict[str, object],
+        kind: str,
+        weight: float,
+        now_iso_str: str,
+        *,
+        per_anima_access_key: str | None = None,
+    ) -> dict[str, str | int | float]:
+        access_count = _metadata_number(current, "access_count") + weight
+        retrieved_count = _metadata_number(current, "retrieved_count")
+        used_count = _metadata_number(
+            current,
+            "used_count",
+            default=_metadata_number(current, "access_count"),
+        )
+
+        patch: dict[str, str | int | float] = {
+            "access_count": access_count,
+            "retrieved_count": retrieved_count,
+            "used_count": used_count,
+            "last_accessed_at": now_iso_str,
+        }
+        if per_anima_access_key is not None:
+            patch[per_anima_access_key] = _metadata_number(current, per_anima_access_key) + weight
+        if kind == "retrieved":
+            patch["retrieved_count"] = retrieved_count + 1
+            patch["last_retrieved_at"] = now_iso_str
+        else:
+            patch["used_count"] = used_count + 1
+            patch["last_used_at"] = now_iso_str
+        return patch
 
     def reset_shared_access_counts(self) -> dict[str, int]:
         """Reset access_count and per-anima ac_* fields in shared collections.
@@ -620,7 +684,11 @@ class MemoryRetriever:
                 for r in all_results:
                     patch: dict[str, str | int | float] = {
                         "access_count": 0,
+                        "retrieved_count": 0,
+                        "used_count": 0,
                         "last_accessed_at": "",
+                        "last_retrieved_at": "",
+                        "last_used_at": "",
                     }
                     for key in r.document.metadata:
                         if key.startswith(_PER_ANIMA_AC_PREFIX):
