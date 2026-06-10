@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ANSWER_MODEL = "deepseek-v4-flash"
 DEFAULT_LLM_CREDENTIAL = "vllm-lb"
+JUDGE_LLM_CREDENTIAL_ENV = "LOCOMO_JUDGE_LLM_CREDENTIAL"
 _HOST_CONFIG_PATH = Path.home() / ".animaworks" / "config.json"
 
 
@@ -59,13 +60,19 @@ def default_llm_credential() -> str:
     return DEFAULT_LLM_CREDENTIAL
 
 
-def resolve_locomo_litellm_kwargs(model: str) -> tuple[str, dict[str, Any]]:
+def default_judge_llm_credential() -> str:
+    """Optional credential name for judge calls when different from answers."""
+    return os.environ.get(JUDGE_LLM_CREDENTIAL_ENV, "").strip()
+
+
+def resolve_locomo_litellm_kwargs(model: str, *, credential: str | None = None) -> tuple[str, dict[str, Any]]:
     """Resolve ``(litellm_model, kwargs)`` for LoCoMo answer generation.
 
     Resolution order:
       1. ``OPENAI_API_BASE`` / ``OPENAI_API_KEY`` env override
-      2. ``LOCOMO_LLM_CREDENTIAL`` or ``config.consolidation.llm_credential`` (default ``vllm-lb``)
-      3. Bare model + ``api_base`` → ``openai/{model}`` via ``get_memory_llm_kwargs_for_model``
+      2. Explicit credential argument
+      3. ``LOCOMO_LLM_CREDENTIAL`` or ``config.consolidation.llm_credential`` (default ``vllm-lb``)
+      4. Bare model + ``api_base`` → ``openai/{model}`` via ``get_memory_llm_kwargs_for_model``
     """
     from core.memory._llm_utils import get_memory_llm_kwargs_for_model
 
@@ -80,13 +87,15 @@ def resolve_locomo_litellm_kwargs(model: str) -> tuple[str, dict[str, Any]]:
         merged = {"api_base": env_base, "api_key": env_key or "dummy", **extras}
         kwargs = get_memory_llm_kwargs_for_model(model, merged)
         litellm_model = str(kwargs.pop("model"))
+        litellm_model = _normalize_openai_compatible_model(litellm_model, api_base=kwargs.get("api_base"))
         return litellm_model, kwargs
 
-    cred = _host_credential(default_llm_credential())
+    credential_name = credential if credential is not None else default_llm_credential()
+    cred = _host_credential(credential_name)
     base_url = str(cred.get("base_url") or "").strip()
     if not base_url:
         raise RuntimeError(
-            f"LoCoMo LLM credential {default_llm_credential()!r} has no base_url in {_HOST_CONFIG_PATH}",
+            f"LoCoMo LLM credential {credential_name!r} has no base_url in {_HOST_CONFIG_PATH}",
         )
     merged = {
         "api_base": base_url,
@@ -95,7 +104,19 @@ def resolve_locomo_litellm_kwargs(model: str) -> tuple[str, dict[str, Any]]:
     }
     kwargs = get_memory_llm_kwargs_for_model(model, merged)
     litellm_model = str(kwargs.pop("model"))
+    litellm_model = _normalize_openai_compatible_model(litellm_model, api_base=kwargs.get("api_base"))
     return litellm_model, kwargs
+
+
+def _normalize_openai_compatible_model(model: str, *, api_base: Any) -> str:
+    """Prefix local OpenAI-compatible model ids that LiteLLM might parse as providers."""
+    if not api_base or model.startswith("openai/"):
+        return model
+    lower = model.lower()
+    local_markers = ("deepseek", "qwen", "kimi", "minimax", "mlx-community/", "dealignai/")
+    if any(marker in lower for marker in local_markers):
+        return f"openai/{model}"
+    return model
 
 
 def resolve_locomo_judge_litellm_kwargs(model: str) -> tuple[str, dict[str, Any]]:
@@ -110,7 +131,8 @@ def resolve_locomo_judge_litellm_kwargs(model: str) -> tuple[str, dict[str, Any]
     lower = model_id.lower()
     proxy_markers = ("deepseek", "qwen", "mlx-community")
     if any(marker in lower for marker in proxy_markers):
-        return resolve_locomo_litellm_kwargs(model_id)
+        judge_credential = default_judge_llm_credential() or None
+        return resolve_locomo_litellm_kwargs(model_id, credential=judge_credential)
     return model_id, {}
 
 
