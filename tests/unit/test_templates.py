@@ -174,14 +174,16 @@ class TestPrimingChannelsReference:
                 assert int(match.group(1)) == expected, f"{locale} {config_key} budget drift"
 
     def test_current_priming_docs_have_no_obsolete_channel_or_skill_tool_references(self):
-        paths = [
+        paths = list(Path(".").glob("README*.md"))
+        paths.extend(
             path
             for root in (Path("docs"), Path("templates"))
             for path in root.rglob("*.md")
             if not any(part in {"legacy", "implemented", "research"} for part in path.parts)
-        ]
+        )
         pattern = re.compile(
-            r"Channel D|channel D|channel_d|`skill`\s*(?:/|\||tool|ツール|도구)|`skill` tool|skill tool"
+            r"Channel D|channel D|channel_d|D:\s*Skill Match|"
+            r"`skill`\s*(?:/|\||tool|ツール|도구)|`skill` tool|skill tool"
         )
         for path in paths:
             content = path.read_text(encoding="utf-8")
