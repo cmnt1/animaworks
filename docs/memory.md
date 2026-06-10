@@ -742,11 +742,11 @@ More lenient than knowledge/ (procedural memory is more forgetting-resistant in 
 |---|---|---|
 | `skills/` | Always | Anchor for description-based matching; deletion breaks recall |
 | `shared/users/` (memory_type: shared_users) | Always | Interpersonal memory |
-| `[IMPORTANT]` / `importance: important` | Implementation note | `_is_protected()` begins with `IMPORTANT_SAFETY_NET_DAYS` (365 days) without access, which can lift protection—but `_is_protected_knowledge` / `_is_protected_procedure` return **`True` again when `importance == "important"`**, so **today [IMPORTANT] knowledge/procedures stay excluded from forgetting even after the safety net expires**. Types without that later check (e.g. episodes) still benefit from the safety net. |
+| `[IMPORTANT]` / `importance: important` | Conditional | Protected for `IMPORTANT_SAFETY_NET_DAYS` (365 days) without access. After the safety net expires, the item can enter normal forgetting unless another protection applies. |
 | `knowledge/` (success_count ≥ 2) | Conditional | Knowledge validated useful multiple times |
 | `procedures/` (version ≥ 3) | Conditional | Mature after 3+ reconsolidations |
 | `procedures/` (`protected: true`) | Conditional | Manual frontmatter flag |
-| `procedures/` ([IMPORTANT]) | Conditional | Tag-based resistance |
+| `episodes/` retention | Conditional | Files older than `episode_retention_days` are archived monthly to `archive/episodes/` and removed from the RAG index independently of low-activation forgetting. |
 
 ### Monthly archive cleanup
 
