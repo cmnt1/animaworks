@@ -86,6 +86,64 @@ def resolve_project(
     return config.get("default_project", "General")
 
 
+def classify_project(
+    anima_name: str,
+    department: str | None,
+    source_fm: dict[str, Any],
+    source_path: Path,
+    body: str,
+    config: dict[str, Any],
+) -> str:
+    """Per-file project routing.
+
+    Priority:
+      1. Source file's own `project` frontmatter (if a known project).
+      2. Keyword match against slug/title/body (project_keywords).
+      3. Per-anima department mapping (resolve_project).
+
+    This replaces the old per-anima-only routing so that a 全社/COO anima
+    (e.g. sakura) writing Affiliate-domain knowledge routes to `_inbox/Affiliate/`
+    instead of dumping everything into `_inbox/General/` (= empty delegation).
+    """
+    known = set(config.get("known_projects", []) or [])
+
+    # 1. explicit source frontmatter
+    src_proj = source_fm.get("project")
+    if isinstance(src_proj, str) and src_proj in known:
+        return src_proj
+
+    # 2. keyword classification
+    hay = f"{source_path.stem}\n{title_from_body(body, '')}".lower()
+    for project, keywords in (config.get("project_keywords", {}) or {}).items():
+        if project not in known:
+            continue
+        for kw in keywords:
+            if kw.lower() in hay:
+                return project
+
+    # 3. department fallback
+    return resolve_project(anima_name, department, config)
+
+
+def should_skip_slug(stem: str, config: dict[str, Any]) -> str | None:
+    """Return the matching skip pattern if this item should NOT be promoted.
+
+    Anima-internal operational notes (heartbeat recovery, delegation constraints,
+    daily/weekly snapshots, changelog logs, concept essays) live in each Anima's
+    own `knowledge/` and do not belong in project runbooks (the Claude/Codex
+    injection point). Skipping them at the source stops the weekly _inbox clog.
+    """
+    s = stem.lower()
+    for pat in config.get("skip_slug_patterns", []) or []:
+        try:
+            if re.search(pat, s):
+                return pat
+        except re.error:
+            if pat.lower() in s:
+                return pat
+    return None
+
+
 def slugify(text: str) -> str:
     text = text.strip().lower()
     text = re.sub(r"[^a-z0-9一-龥ぁ-んァ-ヶー\-]+", "-", text)
@@ -109,6 +167,7 @@ def collect_candidates(
     thresholds: dict[str, Any],
     since_days: int | None,
     force: bool,
+    config: dict[str, Any],
 ) -> list[tuple[Path, dict[str, Any], str]]:
     """Return [(path, frontmatter, body), ...] for items eligible for promotion."""
     sub = anima_dir / kind
@@ -134,6 +193,11 @@ def collect_candidates(
             continue
 
         if not force and fm.get("promoted_to_inbox"):
+            continue
+
+        skip_pat = should_skip_slug(p.stem, config)
+        if skip_pat:
+            logger.debug("skip [%s] %s (matched skip pattern: %s)", kind, p.name, skip_pat)
             continue
 
         conf = float(fm.get("confidence", 0.0) or 0.0)
@@ -306,20 +370,24 @@ def main(argv: list[str] | None = None) -> int:
     for anima_dir in anima_dirs:
         anima = anima_dir.name
         status = load_anima_status(anima_dir)
-        project = resolve_project(anima, status.get("department"), config)
+        department = status.get("department")
 
         for kind in ("procedures", "knowledge"):
             candidates = collect_candidates(
-                anima_dir, kind, thresholds, args.since, args.force
+                anima_dir, kind, thresholds, args.since, args.force, config
             )
             for path, fm, body in candidates:
+                project = classify_project(
+                    anima, department, fm, path, body, config
+                )
                 if per_project_count.get(project, 0) >= max_per_project:
                     logger.info(
-                        "rate-limited: %s already has %d items this run, skipping rest",
+                        "rate-limited: project %s at cap (%d) this run, skipping %s",
                         project,
                         max_per_project,
+                        path.name,
                     )
-                    break
+                    continue
                 target = promote_one(
                     anima=anima,
                     kind=kind,

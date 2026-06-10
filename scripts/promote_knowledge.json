@@ -1,5 +1,5 @@
 {
-  "_comment": "Anima→Project mapping for promote_knowledge.py. Falls back to department→project map, then default_project.",
+  "_comment": "Anima→Project mapping for promote_knowledge.py. Per-file classification: source frontmatter `project` > project_keywords match > department_map > default_project. skip_slug_patterns excludes Anima-internal ops/snapshots that do not belong in project runbooks.",
   "anima_override": {},
   "department_map": {
     "Affiliate": "Affiliate",
@@ -9,6 +9,37 @@
     "Administration": "General",
     "全社": "General"
   },
+  "known_projects": ["Affiliate", "Finance", "Property", "Accounting", "Writing", "General"],
+  "project_keywords": {
+    "Affiliate": ["aff-", "aff0", "affiliate", "ゴルフ", "golf", "asp", "chk_kanna", "chk_sakura", "auto_gnr", "auto_atc", "auto_frt", "post_plan", "backs-poster"],
+    "Finance": ["finance", "投資", "stock", "銘柄", "portfolio", "売買", "ayane"],
+    "Property": ["property", "不動産", "賃貸", "安城", "1k", "hikaru", "物件"],
+    "Accounting": ["accounting", "会計", "仕訳", "確定申告"],
+    "Writing": ["writing", "文芸", "小説", "novel"]
+  },
+  "skip_slug_patterns": [
+    "heartbeat",
+    "weekly-ops-lessons",
+    "weekly-retro",
+    "daily-consolidation",
+    "daily-ops",
+    "task-delegation",
+    "task-queue",
+    "dm-depth",
+    "stream-cut",
+    "stream-and-greeting",
+    "send-message-same-run",
+    "changelog-check",
+    "release-monitoring",
+    "windows-shell-routing",
+    "powershell-file-check",
+    "login-required",
+    "impact-assessment",
+    "feedback-daily-summary",
+    "greeting-generation",
+    "reflection",
+    "^concept-"
+  ],
   "default_project": "General",
   "thresholds": {
     "procedure_min_confidence": 0.7,
