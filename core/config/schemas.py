@@ -585,6 +585,8 @@ class HousekeepingConfig(BaseModel):
     prompt_log_retention_days: int = 3
     daemon_log_max_size_mb: int = 200
     daemon_log_keep_generations: int = 2
+    anima_log_retention_days: int = Field(default=30, ge=1)
+    anima_log_total_max_size_mb: int = Field(default=200, ge=1)
     frontend_log_backup_count: int = 7
     dm_log_archive_retention_days: int = 30
     cron_log_retention_days: int = 30
@@ -594,6 +596,10 @@ class HousekeepingConfig(BaseModel):
     corrupt_vectordb_keep_generations: int = Field(default=3, ge=0)
     tmp_retention_days: int = Field(default=14, ge=1)
     backup_retention_days: int = Field(default=90, ge=1)
+    codex_log_max_size_mb: int = Field(default=200, ge=1)
+    codex_tmp_retention_hours: int = Field(default=12, ge=1)
+    anima_tmp_gitdirs_retention_days: int = Field(default=14, ge=1)
+    anima_local_log_retention_days: int = Field(default=30, ge=1)
     pending_processing_stale_hours: int = Field(default=24, ge=1)
     background_running_stale_hours: int = Field(default=48, ge=1)
     current_state_stale_hours: int = Field(default=24, ge=1)

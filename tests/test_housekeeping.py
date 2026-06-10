@@ -30,6 +30,8 @@ class TestHousekeepingConfig:
         assert cfg.prompt_log_retention_days == 3
         assert cfg.daemon_log_max_size_mb == 200
         assert cfg.daemon_log_keep_generations == 2
+        assert cfg.anima_log_retention_days == 30
+        assert cfg.anima_log_total_max_size_mb == 200
         assert cfg.frontend_log_backup_count == 7
         assert cfg.dm_log_archive_retention_days == 30
         assert cfg.cron_log_retention_days == 30
@@ -39,6 +41,10 @@ class TestHousekeepingConfig:
         assert cfg.corrupt_vectordb_keep_generations == 3
         assert cfg.tmp_retention_days == 14
         assert cfg.backup_retention_days == 90
+        assert cfg.codex_log_max_size_mb == 200
+        assert cfg.codex_tmp_retention_hours == 12
+        assert cfg.anima_tmp_gitdirs_retention_days == 14
+        assert cfg.anima_local_log_retention_days == 30
 
     def test_custom_values(self):
         from core.config.models import HousekeepingConfig
@@ -49,6 +55,8 @@ class TestHousekeepingConfig:
             prompt_log_retention_days=7,
             daemon_log_max_size_mb=200,
             daemon_log_keep_generations=3,
+            anima_log_retention_days=14,
+            anima_log_total_max_size_mb=100,
             frontend_log_backup_count=14,
             dm_log_archive_retention_days=60,
             cron_log_retention_days=14,
@@ -56,14 +64,24 @@ class TestHousekeepingConfig:
             corrupt_vectordb_keep_generations=4,
             tmp_retention_days=21,
             backup_retention_days=120,
+            codex_log_max_size_mb=128,
+            codex_tmp_retention_hours=24,
+            anima_tmp_gitdirs_retention_days=21,
+            anima_local_log_retention_days=45,
         )
         assert cfg.enabled is False
         assert cfg.run_time == "03:00"
         assert cfg.prompt_log_retention_days == 7
         assert cfg.daemon_log_max_size_mb == 200
+        assert cfg.anima_log_retention_days == 14
+        assert cfg.anima_log_total_max_size_mb == 100
         assert cfg.corrupt_vectordb_keep_generations == 4
         assert cfg.tmp_retention_days == 21
         assert cfg.backup_retention_days == 120
+        assert cfg.codex_log_max_size_mb == 128
+        assert cfg.codex_tmp_retention_hours == 24
+        assert cfg.anima_tmp_gitdirs_retention_days == 21
+        assert cfg.anima_local_log_retention_days == 45
 
     def test_config_has_housekeeping_field(self):
         from core.config.models import AnimaWorksConfig
@@ -477,12 +495,17 @@ class TestRunHousekeeping:
         assert results["shortterm"]["deleted_files"] == 1
         assert "daemon_log" in results
         assert results["daemon_log"]["skipped"] is True
+        assert "anima_logs" in results
+        assert "frontend_logs" in results
         assert "dm_archives" in results
         assert results["task_results"]["deleted_files"] == 1
         assert results["pending_failed"]["deleted_files"] == 1
         assert "corrupt_vectordb_archives" in results
         assert "runtime_tmp" in results
         assert "backup_dirs" in results
+        assert "codex_execution_logs" in results
+        assert "codex_tmp" in results
+        assert "anima_runtime_artifacts" in results
 
     @pytest.mark.asyncio
     async def test_handles_missing_dirs_gracefully(self, tmp_path: Path):
@@ -492,11 +515,16 @@ class TestRunHousekeeping:
 
         assert "prompt_logs" in results
         assert "daemon_log" in results
+        assert "anima_logs" in results
+        assert "frontend_logs" in results
         assert "dm_archives" in results
         assert "cron_logs" in results
         assert "shortterm" in results
         assert "task_results" in results
         assert "pending_failed" in results
+        assert "codex_execution_logs" in results
+        assert "codex_tmp" in results
+        assert "anima_runtime_artifacts" in results
         assert "shared_inbox" in results
         assert results["shared_inbox"]["skipped"] is True
 
@@ -756,3 +784,142 @@ class TestRuntimeBloatRetention:
         assert recent_backup.exists()
         assert keep_memory.exists()
         assert nested_memory_backup.exists()
+
+    def test_anima_runtime_logs_delete_old_and_cap_directory(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_anima_runtime_logs
+
+        logs_dir = tmp_path / "logs" / "animas" / "sakura"
+        logs_dir.mkdir(parents=True)
+        current = logs_dir / f"{today_local().strftime('%Y%m%d')}.log"
+        current.write_text("current", encoding="utf-8")
+        old_dated = logs_dir / "20260401.log"
+        old_dated.write_text("old", encoding="utf-8")
+        keep_stderr = logs_dir / "stderr.log"
+        keep_stderr.write_text("stderr", encoding="utf-8")
+        first_recent = logs_dir / "20260601.log"
+        second_recent = logs_dir / "20260602.log"
+        first_recent.write_bytes(b"a" * 700_000)
+        second_recent.write_bytes(b"b" * 700_000)
+        old_time = time.time() - (20 * 86400)
+        os.utime(first_recent, (old_time, old_time))
+        current_link = logs_dir / "current.log"
+        try:
+            current_link.symlink_to(current.name)
+        except OSError:
+            current_link.write_text(current.name, encoding="utf-8")
+
+        result = _cleanup_anima_runtime_logs(tmp_path / "logs" / "animas", retention_days=30, max_total_size_mb=1)
+
+        assert result["deleted_files"] == 2
+        assert result["capped_files"] == 1
+        assert not old_dated.exists()
+        assert not first_recent.exists()
+        assert second_recent.exists()
+        assert current.exists()
+        assert keep_stderr.exists()
+
+    def test_codex_execution_logs_delete_only_oversized_log_db_bundle(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_codex_execution_logs
+
+        codex_home = tmp_path / "sakura" / ".codex_home"
+        codex_home.mkdir(parents=True)
+        log_db = codex_home / "logs_2.sqlite"
+        wal = codex_home / "logs_2.sqlite-wal"
+        shm = codex_home / "logs_2.sqlite-shm"
+        state_db = codex_home / "state_5.sqlite"
+        session = codex_home / "sessions" / "2026" / "06" / "10" / "rollout.jsonl"
+        log_db.write_bytes(b"x" * (2 * 1024 * 1024))
+        wal.write_text("wal", encoding="utf-8")
+        shm.write_text("shm", encoding="utf-8")
+        state_db.write_text("state", encoding="utf-8")
+        session.parent.mkdir(parents=True)
+        session.write_text("session", encoding="utf-8")
+
+        result = _cleanup_codex_execution_logs(tmp_path, max_size_mb=1)
+
+        assert result["deleted_databases"] == 1
+        assert result["deleted_files"] == 3
+        assert not log_db.exists()
+        assert not wal.exists()
+        assert not shm.exists()
+        assert state_db.exists()
+        assert session.exists()
+
+    def test_codex_tmp_deletes_old_temp_entries(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_codex_tmp_dirs
+
+        codex_home = tmp_path / "sakura" / ".codex_home"
+        old_tmp = codex_home / ".tmp" / "plugins"
+        old_tmp.mkdir(parents=True)
+        old_file = old_tmp / "plugin.json"
+        old_file.write_text("old", encoding="utf-8")
+        recent_tmp = codex_home / ".tmp" / "recent"
+        recent_tmp.mkdir()
+        (recent_tmp / "keep.txt").write_text("recent", encoding="utf-8")
+        old_time = time.time() - (24 * 3600)
+        os.utime(old_file, (old_time, old_time))
+        os.utime(old_tmp, (old_time, old_time))
+
+        result = _cleanup_codex_tmp_dirs(tmp_path, retention_hours=12)
+
+        assert result["deleted_entries"] == 1
+        assert not old_tmp.exists()
+        assert recent_tmp.exists()
+
+    def test_frontend_logs_keep_latest_backups(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_frontend_logs
+
+        log_dir = tmp_path / "logs" / "frontend"
+        log_dir.mkdir(parents=True)
+        active = log_dir / "frontend.jsonl"
+        active.write_text("active", encoding="utf-8")
+        latest = log_dir / "frontend.jsonl.20260610"
+        second = log_dir / "frontend.jsonl.20260609"
+        old = log_dir / "frontend.jsonl.20260301"
+        legacy_old = log_dir / "20260228.jsonl"
+        for path in (latest, second, old, legacy_old):
+            path.write_text(path.name, encoding="utf-8")
+
+        result = _cleanup_frontend_logs(log_dir, backup_count=2)
+
+        assert result["deleted_files"] == 2
+        assert active.exists()
+        assert latest.exists()
+        assert second.exists()
+        assert not old.exists()
+        assert not legacy_old.exists()
+
+    def test_anima_runtime_artifacts_delete_tmp_gitdirs_and_local_logs(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_anima_runtime_artifacts
+
+        anima = tmp_path / "sakura"
+        tmp_gitdir = anima / "tmp_gitdirs" / "work.git"
+        tmp_gitdir.mkdir(parents=True)
+        (tmp_gitdir / "pack").write_text("git temp", encoding="utf-8")
+        local_logs = anima / "logs"
+        local_logs.mkdir()
+        old_log = local_logs / "tool-errors.log"
+        old_log.write_text("old", encoding="utf-8")
+        recent_log = local_logs / "recent.log"
+        recent_log.write_text("recent", encoding="utf-8")
+        memory_dir = anima / "knowledge"
+        memory_dir.mkdir()
+        memory_file = memory_dir / "keep.md"
+        memory_file.write_text("memory", encoding="utf-8")
+        old_time = time.time() - (40 * 86400)
+        os.utime(tmp_gitdir / "pack", (old_time, old_time))
+        os.utime(tmp_gitdir, (old_time, old_time))
+        os.utime(old_log, (old_time, old_time))
+
+        result = _cleanup_anima_runtime_artifacts(
+            tmp_path,
+            tmp_gitdirs_retention_days=14,
+            local_log_retention_days=30,
+        )
+
+        assert result["tmp_gitdirs_deleted"] == 1
+        assert result["local_logs_deleted"] == 1
+        assert not tmp_gitdir.exists()
+        assert not old_log.exists()
+        assert recent_log.exists()
+        assert memory_file.exists()

@@ -15,7 +15,8 @@ import logging
 import re
 import shutil
 import subprocess
-from datetime import timedelta
+from collections.abc import Iterable
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,8 @@ from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.housekeeping")
 _PRESERVED_TMP_SUBDIRS = frozenset({"attachments", "skill_hub"})
+_ANIMA_LOG_DATE_RE = re.compile(r"(20\d{6})")
+_CODEX_LOG_DB_NAME = "logs_2.sqlite"
 
 
 # ── Public API ──────────────────────────────────────────────────
@@ -34,6 +37,9 @@ async def run_housekeeping(
     prompt_log_retention_days: int = 3,
     daemon_log_max_size_mb: int = 200,
     daemon_log_keep_generations: int = 2,
+    anima_log_retention_days: int = 30,
+    anima_log_total_max_size_mb: int = 200,
+    frontend_log_backup_count: int = 7,
     dm_log_archive_retention_days: int = 30,
     cron_log_retention_days: int = 30,
     shortterm_retention_days: int = 7,
@@ -42,6 +48,10 @@ async def run_housekeeping(
     corrupt_vectordb_keep_generations: int = 3,
     tmp_retention_days: int = 14,
     backup_retention_days: int = 90,
+    codex_log_max_size_mb: int = 200,
+    codex_tmp_retention_hours: int = 12,
+    anima_tmp_gitdirs_retention_days: int = 14,
+    anima_local_log_retention_days: int = 30,
     pending_processing_stale_hours: int = 24,
     background_running_stale_hours: int = 48,
     current_state_stale_hours: int = 24,
@@ -84,6 +94,32 @@ async def run_housekeeping(
     except Exception:
         logger.exception("Housekeeping: daemon_log rotation failed")
         results["daemon_log"] = {"error": True}
+
+    # 2b. Per-Anima runtime logs
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _cleanup_anima_runtime_logs,
+            data_dir / "logs" / "animas",
+            anima_log_retention_days,
+            anima_log_total_max_size_mb,
+        )
+        results["anima_logs"] = r
+    except Exception:
+        logger.exception("Housekeeping: anima runtime log cleanup failed")
+        results["anima_logs"] = {"error": True}
+
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _cleanup_frontend_logs,
+            data_dir / "logs" / "frontend",
+            frontend_log_backup_count,
+        )
+        results["frontend_logs"] = r
+    except Exception:
+        logger.exception("Housekeeping: frontend log cleanup failed")
+        results["frontend_logs"] = {"error": True}
 
     # 3. DM archives
     try:
@@ -176,6 +212,33 @@ async def run_housekeeping(
     except Exception:
         logger.exception("Housekeeping: backup dir cleanup failed")
         results["backup_dirs"] = {"error": True}
+
+    try:
+        r = await loop.run_in_executor(None, _cleanup_codex_execution_logs, animas_dir, codex_log_max_size_mb)
+        results["codex_execution_logs"] = r
+    except Exception:
+        logger.exception("Housekeeping: Codex execution log cleanup failed")
+        results["codex_execution_logs"] = {"error": True}
+
+    try:
+        r = await loop.run_in_executor(None, _cleanup_codex_tmp_dirs, animas_dir, codex_tmp_retention_hours)
+        results["codex_tmp"] = r
+    except Exception:
+        logger.exception("Housekeeping: Codex tmp cleanup failed")
+        results["codex_tmp"] = {"error": True}
+
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _cleanup_anima_runtime_artifacts,
+            animas_dir,
+            anima_tmp_gitdirs_retention_days,
+            anima_local_log_retention_days,
+        )
+        results["anima_runtime_artifacts"] = r
+    except Exception:
+        logger.exception("Housekeeping: Anima runtime artifact cleanup failed")
+        results["anima_runtime_artifacts"] = {"error": True}
 
     try:
         from core.memory.taskboard_housekeeping import cleanup_taskboard_stale_artifacts
@@ -345,6 +408,201 @@ def _delete_daemon_log_generations(parent: Path, stem: str, keep_generations: in
             old.unlink()
             deleted += 1
     return deleted
+
+
+def _cleanup_anima_runtime_logs(
+    animas_log_dir: Path,
+    retention_days: int,
+    max_total_size_mb: int,
+) -> dict[str, Any]:
+    """Delete old per-Anima runtime logs and cap each Anima log directory.
+
+    The active ``current.log`` target and ``stderr.log`` are preserved. This
+    complements ``TimedRotatingFileHandler`` because Anima workers use a
+    date-stamped base filename on restart, which can leave old files outside
+    the handler's backup cleanup.
+    """
+    if not animas_log_dir.exists():
+        return {"skipped": True}
+
+    cutoff_date = today_local() - timedelta(days=retention_days)
+    cutoff_ts = (now_local() - timedelta(days=retention_days)).timestamp()
+    max_total_bytes = max_total_size_mb * 1024 * 1024
+    open_paths = _collect_open_paths(animas_log_dir)
+
+    deleted_files = 0
+    capped_files = 0
+    freed_bytes = 0
+    skipped_open = 0
+    per_anima: dict[str, dict[str, int]] = {}
+
+    for anima_log_dir in sorted(p for p in animas_log_dir.iterdir() if p.is_dir()):
+        protected = _protected_anima_log_paths(anima_log_dir)
+        anima_deleted = 0
+        anima_capped = 0
+        anima_freed = 0
+
+        for log_file in _iter_anima_log_files(anima_log_dir):
+            if _is_protected_path(log_file, protected):
+                continue
+            try:
+                if not _is_old_anima_log(log_file, cutoff_date, cutoff_ts):
+                    continue
+                if _path_has_open_files(log_file, open_paths):
+                    skipped_open += 1
+                    continue
+                size = log_file.stat().st_size
+                log_file.unlink()
+                deleted_files += 1
+                anima_deleted += 1
+                freed_bytes += size
+                anima_freed += size
+            except OSError:
+                logger.warning("Failed to delete old Anima runtime log: %s", log_file, exc_info=True)
+
+        if max_total_bytes > 0:
+            total_size = 0
+            candidates: list[Path] = []
+            for log_file in _iter_anima_log_files(anima_log_dir):
+                try:
+                    size = log_file.stat().st_size
+                except OSError:
+                    continue
+                total_size += size
+                if not _is_protected_path(log_file, protected):
+                    candidates.append(log_file)
+
+            for log_file in sorted(candidates, key=_anima_log_delete_sort_key):
+                if total_size <= max_total_bytes:
+                    break
+                try:
+                    if _path_has_open_files(log_file, open_paths):
+                        skipped_open += 1
+                        continue
+                    size = log_file.stat().st_size
+                    log_file.unlink()
+                    total_size -= size
+                    deleted_files += 1
+                    capped_files += 1
+                    anima_deleted += 1
+                    anima_capped += 1
+                    freed_bytes += size
+                    anima_freed += size
+                except OSError:
+                    logger.warning("Failed to delete capped Anima runtime log: %s", log_file, exc_info=True)
+
+        if anima_deleted:
+            per_anima[anima_log_dir.name] = {
+                "deleted_files": anima_deleted,
+                "capped_files": anima_capped,
+                "freed_bytes": anima_freed,
+            }
+
+    if deleted_files:
+        logger.info(
+            "Anima runtime log cleanup: deleted=%d capped=%d freed=%d bytes",
+            deleted_files,
+            capped_files,
+            freed_bytes,
+        )
+    return {
+        "deleted_files": deleted_files,
+        "capped_files": capped_files,
+        "freed_bytes": freed_bytes,
+        "skipped_open": skipped_open,
+        "per_anima": per_anima,
+    }
+
+
+def _iter_anima_log_files(anima_log_dir: Path) -> list[Path]:
+    return [
+        p
+        for p in anima_log_dir.iterdir()
+        if p.is_file() and not p.is_symlink() and p.name not in {"current.log", "stderr.log"}
+    ]
+
+
+def _protected_anima_log_paths(anima_log_dir: Path) -> set[Path]:
+    protected: set[Path] = set()
+    current_link = anima_log_dir / "current.log"
+    stderr_log = anima_log_dir / "stderr.log"
+    if stderr_log.exists():
+        protected.add(stderr_log)
+    try:
+        if current_link.is_symlink():
+            protected.add((anima_log_dir / current_link.readlink()).resolve(strict=False))
+        elif current_link.is_file():
+            target_name = current_link.read_text(encoding="utf-8").strip()
+            if target_name:
+                protected.add((anima_log_dir / target_name).resolve(strict=False))
+    except OSError:
+        logger.debug("Failed to resolve current Anima log link: %s", current_link, exc_info=True)
+    return {p.resolve(strict=False) for p in protected}
+
+
+def _is_protected_path(path: Path, protected: set[Path]) -> bool:
+    return path.resolve(strict=False) in protected
+
+
+def _is_old_anima_log(log_file: Path, cutoff_date: date, cutoff_ts: float) -> bool:
+    match = _ANIMA_LOG_DATE_RE.search(log_file.name)
+    if match:
+        try:
+            return datetime.strptime(match.group(1), "%Y%m%d").date() < cutoff_date
+        except ValueError:
+            pass
+    return log_file.stat().st_mtime < cutoff_ts
+
+
+def _anima_log_delete_sort_key(path: Path) -> tuple[float, str]:
+    try:
+        return (path.stat().st_mtime, path.name)
+    except OSError:
+        return (0.0, path.name)
+
+
+def _cleanup_frontend_logs(frontend_log_dir: Path, backup_count: int) -> dict[str, Any]:
+    """Keep only the newest rotated frontend log files."""
+    if not frontend_log_dir.exists():
+        return {"skipped": True}
+
+    backups = [
+        p
+        for p in frontend_log_dir.iterdir()
+        if p.is_file() and not p.is_symlink() and p.name != "frontend.jsonl" and _frontend_log_sort_key(p)[0]
+    ]
+    backups.sort(key=_frontend_log_sort_key, reverse=True)
+
+    deleted_files = 0
+    freed_bytes = 0
+    open_paths = _collect_open_file_paths(backups[max(backup_count, 0) :])
+    skipped_open = 0
+
+    for log_file in backups[max(backup_count, 0) :]:
+        try:
+            if _path_has_open_files(log_file, open_paths):
+                skipped_open += 1
+                continue
+            size = log_file.stat().st_size
+            log_file.unlink()
+            deleted_files += 1
+            freed_bytes += size
+        except OSError:
+            logger.warning("Failed to delete frontend log backup: %s", log_file, exc_info=True)
+
+    if deleted_files:
+        logger.info("Frontend log cleanup: deleted=%d freed=%d bytes", deleted_files, freed_bytes)
+    return {"deleted_files": deleted_files, "freed_bytes": freed_bytes, "skipped_open": skipped_open}
+
+
+def _frontend_log_sort_key(path: Path) -> tuple[str, str]:
+    if path.name.startswith("frontend.jsonl."):
+        stamp = path.name.rsplit(".", 1)[-1]
+        if re.fullmatch(r"\d{8}", stamp):
+            return (stamp, path.name)
+    if path.name.endswith(".jsonl") and re.fullmatch(r"\d{8}", path.stem):
+        return (path.stem, path.name)
+    return ("", path.name)
 
 
 def _cleanup_shared_inbox(
@@ -717,16 +975,30 @@ def _cleanup_runtime_tmp_contents(root: Path, cutoff_ts: float, open_paths: set[
 
 
 def _path_tree_older_than(path: Path, cutoff_ts: float) -> bool:
-    if path.stat().st_mtime >= cutoff_ts:
+    try:
+        if path.stat().st_mtime >= cutoff_ts:
+            return False
+    except FileNotFoundError:
+        return False
+    except OSError:
         return False
     if path.is_dir() and not path.is_symlink():
         for child in path.rglob("*"):
-            if child.stat().st_mtime >= cutoff_ts:
+            try:
+                if child.stat().st_mtime >= cutoff_ts:
+                    return False
+            except FileNotFoundError:
+                continue
+            except OSError:
                 return False
     return True
 
 
 def _collect_open_tmp_paths(root: Path) -> set[Path]:
+    return _collect_open_paths(root)
+
+
+def _collect_open_paths(root: Path) -> set[Path]:
     lsof = shutil.which("lsof")
     if not lsof:
         return set()
@@ -744,6 +1016,35 @@ def _collect_open_tmp_paths(root: Path) -> set[Path]:
         return set()
     if result.returncode not in (0, 1):
         logger.debug("Runtime tmp lsof scan exited with status %s for %s", result.returncode, root)
+    paths: set[Path] = set()
+    for line in result.stdout.splitlines():
+        if not line.startswith("n"):
+            continue
+        raw_path = line[1:].split(" (", 1)[0]
+        if raw_path:
+            paths.add(Path(raw_path).resolve(strict=False))
+    return paths
+
+
+def _collect_open_file_paths(paths_to_check: Iterable[Path]) -> set[Path]:
+    paths_list = [p for p in paths_to_check if p.exists()]
+    if not paths_list:
+        return set()
+    lsof = shutil.which("lsof")
+    if not lsof:
+        return set()
+    try:
+        result = subprocess.run(
+            [lsof, "-F", "n", "--", *(str(p) for p in paths_list)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("Open-file scan timed out; proceeding without open-file skips for %s", paths_list)
+        return set()
     paths: set[Path] = set()
     for line in result.stdout.splitlines():
         if not line.startswith("n"):
@@ -791,3 +1092,158 @@ def _cleanup_backup_dirs(animas_dir: Path, retention_days: int) -> dict[str, Any
     if deleted_dirs:
         logger.info("Backup dir cleanup: deleted=%d freed=%d bytes", deleted_dirs, freed_bytes)
     return {"deleted_dirs": deleted_dirs, "freed_bytes": freed_bytes}
+
+
+def _cleanup_codex_execution_logs(animas_dir: Path, max_size_mb: int) -> dict[str, Any]:
+    """Delete oversized Codex execution log databases, preserving state/session DBs."""
+    if not animas_dir.exists():
+        return {"skipped": True}
+
+    max_bytes = max_size_mb * 1024 * 1024
+    deleted_databases = 0
+    deleted_files = 0
+    freed_bytes = 0
+    skipped_open = 0
+
+    for db in sorted(animas_dir.glob(f"*/.codex_home/{_CODEX_LOG_DB_NAME}")):
+        try:
+            if db.stat().st_size <= max_bytes:
+                continue
+            bundle = [
+                p
+                for p in (db, db.with_name(f"{_CODEX_LOG_DB_NAME}-wal"), db.with_name(f"{_CODEX_LOG_DB_NAME}-shm"))
+                if p.exists()
+            ]
+            open_paths = _collect_open_file_paths(bundle)
+            if any(_path_has_open_files(p, open_paths) for p in bundle):
+                skipped_open += 1
+                logger.warning("Codex execution log DB is open; skipping: %s", db)
+                continue
+            bundle_size = sum(_path_size(p) for p in bundle)
+            for path in bundle:
+                path.unlink(missing_ok=True)
+                deleted_files += 1
+            deleted_databases += 1
+            freed_bytes += bundle_size
+        except OSError:
+            logger.warning("Failed to delete Codex execution log DB: %s", db, exc_info=True)
+
+    if deleted_databases:
+        logger.info(
+            "Codex execution log cleanup: databases=%d files=%d freed=%d bytes",
+            deleted_databases,
+            deleted_files,
+            freed_bytes,
+        )
+    return {
+        "deleted_databases": deleted_databases,
+        "deleted_files": deleted_files,
+        "freed_bytes": freed_bytes,
+        "skipped_open": skipped_open,
+    }
+
+
+def _cleanup_codex_tmp_dirs(animas_dir: Path, retention_hours: int) -> dict[str, Any]:
+    """Delete stale temporary entries under per-Anima CODEX_HOME directories."""
+    if not animas_dir.exists():
+        return {"skipped": True}
+
+    cutoff_ts = (now_local() - timedelta(hours=retention_hours)).timestamp()
+    deleted_entries = 0
+    freed_bytes = 0
+    skipped_open = 0
+
+    for codex_home in sorted(animas_dir.glob("*/.codex_home")):
+        for tmp_root_name in (".tmp", "tmp"):
+            tmp_root = codex_home / tmp_root_name
+            if not tmp_root.is_dir():
+                continue
+            open_paths = _collect_open_paths(tmp_root)
+            for entry in sorted(tmp_root.iterdir()):
+                if entry.is_symlink():
+                    continue
+                try:
+                    if not _path_tree_older_than(entry, cutoff_ts):
+                        continue
+                    if _path_has_open_files(entry, open_paths):
+                        skipped_open += 1
+                        logger.warning("Codex tmp entry is open; skipping: %s", entry)
+                        continue
+                    size = _path_size(entry)
+                    _remove_path(entry)
+                    deleted_entries += 1
+                    freed_bytes += size
+                except OSError:
+                    logger.warning("Failed to delete Codex tmp entry: %s", entry, exc_info=True)
+
+    if deleted_entries:
+        logger.info("Codex tmp cleanup: deleted=%d freed=%d bytes", deleted_entries, freed_bytes)
+    return {"deleted_entries": deleted_entries, "freed_bytes": freed_bytes, "skipped_open": skipped_open}
+
+
+def _cleanup_anima_runtime_artifacts(
+    animas_dir: Path,
+    tmp_gitdirs_retention_days: int,
+    local_log_retention_days: int,
+) -> dict[str, Any]:
+    """Delete old per-Anima temporary git dirs and local runtime log files."""
+    if not animas_dir.exists():
+        return {"skipped": True}
+
+    tmp_cutoff_ts = (now_local() - timedelta(days=tmp_gitdirs_retention_days)).timestamp()
+    log_cutoff_ts = (now_local() - timedelta(days=local_log_retention_days)).timestamp()
+    tmp_gitdirs_deleted = 0
+    local_logs_deleted = 0
+    freed_bytes = 0
+    skipped_open = 0
+
+    for anima_dir in sorted(p for p in animas_dir.iterdir() if p.is_dir()):
+        tmp_gitdirs = anima_dir / "tmp_gitdirs"
+        if tmp_gitdirs.is_dir():
+            open_paths = _collect_open_paths(tmp_gitdirs)
+            for entry in sorted(tmp_gitdirs.iterdir()):
+                if entry.is_symlink():
+                    continue
+                try:
+                    if not _path_tree_older_than(entry, tmp_cutoff_ts):
+                        continue
+                    if _path_has_open_files(entry, open_paths):
+                        skipped_open += 1
+                        continue
+                    size = _path_size(entry)
+                    _remove_path(entry)
+                    tmp_gitdirs_deleted += 1
+                    freed_bytes += size
+                except OSError:
+                    logger.warning("Failed to delete tmp gitdir artifact: %s", entry, exc_info=True)
+
+        local_logs = anima_dir / "logs"
+        if local_logs.is_dir():
+            open_paths = _collect_open_paths(local_logs)
+            for log_file in sorted(p for p in local_logs.rglob("*") if p.is_file() and not p.is_symlink()):
+                try:
+                    if log_file.stat().st_mtime >= log_cutoff_ts:
+                        continue
+                    if _path_has_open_files(log_file, open_paths):
+                        skipped_open += 1
+                        continue
+                    size = log_file.stat().st_size
+                    log_file.unlink()
+                    local_logs_deleted += 1
+                    freed_bytes += size
+                except OSError:
+                    logger.warning("Failed to delete local Anima runtime log: %s", log_file, exc_info=True)
+
+    if tmp_gitdirs_deleted or local_logs_deleted:
+        logger.info(
+            "Anima runtime artifact cleanup: tmp_gitdirs=%d local_logs=%d freed=%d bytes",
+            tmp_gitdirs_deleted,
+            local_logs_deleted,
+            freed_bytes,
+        )
+    return {
+        "tmp_gitdirs_deleted": tmp_gitdirs_deleted,
+        "local_logs_deleted": local_logs_deleted,
+        "freed_bytes": freed_bytes,
+        "skipped_open": skipped_open,
+    }
