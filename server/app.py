@@ -314,6 +314,9 @@ async def _startup_animas_background(app: FastAPI) -> None:
         # except Exception:
         #     logger.debug("Slack env slot check failed", exc_info=True)
 
+        # ── Slack Socket Mode: disabled (migrated to Discord) ──────
+        # Kept off intentionally; _slack_enabled stays False so the CRITICAL
+        # warning below is a no-op for this Discord-only deployment.
         # try:
         #     from server.slack_socket import SlackSocketModeManager
         #     socket_manager = SlackSocketModeManager()
@@ -325,7 +328,15 @@ async def _startup_animas_background(app: FastAPI) -> None:
         # except Exception as exc:
         #     logger.error("Slack Socket Mode startup failed: %s: %s", type(exc).__name__, exc)
         #     app.state.slack_socket_manager = None
+        _slack_enabled = False
         app.state.slack_socket_manager = None
+
+        if _slack_enabled and app.state.slack_socket_manager is None:
+            logger.critical(
+                "Slack is enabled but Socket Mode failed to start — "
+                "Slack replies will NOT be received. "
+                "Install slack-bolt: pip install 'animaworks[communication]'"
+            )
 
         # ── Discord Gateway ────────────────────────────────────
         try:

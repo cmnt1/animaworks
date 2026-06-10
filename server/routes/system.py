@@ -182,10 +182,19 @@ def create_system_router() -> APIRouter:
         # Get all process statuses
         process_statuses = supervisor.get_all_status()
 
+        slack_socket_ok = getattr(request.app.state, "slack_socket_manager", None) is not None
+        try:
+            from core.config.models import load_config as _lc
+
+            slack_enabled = _lc().external_messaging.slack.enabled
+        except Exception:
+            slack_enabled = False
+
         return {
             "animas": len(anima_names),
             "processes": process_statuses,
             "scheduler_running": supervisor.is_scheduler_running(),
+            "slack_socket_mode": "running" if slack_socket_ok else ("failed" if slack_enabled else "disabled"),
         }
 
     @router.post("/system/reload")
