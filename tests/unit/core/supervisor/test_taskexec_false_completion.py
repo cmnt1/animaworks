@@ -274,6 +274,44 @@ def test_tool_call_only_result_maps_to_blocked_with_task_context():
     assert summary.startswith("BLOCKED: Task produced only a tool-call summary")
 
 
+def test_placeholder_completion_maps_to_blocked_when_evidence_required():
+    status, summary = _classify_task_result_for_desc(
+        "(タスク完了)",
+        {
+            "title": "AFF-003 final evidence",
+            "description": "全ゲート証跡付きで報告。G1 DB read-after, G3 sync/deploy, G4 public URLを提出。",
+            "allow_multistage": False,
+        },
+    )
+
+    assert status == "blocked"
+    assert summary == "BLOCKED: Task produced only a placeholder completion, not final evidence"
+
+
+def test_placeholder_completion_without_evidence_requirement_stays_done():
+    status, summary = _classify_task_result_for_desc(
+        "(タスク完了)",
+        {"title": "Simple task", "description": "短い確認を行う", "allow_multistage": False},
+    )
+
+    assert status == "done"
+    assert summary == "(タスク完了)"
+
+
+def test_max_iterations_result_maps_to_blocked_for_retry():
+    status, summary = _classify_task_result_for_desc(
+        "(max iterations reached)",
+        {
+            "title": "AFF-003 final evidence",
+            "description": "対象ID別6ゲート証跡を提出する。",
+            "allow_multistage": True,
+        },
+    )
+
+    assert status == "blocked"
+    assert summary == "BLOCKED: Task hit the iteration limit before final evidence"
+
+
 class TestBlockedAutoRetry:
     def test_multistage_blocked_task_is_requeued(self, tmp_path: Path):
         executor = _make_executor(tmp_path)

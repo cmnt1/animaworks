@@ -39,19 +39,19 @@ _MEDIUM_MODEL_HINTS = (
 )
 
 _PHASE_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("inspect", ("inspect", "investigate", "check", "audit", "confirm", "verify current", "look up")),
-    ("db_fix", ("db", "database", "sql", "record", "migration", "repair", "fix")),
-    ("sync", ("sync", "synchronize", "export", "import")),
-    ("build", ("build", "compile", "generate")),
-    ("deploy", ("deploy", "release", "publish")),
-    ("verify", ("verify", "public", "url", "http", "200", "screenshot", "confirm")),
-    ("report", ("report", "notify", "escalate", "handoff")),
+    ("inspect", ("inspect", "investigate", "check", "audit", "confirm", "verify current", "look up", "調査", "確認", "検証")),
+    ("db_fix", ("db", "database", "sql", "record", "migration", "repair", "fix", "修正", "補正", "復旧")),
+    ("sync", ("sync", "synchronize", "export", "import", "同期")),
+    ("build", ("build", "compile", "generate", "生成")),
+    ("deploy", ("deploy", "release", "publish", "公開", "反映")),
+    ("verify", ("verify", "public", "url", "http", "200", "screenshot", "confirm", "公開確認", "疎通")),
+    ("report", ("report", "notify", "escalate", "handoff", "報告", "証跡", "提出")),
 )
 
-_BOUNDARY_RE = re.compile(r"(?:->|=>|/|,|;|\n|\bthen\b|\band then\b)", re.IGNORECASE)
+_BOUNDARY_RE = re.compile(r"(?:->|=>|→|⇒|/|／|,|、|;|；|\+|＋|・|\n|\bthen\b|\band then\b|と)", re.IGNORECASE)
 
 
-def _capability_for_model(model_name: str) -> str:
+def capability_for_model(model_name: str) -> str:
     normalized = (model_name or "").strip()
     if not normalized:
         return "high"
@@ -60,6 +60,9 @@ def _capability_for_model(model_name: str) -> str:
         if fnmatch.fnmatch(lowered, pattern):
             return "medium"
     return resolve_tool_use_capability(normalized)
+
+
+_capability_for_model = capability_for_model
 
 
 def _phase_limit(capability: str) -> int:
@@ -82,7 +85,7 @@ def estimate_phase_count(text: str) -> int:
             matched += 1
 
     boundary_count = len([part for part in _BOUNDARY_RE.split(folded) if part.strip()])
-    if boundary_count >= 3:
+    if boundary_count >= 2:
         matched = max(matched, boundary_count)
     return max(1, matched)
 
@@ -103,13 +106,15 @@ def assess_task_granularity(
     description: str = "",
     context: str = "",
     allow_multistage: bool = False,
+    honor_allow_multistage: bool = True,
+    max_phases: int | None = None,
 ) -> TaskGranularityDecision:
-    capability = _capability_for_model(model_name)
-    limit = _phase_limit(capability)
+    capability = capability_for_model(model_name)
+    limit = max_phases if max_phases is not None else _phase_limit(capability)
     text = "\n".join(part for part in (title, description, context) if part)
     phase_count = estimate_phase_count(text)
 
-    if allow_multistage or phase_count <= limit:
+    if (honor_allow_multistage and allow_multistage) or phase_count <= limit:
         return TaskGranularityDecision(
             allowed=True,
             model_name=model_name,

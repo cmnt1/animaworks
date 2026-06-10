@@ -9,6 +9,12 @@ def test_estimate_phase_count_detects_operational_chain() -> None:
     assert estimate_phase_count(text) >= 5
 
 
+def test_estimate_phase_count_detects_japanese_parallel_objectives() -> None:
+    text = "AFF-003画像重複・108509バナー修正を完了証跡まで実行"
+
+    assert estimate_phase_count(text) >= 2
+
+
 def test_medium_qwen_coder_rejects_broad_operational_task() -> None:
     decision = assess_task_granularity(
         model_name="qwen3-coder-30b",
@@ -40,3 +46,17 @@ def test_allow_multistage_overrides_guardrail() -> None:
     )
 
     assert decision.allowed is True
+
+
+def test_lightweight_subordinate_policy_ignores_multistage_override() -> None:
+    decision = assess_task_granularity(
+        model_name="qwen3-coder-30b",
+        description="Repair DB records -> sync -> deploy -> verify public URL -> report status",
+        allow_multistage=True,
+        honor_allow_multistage=False,
+        max_phases=1,
+    )
+
+    assert decision.allowed is False
+    assert decision.limit == 1
+    assert decision.reason == "task_too_broad_for_model"

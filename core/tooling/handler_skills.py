@@ -770,10 +770,12 @@ class SkillsToolsMixin:
 
         try:
             from core.config.model_config import load_model_config
-            from core.task_granularity import assess_task_granularity
+            from core.task_granularity import assess_task_granularity, capability_for_model
 
             config = load_model_config(self._anima_dir)
             model_name = config.background_model or config.model
+            capability = capability_for_model(model_name)
+            lightweight_task_limit = 1 if capability != "high" else None
             for t in tasks:
                 decision = assess_task_granularity(
                     model_name=model_name,
@@ -781,12 +783,15 @@ class SkillsToolsMixin:
                     description=t.get("description", ""),
                     context=t.get("context", ""),
                     allow_multistage=bool(t.get("allow_multistage")),
+                    honor_allow_multistage=capability == "high",
+                    max_phases=lightweight_task_limit,
                 )
                 if not decision.allowed:
                     return _error_result(
                         "TaskTooBroadForModel",
                         (
                             f"{decision.guidance} "
+                            "For lightweight or medium background models, submit one concrete phase per task. "
                             f"task_id={t.get('task_id', '?')}, model={decision.model_name}, "
                             f"capability={decision.capability}."
                         ),

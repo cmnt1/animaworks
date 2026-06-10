@@ -76,21 +76,26 @@ class DelegationMixin(OrgHelpersMixin):
 
         try:
             from core.config.model_config import load_model_config
-            from core.task_granularity import assess_task_granularity
+            from core.task_granularity import assess_task_granularity, capability_for_model
 
             target_config = load_model_config(target_dir)
             target_model = target_config.background_model or target_config.model
+            target_capability = capability_for_model(target_model)
+            lightweight_subtask_limit = 1 if target_capability != "high" else None
             decision = assess_task_granularity(
                 model_name=target_model,
                 title=summary,
                 description=instruction,
                 allow_multistage=bool(args.get("allow_multistage")),
+                honor_allow_multistage=target_capability == "high",
+                max_phases=lightweight_subtask_limit,
             )
             if not decision.allowed:
                 return _error_result(
                     "TaskTooBroadForModel",
                     (
                         f"{decision.guidance} "
+                        "For lightweight or medium subordinate models, delegate one concrete phase at a time. "
                         f"Target={target_name}, model={decision.model_name}, capability={decision.capability}."
                     ),
                 )

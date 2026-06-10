@@ -183,6 +183,84 @@ class TestSyncDelegated:
         assert sup_tqm.get_task_by_id(sup_id1).status == "done"
         assert sup_tqm.get_task_by_id(sup_id2).status == "delegated"
 
+    def test_parent_with_multiple_child_ids_waits_until_all_done(self, tmp_path):
+        animas_dir = _make_animas_dir(tmp_path)
+        sup_tqm = TaskQueueManager(animas_dir / "supervisor")
+        sub_tqm = TaskQueueManager(animas_dir / "subordinate")
+
+        child_a = sub_tqm.add_task(
+            source="anima",
+            original_instruction="Fix image duplicates only",
+            assignee="subordinate",
+            summary="Image duplicate fix",
+            task_id="childimage",
+        )
+        child_b = sub_tqm.add_task(
+            source="anima",
+            original_instruction="Fix banner only",
+            assignee="subordinate",
+            summary="Banner fix",
+            task_id="childbanner",
+        )
+        parent = sup_tqm.add_delegated_task(
+            original_instruction="Split AFF-003 work",
+            assignee="subordinate",
+            summary="Delegated split AFF-003 work",
+            deadline="1d",
+            meta={
+                "delegated_to": "subordinate",
+                "delegated_task_ids": [
+                    {"task_id": child_a.task_id, "label": "image_duplicates"},
+                    {"task_id": child_b.task_id, "label": "banner"},
+                ],
+            },
+        )
+
+        sub_tqm.update_status(child_a.task_id, "done", summary="Image fixed")
+        synced = sup_tqm.sync_delegated(animas_dir)
+        assert synced == 0
+        assert sup_tqm.get_task_by_id(parent.task_id).status == "delegated"
+
+        sub_tqm.update_status(child_b.task_id, "done", summary="Banner fixed")
+        synced = sup_tqm.sync_delegated(animas_dir)
+        assert synced == 1
+        assert sup_tqm.get_task_by_id(parent.task_id).status == "done"
+
+    def test_parent_cancel_cancels_multiple_active_children(self, tmp_path):
+        animas_dir = _make_animas_dir(tmp_path)
+        sup_tqm = TaskQueueManager(animas_dir / "supervisor")
+        sub_tqm = TaskQueueManager(animas_dir / "subordinate")
+
+        child_a = sub_tqm.add_task(
+            source="anima",
+            original_instruction="Fix image duplicates only",
+            assignee="subordinate",
+            summary="Image duplicate fix",
+            task_id="childimage",
+        )
+        child_b = sub_tqm.add_task(
+            source="anima",
+            original_instruction="Fix banner only",
+            assignee="subordinate",
+            summary="Banner fix",
+            task_id="childbanner",
+        )
+        parent = sup_tqm.add_delegated_task(
+            original_instruction="Split AFF-003 work",
+            assignee="subordinate",
+            summary="Delegated split AFF-003 work",
+            deadline="1d",
+            meta={
+                "delegated_to": "subordinate",
+                "delegated_task_ids": [child_a.task_id, child_b.task_id],
+            },
+        )
+
+        sup_tqm.update_status(parent.task_id, "cancelled", summary="Superseded by split retry")
+
+        assert sub_tqm.get_task_by_id(child_a.task_id).status == "cancelled"
+        assert sub_tqm.get_task_by_id(child_b.task_id).status == "cancelled"
+
 
 class TestCancelDelegatedChild:
     """Tests for cancelling child tasks when a delegated parent is cancelled."""

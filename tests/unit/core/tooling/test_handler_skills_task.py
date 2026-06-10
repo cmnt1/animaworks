@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 
 from core.tooling.handler import ToolHandler
@@ -70,3 +71,45 @@ def test_submit_tasks_sets_reply_to(tmp_path: Path) -> None:
         assert data.get("submitted_by") == "sakura"
         assert data.get("task_type") == "llm"
         assert data.get("batch_id") == "test-batch-1"
+
+
+def test_submit_tasks_lightweight_model_rejects_japanese_multistage_task(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "kanna"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "permissions.md").write_text("", encoding="utf-8")
+    (anima_dir / "state").mkdir(exist_ok=True)
+
+    memory = MagicMock()
+    memory.read_permissions.return_value = ""
+
+    handler = ToolHandler(
+        anima_dir=anima_dir,
+        memory=memory,
+        tool_registry=[],
+    )
+
+    with patch(
+        "core.config.model_config.load_model_config",
+        return_value=SimpleNamespace(
+            model="nanogpt/qwen3-coder-30b-a3b-instruct",
+            background_model="",
+        ),
+    ):
+        result = handler.handle(
+            "submit_tasks",
+            {
+                "batch_id": "aff-003-retry",
+                "tasks": [
+                    {
+                        "task_id": "too-broad",
+                        "title": "AFF-003画像重複・108509バナー修正",
+                        "description": "画像重複の解消と108509バナー修正をDB修正、JSON生成、sync、deploy、公開確認、証跡提出まで実行",
+                        "allow_multistage": True,
+                    }
+                ],
+            },
+        )
+
+    assert "TaskTooBroadForModel" in result
+    assert "one concrete phase per task" in result
+    assert not (anima_dir / "state" / "pending" / "too-broad.json").exists()

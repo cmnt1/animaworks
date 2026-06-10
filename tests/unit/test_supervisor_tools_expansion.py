@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -383,6 +384,39 @@ class TestDelegateTask:
         own_task = json.loads(lines[-1])
         assert own_task["status"] == "delegated"
         assert own_task["meta"]["delegated_to"] == "hinata"
+
+    def test_delegate_to_lightweight_subordinate_rejects_broad_multistage_task(self, tmp_path):
+        handler = _make_handler(tmp_path, "sakura")
+        _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
+
+        mock_cfg = _mock_config(tmp_path, {
+            "sakura": {},
+            "hinata": {"supervisor": "sakura"},
+        })
+
+        with (
+            patch("core.config.models.load_config", return_value=mock_cfg),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+            patch(
+                "core.config.model_config.load_model_config",
+                return_value=SimpleNamespace(
+                    model="nanogpt/qwen3-coder-30b-a3b-instruct",
+                    background_model="",
+                ),
+            ),
+        ):
+            result = handler.handle("delegate_task", {
+                "name": "hinata",
+                "instruction": "Repair DB records -> sync -> deploy -> verify public URL -> report status",
+                "summary": "AFF-003 full repair",
+                "deadline": "2h",
+                "allow_multistage": True,
+            })
+
+        assert "TaskTooBroadForModel" in result
+        assert "delegate one concrete phase at a time" in result
+        sub_queue = tmp_path / "animas" / "hinata" / "state" / "task_queue.jsonl"
+        assert not sub_queue.exists()
 
     def test_delegate_to_non_descendant(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")

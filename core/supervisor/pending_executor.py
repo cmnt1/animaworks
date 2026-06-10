@@ -55,6 +55,8 @@ _AUTO_RETRY_BLOCKED_SUMMARY_PREFIXES = (
     "BLOCKED: Task reported unresolved blockers instead of final evidence",
     "BLOCKED: Task reported known AFF-003 blockers instead of final evidence",
     "BLOCKED: Multi-stage task reported an intermediate/next-step result",
+    "BLOCKED: Task produced only a placeholder completion, not final evidence",
+    "BLOCKED: Task hit the iteration limit before final evidence",
 )
 _AUTO_RETRY_NON_FINAL_MAX_RETRIES = 20
 _AUTO_RETRY_STREAM_ERROR_MAX_RETRIES = 2
@@ -274,6 +276,68 @@ def _detect_synthesized_tool_only_result(result: str) -> str | None:
     return "Task produced only a tool-call summary, not final evidence"
 
 
+def _detect_placeholder_completion_result(result: str) -> str | None:
+    """Return a blocked summary for completion placeholders with no evidence."""
+    text = (result or "").strip()
+    normalized = text.replace("（", "(").replace("）", ")")
+    placeholders = {
+        "(タスク完了)",
+        "タスク完了",
+        "(task complete)",
+        "task complete",
+        "(task completed)",
+        "task completed",
+    }
+    if normalized.casefold() not in placeholders:
+        return None
+    return "Task produced only a placeholder completion, not final evidence"
+
+
+def _detect_iteration_limit_result(result: str) -> str | None:
+    """Return a blocked summary when the runner stops before a final answer."""
+    text = (result or "").strip().replace("（", "(").replace("）", ")")
+    folded = text.casefold()
+    if folded in {
+        "(max iterations reached)",
+        "max iterations reached",
+        "(maximum iterations reached)",
+        "maximum iterations reached",
+    }:
+        return "Task hit the iteration limit before final evidence"
+    return None
+
+
+def _task_desc_requires_final_evidence(task_desc: dict[str, Any]) -> bool:
+    """Return whether a task descriptor demands concrete final evidence."""
+    parts: list[str] = []
+    for key in ("title", "description", "context"):
+        value = task_desc.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    for key in ("acceptance_criteria", "constraints", "file_paths"):
+        value = task_desc.get(key)
+        if isinstance(value, list):
+            parts.extend(str(item) for item in value)
+    text = "\n".join(parts).casefold()
+    evidence_terms = (
+        "証跡",
+        "全ゲート",
+        "ゲート",
+        "完了条件",
+        "db read-after",
+        "read-after",
+        "sync/deploy",
+        "deploy",
+        "公開url",
+        "public url",
+        "image/*",
+        "final evidence",
+        "six-gate",
+        "6-gate",
+    )
+    return any(term in text for term in evidence_terms)
+
+
 def _detect_non_final_delegation_report(result: str) -> str | None:
     """Return a failure summary when TaskExec only reports a handoff/start log."""
     text = (result or "").strip()
@@ -434,6 +498,9 @@ def _classify_task_result_for_desc(result: str, task_desc: dict[str, Any]) -> tu
     status, summary = _classify_task_result(result)
     if status != "done":
         return status, summary
+    iteration_limit = _detect_iteration_limit_result(result)
+    if iteration_limit:
+        return "blocked", f"BLOCKED: {iteration_limit}"
     non_final = _detect_non_final_multistage_result(result)
     if non_final and bool(task_desc.get("allow_multistage")):
         return "blocked", f"BLOCKED: {non_final}"
@@ -443,6 +510,9 @@ def _classify_task_result_for_desc(result: str, task_desc: dict[str, Any]) -> tu
     tool_only = _detect_synthesized_tool_only_result(result)
     if tool_only:
         return "blocked", f"BLOCKED: {tool_only}"
+    placeholder = _detect_placeholder_completion_result(result)
+    if placeholder and _task_desc_requires_final_evidence(task_desc):
+        return "blocked", f"BLOCKED: {placeholder}"
     return status, summary
 
 

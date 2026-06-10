@@ -68,6 +68,28 @@ _DELEGATED_CHILD_PROGRESS_MARKERS = (
 )
 
 
+def _delegated_child_ids(meta: dict | None) -> list[str]:
+    """Return delegated child ids from single-id and multi-id metadata."""
+    if not meta:
+        return []
+    child_ids = meta.get("delegated_task_ids")
+    if isinstance(child_ids, list):
+        result: list[str] = []
+        for item in child_ids:
+            if isinstance(item, str) and item:
+                result.append(item)
+            elif isinstance(item, dict):
+                child_id = item.get("task_id")
+                if isinstance(child_id, str) and child_id:
+                    result.append(child_id)
+        if result:
+            return result
+    child_id = meta.get("delegated_task_id")
+    if isinstance(child_id, str) and child_id:
+        return [child_id]
+    return []
+
+
 def compute_needs_human(
     *,
     assignee: str | None,
@@ -270,8 +292,10 @@ def _attach_related_tasks(
     for candidate in index.values():
         meta = candidate.meta or {}
         target = meta.get("delegated_to")
-        child_id = meta.get("delegated_task_id")
-        if isinstance(target, str) and target and isinstance(child_id, str) and child_id:
+        child_ids = _delegated_child_ids(meta)
+        if not isinstance(target, str) or not target:
+            continue
+        for child_id in child_ids:
             delegated_parent_by_child[(target, child_id)] = candidate
 
     for task in tasks:
@@ -280,8 +304,10 @@ def _attach_related_tasks(
 
         meta = task.meta or {}
         target = meta.get("delegated_to")
-        child_id = meta.get("delegated_task_id")
-        if isinstance(target, str) and target and isinstance(child_id, str) and child_id:
+        child_ids = _delegated_child_ids(meta)
+        if not isinstance(target, str) or not target:
+            child_ids = []
+        for child_id in child_ids:
             related_child = index.get((target, child_id))
             _append_link(
                 links,
@@ -346,10 +372,10 @@ def _suppress_duplicate_delegated_parents(tasks: list[BoardTask]) -> None:
             continue
         meta = task.meta or {}
         target = meta.get("delegated_to")
-        child_id = meta.get("delegated_task_id")
-        if not isinstance(target, str) or not target or not isinstance(child_id, str) or not child_id:
+        child_ids = _delegated_child_ids(meta)
+        if not isinstance(target, str) or not target or not child_ids:
             continue
-        groups.setdefault((task.anima_name, target, child_id), []).append(task)
+        groups.setdefault((task.anima_name, target, ",".join(child_ids)), []).append(task)
 
     for duplicates in groups.values():
         if len(duplicates) <= 1:

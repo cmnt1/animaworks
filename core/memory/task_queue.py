@@ -220,6 +220,26 @@ def _metadata_expired(expires_at: str | None) -> bool:
         return False
 
 
+def _delegated_child_ids(meta: dict[str, Any]) -> list[str]:
+    """Return delegated child task ids from single-id and multi-id metadata."""
+    child_ids = meta.get("delegated_task_ids")
+    if isinstance(child_ids, list):
+        result: list[str] = []
+        for item in child_ids:
+            if isinstance(item, str) and item:
+                result.append(item)
+            elif isinstance(item, dict):
+                child_id = item.get("task_id")
+                if isinstance(child_id, str) and child_id:
+                    result.append(child_id)
+        if result:
+            return result
+    child_id = meta.get("delegated_task_id")
+    if isinstance(child_id, str) and child_id:
+        return [child_id]
+    return []
+
+
 class TaskQueueManager:
     """Manages a persistent task queue backed by JSONL.
 
@@ -430,10 +450,10 @@ class TaskQueueManager:
         """Cancel the active subordinate task for a cancelled delegated entry."""
         meta = task.meta or {}
         target = meta.get("delegated_to")
-        child_id = meta.get("delegated_task_id")
+        child_ids = _delegated_child_ids(meta)
         if not isinstance(target, str) or not target:
             return False
-        if not isinstance(child_id, str) or not child_id:
+        if not child_ids:
             return False
 
         target_dir = self.anima_dir.parent / target
@@ -441,18 +461,21 @@ class TaskQueueManager:
             logger.debug("cancel_delegated_child: target dir missing for %s", target)
             return False
 
+        cancelled = False
         try:
             child_manager = TaskQueueManager(target_dir)
-            child = child_manager.get_task_by_id(child_id)
-            if child is None or child.status in _TERMINAL_STATUSES:
-                return False
-            child_summary = summary or f"Cancelled because upstream delegated task {task.task_id} was cancelled"
-            return child_manager.update_status(child_id, "cancelled", summary=child_summary) is not None
+            for child_id in child_ids:
+                child = child_manager.get_task_by_id(child_id)
+                if child is None or child.status in _TERMINAL_STATUSES:
+                    continue
+                child_summary = summary or f"Cancelled because upstream delegated task {task.task_id} was cancelled"
+                cancelled = child_manager.update_status(child_id, "cancelled", summary=child_summary) is not None or cancelled
+            return cancelled
         except Exception:
             logger.debug(
-                "cancel_delegated_child: failed to cancel subordinate task %s/%s",
+                "cancel_delegated_child: failed to cancel subordinate task(s) %s/%s",
                 target,
-                child_id,
+                ",".join(child_ids),
                 exc_info=True,
             )
             return False
@@ -608,7 +631,7 @@ class TaskQueueManager:
             if task.status not in _DELEGATION_TRACKING_STATUSES:
                 continue
             meta = task.meta or {}
-            if meta.get("delegated_to") and meta.get("delegated_task_id"):
+            if meta.get("delegated_to") and _delegated_child_ids(meta):
                 result.append(task)
         return result
 
@@ -802,26 +825,35 @@ class TaskQueueManager:
         for task in delegated:
             meta = task.meta or {}
             target = meta.get("delegated_to", "")
-            child_id = meta.get("delegated_task_id", "")
-            if not target or not child_id:
+            child_ids = _delegated_child_ids(meta)
+            if not target or not child_ids:
                 continue
             target_dir = animas_dir / target
             if not target_dir.is_dir():
                 logger.debug("sync_delegated: target dir missing for %s", target)
                 continue
-            sub_status = self._resolve_subordinate_status(target_dir, child_id, include_active=True)
-            if sub_status is None:
+            child_statuses = {
+                child_id: self._resolve_subordinate_status(target_dir, child_id, include_active=True)
+                for child_id in child_ids
+            }
+            resolved_statuses = [status for status in child_statuses.values() if status is not None]
+            if len(resolved_statuses) != len(child_ids):
                 continue
-            if sub_status in _ACTIVE_STATUSES:
+            if any(status in _ACTIVE_STATUSES for status in resolved_statuses):
                 if task.status == "blocked":
+                    active_children = ", ".join(
+                        f"{target}:{child_id}={status}"
+                        for child_id, status in child_statuses.items()
+                        if status in _ACTIVE_STATUSES
+                    )
                     self.update_status(
                         task.task_id,
                         "delegated",
-                        summary=f"Delegated child {target}:{child_id} is {sub_status}; tracking continues",
+                        summary=f"Delegated child task(s) active: {active_children}; tracking continues",
                     )
                     synced += 1
                 continue
-            if sub_status == "done":
+            if all(status == "done" for status in resolved_statuses):
                 self.update_status(
                     task.task_id,
                     "done",
@@ -831,17 +863,22 @@ class TaskQueueManager:
                     task,
                     self.anima_dir,
                     target,
-                    child_id,
+                    ",".join(child_ids),
                     animas_dir,
                     status="done",
                 )
                 synced += 1
-            elif sub_status == "cancelled":
+            elif any(status == "cancelled" for status in resolved_statuses):
+                cancelled_children = ", ".join(
+                    f"{target}:{child_id}"
+                    for child_id, status in child_statuses.items()
+                    if status == "cancelled"
+                )
                 self.update_status(
                     task.task_id,
                     "blocked",
                     summary=(
-                        f"BLOCKED: delegated child {target}:{child_id} was cancelled; "
+                        f"BLOCKED: delegated child task(s) {cancelled_children} were cancelled; "
                         "re-delegation or explicit closure required"
                     ),
                 )
@@ -849,12 +886,12 @@ class TaskQueueManager:
                     task,
                     self.anima_dir,
                     target,
-                    child_id,
+                    ",".join(child_ids),
                     animas_dir,
                     status="cancelled",
                 )
                 synced += 1
-            elif sub_status == "failed":
+            elif any(status == "failed" for status in resolved_statuses):
                 self.update_status(
                     task.task_id,
                     "failed",
@@ -864,7 +901,7 @@ class TaskQueueManager:
                     task,
                     self.anima_dir,
                     target,
-                    child_id,
+                    ",".join(child_ids),
                     animas_dir,
                     status="failed",
                 )

@@ -179,7 +179,8 @@ def _supervisor_tools() -> list[dict[str, Any]]:
                         "type": "boolean",
                         "description": (
                             "Override model-based task granularity guardrails. "
-                            "Use only when the target model is explicitly trusted for this multi-step task."
+                            "Use only when the target model is explicitly trusted for this multi-step task. "
+                            "Ignored for lightweight/medium subordinate models; split those into one concrete phase per task."
                         ),
                         "default": False,
                     },
