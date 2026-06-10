@@ -138,6 +138,41 @@ class TestIsProtected:
         meta = {"memory_type": "knowledge", "importance": "important"}
         assert forgetting_engine._is_protected(meta) is True
 
+    def test_is_protected_expired_important_knowledge_can_forget(self, forgetting_engine):
+        """[IMPORTANT] knowledge becomes eligible after the safety-net window."""
+        old_date = (now_jst() - timedelta(days=370)).isoformat()
+        meta = {
+            "memory_type": "knowledge",
+            "importance": "important",
+            "access_count": 0,
+            "updated_at": old_date,
+        }
+        assert forgetting_engine._is_protected(meta) is False
+
+    def test_is_protected_expired_important_procedure_can_forget(self, forgetting_engine):
+        """[IMPORTANT] procedures lose tag protection after the safety-net window."""
+        old_date = (now_jst() - timedelta(days=370)).isoformat()
+        meta = {
+            "memory_type": "procedures",
+            "importance": "important",
+            "access_count": 0,
+            "updated_at": old_date,
+            "version": 1,
+            "protected": False,
+        }
+        assert forgetting_engine._is_protected(meta) is False
+
+    def test_is_protected_expired_important_skills_and_users_stay_protected(self, forgetting_engine):
+        """Permanent memory types stay protected even when [IMPORTANT] expires."""
+        old_date = (now_jst() - timedelta(days=370)).isoformat()
+        base = {
+            "importance": "important",
+            "access_count": 0,
+            "updated_at": old_date,
+        }
+        assert forgetting_engine._is_protected({**base, "memory_type": "skills"}) is True
+        assert forgetting_engine._is_protected({**base, "memory_type": "shared_users"}) is True
+
     def test_is_protected_normal_knowledge(self, forgetting_engine):
         """Verify that memory_type='knowledge', importance='normal' is NOT protected."""
         meta = {"memory_type": "knowledge", "importance": "normal"}
@@ -180,9 +215,11 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["scanned"] == 1
         assert result["marked_low"] == 1
@@ -220,9 +257,11 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["scanned"] == 1
         assert result["marked_low"] == 0
@@ -248,9 +287,11 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
@@ -275,9 +316,11 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
@@ -299,9 +342,11 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
@@ -331,13 +376,15 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(
                 forgetting_engine,
                 "_get_all_chunks",
                 side_effect=side_effect_chunks,
-            ):
-                result = forgetting_engine.synaptic_downscaling()
+            ),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         # Should have been called for all three collections
         assert call_count["n"] == 3
@@ -568,9 +615,11 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 1
         assert len(result["archived_files"]) == 1
@@ -612,9 +661,11 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 0
         assert len(result["archived_files"]) == 0
@@ -636,9 +687,11 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 0
         mock_store.delete_documents.assert_not_called()
@@ -657,9 +710,11 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 0
         mock_store.delete_documents.assert_not_called()
@@ -683,12 +738,93 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 0
         mock_store.delete_documents.assert_not_called()
+
+    def test_complete_forgetting_emits_funnel_log(self, forgetting_engine, caplog):
+        """Complete forgetting logs diagnostic funnel counts."""
+        old_low_since = (now_jst() - timedelta(days=120)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="forget_me",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old_low_since,
+            ),
+        ]
+
+        mock_store = MagicMock()
+        mock_store.delete_documents.return_value = True
+
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+            caplog.at_level(logging.INFO, logger="animaworks.forgetting"),
+        ):
+            forgetting_engine.complete_forgetting()
+
+        assert "forgetting_funnel: anima=test_anima stage=complete" in caplog.text
+        assert "scanned=3" in caplog.text
+        assert "marked=3" in caplog.text
+        assert "forgotten=3" in caplog.text
+
+
+class TestEpisodeRetentionArchival:
+    """Test deterministic retention archival for old episode files."""
+
+    def test_archive_expired_episodes_moves_files_and_deletes_rag(self, forgetting_engine, anima_dir):
+        old_date = (now_jst().date() - timedelta(days=45)).isoformat()
+        recent_date = (now_jst().date() - timedelta(days=5)).isoformat()
+        old_file = anima_dir / "episodes" / f"{old_date}.md"
+        recent_file = anima_dir / "episodes" / f"{recent_date}.md"
+        old_file.write_text("# Old episode\n\nArchive me.", encoding="utf-8")
+        recent_file.write_text("# Recent episode\n\nKeep me.", encoding="utf-8")
+
+        mock_store = MagicMock()
+        mock_store.get_by_metadata.return_value = [
+            SimpleNamespace(document=SimpleNamespace(id="test_anima/episodes/old#0")),
+        ]
+        mock_store.delete_documents.return_value = True
+
+        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
+            result = forgetting_engine.archive_expired_episodes(retention_days=30)
+
+        assert result["scanned"] == 2
+        assert result["archived_count"] == 1
+        assert result["archived_files"] == [f"episodes/{old_date}.md"]
+        assert result["deleted_indexed_chunks"] == 1
+        assert not old_file.exists()
+        assert recent_file.exists()
+        assert (anima_dir / "archive" / "episodes" / f"{old_date}.md").exists()
+        mock_store.get_by_metadata.assert_called_once_with(
+            "test_anima_episodes",
+            {"source_file": f"episodes/{old_date}.md"},
+            limit=10_000,
+        )
+        mock_store.delete_documents.assert_called_once_with(
+            "test_anima_episodes",
+            ["test_anima/episodes/old#0"],
+        )
+
+    def test_archive_expired_episodes_archives_when_rag_unavailable(self, forgetting_engine, anima_dir):
+        old_date = (now_jst().date() - timedelta(days=45)).isoformat()
+        old_file = anima_dir / "episodes" / f"{old_date}.md"
+        old_file.write_text("# Old episode\n\nArchive me.", encoding="utf-8")
+
+        with patch.object(forgetting_engine, "_get_vector_store", return_value=None):
+            result = forgetting_engine.archive_expired_episodes(retention_days=30)
+
+        assert result["archived_count"] == 1
+        assert result["deleted_indexed_chunks"] == 0
+        assert result["index_delete_failures"] == 0
+        assert result["index_skipped_reason"] == "rag_unavailable"
+        assert not old_file.exists()
 
 
 # ── Consolidation Integration Tests ─────────────────────────────────
@@ -843,18 +979,37 @@ class TestMonthlyForgettingHook:
     async def test_monthly_forget_calls_complete_forgetting(self, consolidation_engine):
         """Test that monthly_forget() calls ForgettingEngine.complete_forgetting()."""
         mock_result = {"forgotten_chunks": 5, "archived_files": ["a.md", "b.md"]}
+        retention_result = {
+            "retention_days": 17,
+            "scanned": 3,
+            "archived_count": 1,
+            "archived_files": ["episodes/old.md"],
+            "archive_destinations": ["archive/episodes/old.md"],
+            "deleted_indexed_chunks": 1,
+            "skipped_undated": 0,
+            "index_delete_failures": 0,
+        }
 
         with patch("core.memory.forgetting.ForgettingEngine") as MockForgettingEngine:
             mock_forgetter = MagicMock()
             mock_forgetter.complete_forgetting.return_value = mock_result
+            mock_forgetter.archive_expired_episodes.return_value = retention_result
             MockForgettingEngine.return_value = mock_forgetter
 
-            with patch.object(consolidation_engine, "_rebuild_rag_index"):
+            config = SimpleNamespace(
+                consolidation=SimpleNamespace(episode_retention_days=17),
+            )
+            with (
+                patch("core.config.load_config", return_value=config),
+                patch.object(consolidation_engine, "_rebuild_rag_index"),
+            ):
                 result = await consolidation_engine.monthly_forget()
 
         mock_forgetter.complete_forgetting.assert_called_once()
+        mock_forgetter.archive_expired_episodes.assert_called_once_with(17)
         assert result["forgotten_chunks"] == 5
-        assert len(result["archived_files"]) == 2
+        assert len(result["archived_files"]) == 3
+        assert result["episode_retention"] == retention_result
 
 
 if __name__ == "__main__":

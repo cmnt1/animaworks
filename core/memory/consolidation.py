@@ -1571,6 +1571,39 @@ class ConsolidationEngine:
             forgetter = ForgettingEngine(self.anima_dir, self.anima_name)
             result = forgetter.complete_forgetting()
 
+            try:
+                from core.config import load_config
+                from core.config.models import ConsolidationConfig
+
+                default_retention_days = ConsolidationConfig().episode_retention_days
+                consolidation_cfg = getattr(load_config(), "consolidation", None)
+                retention_days = int(
+                    getattr(
+                        consolidation_cfg,
+                        "episode_retention_days",
+                        default_retention_days,
+                    )
+                )
+            except Exception:
+                logger.debug(
+                    "Failed to load episode retention config for anima=%s; using default",
+                    self.anima_name,
+                    exc_info=True,
+                )
+                from core.config.models import ConsolidationConfig
+
+                retention_days = ConsolidationConfig().episode_retention_days
+
+            retention_result = forgetter.archive_expired_episodes(retention_days)
+            result["episode_retention"] = retention_result
+            result.setdefault("archived_files", []).extend(retention_result.get("archived_files", []))
+            logger.info(
+                "Episode retention archival for anima=%s: archived=%d retention_days=%d",
+                self.anima_name,
+                retention_result.get("archived_count", 0),
+                retention_result.get("retention_days", retention_days),
+            )
+
             # Clean up old procedure version archives
             try:
                 archive_result = forgetter.cleanup_procedure_archives()

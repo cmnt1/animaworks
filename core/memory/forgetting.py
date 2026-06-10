@@ -25,13 +25,13 @@ import logging
 import re
 import shutil
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from core.memory._io import atomic_write_text
 from core.paths import load_prompt
-from core.time_utils import ensure_aware, now_local
+from core.time_utils import ensure_aware, now_local, today_local
 
 logger = logging.getLogger("animaworks.forgetting")
 
@@ -109,15 +109,17 @@ class ForgettingEngine:
         """
         if metadata.get("memory_type") in PROTECTED_MEMORY_TYPES:
             return True
+        important_expired = False
         if metadata.get("importance") == "important":
-            if not self._important_safety_net_expired(metadata):
+            important_expired = self._important_safety_net_expired(metadata)
+            if not important_expired:
                 return True
         # Procedures use utility-based protection instead of blanket protection
         if metadata.get("memory_type") == "procedures":
-            return self._is_protected_procedure(metadata)
+            return self._is_protected_procedure(metadata, important_expired=important_expired)
         # Knowledge with confirmed usefulness is protected
         if metadata.get("memory_type") == "knowledge":
-            return self._is_protected_knowledge(metadata)
+            return self._is_protected_knowledge(metadata, important_expired=important_expired)
         return False
 
     def _important_safety_net_expired(self, metadata: dict) -> bool:
@@ -150,11 +152,12 @@ class ForgettingEngine:
                 pass
         return False
 
-    def _is_protected_knowledge(self, metadata: dict) -> bool:
+    def _is_protected_knowledge(self, metadata: dict, *, important_expired: bool = False) -> bool:
         """Knowledge-specific protection check.
 
         Returns True (protected) if any of:
-        - ``importance == "important"`` ([IMPORTANT] tag)
+        - ``importance == "important"`` ([IMPORTANT] tag), unless the
+          top-level important safety net has expired
         - ``success_count >= 2`` (knowledge confirmed useful multiple times)
 
         Args:
@@ -163,21 +166,22 @@ class ForgettingEngine:
         Returns:
             True if the knowledge chunk should be protected from forgetting.
         """
-        if metadata.get("importance") == "important":
+        if metadata.get("importance") == "important" and not important_expired:
             return True
         if int(metadata.get("success_count", 0)) >= 2:  # noqa: SIM103
             return True
         return False
 
-    def _is_protected_procedure(self, metadata: dict) -> bool:
+    def _is_protected_procedure(self, metadata: dict, *, important_expired: bool = False) -> bool:
         """Procedure-specific protection check.
 
         Returns True (protected) if any of:
-        - ``importance == "important"`` ([IMPORTANT] tag)
+        - ``importance == "important"`` ([IMPORTANT] tag), unless the
+          top-level important safety net has expired
         - ``protected is True`` (manual protection flag)
         - ``version >= 3`` (mature procedure that survived reconsolidation)
         """
-        if metadata.get("importance") == "important":
+        if metadata.get("importance") == "important" and not important_expired:
             return True
         if metadata.get("protected") is True:
             return True
@@ -376,6 +380,12 @@ class ForgettingEngine:
             total_scanned,
             total_marked,
         )
+        logger.info(
+            "forgetting_funnel: anima=%s stage=downscaling scanned=%d marked=%d merged=0 forgotten=0",
+            self.anima_name,
+            total_scanned,
+            total_marked,
+        )
         return result
 
     # ── Stage 2: Neurogenesis Reorganization (Weekly) ──────────────
@@ -404,11 +414,14 @@ class ForgettingEngine:
             return {"merged_count": 0, "merged_pairs": [], "skipped_reason": "rag_unavailable"}
 
         total_merged = 0
+        total_scanned = 0
+        total_marked = 0
         merged_pairs: list[str] = []
 
         for memory_type in ("knowledge", "episodes", "procedures"):
             collection_name = f"{self.anima_name}_{memory_type}"
             chunks = self._get_all_chunks(collection_name)
+            total_scanned += len(chunks)
 
             # Filter low-activation chunks
             low_chunks = [
@@ -416,6 +429,7 @@ class ForgettingEngine:
                 for c in chunks
                 if c["metadata"].get("activation_level") == "low" and not self._is_protected(c["metadata"])
             ]
+            total_marked += len(low_chunks)
 
             if len(low_chunks) < 2:
                 continue
@@ -484,12 +498,21 @@ class ForgettingEngine:
                     )
 
         result = {
+            "scanned": total_scanned,
+            "marked_low": total_marked,
             "merged_count": total_merged,
             "merged_pairs": merged_pairs,
         }
         logger.info(
             "Neurogenesis reorganization complete for anima=%s: merged=%d",
             self.anima_name,
+            total_merged,
+        )
+        logger.info(
+            "forgetting_funnel: anima=%s stage=reorganization scanned=%d marked=%d merged=%d forgotten=0",
+            self.anima_name,
+            total_scanned,
+            total_marked,
             total_merged,
         )
         return result
@@ -508,10 +531,7 @@ class ForgettingEngine:
 
         try:
             embeddings = generate_embeddings([chunk["content"] for chunk in chunks])
-            embeddings_by_id = {
-                chunk["id"]: embedding
-                for chunk, embedding in zip(chunks, embeddings, strict=False)
-            }
+            embeddings_by_id = {chunk["id"]: embedding for chunk, embedding in zip(chunks, embeddings, strict=False)}
 
             for _, chunk_a in enumerate(chunks):
                 if chunk_a["id"] in processed_ids:
@@ -1052,11 +1072,14 @@ class ForgettingEngine:
             return {"forgotten_chunks": 0, "archived_files": [], "skipped_reason": "rag_unavailable"}
 
         total_forgotten = 0
+        total_scanned = 0
+        total_marked = 0
         archived_files: list[str] = []
 
         for memory_type in ("knowledge", "episodes", "procedures"):
             collection_name = f"{self.anima_name}_{memory_type}"
             chunks = self._get_all_chunks(collection_name)
+            total_scanned += len(chunks)
 
             ids_to_delete: list[str] = []
             source_files_to_archive: set[str] = set()
@@ -1071,6 +1094,7 @@ class ForgettingEngine:
                 # Must be low activation
                 if meta.get("activation_level") != "low":
                     continue
+                total_marked += 1
 
                 # Check duration of low activation
                 low_since_str = meta.get("low_activation_since", "")
@@ -1118,12 +1142,25 @@ class ForgettingEngine:
         result = {
             "forgotten_chunks": total_forgotten,
             "archived_files": archived_files,
+            "funnel": {
+                "scanned": total_scanned,
+                "marked": total_marked,
+                "merged": 0,
+                "forgotten": total_forgotten,
+            },
         }
         logger.info(
             "Complete forgetting done for anima=%s: forgotten=%d, archived=%d files",
             self.anima_name,
             total_forgotten,
             len(archived_files),
+        )
+        logger.info(
+            "forgetting_funnel: anima=%s stage=complete scanned=%d marked=%d merged=0 forgotten=%d",
+            self.anima_name,
+            total_scanned,
+            total_marked,
+            total_forgotten,
         )
         return result
 
@@ -1146,6 +1183,162 @@ class ForgettingEngine:
             logger.info("Archived forgotten file: %s -> %s", relative_path, dest_path.name)
         except Exception as e:
             logger.warning("Failed to archive %s: %s", relative_path, e)
+
+    # ── Episode Retention Archival ─────────────────────────────────
+
+    def archive_expired_episodes(self, retention_days: int) -> dict[str, Any]:
+        """Archive episode files older than the configured retention window.
+
+        This is deterministic monthly housekeeping, independent from the
+        vector low-activation criteria used by ``complete_forgetting``.
+        Files are moved from ``episodes/`` to ``archive/episodes/`` and their
+        existing RAG chunks are removed by ``source_file`` when a vector store
+        is available.
+        """
+        episodes_dir = self.anima_dir / "episodes"
+        if retention_days < 0:
+            retention_days = 0
+        if not episodes_dir.is_dir():
+            return {
+                "retention_days": retention_days,
+                "scanned": 0,
+                "archived_count": 0,
+                "archived_files": [],
+                "archive_destinations": [],
+                "deleted_indexed_chunks": 0,
+                "skipped_undated": 0,
+                "index_delete_failures": 0,
+            }
+
+        today = today_local()
+        store = self._get_vector_store()
+        collection_name = f"{self.anima_name}_episodes"
+        archived_files: list[str] = []
+        archive_destinations: list[str] = []
+        deleted_indexed_chunks = 0
+        index_delete_failures = 0
+        skipped_undated = 0
+        scanned = 0
+
+        for episode_file in sorted(episodes_dir.glob("*.md")):
+            if not episode_file.is_file():
+                continue
+            scanned += 1
+            episode_date = self._episode_file_date(episode_file)
+            if episode_date is None:
+                skipped_undated += 1
+                continue
+            if (today - episode_date).days <= retention_days:
+                continue
+
+            relative_path = str(episode_file.relative_to(self.anima_dir))
+            if store is None:
+                deleted = 0
+            else:
+                deleted = self._delete_indexed_source_file(
+                    store,
+                    collection_name,
+                    relative_path,
+                )
+            if deleted is None:
+                index_delete_failures += 1
+            else:
+                deleted_indexed_chunks += deleted
+
+            destination = self._archive_episode_file(episode_file)
+            if destination is None:
+                continue
+            archived_files.append(relative_path)
+            archive_destinations.append(str(destination.relative_to(self.anima_dir)))
+
+        result = {
+            "retention_days": retention_days,
+            "scanned": scanned,
+            "archived_count": len(archived_files),
+            "archived_files": archived_files,
+            "archive_destinations": archive_destinations,
+            "deleted_indexed_chunks": deleted_indexed_chunks,
+            "skipped_undated": skipped_undated,
+            "index_delete_failures": index_delete_failures,
+        }
+        if store is None:
+            result["index_skipped_reason"] = "rag_unavailable"
+
+        logger.info(
+            "Episode retention archival for anima=%s: retention_days=%d scanned=%d archived=%d "
+            "deleted_indexed_chunks=%d skipped_undated=%d index_delete_failures=%d",
+            self.anima_name,
+            retention_days,
+            scanned,
+            len(archived_files),
+            deleted_indexed_chunks,
+            skipped_undated,
+            index_delete_failures,
+        )
+        return result
+
+    @staticmethod
+    def _episode_file_date(path: Path) -> date | None:
+        """Return the date encoded in an episode filename, if present."""
+        match = re.match(r"^(\d{4}-\d{2}-\d{2})(?:$|[_-].*)", path.stem)
+        if match is None:
+            return None
+        try:
+            return datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    def _delete_indexed_source_file(
+        self,
+        store: Any | None,
+        collection_name: str,
+        source_file: str,
+    ) -> int | None:
+        """Delete vector documents for one source file.
+
+        Returns the number of deleted chunks, or ``None`` when the vector
+        store was unavailable or deletion failed.
+        """
+        if store is None:
+            return None
+        try:
+            results = store.get_by_metadata(collection_name, {"source_file": source_file}, limit=10_000)
+            ids = [result.document.id for result in results]
+            if not ids:
+                return 0
+            if not store.delete_documents(collection_name, ids):
+                logger.warning("Failed to delete indexed chunks for %s/%s", collection_name, source_file)
+                return None
+            return len(ids)
+        except Exception:
+            logger.debug(
+                "Failed to delete indexed chunks for %s/%s",
+                collection_name,
+                source_file,
+                exc_info=True,
+            )
+            return None
+
+    def _archive_episode_file(self, source_path: Path) -> Path | None:
+        """Move an expired episode file into ``archive/episodes/``."""
+        archive_dir = self.anima_dir / "archive" / "episodes"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = archive_dir / source_path.name
+        if dest_path.exists():
+            timestamp = now_local().strftime("%Y%m%d_%H%M%S")
+            dest_path = archive_dir / f"{source_path.stem}_{timestamp}{source_path.suffix}"
+
+        try:
+            shutil.move(str(source_path), str(dest_path))
+            logger.info(
+                "Archived retention-expired episode: %s -> %s",
+                source_path.relative_to(self.anima_dir),
+                dest_path.relative_to(self.anima_dir),
+            )
+            return dest_path
+        except Exception as e:
+            logger.warning("Failed to archive retention-expired episode %s: %s", source_path, e)
+            return None
 
     # ── Procedure Archive Cleanup ──────────────────────────────────
 
