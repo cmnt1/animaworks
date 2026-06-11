@@ -75,7 +75,6 @@ logger = logging.getLogger("animaworks.tool_handler")
 
 _MEETING_BLOCKED_TOOLS: frozenset[str] = frozenset(
     {
-        "send_message",
         "post_channel",
         "delegate_task",
         "call_human",

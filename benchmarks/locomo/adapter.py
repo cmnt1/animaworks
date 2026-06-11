@@ -291,6 +291,8 @@ class AnimaWorksLoCoMoAdapter:
         answer_max_retries: int = 2,
         enable_locomo_alias: bool = False,
         enable_locomo_category_branches: bool = False,
+        cross_encoder_model: str | None = None,
+        embedding_e5_prefix_enabled: bool = False,
     ) -> None:
         """
         Args:
@@ -300,6 +302,8 @@ class AnimaWorksLoCoMoAdapter:
             answer_max_retries: Number of retries after the first answer attempt.
             enable_locomo_alias: Enable historical LoCoMo alias-map expansion.
             enable_locomo_category_branches: Enable gold-category-specific retrieval and answer tweaks.
+            cross_encoder_model: Optional cross-encoder reranker model override.
+            embedding_e5_prefix_enabled: Enable e5 query/passage prefixes before indexing and retrieval.
         """
         if search_mode not in SEARCH_MODES:
             raise ValueError(f"search_mode must be one of {SEARCH_MODES}, got {search_mode!r}")
@@ -310,6 +314,8 @@ class AnimaWorksLoCoMoAdapter:
         self._answer_max_retries = max(0, int(answer_max_retries))
         self._enable_locomo_alias = bool(enable_locomo_alias)
         self._enable_locomo_category_branches = bool(enable_locomo_category_branches)
+        self._cross_encoder_model = (cross_encoder_model or "").strip()
+        self._embedding_e5_prefix_enabled = bool(embedding_e5_prefix_enabled)
         self._temp_dir: str | None = None
         self._previous_animaworks_data: str | None = None
         self._own_data_env = False
@@ -374,6 +380,8 @@ class AnimaWorksLoCoMoAdapter:
         if real_models.is_dir() and not tmp_models.exists():
             tmp_models.symlink_to(real_models)
 
+        self._write_benchmark_config()
+
         (self._anima_dir / "vectordb").mkdir(parents=True, exist_ok=True)
         try:
             self._temp_worker = start_temporary_vector_worker(log_dir=Path(self._temp_dir) / "logs")
@@ -399,6 +407,16 @@ class AnimaWorksLoCoMoAdapter:
             self._indexer,
             knowledge_dir=self._anima_dir / "knowledge",
         )
+
+    def _write_benchmark_config(self) -> None:
+        """Persist benchmark-specific RAG knobs into the isolated data dir."""
+        from core.config import load_config, save_config  # noqa: PLC0415
+
+        cfg = load_config()
+        if self._cross_encoder_model:
+            cfg.rag.cross_encoder_model = self._cross_encoder_model
+        cfg.rag.embedding_e5_prefix_enabled = self._embedding_e5_prefix_enabled
+        save_config(cfg)
 
     @property
     def _index_meta_path(self) -> Path:
@@ -685,6 +703,8 @@ class AnimaWorksLoCoMoAdapter:
                 )
         except Exception:
             logger.debug("Using default pipeline settings for LoCoMo adapter", exc_info=True)
+        if getattr(self, "_cross_encoder_model", ""):
+            defaults["cross_encoder_model"] = self._cross_encoder_model
         return defaults
 
     def retrieve(self, question: str, *, category: int | None = None) -> list[dict[str, Any]]:

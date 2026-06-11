@@ -124,6 +124,9 @@ async def run_weekly_integration_post_processing(
     except Exception:
         logger.exception("Neurogenesis reorganization failed for anima=%s", anima_name)
 
+    await run_weekly_pattern_distillation(anima_dir, anima_name, model=model)
+    await run_weekly_full_contradiction_scan(anima_dir, anima_name, consolidation_cfg, model=model)
+
     try:
         from core.memory.consolidation import ConsolidationEngine
 
@@ -141,6 +144,76 @@ async def run_weekly_integration_post_processing(
         logger.exception("Neo4j ingest failed for anima=%s", anima_name)
 
     await detect_communities_if_neo4j(anima_dir, anima_name)
+
+
+async def run_weekly_pattern_distillation(
+    anima_dir: Path,
+    anima_name: str,
+    *,
+    model: str,
+) -> None:
+    """Distill repeated activity patterns into procedures during weekly post-processing."""
+    try:
+        from core.memory.distillation import ProceduralDistiller
+
+        distiller = ProceduralDistiller(anima_dir, anima_name)
+        result = await distiller.weekly_pattern_distill(model=model, days=7)
+        logger.info("Weekly pattern distillation for %s: %s", anima_name, result)
+    except Exception:
+        logger.exception("Weekly pattern distillation failed for anima=%s", anima_name)
+
+
+async def run_weekly_full_contradiction_scan(
+    anima_dir: Path,
+    anima_name: str,
+    consolidation_cfg: Any,
+    *,
+    model: str,
+) -> None:
+    """Run a full knowledge contradiction scan during weekly post-processing."""
+    default_cfg = ConsolidationConfig()
+    max_llm_checks = int(
+        getattr(
+            consolidation_cfg,
+            "weekly_full_contradiction_max_pairs",
+            getattr(
+                consolidation_cfg,
+                "knowledge_self_correction_max_contradiction_pairs",
+                default_cfg.knowledge_self_correction_max_contradiction_pairs,
+            ),
+        )
+        if consolidation_cfg is not None
+        else default_cfg.knowledge_self_correction_max_contradiction_pairs
+    )
+    if max_llm_checks <= 0:
+        logger.info("Weekly full contradiction scan skipped for %s: max_llm_checks=%d", anima_name, max_llm_checks)
+        return
+
+    try:
+        from core.memory.activity import ActivityLogger
+        from core.memory.contradiction import ContradictionDetector
+        from core.memory.manager import MemoryManager
+
+        detector = ContradictionDetector(
+            anima_dir,
+            anima_name,
+            ActivityLogger(anima_dir),
+            memory_manager=MemoryManager(anima_dir),
+        )
+        pairs = await detector.scan_contradictions(
+            model=model,
+            max_llm_checks=max_llm_checks,
+        )
+        resolved = await detector.resolve_contradictions(pairs, model) if pairs else 0
+        logger.info(
+            "Weekly full contradiction scan for %s: detected=%d resolved=%d stats=%s",
+            anima_name,
+            len(pairs),
+            resolved,
+            detector.last_scan_stats,
+        )
+    except Exception:
+        logger.exception("Weekly full contradiction scan failed for anima=%s", anima_name)
 
 
 async def run_knowledge_self_correction_if_enabled(

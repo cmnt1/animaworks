@@ -31,6 +31,7 @@ _DEFAULT_DATA = _ROOT / "benchmarks" / "locomo" / "data" / "locomo10.json"
 _DEFAULT_OUTPUT = _ROOT / "benchmarks" / "locomo" / "results"
 
 EMBEDDING_MODEL_DEFAULT = "intfloat/multilingual-e5-small"
+CROSS_ENCODER_MODEL_DEFAULT = "cross-encoder/ms-marco-MiniLM-L-12-v2"
 _REFERENCE_SCORES: dict[str, dict[str, float]] = {
     "Mem0": {
         "overall": 66.88,
@@ -500,6 +501,8 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             "judge_enabled": bool(args.judge),
             "conversations": n_conv,
             "embedding_model": EMBEDDING_MODEL_DEFAULT,
+            "embedding_e5_prefix_enabled": bool(getattr(args, "embedding_e5_prefix_enabled", False)),
+            "cross_encoder_model": str(getattr(args, "cross_encoder_model", CROSS_ENCODER_MODEL_DEFAULT)),
             "leakage_alias_map_enabled": enable_locomo_alias,
             "category_branches_enabled": enable_category_branches,
             "category_dependent_normalization_enabled": enable_category_branches,
@@ -531,6 +534,8 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 answer_max_retries=int(getattr(args, "answer_max_retries", 2) or 0),
                 enable_locomo_alias=enable_locomo_alias,
                 enable_locomo_category_branches=enable_category_branches,
+                cross_encoder_model=str(getattr(args, "cross_encoder_model", CROSS_ENCODER_MODEL_DEFAULT)),
+                embedding_e5_prefix_enabled=bool(getattr(args, "embedding_e5_prefix_enabled", False)),
             ) as adapter:
                 mode_results, mode_errors = _run_qa_loop(
                     adapter=adapter,
@@ -646,6 +651,19 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=2,
         dest="answer_max_retries",
         help="answer retries after the first attempt (default: 2 = 3 total attempts)",
+    )
+    p.add_argument(
+        "--cross-encoder-model",
+        type=str,
+        default=CROSS_ENCODER_MODEL_DEFAULT,
+        dest="cross_encoder_model",
+        help=f"cross-encoder reranker model for scope_all (default: {CROSS_ENCODER_MODEL_DEFAULT})",
+    )
+    p.add_argument(
+        "--embedding-e5-prefix",
+        action="store_true",
+        dest="embedding_e5_prefix_enabled",
+        help="enable E5 query:/passage: prefixes before benchmark indexing and retrieval",
     )
     p.add_argument(
         "--enable-locomo-alias",

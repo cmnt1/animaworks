@@ -258,6 +258,42 @@ async def test_daily_phase_b_timeout_keeps_carryover_source_bundle():
 
     assert engine.carryover_items
     assert engine.carryover_items[0]["date"] == "2026-06-09"
+
+
+@pytest.mark.asyncio
+async def test_daily_phase_b_max_iterations_returns_truncated_and_keeps_carryover():
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    anima.agent.run_cycle = AsyncMock(
+        return_value=CycleResult(
+            trigger="consolidation:daily",
+            action="responded",
+            summary="(max iterations reached)",
+        )
+    )
+    engine = _FakeEngine(
+        recent_episodes=[
+            {
+                "date": "2026-06-09",
+                "time": "14:00",
+                "content": "Important episode source",
+            }
+        ]
+    )
+    fixed_now = datetime(2026, 6, 10, 2, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+
+    with (
+        patch("core.config.load_config", return_value=_mock_config()),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
+        patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
+    ):
+        result = await anima._run_daily_consolidation(engine, max_turns=7)
+
+    assert result.action == "truncated"
+    assert "[TRUNCATED]" in result.summary
+    assert engine.carryover_items
+    assert engine.carryover_cleared is False
     assert "Important episode source" in engine.carryover_items[0]["episodes_summary"]
     assert engine.carryover_cleared is False
 

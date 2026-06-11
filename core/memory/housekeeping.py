@@ -35,8 +35,8 @@ async def run_housekeeping(
     data_dir: Path,
     *,
     prompt_log_retention_days: int = 3,
-    daemon_log_max_size_mb: int = 200,
-    daemon_log_keep_generations: int = 2,
+    daemon_log_max_size_mb: int = 50,
+    daemon_log_keep_generations: int = 5,
     anima_log_retention_days: int = 30,
     anima_log_total_max_size_mb: int = 200,
     frontend_log_backup_count: int = 7,
@@ -45,7 +45,7 @@ async def run_housekeeping(
     shortterm_retention_days: int = 7,
     task_results_retention_days: int = 7,
     pending_failed_retention_days: int = 14,
-    corrupt_vectordb_keep_generations: int = 3,
+    corrupt_vectordb_keep_generations: int = 2,
     tmp_retention_days: int = 14,
     backup_retention_days: int = 90,
     codex_log_max_size_mb: int = 200,
@@ -56,6 +56,8 @@ async def run_housekeeping(
     background_running_stale_hours: int = 48,
     current_state_stale_hours: int = 24,
     taskboard_suppressed_retention_days: int = 30,
+    suppressed_messages_max_size_mb: int = 10,
+    suppressed_messages_keep_generations: int = 5,
     archive_superseded_retention_days: int = 7,
     inbox_ttl_hours: float = 24.0,
     inbox_expired_retention_days: int = 7,
@@ -94,6 +96,19 @@ async def run_housekeeping(
     except Exception:
         logger.exception("Housekeeping: daemon_log rotation failed")
         results["daemon_log"] = {"error": True}
+
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _rotate_daemon_log,
+            data_dir / "logs" / "vector-worker.log",
+            daemon_log_max_size_mb,
+            daemon_log_keep_generations,
+        )
+        results["vector_worker_log"] = r
+    except Exception:
+        logger.exception("Housekeeping: vector worker log rotation failed")
+        results["vector_worker_log"] = {"error": True}
 
     # 2b. Per-Anima runtime logs
     try:
@@ -257,6 +272,19 @@ async def run_housekeeping(
         logger.exception("Housekeeping: taskboard stale cleanup failed")
         results["taskboard_stale"] = {"error": True}
 
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _rotate_suppressed_message_logs,
+            data_dir,
+            suppressed_messages_max_size_mb,
+            suppressed_messages_keep_generations,
+        )
+        results["suppressed_messages"] = r
+    except Exception:
+        logger.exception("Housekeeping: suppressed message log rotation failed")
+        results["suppressed_messages"] = {"error": True}
+
     # 9. Archive/superseded rotation
     try:
         r = await loop.run_in_executor(
@@ -408,6 +436,35 @@ def _delete_daemon_log_generations(parent: Path, stem: str, keep_generations: in
             old.unlink()
             deleted += 1
     return deleted
+
+
+def _rotate_suppressed_message_logs(
+    data_dir: Path,
+    max_size_mb: int,
+    keep_generations: int,
+) -> dict[str, Any]:
+    """Rotate legacy ``suppressed_messages.jsonl`` files by size."""
+    if not data_dir.exists():
+        return {"skipped": True}
+
+    files = sorted(path for path in data_dir.rglob("suppressed_messages.jsonl") if path.is_file())
+    rotated = 0
+    skipped = 0
+    deleted_generations = 0
+    for path in files:
+        result = _rotate_daemon_log(path, max_size_mb=max_size_mb, keep_generations=keep_generations)
+        if result.get("rotated"):
+            rotated += 1
+        if result.get("skipped"):
+            skipped += 1
+        deleted_generations += int(result.get("deleted_generations", 0) or 0)
+
+    return {
+        "files": len(files),
+        "rotated": rotated,
+        "skipped": skipped,
+        "deleted_generations": deleted_generations,
+    }
 
 
 def _cleanup_anima_runtime_logs(

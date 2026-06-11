@@ -199,8 +199,79 @@ class TestCleanupZombieReap:
         assert handle.process is None
 
 
+class TestStopProcess:
+    """Tests for graceful stop and SIGTERM escalation."""
+
+    @pytest.mark.asyncio
+    async def test_stop_exits_after_sigterm_without_sigkill(self, handle: ProcessHandle):
+        handle.state = ProcessState.RUNNING
+        handle.send_request = AsyncMock()
+
+        mock_process = MagicMock(spec=subprocess.Popen)
+        mock_process.pid = 12345
+        mock_process.returncode = None
+        terminated = False
+
+        def poll() -> int | None:
+            return -15 if terminated else None
+
+        def terminate(_proc, *, force: bool) -> None:
+            nonlocal terminated
+            assert force is False
+            terminated = True
+            mock_process.returncode = -15
+
+        mock_process.poll.side_effect = poll
+        handle.process = mock_process
+        handle.ipc_client = None
+        handle.socket_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with (
+            patch("core.supervisor.process_handle.psutil.Process") as mock_psutil_process,
+            patch("core.supervisor.process_handle.terminate_subprocess", side_effect=terminate) as mock_terminate,
+            patch.object(handle, "kill", new_callable=AsyncMock) as mock_kill,
+        ):
+            mock_psutil_process.return_value.children.return_value = []
+
+            await handle.stop(timeout=0.05)
+
+        mock_terminate.assert_called_once_with(mock_process, force=False)
+        mock_kill.assert_not_awaited()
+        assert handle.state == ProcessState.STOPPED
+        assert handle.stats.exit_code == -15
+
+
 class TestStartBaseException:
     """Tests for start() catching BaseException (including CancelledError)."""
+
+    @pytest.mark.asyncio
+    async def test_start_uses_configured_ready_timeout(self, tmp_path: Path):
+        handle = ProcessHandle(
+            anima_name="test-anima",
+            socket_path=tmp_path / "test.sock",
+            animas_dir=tmp_path / "animas",
+            shared_dir=tmp_path / "shared",
+            log_dir=tmp_path / "logs",
+            startup_ready_timeout=300.0,
+        )
+        handle.state = ProcessState.STOPPED
+
+        with (
+            patch("subprocess.Popen") as mock_popen,
+            patch.object(handle, "_wait_for_socket", new_callable=AsyncMock),
+            patch("core.supervisor.process_handle.IPCClient") as mock_client_cls,
+            patch.object(handle, "_wait_for_ready", new_callable=AsyncMock) as mock_ready,
+        ):
+            mock_proc = MagicMock()
+            mock_proc.pid = 99999
+            mock_popen.return_value = mock_proc
+            mock_client = mock_client_cls.return_value
+            mock_client.connect = AsyncMock()
+
+            await handle.start()
+
+        mock_ready.assert_awaited_once_with(timeout=300.0)
+        assert handle.state == ProcessState.RUNNING
 
     @pytest.mark.asyncio
     async def test_start_catches_cancelled_error(self, handle: ProcessHandle):

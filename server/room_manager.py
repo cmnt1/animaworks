@@ -243,7 +243,15 @@ class RoomManager:
 
     # ── Conversation history ────────────────────────────────
 
-    def append_message(self, room_id: str, speaker: str, role: str, text: str) -> None:
+    def append_message(
+        self,
+        room_id: str,
+        speaker: str,
+        role: str,
+        text: str,
+        *,
+        meta: dict | None = None,
+    ) -> None:
         """Append a message to the room's conversation history.
 
         Args:
@@ -251,6 +259,7 @@ class RoomManager:
             speaker: Speaker name (Anima or human).
             role: One of 'chair', 'participant', 'human'.
             text: Message text.
+            meta: Optional machine-readable metadata for non-standard entries.
         """
         room = self.get_room(room_id)
         if room is None:
@@ -261,6 +270,8 @@ class RoomManager:
             "text": text,
             "ts": datetime.now().isoformat(),
         }
+        if meta:
+            entry["meta"] = meta
         room.conversation.append(entry)
         self.save_room(room_id)
 

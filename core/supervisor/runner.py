@@ -689,6 +689,8 @@ class AnimaRunner:
         attachment_paths = params.get("attachment_paths") or None
         thread_id = params.get("thread_id", "default")
         source = params.get("source", "")
+        meeting_room_id = params.get("meeting_room_id", "")
+        meeting_participants = params.get("meeting_participants") or None
 
         result = await self.anima.process_message(
             message,
@@ -699,6 +701,8 @@ class AnimaRunner:
             thread_id=thread_id,
             include_cycle_result=True,
             source=source,
+            meeting_room_id=meeting_room_id,
+            meeting_participants=meeting_participants,
         )
         cycle_result: dict[str, Any] = {}
         response_text = result

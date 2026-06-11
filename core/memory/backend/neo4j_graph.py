@@ -16,7 +16,7 @@ import logging
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from core.memory.backend.base import MemoryBackend, RetrievedMemory
@@ -125,7 +125,12 @@ class Neo4jGraphBackend(MemoryBackend):
 
     # ── Embedding ──────────────────────────────────────────────────────────
 
-    async def _embed_texts(self, texts: list[str]) -> list[list[float]]:
+    async def _embed_texts(
+        self,
+        texts: list[str],
+        *,
+        purpose: Literal["document", "query"] = "document",
+    ) -> list[list[float]]:
         """Generate embeddings using the shared singleton model.
 
         Falls back to empty lists when sentence-transformers is unavailable
@@ -138,7 +143,7 @@ class Neo4jGraphBackend(MemoryBackend):
         try:
             from core.memory.rag.singleton import generate_embeddings
 
-            result = await asyncio.to_thread(generate_embeddings, texts)
+            result = await asyncio.to_thread(generate_embeddings, texts, purpose=purpose)
             self._embedding_available = True
             return result
         except Exception:
@@ -584,7 +589,7 @@ class Neo4jGraphBackend(MemoryBackend):
 
         driver = await self._ensure_driver()
 
-        query_embeddings = await self._embed_texts([query])
+        query_embeddings = await self._embed_texts([query], purpose="query")
         query_embedding = query_embeddings[0] if query_embeddings else []
 
         from core.memory.graph.search import HybridSearch
@@ -717,7 +722,7 @@ class Neo4jGraphBackend(MemoryBackend):
             if query.strip():
                 from core.memory.graph.search import HybridSearch
 
-                query_embeddings = await self._embed_texts([query])
+                query_embeddings = await self._embed_texts([query], purpose="query")
                 query_embedding = query_embeddings[0] if query_embeddings else []
                 rows = await HybridSearch(driver, self._group_id).search(
                     query,

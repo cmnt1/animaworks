@@ -375,7 +375,7 @@ class MemoryRetriever:
             List of (doc_id, content, score, metadata) tuples
         """
         # Generate query embedding
-        embedding = self.indexer._generate_embeddings([query])[0]
+        embedding = self.indexer._generate_embeddings([query], purpose="query")[0]
 
         # Query vector store
         results = self.vector_store.query(

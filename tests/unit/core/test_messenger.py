@@ -15,8 +15,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.exceptions import DeliveryError
+from core.i18n import t
 from core.messenger import InboxItem, Messenger
 from core.schemas import Message
+from core.tooling.handler_comms import CommsToolsMixin
 from core.time_utils import now_local
 
 
@@ -153,6 +155,35 @@ class TestSend:
             for f in files:
                 content = f.read_text(encoding="utf-8").strip()
                 assert content == ""
+
+    def test_self_addressed_message_is_rejected(self, shared_dir, messenger):
+        msg = messenger.send("alice", "note to self", intent="report")
+
+        assert msg.type == "error"
+        assert msg.content == t("handler.dm_self_addressed_error")
+        assert not list((shared_dir / "inbox" / "alice").glob("*.json"))
+
+    def test_system_alert_to_self_is_allowed(self, shared_dir, messenger):
+        msg = messenger.send("alice", "runtime alert", msg_type="system_alert")
+
+        assert msg.type == "system_alert"
+        assert msg.to_person == "alice"
+        assert len(list((shared_dir / "inbox" / "alice").glob("*.json"))) == 1
+
+
+class _CommsHarness(CommsToolsMixin):
+    def __init__(self, messenger: Messenger) -> None:
+        self._messenger = messenger
+        self._anima_name = messenger.anima_name
+
+
+def test_send_message_tool_rejects_self_addressed_dm(shared_dir: Path) -> None:
+    harness = _CommsHarness(Messenger(shared_dir, "alice"))
+
+    result = harness._handle_send_message({"to": "alice", "content": "loop", "intent": "report"})
+
+    assert result == t("handler.dm_self_addressed_error")
+    assert not list((shared_dir / "inbox" / "alice").glob("*.json"))
 
 
 # ── reply ─────────────────────────────────────────────────

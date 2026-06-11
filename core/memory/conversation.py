@@ -189,43 +189,6 @@ class ConversationMemory:
             json.dumps(data, ensure_ascii=False, indent=2),
         )
 
-    @property
-    def _pending_procedures_path(self) -> Path:
-        return self._state_dir / "pending_procedures.json"
-
-    def store_injected_procedures(self, procedures: list[Path], session_id: str = "") -> None:
-        if not procedures:
-            return
-        self._state_dir.mkdir(parents=True, exist_ok=True)
-        data = {
-            "procedures": [str(p) for p in procedures],
-            "session_id": session_id,
-        }
-        try:
-            self._pending_procedures_path.write_text(
-                json.dumps(data, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except OSError:
-            logger.warning("Failed to write pending procedures to %s", self._pending_procedures_path, exc_info=True)
-
-    def _load_pending_procedures(self) -> tuple[list[Path], str]:
-        path = self._pending_procedures_path
-        if not path.exists():
-            return [], ""
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            procedures = [Path(p) for p in data.get("procedures", [])]
-            session_id = data.get("session_id", "")
-            path.unlink(missing_ok=True)
-            return procedures, session_id
-        except OSError:
-            logger.warning("Failed to read pending procedures from %s", path, exc_info=True)
-            return [], ""
-        except (json.JSONDecodeError, TypeError):
-            path.unlink(missing_ok=True)
-            return [], ""
-
     @staticmethod
     def _valid_date(date: str) -> bool:
         return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", date))
@@ -362,23 +325,6 @@ class ConversationMemory:
     def _record_resolutions(self, memory_mgr: MemoryManager, resolved_items: list[str]) -> None:
         _record_resolutions_fn(self.anima_dir, memory_mgr, resolved_items)
 
-    def _auto_track_procedure_outcomes(
-        self,
-        memory_mgr: MemoryManager,
-        turns: list[ConversationTurn],
-        injected_procedures: list[Path] | None = None,
-        session_id: str = "",
-    ) -> None:
-        from core.memory.conversation_state_update import _auto_track_procedure_outcomes
-
-        _auto_track_procedure_outcomes(
-            self.anima_dir,
-            memory_mgr,
-            turns,
-            injected_procedures=injected_procedures,
-            session_id=session_id,
-        )
-
     def _gather_activity_context(self, turns: list[ConversationTurn]) -> str:
         from core.memory.conversation_finalize import _gather_activity_context
 
@@ -424,17 +370,16 @@ class ConversationMemory:
     async def finalize_session(
         self,
         min_turns: int = 3,
-        injected_procedures: list[Path] | None = None,
+        injected_procedures: list[str] | None = None,
         session_id: str = "",
     ) -> bool:
+        del injected_procedures, session_id
         return await _finalize_session(
             self.anima_dir,
             self.load(),
             self.model_config,
             self.save,
             min_turns=min_turns,
-            injected_procedures=injected_procedures,
-            session_id=session_id,
         )
 
     async def finalize_if_session_ended(self) -> bool:
@@ -443,14 +388,12 @@ class ConversationMemory:
 
             return await _compress(self.load(), self.model_config, self.save, self.anima_name)
 
-        async def _finalize_inner(procedures: list[Path] | None, sid: str) -> bool:
+        async def _finalize_inner() -> bool:
             return await _finalize_session(
                 self.anima_dir,
                 self.load(),
                 self.model_config,
                 self.save,
-                injected_procedures=procedures,
-                session_id=sid,
             )
 
         return await _finalize_if_session_ended(
@@ -460,6 +403,5 @@ class ConversationMemory:
             self.needs_compression,
             _compress_inner,
             _finalize_inner,
-            self._load_pending_procedures,
             self.anima_name,
         )

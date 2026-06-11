@@ -259,7 +259,7 @@ async def finalize_session(
     model_config: Any,
     save_fn: Callable[[], None],
     min_turns: int = 3,
-    injected_procedures: list[Path] | None = None,
+    injected_procedures: list[str] | None = None,
     session_id: str = "",
 ) -> bool:
     """Finalize the current conversation session (differential).
@@ -271,6 +271,7 @@ async def finalize_session(
     Returns:
         True if session was finalized and written to episodes/, False if skipped.
     """
+    del injected_procedures, session_id
     new_turns = state.turns[state.last_finalized_turn_index :]
     if len(new_turns) < min_turns:
         logger.debug(
@@ -297,10 +298,9 @@ async def finalize_session(
     time_str = timestamp.strftime("%H:%M")
     episode_entry = f"## {time_str} — {parsed.title}\n\n{parsed.episode_body}\n"
     memory_mgr.append_episode(episode_entry)
-    fact_extraction_status = _schedule_session_fact_extraction(anima_dir, new_turns, session_id=session_id)
+    fact_extraction_status = _schedule_session_fact_extraction(anima_dir, new_turns, session_id="")
 
     from core.memory.conversation_state_update import (
-        _auto_track_procedure_outcomes,
         _record_resolutions,
         _update_state_from_summary,
     )
@@ -310,15 +310,6 @@ async def finalize_session(
 
     if parsed.resolved_items:
         _record_resolutions(anima_dir, memory_mgr, parsed.resolved_items)
-
-    if injected_procedures:
-        _auto_track_procedure_outcomes(
-            anima_dir,
-            memory_mgr,
-            new_turns,
-            injected_procedures=injected_procedures,
-            session_id=session_id,
-        )
 
     # If a previous finalization wrote an episode but compression failed, the
     # already-finalized raw turns remain before last_finalized_turn_index.
@@ -383,7 +374,6 @@ async def finalize_if_session_ended(
     needs_compression_fn: Callable[[], bool],
     compress_fn: Callable[[], Awaitable[Any]],
     finalize_session_fn: Callable[..., Awaitable[bool]],
-    load_pending_fn: Callable[[], tuple[list[Path], str]],
     anima_name: str = "",
 ) -> bool:
     """Finalize if session has ended (10-minute idle gap).
@@ -424,5 +414,4 @@ async def finalize_if_session_ended(
         if not is_idle:
             return False
 
-        procedures, session_id = load_pending_fn()
-        return await finalize_session_fn(procedures or None, session_id)
+        return await finalize_session_fn()

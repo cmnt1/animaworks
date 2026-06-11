@@ -18,7 +18,7 @@ via HTTP, eliminating per-process GPU model loading.
 import logging
 import os
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
@@ -39,6 +39,8 @@ _embedding_model_name: str | None = None
 _init_failed: bool = False
 _direct_disabled_warned: bool = False
 _cuda_unavailable_warned: bool = False
+
+EmbeddingPurpose = Literal["document", "query"]
 
 
 def _get_http_store(base_url: str, anima_name: str | None) -> HttpVectorStore:
@@ -137,6 +139,32 @@ def _get_configured_model_name() -> str:
         return "intfloat/multilingual-e5-small"
 
 
+def _get_embedding_prefix_settings() -> tuple[bool, str, str]:
+    """Return e5-prefix settings from config, preserving legacy defaults on failure."""
+    try:
+        from core.config import load_config
+
+        rag = load_config().rag
+        return (
+            bool(getattr(rag, "embedding_e5_prefix_enabled", False)),
+            str(getattr(rag, "embedding_query_prefix", "query: ") or ""),
+            str(getattr(rag, "embedding_document_prefix", "passage: ") or ""),
+        )
+    except Exception:
+        return False, "query: ", "passage: "
+
+
+def _prefix_texts_for_embedding(texts: list[str], *, purpose: EmbeddingPurpose) -> list[str]:
+    """Apply configured E5 query/document prefixes to embedding input text."""
+    enabled, query_prefix, document_prefix = _get_embedding_prefix_settings()
+    if not enabled:
+        return texts
+    prefix = query_prefix if purpose == "query" else document_prefix
+    if not prefix:
+        return texts
+    return [text if text.startswith(prefix) else f"{prefix}{text}" for text in texts]
+
+
 def _cuda_available_safely() -> bool:
     """Return whether CUDA can be initialized without raising.
 
@@ -223,6 +251,7 @@ def thread_safe_encode(
     *,
     convert_to_numpy: bool = True,
     show_progress_bar: bool = False,
+    purpose: EmbeddingPurpose = "document",
 ) -> list[list[float]]:
     """Serialize SentenceTransformer.encode() via _native_ops_lock.
 
@@ -233,9 +262,10 @@ def thread_safe_encode(
     import numpy as np
 
     model = get_embedding_model()
+    prefixed_texts = _prefix_texts_for_embedding(texts, purpose=purpose)
     with _native_ops_lock:
         embeddings = model.encode(
-            texts,
+            prefixed_texts,
             convert_to_numpy=convert_to_numpy,
             show_progress_bar=show_progress_bar,
         )
@@ -315,7 +345,7 @@ def get_embedding_dimension() -> int:
 # ── Unified embedding generation ─────────────────────────────────
 
 
-def generate_embeddings(texts: list[str]) -> list[list[float]]:
+def generate_embeddings(texts: list[str], *, purpose: EmbeddingPurpose = "document") -> list[list[float]]:
     """Generate embeddings via HTTP server or local model.
 
     When ``ANIMAWORKS_EMBED_URL`` is set, delegates to the server's
@@ -326,11 +356,16 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
         return []
     embed_url = os.environ.get("ANIMAWORKS_EMBED_URL")
     if embed_url:
-        return _generate_embeddings_http(texts, embed_url)
-    return _generate_embeddings_local(texts)
+        return _generate_embeddings_http(texts, embed_url, purpose=purpose)
+    return _generate_embeddings_local(texts, purpose=purpose)
 
 
-def _generate_embeddings_http(texts: list[str], embed_url: str) -> list[list[float]]:
+def _generate_embeddings_http(
+    texts: list[str],
+    embed_url: str,
+    *,
+    purpose: EmbeddingPurpose = "document",
+) -> list[list[float]]:
     """Call server's /api/internal/embed endpoint."""
     import httpx
 
@@ -339,7 +374,7 @@ def _generate_embeddings_http(texts: list[str], embed_url: str) -> list[list[flo
         batch = texts[i : i + _BATCH_LIMIT]
         resp = httpx.post(
             embed_url,
-            json={"texts": batch},
+            json={"texts": batch, "purpose": purpose},
             timeout=30.0,
         )
         resp.raise_for_status()
@@ -347,9 +382,9 @@ def _generate_embeddings_http(texts: list[str], embed_url: str) -> list[list[flo
     return all_embeddings
 
 
-def _generate_embeddings_local(texts: list[str]) -> list[list[float]]:
+def _generate_embeddings_local(texts: list[str], *, purpose: EmbeddingPurpose = "document") -> list[list[float]]:
     """Use local SentenceTransformer model."""
-    return thread_safe_encode(texts)
+    return thread_safe_encode(texts, purpose=purpose)
 
 
 def get_embedding_model_name() -> str:

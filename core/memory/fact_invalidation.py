@@ -201,7 +201,7 @@ def _search_fact_candidates(anima_dir: Path, fact: FactRecord, top_k: int) -> li
     vector_store = get_vector_store(anima_dir.name)
     if vector_store is None:
         return []
-    embeddings = generate_embeddings([fact.text])
+    embeddings = generate_embeddings([fact.text], purpose="query")
     if not embeddings:
         return []
 

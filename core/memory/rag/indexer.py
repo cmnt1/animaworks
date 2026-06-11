@@ -22,7 +22,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from core.memory.rag import indexer_delete
 from core.memory.rag.episode_time import apply_episode_heading_event_time
@@ -983,7 +983,12 @@ class MemoryIndexer:
 
         return metadata
 
-    def _generate_embeddings(self, texts: list[str]) -> list[list[float]]:
+    def _generate_embeddings(
+        self,
+        texts: list[str],
+        *,
+        purpose: Literal["document", "query"] = "document",
+    ) -> list[list[float]]:
         """Generate embeddings for a batch of texts.
 
         Delegates to ``generate_embeddings()`` which routes to the HTTP
@@ -995,7 +1000,7 @@ class MemoryIndexer:
         logger.debug("Generating embeddings for %d texts", len(texts))
         from core.memory.rag.singleton import generate_embeddings
 
-        return generate_embeddings(texts)
+        return generate_embeddings(texts, purpose=purpose)
 
     @staticmethod
     def _compute_file_hash(file_path: Path) -> str:

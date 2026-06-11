@@ -147,6 +147,19 @@ def _handle_chunk(
             asyncio.ensure_future(emit_notification(request, notif_data))
         return None, ""
 
+    if event_type == "meeting_redirect":
+        return _format_sse(
+            "meeting_redirect",
+            {
+                "room_id": chunk.get("room_id", ""),
+                "from": chunk.get("from", ""),
+                "to": chunk.get("to", ""),
+                "content": chunk.get("content", ""),
+                "intent": chunk.get("intent", ""),
+                "ts": chunk.get("ts", ""),
+            },
+        ), ""
+
     if event_type == "cycle_done":
         cycle_result = chunk.get("cycle_result", {})
         response_text = cycle_result.get("summary", "")
@@ -223,6 +236,15 @@ def _chunk_to_event(chunk: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
         return "thinking_delta", {"text": chunk.get("text", "")}
     if event_type == "thinking_end":
         return "thinking_end", {}
+    if event_type == "meeting_redirect":
+        return "meeting_redirect", {
+            "room_id": chunk.get("room_id", ""),
+            "from": chunk.get("from", ""),
+            "to": chunk.get("to", ""),
+            "content": chunk.get("content", ""),
+            "intent": chunk.get("intent", ""),
+            "ts": chunk.get("ts", ""),
+        }
     if event_type == "context_update":
         return "context_update", {
             "context_usage_ratio": chunk.get("context_usage_ratio", 0),

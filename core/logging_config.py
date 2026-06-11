@@ -42,6 +42,15 @@ def get_request_id() -> str:
     return ctx.get("request_id", "-")
 
 
+def _anima_log_rollover_name(default_name: str) -> str:
+    """Normalize TimedRotatingFileHandler names to avoid double .log suffixes."""
+    path = Path(default_name)
+    parts = path.name.split(".")
+    if len(parts) >= 4 and parts[-1] == "log" and parts[-3] == "log" and parts[-2].isdigit():
+        return str(path.with_name(f"{parts[-2]}.log"))
+    return default_name
+
+
 # ── Shared Processors ──────────────────────────────────────────
 
 
@@ -243,6 +252,7 @@ def setup_anima_logging(
     )
     file_handler.addFilter(anima_filter)
     file_handler.suffix = "%Y%m%d.log"  # Match filename format
+    file_handler.namer = _anima_log_rollover_name
     root.addHandler(file_handler)
 
     # Create/update current.log symlink

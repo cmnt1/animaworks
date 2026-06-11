@@ -11,14 +11,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.tooling.handler import ToolHandler, meeting_mode
-from core.tooling.handler_base import meeting_mode as meeting_mode_var
+from core.tooling.handler_base import meeting_context, meeting_mode as meeting_mode_var
 from server.room_manager import SUMMARY_THRESHOLD, RoomManager
 
 
 # ── ToolHandler meeting mode tests ──────────────────────────
 
 
-def _make_handler(tmp_path: Path) -> ToolHandler:
+def _make_handler(tmp_path: Path, messenger=None) -> ToolHandler:
     """Create a ToolHandler with minimal mocked dependencies."""
     anima_dir = tmp_path / "animas" / "test"
     anima_dir.mkdir(parents=True)
@@ -31,7 +31,7 @@ def _make_handler(tmp_path: Path) -> ToolHandler:
     handler = ToolHandler(
         anima_dir=anima_dir,
         memory=memory,
-        messenger=None,
+        messenger=messenger,
         tool_registry=[],
     )
     return handler
@@ -41,7 +41,6 @@ class TestMeetingModeToolBlocking:
     """Verify that blocked tools return error in meeting mode."""
 
     BLOCKED_TOOLS = [
-        "send_message",
         "post_channel",
         "delegate_task",
         "call_human",
@@ -96,6 +95,58 @@ class TestMeetingModeToolBlocking:
 
     def test_meeting_mode_default_is_false(self):
         assert meeting_mode_var.get() is False
+
+    def test_send_message_redirects_to_meeting_channel(self, tmp_path):
+        messenger = MagicMock()
+        messenger.anima_name = "test"
+        handler = _make_handler(tmp_path, messenger=messenger)
+        context = {"room_id": "room-1", "participants": ["rin"], "redirects": []}
+
+        meeting_token = meeting_mode_var.set(True)
+        context_token = meeting_context.set(context)
+        try:
+            with patch(
+                "core.config.models.resolve_outbound_limits",
+                return_value={"max_recipients_per_run": 5},
+            ):
+                result = handler.handle(
+                    "send_message",
+                    {"to": "rin", "content": "Please review this", "intent": "question"},
+                )
+        finally:
+            meeting_context.reset(context_token)
+            meeting_mode_var.reset(meeting_token)
+
+        assert "rin" in result
+        assert len(context["redirects"]) == 1
+        redirect = context["redirects"][0]
+        assert redirect["from"] == "test"
+        assert redirect["to"] == "rin"
+        assert redirect["content"] == "Please review this"
+        assert redirect["intent"] == "question"
+        assert redirect["ts"]
+        messenger.send.assert_not_called()
+
+    def test_send_message_to_nonparticipant_is_blocked_in_meeting(self, tmp_path):
+        messenger = MagicMock()
+        messenger.anima_name = "test"
+        handler = _make_handler(tmp_path, messenger=messenger)
+        context = {"room_id": "room-1", "participants": ["rin"], "redirects": []}
+
+        meeting_token = meeting_mode_var.set(True)
+        context_token = meeting_context.set(context)
+        try:
+            result = handler.handle(
+                "send_message",
+                {"to": "outsider", "content": "Side channel", "intent": "question"},
+            )
+        finally:
+            meeting_context.reset(context_token)
+            meeting_mode_var.reset(meeting_token)
+
+        assert "会議中" in result or "not available during meetings" in result
+        assert context["redirects"] == []
+        messenger.send.assert_not_called()
 
 
 class TestMeetingModeContextVarReset:

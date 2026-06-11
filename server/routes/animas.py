@@ -833,6 +833,26 @@ def create_animas_router() -> APIRouter:
         "identity": "あなたは業務支援AIエージェントです。与えられたタスクを正確かつ効率的に遂行します。",
         "injection": "与えられたタスクに集中し、不明点があれば確認してから行動してください。",
     }
+    _TEAM_ROLE_TO_CORE: dict[str, str] = {
+        "secretary": "manager",
+        "customer_support": "ops",
+        "back_office": "ops",
+        "sales_assist": "manager",
+        "pr_sns": "writer",
+        "recruiter": "manager",
+        "accounting": "ops",
+        "project_manager": "manager",
+        "researcher": "researcher",
+        "content_writer": "writer",
+        "engineer": "engineer",
+        "data_analyst": "researcher",
+        "designer": "writer",
+        "marketing": "writer",
+        "hr": "manager",
+        "legal": "ops",
+        "product_manager": "manager",
+        "finance": "ops",
+    }
 
     @router.post("/teams/deploy")
     async def deploy_team(request: Request):
@@ -889,6 +909,7 @@ def create_animas_router() -> APIRouter:
 
             try:
                 anima_dir = create_blank(animas_dir, name)
+                core_role = _TEAM_ROLE_TO_CORE.get(role_id, "general")
 
                 # Write role-specific identity.md
                 content = _TEAM_ROLE_CONTENT.get(role_id, _DEFAULT_ROLE_CONTENT)
@@ -907,7 +928,8 @@ def create_animas_router() -> APIRouter:
                 # Write status.json with role info, model, org data
                 status: dict[str, Any] = {
                     "enabled": True,
-                    "role": role_id,
+                    "role": core_role,
+                    "speciality": role_id,
                 }
 
                 if team_department:
@@ -933,7 +955,7 @@ def create_animas_router() -> APIRouter:
                         from core.config.local_llm import apply_local_llm_role_to_status
 
                         cfg = load_config()
-                        apply_local_llm_role_to_status(status, cfg, "general")
+                        apply_local_llm_role_to_status(status, cfg, core_role)
                     except Exception:
                         pass
 

@@ -325,6 +325,10 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
             callbacks.onSpeakerEnd?.({ speaker: data.speaker || "" });
             break;
 
+          case "meeting_redirect":
+            callbacks.onMeetingRedirect?.(data);
+            break;
+
           default:
             logger.debug(`[SSE-FE] EVENT unknown event=${event} id=${id}`);
             break;

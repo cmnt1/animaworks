@@ -18,6 +18,9 @@ from core.tooling.handler_base import (
     _error_result,
     active_session_type,
     build_outgoing_origin_chain,
+    meeting_context,
+    meeting_mode,
+    record_meeting_redirect,
     suppress_board_fanout,
 )
 
@@ -44,6 +47,11 @@ class CommsToolsMixin:
     _session_origin: str
     _session_origin_chain: list[str]
 
+    @staticmethod
+    def _resolve_meeting_participant(to: str, participants: list[Any]) -> str:
+        participant_map = {str(name).lower(): str(name) for name in participants if str(name)}
+        return participant_map.get(to.lower(), "")
+
     def _handle_send_message(self, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
@@ -54,6 +62,9 @@ class CommsToolsMixin:
         content = args["content"]
         intent = args.get("intent", "")
 
+        if to == self._anima_name:
+            return t("handler.dm_self_addressed_error")
+
         # ── Per-run DM limits ──
         if intent == "delegation":
             return t("handler.delegation_intent_deprecated")
@@ -61,8 +72,17 @@ class CommsToolsMixin:
             return t("handler.dm_intent_error")
 
         current_replied = self.replied_to_for(active_session_type.get())
-        if to in current_replied:
-            return t("handler.dm_already_sent", to=to)
+        meeting_target = ""
+        if meeting_mode.get():
+            ctx = meeting_context.get() or {}
+            participants = ctx.get("participants", []) if isinstance(ctx, dict) else []
+            meeting_target = self._resolve_meeting_participant(to, participants)
+            if not meeting_target:
+                return t("handler.meeting_tool_blocked", tool="send_message")
+
+        effective_to = meeting_target or to
+        if effective_to in current_replied:
+            return t("handler.dm_already_sent", to=effective_to)
 
         from core.config.models import resolve_outbound_limits
         from core.paths import get_animas_dir as _get_animas_dir
@@ -70,8 +90,29 @@ class CommsToolsMixin:
         _anima_dir = _get_animas_dir() / self._anima_name if _get_animas_dir().exists() else None
         limits = resolve_outbound_limits(self._anima_name, _anima_dir)
         max_recipients = limits["max_recipients_per_run"]
-        if len(current_replied) >= max_recipients and to not in current_replied:
+        if len(current_replied) >= max_recipients and effective_to not in current_replied:
             return t("handler.dm_max_recipients", limit=max_recipients)
+
+        if meeting_target:
+            record_meeting_redirect(
+                from_name=self._anima_name,
+                to_name=meeting_target,
+                content=content,
+                intent=intent,
+            )
+            self._replied_to.setdefault(active_session_type.get(), set()).add(meeting_target)
+            self._persist_replied_to(meeting_target, success=True)
+            try:
+                self._activity.log(
+                    "meeting_redirect_sent",
+                    content=content,
+                    to_person=meeting_target,
+                    summary=f"meeting → {meeting_target}: {content[:80]}",
+                    meta={"intent": intent, "delivery": "meeting"},
+                )
+            except Exception:
+                logger.warning("Activity logging failed for meeting redirect to %s", meeting_target)
+            return t("handler.meeting_dm_redirected", to=meeting_target)
 
         # ── Resolve recipient ──
         try:

@@ -8,7 +8,7 @@ import concurrent.futures
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -33,6 +33,7 @@ class MessageSentNotification(BaseModel):
 
 class EmbedRequest(BaseModel):
     texts: list[str]
+    purpose: Literal["document", "query"] = "document"
 
 
 class VectorQueryRequest(BaseModel):
@@ -172,13 +173,14 @@ def create_internal_router() -> APIRouter:
         if not body.texts:
             return {"embeddings": []}
 
+        from functools import partial
+
         from core.memory.rag.singleton import thread_safe_encode
 
         loop = asyncio.get_running_loop()
         embeddings = await loop.run_in_executor(
             _native_executor,
-            thread_safe_encode,
-            body.texts,
+            partial(thread_safe_encode, body.texts, purpose=body.purpose),
         )
         return {"embeddings": embeddings}
 
@@ -205,7 +207,8 @@ def create_internal_router() -> APIRouter:
                 logger.warning("Vector worker unavailable for %s: %s", path, exc)
             return JSONResponse(status_code=503, content={"detail": "Vector worker unavailable"})
         if response.status_code >= 400:
-            return JSONResponse(status_code=response.status_code, content=response.data)
+            headers = dict(getattr(response, "headers", None) or {})
+            return JSONResponse(status_code=response.status_code, content=response.data, headers=headers)
         return response.data
 
     @router.post("/internal/vector/query")

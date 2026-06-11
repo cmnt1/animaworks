@@ -15,11 +15,23 @@ from core.memory.fact_observability import warn_rate_limited
 
 logger = logging.getLogger("animaworks.memory.fact_extraction")
 
+DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS = 120
+
+
+def _coerce_timeout_seconds(value: object, fallback: int) -> int:
+    if value is None or value == "":
+        return fallback
+    try:
+        timeout = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return timeout if timeout > 0 else fallback
+
 
 def _resolve_extraction_config(anima_dir: Path) -> tuple[str, dict[str, object], str, int, str]:
     """Resolve extraction model/credential without trusting endpoint fields in status.json."""
     llm_extra: dict[str, object] = {}
-    timeout = 30
+    timeout = DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
     status_data: dict[str, Any] = {}
     cfg: Any | None = None
 
@@ -27,6 +39,10 @@ def _resolve_extraction_config(anima_dir: Path) -> tuple[str, dict[str, object],
         from core.config import load_config
 
         cfg = load_config()
+        timeout = _coerce_timeout_seconds(
+            getattr(getattr(cfg, "rag", None), "fact_extraction_timeout_seconds", None),
+            timeout,
+        )
     except Exception:
         cfg = None
 
@@ -37,7 +53,7 @@ def _resolve_extraction_config(anima_dir: Path) -> tuple[str, dict[str, object],
         if status_path.is_file():
             status_data = json.loads(status_path.read_text(encoding="utf-8"))
             if status_data.get("extraction_timeout"):
-                timeout = int(status_data["extraction_timeout"])
+                timeout = _coerce_timeout_seconds(status_data["extraction_timeout"], timeout)
     except Exception:
         warn_rate_limited(
             logger,

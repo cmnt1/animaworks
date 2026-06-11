@@ -43,6 +43,11 @@ meeting_mode: contextvars.ContextVar[bool] = contextvars.ContextVar(
     default=False,
 )
 
+meeting_context: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "meeting_context",
+    default=None,
+)
+
 # Type alias for the message-sent callback (from, to, content).
 OnMessageSentFn = Callable[[str, str, str], None]
 
@@ -135,6 +140,29 @@ def build_outgoing_origin_chain(
     if ORIGIN_ANIMA not in chain:
         chain.append(ORIGIN_ANIMA)
     return chain[:MAX_ORIGIN_CHAIN_LENGTH]
+
+
+def record_meeting_redirect(
+    *,
+    from_name: str,
+    to_name: str,
+    content: str,
+    intent: str = "",
+) -> dict[str, str]:
+    """Record a meeting-local DM redirect for the process_message stream."""
+    redirect = {
+        "from": from_name,
+        "to": to_name,
+        "content": content,
+        "intent": intent,
+        "ts": now_iso(),
+    }
+    ctx = meeting_context.get()
+    if isinstance(ctx, dict):
+        redirects = ctx.setdefault("redirects", [])
+        if isinstance(redirects, list):
+            redirects.append(redirect)
+    return redirect
 
 
 def _error_result(

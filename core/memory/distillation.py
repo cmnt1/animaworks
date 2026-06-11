@@ -134,62 +134,6 @@ class ProceduralDistiller:
 
         return result
 
-    # ── Daily Distillation (legacy-compatible entry point) ─────
-
-    async def distill_procedures(
-        self,
-        procedural_episodes: str,
-        model: str = "",
-    ) -> list[dict]:
-        """Extract reusable procedures from episode text via LLM classification.
-
-        This is the main daily distillation entry point.  It sends episodes
-        to the LLM for classification and returns extracted procedure items.
-
-        Args:
-            procedural_episodes: Concatenated episode text.
-            model: LiteLLM model identifier.
-
-        Returns:
-            List of dicts, each with keys ``title``, ``description``,
-            ``tags``, and ``content``.
-        """
-        if not model:
-            from core.memory._llm_utils import get_consolidation_llm_kwargs
-
-            model = get_consolidation_llm_kwargs()["model"]
-        if not procedural_episodes.strip():
-            return []
-
-        classification = await self.classify_and_distill(
-            procedural_episodes,
-            model=model,
-        )
-
-        # Convert procedure_items to the legacy format expected by callers
-        procedures: list[dict] = []
-        for item in classification["procedure_items"]:
-            filename = item.get("filename", "")
-            # Extract title from filename (strip procedures/ prefix and .md)
-            title = filename.replace("procedures/", "").replace(".md", "")
-            if not title:
-                continue
-            procedures.append(
-                {
-                    "title": title,
-                    "description": item.get("description", ""),
-                    "tags": item.get("tags", []),
-                    "content": item.get("content", ""),
-                }
-            )
-
-        logger.info(
-            "Distilled %d procedures from episodes for anima=%s",
-            len(procedures),
-            self.anima_name,
-        )
-        return procedures
-
     def get_knowledge_items(self, classification_result: dict) -> list[dict]:
         """Extract knowledge items from a classification result.
 

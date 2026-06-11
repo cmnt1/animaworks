@@ -14,7 +14,6 @@ from core.config.models import (
     ServerConfig,
 )
 
-
 # ── ServerConfig ─────────────────────────────────────────────
 
 
@@ -24,6 +23,7 @@ class TestServerConfig:
         sc = ServerConfig()
         assert sc.ipc_stream_timeout == 60
         assert sc.keepalive_interval == 30
+        assert sc.anima_startup_ready_timeout == 120
 
     def test_server_config_rejects_invalid_intervals(self):
         """keepalive_interval must be less than ipc_stream_timeout."""
@@ -40,6 +40,10 @@ class TestServerConfig:
         sc = ServerConfig(keepalive_interval=15, ipc_stream_timeout=120)
         assert sc.keepalive_interval == 15
         assert sc.ipc_stream_timeout == 120
+
+    def test_server_config_custom_anima_startup_ready_timeout(self):
+        sc = ServerConfig(anima_startup_ready_timeout=300)
+        assert sc.anima_startup_ready_timeout == 300
 
 
 # ── BackgroundTaskConfig ─────────────────────────────────────

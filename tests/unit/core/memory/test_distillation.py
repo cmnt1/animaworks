@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -21,12 +22,12 @@ Covers:
 
 import json
 from datetime import timedelta
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.time_utils import now_jst
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -228,96 +229,6 @@ class TestClassifyAndDistill:
         assert len(result["knowledge_items"]) == 2
         assert len(result["procedure_items"]) == 2
         assert result["procedure_items"][1]["tags"] == ["backup", "ops"]
-
-
-# ── Distill Procedures (Legacy Entry Point) ──────────────────
-
-
-class TestDistillProcedures:
-    """Test distill_procedures() with mocked LLM."""
-
-    @pytest.mark.asyncio
-    async def test_distill_returns_procedures(self, distiller) -> None:
-        """Procedures extracted via LLM classification should be returned."""
-        llm_response = (
-            "## knowledge抽出\n(なし)\n\n"
-            "## procedure抽出\n"
-            "- ファイル名: procedures/deploy_to_production.md\n"
-            "  description: Production deployment procedure\n"
-            "  tags: deploy, ops\n"
-            "  内容: # Deploy to Production\n\n## Steps\n1. Pull latest\n2. Run tests\n3. Deploy"
-        )
-
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = llm_response
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.distill_procedures(
-                "手順に従って操作した。コマンドを実行した。デプロイした。",
-                model="test-model",
-            )
-
-        assert len(result) == 1
-        assert result[0]["title"] == "deploy_to_production"
-        assert "Deploy to Production" in result[0]["content"]
-
-    @pytest.mark.asyncio
-    async def test_distill_empty_input(self, distiller) -> None:
-        result = await distiller.distill_procedures("")
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_distill_no_procedures_found(self, distiller) -> None:
-        llm_response = (
-            "## knowledge抽出\n(なし)\n\n"
-            "## procedure抽出\n(なし)"
-        )
-
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = llm_response
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.distill_procedures(
-                "手順に従って操作した。コマンドを実行した。",
-                model="test-model",
-            )
-
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_distill_malformed_response(self, distiller) -> None:
-        """Malformed LLM output should return empty list without error."""
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = "not valid format at all"
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.distill_procedures(
-                "手順に従ってコマンドを操作した。",
-                model="test-model",
-            )
-
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_distill_llm_error(self, distiller) -> None:
-        """LLM call failure should return empty list."""
-        with patch(
-            "litellm.acompletion",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("API down"),
-        ):
-            result = await distiller.distill_procedures(
-                "手順に従ってコマンドを操作した。",
-                model="test-model",
-            )
-
-        assert result == []
 
 
 # ── Knowledge vs Procedures Routing ──────────────────────────

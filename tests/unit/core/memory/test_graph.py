@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -79,7 +80,7 @@ class MockIndexer:
         self.anima_name = "test_anima"
         self.anima_dir = anima_dir or Path("/tmp/nonexistent")
 
-    def _generate_embeddings(self, texts):
+    def _generate_embeddings(self, texts, **_kwargs):
         """Mock embedding generation."""
         return [[0.1] * 384 for _ in texts]
 
@@ -915,7 +916,7 @@ def test_fetch_node_content_no_node_id_in_embedding():
     class TrackingIndexer:
         anima_name = "test_anima"
 
-        def _generate_embeddings(self, texts):
+        def _generate_embeddings(self, texts, **_kwargs):
             calls.append(texts)
             return [[0.1] * 384 for _ in texts]
 

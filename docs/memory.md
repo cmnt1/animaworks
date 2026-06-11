@@ -230,10 +230,11 @@ For side-effecting actions such as external sends, channel posts, human notifica
 
 **AnimaWorks implementation**: Dense vector search, temporal decay, importance boost, and graph spreading activation. Default `config.rag.enable_spreading_activation` is **True** (`RAGConfig` in `core/config/schemas.py`). `MemoryRetriever.search(..., enable_spreading_activation=None)` reads config and disables spread only on config load failure. Applicable types: `spreading_memory_types` (default `knowledge`, `episodes`).
 
-Indexed long-term stores (`knowledge`, `episodes`, `procedures`, `common_knowledge`) are retrieved with dense vectors and optional graph spread (below). **`search_memory` extends this:**
+Indexed long-term stores (`knowledge`, `episodes`, `procedures`, `common_knowledge`) are retrieved with dense vectors, long-term BM25, and optional graph spread (below). **`search_memory` extends this:**
 
 - **`activity_log` scope:** BM25 keyword search over the **last 3 days** of unified activity JSONL (the operational timeline), not vector similarity.
-- **`all` scope:** fuses vector hits with `activity_log` BM25 results using **Reciprocal Rank Fusion (RRF, k=60)**.
+- **Long-term BM25:** personal `knowledge`, `episodes`, and `procedures` use a persisted BM25 corpus as a sparse companion to vectors and as fallback when vector search is unavailable.
+- **`all` scope:** the unified retrieval pipeline fuses vector, graph, long-term BM25, and `activity_log` BM25 results using **Reciprocal Rank Fusion (RRF, k=60)**, then applies optional reranking and confidence gating.
 
 Together, these let Animas recall **recent tool outcomes** (e.g. email or messaging snippets) that have not yet been consolidated into long-term memory.
 
@@ -328,9 +329,31 @@ Cached at `{anima_dir}/vectordb/knowledge_graph.json`; incrementally updated whe
 | `skill_match_min_score` | `0.75` | Vector-stage threshold for skill matching |
 | `enabled` | `true` | Master RAG enable flag |
 | `embedding_model` | `intfloat/multilingual-e5-small` | Embedding model id |
+| `embedding_e5_prefix_enabled` | `false` | Prefix embedding inputs by purpose when using E5-style models |
+| `embedding_query_prefix` | `"query: "` | Prefix applied to query embeddings when E5 prefixing is enabled |
+| `embedding_document_prefix` | `"passage: "` | Prefix applied to document/chunk embeddings when E5 prefixing is enabled |
 | `use_gpu` | `false` | Use GPU for embedding inference |
 | `enable_file_watcher` | `true` | Watch memory files (incremental index) |
 | `graph_cache_enabled` | `true` | Cache knowledge graph JSON |
+| `vector_worker_enabled` | `true` | Run ChromaDB / sentence-transformers behind the vector worker |
+| `vector_worker_fallback_direct` | `false` | Fall back to in-process ChromaDB if the worker is unavailable. Default is no fallback |
+| `repair_enabled` | `true` | Enable RAG inconsistency detection and quarantine/rebuild repair |
+| `repair_error_threshold` | `2` | Errors in the repair window required before marking a target repairable |
+| `repair_cooldown_minutes` | `60` | Suppress repeated repair attempts for the same target |
+| `startup_repair_preflight_enabled` | `true` | Check recent RAG inconsistencies during startup |
+| `cross_encoder_model` | `cross-encoder/ms-marco-MiniLM-L-12-v2` | Cross-encoder used when reranking is enabled |
+| `facts_extraction_enabled` | `true` | Enable legacy atomic fact extraction during session and consolidation finalization |
+| `fact_extraction_timeout_seconds` | `120` | Default timeout for fact-extraction LLM calls; per-Anima `status.json` `extraction_timeout` overrides it |
+| `facts_reconcile_enabled` | `true` | Reconcile extracted facts against active similar facts before append |
+| `entity_registry_enabled` | `true` | Maintain the local entity registry and entity vector collection from extracted facts |
+
+Native ChromaDB access is normally disabled from runtime processes. The server, CLI `index`, and `repair-rag` routes use the vector worker or a temporary vector worker; if a crash or lock corruption is recorded, the repair service treats the target as eligible for quarantine and rebuild. `animaworks repair-rag --anima NAME --full` quarantines the damaged `vectordb` and fully reindexes that Anima's memory.
+
+### Atomic facts and entity index
+
+Atomic facts are a structured memory layer stored under `facts/YYYY-MM-DD.jsonl`. Session finalization and Phase A of daily consolidation can extract entity-linked facts from conversation/episode text, reconcile them against active similar facts, append durable records, and index the `facts` scope for retrieval. The entity registry is updated from stored facts and can feed entity-aware retrieval and graph context.
+
+The extraction path is non-fatal: failures are logged with `facts_extracted` and `facts_failed` counters, then consolidation/session finalization continues. The default timeout is `rag.fact_extraction_timeout_seconds`; individual Animas can still override it with `status.json` `extraction_timeout`.
 
 ---
 
@@ -356,7 +379,7 @@ version: 1
 | `created_at` | ISO8601 | Created |
 | `updated_at` | ISO8601 | Last updated |
 | `source_episodes` | int | Count of source episodes |
-| `confidence` | float | Confidence (NLI+LLM validation), 0.0–1.0 |
+| `confidence` | float | Confidence score used by retrieval, contradiction handling, and reconsolidation, 0.0–1.0 |
 | `auto_consolidated` | bool | Produced by automatic consolidation |
 | `version` | int | Version (increment on re-consolidation) |
 | `superseded_by` | str | New file that replaced this (contradiction resolution) |
@@ -432,7 +455,7 @@ Waking (conversation)                     Sleeping (no conversation)
 ### Daily consolidation flow
 
 > Implementation: `core/_anima_lifecycle.py` — `Anima.run_consolidation()`, `core/memory/consolidation.py` — `ConsolidationEngine` (pre/post)
-> Schedule: `core/lifecycle/system_crons.py` registers the daily handler from `core/lifecycle/system_consolidation.py` (`ConsolidationConfig.daily_time`, default 02:00 JST)
+> Schedule: the production `ProcessSupervisor` scheduler (`core/supervisor/_mgr_scheduler.py`) registers the daily handler from `core/lifecycle/system_consolidation.py` (`ConsolidationConfig.daily_time`, default 02:00 JST)
 
 **1. Preprocessing** (ConsolidationEngine): collect four inputs and inject into `consolidation_instruction`:
 
@@ -477,13 +500,13 @@ Waking (conversation)                     Sleeping (no conversation)
 
 ### Models used for consolidation
 
-Daily and weekly consolidation run as **background triggers** (`consolidation:daily`, `consolidation:weekly`). Resolution order:
+Daily and weekly consolidation run as **background triggers** (`consolidation:daily`, `consolidation:weekly`). Model and credential resolution is isolated from chat:
 
-1. Per-Anima `status.json` `background_model`
-2. `config.json` `heartbeat.default_model`
-3. Main `model` fallback
+1. `config.json` `consolidation.llm_model`
+2. `config.json` `consolidation.llm_credential` when a dedicated credential is configured
+3. Framework defaults from `ConsolidationConfig`
 
-A lighter `background_model` (e.g. `claude-sonnet-4-6`) keeps a heavy main model (e.g. `claude-opus-4-6`) for chat while cutting consolidation cost. Weekly `neurogenesis_reorganize` (LLM merge) uses the same resolution.
+A lighter consolidation model keeps a heavy main model for chat while cutting consolidation cost. Weekly `neurogenesis_reorganize`, pattern distillation, and full contradiction scanning use the same consolidation model value.
 
 ### Consolidation stages summary
 
@@ -525,37 +548,32 @@ Resolution propagates in three layers to the local Anima and others:
 
 ---
 
-## Knowledge validation: NLI+LLM cascade
+## Knowledge consistency checks
 
-> Implementation: `core/memory/validation.py` — `KnowledgeValidator`
+> Implementation: `core/memory/contradiction.py` — `ContradictionDetector`; `core/memory/nli.py` — `SharedNLIModel`.
 
-Writing raw LLM-extracted knowledge risks hallucinations. A **cascade of NLI and LLM** filters candidates. In Anima-led daily consolidation the Anima writes via tools, so this pipeline is used on other paths (batch, legacy).
+Writing raw LLM-extracted knowledge risks hallucinations and contradictions. The current Anima-led consolidation path writes memory through tools, then uses contradiction scanning to catch inconsistent `knowledge/` entries after daily and weekly consolidation. The older standalone knowledge-validation path was removed; NLI is now a shared helper used by contradiction scanning.
 
 ### NLI model
 
 - Model: `MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7`
 - Multilingual zero-shot NLI (includes Japanese)
 - GPU if available, else CPU
-- If NLI unavailable, LLM-only validation (graceful degradation)
+- If NLI unavailable, contradiction scanning skips the local NLI pre-check and relies on LLM review for candidate pairs.
 
-### Cascade flow
+### NLI helper behavior
 
 ```
-Knowledge candidate (premise: source episode, hypothesis: extracted knowledge)
+Knowledge file pair
     │
     ▼
-[NLI]
-    ├── entailment ≥ 0.6  → approve confidence=0.9 (skip LLM)
-    ├── contradiction ≥ 0.7 → reject (skip LLM)
-    └── neutral / below threshold → LLM review
-                                  │
-                                  ▼
-                             [LLM]
-                                  ├── approve → write confidence=0.7
-                                  └── reject → discard
+[SharedNLIModel]
+    ├── entailment above detector threshold → pair is consistent; skip LLM
+    ├── contradiction above detector threshold → send to LLM for resolution strategy
+    └── neutral / below threshold → send to LLM deep dive
 ```
 
-High-confidence NLI skips the LLM for cost/latency; ambiguous neutral cases go to the LLM.
+NLI is only a pre-check. The contradiction detector still asks the LLM to confirm and propose a resolution strategy before modifying memory.
 
 ---
 
@@ -575,8 +593,8 @@ New/updated knowledge file
     │
     ▼
 [NLI] Per pair: entailment / contradiction / neutral
-    ├── entailment ≥ 0.7  → no contradiction (skip LLM)
-    ├── contradiction ≥ 0.7 → contradiction → LLM resolution
+    ├── entailment ≥ 0.70  → no contradiction (skip LLM)
+    ├── contradiction ≥ 0.65 → contradiction → LLM resolution
     └── neutral / below threshold → LLM deep dive
                                   │
                                   ▼
@@ -616,7 +634,7 @@ Per `consolidation_instruction`, the Anima creates/updates `procedures/` via `wr
 
 **ReconsolidationEngine** (alternate path):
 
-`create_procedures_from_resolved()` scans `issue_resolved` and builds procedures with `ProceduralDistiller`. Not invoked on the main daily path; usable from batch jobs.
+`create_procedures_from_resolved()` scans `issue_resolved` and builds procedures with `ProceduralDistiller`. It runs from nightly knowledge self-correction and remains usable from batch jobs.
 
 ### 3-stage matching (compatibility path)
 
@@ -651,7 +669,7 @@ Initial values (auto-distillation): `confidence: 0.4`, `success_count: 0`, `fail
 
 **Neuroscience basis**: Nader et al. (2000) reconsolidation. Recalled traces destabilize and reconsolidate after new integration. Prediction error triggers reconsolidation.
 
-**AnimaWorks implementation**: Anima-led consolidation follows `consolidation_instruction` (“cross-check existing knowledge,” “archive contradictions”) via tools. `ReconsolidationEngine` supports automatic NLI+LLM reconsolidation on alternate paths. Flow:
+**AnimaWorks implementation**: Anima-led consolidation follows `consolidation_instruction` (“cross-check existing knowledge,” “archive contradictions”) via tools. `ReconsolidationEngine` automatically revises procedures and knowledge when `failure_count >= 2` and `confidence < 0.6`. Flow:
 
 ```
 New episode
@@ -888,13 +906,13 @@ Whichever condition fires first writes a `text` JSONL line and `fsync()`s.
 
 1. **Dual stores are required** — Keep episodic (raw) and semantic (distilled) memory
 2. **Dual recall** — Automatic priming and intentional tool recall
-3. **Memory infrastructure is the framework’s job** — Priming, RAG, forgetting, logging, etc. The scheduler kicks `run_consolidation`; the **background model** runs the Anima tool loop (**when** and post-processing = framework; read/write decisions = that session’s LLM)
+3. **Memory infrastructure is the framework’s job** — Priming, RAG, forgetting, logging, etc. The scheduler kicks `run_consolidation`; the configured **consolidation model** runs the Anima tool loop (**when** and post-processing = framework; read/write decisions = that session’s LLM)
 4. **Consolidate daily** — Like nightly NREM: at minimum daily consolidation plus weekly integration
 5. **Context is a first-class retrieval dimension** — Rich metadata at write; match current context at read
 6. **Working memory limits are intentional** — Context caps are a feature; keep the most relevant material
 7. **Active forgetting keeps the system healthy** — Prune low-activity memory to preserve retrieval S/N
 8. **Procedural memory strengthens with use** — Confidence from success/failure feedback; repeated success increases forgetting resistance
-9. **Detect and resolve contradictions** — NLI+LLM cascade; do not ignore conflicts
+9. **Detect and resolve contradictions** — NLI-assisted scanning plus LLM resolution; do not ignore conflicts
 
 ---
 
@@ -945,7 +963,7 @@ Public API: `from core.memory.priming import PrimingEngine, PrimingResult, forma
 | `resolution_tracker.py` | `ResolutionTracker` | `shared/resolutions.jsonl` |
 | `cron_logger.py` | `CronLogger` | `state/cron_logs/` |
 | `skill_metadata.py` | Functions | Skill match normalization / keywords |
-| `validation.py` | `KnowledgeValidator` | NLI+LLM validation |
+| `nli.py` | `SharedNLIModel` | Shared NLI helper for contradiction detection |
 | `contradiction.py` | `ContradictionDetector` | Contradiction utilities |
 | `dedup.py` | — | Message dedup, heartbeat rate limits |
 | `housekeeping.py` | `run_housekeeping()` | Daily cleanup of logs, shortterm, etc. |

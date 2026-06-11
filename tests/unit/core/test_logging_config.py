@@ -11,6 +11,7 @@ import pytest
 import structlog
 
 from core.logging_config import (
+    _anima_log_rollover_name,
     get_request_id,
     set_request_id,
     setup_logging,
@@ -143,3 +144,9 @@ class TestSetupLogging:
             assert data.get("request_id") == "test-req-42"
 
         structlog.contextvars.clear_contextvars()
+
+
+def test_anima_log_rollover_name_removes_double_log_suffix(tmp_path):
+    default_name = str(tmp_path / "20260611.log.20260612.log")
+
+    assert _anima_log_rollover_name(default_name) == str(tmp_path / "20260612.log")

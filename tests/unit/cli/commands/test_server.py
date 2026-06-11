@@ -14,7 +14,6 @@ import pytest
 
 from core.platform.process import subprocess_session_kwargs
 
-
 # ── PID helpers ──────────────────────────────────────────
 
 
@@ -670,6 +669,8 @@ class TestSpawnRestartHelper:
         helper_code = mock_popen.call_args.args[0][2]
         assert "find_first_matching_pid" in helper_code
         assert "terminate_pid" in helper_code
+        assert "Lingering server process still detected" in helper_code
+        assert "include_children=True" in helper_code
         assert "/proc" not in helper_code
         assert "os.killpg" not in helper_code
 

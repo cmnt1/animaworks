@@ -101,6 +101,8 @@ class StreamingIPCHandler:
         attachment_paths = request.params.get("attachment_paths") or None
         thread_id = request.params.get("thread_id", "default")
         source = request.params.get("source", "")
+        meeting_room_id = request.params.get("meeting_room_id", "")
+        meeting_participants = request.params.get("meeting_participants") or None
         full_response = ""
 
         # Track bootstrap state to detect completion
@@ -142,6 +144,8 @@ class StreamingIPCHandler:
                     attachment_paths=attachment_paths,
                     thread_id=thread_id,
                     source=source,
+                    meeting_room_id=meeting_room_id,
+                    meeting_participants=meeting_participants,
                 ):
                     event_type = chunk.get("type", "unknown")
 

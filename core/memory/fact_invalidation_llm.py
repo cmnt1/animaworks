@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from core.memory.fact_config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS, _coerce_timeout_seconds
 from core.memory.facts import FactRecord
 
 logger = logging.getLogger("animaworks.memory.fact_invalidation_llm")
@@ -73,14 +74,25 @@ def _user_prompt(new_fact: FactRecord, candidates: list[Any]) -> str:
 
 
 def _resolve_reconcile_llm_config(anima_dir: Path) -> tuple[str, dict[str, object], int]:
-    timeout = 30
+    timeout = DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
     llm_extra: dict[str, object] = {}
+    try:
+        from core.config import load_config
+
+        cfg = load_config()
+        timeout = _coerce_timeout_seconds(
+            getattr(getattr(cfg, "rag", None), "fact_extraction_timeout_seconds", None),
+            timeout,
+        )
+    except Exception:
+        logger.debug("Failed to load fact reconciliation timeout from config", exc_info=True)
+
     try:
         status_path = anima_dir / "status.json"
         if status_path.is_file():
             data = json.loads(status_path.read_text(encoding="utf-8"))
             if data.get("extraction_timeout"):
-                timeout = int(data["extraction_timeout"])
+                timeout = _coerce_timeout_seconds(data["extraction_timeout"], timeout)
             if data.get("background_model"):
                 return str(data["background_model"]), llm_extra, timeout
             if data.get("extraction_model"):

@@ -185,6 +185,12 @@ def resolve_outbound_limits(
 
     role = data.get("role", "general")
     role_defaults = ROLE_OUTBOUND_DEFAULTS.get(role, fallback)
+    if role not in ROLE_OUTBOUND_DEFAULTS:
+        logger.warning(
+            "Unknown role %r for anima %s; falling back to general outbound limits",
+            role,
+            anima_name,
+        )
 
     result: dict[str, int] = {}
     for field in _FIELDS:
@@ -202,6 +208,17 @@ class RAGConfig(BaseModel):
 
     enabled: bool = True
     embedding_model: str = "intfloat/multilingual-e5-small"
+    embedding_e5_prefix_enabled: bool = Field(
+        default=False,
+        description=(
+            "When enabled, prefix query embeddings with embedding_query_prefix "
+            "and indexed document embeddings with embedding_document_prefix. "
+            "This is intended for E5-family ablations and requires re-indexing "
+            "for document-prefix changes to take effect."
+        ),
+    )
+    embedding_query_prefix: str = "query: "
+    embedding_document_prefix: str = "passage: "
     use_gpu: bool = False
     enable_spreading_activation: bool = True
     max_graph_hops: int = 2
@@ -253,6 +270,14 @@ class RAGConfig(BaseModel):
     confidence_threshold: float = 0.35
     rrf_confidence_threshold: float = 0.02
     facts_extraction_enabled: bool = True
+    fact_extraction_timeout_seconds: int = Field(
+        default=120,
+        ge=1,
+        description=(
+            "Default timeout in seconds for LLM calls used by legacy atomic fact extraction; "
+            "per-Anima status.json extraction_timeout overrides this value."
+        ),
+    )
     facts_reconcile_enabled: bool = Field(
         default=True,
         description="Enable legacy atomic fact reconciliation before append; failures fall back to ADD.",
@@ -353,6 +378,12 @@ class ConsolidationConfig(BaseModel):
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
     llm_credential: str = ""
     max_turns: int = 30  # Tool-call loop limit for consolidation tasks
+    ipc_timeout_base_seconds: int = Field(default=1800, ge=60)
+    ipc_timeout_per_activity_entry_seconds: float = Field(default=4.0, ge=0.0)
+    ipc_timeout_per_episode_seconds: float = Field(default=120.0, ge=0.0)
+    ipc_timeout_per_carryover_item_seconds: float = Field(default=600.0, ge=0.0)
+    ipc_timeout_max_seconds: int = Field(default=7200, ge=60)
+    weekly_ipc_timeout_seconds: int = Field(default=3600, ge=60)
     weekly_enabled: bool = True  # Phase 3 implementation
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
     duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
@@ -366,6 +397,7 @@ class ConsolidationConfig(BaseModel):
     knowledge_self_correction_max_reconsolidation_files: int = Field(default=5, ge=0)
     knowledge_self_correction_timeout_seconds: int = Field(default=300, ge=1)
     knowledge_self_correction_recent_hours: int = Field(default=24, ge=1)
+    weekly_full_contradiction_max_pairs: int = Field(default=50, ge=0)
 
 
 class ImageGenConfig(BaseModel):
@@ -501,6 +533,7 @@ class ServerConfig(BaseModel):
     keepalive_interval: int = 30  # keep-alive emission interval in seconds
     max_streaming_duration: int = 1800  # max streaming duration before hang (seconds)
     busy_hang_threshold: int = 900  # no-progress timeout for busy processes (seconds)
+    anima_startup_ready_timeout: int = Field(default=120, ge=1)
     stream_checkpoint_enabled: bool = True  # save tool results during streaming
     stream_retry_max: int = 3  # max automatic retries on stream disconnect
     stream_retry_delay_s: float = 5.0  # delay between retries (seconds)
@@ -583,8 +616,8 @@ class HousekeepingConfig(BaseModel):
     run_time: str = "05:30"
 
     prompt_log_retention_days: int = 3
-    daemon_log_max_size_mb: int = 200
-    daemon_log_keep_generations: int = 2
+    daemon_log_max_size_mb: int = 50
+    daemon_log_keep_generations: int = 5
     anima_log_retention_days: int = Field(default=30, ge=1)
     anima_log_total_max_size_mb: int = Field(default=200, ge=1)
     frontend_log_backup_count: int = 7
@@ -593,7 +626,7 @@ class HousekeepingConfig(BaseModel):
     shortterm_retention_days: int = 7
     task_results_retention_days: int = 7
     pending_failed_retention_days: int = 14
-    corrupt_vectordb_keep_generations: int = Field(default=3, ge=0)
+    corrupt_vectordb_keep_generations: int = Field(default=2, ge=0)
     tmp_retention_days: int = Field(default=14, ge=1)
     backup_retention_days: int = Field(default=90, ge=1)
     codex_log_max_size_mb: int = Field(default=200, ge=1)
@@ -604,6 +637,8 @@ class HousekeepingConfig(BaseModel):
     background_running_stale_hours: int = Field(default=48, ge=1)
     current_state_stale_hours: int = Field(default=24, ge=1)
     taskboard_suppressed_retention_days: int = Field(default=30, ge=1)
+    suppressed_messages_max_size_mb: int = Field(default=10, ge=1)
+    suppressed_messages_keep_generations: int = Field(default=5, ge=1)
 
 
 class InboxConfig(BaseModel):

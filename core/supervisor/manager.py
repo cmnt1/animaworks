@@ -134,6 +134,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         # Defaults to 1800s (30 min) to accommodate long tool executions
         # while still catching truly stuck streams.
         self._max_streaming_duration_sec: int = 1800
+        self._anima_startup_ready_timeout: float = 120.0
         try:
             from core.config import load_config
 
@@ -143,8 +144,11 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 "max_streaming_duration",
                 1800,
             )
+            self._anima_startup_ready_timeout = float(
+                getattr(srv, "anima_startup_ready_timeout", 120),
+            )
         except (ConfigError, ConfigNotFoundError):
-            logger.debug("Config load failed for max_streaming_duration", exc_info=True)
+            logger.debug("Config load failed for server process timeouts", exc_info=True)
 
         # Callbacks for anima lifecycle events (set by server/app.py)
         self.on_anima_added: Callable[[str], None] | None = None
@@ -328,6 +332,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 shared_dir=self.shared_dir,
                 log_dir=self.log_dir,
                 child_env_urls=self.child_env_urls,
+                startup_ready_timeout=self._anima_startup_ready_timeout,
             )
 
             try:

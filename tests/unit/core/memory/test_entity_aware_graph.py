@@ -21,7 +21,7 @@ class MockIndexer:
         self.anima_name = "test_anima"
         self.anima_dir = anima_dir
 
-    def _generate_embeddings(self, texts):
+    def _generate_embeddings(self, texts, **_kwargs):
         return [[0.1] * 8 for _ in texts]
 
 

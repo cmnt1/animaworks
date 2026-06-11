@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.memory import fact_extraction
+from core.memory.fact_config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
 from core.memory.fact_extraction import (
     DEFAULT_FACT_CONFIDENCE,
     _resolve_extraction_config,
@@ -302,7 +303,7 @@ def test_resolve_extraction_config_uses_background_model_and_handles_invalid_sta
     assert fallback_model
     assert fallback_extra == {}
     assert fallback_locale
-    assert fallback_timeout == 30
+    assert fallback_timeout == DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
     assert isinstance(fallback_credential, str)
 
 
@@ -313,6 +314,7 @@ def test_resolve_extraction_config_defaults_to_consolidation_llm(
 ) -> None:
     cfg = SimpleNamespace(
         locale="ja",
+        rag=SimpleNamespace(fact_extraction_timeout_seconds=75),
         consolidation=SimpleNamespace(llm_model="openai/deepseek-v4-flash", llm_credential="vllm-lb"),
         anima_defaults=SimpleNamespace(
             background_model=None,
@@ -328,7 +330,7 @@ def test_resolve_extraction_config_defaults_to_consolidation_llm(
     assert model == "openai/deepseek-v4-flash"
     assert llm_extra == {}
     assert locale == "ja"
-    assert timeout == 30
+    assert timeout == 75
     assert credential == "vllm-lb"
 
 

@@ -12,6 +12,7 @@ import concurrent.futures
 import functools
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -20,6 +21,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger("animaworks.rag.vector_worker")
+
+_CIRCUIT_FAILURE_THRESHOLD = int(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_FAILURE_THRESHOLD", "3"))
+_CIRCUIT_BACKOFF_BASE_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_BACKOFF_BASE_SECONDS", "1"))
+_CIRCUIT_BACKOFF_MAX_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_BACKOFF_MAX_SECONDS", "300"))
+_write_circuit_breakers: dict[str, dict[str, Any]] = {}
 
 _native_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=1,
@@ -100,6 +106,116 @@ def _vector_write_failed(operation: str, collection: str) -> JSONResponse:
     )
 
 
+def _breaker_key(anima_name: str | None, collection: str) -> str:
+    owner = anima_name or "shared"
+    return f"{owner}:{collection}"
+
+
+def _before_vector_write(anima_name: str | None, collection: str) -> JSONResponse | None:
+    key = _breaker_key(anima_name, collection)
+    state = _write_circuit_breakers.get(key)
+    if not state:
+        return None
+    retry_at = float(state.get("next_retry_at") or 0.0)
+    now = time.monotonic()
+    if retry_at <= now:
+        return None
+    retry_after = max(1, int(retry_at - now))
+    logger.error(
+        "Vector write circuit breaker open: owner=%s collection=%s failures=%s retry_after=%ss",
+        anima_name or "shared",
+        collection,
+        state.get("consecutive_failures", 0),
+        retry_after,
+    )
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": "Vector write circuit breaker open",
+            "collection": collection,
+            "owner": anima_name or "shared",
+            "consecutive_failures": state.get("consecutive_failures", 0),
+            "retry_after_seconds": retry_after,
+        },
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+def _record_vector_write_success(anima_name: str | None, collection: str) -> None:
+    _write_circuit_breakers.pop(_breaker_key(anima_name, collection), None)
+
+
+def _record_vector_write_failure(anima_name: str | None, collection: str, operation: str) -> dict[str, Any]:
+    key = _breaker_key(anima_name, collection)
+    now = time.monotonic()
+    state = dict(_write_circuit_breakers.get(key) or {})
+    failures = int(state.get("consecutive_failures") or 0) + 1
+    delay = (
+        min(_CIRCUIT_BACKOFF_BASE_SECONDS * (2 ** max(0, failures - 1)), _CIRCUIT_BACKOFF_MAX_SECONDS)
+        if failures >= _CIRCUIT_FAILURE_THRESHOLD
+        else 0.0
+    )
+    state.update(
+        {
+            "owner": anima_name or "shared",
+            "collection": collection,
+            "operation": operation,
+            "consecutive_failures": failures,
+            "next_retry_at": now + delay if delay > 0 else 0.0,
+            "last_failure_monotonic": now,
+            "threshold": _CIRCUIT_FAILURE_THRESHOLD,
+        }
+    )
+    _write_circuit_breakers[key] = state
+    log = logger.error if failures >= _CIRCUIT_FAILURE_THRESHOLD else logger.warning
+    log(
+        "Vector write failure recorded: owner=%s collection=%s operation=%s failures=%d next_retry=%.1fs",
+        anima_name or "shared",
+        collection,
+        operation,
+        failures,
+        delay,
+    )
+    return state
+
+
+def _breaker_status() -> list[dict[str, Any]]:
+    now = time.monotonic()
+    statuses: list[dict[str, Any]] = []
+    for state in _write_circuit_breakers.values():
+        retry_at = float(state.get("next_retry_at") or 0.0)
+        item = {
+            "owner": state.get("owner", "shared"),
+            "collection": state.get("collection", ""),
+            "operation": state.get("operation", ""),
+            "consecutive_failures": int(state.get("consecutive_failures") or 0),
+            "threshold": int(state.get("threshold") or _CIRCUIT_FAILURE_THRESHOLD),
+            "open": retry_at > now,
+            "retry_after_seconds": max(0, int(retry_at - now)),
+        }
+        statuses.append(item)
+    return statuses
+
+
+def _write_success_response(anima_name: str | None, collection: str) -> dict[str, str]:
+    _record_vector_write_success(anima_name, collection)
+    return {"status": "ok"}
+
+
+def _write_failure_response(anima_name: str | None, collection: str, operation: str) -> JSONResponse:
+    state = _record_vector_write_failure(anima_name, collection, operation)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"Vector {operation} failed",
+            "collection": collection,
+            "owner": anima_name or "shared",
+            "consecutive_failures": state["consecutive_failures"],
+            "circuit_breaker_threshold": state["threshold"],
+        },
+    )
+
+
 def _search_results_payload(results) -> dict[str, Any]:
     return {
         "results": [
@@ -123,6 +239,7 @@ async def _close_native_vector_stores() -> None:
 
 def create_app() -> FastAPI:
     os.environ.pop("ANIMAWORKS_VECTOR_URL", None)
+    _write_circuit_breakers.clear()
     from core.memory.rag.direct_access import enable_direct_chroma_for_process
 
     enable_direct_chroma_for_process()
@@ -139,6 +256,10 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/status")
+    async def status() -> dict[str, Any]:
+        return {"status": "ok", "write_circuit_breakers": _breaker_status()}
 
     @app.post("/query")
     async def vector_query(body: VectorQueryRequest):
@@ -161,6 +282,9 @@ def create_app() -> FastAPI:
         from core.memory.rag.singleton import get_vector_store
         from core.memory.rag.store import Document
 
+        breaker = _before_vector_write(body.anima_name, body.collection)
+        if breaker is not None:
+            return breaker
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
@@ -175,13 +299,16 @@ def create_app() -> FastAPI:
         ]
         ok = await _run_native(store.upsert, body.collection, docs)
         if not ok:
-            return _vector_write_failed("upsert", body.collection)
-        return {"status": "ok"}
+            return _write_failure_response(body.anima_name, body.collection, "upsert")
+        return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/update-metadata")
     async def vector_update_metadata(body: VectorUpdateMetadataRequest):
         from core.memory.rag.singleton import get_vector_store
 
+        breaker = _before_vector_write(body.anima_name, body.collection)
+        if breaker is not None:
+            return breaker
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
@@ -192,20 +319,23 @@ def create_app() -> FastAPI:
             body.metadatas,
         )
         if not ok:
-            return _vector_write_failed("update-metadata", body.collection)
-        return {"status": "ok"}
+            return _write_failure_response(body.anima_name, body.collection, "update-metadata")
+        return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/delete-documents")
     async def vector_delete_documents(body: VectorDeleteDocumentsRequest):
         from core.memory.rag.singleton import get_vector_store
 
+        breaker = _before_vector_write(body.anima_name, body.collection)
+        if breaker is not None:
+            return breaker
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         ok = await _run_native(store.delete_documents, body.collection, body.ids)
         if not ok:
-            return _vector_write_failed("delete-documents", body.collection)
-        return {"status": "ok"}
+            return _write_failure_response(body.anima_name, body.collection, "delete-documents")
+        return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/get-by-metadata")
     async def vector_get_by_metadata(body: VectorGetByMetadataRequest):
@@ -236,25 +366,31 @@ def create_app() -> FastAPI:
     async def vector_create_collection(body: VectorCollectionRequest):
         from core.memory.rag.singleton import get_vector_store
 
+        breaker = _before_vector_write(body.anima_name, body.collection)
+        if breaker is not None:
+            return breaker
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         ok = await _run_native(store.create_collection, body.collection)
         if not ok:
-            return _vector_write_failed("create-collection", body.collection)
-        return {"status": "ok"}
+            return _write_failure_response(body.anima_name, body.collection, "create-collection")
+        return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/delete-collection")
     async def vector_delete_collection(body: VectorCollectionRequest):
         from core.memory.rag.singleton import get_vector_store
 
+        breaker = _before_vector_write(body.anima_name, body.collection)
+        if breaker is not None:
+            return breaker
         store = get_vector_store(body.anima_name)
         if store is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         ok = await _run_native(store.delete_collection, body.collection)
         if not ok:
-            return _vector_write_failed("delete-collection", body.collection)
-        return {"status": "ok"}
+            return _write_failure_response(body.anima_name, body.collection, "delete-collection")
+        return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/list-collections")
     async def vector_list_collections(body: VectorListCollectionsRequest):

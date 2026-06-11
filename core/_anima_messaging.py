@@ -75,6 +75,57 @@ def _chat_cycle_isolated(
     )
 
 
+def _build_meeting_context(
+    *,
+    thread_id: str,
+    room_id: str,
+    participants: list[str] | None,
+) -> dict[str, Any]:
+    if not room_id and thread_id.startswith("meeting-"):
+        room_id = thread_id.removeprefix("meeting-")
+    return {
+        "room_id": room_id,
+        "participants": [str(p) for p in (participants or []) if str(p)],
+        "redirects": [],
+    }
+
+
+def _collect_meeting_redirects() -> list[dict[str, str]]:
+    from core.tooling.handler_base import meeting_context
+
+    ctx = meeting_context.get()
+    if not isinstance(ctx, dict):
+        return []
+    room_id = str(ctx.get("room_id") or "")
+    raw_redirects = ctx.get("redirects", [])
+    if not isinstance(raw_redirects, list):
+        return []
+    redirects: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in raw_redirects:
+        if not isinstance(item, dict):
+            continue
+        to_name = str(item.get("to") or "")
+        content = str(item.get("content") or "")
+        if not to_name or not content:
+            continue
+        key = (to_name.lower(), content.strip(), str(item.get("from") or "").lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        redirects.append(
+            {
+                "room_id": str(item.get("room_id") or room_id),
+                "from": str(item.get("from") or ""),
+                "to": to_name,
+                "content": content,
+                "intent": str(item.get("intent") or ""),
+                "ts": str(item.get("ts") or ""),
+            }
+        )
+    return redirects
+
+
 class MessagingMixin:
     """Mixin: human chat processing, bootstrap, and greeting."""
 
@@ -294,6 +345,8 @@ class MessagingMixin:
         thread_id: str = "default",
         include_cycle_result: bool = False,
         source: str = "",
+        meeting_room_id: str = "",
+        meeting_participants: list[str] | None = None,
     ) -> str | dict[str, Any]:
         self._validate_thread_id(thread_id)
         # Auto-interrupt: if a session is already running on this thread,
@@ -336,10 +389,18 @@ class MessagingMixin:
                 bootstrap_before = self.needs_bootstrap
                 _session_token = self.agent._tool_handler.set_active_session_type("chat")
                 _meeting_token = None
+                _meeting_context_token = None
                 if source == "meeting":
-                    from core.tooling.handler_base import meeting_mode
+                    from core.tooling.handler_base import meeting_context, meeting_mode
 
                     _meeting_token = meeting_mode.set(True)
+                    _meeting_context_token = meeting_context.set(
+                        _build_meeting_context(
+                            thread_id=thread_id,
+                            room_id=meeting_room_id,
+                            participants=meeting_participants,
+                        )
+                    )
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
@@ -414,9 +475,12 @@ class MessagingMixin:
                             prior_messages=prior_messages,
                             thread_id=thread_id,
                             model_config_override=base_model_config,
-                        )
+                    )
                     self._last_activity = now_local()
                     result.summary = normalize_user_facing_response_text(result.summary)
+                    meeting_redirects = _collect_meeting_redirects()
+                    if meeting_redirects:
+                        result.meeting_redirects = meeting_redirects
 
                     # Resolve local absolute/file:// image paths → attachments/
                     result.summary, local_artifacts = resolve_local_image_paths(
@@ -528,6 +592,10 @@ class MessagingMixin:
                     conv_memory.save()
                     raise
                 finally:
+                    if _meeting_context_token is not None:
+                        from core.tooling.handler_base import meeting_context
+
+                        meeting_context.reset(_meeting_context_token)
                     if _meeting_token is not None:
                         from core.tooling.handler_base import meeting_mode
 
@@ -565,6 +633,8 @@ class MessagingMixin:
         intent: str = "",
         thread_id: str = "default",
         source: str = "",
+        meeting_room_id: str = "",
+        meeting_participants: list[str] | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Streaming version of process_message.
 
@@ -628,10 +698,18 @@ class MessagingMixin:
                 bootstrap_before = self.needs_bootstrap
                 _session_token = self.agent._tool_handler.set_active_session_type("chat")
                 _meeting_token = None
+                _meeting_context_token = None
                 if source == "meeting":
-                    from core.tooling.handler_base import meeting_mode
+                    from core.tooling.handler_base import meeting_context, meeting_mode
 
                     _meeting_token = meeting_mode.set(True)
+                    _meeting_context_token = meeting_context.set(
+                        _build_meeting_context(
+                            thread_id=thread_id,
+                            room_id=meeting_room_id,
+                            participants=meeting_participants,
+                        )
+                    )
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
@@ -777,6 +855,11 @@ class MessagingMixin:
                                 self.anima_dir,
                             )
                             cycle_result["summary"] = summary
+                            meeting_redirects = _collect_meeting_redirects()
+                            if meeting_redirects:
+                                cycle_result["meeting_redirects"] = meeting_redirects
+                                for redirect in meeting_redirects:
+                                    yield {"type": "meeting_redirect", **redirect}
 
                             response_artifacts = extract_image_artifacts_from_tool_records(
                                 cycle_result.get("tool_call_records", [])
@@ -919,6 +1002,10 @@ class MessagingMixin:
                         conv_memory.save()
                     # Close journal (no-op if already finalized)
                     journal.close()
+                    if _meeting_context_token is not None:
+                        from core.tooling.handler_base import meeting_context
+
+                        meeting_context.reset(_meeting_context_token)
                     if _meeting_token is not None:
                         from core.tooling.handler_base import meeting_mode
 

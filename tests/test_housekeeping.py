@@ -28,8 +28,8 @@ class TestHousekeepingConfig:
         assert cfg.enabled is True
         assert cfg.run_time == "05:30"
         assert cfg.prompt_log_retention_days == 3
-        assert cfg.daemon_log_max_size_mb == 200
-        assert cfg.daemon_log_keep_generations == 2
+        assert cfg.daemon_log_max_size_mb == 50
+        assert cfg.daemon_log_keep_generations == 5
         assert cfg.anima_log_retention_days == 30
         assert cfg.anima_log_total_max_size_mb == 200
         assert cfg.frontend_log_backup_count == 7
@@ -38,13 +38,15 @@ class TestHousekeepingConfig:
         assert cfg.shortterm_retention_days == 7
         assert cfg.task_results_retention_days == 7
         assert cfg.pending_failed_retention_days == 14
-        assert cfg.corrupt_vectordb_keep_generations == 3
+        assert cfg.corrupt_vectordb_keep_generations == 2
         assert cfg.tmp_retention_days == 14
         assert cfg.backup_retention_days == 90
         assert cfg.codex_log_max_size_mb == 200
         assert cfg.codex_tmp_retention_hours == 12
         assert cfg.anima_tmp_gitdirs_retention_days == 14
         assert cfg.anima_local_log_retention_days == 30
+        assert cfg.suppressed_messages_max_size_mb == 10
+        assert cfg.suppressed_messages_keep_generations == 5
 
     def test_custom_values(self):
         from core.config.models import HousekeepingConfig
@@ -68,6 +70,8 @@ class TestHousekeepingConfig:
             codex_tmp_retention_hours=24,
             anima_tmp_gitdirs_retention_days=21,
             anima_local_log_retention_days=45,
+            suppressed_messages_max_size_mb=20,
+            suppressed_messages_keep_generations=2,
         )
         assert cfg.enabled is False
         assert cfg.run_time == "03:00"
@@ -82,6 +86,8 @@ class TestHousekeepingConfig:
         assert cfg.codex_tmp_retention_hours == 24
         assert cfg.anima_tmp_gitdirs_retention_days == 21
         assert cfg.anima_local_log_retention_days == 45
+        assert cfg.suppressed_messages_max_size_mb == 20
+        assert cfg.suppressed_messages_keep_generations == 2
 
     def test_config_has_housekeeping_field(self):
         from core.config.models import AnimaWorksConfig
@@ -101,6 +107,42 @@ class TestHousekeepingConfig:
 
         restored = AnimaWorksConfig(**data)
         assert restored.housekeeping.prompt_log_retention_days == 3
+
+    @pytest.mark.asyncio
+    async def test_run_housekeeping_rotates_vector_worker_log(self, tmp_path: Path):
+        from core.memory.housekeeping import run_housekeeping
+
+        logs = tmp_path / "logs"
+        logs.mkdir()
+        (logs / "vector-worker.log").write_bytes(b"x" * 2048)
+
+        results = await run_housekeeping(
+            tmp_path,
+            daemon_log_max_size_mb=0,
+            daemon_log_keep_generations=5,
+        )
+
+        assert results["vector_worker_log"]["rotated"] is True
+        assert (logs / "vector-worker.log.1").exists()
+
+    @pytest.mark.asyncio
+    async def test_run_housekeeping_rotates_suppressed_messages_log(self, tmp_path: Path):
+        from core.memory.housekeeping import run_housekeeping
+
+        state_dir = tmp_path / "animas" / "alice" / "state"
+        state_dir.mkdir(parents=True)
+        suppressed = state_dir / "suppressed_messages.jsonl"
+        suppressed.write_bytes(b"x" * 2048)
+
+        results = await run_housekeeping(
+            tmp_path,
+            suppressed_messages_max_size_mb=0,
+            suppressed_messages_keep_generations=2,
+        )
+
+        assert results["suppressed_messages"]["files"] == 1
+        assert results["suppressed_messages"]["rotated"] == 1
+        assert (state_dir / "suppressed_messages.jsonl.1").exists()
 
 
 class TestInboxConfig:
@@ -697,7 +739,7 @@ class TestCleanupPendingFailed:
 class TestRuntimeBloatRetention:
     """Tests for recurring runtime bloat retention helpers."""
 
-    def test_keeps_latest_three_corrupt_vectordb_archives(self, tmp_path: Path):
+    def test_keeps_latest_two_corrupt_vectordb_archives(self, tmp_path: Path):
         from core.memory.housekeeping import _cleanup_corrupt_vectordb_archives
 
         archive = tmp_path / "sakura" / "archive"
@@ -714,12 +756,12 @@ class TestRuntimeBloatRetention:
             path.mkdir()
             (path / "data.bin").write_text(name)
 
-        result = _cleanup_corrupt_vectordb_archives(tmp_path, keep_generations=3)
+        result = _cleanup_corrupt_vectordb_archives(tmp_path, keep_generations=2)
 
-        assert result["deleted_dirs"] == 2
+        assert result["deleted_dirs"] == 3
         assert not (archive / "vectordb-corrupt-20260101-010101").exists()
         assert not (archive / "vectordb-corrupt-20260201-010101").exists()
-        assert (archive / "vectordb-corrupt-20260301-010101").exists()
+        assert not (archive / "vectordb-corrupt-20260301-010101").exists()
         assert (archive / "vectordb-corrupt-20260401-010101").exists()
         assert (archive / "corrupt-vectordb-20260501010101").exists()
 

@@ -9,8 +9,10 @@ from __future__ import annotations
 import logging
 import os
 import re
+import warnings
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 from core.i18n import t
 from core.memory._io import atomic_write_text
@@ -32,13 +34,25 @@ from core.memory.skill_metadata import (  # noqa: F401
     _match_tier2,
     _match_tier3_vector,
     _normalize_text,
-    match_skills_by_description,
+)
+from core.memory.skill_metadata import (
+    match_skills_by_description as _match_skills_by_description,
 )
 from core.paths import get_common_knowledge_dir, get_common_skills_dir, get_company_dir, get_shared_dir
 from core.schemas import ModelConfig, SkillMeta
 from core.time_utils import today_local
 
 logger = logging.getLogger("animaworks.memory")
+
+
+def match_skills_by_description(*args: Any, **kwargs: Any):
+    """Deprecated compatibility re-export for the old skill matcher."""
+    warnings.warn(
+        "core.memory.manager.match_skills_by_description is deprecated; use SkillRouter instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _match_skills_by_description(*args, **kwargs)
 
 
 class MemoryManager:

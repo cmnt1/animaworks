@@ -157,6 +157,7 @@ async def _meeting_stream(
         _timeout = 60.0
 
     queue: list[str] = list(targets)
+    processed_targets: set[str] = set()
     prev_speaker = from_person
 
     while queue:
@@ -178,6 +179,8 @@ async def _meeting_stream(
             "stream": True,
             "source": "meeting",
             "thread_id": f"meeting-{room_id}",
+            "meeting_room_id": room_id,
+            "meeting_participants": room.participants,
         }
 
         # Yield speaker_start
@@ -212,6 +215,33 @@ async def _meeting_stream(
                             # Don't yield "done" from cycle_done — we yield our own at the end
                             if evt_name == "done":
                                 full_response = evt_payload.get("summary", full_response) or full_response
+                                continue
+                            if evt_name == "meeting_redirect":
+                                redirect_from = str(evt_payload.get("from") or target_name)
+                                redirect_to = str(evt_payload.get("to") or "")
+                                redirect_content = str(evt_payload.get("content") or "")
+                                if redirect_to in room.participants and redirect_content:
+                                    redirect_role = "chair" if redirect_from == room.chair else "participant"
+                                    room_manager.append_message(
+                                        room_id,
+                                        redirect_from,
+                                        redirect_role,
+                                        f"@{redirect_to} {redirect_content}",
+                                        meta={
+                                            "type": "meeting_redirect",
+                                            "to": redirect_to,
+                                        },
+                                    )
+                                    if (
+                                        redirect_to != target_name
+                                        and redirect_to in room.participants
+                                        and redirect_to not in processed_targets
+                                        and redirect_to not in queue
+                                    ):
+                                        queue.append(redirect_to)
+                                evt_payload = dict(evt_payload)
+                                evt_payload["speaker"] = redirect_from
+                                yield _format_sse(evt_name, evt_payload)
                                 continue
                             evt_payload = dict(evt_payload)
                             evt_payload["speaker"] = target_name
@@ -253,13 +283,14 @@ async def _meeting_stream(
         # Yield speaker_end
         yield _format_sse("speaker_end", {"speaker": target_name})
 
+        processed_targets.add(target_name)
         prev_speaker = target_name
 
         # After chair responds: extract @mentions and add as next targets
         if is_chair and clean_text:
             new_mentions = room_manager.extract_mentions(clean_text, room.participants)
             for m in new_mentions:
-                if m != target_name and m in room.participants and m not in queue:
+                if m != target_name and m in room.participants and m not in processed_targets and m not in queue:
                     queue.append(m)
 
     yield _format_sse("done", {"summary": "Meeting round complete"})

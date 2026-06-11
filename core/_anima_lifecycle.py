@@ -135,6 +135,11 @@ def _consolidation_model_config(base_model_config: Any, consolidation_model: str
     return base_model_config.model_copy(update=updates)
 
 
+def _phase_b_reached_max_iterations(summary: str) -> bool:
+    lowered = summary.lower()
+    return "max iterations reached" in lowered or "max turns" in lowered or "max_turns" in lowered
+
+
 class LifecycleMixin:
     """Mixin: heartbeat orchestration, memory consolidation, cron task execution."""
 
@@ -615,17 +620,25 @@ class LifecycleMixin:
                 )
                 raise
 
-        engine.clear_phase_b_carryover()
-
         autolearn = self._run_autonomous_skill_learning()
         summary = result.summary or ""
+        truncated = _phase_b_reached_max_iterations(summary)
+        if truncated:
+            summary = (
+                summary
+                + "\n\n[TRUNCATED] Daily consolidation reached max_turns="
+                + str(max_turns)
+                + "; partial outputs were kept and Phase B carryover will resume on the next trigger."
+            )
+        else:
+            engine.clear_phase_b_carryover()
         if autolearn is not None and autolearn.report_lines:
             summary = (summary + "\n\n" if summary else "") + "\n".join(autolearn.report_lines)
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
             trigger="consolidation:daily",
-            action="completed",
+            action="truncated" if truncated else "completed",
             summary=summary,
             duration_ms=elapsed_ms,
         )

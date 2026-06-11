@@ -554,7 +554,7 @@ class ForgettingEngine:
         processed_ids: set[str] = set()
 
         try:
-            embeddings = generate_embeddings([chunk["content"] for chunk in chunks])
+            embeddings = generate_embeddings([chunk["content"] for chunk in chunks], purpose="query")
             embeddings_by_id = {chunk["id"]: embedding for chunk, embedding in zip(chunks, embeddings, strict=False)}
 
             for _, chunk_a in enumerate(chunks):

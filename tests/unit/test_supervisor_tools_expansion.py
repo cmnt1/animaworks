@@ -429,6 +429,41 @@ class TestDelegateTask:
         sub_queue = tmp_path / "animas" / "hinata" / "state" / "task_queue.jsonl"
         assert sub_queue.exists()
 
+    def test_disable_subordinate_surfaces_open_delegation(self, tmp_path):
+        messenger = MagicMock()
+        msg_mock = MagicMock()
+        msg_mock.id = "msg1"
+        msg_mock.thread_id = "t1"
+        msg_mock.type = "message"
+        messenger.send.return_value = msg_mock
+
+        handler = _make_handler(tmp_path, "sakura", messenger=messenger)
+        _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
+        mock_cfg = _mock_config(tmp_path, {
+            "sakura": {},
+            "hinata": {"supervisor": "sakura"},
+        })
+
+        with (
+            patch("core.config.models.load_config", return_value=mock_cfg),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        ):
+            handler.handle("delegate_task", {
+                "name": "hinata",
+                "instruction": "Prepare the monthly report",
+                "summary": "Monthly report",
+                "deadline": "2h",
+            })
+            result = handler.handle("disable_subordinate", {"name": "hinata", "reason": "maintenance"})
+
+        assert "再割当" in result or "reassignment" in result
+        own_queue = tmp_path / "animas" / "sakura" / "state" / "task_queue.jsonl"
+        records = [json.loads(line) for line in own_queue.read_text(encoding="utf-8").splitlines()]
+        assert any(
+            record.get("meta", {}).get("kind") == "disabled_delegation_reassignment"
+            for record in records
+        )
+
 
 # ── task_tracker tests ─────────────────────────────────────
 

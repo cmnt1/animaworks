@@ -208,7 +208,10 @@ def sync_entity_collection(
         if embedding_fn is None:
             from core.memory.rag.singleton import generate_embeddings
 
-            embedding_fn = generate_embeddings
+            def _default_embedding_fn(texts):
+                return generate_embeddings(texts, purpose="document")
+
+            embedding_fn = _default_embedding_fn
         from core.memory.rag.store import Document
 
         docs: list[Any] = []
@@ -284,7 +287,10 @@ def _match_query_entities_from_collection(
         if embedding_fn is None:
             from core.memory.rag.singleton import generate_embeddings
 
-            embedding_fn = generate_embeddings
+            def _default_embedding_fn(texts):
+                return generate_embeddings(texts, purpose="query")
+
+            embedding_fn = _default_embedding_fn
         embeddings = embedding_fn([query])
         if not embeddings:
             return set()

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -151,6 +152,7 @@ class _TimeoutHandle:
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.timeouts: list[float] = []
 
     async def send_request(
         self,
@@ -159,6 +161,7 @@ class _TimeoutHandle:
         timeout: float = 60.0,
     ) -> IPCResponse:
         self.calls.append(method)
+        self.timeouts.append(timeout)
         if method == "run_consolidation":
             raise TimeoutError("consolidation timed out")
         return IPCResponse(id="fake", result={})
@@ -189,6 +192,41 @@ class _RecentEpisodesEngine:
     async def ingest_recent_to_backend(self, hours: int) -> dict[str, int]:
         self.ingest_calls.append((self.anima_name, hours))
         return {"episodes": 0, "knowledge": 0, "errors": 0}
+
+
+def test_consolidation_ipc_timeout_scales_with_daily_workload(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    cfg = SimpleNamespace(
+        ipc_timeout_base_seconds=1800,
+        ipc_timeout_per_activity_entry_seconds=4.0,
+        ipc_timeout_per_episode_seconds=120.0,
+        ipc_timeout_per_carryover_item_seconds=600.0,
+        ipc_timeout_max_seconds=7200,
+    )
+    gate = SimpleNamespace(activity_count=300, episode_count=2, carryover_count=1)
+
+    timeout = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
+
+    assert timeout == 3840.0
+
+
+def test_consolidation_ipc_timeout_respects_max_and_weekly_override(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    cfg = SimpleNamespace(
+        ipc_timeout_base_seconds=1800,
+        ipc_timeout_per_activity_entry_seconds=10.0,
+        ipc_timeout_per_episode_seconds=100.0,
+        ipc_timeout_per_carryover_item_seconds=1000.0,
+        ipc_timeout_max_seconds=2000,
+        weekly_ipc_timeout_seconds=4800,
+    )
+    gate = SimpleNamespace(activity_count=300, episode_count=2, carryover_count=1)
+
+    daily = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
+    weekly = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="weekly")
+
+    assert daily == 2000.0
+    assert weekly == 4800.0
 
 
 @pytest.mark.asyncio

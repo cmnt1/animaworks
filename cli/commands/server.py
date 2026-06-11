@@ -273,6 +273,12 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
     cmd = [sys.executable, "-m", "cli", "start", "--foreground", "--host", args.host, "--port", str(args.port)]
 
     log_path = _get_daemon_log_path()
+    try:
+        from core.memory.housekeeping import _rotate_daemon_log
+
+        _rotate_daemon_log(log_path, max_size_mb=50, keep_generations=5)
+    except Exception:
+        logger.debug("Failed to rotate daemon log before spawn: %s", log_path, exc_info=True)
     log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
 
     proc = subprocess.Popen(
@@ -682,6 +688,21 @@ while time.monotonic() < scan_deadline:
     if _find_server_process() is None:
         break
     time.sleep(0.5)
+
+lingering_pid = _find_server_process()
+if lingering_pid is not None:
+    _log(f"Lingering server process still detected (pid={{lingering_pid}}); force-stopping before restart")
+    try:
+        terminate_pid(lingering_pid, force=True, include_children=True)
+    except (OSError, ProcessLookupError):
+        pass
+    kill_deadline = time.monotonic() + 5
+    while time.monotonic() < kill_deadline and _alive(lingering_pid):
+        time.sleep(0.2)
+    if _alive(lingering_pid):
+        _write_status(False, f"Lingering server process still alive after force-stop: pid={{lingering_pid}}")
+        _log("FAILED: lingering server process survived force-stop")
+        sys.exit(1)
 
 time.sleep(0.5)
 

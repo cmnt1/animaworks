@@ -267,6 +267,54 @@ class SchedulerMixin:
         """Return the runtime data directory (``~/.animaworks`` or override)."""
         return self.animas_dir.parent
 
+    @staticmethod
+    def _resolve_consolidation_ipc_timeout(
+        consolidation_cfg: object | None,
+        *,
+        consolidation_type: str,
+        gate: object | None = None,
+    ) -> float:
+        """Size consolidation IPC timeout from observed workload.
+
+        The old fixed 1800s cap caused scheduler-side interrupts at the
+        30-minute mark.  Daily consolidation now scales with the gate counts
+        that triggered the run; weekly uses its own explicit cap.
+        """
+        from core.config.models import ConsolidationConfig
+
+        defaults = ConsolidationConfig()
+        if consolidation_type == "weekly":
+            return float(getattr(consolidation_cfg, "weekly_ipc_timeout_seconds", defaults.weekly_ipc_timeout_seconds))
+
+        base = float(getattr(consolidation_cfg, "ipc_timeout_base_seconds", defaults.ipc_timeout_base_seconds))
+        per_activity = float(
+            getattr(
+                consolidation_cfg,
+                "ipc_timeout_per_activity_entry_seconds",
+                defaults.ipc_timeout_per_activity_entry_seconds,
+            )
+        )
+        per_episode = float(
+            getattr(consolidation_cfg, "ipc_timeout_per_episode_seconds", defaults.ipc_timeout_per_episode_seconds)
+        )
+        per_carryover = float(
+            getattr(
+                consolidation_cfg,
+                "ipc_timeout_per_carryover_item_seconds",
+                defaults.ipc_timeout_per_carryover_item_seconds,
+            )
+        )
+        max_seconds = float(getattr(consolidation_cfg, "ipc_timeout_max_seconds", defaults.ipc_timeout_max_seconds))
+        if gate is None:
+            return min(max_seconds, base)
+        estimate = (
+            base
+            + float(getattr(gate, "activity_count", 0)) * per_activity
+            + float(getattr(gate, "episode_count", 0)) * per_episode
+            + float(getattr(gate, "carryover_count", 0)) * per_carryover
+        )
+        return min(max_seconds, max(base, estimate))
+
     async def _run_daily_consolidation(self) -> None:
         """Run daily consolidation for all animas via IPC.
 
@@ -325,6 +373,11 @@ class SchedulerMixin:
                     gate.threshold,
                 )
                 continue
+            timeout_s = self._resolve_consolidation_ipc_timeout(
+                consolidation_cfg,
+                consolidation_type="daily",
+                gate=gate,
+            )
 
             result: dict = {}
             try:
@@ -335,13 +388,14 @@ class SchedulerMixin:
                     response = await handle.send_request(
                         "run_consolidation",
                         {"consolidation_type": "daily", "max_turns": max_turns},
-                        timeout=1800.0,
+                        timeout=timeout_s,
                     )
                 except TimeoutError:
                     _timed_out = True
                     logger.warning(
-                        "consolidation_timeout anima=%s phase=phase_b type=daily timeout_s=1800",
+                        "consolidation_timeout anima=%s phase=phase_b type=daily timeout_s=%.0f",
                         anima_name,
+                        timeout_s,
                     )
                     try:
                         await handle.send_request("interrupt", {}, timeout=10.0)
@@ -426,6 +480,10 @@ class SchedulerMixin:
                     anima_name,
                 )
                 continue
+            timeout_s = self._resolve_consolidation_ipc_timeout(
+                consolidation_cfg,
+                consolidation_type="weekly",
+            )
 
             result: dict = {}
             try:
@@ -436,13 +494,14 @@ class SchedulerMixin:
                     response = await handle.send_request(
                         "run_consolidation",
                         {"consolidation_type": "weekly", "max_turns": max_turns},
-                        timeout=1800.0,
+                        timeout=timeout_s,
                     )
                 except TimeoutError:
                     _timed_out_w = True
                     logger.warning(
-                        "consolidation_timeout anima=%s phase=phase_b type=weekly timeout_s=1800",
+                        "consolidation_timeout anima=%s phase=phase_b type=weekly timeout_s=%.0f",
                         anima_name,
+                        timeout_s,
                     )
                     try:
                         await handle.send_request("interrupt", {}, timeout=10.0)

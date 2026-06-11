@@ -3,6 +3,7 @@ from __future__ import annotations
 """Tests for resolve_outbound_limits and ROLE_OUTBOUND_DEFAULTS."""
 
 import json
+import logging
 from pathlib import Path
 
 from core.config.models import ROLE_OUTBOUND_DEFAULTS, resolve_outbound_limits
@@ -101,12 +102,16 @@ class TestResolveOutboundLimits:
         assert result["max_outbound_per_day"] == 999  # overridden
         assert result["max_recipients_per_run"] == 5  # engineer default
 
-    def test_unknown_role_falls_back_to_general(self, tmp_path: Path):
+    def test_unknown_role_falls_back_to_general(self, tmp_path: Path, caplog):
         anima_dir = tmp_path / "animas" / "custom"
         anima_dir.mkdir(parents=True)
         (anima_dir / "status.json").write_text(json.dumps({"role": "custom_role_xyz"}), encoding="utf-8")
+        caplog.set_level(logging.WARNING, logger="animaworks.config")
+
         result = resolve_outbound_limits("custom", anima_dir)
+
         assert result == ROLE_OUTBOUND_DEFAULTS["general"]
+        assert "Unknown role 'custom_role_xyz'" in caplog.text
 
     def test_no_role_field_falls_back_to_general(self, tmp_path: Path):
         anima_dir = tmp_path / "animas" / "norole"

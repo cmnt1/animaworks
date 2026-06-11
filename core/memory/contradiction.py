@@ -34,7 +34,7 @@ from core.time_utils import now_iso
 
 if TYPE_CHECKING:
     from core.memory.activity import ActivityLogger
-    from core.memory.validation import KnowledgeValidator
+    from core.memory.nli import SharedNLIModel
 
 logger = logging.getLogger("animaworks.contradiction")
 
@@ -76,8 +76,9 @@ class ContradictionDetector:
     1. RAG vector similarity to find candidate pairs
     2. NLI model + LLM cascade to classify and resolve contradictions
 
-    The NLI model is shared with ``KnowledgeValidator`` to avoid
-    duplicate model loading.
+    NLI loading is delegated to ``SharedNLIModel`` so contradiction scanning
+    can use local entailment/contradiction checks without the retired
+    standalone knowledge-validation pipeline.
     """
 
     NLI_CONTRADICTION_THRESHOLD = 0.65
@@ -103,7 +104,7 @@ class ContradictionDetector:
         self.anima_dir = anima_dir
         self.anima_name = anima_name
         self.knowledge_dir = anima_dir / "knowledge"
-        self._nli_validator: KnowledgeValidator | None = None
+        self._nli_model: SharedNLIModel | None = None
         self._activity_logger = activity_logger
         self._memory_manager = memory_manager
         self.last_scan_stats: dict[str, int | bool] = {
@@ -121,21 +122,21 @@ class ContradictionDetector:
 
     # ── NLI validator access ────────────────────────────────────
 
-    def _get_nli_validator(self):
-        """Lazily load the shared KnowledgeValidator for NLI checks.
+    def _get_nli_model(self):
+        """Lazily load the shared NLI model for contradiction checks.
 
         Returns:
-            KnowledgeValidator instance, or None if unavailable
+            SharedNLIModel instance, or None if unavailable
         """
-        if self._nli_validator is None:
+        if self._nli_model is None:
             try:
-                from core.memory.validation import KnowledgeValidator
+                from core.memory.nli import SharedNLIModel
 
-                self._nli_validator = KnowledgeValidator()
+                self._nli_model = SharedNLIModel()
             except ImportError:
-                logger.warning("KnowledgeValidator not available for NLI checks")
+                logger.warning("SharedNLIModel not available for contradiction checks")
                 return None
-        return self._nli_validator
+        return self._nli_model
 
     # ── Candidate pair generation ───────────────────────────────
 
@@ -305,8 +306,8 @@ class ContradictionDetector:
     ) -> tuple[bool, float, bool]:
         """Check for contradiction using NLI model.
 
-        Uses the shared KnowledgeValidator's NLI pipeline to classify
-        the relationship between two texts.
+        Uses the shared NLI model to classify the relationship between two
+        texts.
 
         Args:
             text_a: First knowledge text
@@ -318,17 +319,17 @@ class ContradictionDetector:
             entailment above ``NLI_ENTAILMENT_THRESHOLD``, indicating
             the texts are consistent and no LLM check is needed.
         """
-        validator = self._get_nli_validator()
-        if validator is None:
+        nli_model = self._get_nli_model()
+        if nli_model is None:
             return (False, 0.0, False)
 
         # NLI check: text_a as premise, text_b as hypothesis
-        label_ab, score_ab = validator._nli_check(
+        label_ab, score_ab = nli_model.check(
             text_b[:2000],
             text_a[:2000],
         )
         # Also check the reverse direction
-        label_ba, score_ba = validator._nli_check(
+        label_ba, score_ba = nli_model.check(
             text_a[:2000],
             text_b[:2000],
         )
