@@ -73,6 +73,44 @@ class _DeterministicEmbeddingModel:
         return word_tokens + char_tokens or [normalized]
 
 
+class _DeterministicReranker:
+    """Local cross-encoder stand-in for E2E retrieval tests."""
+
+    _model_name = "e2e-deterministic-reranker"
+
+    def rerank_sync(
+        self,
+        query: str,
+        items: list[dict],
+        *,
+        text_field: str | Any = "content",
+        top_k: int = 10,
+        min_candidates: int = 2,
+    ) -> list[dict]:
+        return self._rank(items, top_k)
+
+    async def rerank(
+        self,
+        query: str,
+        items: list[dict],
+        *,
+        text_field: str | Any = "fact",
+        top_k: int = 10,
+    ) -> list[dict]:
+        return self._rank(items, top_k)
+
+    def _rank(self, items: list[dict], top_k: int) -> list[dict]:
+        ranked: list[dict] = []
+        for offset, item in enumerate(items[:top_k]):
+            row = dict(item)
+            score = 1.0 - (offset * 0.01)
+            row["ce_score"] = score
+            row["score"] = score
+            row["search_method"] = "cross_encoder"
+            ranked.append(row)
+        return ranked
+
+
 @pytest.fixture(autouse=True)
 def _bypass_completion_gate():
     """Disable completion_gate enforcement for all e2e tests.
@@ -96,6 +134,16 @@ def _deterministic_embedding_model(monkeypatch: pytest.MonkeyPatch):
 
     model = _DeterministicEmbeddingModel()
     monkeypatch.setattr("core.memory.rag.singleton.get_embedding_model", lambda model_name=None: model)
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_reranker(monkeypatch: pytest.MonkeyPatch):
+    """Prevent E2E tests from downloading external cross-encoder models."""
+
+    reranker = _DeterministicReranker()
+    monkeypatch.setattr("core.memory.retrieval.reranker.get_reranker", lambda model_name=None: reranker)
+    monkeypatch.setattr("core.memory.retrieval.pipeline.get_reranker", lambda model_name=None: reranker)
+    monkeypatch.setattr("core.memory.graph.reranker.get_reranker", lambda model_name=None: reranker)
 
 
 @pytest.fixture
