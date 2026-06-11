@@ -36,6 +36,64 @@ class LoopStatus(StrEnum):
     FAILED = "failed"
 
 
+@dataclass
+class AutofixConfig:
+    """Configuration for one CI auto-fix run."""
+
+    repo_dir: Path
+    mode: str = "ci"
+    branch: str | None = None
+    repo: str | None = None
+    workflow: str | None = None
+    max_iter: int = DEFAULT_MAX_ITER
+    quality_commands: tuple[tuple[str, ...], ...] = DEFAULT_QUALITY_COMMANDS
+    fix_command: tuple[str, ...] | None = None
+    agent_name: str = "swe-architect"
+    review_command: tuple[str, ...] | None = None
+    review_agent_name: str = "swe-reviewer"
+    skip_review: bool = False
+    push: bool = False
+    allow_dirty: bool = False
+    match_head_sha: bool = True
+    result_dir: Path | None = None
+    escalation_command: tuple[str, ...] = ("animaworks-tool", "call_human")
+    command_timeout: int = DEFAULT_COMMAND_TIMEOUT
+    log_limit: int = DEFAULT_LOG_LIMIT
+
+    def __post_init__(self) -> None:
+        self.repo_dir = self.repo_dir.resolve()
+        if self.result_dir is None:
+            self.result_dir = self.repo_dir / "swe" / "results"
+        else:
+            self.result_dir = self.result_dir.resolve()
+
+
+@dataclass(frozen=True)
+class AutofixOutcome:
+    """Result returned by ``CIAutofixLoop.run``."""
+
+    status: LoopStatus
+    attempts: int = 0
+    branch: str = ""
+    run_id: str = ""
+    message: str = ""
+    commit_sha: str = ""
+    escalation_path: str = ""
+    gate_summary: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "status": self.status.value,
+            "attempts": self.attempts,
+            "branch": self.branch,
+            "run_id": self.run_id,
+            "message": self.message,
+            "commit_sha": self.commit_sha,
+            "escalation_path": self.escalation_path,
+            "gate_summary": self.gate_summary,
+        }
+
+
 @dataclass(frozen=True)
 class CommandResult:
     """Result of an external command."""

@@ -10,11 +10,13 @@ import shlex
 from collections.abc import Sequence
 from pathlib import Path
 
-from swe.ci_autofix_loop import AutofixConfig, AutofixOutcome, CIAutofixLoop
+from swe.ci_autofix_loop import CIAutofixLoop
 from swe.ci_autofix_types import (
     DEFAULT_COMMAND_TIMEOUT,
     DEFAULT_MAX_ITER,
     DEFAULT_QUALITY_COMMANDS,
+    AutofixConfig,
+    AutofixOutcome,
     CIRun,
     CommandResult,
     CommandRunner,

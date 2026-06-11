@@ -341,7 +341,7 @@ def test_allow_dirty_does_not_commit_baseline_dirty_paths(tmp_path: Path) -> Non
 
     outcome = CIAutofixLoop(config, runner=SubprocessCommandRunner()).run()
 
-    assert outcome.status == LoopStatus.EXHAUSTED
+    assert outcome.status == LoopStatus.FAILED
     assert "pre-existing dirty paths" in outcome.gate_summary
     assert _run(["git", "log", "-1", "--pretty=%s"], tmp_path).stdout.strip() == "initial"
 

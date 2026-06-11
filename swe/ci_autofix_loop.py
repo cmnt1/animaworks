@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 
 from swe.ci_autofix_types import (
-    DEFAULT_COMMAND_TIMEOUT,
-    DEFAULT_LOG_LIMIT,
-    DEFAULT_MAX_ITER,
-    DEFAULT_QUALITY_COMMANDS,
+    AutofixConfig,
+    AutofixOutcome,
     CommandResult,
     CommandRunner,
     GitHubActionsClient,
@@ -23,64 +19,6 @@ from swe.ci_autofix_types import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class AutofixConfig:
-    """Configuration for one CI auto-fix run."""
-
-    repo_dir: Path
-    mode: str = "ci"
-    branch: str | None = None
-    repo: str | None = None
-    workflow: str | None = None
-    max_iter: int = DEFAULT_MAX_ITER
-    quality_commands: tuple[tuple[str, ...], ...] = DEFAULT_QUALITY_COMMANDS
-    fix_command: tuple[str, ...] | None = None
-    agent_name: str = "swe-architect"
-    review_command: tuple[str, ...] | None = None
-    review_agent_name: str = "swe-reviewer"
-    skip_review: bool = False
-    push: bool = False
-    allow_dirty: bool = False
-    match_head_sha: bool = True
-    result_dir: Path | None = None
-    escalation_command: tuple[str, ...] = ("animaworks-tool", "call_human")
-    command_timeout: int = DEFAULT_COMMAND_TIMEOUT
-    log_limit: int = DEFAULT_LOG_LIMIT
-
-    def __post_init__(self) -> None:
-        self.repo_dir = self.repo_dir.resolve()
-        if self.result_dir is None:
-            self.result_dir = self.repo_dir / "swe" / "results"
-        else:
-            self.result_dir = self.result_dir.resolve()
-
-
-@dataclass(frozen=True)
-class AutofixOutcome:
-    """Result returned by ``CIAutofixLoop.run``."""
-
-    status: LoopStatus
-    attempts: int = 0
-    branch: str = ""
-    run_id: str = ""
-    message: str = ""
-    commit_sha: str = ""
-    escalation_path: str = ""
-    gate_summary: str = ""
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "status": self.status.value,
-            "attempts": self.attempts,
-            "branch": self.branch,
-            "run_id": self.run_id,
-            "message": self.message,
-            "commit_sha": self.commit_sha,
-            "escalation_path": self.escalation_path,
-            "gate_summary": self.gate_summary,
-        }
-
-
 class CIAutofixLoop:
     """State machine for CI/local auto-repair."""
 
@@ -89,6 +27,7 @@ class CIAutofixLoop:
         self.runner = runner or SubprocessCommandRunner()
         self.github = GitHubActionsClient(self.runner, config.repo_dir, config.repo)
         self._baseline_dirty_paths: set[str] = set()
+        self._baseline_dirty_snapshots: dict[str, bytes | None] = {}
         self.gates = QualityGate(
             self.runner,
             config.repo_dir,
@@ -102,6 +41,7 @@ class CIAutofixLoop:
 
         dirty = self._git_status()
         self._baseline_dirty_paths = self._expand_dirty_paths(self._status_paths(dirty))
+        self._baseline_dirty_snapshots = self._snapshot_dirty_paths(self._baseline_dirty_paths)
         if dirty and not self.config.allow_dirty:
             return AutofixOutcome(
                 LoopStatus.DIRTY_WORKTREE,
@@ -191,12 +131,32 @@ class CIAutofixLoop:
             review = self._run_review(gate_result.summary(self.config.log_limit))
             if not review.ok:
                 last_summary = self._attempt_summary("Reviewer gate failed", review)
+                if review.args == ("review-worktree-guard",):
+                    escalation_path = self._escalate(branch=branch, run_id=run_id, summary=last_summary)
+                    return AutofixOutcome(
+                        LoopStatus.FAILED,
+                        attempts=attempt,
+                        branch=branch,
+                        run_id=run_id,
+                        message="Reviewer modified the worktree; auto-fix stopped before commit.",
+                        escalation_path=escalation_path,
+                        gate_summary=last_summary,
+                    )
                 continue
 
             baseline_guard = self._guard_no_baseline_dirty_paths()
             if not baseline_guard.ok:
                 last_summary = self._attempt_summary("Baseline dirty-path guard failed", baseline_guard)
-                continue
+                escalation_path = self._escalate(branch=branch, run_id=run_id, summary=last_summary)
+                return AutofixOutcome(
+                    LoopStatus.FAILED,
+                    attempts=attempt,
+                    branch=branch,
+                    run_id=run_id,
+                    message="Baseline dirty paths changed during auto-fix; stopped before commit.",
+                    escalation_path=escalation_path,
+                    gate_summary=last_summary,
+                )
 
             commit = self._commit_successful_fix(branch=branch, run_id=run_id, attempt=attempt)
             if not commit.ok:
@@ -333,10 +293,10 @@ Patch:
                 "Reviewer command modified the worktree after the reviewed diff was captured.",
             )
 
-        verdict = result.combined_output.upper()
-        if "NEEDS_CHANGES" in verdict or "REQUEST_CHANGES" in verdict:
+        verdict = self._review_verdict(result.combined_output)
+        if verdict in {"NEEDS_CHANGES", "REQUEST_CHANGES"}:
             return CommandResult(result.args, 1, result.stdout, result.stderr)
-        if "APPROVE" in verdict:
+        if verdict == "APPROVE":
             return result
         return CommandResult(
             result.args,
@@ -368,6 +328,18 @@ Patch:
         if not self._baseline_dirty_paths:
             return CommandResult(("baseline-dirty-path-guard",), 0, "clean baseline", "")
 
+        changed = sorted(
+            path for path, snapshot in self._baseline_dirty_snapshots.items() if self._path_snapshot(path) != snapshot
+        )
+        if changed:
+            self._restore_dirty_snapshots(changed)
+            return CommandResult(
+                ("baseline-dirty-path-guard",),
+                1,
+                "",
+                "Refusing to commit because pre-existing dirty paths changed and were restored: " + ", ".join(changed),
+            )
+
         current_dirty_paths = self._expand_dirty_paths(self._status_paths(self._git_status()))
         overlapping = sorted(
             path for path in current_dirty_paths if self._path_overlaps_any_baseline(path, self._baseline_dirty_paths)
@@ -394,6 +366,18 @@ Patch:
             paths.add(path)
         return paths
 
+    @staticmethod
+    def _review_verdict(output: str) -> str:
+        for line in output.splitlines():
+            verdict = line.strip().upper()
+            if verdict.startswith("APPROVE"):
+                return "APPROVE"
+            if verdict.startswith("NEEDS_CHANGES"):
+                return "NEEDS_CHANGES"
+            if verdict.startswith("REQUEST_CHANGES"):
+                return "REQUEST_CHANGES"
+        return ""
+
     def _expand_dirty_paths(self, paths: set[str]) -> set[str]:
         expanded = set(paths)
         for path in paths:
@@ -404,6 +388,28 @@ Patch:
                 if child.is_file():
                     expanded.add(child.relative_to(self.config.repo_dir).as_posix())
         return expanded
+
+    def _snapshot_dirty_paths(self, paths: set[str]) -> dict[str, bytes | None]:
+        return {
+            path: self._path_snapshot(path) for path in paths if not (self.config.repo_dir / path.rstrip("/")).is_dir()
+        }
+
+    def _path_snapshot(self, path: str) -> bytes | None:
+        candidate = self.config.repo_dir / path.rstrip("/")
+        if not candidate.exists():
+            return None
+        return candidate.read_bytes()
+
+    def _restore_dirty_snapshots(self, paths: list[str]) -> None:
+        for path in paths:
+            candidate = self.config.repo_dir / path.rstrip("/")
+            snapshot = self._baseline_dirty_snapshots[path]
+            if snapshot is None:
+                if candidate.exists() and candidate.is_file():
+                    candidate.unlink()
+                continue
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            candidate.write_bytes(snapshot)
 
     @staticmethod
     def _path_overlaps_any_baseline(path: str, baseline_paths: set[str]) -> bool:

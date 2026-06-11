@@ -54,7 +54,7 @@ def test_allow_dirty_does_not_commit_baseline_untracked_directory(tmp_path: Path
 
     outcome = CIAutofixLoop(config, runner=SubprocessCommandRunner()).run()
 
-    assert outcome.status == LoopStatus.EXHAUSTED
+    assert outcome.status == LoopStatus.FAILED
     assert "baseline_dir/secret.txt" in outcome.gate_summary
     assert _run(["git", "log", "-1", "--pretty=%s"], tmp_path).stdout.strip() == "initial"
 
@@ -81,6 +81,76 @@ def test_reviewer_side_effects_are_rejected(tmp_path: Path) -> None:
     config = AutofixConfig(
         repo_dir=tmp_path,
         mode="local",
+        max_iter=2,
+        quality_commands=(gate,),
+        fix_command=fix,
+        review_command=review,
+        escalation_command=escalation,
+        result_dir=tmp_path / "results",
+    )
+
+    outcome = CIAutofixLoop(config, runner=SubprocessCommandRunner()).run()
+
+    assert outcome.status == LoopStatus.FAILED
+    assert "Reviewer command modified the worktree" in outcome.gate_summary
+    assert _run(["git", "log", "-1", "--pretty=%s"], tmp_path).stdout.strip() == "initial"
+    assert "review_artifact.txt" not in _run(["git", "ls-tree", "-r", "--name-only", "HEAD"], tmp_path).stdout
+
+
+def test_allow_dirty_restores_baseline_file_modified_by_fixer(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "README.md").write_text("user change\n", encoding="utf-8")
+    gate = (
+        sys.executable,
+        "-c",
+        "from pathlib import Path; import sys; sys.exit(0 if Path('fixed.txt').exists() else 1)",
+    )
+    fix = (
+        sys.executable,
+        "-c",
+        "from pathlib import Path; "
+        "Path('README.md').write_text('initial\\n', encoding='utf-8'); "
+        "Path('fixed.txt').write_text('ok\\n', encoding='utf-8')",
+    )
+    review = (sys.executable, "-c", "import sys; sys.stdin.read(); print('APPROVE')")
+    escalation = (sys.executable, "-c", "import sys; sys.exit(1)")
+    config = AutofixConfig(
+        repo_dir=tmp_path,
+        mode="local",
+        max_iter=2,
+        quality_commands=(gate,),
+        fix_command=fix,
+        review_command=review,
+        allow_dirty=True,
+        escalation_command=escalation,
+        result_dir=tmp_path / "results",
+    )
+
+    outcome = CIAutofixLoop(config, runner=SubprocessCommandRunner()).run()
+
+    assert outcome.status == LoopStatus.FAILED
+    assert "README.md" in outcome.gate_summary
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "user change\n"
+    assert _run(["git", "log", "-1", "--pretty=%s"], tmp_path).stdout.strip() == "initial"
+
+
+def test_reviewer_verdict_requires_leading_approve(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    gate = (
+        sys.executable,
+        "-c",
+        "from pathlib import Path; import sys; sys.exit(0 if Path('fixed.txt').exists() else 1)",
+    )
+    fix = (
+        sys.executable,
+        "-c",
+        "from pathlib import Path; Path('fixed.txt').write_text('ok\\n', encoding='utf-8')",
+    )
+    review = (sys.executable, "-c", "import sys; sys.stdin.read(); print('I cannot approve this patch')")
+    escalation = (sys.executable, "-c", "import sys; sys.exit(1)")
+    config = AutofixConfig(
+        repo_dir=tmp_path,
+        mode="local",
         max_iter=1,
         quality_commands=(gate,),
         fix_command=fix,
@@ -92,5 +162,5 @@ def test_reviewer_side_effects_are_rejected(tmp_path: Path) -> None:
     outcome = CIAutofixLoop(config, runner=SubprocessCommandRunner()).run()
 
     assert outcome.status == LoopStatus.EXHAUSTED
-    assert "Reviewer command modified the worktree" in outcome.gate_summary
+    assert "Reviewer did not return APPROVE or NEEDS_CHANGES" in outcome.gate_summary
     assert _run(["git", "log", "-1", "--pretty=%s"], tmp_path).stdout.strip() == "initial"
