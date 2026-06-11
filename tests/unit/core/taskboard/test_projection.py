@@ -123,6 +123,31 @@ def test_stale_active_tasks_go_to_review_without_mutating_queue_status(tmp_path:
     assert manager.get_task_by_id(task.task_id).status == "pending"
 
 
+def test_stale_in_progress_task_stays_running(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    task = manager.add_task(
+        source="human",
+        original_instruction="long running cron",
+        assignee="sakura",
+        summary="long running cron",
+        task_id="task-1",
+        status="in_progress",
+    )
+    manager.queue_path.write_text(
+        manager.queue_path.read_text(encoding="utf-8").replace(
+            '"updated_at": "' + manager.get_task_by_id(task.task_id).updated_at + '"',
+            '"updated_at": "2000-01-01T00:00:00+09:00"',
+        ),
+        encoding="utf-8",
+    )
+
+    projected = project_anima(manager.anima_dir, TaskBoardStore(tmp_path / "taskboard.sqlite3"))
+
+    assert projected[0].queue_status == "in_progress"
+    assert projected[0].column == BoardColumn.RUNNING
+    assert manager.get_task_by_id(task.task_id).status == "in_progress"
+
+
 def test_stale_pending_task_waits_when_same_anima_has_running_task(tmp_path: Path) -> None:
     manager = _queue(tmp_path, "kanna")
     running = manager.add_task(
@@ -467,7 +492,7 @@ def test_projected_task_surfaces_delegation_and_response_links(tmp_path: Path) -
     assert response_links[0].title == "AFF-003 repair"
 
 
-def test_blocked_delegated_parent_waits_when_child_is_active(tmp_path: Path) -> None:
+def test_blocked_delegated_parent_blocks_when_child_is_blocked(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     sora = _queue(tmp_path, "sora")
     store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
@@ -493,7 +518,7 @@ def test_blocked_delegated_parent_waits_when_child_is_active(tmp_path: Path) -> 
     by_key = {(task.anima_name, task.task_id): task for task in projected}
 
     assert by_key[("sakura", parent.task_id)].queue_status == "blocked"
-    assert by_key[("sakura", parent.task_id)].column == BoardColumn.WAITING
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
     assert by_key[("sora", child.task_id)].queue_status == "blocked"
     assert by_key[("sora", child.task_id)].column == BoardColumn.BLOCKED
 
@@ -562,7 +587,35 @@ def test_blocked_task_does_not_wait_on_historical_reference_in_original_instruct
 
     assert by_key[("kanna", child.task_id)].queue_status == "blocked"
     assert by_key[("kanna", child.task_id)].column == BoardColumn.BLOCKED
-    assert by_key[("sakura", parent.task_id)].column == BoardColumn.WAITING
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+
+
+def test_blocked_parent_does_not_wait_when_summary_references_blocked_child(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    hikaru = _queue(tmp_path, "hikaru")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = hikaru.add_task(
+        source="anima",
+        original_instruction="produce final evidence",
+        assignee="hikaru",
+        summary="BLOCKED: unresolved blockers",
+        task_id="childblocked1",
+    )
+    hikaru.update_status(child.task_id, "blocked", summary="BLOCKED: unresolved blockers")
+    parent = sakura.add_delegated_task(
+        original_instruction="track property report evidence",
+        assignee="hikaru",
+        summary=f"Delegated child task(s) active: hikaru:{child.task_id}=blocked; tracking continues",
+        deadline="1h",
+        meta={"delegated_to": "hikaru", "delegated_task_id": child.task_id},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
 
 
 def test_delegated_parent_moves_to_review_when_child_is_terminal(tmp_path: Path) -> None:

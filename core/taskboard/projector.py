@@ -319,7 +319,9 @@ def _attach_related_tasks(
                 peer_name=target,
             )
             if related_child is not None and task.queue_status not in _TERMINAL_QUEUE_STATUSES:
-                if related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
+                if related_child.queue_status == "blocked":
+                    task.column = BoardColumn.BLOCKED
+                elif related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
                     if _delegated_child_needs_followup(related_child):
                         task.column = BoardColumn.BLOCKED
                     elif task.column != BoardColumn.BLOCKED:
@@ -358,7 +360,7 @@ def _attach_related_tasks(
             )
         summary_referenced_tasks = _find_referenced_tasks(task, index, include_original_instruction=False)
         if task.column == BoardColumn.BLOCKED and any(
-            related.queue_status not in _TERMINAL_QUEUE_STATUSES for related in summary_referenced_tasks
+            related.queue_status in {"pending", "in_progress", "delegated"} for related in summary_referenced_tasks
         ):
             task.column = BoardColumn.WAITING
 
@@ -571,11 +573,7 @@ def _project_queue_task(
     )
     visibility = metadata.visibility if metadata is not None else default_visibility
     column = metadata.column if metadata is not None and metadata.column is not None else default_column
-    if (
-        task.status in {"pending", "in_progress"}
-        and column in {BoardColumn.TODO, BoardColumn.RUNNING}
-        and _is_stale_queue_task(task)
-    ):
+    if task.status == "pending" and column == BoardColumn.TODO and _is_stale_queue_task(task):
         # Stale active work needs triage, but it is not the same thing as a
         # queue task explicitly marked blocked.
         column = BoardColumn.REVIEW
