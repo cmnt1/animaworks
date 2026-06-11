@@ -61,6 +61,10 @@ Use `--push` only when GitHub Actions will actually run for the branch, for exam
 `main` or a workflow that accepts that branch. This repository's CI currently runs on `main` pushes and PRs to
 `main`, so arbitrary branch pushes do not create CI runs by themselves.
 
+Run CI auto-fix only on branches you trust. The repair prompt treats CI logs as untrusted evidence and tells
+agents not to obey instructions embedded in logs, stack traces, diffs, or command output, but the fixer still has
+repository write access.
+
 For deterministic local repair without GitHub or LLM calls, provide a fixer and gate commands:
 
 ```bash
