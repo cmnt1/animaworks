@@ -88,6 +88,7 @@ def resolve_locomo_litellm_kwargs(model: str, *, credential: str | None = None) 
         kwargs = get_memory_llm_kwargs_for_model(model, merged)
         litellm_model = str(kwargs.pop("model"))
         litellm_model = _normalize_openai_compatible_model(litellm_model, api_base=kwargs.get("api_base"))
+        _add_provider_env_kwargs(litellm_model, kwargs)
         return litellm_model, kwargs
 
     credential_name = credential if credential is not None else default_llm_credential()
@@ -105,7 +106,15 @@ def resolve_locomo_litellm_kwargs(model: str, *, credential: str | None = None) 
     kwargs = get_memory_llm_kwargs_for_model(model, merged)
     litellm_model = str(kwargs.pop("model"))
     litellm_model = _normalize_openai_compatible_model(litellm_model, api_base=kwargs.get("api_base"))
+    _add_provider_env_kwargs(litellm_model, kwargs)
     return litellm_model, kwargs
+
+
+def _add_provider_env_kwargs(model: str, kwargs: dict[str, Any]) -> None:
+    if model.startswith("azure/") and not kwargs.get("api_version"):
+        api_version = os.environ.get("LOCOMO_AZURE_API_VERSION") or os.environ.get("AZURE_API_VERSION")
+        if api_version:
+            kwargs["api_version"] = api_version
 
 
 def _normalize_openai_compatible_model(model: str, *, api_base: Any) -> str:
@@ -128,11 +137,13 @@ def resolve_locomo_judge_litellm_kwargs(model: str) -> tuple[str, dict[str, Any]
     answer generation.
     """
     model_id = str(model or "").strip()
+    judge_credential = default_judge_llm_credential()
+    if judge_credential:
+        return resolve_locomo_litellm_kwargs(model_id, credential=judge_credential)
     lower = model_id.lower()
     proxy_markers = ("deepseek", "qwen", "mlx-community")
     if any(marker in lower for marker in proxy_markers):
-        judge_credential = default_judge_llm_credential() or None
-        return resolve_locomo_litellm_kwargs(model_id, credential=judge_credential)
+        return resolve_locomo_litellm_kwargs(model_id)
     return model_id, {}
 
 

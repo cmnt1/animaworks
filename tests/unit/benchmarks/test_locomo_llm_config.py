@@ -136,9 +136,30 @@ class TestLoCoMoLlmConfig:
         assert kwargs["api_base"] == "http://judge.example/v1"
         assert kwargs["api_key"] == "judge-key"
 
+    def test_resolve_judge_standard_model_uses_judge_credential(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+        monkeypatch.setenv("LOCOMO_JUDGE_LLM_CREDENTIAL", "azure-host")
+        monkeypatch.setenv("AZURE_API_VERSION", "2025-01-01-preview")
+
+        host_cfg = {
+            "credentials": {
+                "azure-host": {"api_key": "azure-key", "base_url": "https://azure.example"},
+            },
+            "consolidation": {"llm_credential": "answer-host"},
+        }
+        with patch("benchmarks.locomo.llm_config._load_host_config", return_value=host_cfg):
+            model, kwargs = resolve_locomo_judge_litellm_kwargs("azure/gpt-4.1")
+
+        assert model == "azure/gpt-4.1"
+        assert kwargs["api_base"] == "https://azure.example"
+        assert kwargs["api_key"] == "azure-key"
+        assert kwargs["api_version"] == "2025-01-01-preview"
+
     def test_resolve_judge_preserves_standard_openai_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("OPENAI_API_BASE", raising=False)
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+        monkeypatch.delenv("LOCOMO_JUDGE_LLM_CREDENTIAL", raising=False)
 
         model, kwargs = resolve_locomo_judge_litellm_kwargs("gpt-4o")
 
