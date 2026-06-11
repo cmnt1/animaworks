@@ -276,9 +276,6 @@ Patch:
             command = ["uv", "run", "animaworks", "chat", self.config.review_agent_name, prompt]
             result = self.runner.run(command, cwd=self.config.repo_dir, timeout=self.config.command_timeout)
 
-        if not result.ok:
-            return result
-
         post_review_intent = self._include_untracked_in_diff()
         if not post_review_intent.ok:
             return post_review_intent
@@ -292,6 +289,9 @@ Patch:
                 "",
                 "Reviewer command modified the worktree after the reviewed diff was captured.",
             )
+
+        if not result.ok:
+            return result
 
         verdict = self._review_verdict(result.combined_output)
         if verdict in {"NEEDS_CHANGES", "REQUEST_CHANGES"}:
