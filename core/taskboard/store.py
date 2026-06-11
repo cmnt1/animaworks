@@ -119,6 +119,7 @@ class TaskBoardStore:
     def _ensure_schema(self) -> None:
         with self._connection() as conn:
             conn.executescript(_SCHEMA_SQL)
+            _migrate_taskboard_metadata_column_constraint(conn)
             _migrate_taskboard_events_constraint(conn)
 
     def get_metadata(self, anima_name: str, task_id: str) -> TaskBoardMetadata | None:
@@ -450,6 +451,73 @@ def _migrate_taskboard_events_constraint(conn: sqlite3.Connection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_taskboard_events_task
             ON taskboard_events(anima_name, task_id, id)
+        """
+    )
+
+
+def _migrate_taskboard_metadata_column_constraint(conn: sqlite3.Connection) -> None:
+    row = conn.execute(
+        """
+        SELECT sql
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'taskboard_metadata'
+        """
+    ).fetchone()
+    if row is None:
+        return
+    create_sql = str(row["sql"] or "")
+    if "tracking" in create_sql:
+        return
+
+    conn.execute("ALTER TABLE taskboard_metadata RENAME TO taskboard_metadata_legacy")
+    conn.execute(
+        f"""
+        CREATE TABLE taskboard_metadata (
+            anima_name TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            visibility TEXT NOT NULL DEFAULT 'active'
+                CHECK(visibility IN ('{_VISIBILITY_VALUES}')),
+            column TEXT CHECK(column IS NULL OR column IN ('{_COLUMN_VALUES}')),
+            position REAL,
+            expires_at TEXT,
+            snoozed_until TEXT,
+            last_notified_at TEXT,
+            notification_key TEXT,
+            surface_count INTEGER NOT NULL DEFAULT 0 CHECK(surface_count >= 0),
+            source_ref TEXT,
+            replaced_by TEXT,
+            tombstone_reason TEXT,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT NOT NULL DEFAULT 'system',
+            PRIMARY KEY (anima_name, task_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO taskboard_metadata (
+            anima_name, task_id, visibility, column, position, expires_at, snoozed_until,
+            last_notified_at, notification_key, surface_count, source_ref, replaced_by,
+            tombstone_reason, updated_at, updated_by
+        )
+        SELECT
+            anima_name, task_id, visibility, column, position, expires_at, snoozed_until,
+            last_notified_at, notification_key, surface_count, source_ref, replaced_by,
+            tombstone_reason, updated_at, updated_by
+        FROM taskboard_metadata_legacy
+        """
+    )
+    conn.execute("DROP TABLE taskboard_metadata_legacy")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_taskboard_metadata_visibility
+            ON taskboard_metadata(visibility)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_taskboard_metadata_column_position
+            ON taskboard_metadata(column, position)
         """
     )
 

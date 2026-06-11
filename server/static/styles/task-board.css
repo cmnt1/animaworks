@@ -379,6 +379,13 @@
   line-height: 1.35;
 }
 
+.taskboard-diagnostic {
+  color: var(--aw-color-text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .taskboard-card code {
   color: var(--aw-color-text-muted);
   font-size: 0.72rem;

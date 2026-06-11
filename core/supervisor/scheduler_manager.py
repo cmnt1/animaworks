@@ -48,6 +48,28 @@ _CREDENTIAL_TO_GOVERNOR_PROVIDER: dict[str, str] = {
 }
 
 
+def _cron_failure_output(result: dict[str, Any]) -> str:
+    """Format a failed command cron result for the follow-up LLM."""
+    exit_code = result.get("exit_code", "")
+    stdout = str(result.get("stdout") or "").strip()
+    stderr = str(result.get("stderr") or "").strip()
+    if not stdout and not stderr:
+        return ""
+    parts = [
+        "COMMAND_CRON_FAILED",
+        f"task: {result.get('task', '')}",
+        f"exit_code: {exit_code}",
+    ]
+    duration_ms = result.get("duration_ms")
+    if duration_ms is not None:
+        parts.append(f"duration_ms: {duration_ms}")
+    if stdout:
+        parts.extend(["stdout:", stdout])
+    if stderr:
+        parts.extend(["stderr:", stderr])
+    return "\n".join(parts)
+
+
 def _read_anima_credential(anima_dir: Path) -> str:
     """Read the ``credential`` field from an Anima's status.json."""
     return _read_anima_status_field(anima_dir, "credential")
@@ -1040,11 +1062,13 @@ class SchedulerManager:
                         "result": result,
                     },
                 )
-                # If command produced non-empty output, run a follow-up
-                # cron LLM session so the Anima can review and act on the
-                # results with full background context (heartbeat-equivalent).
+                # If command produced actionable output, run a follow-up cron
+                # LLM session so the Anima can review and act on the results
+                # with full background context (heartbeat-equivalent).
                 stdout = result.get("stdout", "").strip()
-                if stdout and result.get("exit_code", 0) == 0:
+                exit_code = int(result.get("exit_code", 0) or 0)
+                failure_output = _cron_failure_output(result) if exit_code != 0 else ""
+                if (stdout and exit_code == 0) or failure_output:
                     # trigger_heartbeat=False means no follow-up analysis
                     if not task.trigger_heartbeat:
                         logger.info(
@@ -1054,8 +1078,9 @@ class SchedulerManager:
                         )
                         return
 
-                    # skip_pattern: if stdout matches, suppress follow-up
-                    if task.skip_pattern:
+                    # skip_pattern suppresses successful no-op output only.
+                    # Failures still need an Anima-readable diagnostic path.
+                    if exit_code == 0 and task.skip_pattern:
                         try:
                             if re.search(task.skip_pattern, stdout):
                                 logger.info(
@@ -1073,7 +1098,7 @@ class SchedulerManager:
                             )
 
                     logger.info(
-                        "Cron command '%s' produced output, running cron LLM for %s",
+                        "Cron command '%s' produced actionable output, running cron LLM for %s",
                         task.name,
                         self._anima_name,
                     )
@@ -1083,7 +1108,7 @@ class SchedulerManager:
                     await self._anima.run_cron_task(
                         task.name,
                         task.description or f"cron.mdの「{task.name}」の指示に従って処理してください。",
-                        command_output=stdout,
+                        command_output=failure_output or stdout,
                         **followup_kwargs,
                     )
             else:

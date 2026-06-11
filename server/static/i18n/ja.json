@@ -854,6 +854,8 @@
   "taskboard.assignee_all": "すべて",
   "taskboard.column_blocked": "停止中",
   "taskboard.column_blocked_hint": "介入が必要",
+  "taskboard.column_tracking": "追跡中",
+  "taskboard.column_tracking_hint": "委譲先の停止を追跡",
   "taskboard.column_done": "完了",
   "taskboard.column_done_hint": "完了・キャンセル",
   "taskboard.column_review": "確認待ち",

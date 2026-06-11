@@ -60,6 +60,23 @@ def _missing_cron_success_paths(success_paths: list[str] | None) -> list[str]:
     return missing
 
 
+def _cron_command_error_excerpt(stderr: str, stdout: str) -> str:
+    """Return a compact, actionable error line for a failed command cron."""
+    text = (stderr or stdout or "").strip()
+    if not text:
+        return "no stderr/stdout captured"
+    lines = [" ".join(line.strip().split()) for line in text.splitlines() if line.strip()]
+    for line in reversed(lines):
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_.]*(Error|Exception|Warning)?\s*:", line):
+            return line[:240]
+    return lines[-1][:240] if lines else "no stderr/stdout captured"
+
+
+def _cron_command_failure_summary(task_name: str, *, exit_code: int, error_excerpt: str) -> str:
+    base = t("anima.cron_taskboard_cmd_failed", task=task_name, exit_code=exit_code)
+    return f"{base}: {error_excerpt}" if error_excerpt else base
+
+
 def _assert_cron_success_paths(task_name: str, success_paths: list[str] | None) -> None:
     missing = _missing_cron_success_paths(success_paths)
     if missing:
@@ -778,7 +795,14 @@ class LifecycleMixin:
             logger.warning("[%s] Failed to register cron '%s' on task_queue", self.name, task_name, exc_info=True)
             return None
 
-    def _cron_taskboard_finish(self, task_id: str | None, *, status: str, summary: str) -> None:
+    def _cron_taskboard_finish(
+        self,
+        task_id: str | None,
+        *,
+        status: str,
+        summary: str,
+        meta_patch: dict[str, Any] | None = None,
+    ) -> None:
         """Update the task_queue entry recorded by ``_cron_taskboard_start``.
 
         Best-effort: failures are logged and ignored.
@@ -790,6 +814,8 @@ class LifecycleMixin:
 
             manager = TaskQueueManager(self.anima_dir)
             manager.update_status(task_id, status, summary=summary[:500] if summary else None)
+            if meta_patch:
+                manager.update_meta(task_id, meta_patch)
         except Exception:
             logger.warning("[%s] Failed to finalize cron task_queue entry %s", self.name, task_id, exc_info=True)
 
@@ -1150,14 +1176,17 @@ class LifecycleMixin:
                     summary=t("anima.cron_taskboard_cmd_done", task=task_name),
                 )
             else:
+                error_excerpt = _cron_command_error_excerpt(stderr, stdout)
                 self._cron_taskboard_finish(
                     cron_tq_id,
                     status="failed",
-                    summary=t(
-                        "anima.cron_taskboard_cmd_failed",
-                        task=task_name,
-                        exit_code=exit_code,
-                    ),
+                    summary=_cron_command_failure_summary(task_name, exit_code=exit_code, error_excerpt=error_excerpt),
+                    meta_patch={
+                        "cron_exit_code": exit_code,
+                        "cron_error_excerpt": error_excerpt,
+                        "cron_stdout_preview": stdout[:1000],
+                        "cron_stderr_preview": stderr[:2000],
+                    },
                 )
 
             logger.info(

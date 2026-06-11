@@ -26,6 +26,7 @@ class BoardColumn(StrEnum):
     TODO = "todo"
     RUNNING = "running"
     BLOCKED = "blocked"
+    TRACKING = "tracking"
     WAITING = "waiting"
     REVIEW = "review"
     DONE = "done"

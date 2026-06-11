@@ -167,6 +167,7 @@ def project_anima(
             _build_task_index(resolved_anima_dir.parent, [resolved_anima_name], resolved_store),
         )
     _mark_serial_pending_backlog(projected)
+    _suppress_superseded_cron_runs(projected)
     _suppress_duplicate_failed_crons(projected)
     _suppress_duplicate_delegated_parents(projected)
     return sorted(
@@ -207,6 +208,7 @@ def project_all(
     relation_names = set(relation_anima_names) if relation_anima_names is not None else names
     _attach_related_tasks(projected, _build_task_index(resolved_animas_dir, relation_names, resolved_store))
     _mark_serial_pending_backlog(projected)
+    _suppress_superseded_cron_runs(projected)
     _suppress_duplicate_failed_crons(projected)
     _suppress_duplicate_delegated_parents(projected)
     return sorted(
@@ -320,7 +322,7 @@ def _attach_related_tasks(
             )
             if related_child is not None and task.queue_status not in _TERMINAL_QUEUE_STATUSES:
                 if related_child.queue_status == "blocked":
-                    task.column = BoardColumn.BLOCKED
+                    task.column = BoardColumn.TRACKING if task.queue_status == "delegated" else BoardColumn.BLOCKED
                 elif related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
                     if _delegated_child_needs_followup(related_child):
                         task.column = BoardColumn.BLOCKED
@@ -436,6 +438,28 @@ def _suppress_duplicate_failed_crons(tasks: list[BoardTask]) -> None:
             task.tombstone_reason = "duplicate_failed_cron"
 
 
+def _suppress_superseded_cron_runs(tasks: list[BoardTask]) -> None:
+    groups: dict[tuple[str, str], list[BoardTask]] = {}
+    for task in tasks:
+        if task.visibility != AttentionVisibility.ACTIVE or not task.is_from_cron or not task.cron_task_name:
+            continue
+        if task.queue_status not in {"pending", "in_progress", "blocked", "failed", "delegated"}:
+            continue
+        groups.setdefault((task.anima_name, task.cron_task_name), []).append(task)
+
+    for duplicates in groups.values():
+        if len(duplicates) <= 1:
+            continue
+        keeper = max(duplicates, key=_task_updated_precedence)
+        for task in duplicates:
+            if task is keeper:
+                continue
+            task.visibility = AttentionVisibility.ARCHIVED
+            task.column = BoardColumn.SUPPRESSED
+            task.replaced_by = f"{keeper.anima_name}:{keeper.task_id}"
+            task.tombstone_reason = "superseded_cron_run"
+
+
 def _is_cancelled_or_tombstoned_parent(parent: BoardTask) -> bool:
     return parent.queue_status == "cancelled" or parent.visibility == AttentionVisibility.TOMBSTONED
 
@@ -546,10 +570,39 @@ def _find_referenced_tasks(
 def _title_for_link(task: BoardTask | None) -> str | None:
     if task is None:
         return None
+    display_title = _display_title_for_task(task)
+    if display_title:
+        return display_title
     summary = _compact_relation_title(task.summary)
     if summary and "\n" not in (task.summary or "") and len(task.summary or "") <= 160:
         return summary
     return _compact_relation_title(task.original_instruction) or summary
+
+
+def _display_title_for_task(task: BoardTask) -> str | None:
+    meta = task.meta or {}
+    task_desc = meta.get("task_desc")
+    if isinstance(task_desc, dict):
+        title = task_desc.get("title")
+        if isinstance(title, str) and title.strip():
+            return title.strip()
+    if not _is_diagnostic_summary(task.summary):
+        return None
+    return _compact_relation_title(task.original_instruction)
+
+
+def _is_diagnostic_summary(value: str | None) -> bool:
+    if not value:
+        return False
+    text = value.strip()
+    return text.startswith(
+        (
+            "BLOCKED: Task reported ",
+            "BLOCKED: Task produced ",
+            "BLOCKED: Task only ",
+            "FAILED: Task produced no final response",
+        )
+    )
 
 
 def _compact_relation_title(value: str | None) -> str | None:

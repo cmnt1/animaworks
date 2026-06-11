@@ -284,8 +284,8 @@ class TestSkipPatternFiltering:
         mgr._anima.run_cron_task.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_nonzero_exit_code_no_heartbeat(self):
-        """Non-zero exit code does not trigger heartbeat regardless of stdout."""
+    async def test_nonzero_exit_code_triggers_failure_followup(self):
+        """Non-zero exit code triggers a diagnostic cron LLM follow-up."""
         mgr = _make_scheduler_mgr()
         mgr._anima.run_cron_command.return_value = {
             "task": "test_task",
@@ -296,6 +296,28 @@ class TestSkipPatternFiltering:
         }
 
         task = _make_command_task(skip_pattern=None)
+
+        await mgr._run_cron_task(task)
+
+        mgr._anima.run_cron_task.assert_called_once()
+        _, _, kwargs = mgr._anima.run_cron_task.mock_calls[0]
+        assert "COMMAND_CRON_FAILED" in kwargs["command_output"]
+        assert "stderr:" in kwargs["command_output"]
+        assert "some error" in kwargs["command_output"]
+
+    @pytest.mark.asyncio
+    async def test_nonzero_exit_code_respects_trigger_heartbeat_false(self):
+        """trigger_heartbeat=False suppresses diagnostic follow-up for failures."""
+        mgr = _make_scheduler_mgr()
+        mgr._anima.run_cron_command.return_value = {
+            "task": "test_task",
+            "exit_code": 1,
+            "stdout": "error occurred",
+            "stderr": "some error",
+            "duration_ms": 100,
+        }
+
+        task = _make_command_task(skip_pattern=None, trigger_heartbeat=False)
 
         await mgr._run_cron_task(task)
 

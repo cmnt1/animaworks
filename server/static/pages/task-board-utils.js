@@ -1,6 +1,6 @@
 import { t } from "/shared/i18n.js";
 
-export const COLUMNS = ["todo", "running", "blocked", "waiting", "review", "done", "suppressed"];
+export const COLUMNS = ["todo", "running", "blocked", "tracking", "waiting", "review", "done", "suppressed"];
 export const SUPPRESSED_VISIBILITIES = new Set(["expired", "archived", "tombstoned"]);
 
 export function taskKey(task) {

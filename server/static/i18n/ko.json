@@ -760,6 +760,8 @@
   "taskboard.cancel": "Cancel",
   "taskboard.column_blocked": "Blocked",
   "taskboard.column_blocked_hint": "Needs intervention",
+  "taskboard.column_tracking": "Tracking",
+  "taskboard.column_tracking_hint": "Tracking blocked delegated work",
   "taskboard.column_done": "Done",
   "taskboard.column_done_hint": "Closed or cancelled",
   "taskboard.column_review": "Review",

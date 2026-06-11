@@ -110,6 +110,60 @@ def test_store_migrates_event_type_constraint_for_stale_processing_event(tmp_pat
     ]
 
 
+def test_store_migrates_metadata_column_constraint_for_tracking_column(tmp_path: Path) -> None:
+    db_path = tmp_path / "shared" / "taskboard.sqlite3"
+    db_path.parent.mkdir(parents=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE taskboard_metadata (
+                anima_name TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                visibility TEXT NOT NULL DEFAULT 'active'
+                    CHECK(visibility IN ('active', 'snoozed', 'expired', 'archived', 'tombstoned')),
+                column TEXT CHECK(column IS NULL OR column IN ('todo', 'running', 'blocked', 'waiting', 'review', 'done', 'suppressed')),
+                position REAL,
+                expires_at TEXT,
+                snoozed_until TEXT,
+                last_notified_at TEXT,
+                notification_key TEXT,
+                surface_count INTEGER NOT NULL DEFAULT 0 CHECK(surface_count >= 0),
+                source_ref TEXT,
+                replaced_by TEXT,
+                tombstone_reason TEXT,
+                updated_at TEXT NOT NULL,
+                updated_by TEXT NOT NULL DEFAULT 'system',
+                PRIMARY KEY (anima_name, task_id)
+            );
+            CREATE TABLE taskboard_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                event_type TEXT NOT NULL
+                    CHECK(event_type IN ('metadata_upserted', 'column_changed', 'surface_recorded', 'stale_processing_recovered')),
+                anima_name TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}'
+            );
+            INSERT INTO taskboard_metadata (
+                anima_name, task_id, visibility, column, position, surface_count, updated_at, updated_by
+            )
+            VALUES ('sakura', 'task-1', 'active', 'blocked', 1.0, 0, '2026-05-14T00:00:00+09:00', 'test');
+            """
+        )
+
+    store = TaskBoardStore(db_path)
+    updated = store.upsert_metadata(
+        anima_name="sakura",
+        task_id="task-1",
+        actor="test",
+        column=BoardColumn.TRACKING,
+    )
+
+    assert updated.column == BoardColumn.TRACKING
+    assert updated.position == 1.0
+
+
 def test_upsert_and_read_metadata_appends_events(tmp_path: Path) -> None:
     store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
 

@@ -283,7 +283,46 @@ def test_duplicate_failed_crons_keep_latest_only(tmp_path: Path) -> None:
     assert archived_by_id[first.task_id].visibility == AttentionVisibility.ARCHIVED
     assert archived_by_id[first.task_id].column == BoardColumn.SUPPRESSED
     assert archived_by_id[first.task_id].replaced_by == f"sakura:{second.task_id}"
-    assert archived_by_id[first.task_id].tombstone_reason == "duplicate_failed_cron"
+    assert archived_by_id[first.task_id].tombstone_reason == "superseded_cron_run"
+
+
+def test_newer_failed_cron_suppresses_older_running_cron(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    meta = {"from_cron": True, "cron_task_name": "daily review", "cron_type": "command"}
+
+    running = manager.add_task(
+        source="anima",
+        original_instruction="run daily review",
+        assignee="sakura",
+        summary="cron running",
+        task_id="cron-running",
+        meta=meta,
+    )
+    manager.update_status(running.task_id, "in_progress", summary="cron running")
+    failed = manager.add_task(
+        source="anima",
+        original_instruction="run daily review",
+        assignee="sakura",
+        summary="cron failed",
+        task_id="cron-failed",
+        meta=meta,
+    )
+    manager.update_status(failed.task_id, "failed", summary="cron failed")
+
+    projected = project_anima(manager.anima_dir, store)
+    by_id = {task.task_id: task for task in projected}
+
+    assert list(by_id) == [failed.task_id]
+    assert by_id[failed.task_id].column == BoardColumn.BLOCKED
+
+    archived = project_anima(manager.anima_dir, store, include_archived=True)
+    archived_by_id = {task.task_id: task for task in archived}
+
+    assert archived_by_id[running.task_id].visibility == AttentionVisibility.ARCHIVED
+    assert archived_by_id[running.task_id].column == BoardColumn.SUPPRESSED
+    assert archived_by_id[running.task_id].replaced_by == f"sakura:{failed.task_id}"
+    assert archived_by_id[running.task_id].tombstone_reason == "superseded_cron_run"
 
 
 def test_failed_delegated_child_is_hidden_when_parent_was_cancelled(tmp_path: Path) -> None:
@@ -492,7 +531,7 @@ def test_projected_task_surfaces_delegation_and_response_links(tmp_path: Path) -
     assert response_links[0].title == "AFF-003 repair"
 
 
-def test_blocked_delegated_parent_blocks_when_child_is_blocked(tmp_path: Path) -> None:
+def test_blocked_delegated_parent_stays_blocked_when_child_is_blocked(tmp_path: Path) -> None:
     sakura = _queue(tmp_path, "sakura")
     sora = _queue(tmp_path, "sora")
     store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
@@ -587,7 +626,7 @@ def test_blocked_task_does_not_wait_on_historical_reference_in_original_instruct
 
     assert by_key[("kanna", child.task_id)].queue_status == "blocked"
     assert by_key[("kanna", child.task_id)].column == BoardColumn.BLOCKED
-    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.TRACKING
 
 
 def test_blocked_parent_does_not_wait_when_summary_references_blocked_child(tmp_path: Path) -> None:
@@ -615,7 +654,7 @@ def test_blocked_parent_does_not_wait_when_summary_references_blocked_child(tmp_
     by_key = {(task.anima_name, task.task_id): task for task in projected}
 
     assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
-    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.TRACKING
 
 
 def test_delegated_parent_moves_to_review_when_child_is_terminal(tmp_path: Path) -> None:

@@ -153,6 +153,33 @@ class TestTaskBoardList:
             "最終6ゲート証跡または保存済みBLOCKED表を待機中。"
         )
 
+    async def test_false_completion_summary_is_diagnostic_not_display_title(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["hikaru"])
+        queue = _queue(app, "hikaru")
+        task = queue.add_task(
+            source="anima",
+            original_instruction="修正内容を実装して最終証跡を提出してください。",
+            assignee="hikaru",
+            summary="実装タスク",
+            task_id="task-blocked",
+            meta={"task_desc": {"title": "安城デイリー売買レポート前日差分を修正"}},
+        )
+        queue.update_status(
+            task.task_id,
+            "blocked",
+            summary="BLOCKED: Task reported an explicit follow-up/start step, not final evidence",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/task-board")
+
+        assert resp.status_code == 200
+        projected = resp.json()["tasks"][0]
+        assert projected["display_title"] == "安城デイリー売買レポート前日差分を修正"
+        assert projected["diagnostic_summary"] == "停止: 開始・次アクションのみで、最終証跡ではありません"
+        assert projected["summary"] == "停止: 開始・次アクションのみで、最終証跡ではありません"
+
     async def test_include_missing_returns_metadata_only_tasks(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
         _store(app).upsert_metadata(
@@ -342,3 +369,32 @@ class TestTaskSummaryCompatibility:
         assert board_data["blocked"] == 0
         assert board_data["failed_review"] == 1
         assert board_data["total_active"] == 1
+
+    async def test_summary_counts_blocked_child_parent_as_tracking_not_blocked(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["sakura", "hikaru"])
+        hikaru = _queue(app, "hikaru")
+        child = hikaru.add_task(
+            source="anima",
+            original_instruction="produce final evidence",
+            assignee="hikaru",
+            summary="produce final evidence",
+            task_id="child-blocked",
+        )
+        hikaru.update_status(child.task_id, "blocked", summary="BLOCKED: missing evidence")
+        sakura = _queue(app, "sakura")
+        sakura.add_delegated_task(
+            original_instruction="track delegated evidence",
+            assignee="hikaru",
+            summary="track delegated evidence",
+            deadline="1h",
+            meta={"delegated_to": "hikaru", "delegated_task_id": child.task_id},
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            board_resp = await client.get("/api/task-board/summary")
+
+        board_data = board_resp.json()
+        assert board_data["blocked"] == 1
+        assert board_data["tracking"] == 1
+        assert board_data["total_active"] == 2

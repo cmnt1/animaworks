@@ -30,6 +30,7 @@ _COLUMN_TITLES = {
     BoardColumn.TODO: "Todo",
     BoardColumn.RUNNING: "Running",
     BoardColumn.BLOCKED: "Blocked",
+    BoardColumn.TRACKING: "Tracking",
     BoardColumn.WAITING: "Waiting",
     BoardColumn.REVIEW: "Review",
     BoardColumn.DONE: "Done",
@@ -175,6 +176,7 @@ def summarize_task_board(
         "pending": 0,
         "in_progress": 0,
         "blocked": 0,
+        "tracking": 0,
         "delegated": 0,
         "failed_review": 0,
         "snoozed": 0,
@@ -203,6 +205,8 @@ def summarize_task_board(
             summary["in_progress"] += 1
         elif column == BoardColumn.BLOCKED:
             summary["blocked"] += 1
+        elif column == BoardColumn.TRACKING:
+            summary["tracking"] += 1
         elif column == BoardColumn.WAITING:
             summary["delegated"] += 1
         elif column == BoardColumn.REVIEW:
@@ -212,6 +216,7 @@ def summarize_task_board(
         summary["pending"]
         + summary["in_progress"]
         + summary["blocked"]
+        + summary["tracking"]
         + summary["delegated"]
         + summary["failed_review"]
     )
@@ -467,8 +472,11 @@ def _column_response(tasks: list[BoardTask]) -> list[dict[str, Any]]:
 
 
 def _task_to_response(task: BoardTask) -> dict[str, Any]:
+    raw_summary = task.summary
     data = task.model_dump(mode="json")
     data["summary"] = _task_display_text(data.get("summary"))
+    data["display_title"] = _task_display_title(task, fallback_summary=data.get("summary"))
+    data["diagnostic_summary"] = data["summary"] if _is_diagnostic_summary(raw_summary) else None
     related_tasks = data.get("related_tasks")
     if isinstance(related_tasks, list):
         for related_task in related_tasks:
@@ -479,6 +487,38 @@ def _task_to_response(task: BoardTask) -> dict[str, Any]:
         max(timestamps, key=lambda value: datetime.fromisoformat(value.replace("Z", "+00:00"))) if timestamps else None
     )
     return data
+
+
+def _is_diagnostic_summary(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return text.startswith(
+        (
+            "BLOCKED: Task reported ",
+            "BLOCKED: Task produced ",
+            "BLOCKED: Task only ",
+            "FAILED: Task produced no final response",
+        )
+    )
+
+
+def _task_display_title(task: BoardTask, *, fallback_summary: Any) -> str | None:
+    meta = task.meta or {}
+    task_desc = meta.get("task_desc")
+    if isinstance(task_desc, dict):
+        title = task_desc.get("title")
+        if isinstance(title, str) and title.strip():
+            return title.strip()
+
+    if not _is_diagnostic_summary(task.summary) and isinstance(fallback_summary, str) and fallback_summary.strip():
+        return fallback_summary.strip()
+
+    instruction = task.original_instruction
+    if isinstance(instruction, str) and instruction.strip():
+        first_line = next((line.strip() for line in instruction.splitlines() if line.strip()), "")
+        return first_line[:180] if first_line else None
+    return fallback_summary if isinstance(fallback_summary, str) else None
 
 
 def _task_display_text(value: Any) -> Any:

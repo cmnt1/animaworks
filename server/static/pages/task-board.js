@@ -291,7 +291,10 @@ function _cardHtml(task) {
   const key = taskKey(task);
   const column = task.column || "todo";
   const overdue = isOverdue(task.deadline);
-  const title = task.summary || task.original_instruction || t("taskboard.untitled");
+  const title = task.display_title || task.summary || task.original_instruction || t("taskboard.untitled");
+  const diagnostic = task.diagnostic_summary && task.diagnostic_summary !== title
+    ? `<div class="taskboard-diagnostic">${escapeHtml(task.diagnostic_summary)}</div>`
+    : "";
   const ref = _taskReference(task);
   const needsHuman = task.needs_human === true;
   const isFromCron = task.is_from_cron === true;
@@ -315,6 +318,7 @@ function _cardHtml(task) {
         ><code>${escapeHtml(shortId(task.task_id))}</code></button>
       </div>
       <h4>${escapeHtml(title)}</h4>
+      ${diagnostic}
       <div class="taskboard-task-ref">${escapeHtml(ref)}</div>
       ${_relatedTasksHtml(task)}
       <div class="taskboard-meta-row">
@@ -344,7 +348,7 @@ function _queueStatusLabel(status) {
 }
 
 function _taskTitle(task) {
-  return task?.summary || task?.original_instruction || t("taskboard.untitled");
+  return task?.display_title || task?.summary || task?.original_instruction || t("taskboard.untitled");
 }
 
 function _taskReference(task) {
