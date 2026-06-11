@@ -39,7 +39,10 @@ _MEDIUM_MODEL_HINTS = (
 )
 
 _PHASE_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("inspect", ("inspect", "investigate", "check", "audit", "confirm", "verify current", "look up", "調査", "確認", "検証")),
+    (
+        "inspect",
+        ("inspect", "investigate", "check", "audit", "confirm", "verify current", "look up", "調査", "確認", "検証"),
+    ),
     ("db_fix", ("db", "database", "sql", "record", "migration", "repair", "fix", "修正", "補正", "復旧")),
     ("sync", ("sync", "synchronize", "export", "import", "同期")),
     ("build", ("build", "compile", "generate", "生成")),

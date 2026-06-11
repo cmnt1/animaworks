@@ -469,7 +469,9 @@ class TaskQueueManager:
                 if child is None or child.status in _TERMINAL_STATUSES:
                     continue
                 child_summary = summary or f"Cancelled because upstream delegated task {task.task_id} was cancelled"
-                cancelled = child_manager.update_status(child_id, "cancelled", summary=child_summary) is not None or cancelled
+                cancelled = (
+                    child_manager.update_status(child_id, "cancelled", summary=child_summary) is not None or cancelled
+                )
             return cancelled
         except Exception:
             logger.debug(
@@ -870,9 +872,7 @@ class TaskQueueManager:
                 synced += 1
             elif any(status == "cancelled" for status in resolved_statuses):
                 cancelled_children = ", ".join(
-                    f"{target}:{child_id}"
-                    for child_id, status in child_statuses.items()
-                    if status == "cancelled"
+                    f"{target}:{child_id}" for child_id, status in child_statuses.items() if status == "cancelled"
                 )
                 self.update_status(
                     task.task_id,
