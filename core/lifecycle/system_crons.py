@@ -128,7 +128,7 @@ class SystemCronsMixin:
                 from core.memory.consolidation import ConsolidationEngine
 
                 engine = ConsolidationEngine(anima.memory.anima_dir, anima_name)
-                engine._rebuild_rag_index()
+                await asyncio.to_thread(engine._rebuild_rag_index)
             except Exception:
                 logger.exception("RAG index rebuild failed after retry for anima=%s", anima_name)
         except Exception:

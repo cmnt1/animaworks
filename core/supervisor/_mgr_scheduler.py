@@ -422,7 +422,7 @@ class SchedulerMixin:
                 # Post-processing: Rebuild RAG index
                 try:
                     engine = ConsolidationEngine(anima_dir, anima_name)
-                    engine._rebuild_rag_index()
+                    await asyncio.to_thread(engine._rebuild_rag_index)
                 except Exception:
                     logger.exception(
                         "RAG index rebuild failed for anima=%s",
@@ -576,7 +576,7 @@ class SchedulerMixin:
                     from core.memory.consolidation import ConsolidationEngine
 
                     engine = ConsolidationEngine(anima_dir, anima_name)
-                    engine._rebuild_rag_index()
+                    await asyncio.to_thread(engine._rebuild_rag_index)
                 except Exception:
                     logger.exception(
                         "RAG index rebuild failed for anima=%s",

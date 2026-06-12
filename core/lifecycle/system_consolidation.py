@@ -6,6 +6,7 @@ from __future__ import annotations
 #
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
+import asyncio
 import logging
 
 from core.config import load_config
@@ -143,7 +144,7 @@ class SystemConsolidationMixin:
                     from core.memory.consolidation import ConsolidationEngine
 
                     engine = ConsolidationEngine(anima.memory.anima_dir, anima_name)
-                    engine._rebuild_rag_index()
+                    await asyncio.to_thread(engine._rebuild_rag_index)
                 except Exception:
                     logger.exception(
                         "RAG index rebuild failed for anima=%s",
@@ -285,7 +286,7 @@ class SystemConsolidationMixin:
                     from core.memory.consolidation import ConsolidationEngine
 
                     engine = ConsolidationEngine(anima.memory.anima_dir, anima_name)
-                    engine._rebuild_rag_index()
+                    await asyncio.to_thread(engine._rebuild_rag_index)
                 except Exception:
                     logger.exception(
                         "RAG index rebuild failed for anima=%s",
