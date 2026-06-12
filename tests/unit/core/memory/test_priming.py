@@ -259,7 +259,10 @@ async def test_channel_c_top_k(temp_anima_dir):
     mock_searcher.search_many.return_value = []
     mock_searcher.last_search_meta = {}
 
-    with patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=mock_searcher):
+    with (
+        patch.object(engine, "_get_retriever", return_value=object()),
+        patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=mock_searcher),
+    ):
         await engine._channel_c_related_knowledge(["test"], message="")
 
     mock_searcher.search_many.assert_called_once()
@@ -280,7 +283,10 @@ async def test_channel_c_query_includes_message(temp_anima_dir):
 
     msg = "このIssueを裏で実装して"
 
-    with patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=mock_searcher):
+    with (
+        patch.object(engine, "_get_retriever", return_value=object()),
+        patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=mock_searcher),
+    ):
         await engine._channel_c_related_knowledge(["Issue", "裏", "実装"], message=msg)
 
     call_kwargs = mock_searcher.search_many.call_args
@@ -303,7 +309,10 @@ async def test_channel_c_query_keyword_only_when_no_message(temp_anima_dir):
     mock_searcher.search_many.return_value = []
     mock_searcher.last_search_meta = {}
 
-    with patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=mock_searcher):
+    with (
+        patch.object(engine, "_get_retriever", return_value=object()),
+        patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=mock_searcher),
+    ):
         await engine._channel_c_related_knowledge(["Issue", "実装"], message="")
 
     call_kwargs = mock_searcher.search_many.call_args
