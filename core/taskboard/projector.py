@@ -40,6 +40,10 @@ _HUMAN_BLOCKER_VALUES = {"human", "user", "owner"}
 _HUMAN_BLOCKER_KEYS = ("blocker", "blocked_on", "waiting_for", "waiting_on")
 _TASK_ID_RE = re.compile(r"\b[0-9a-f]{8,16}\b", re.IGNORECASE)
 _DELEGATED_CHILD_PROGRESS_MARKERS = (
+    "まずは該当ファイル",
+    "読み取ろう",
+    "問題点を特定します",
+    "求められている",
     "next step",
     "next action",
     "completion_gate",
@@ -322,7 +326,9 @@ def _attach_related_tasks(
             )
             if related_child is not None and task.queue_status not in _TERMINAL_QUEUE_STATUSES:
                 if related_child.queue_status == "blocked":
-                    task.column = BoardColumn.TRACKING if task.queue_status == "delegated" else BoardColumn.BLOCKED
+                    task.column = BoardColumn.TRACKING
+                elif related_child.queue_status == "failed":
+                    task.column = BoardColumn.TRACKING
                 elif related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
                     if _delegated_child_needs_followup(related_child):
                         task.column = BoardColumn.BLOCKED
@@ -342,11 +348,11 @@ def _attach_related_tasks(
                 fallback_task_id=parent.task_id,
                 peer_name=parent.anima_name,
             )
-            if task.queue_status == "failed" and _is_cancelled_or_tombstoned_parent(parent):
+            if task.queue_status in {"blocked", "failed"} and _is_terminal_or_tombstoned_parent(parent):
                 task.visibility = AttentionVisibility.ARCHIVED
                 task.column = BoardColumn.SUPPRESSED
                 task.replaced_by = f"{parent.anima_name}:{parent.task_id}"
-                task.tombstone_reason = "delegated_parent_cancelled"
+                task.tombstone_reason = "delegated_parent_terminal"
 
         source_from = meta.get("source_from")
         referenced_tasks = _find_referenced_tasks(task, index)
@@ -460,8 +466,8 @@ def _suppress_superseded_cron_runs(tasks: list[BoardTask]) -> None:
             task.tombstone_reason = "superseded_cron_run"
 
 
-def _is_cancelled_or_tombstoned_parent(parent: BoardTask) -> bool:
-    return parent.queue_status == "cancelled" or parent.visibility == AttentionVisibility.TOMBSTONED
+def _is_terminal_or_tombstoned_parent(parent: BoardTask) -> bool:
+    return parent.queue_status in {"done", "cancelled"} or parent.visibility == AttentionVisibility.TOMBSTONED
 
 
 def _delegated_child_needs_followup(child: BoardTask) -> bool:
@@ -626,10 +632,17 @@ def _project_queue_task(
     )
     visibility = metadata.visibility if metadata is not None else default_visibility
     column = metadata.column if metadata is not None and metadata.column is not None else default_column
+    task_meta = task.meta or {}
+    is_from_cron = bool(task_meta.get("from_cron"))
+    cron_task_name = task_meta.get("cron_task_name") if is_from_cron else None
     if task.status == "pending" and column == BoardColumn.TODO and _is_stale_queue_task(task):
         # Stale active work needs triage, but it is not the same thing as a
         # queue task explicitly marked blocked.
         column = BoardColumn.REVIEW
+    elif task.status == "in_progress" and is_from_cron and column == BoardColumn.RUNNING and _is_stale_queue_task(task):
+        # Cron executions should normally finish quickly. A stale cron row is
+        # a stuck runner, not useful evidence that work is actively progressing.
+        column = BoardColumn.BLOCKED
 
     needs_human, needs_human_reason = compute_needs_human(
         assignee=task.assignee,
@@ -637,10 +650,6 @@ def _project_queue_task(
         meta=task.meta,
         notification_key=metadata.notification_key if metadata is not None else None,
     )
-
-    task_meta = task.meta or {}
-    is_from_cron = bool(task_meta.get("from_cron"))
-    cron_task_name = task_meta.get("cron_task_name") if is_from_cron else None
 
     return BoardTask(
         anima_name=anima_name,

@@ -477,6 +477,8 @@ def _task_to_response(task: BoardTask) -> dict[str, Any]:
     data["summary"] = _task_display_text(data.get("summary"))
     data["display_title"] = _task_display_title(task, fallback_summary=data.get("summary"))
     data["diagnostic_summary"] = data["summary"] if _is_diagnostic_summary(raw_summary) else None
+    if task.is_from_cron and task.queue_status == "in_progress" and task.column == BoardColumn.BLOCKED:
+        data["diagnostic_summary"] = "古いcron実行中が停止扱いになっています。再実行または環境確認が必要です。"
     related_tasks = data.get("related_tasks")
     if isinstance(related_tasks, list):
         for related_task in related_tasks:
@@ -504,6 +506,10 @@ def _is_diagnostic_summary(value: Any) -> bool:
 
 
 def _task_display_title(task: BoardTask, *, fallback_summary: Any) -> str | None:
+    if task.is_from_cron and task.queue_status == "in_progress" and task.column == BoardColumn.BLOCKED:
+        cron_name = task.cron_task_name or "cron"
+        return f"停止: 古いcron実行中: {cron_name}"
+
     meta = task.meta or {}
     task_desc = meta.get("task_desc")
     if isinstance(task_desc, dict):
@@ -526,6 +532,14 @@ def _task_display_text(value: Any) -> Any:
         return value
 
     text = value.strip()
+    if text == "BLOCKED: Task reported an explicit follow-up/start step, not final evidence":
+        return "停止: 開始・次アクションのみで、最終証跡ではありません"
+    if text == "BLOCKED: Task reported unresolved blockers instead of final evidence":
+        return "停止: 未解決ブロッカーの報告で、最終証跡ではありません"
+    if text == "auto retry queued after blocked TaskExec result":
+        return "非最終報告のため自動再実行待ち"
+    if text == "Recovered orphaned processing task; retry queued.":
+        return "中断された処理を回収し、再実行待ちにしました。"
     exact = {
         "BLOCKED: Task reported an explicit follow-up/start step, not final evidence": (
             "停止: 開始・次アクションのみで、最終証跡ではありません"

@@ -180,6 +180,39 @@ class TestTaskBoardList:
         assert projected["diagnostic_summary"] == "停止: 開始・次アクションのみで、最終証跡ではありません"
         assert projected["summary"] == "停止: 開始・次アクションのみで、最終証跡ではありません"
 
+    async def test_stale_cron_in_progress_display_is_stopped(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["alice"])
+        queue = _queue(app, "alice")
+        task = queue.add_task(
+            source="anima",
+            original_instruction="run weekly knowledge cron",
+            assignee="alice",
+            summary="cron running",
+            task_id="cron-stale",
+            status="in_progress",
+            meta={"from_cron": True, "cron_task_name": "weekly knowledge", "cron_type": "llm"},
+        )
+        queue.queue_path.write_text(
+            queue.queue_path.read_text(encoding="utf-8").replace(
+                '"updated_at": "' + queue.get_task_by_id(task.task_id).updated_at + '"',
+                '"updated_at": "2000-01-01T00:00:00+09:00"',
+            ),
+            encoding="utf-8",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/task-board")
+
+        assert resp.status_code == 200
+        projected = resp.json()["tasks"][0]
+        assert projected["queue_status"] == "in_progress"
+        assert projected["column"] == "blocked"
+        assert projected["display_title"] == "停止: 古いcron実行中: weekly knowledge"
+        assert projected["diagnostic_summary"] == (
+            "古いcron実行中が停止扱いになっています。再実行または環境確認が必要です。"
+        )
+
     async def test_include_missing_returns_metadata_only_tasks(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
         _store(app).upsert_metadata(

@@ -148,6 +148,32 @@ def test_stale_in_progress_task_stays_running(tmp_path: Path) -> None:
     assert manager.get_task_by_id(task.task_id).status == "in_progress"
 
 
+def test_stale_in_progress_cron_is_blocked_not_running(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    task = manager.add_task(
+        source="anima",
+        original_instruction="run stale cron",
+        assignee="sakura",
+        summary="cron running",
+        task_id="cron-stale",
+        status="in_progress",
+        meta={"from_cron": True, "cron_task_name": "daily report", "cron_type": "llm"},
+    )
+    manager.queue_path.write_text(
+        manager.queue_path.read_text(encoding="utf-8").replace(
+            '"updated_at": "' + manager.get_task_by_id(task.task_id).updated_at + '"',
+            '"updated_at": "2000-01-01T00:00:00+09:00"',
+        ),
+        encoding="utf-8",
+    )
+
+    projected = project_anima(manager.anima_dir, TaskBoardStore(tmp_path / "taskboard.sqlite3"))
+
+    assert projected[0].queue_status == "in_progress"
+    assert projected[0].column == BoardColumn.BLOCKED
+    assert manager.get_task_by_id(task.task_id).status == "in_progress"
+
+
 def test_stale_pending_task_waits_when_same_anima_has_running_task(tmp_path: Path) -> None:
     manager = _queue(tmp_path, "kanna")
     running = manager.add_task(
@@ -360,6 +386,42 @@ def test_failed_delegated_child_is_hidden_when_parent_was_cancelled(tmp_path: Pa
     assert archived_child.replaced_by == f"ayane:{parent.task_id}"
 
 
+def test_blocked_delegated_child_is_hidden_when_parent_was_done(tmp_path: Path) -> None:
+    sakura = _queue(tmp_path, "sakura")
+    hikaru = _queue(tmp_path, "hikaru")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = hikaru.add_task(
+        source="anima",
+        original_instruction="collect formal evidence",
+        assignee="hikaru",
+        summary="collect formal evidence",
+        task_id="child-blocked",
+    )
+    hikaru.update_status(child.task_id, "blocked", summary="BLOCKED: upstream fetch failed")
+    parent = sakura.add_delegated_task(
+        original_instruction="track formal evidence",
+        assignee="hikaru",
+        summary="track formal evidence",
+        deadline="1h",
+        meta={"delegated_to": "hikaru", "delegated_task_id": child.task_id},
+    )
+    sakura.update_status(parent.task_id, "done", summary="independently verified and accepted")
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("hikaru", child.task_id) not in by_key
+
+    archived = project_all(tmp_path / "animas", store, include_archived=True)
+    archived_by_key = {(task.anima_name, task.task_id): task for task in archived}
+    archived_child = archived_by_key[("hikaru", child.task_id)]
+    assert archived_child.visibility == AttentionVisibility.ARCHIVED
+    assert archived_child.column == BoardColumn.SUPPRESSED
+    assert archived_child.replaced_by == f"sakura:{parent.task_id}"
+    assert archived_child.tombstone_reason == "delegated_parent_terminal"
+
+
 def test_missing_queue_metadata_is_hidden_unless_requested(tmp_path: Path) -> None:
     store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
     store.upsert_metadata(
@@ -557,7 +619,7 @@ def test_blocked_delegated_parent_stays_blocked_when_child_is_blocked(tmp_path: 
     by_key = {(task.anima_name, task.task_id): task for task in projected}
 
     assert by_key[("sakura", parent.task_id)].queue_status == "blocked"
-    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.TRACKING
     assert by_key[("sora", child.task_id)].queue_status == "blocked"
     assert by_key[("sora", child.task_id)].column == BoardColumn.BLOCKED
 
@@ -716,7 +778,7 @@ def test_delegated_parent_blocks_when_child_failed_without_parent_status_update(
     by_key = {(task.anima_name, task.task_id): task for task in projected}
 
     assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
-    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.TRACKING
 
 
 def test_delegated_parent_blocks_when_child_done_is_non_final_progress(tmp_path: Path) -> None:
@@ -852,6 +914,39 @@ def test_delegated_parent_blocks_when_child_done_is_completion_gate_reminder(tmp
     assert ("aoi", child.task_id) not in by_key
     assert by_key[("sakura", parent.task_id)].queue_status == "delegated"
     assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+
+
+def test_delegated_parent_blocks_when_child_done_is_japanese_start_note(tmp_path: Path) -> None:
+    hikaru = _queue(tmp_path, "hikaru")
+    aoi = _queue(tmp_path, "aoi")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    child = aoi.add_task(
+        source="anima",
+        original_instruction="fix syntax error and report py_compile",
+        assignee="aoi",
+        summary="fix syntax error and report py_compile",
+        task_id="child-start-note",
+    )
+    aoi.update_status(
+        child.task_id,
+        "done",
+        summary="まずは該当ファイルの該当部分を読み取って問題点を特定します。",
+    )
+    parent = hikaru.add_delegated_task(
+        original_instruction="track syntax fix",
+        assignee="aoi",
+        summary="[delegate] track syntax fix",
+        deadline="1h",
+        meta={"delegated_to": "aoi", "delegated_task_id": child.task_id},
+    )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("aoi", child.task_id) not in by_key
+    assert by_key[("hikaru", parent.task_id)].queue_status == "delegated"
+    assert by_key[("hikaru", parent.task_id)].column == BoardColumn.BLOCKED
 
 
 def test_delegated_parent_blocks_when_child_done_is_requirement_only_note(tmp_path: Path) -> None:
@@ -1019,7 +1114,7 @@ def test_blocked_delegated_parent_stays_blocked_when_child_failed(tmp_path: Path
     assert by_key[("kanna", child.task_id)].queue_status == "failed"
     assert by_key[("kanna", child.task_id)].column == BoardColumn.BLOCKED
     assert by_key[("sakura", parent.task_id)].queue_status == "blocked"
-    assert by_key[("sakura", parent.task_id)].column == BoardColumn.BLOCKED
+    assert by_key[("sakura", parent.task_id)].column == BoardColumn.TRACKING
 
 
 def test_same_task_id_is_scoped_per_anima(tmp_path: Path) -> None:
