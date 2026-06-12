@@ -439,9 +439,7 @@ def _delegated_retry_fingerprint(task: BoardTask) -> str | None:
     parts = [task.original_instruction or "", task.summary or ""]
     if isinstance(task_desc, dict):
         parts.extend(
-            str(value)
-            for value in (task_desc.get("title"), task_desc.get("description"))
-            if isinstance(value, str)
+            str(value) for value in (task_desc.get("title"), task_desc.get("description")) if isinstance(value, str)
         )
     text = "\n".join(parts)
     matches = sorted({match.group(0).lower() for match in _FILE_FINGERPRINT_RE.finditer(text)})
