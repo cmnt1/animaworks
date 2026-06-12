@@ -40,6 +40,7 @@ class _DeterministicEmbeddingModel:
         *,
         convert_to_numpy: bool = True,
         show_progress_bar: bool = False,
+        batch_size: int | None = None,
     ):
         if isinstance(texts, str):
             vector = self._embed(texts)

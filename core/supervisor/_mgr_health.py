@@ -446,6 +446,7 @@ class HealthMixin:
                     "Restart transaction failed with no handle: %s",
                     anima_name,
                 )
+                handle.state = ProcessState.FAILED
 
         except Exception as e:
             logger.error("Failed to restart %s: %s", anima_name, e)

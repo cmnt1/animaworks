@@ -160,9 +160,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 self.restart_policy.backoff_base_sec = max(0.0, retry_interval)
                 self.restart_policy.backoff_max_sec = max(0.0, retry_interval)
             if health_config is None:
-                self.health_config.health_check_warmup_seconds = float(
-                    getattr(srv, "health_check_warmup_seconds", 300)
-                )
+                self.health_config.health_check_warmup_seconds = float(getattr(srv, "health_check_warmup_seconds", 300))
                 self.health_config.runner_warmup_seconds = float(getattr(srv, "runner_warmup_seconds", 180))
         except (ConfigError, ConfigNotFoundError):
             logger.debug("Config load failed for server process timeouts", exc_info=True)
@@ -1005,7 +1003,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
 
     def get_all_status(self) -> dict[str, dict]:
         """Get status of all processes."""
-        names = set(self.processes) | set(self._starting_since) | set(self._permanently_failed) | set(
-            self._failure_reasons
+        names = (
+            set(self.processes) | set(self._starting_since) | set(self._permanently_failed) | set(self._failure_reasons)
         )
         return {name: self.get_process_status(name) for name in sorted(names)}

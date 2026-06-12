@@ -411,7 +411,9 @@ def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
         startup_progress.raise_if_cancelled()
         reason = "startup_chroma_crash_preflight"
         if force_all_vectordb:
-            logger.info("Ignoring startup full repair request from unclean previous exit; using corruption suspects only")
+            logger.info(
+                "Ignoring startup full repair request from unclean previous exit; using corruption suspects only"
+            )
         if not suspects:
             logger.info("RAG startup preflight: no suspect DBs found")
             startup_progress.update_progress(detail="No suspect vector databases found", done_count=0, total_count=0)

@@ -6,6 +6,7 @@
 Validates Room CRUD API and meeting chat SSE streaming through the full
 FastAPI app stack, with mocked ProcessSupervisor to avoid real Anima processes.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,9 +14,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from core.supervisor.ipc import IPCResponse
 from httpx import ASGITransport, AsyncClient
 
+from core.supervisor.ipc import IPCResponse
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -138,9 +139,7 @@ class TestRoomCRUD:
         assert "created_at" in data
 
     @pytest.mark.asyncio
-    async def test_create_room_invalid_too_many_participants(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_create_room_invalid_too_many_participants(self, tmp_path: Path) -> None:
         """422 for > 5 participants."""
         app = _create_app(tmp_path)
         transport = ASGITransport(app=app)
@@ -157,9 +156,7 @@ class TestRoomCRUD:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_create_room_chair_not_in_participants(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_create_room_chair_not_in_participants(self, tmp_path: Path) -> None:
         """400 validation error when chair not in participants."""
         app = _create_app(tmp_path, anima_names=["sakura", "rin"])
         transport = ASGITransport(app=app)
@@ -284,9 +281,7 @@ class TestRoomCRUD:
             assert "rin" not in get_resp.json()["participants"]
 
     @pytest.mark.asyncio
-    async def test_close_room(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_close_room(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """POST /api/rooms/{room_id}/close closes room and generates minutes."""
         ck_dir = tmp_path / "common_knowledge"
         ck_dir.mkdir(parents=True, exist_ok=True)
@@ -400,9 +395,7 @@ class TestMeetingChatStream:
         assert len(done_events) >= 1
 
     @pytest.mark.asyncio
-    async def test_meeting_redirect_and_mention_process_participant_once(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_meeting_redirect_and_mention_process_participant_once(self, tmp_path: Path) -> None:
         app = _create_app(tmp_path, anima_names=["sakura", "rin"])
         transport = ASGITransport(app=app)
         app.state.supervisor.processes = {"sakura": MagicMock(), "rin": MagicMock()}
@@ -477,11 +470,7 @@ class TestMeetingChatStream:
         assert sum(1 for name, _payload in events if name == "meeting_redirect") == 1
 
         conversation = room_resp.json()["conversation"]
-        redirected = [
-            entry
-            for entry in conversation
-            if entry.get("meta", {}).get("type") == "meeting_redirect"
-        ]
+        redirected = [entry for entry in conversation if entry.get("meta", {}).get("type") == "meeting_redirect"]
         assert len(redirected) == 1
         assert redirected[0]["speaker"] == "sakura"
         assert redirected[0]["text"] == "@rin Please share status"

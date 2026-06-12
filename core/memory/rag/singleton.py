@@ -233,11 +233,7 @@ def get_embedding_model(model_name: str | None = None) -> SentenceTransformer:
     device = "cpu" if is_component_degraded("embedding") else resolve_device("embedding")
 
     # Fast path: already loaded with the same model name
-    if (
-        _embedding_model is not None
-        and _embedding_model_name == resolved_name
-        and _embedding_model_device == device
-    ):
+    if _embedding_model is not None and _embedding_model_name == resolved_name and _embedding_model_device == device:
         return _embedding_model
 
     with _lock:

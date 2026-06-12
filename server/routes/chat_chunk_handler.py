@@ -152,6 +152,7 @@ def _handle_chunk(
             "meeting_redirect",
             {
                 "room_id": chunk.get("room_id", ""),
+                "redirect_id": chunk.get("redirect_id", ""),
                 "from": chunk.get("from", ""),
                 "to": chunk.get("to", ""),
                 "content": chunk.get("content", ""),
@@ -239,6 +240,7 @@ def _chunk_to_event(chunk: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
     if event_type == "meeting_redirect":
         return "meeting_redirect", {
             "room_id": chunk.get("room_id", ""),
+            "redirect_id": chunk.get("redirect_id", ""),
             "from": chunk.get("from", ""),
             "to": chunk.get("to", ""),
             "content": chunk.get("content", ""),

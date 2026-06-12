@@ -35,7 +35,7 @@ class TestDoneEventThinkingText:
         sse_str, _ = _handle_chunk(chunk)
         assert sse_str is not None
         data_line = [line for line in sse_str.split("\n") if line.startswith("data:")][0]
-        data = json.loads(data_line[len("data:"):])
+        data = json.loads(data_line[len("data:") :])
         assert "thinking_text" not in data
         assert data.get("thinking_summary") == "secret thinking"
 
@@ -44,21 +44,21 @@ class TestDoneEventThinkingText:
         chunk = self._make_cycle_done_chunk(thinking_text=long_thinking)
         sse_str, _ = _handle_chunk(chunk)
         data_line = [line for line in sse_str.split("\n") if line.startswith("data:")][0]
-        data = json.loads(data_line[len("data:"):])
+        data = json.loads(data_line[len("data:") :])
         assert len(data["thinking_summary"]) == 5000
 
     def test_empty_thinking_text_gives_null_summary(self):
         chunk = self._make_cycle_done_chunk(thinking_text="")
         sse_str, _ = _handle_chunk(chunk)
         data_line = [line for line in sse_str.split("\n") if line.startswith("data:")][0]
-        data = json.loads(data_line[len("data:"):])
+        data = json.loads(data_line[len("data:") :])
         assert data["thinking_summary"] is None
 
     def test_tool_call_records_removed(self):
         chunk = self._make_cycle_done_chunk(thinking_text="think")
         sse_str, _ = _handle_chunk(chunk)
         data_line = [line for line in sse_str.split("\n") if line.startswith("data:")][0]
-        data = json.loads(data_line[len("data:"):])
+        data = json.loads(data_line[len("data:") :])
         assert "tool_call_records" not in data
 
     def test_chunk_to_event_thinking_text_removed(self):
@@ -87,7 +87,7 @@ class TestDoneEventThinkingText:
         )
         sse_str, clean = _handle_chunk(chunk)
         data_line = [line for line in sse_str.split("\n") if line.startswith("data:")][0]
-        data = json.loads(data_line[len("data:"):])
+        data = json.loads(data_line[len("data:") :])
         assert data["summary"] == "clean response"
         assert "<think>" not in data["summary"]
         assert data["thinking_summary"] == "leaked reasoning"
@@ -101,7 +101,7 @@ class TestDoneEventThinkingText:
         )
         sse_str, clean = _handle_chunk(chunk)
         data_line = [line for line in sse_str.split("\n") if line.startswith("data:")][0]
-        data = json.loads(data_line[len("data:"):])
+        data = json.loads(data_line[len("data:") :])
         assert data["summary"] == "actual response"
         assert "</think>" not in data["summary"]
         assert "reasoning content" in data["thinking_summary"]
@@ -126,6 +126,49 @@ class TestDoneEventThinkingText:
         )
         sse_str, _ = _handle_chunk(chunk)
         data_line = [line for line in sse_str.split("\n") if line.startswith("data:")][0]
-        data = json.loads(data_line[len("data:"):])
+        data = json.loads(data_line[len("data:") :])
         assert data["summary"] == "response"
         assert data["thinking_summary"] == "proper thinking from safety net"
+
+
+class TestMeetingRedirectEvent:
+    """Verify meeting redirect stream chunks keep deduplication metadata."""
+
+    def test_handle_chunk_preserves_redirect_id(self):
+        chunk = {
+            "type": "meeting_redirect",
+            "room_id": "abc123def456",
+            "redirect_id": "redirect-1",
+            "from": "sakura",
+            "to": "rin",
+            "content": "Please share status",
+            "intent": "question",
+            "ts": "2026-06-12T00:00:00+09:00",
+        }
+
+        sse_str, response_text = _handle_chunk(chunk)
+
+        assert response_text == ""
+        assert sse_str is not None
+        data_line = [line for line in sse_str.split("\n") if line.startswith("data:")][0]
+        data = json.loads(data_line[len("data:") :])
+        assert data["redirect_id"] == "redirect-1"
+
+    def test_chunk_to_event_preserves_redirect_id(self):
+        result = _chunk_to_event(
+            {
+                "type": "meeting_redirect",
+                "room_id": "abc123def456",
+                "redirect_id": "redirect-1",
+                "from": "sakura",
+                "to": "rin",
+                "content": "Please share status",
+                "intent": "question",
+                "ts": "2026-06-12T00:00:00+09:00",
+            }
+        )
+
+        assert result is not None
+        event_name, payload = result
+        assert event_name == "meeting_redirect"
+        assert payload["redirect_id"] == "redirect-1"

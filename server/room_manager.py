@@ -275,6 +275,32 @@ class RoomManager:
         )
         self.load_room(room_id)
 
+    def append_meeting_redirect(
+        self,
+        room_id: str,
+        *,
+        from_name: str,
+        to_name: str,
+        content: str,
+        intent: str = "",
+        redirect_id: str = "",
+    ) -> None:
+        """Append a meeting-local redirect to the room's conversation history."""
+        from core.meeting_room_store import append_meeting_redirect
+
+        if self.get_room(room_id) is None:
+            raise ValueError(t("room_manager.room_not_found", room_id=room_id))
+        append_meeting_redirect(
+            self._data_dir,
+            room_id,
+            from_name=from_name,
+            to_name=to_name,
+            content=content,
+            intent=intent,
+            redirect_id=redirect_id,
+        )
+        self.load_room(room_id)
+
     @staticmethod
     def _format_entries(messages: list[dict]) -> str:
         """Format conversation entries into display strings."""

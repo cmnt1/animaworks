@@ -220,7 +220,25 @@ async def _meeting_stream(
                                 redirect_from = str(evt_payload.get("from") or target_name)
                                 redirect_to = str(evt_payload.get("to") or "")
                                 redirect_content = str(evt_payload.get("content") or "")
+                                redirect_id = str(evt_payload.get("redirect_id") or "")
                                 if redirect_to in room.participants and redirect_content:
+                                    try:
+                                        room_manager.append_meeting_redirect(
+                                            room_id,
+                                            from_name=redirect_from,
+                                            to_name=redirect_to,
+                                            content=redirect_content,
+                                            intent=str(evt_payload.get("intent") or ""),
+                                            redirect_id=redirect_id,
+                                        )
+                                    except ValueError:
+                                        logger.warning(
+                                            "Meeting redirect persistence failed for room %s: %s -> %s",
+                                            room_id,
+                                            redirect_from,
+                                            redirect_to,
+                                            exc_info=True,
+                                        )
                                     if (
                                         redirect_to != target_name
                                         and redirect_to in room.participants
