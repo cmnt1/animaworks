@@ -10,11 +10,10 @@ def write_text(path: Path, text: str) -> None:
 
 def test_script_preflight_records_repo_source() -> None:
     provenance = report.script_preflight()
+    script_path = provenance["script_path"].replace("\\", "/")
 
     assert provenance["ok"] is True
-    assert provenance["script_path"].endswith(
-        "core\\reports\\property\\anjo_1k_product_draft.py"
-    )
+    assert script_path.endswith("core/reports/property/anjo_1k_product_draft.py")
     assert provenance["script_size_bytes"] > 0
     assert len(provenance["script_sha256"]) == 64
     assert provenance["checks"]["py_compile_ok"] is True
