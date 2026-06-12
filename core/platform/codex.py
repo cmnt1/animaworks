@@ -29,6 +29,23 @@ def codex_auth_path() -> Path:
     return Path(default_home_dir()) / ".codex" / "auth.json"
 
 
+def _candidate_auth_paths() -> list[Path]:
+    """Return auth.json locations to probe, in priority order.
+
+    ``CODEX_HOME`` is honored first because setups that relocate the Codex home
+    off the default ``~/.codex`` keep the real credentials there; the default
+    home is the fallback. Probing both lets a valid login be recognized from a
+    file without depending solely on the ``codex login status`` subprocess,
+    which can transiently time out under load and yield a false negative.
+    """
+    paths: list[Path] = []
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home:
+        paths.append(Path(codex_home) / "auth.json")
+    paths.append(codex_auth_path())
+    return paths
+
+
 def _iter_embedded_codex_candidates() -> list[Path]:
     """Return plausible embedded Codex CLI locations."""
     candidates: list[Path] = []
@@ -151,14 +168,16 @@ def is_codex_cli_available() -> bool:
 
 
 def _auth_file_looks_valid() -> bool:
-    auth_path = codex_auth_path()
-    if not auth_path.is_file():
-        return False
-    try:
-        data = json.loads(auth_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    return bool(data)
+    for auth_path in _candidate_auth_paths():
+        if not auth_path.is_file():
+            continue
+        try:
+            data = json.loads(auth_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if data:
+            return True
+    return False
 
 
 def is_codex_login_available() -> bool:

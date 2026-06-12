@@ -26,10 +26,25 @@ class TestCodexLoginAvailability:
     def test_returns_false_when_auth_missing(self, tmp_path: Path):
         codex.get_codex_executable.cache_clear()
         with (
+            patch.dict("os.environ", {}, clear=True),
             patch("core.platform.codex.default_home_dir", return_value=str(tmp_path)),
             patch("core.platform.codex._run_codex_command", return_value=None),
         ):
             assert codex.is_codex_login_available() is False
+
+    def test_honors_codex_home_auth_file(self, tmp_path: Path):
+        codex.get_codex_executable.cache_clear()
+        codex_home = tmp_path / "relocated" / ".codex"
+        auth_path = codex_home / "auth.json"
+        auth_path.parent.mkdir(parents=True)
+        auth_path.write_text('{"tokens":{"access_token":"abc"}}', encoding="utf-8")
+
+        with (
+            patch.dict("os.environ", {"CODEX_HOME": str(codex_home)}, clear=True),
+            patch("core.platform.codex.default_home_dir", return_value=str(tmp_path)),
+            patch("core.platform.codex._run_codex_command", return_value=None),
+        ):
+            assert codex.is_codex_login_available() is True
 
     def test_returns_true_for_valid_auth_file(self, tmp_path: Path):
         codex.get_codex_executable.cache_clear()
@@ -48,6 +63,7 @@ class TestCodexLoginAvailability:
         auth_path.write_text("{not-json", encoding="utf-8")
 
         with (
+            patch.dict("os.environ", {}, clear=True),
             patch("core.platform.codex.default_home_dir", return_value=str(tmp_path)),
             patch("core.platform.codex._run_codex_command", return_value=None),
         ):
