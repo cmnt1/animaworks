@@ -18,10 +18,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import psutil
 
 from core.platform.process import subprocess_session_kwargs
 
 logger = logging.getLogger("animaworks.rag.vector_worker")
+_VECTOR_WORKER_MARKER = "core.memory.rag.vector_worker"
 
 
 @dataclass(frozen=True)
@@ -156,6 +158,7 @@ class VectorWorkerManager:
     async def _start_process(self) -> None:
         from core.paths import PROJECT_DIR
 
+        cleanup_orphaned_vector_workers()
         port = self.port or _choose_free_port(self.host)
         self.base_url = f"http://{self.host}:{port}"
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -271,3 +274,57 @@ def start_temporary_vector_worker(
         previous_vector_url=previous,
         had_previous_vector_url=had_previous,
     )
+
+
+def cleanup_orphaned_vector_workers() -> int:
+    """Terminate vector-worker process trees whose parent has disappeared.
+
+    Temporary vector workers are intentionally short-lived.  If a caller is
+    killed before ``TemporaryVectorWorker.stop()`` runs, the worker can survive
+    as an orphan and keep Chroma/Python runtime resources pinned.  On Windows
+    that can cascade into child Python startup failures before stderr is ready.
+    """
+    from core.paths import PROJECT_DIR
+
+    current_pid = os.getpid()
+    killed = 0
+    project_dir = str(PROJECT_DIR).lower()
+
+    for proc in psutil.process_iter(["pid", "ppid", "cmdline", "name", "exe", "username"]):
+        try:
+            pid = int(proc.info["pid"])
+            if pid == current_pid:
+                continue
+            cmdline_parts = proc.info.get("cmdline") or []
+            cmdline = " ".join(str(part) for part in cmdline_parts)
+            if _VECTOR_WORKER_MARKER not in cmdline:
+                continue
+            exe_name = Path(proc.info.get("exe") or proc.info.get("name") or "").name.lower()
+            if "python" not in exe_name:
+                continue
+            try:
+                cwd = proc.cwd().lower()
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                continue
+            if cwd != project_dir:
+                continue
+
+            parent_pid = int(proc.info.get("ppid") or 0)
+            if parent_pid > 0 and psutil.pid_exists(parent_pid):
+                continue
+
+            descendants = proc.children(recursive=True)
+            for child in sorted(descendants, key=lambda p: len(p.parents()), reverse=True):
+                try:
+                    child.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            proc.kill()
+            killed += 1
+            logger.warning("Killed orphaned vector worker pid=%s", pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+            continue
+        except Exception:
+            logger.debug("Failed while checking vector worker process", exc_info=True)
+
+    return killed

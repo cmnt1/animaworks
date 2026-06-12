@@ -309,6 +309,45 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             except OSError:
                 logger.debug("Could not remove lock file %s (may still be held)", lock_file)
 
+    def _cleanup_stale_runtime_files(self, anima_name: str) -> None:
+        """Remove stale runner sidecars when their recorded PID is gone."""
+        import psutil as _psutil
+
+        pid_dir = self.run_dir / "animas"
+        pid_file = pid_dir / f"{anima_name}.pid"
+        if not pid_file.exists():
+            return
+
+        try:
+            pid = int(pid_file.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            pid = 0
+
+        alive = False
+        if pid > 0:
+            try:
+                proc = _psutil.Process(pid)
+                alive = proc.is_running() and proc.status() != _psutil.STATUS_ZOMBIE
+            except _psutil.NoSuchProcess:
+                alive = False
+            except _psutil.Error:
+                return
+
+        if alive:
+            return
+
+        logger.warning("Removing stale runtime files for %s (pid=%s)", anima_name, pid or "invalid")
+        for path in (
+            pid_file,
+            pid_dir / f"{anima_name}.lock",
+            pid_dir / f"{anima_name}.busy.json",
+            self.run_dir / "sockets" / f"{anima_name}.sock",
+        ):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Could not remove stale runtime file %s", path, exc_info=True)
+
     async def start_anima(self, anima_name: str) -> None:
         """Start a single Anima process.
 
@@ -324,6 +363,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
 
         self._starting.add(anima_name)
         try:
+            self._cleanup_stale_runtime_files(anima_name)
+
             socket_dir = self.run_dir / "sockets"
             socket_dir.mkdir(parents=True, exist_ok=True)
             socket_path = socket_dir / f"{anima_name}.sock"

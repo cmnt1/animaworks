@@ -5,7 +5,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from core.memory.rag.vector_worker_client import VectorWorkerManager, start_temporary_vector_worker
+from core.memory.rag.vector_worker_client import (
+    VectorWorkerManager,
+    cleanup_orphaned_vector_workers,
+    start_temporary_vector_worker,
+)
 
 
 class _ExitedProcess:
@@ -91,3 +95,43 @@ def test_start_temporary_vector_worker_sets_and_restores_vector_url(monkeypatch,
         worker.stop()
 
     assert os.environ["ANIMAWORKS_VECTOR_URL"] == "http://previous/vector"
+
+
+def test_cleanup_orphaned_vector_workers_kills_only_parentless_workers(monkeypatch) -> None:
+    from core.paths import PROJECT_DIR
+
+    class FakeProcess:
+        def __init__(self, pid: int, ppid: int, cmdline: list[str]) -> None:
+            self.info = {
+                "pid": pid,
+                "ppid": ppid,
+                "cmdline": cmdline,
+                "exe": "python.exe",
+                "name": "python.exe",
+            }
+            self.killed = False
+
+        def cwd(self) -> str:
+            return str(PROJECT_DIR)
+
+        def children(self, recursive: bool = False) -> list[FakeProcess]:
+            return []
+
+        def parents(self) -> list[FakeProcess]:
+            return []
+
+        def kill(self) -> None:
+            self.killed = True
+
+    orphan = FakeProcess(1001, 9001, ["python", "-m", "core.memory.rag.vector_worker"])
+    live_child = FakeProcess(1002, 9002, ["python", "-m", "core.memory.rag.vector_worker"])
+
+    monkeypatch.setattr("core.memory.rag.vector_worker_client.psutil.process_iter", lambda attrs: [orphan, live_child])
+    monkeypatch.setattr(
+        "core.memory.rag.vector_worker_client.psutil.pid_exists",
+        lambda pid: pid == 9002,
+    )
+
+    assert cleanup_orphaned_vector_workers() == 1
+    assert orphan.killed is True
+    assert live_child.killed is False

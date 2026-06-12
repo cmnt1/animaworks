@@ -40,6 +40,9 @@ _RESTART_HELPER_CMD_MARKERS = (
 
 _DAEMON_STARTUP_TIMEOUT = 120
 _DAEMON_POLL_INTERVAL = 0.3
+_RESTART_MAX_RETRIES = int(os.environ.get("ANIMAWORKS_RESTART_MAX_RETRIES", "2"))
+_RESTART_RETRY_DELAY = int(os.environ.get("ANIMAWORKS_RESTART_RETRY_DELAY", "5"))
+_RESTART_PORT_WAIT_TIMEOUT = int(os.environ.get("ANIMAWORKS_RESTART_PORT_WAIT_TIMEOUT", "900"))
 _PID_WATCHDOG_STOP = threading.Event()
 
 
@@ -454,8 +457,6 @@ def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
     """Repair suspected corrupt RAG DBs before the server imports Chroma."""
     try:
         from core.config import load_config
-        from core.paths import get_animas_dir
-
         config = load_config()
         rag = config.rag
         if not config.setup_complete:
@@ -472,41 +473,12 @@ def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
         suspects = service.discover_suspect_animas(window_minutes=window_minutes)
         reason = "startup_chroma_crash_preflight"
         if not suspects and force_all_vectordb:
-            animas_dir = get_animas_dir()
-            suspects = [
-                name
-                for name in service.list_repairable_animas(animas_dir=animas_dir)
-                if (animas_dir / name / "vectordb").exists()
-            ]
-            reason = "startup_unclean_exit_preflight"
+            logger.info("RAG startup preflight: unclean exit observed, but no suspect DBs found")
         if not suspects:
             logger.info("RAG startup preflight: no suspect DBs found")
             return
 
-        joined = ", ".join(suspects)
-        print(f"RAG startup preflight: repairing suspected vector DB(s): {joined}")
-        results = service.repair_animas_if_allowed(
-            suspects,
-            reason=reason,
-            source="startup_preflight",
-            include_shared=True,
-        )
-        for result in results.values():
-            if result.ok:
-                logger.warning(
-                    "RAG startup preflight repaired %s: chunks=%s quarantine=%s",
-                    result.anima_name,
-                    result.chunks_indexed,
-                    result.quarantine_path,
-                )
-            else:
-                logger.error(
-                    "RAG startup preflight failed for %s: status=%s stage=%s error=%s",
-                    result.anima_name,
-                    result.status,
-                    result.stage,
-                    result.error,
-                )
+        _request_rag_startup_preflight_targets(service, suspects, reason=reason)
     except Exception:
         logger.exception("RAG startup preflight failed unexpectedly; continuing server startup")
 
@@ -518,8 +490,6 @@ def _discover_rag_startup_preflight_targets(
     """Discover startup RAG repair targets without starting a vector worker."""
     try:
         from core.config import load_config
-        from core.paths import get_animas_dir
-
         config = load_config()
         rag = config.rag
         if not config.setup_complete:
@@ -536,13 +506,7 @@ def _discover_rag_startup_preflight_targets(
         suspects = service.discover_suspect_animas(window_minutes=window_minutes)
         reason = "startup_chroma_crash_preflight"
         if not suspects and force_all_vectordb:
-            animas_dir = get_animas_dir()
-            suspects = [
-                name
-                for name in service.list_repairable_animas(animas_dir=animas_dir)
-                if (animas_dir / name / "vectordb").exists()
-            ]
-            reason = "startup_unclean_exit_preflight"
+            logger.info("RAG startup preflight: unclean exit observed, but no suspect DBs found")
         if not suspects:
             logger.info("RAG startup preflight: no suspect DBs found")
             return None
@@ -552,40 +516,28 @@ def _discover_rag_startup_preflight_targets(
         return None
 
 
-def _repair_rag_startup_preflight_targets(
+def _request_rag_startup_preflight_targets(
     service: object,
     suspects: list[str],
     *,
     reason: str,
 ) -> None:
     joined = ", ".join(suspects)
-    print(f"RAG startup preflight: repairing suspected vector DB(s): {joined}")
-    results = service.repair_animas_if_allowed(  # type: ignore[attr-defined]
-        suspects,
-        reason=reason,
-        source="startup_preflight",
-        include_shared=True,
-    )
-    for result in results.values():
-        if result.ok:
-            logger.warning(
-                "RAG startup preflight repaired %s: chunks=%s quarantine=%s",
-                result.anima_name,
-                result.chunks_indexed,
-                result.quarantine_path,
+    logger.warning("RAG startup preflight: requesting supervised repair for suspected vector DB(s): %s", joined)
+    for anima_name in suspects:
+        try:
+            service.request_repair(  # type: ignore[attr-defined]
+                anima_name,
+                reason=reason,
+                source="startup_preflight",
+                include_shared=True,
             )
-        else:
-            logger.error(
-                "RAG startup preflight failed for %s: status=%s stage=%s error=%s",
-                result.anima_name,
-                result.status,
-                result.stage,
-                result.error,
-            )
+        except Exception:
+            logger.exception("RAG startup preflight failed to request repair for %s", anima_name)
 
 
 def _run_rag_startup_preflight_via_worker(*, force_all_vectordb: bool = False) -> None:
-    """Run startup RAG repair with ChromaDB isolated in a temporary worker."""
+    """Request startup RAG repair without blocking server availability."""
     discovered = _discover_rag_startup_preflight_targets(force_all_vectordb=force_all_vectordb)
     if discovered is None:
         return
@@ -604,35 +556,7 @@ def _run_rag_startup_preflight_via_worker(*, force_all_vectordb: bool = False) -
         logger.info("RAG startup preflight: all suspect DBs are currently blocked")
         return
 
-    try:
-        from core.config import load_config
-
-        config = load_config()
-        if not config.setup_complete:
-            _repair_rag_startup_preflight_targets(service, runnable, reason=reason)
-            return
-
-        rag = config.rag
-        if not bool(getattr(rag, "repair_enabled", True)):
-            return
-        if not bool(getattr(rag, "startup_repair_preflight_enabled", True)):
-            return
-
-        from core.memory.rag.vector_worker_client import start_temporary_vector_worker
-        from core.paths import get_data_dir
-
-        worker = start_temporary_vector_worker(
-            config=config,
-            log_dir=get_data_dir() / "logs",
-        )
-    except Exception:
-        logger.exception("RAG startup preflight vector worker unavailable; continuing server startup")
-        return
-
-    try:
-        _repair_rag_startup_preflight_targets(service, runnable, reason=reason)
-    finally:
-        worker.stop()
+    _request_rag_startup_preflight_targets(service, runnable, reason=reason)
 
 
 def _start_foreground(args: argparse.Namespace) -> None:
@@ -793,9 +717,9 @@ host = {host!r}
 port = {port!r}
 _SERVER_CMD_MARKERS = {_SERVER_CMD_MARKERS!r}
 _RESTART_HELPER_CMD_MARKERS = {_RESTART_HELPER_CMD_MARKERS!r}
-MAX_RETRIES = 3
-RETRY_DELAY = 5
-PORT_WAIT_TIMEOUT = 180
+MAX_RETRIES = {_RESTART_MAX_RETRIES!r}
+RETRY_DELAY = {_RESTART_RETRY_DELAY!r}
+PORT_WAIT_TIMEOUT = {_RESTART_PORT_WAIT_TIMEOUT!r}
 
 def _log(msg):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -854,7 +778,7 @@ if old_pid is not None:
     while time.monotonic() < deadline and _alive(old_pid):
         time.sleep(0.3)
     if _alive(old_pid):
-        _log(f"Old server still alive after 30s, force-killing pid={{old_pid}}")
+        _log(f"Old server still alive after 180s, force-killing pid={{old_pid}}")
         try:
             terminate_pid(old_pid, force=True, include_children=True)
         except (OSError, ProcessLookupError):
@@ -917,6 +841,13 @@ for attempt in range(1, MAX_RETRIES + 1):
         sys.exit(0)
 
     _log(f"Attempt {{attempt}} failed: port not listening after {{PORT_WAIT_TIMEOUT}}s")
+    if proc.poll() is None:
+        _log(f"Terminating unready server process pid={{proc.pid}} before retry/fail")
+        try:
+            terminate_pid(proc.pid, force=True, include_children=True)
+        except (OSError, ProcessLookupError):
+            pass
+        time.sleep(1)
     if attempt < MAX_RETRIES:
         _log(f"Retrying in {{RETRY_DELAY}}s...")
         time.sleep(RETRY_DELAY)
@@ -984,7 +915,10 @@ def cmd_restart(args: argparse.Namespace) -> None:
     daemon_log = _get_daemon_log_path()
 
     print("Waiting for server to start...")
-    deadline = time.monotonic() + 180
+    restart_wait_timeout = (_RESTART_PORT_WAIT_TIMEOUT * _RESTART_MAX_RETRIES) + (
+        _RESTART_RETRY_DELAY * max(_RESTART_MAX_RETRIES - 1, 0)
+    ) + 30
+    deadline = time.monotonic() + restart_wait_timeout
     started = False
     while time.monotonic() < deadline:
         if _is_port_listening(check_host, port):
@@ -1012,7 +946,7 @@ def cmd_restart(args: argparse.Namespace) -> None:
         print(f"  Dashboard: http://{display_host}:{port}/")
         print(f"  Logs:      {daemon_log}")
     else:
-        print("Error: Server did not start within 180 seconds.")
+        print(f"Error: Server did not start within {restart_wait_timeout} seconds.")
         print(f"  Helper log: {helper_log}")
         print(f"  Daemon log: {daemon_log}")
         sys.exit(1)

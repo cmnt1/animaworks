@@ -24,7 +24,7 @@ from typing import Any
 import psutil
 
 from core.exceptions import AnimaNotRunningError, IPCConnectionError, ProcessError
-from core.platform.process import subprocess_session_kwargs, terminate_subprocess
+from core.platform.process import subprocess_session_kwargs, terminate_pid, terminate_subprocess
 from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse
 from core.time_utils import ensure_aware, now_local
 
@@ -582,6 +582,8 @@ class ProcessHandle:
 
     async def _cleanup(self) -> None:
         """Clean up resources (including killing orphaned subprocesses)."""
+        runtime_pid = self._read_runtime_pid()
+
         if self.process:
             if self.process.poll() is None:
                 # Still alive — kill and wait
@@ -604,6 +606,8 @@ class ProcessHandle:
                     pass
             self.process = None
 
+        self._kill_runtime_pid(runtime_pid)
+
         if self.ipc_client:
             try:
                 await self.ipc_client.close()
@@ -621,6 +625,50 @@ class ProcessHandle:
         if self.socket_path.exists():
             self.socket_path.unlink()
             logger.debug("Socket file removed: %s", self.socket_path)
+
+        self._cleanup_runtime_sidecars()
+
+    def _runtime_anima_dir(self) -> Path:
+        return self.socket_path.parent.parent / "animas"
+
+    def _runtime_pid_path(self) -> Path:
+        return self._runtime_anima_dir() / f"{self.anima_name}.pid"
+
+    def _read_runtime_pid(self) -> int | None:
+        try:
+            raw = self._runtime_pid_path().read_text(encoding="utf-8").strip()
+            return int(raw)
+        except (OSError, ValueError):
+            return None
+
+    def _kill_runtime_pid(self, pid: int | None) -> None:
+        if not pid:
+            return
+        try:
+            proc = psutil.Process(pid)
+            cmdline = " ".join(proc.cmdline())
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return
+        if "core.supervisor.runner" not in cmdline or f"--anima-name {self.anima_name}" not in cmdline:
+            logger.debug("Runtime sidecar PID %s no longer matches %s", pid, self.anima_name)
+            return
+        logger.warning("Killing runtime sidecar process: %s (PID %s)", self.anima_name, pid)
+        try:
+            terminate_pid(pid, force=True, include_children=True)
+        except (OSError, ProcessLookupError):
+            pass
+
+    def _cleanup_runtime_sidecars(self) -> None:
+        runtime_dir = self._runtime_anima_dir()
+        for path in (
+            runtime_dir / f"{self.anima_name}.pid",
+            runtime_dir / f"{self.anima_name}.lock",
+            runtime_dir / f"{self.anima_name}.busy.json",
+        ):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Failed to remove runtime sidecar %s", path, exc_info=True)
 
     def is_alive(self) -> bool:
         """Check if process is alive."""

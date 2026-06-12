@@ -217,6 +217,44 @@ class TestStopIPCShutdownOrder:
         assert handle.state == ProcessState.STOPPED
 
 
+def test_start_cleanup_removes_stale_runtime_files(supervisor: ProcessSupervisor, monkeypatch):
+    """Stale pid/lock/busy/socket files should not block a fresh start."""
+    run_animas = supervisor.run_dir / "animas"
+    run_sockets = supervisor.run_dir / "sockets"
+    run_animas.mkdir(parents=True)
+    run_sockets.mkdir(parents=True)
+
+    for path, content in (
+        (run_animas / "sakura.pid", "999999"),
+        (run_animas / "sakura.lock", ""),
+        (run_animas / "sakura.busy.json", "{}"),
+        (run_sockets / "sakura.sock", ""),
+    ):
+        path.write_text(content, encoding="utf-8")
+
+    class NoSuchProcessModule:
+        STATUS_ZOMBIE = "zombie"
+
+        class NoSuchProcess(Exception):
+            pass
+
+        class Error(Exception):
+            pass
+
+        @staticmethod
+        def Process(pid: int):
+            raise NoSuchProcessModule.NoSuchProcess(pid)
+
+    monkeypatch.setitem(__import__("sys").modules, "psutil", NoSuchProcessModule)
+
+    supervisor._cleanup_stale_runtime_files("sakura")  # noqa: SLF001
+
+    assert not (run_animas / "sakura.pid").exists()
+    assert not (run_animas / "sakura.lock").exists()
+    assert not (run_animas / "sakura.busy.json").exists()
+    assert not (run_sockets / "sakura.sock").exists()
+
+
 # ── Bug 2: SSE stream_done flag and STREAM_INCOMPLETE fallback ────
 
 

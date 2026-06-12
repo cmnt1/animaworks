@@ -20,9 +20,6 @@ def test_rag_startup_preflight_repairs_suspects() -> None:
     )
     service = MagicMock()
     service.discover_suspect_animas.return_value = ["sora"]
-    service.repair_animas_if_allowed.return_value = {
-        "sora": RepairResult(status="success", anima_name="sora", reason="startup_chroma_crash_preflight")
-    }
 
     with (
         patch("core.config.load_config", return_value=config),
@@ -31,15 +28,15 @@ def test_rag_startup_preflight_repairs_suspects() -> None:
         _run_rag_startup_preflight()
 
     service.discover_suspect_animas.assert_called_once_with(window_minutes=30)
-    service.repair_animas_if_allowed.assert_called_once_with(
-        ["sora"],
+    service.request_repair.assert_called_once_with(
+        "sora",
         reason="startup_chroma_crash_preflight",
         source="startup_preflight",
         include_shared=True,
     )
 
 
-def test_rag_startup_preflight_repairs_vectordbs_after_unclean_exit(data_dir: Path) -> None:
+def test_rag_startup_preflight_skips_unclean_exit_without_suspects(data_dir: Path) -> None:
     from cli.commands.server import _run_rag_startup_preflight
 
     anima_dir = data_dir / "animas" / "sora"
@@ -56,10 +53,6 @@ def test_rag_startup_preflight_repairs_vectordbs_after_unclean_exit(data_dir: Pa
     )
     service = MagicMock()
     service.discover_suspect_animas.return_value = []
-    service.list_repairable_animas.return_value = ["sora"]
-    service.repair_animas_if_allowed.return_value = {
-        "sora": RepairResult(status="success", anima_name="sora", reason="startup_unclean_exit_preflight")
-    }
 
     with (
         patch("core.config.load_config", return_value=config),
@@ -67,15 +60,11 @@ def test_rag_startup_preflight_repairs_vectordbs_after_unclean_exit(data_dir: Pa
     ):
         _run_rag_startup_preflight(force_all_vectordb=True)
 
-    service.repair_animas_if_allowed.assert_called_once_with(
-        ["sora"],
-        reason="startup_unclean_exit_preflight",
-        source="startup_preflight",
-        include_shared=True,
-    )
+    service.list_repairable_animas.assert_not_called()
+    service.repair_animas_if_allowed.assert_not_called()
 
 
-def test_rag_startup_preflight_worker_skipped_without_suspects() -> None:
+def test_rag_startup_preflight_skipped_without_suspects() -> None:
     from cli.commands.server import _run_rag_startup_preflight_via_worker
 
     config = SimpleNamespace(
@@ -93,12 +82,10 @@ def test_rag_startup_preflight_worker_skipped_without_suspects() -> None:
     with (
         patch("core.config.load_config", return_value=config),
         patch("core.memory.rag.repair.get_repair_service", return_value=service),
-        patch("core.memory.rag.vector_worker_client.start_temporary_vector_worker") as mock_worker,
     ):
         _run_rag_startup_preflight_via_worker()
 
-    mock_worker.assert_not_called()
-    service.repair_animas_if_allowed.assert_not_called()
+    service.request_repair.assert_not_called()
 
 
 def test_rag_startup_preflight_worker_skipped_when_all_targets_blocked() -> None:
@@ -124,15 +111,13 @@ def test_rag_startup_preflight_worker_skipped_when_all_targets_blocked() -> None
     with (
         patch("core.config.load_config", return_value=config),
         patch("core.memory.rag.repair.get_repair_service", return_value=service),
-        patch("core.memory.rag.vector_worker_client.start_temporary_vector_worker") as mock_worker,
     ):
         _run_rag_startup_preflight_via_worker()
 
-    mock_worker.assert_not_called()
-    service.repair_animas_if_allowed.assert_not_called()
+    service.request_repair.assert_not_called()
 
 
-def test_rag_startup_preflight_worker_starts_for_unblocked_targets() -> None:
+def test_rag_startup_preflight_requests_unblocked_targets() -> None:
     from cli.commands.server import _run_rag_startup_preflight_via_worker
 
     config = SimpleNamespace(
@@ -147,25 +132,16 @@ def test_rag_startup_preflight_worker_starts_for_unblocked_targets() -> None:
     service = MagicMock()
     service.discover_suspect_animas.return_value = ["sora"]
     service.repair_blocker.return_value = None
-    service.repair_animas_if_allowed.return_value = {
-        "sora": RepairResult(status="success", anima_name="sora", reason="startup_chroma_crash_preflight")
-    }
-    worker = MagicMock()
 
     with (
         patch("core.config.load_config", return_value=config),
         patch("core.memory.rag.repair.get_repair_service", return_value=service),
-        patch("core.memory.rag.vector_worker_client.start_temporary_vector_worker", return_value=worker) as mock_worker,
     ):
         _run_rag_startup_preflight_via_worker()
 
-    mock_worker.assert_called_once()
-    assert mock_worker.call_args.kwargs["config"] is config
-    assert mock_worker.call_args.kwargs["log_dir"].name == "logs"
-    service.repair_animas_if_allowed.assert_called_once_with(
-        ["sora"],
+    service.request_repair.assert_called_once_with(
+        "sora",
         reason="startup_chroma_crash_preflight",
         source="startup_preflight",
         include_shared=True,
     )
-    worker.stop.assert_called_once()

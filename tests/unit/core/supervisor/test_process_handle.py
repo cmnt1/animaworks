@@ -198,6 +198,38 @@ class TestCleanupZombieReap:
 
         assert handle.process is None
 
+    @pytest.mark.asyncio
+    async def test_cleanup_kills_runtime_sidecar_when_wrapper_exited(self, handle: ProcessHandle, tmp_path: Path):
+        """_cleanup() should kill the pidfile runner when the Popen wrapper already exited."""
+        handle.socket_path = tmp_path / "run" / "sockets" / "test.sock"
+        runtime_dir = tmp_path / "run" / "animas"
+        runtime_dir.mkdir(parents=True)
+        handle.socket_path.parent.mkdir(parents=True)
+        (runtime_dir / "test-anima.pid").write_text("67890", encoding="utf-8")
+        (runtime_dir / "test-anima.lock").write_text("", encoding="utf-8")
+        (runtime_dir / "test-anima.busy.json").write_text("{}", encoding="utf-8")
+
+        mock_process = MagicMock(spec=subprocess.Popen)
+        mock_process.poll.return_value = 0
+        mock_process.pid = 12345
+        handle.process = mock_process
+        handle.ipc_client = None
+
+        class FakeRuntimeProcess:
+            def cmdline(self) -> list[str]:
+                return ["python", "-m", "core.supervisor.runner", "--anima-name", "test-anima"]
+
+        with (
+            patch("core.supervisor.process_handle.psutil.Process", return_value=FakeRuntimeProcess()),
+            patch("core.supervisor.process_handle.terminate_pid") as mock_terminate_pid,
+        ):
+            await handle._cleanup()
+
+        mock_terminate_pid.assert_called_once_with(67890, force=True, include_children=True)
+        assert not (runtime_dir / "test-anima.pid").exists()
+        assert not (runtime_dir / "test-anima.lock").exists()
+        assert not (runtime_dir / "test-anima.busy.json").exists()
+
 
 class TestStartBaseException:
     """Tests for start() catching BaseException (including CancelledError)."""
