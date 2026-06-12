@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Create the Anjo 1K daily Products draft for Sakura review."""
 
 from __future__ import annotations
@@ -28,12 +27,8 @@ DATA_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_data\Property\Suumo")
 PRODUCT_DATA_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_data\Property\Products")
 PRODUCT_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_products")
 CATEGORY_DIR = PRODUCT_ROOT / "Property"
-DEFAULT_TASK_RESULTS_DIR = Path(
-    r"E:\OneDriveBiz\AnimaWorks\.animaworks\animas\hikaru\state\task_results"
-)
-TASK_RESULTS_DIR = Path(
-    os.environ.get("ANIMAWORKS_REPORT_TASK_RESULTS_DIR", str(DEFAULT_TASK_RESULTS_DIR))
-)
+DEFAULT_TASK_RESULTS_DIR = Path(r"E:\OneDriveBiz\AnimaWorks\.animaworks\animas\hikaru\state\task_results")
+TASK_RESULTS_DIR = Path(os.environ.get("ANIMAWORKS_REPORT_TASK_RESULTS_DIR", str(DEFAULT_TASK_RESULTS_DIR)))
 
 TASK_CODE = "PTY-ANJO-1K-DAILY"
 TASK_NAME = "安城市1K賃貸 市場動向 日次レポート"
@@ -86,8 +81,8 @@ def script_preflight(path: Path | None = None) -> dict:
 
 
 def read_scrape_status() -> dict | None:
-    from sqlalchemy import text
     from Cnct_Env import create_connection
+    from sqlalchemy import text
 
     engine = create_connection("property_db")
     with engine.connect() as conn:
@@ -279,22 +274,22 @@ formal_evidence_path: {evidence_path}
 
 ## サマリー
 - 対象データ最新日: **{d}**（前日: {prev}）
-- 募集件数: **{lc['latest']}件**（前日比 {signed(lc['change'], '件')}）
-- 平均賃料: **{yen(rent['latest']['mean'])}円**（前日比 {signed(rent['change_mean'], '円')}）
-- 中央値賃料: **{yen(rent['latest']['median'])}円**（前日比 {signed(rent['change_median'], '円')}）
-- 平均坪単価: **{yen(unit['latest']['mean'])}円/坪**（前日比 {signed(unit['change_mean'], '円/坪')}）
-- 中央値坪単価: **{yen(unit['latest']['median'])}円/坪**
-- 掲載日数中央値: **{vac['median_obs_days']}日**
-- 7日以上掲載比率: **{vac['pct_listings_7plus_days']}%**
+- 募集件数: **{lc["latest"]}件**（前日比 {signed(lc["change"], "件")}）
+- 平均賃料: **{yen(rent["latest"]["mean"])}円**（前日比 {signed(rent["change_mean"], "円")}）
+- 中央値賃料: **{yen(rent["latest"]["median"])}円**（前日比 {signed(rent["change_median"], "円")}）
+- 平均坪単価: **{yen(unit["latest"]["mean"])}円/坪**（前日比 {signed(unit["change_mean"], "円/坪")}）
+- 中央値坪単価: **{yen(unit["latest"]["median"])}円/坪**
+- 掲載日数中央値: **{vac["median_obs_days"]}日**
+- 7日以上掲載比率: **{vac["pct_listings_7plus_days"]}%**
 
 ## 主要指標（最新日 vs 前日）
 | 指標 | 最新日（{d}） | 前日（{prev}） | 前日比 |
 |---|---:|---:|---:|
-| 募集件数 | {lc['latest']}件 | {lc['prev']}件 | {signed(lc['change'], '件')} |
-| 平均賃料 | {yen(rent['latest']['mean'])}円 | {yen(rent['prev']['mean'])}円 | {signed(rent['change_mean'], '円')} |
-| 中央値賃料 | {yen(rent['latest']['median'])}円 | {yen(rent['prev']['median'])}円 | {signed(rent['change_median'], '円')} |
-| 平均坪単価 | {yen(unit['latest']['mean'])}円/坪 | {yen(unit['prev']['mean'])}円/坪 | {signed(unit['change_mean'], '円/坪')} |
-| 中央値坪単価 | {yen(unit['latest']['median'])}円/坪 | {yen(unit['prev']['median'])}円/坪 | - |
+| 募集件数 | {lc["latest"]}件 | {lc["prev"]}件 | {signed(lc["change"], "件")} |
+| 平均賃料 | {yen(rent["latest"]["mean"])}円 | {yen(rent["prev"]["mean"])}円 | {signed(rent["change_mean"], "円")} |
+| 中央値賃料 | {yen(rent["latest"]["median"])}円 | {yen(rent["prev"]["median"])}円 | {signed(rent["change_median"], "円")} |
+| 平均坪単価 | {yen(unit["latest"]["mean"])}円/坪 | {yen(unit["prev"]["mean"])}円/坪 | {signed(unit["change_mean"], "円/坪")} |
+| 中央値坪単価 | {yen(unit["latest"]["median"])}円/坪 | {yen(unit["prev"]["median"])}円/坪 | - |
 
 ## 直近7日トレンド
 | 日付 | 募集件数 | 平均賃料 | 中央値賃料 | 平均坪単価 |
@@ -308,11 +303,11 @@ formal_evidence_path: {evidence_path}
 - 参照JSON: `{source_json}`
 - Obsidian格納JSON: `{copy_json}`
 - JSON SHA-256: `{digest}`
-- データ基準日: {d}（latest_date_in_db: {meta.get('latest_date_in_db')}）
-- JSON抽出時刻: {meta.get('extraction_time')} JST
-- 賃料カラム: {meta.get('rent_column_used')}
+- データ基準日: {d}（latest_date_in_db: {meta.get("latest_date_in_db")}）
+- JSON抽出時刻: {meta.get("extraction_time")} JST
+- 賃料カラム: {meta.get("rent_column_used")}
 - 単価カラム: Base_Rent / Ocu_Area
-- データ期間: {meta.get('data_range', {}).get('min_date')} - {meta.get('data_range', {}).get('max_date')}
+- データ期間: {meta.get("data_range", {}).get("min_date")} - {meta.get("data_range", {}).get("max_date")}
 
 ## レビュー依頼
 Sakuraはこの下書きを確認し、問題がなければ frontmatter の `status` を `完了`、`submitted` を `{d}` に更新したうえで、Discordスレッド `{DISCORD_THREAD_ID}` に完成報告してください。

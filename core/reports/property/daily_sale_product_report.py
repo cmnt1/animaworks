@@ -1,4 +1,3 @@
-﻿# -*- coding: utf-8 -*-
 """Create the daily property sale portal Products draft for Sakura review."""
 
 from __future__ import annotations
@@ -14,108 +13,115 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
+
 import pandas as pd
 
 
 def normalize_url_for_diff(value: object) -> str:
-    text = '' if value is None else str(value).strip()
+    text = "" if value is None else str(value).strip()
     if not text:
-        return ''
+        return ""
     split = urlsplit(text)
-    return urlunsplit((split.scheme, split.netloc, split.path, split.query, ''))
+    return urlunsplit((split.scheme, split.netloc, split.path, split.query, ""))
+
 
 def escape_md_cell(value: object) -> str:
-    text = '-' if value is None else str(value)
-    return text.replace('\n', ' ').replace('|', '｜')
+    text = "-" if value is None else str(value)
+    return text.replace("\n", " ").replace("|", "｜")
+
 
 def load_listing_csv(path: Path | None) -> pd.DataFrame | None:
     if path is None or not path.exists():
         return None
     return pd.read_csv(path)
 
+
 def latest_previous_csv(report_date: str) -> Path | None:
-    prev_dt = datetime.strptime(report_date, '%Y-%m-%d') - timedelta(days=1)
-    prev_dir = data_dir_for_date(DATA_ROOT, prev_dt.strftime('%Y-%m-%d'))
-    prev_ymd = prev_dt.strftime('%Y%m%d')
-    candidates = sorted(prev_dir.glob(f'P-*_{SLUG_PREFIX}-{prev_ymd}.csv'))
+    prev_dt = datetime.strptime(report_date, "%Y-%m-%d") - timedelta(days=1)
+    prev_dir = data_dir_for_date(DATA_ROOT, prev_dt.strftime("%Y-%m-%d"))
+    prev_ymd = prev_dt.strftime("%Y%m%d")
+    candidates = sorted(prev_dir.glob(f"P-*_{SLUG_PREFIX}-{prev_ymd}.csv"))
     return candidates[0] if candidates else None
+
 
 def prepare_diff_frame(df: pd.DataFrame | None, *, source_label: str) -> pd.DataFrame:
     if df is None or df.empty:
         columns = [
-            'source_label',
-            'portal_label',
-            'title',
-            'url',
-            'price_text',
-            'price_jpy',
-            'gross_yield_percent',
-            'property_type',
-            'review_status',
-            '_url_norm',
-            '_url_occurrence',
-            '_match_key',
+            "source_label",
+            "portal_label",
+            "title",
+            "url",
+            "price_text",
+            "price_jpy",
+            "gross_yield_percent",
+            "property_type",
+            "review_status",
+            "_url_norm",
+            "_url_occurrence",
+            "_match_key",
         ]
         return pd.DataFrame(columns=columns)
 
     out = df.copy()
-    for col in ['portal_label', 'title', 'url', 'price_text', 'property_type', 'review_status']:
+    for col in ["portal_label", "title", "url", "price_text", "property_type", "review_status"]:
         if col not in out.columns:
-            out[col] = ''
-    if 'price_jpy' not in out.columns:
-        out['price_jpy'] = None
-    if 'gross_yield_percent' not in out.columns:
-        out['gross_yield_percent'] = None
+            out[col] = ""
+    if "price_jpy" not in out.columns:
+        out["price_jpy"] = None
+    if "gross_yield_percent" not in out.columns:
+        out["gross_yield_percent"] = None
 
-    out['source_label'] = source_label
-    out['_url_norm'] = out['url'].map(normalize_url_for_diff)
-    out = out[out['_url_norm'].astype(str).str.len() > 0].copy()
+    out["source_label"] = source_label
+    out["_url_norm"] = out["url"].map(normalize_url_for_diff)
+    out = out[out["_url_norm"].astype(str).str.len() > 0].copy()
     out = out.reset_index(drop=True)
-    out['_url_occurrence'] = out.groupby('_url_norm').cumcount() + 1
-    out['_match_key'] = out['_url_norm'] + '||' + out['_url_occurrence'].astype(str)
+    out["_url_occurrence"] = out.groupby("_url_norm").cumcount() + 1
+    out["_match_key"] = out["_url_norm"] + "||" + out["_url_occurrence"].astype(str)
     return out
 
-def diff_rows_to_markdown(rows: list[dict], *, empty_message: str = '該当なし') -> str:
-    header = '| 媒体名 | タイトル/物件名 | URL | 価格 | 表面利回り | 種別 |'
-    separator = '|---|---|---|---:|---:|---|'
+
+def diff_rows_to_markdown(rows: list[dict], *, empty_message: str = "該当なし") -> str:
+    header = "| 媒体名 | タイトル/物件名 | URL | 価格 | 表面利回り | 種別 |"
+    separator = "|---|---|---|---:|---:|---|"
     if not rows:
-        return '\n'.join([header, separator, f'| {empty_message} | - | - | - | - | - |'])
+        return "\n".join([header, separator, f"| {empty_message} | - | - | - | - | - |"])
 
     lines = [header, separator]
     for row in rows:
-        portal = escape_md_cell(row.get('portal_label'))
-        title = escape_md_cell(row.get('title'))
-        url = escape_md_cell(row.get('url'))
-        price = escape_md_cell(row.get('price_text') or yen(row.get('price_jpy')))
-        yield_ = escape_md_cell(pct(row.get('gross_yield_percent')))
-        property_type = escape_md_cell(row.get('property_type') or '-')
-        lines.append(f'| {portal} | {title} | `{url}` | {price} | {yield_} | {property_type} |')
-    return '\n'.join(lines)
+        portal = escape_md_cell(row.get("portal_label"))
+        title = escape_md_cell(row.get("title"))
+        url = escape_md_cell(row.get("url"))
+        price = escape_md_cell(row.get("price_text") or yen(row.get("price_jpy")))
+        yield_ = escape_md_cell(pct(row.get("gross_yield_percent")))
+        property_type = escape_md_cell(row.get("property_type") or "-")
+        lines.append(f"| {portal} | {title} | `{url}` | {price} | {yield_} | {property_type} |")
+    return "\n".join(lines)
+
 
 def build_url_diff_report(current_csv: Path, previous_csv: Path | None) -> dict[str, object]:
-    current_df = prepare_diff_frame(load_listing_csv(current_csv), source_label='current')
-    previous_df = prepare_diff_frame(load_listing_csv(previous_csv), source_label='previous')
+    current_df = prepare_diff_frame(load_listing_csv(current_csv), source_label="current")
+    previous_df = prepare_diff_frame(load_listing_csv(previous_csv), source_label="previous")
 
     comparison_available = previous_csv is not None and previous_csv.exists()
     if not comparison_available or previous_df.empty:
         return {
-            'comparison_available': False,
-            'message': '前日データなしのため比較不可',
-            'current_csv': str(current_csv),
-            'previous_csv': str(previous_csv) if previous_csv else None,
-            'current_count': int(current_df['_match_key'].nunique()) if not current_df.empty else 0,
-            'previous_count': int(previous_df['_match_key'].nunique()) if not previous_df.empty else 0,
-            'new_count': None,
-            'continued_count': None,
-            'deleted_count': None,
-            'new_rows': [],
-            'continued_rows': [],
-            'deleted_rows': [],
-            'comparison_key': 'URL（fragment除去・空白除去）',
+            "comparison_available": False,
+            "message": "前日データなしのため比較不可",
+            "current_csv": str(current_csv),
+            "previous_csv": str(previous_csv) if previous_csv else None,
+            "current_count": int(current_df["_match_key"].nunique()) if not current_df.empty else 0,
+            "previous_count": int(previous_df["_match_key"].nunique()) if not previous_df.empty else 0,
+            "new_count": None,
+            "continued_count": None,
+            "deleted_count": None,
+            "new_rows": [],
+            "continued_rows": [],
+            "deleted_rows": [],
+            "comparison_key": "URL（fragment除去・空白除去）",
         }
 
-    current_map = current_df.set_index('_match_key', drop=False) if not current_df.empty else pd.DataFrame()
-    previous_map = previous_df.set_index('_match_key', drop=False) if not previous_df.empty else pd.DataFrame()
+    current_map = current_df.set_index("_match_key", drop=False) if not current_df.empty else pd.DataFrame()
+    previous_map = previous_df.set_index("_match_key", drop=False) if not previous_df.empty else pd.DataFrame()
     current_urls = set(current_map.index) if not current_map.empty else set()
     previous_urls = set(previous_map.index) if not previous_map.empty else set()
 
@@ -136,22 +142,20 @@ def build_url_diff_report(current_csv: Path, previous_csv: Path | None) -> dict[
         return rows
 
     return {
-        'comparison_available': True,
-        'message': '',
-        'current_csv': str(current_csv),
-        'previous_csv': str(previous_csv) if previous_csv else None,
-        'current_count': len(current_urls),
-        'previous_count': len(previous_urls),
-        'new_count': len(new_urls),
-        'continued_count': len(continued_urls),
-        'deleted_count': len(deleted_urls),
-        'new_rows': _rows_for(new_urls, current_map),
-        'continued_rows': _rows_for(continued_urls, current_map),
-        'deleted_rows': _rows_for(deleted_urls, previous_map),
-        'comparison_key': 'URL（fragment除去・空白除去）',
+        "comparison_available": True,
+        "message": "",
+        "current_csv": str(current_csv),
+        "previous_csv": str(previous_csv) if previous_csv else None,
+        "current_count": len(current_urls),
+        "previous_count": len(previous_urls),
+        "new_count": len(new_urls),
+        "continued_count": len(continued_urls),
+        "deleted_count": len(deleted_urls),
+        "new_rows": _rows_for(new_urls, current_map),
+        "continued_rows": _rows_for(continued_urls, current_map),
+        "deleted_rows": _rows_for(deleted_urls, previous_map),
+        "comparison_key": "URL（fragment除去・空白除去）",
     }
-
-
 
 
 JST = timezone(timedelta(hours=9))
@@ -160,18 +164,14 @@ PROJECT_DIR = Path(r"E:\OneDriveBiz\Tools\General\animaworks")
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from core.tools.property_portal_scraper import format_markdown, result_to_dict, run_scan, write_outputs
+from core.tools.property_portal_scraper import result_to_dict, run_scan, write_outputs
 
 PRODUCT_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_products")
 CATEGORY_DIR = PRODUCT_ROOT / "Property"
 DATA_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_data\Property\SalePortals")
 REPORT_OUTPUT_DIR = PROJECT_DIR / "reports" / "property_portals"
-DEFAULT_TASK_RESULTS_DIR = Path(
-    r"E:\OneDriveBiz\AnimaWorks\.animaworks\animas\hikaru\state\task_results"
-)
-TASK_RESULTS_DIR = Path(
-    os.environ.get("ANIMAWORKS_REPORT_TASK_RESULTS_DIR", str(DEFAULT_TASK_RESULTS_DIR))
-)
+DEFAULT_TASK_RESULTS_DIR = Path(r"E:\OneDriveBiz\AnimaWorks\.animaworks\animas\hikaru\state\task_results")
+TASK_RESULTS_DIR = Path(os.environ.get("ANIMAWORKS_REPORT_TASK_RESULTS_DIR", str(DEFAULT_TASK_RESULTS_DIR)))
 
 TASK_CODE = "PROP-07"
 TASK_NAME = "デイリー売買情報レポート"
@@ -337,10 +337,10 @@ def render_product(
         )
         for run in portal_runs
     )
-    blocked_lines = "\n".join(
-        f"- {run['portal_label']}: {run.get('error') or '未取得'} ({run.get('url')})"
-        for run in blocked
-    ) or "- なし"
+    blocked_lines = (
+        "\n".join(f"- {run['portal_label']}: {run.get('error') or '未取得'} ({run.get('url')})" for run in blocked)
+        or "- なし"
+    )
     diff_section: list[str] = []
     if comparison and comparison.get("comparison_available"):
         diff_section.extend(
@@ -643,12 +643,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
-
-
-
-
-
-
