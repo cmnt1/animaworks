@@ -12,9 +12,17 @@ import shutil
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
+
+
+def _load_pandas() -> Any:
+    import pandas as pd
+
+    return pd
 
 
 def normalize_url_for_diff(value: object) -> str:
@@ -33,6 +41,7 @@ def escape_md_cell(value: object) -> str:
 def load_listing_csv(path: Path | None) -> pd.DataFrame | None:
     if path is None or not path.exists():
         return None
+    pd = _load_pandas()
     return pd.read_csv(path)
 
 
@@ -45,6 +54,7 @@ def latest_previous_csv(report_date: str) -> Path | None:
 
 
 def prepare_diff_frame(df: pd.DataFrame | None, *, source_label: str) -> pd.DataFrame:
+    pd = _load_pandas()
     if df is None or df.empty:
         columns = [
             "source_label",
@@ -99,6 +109,7 @@ def diff_rows_to_markdown(rows: list[dict], *, empty_message: str = "該当な�
 
 
 def build_url_diff_report(current_csv: Path, previous_csv: Path | None) -> dict[str, object]:
+    pd = _load_pandas()
     current_df = prepare_diff_frame(load_listing_csv(current_csv), source_label="current")
     previous_df = prepare_diff_frame(load_listing_csv(previous_csv), source_label="previous")
 
