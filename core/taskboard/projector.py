@@ -325,9 +325,7 @@ def _attach_related_tasks(
                 peer_name=target,
             )
             if related_child is not None and task.queue_status not in _TERMINAL_QUEUE_STATUSES:
-                if related_child.queue_status == "blocked":
-                    task.column = BoardColumn.TRACKING
-                elif related_child.queue_status == "failed":
+                if related_child.queue_status == "blocked" or related_child.queue_status == "failed":
                     task.column = BoardColumn.TRACKING
                 elif related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
                     if _delegated_child_needs_followup(related_child):
