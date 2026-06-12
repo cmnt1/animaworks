@@ -457,6 +457,7 @@ def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
     """Repair suspected corrupt RAG DBs before the server imports Chroma."""
     try:
         from core.config import load_config
+
         config = load_config()
         rag = config.rag
         if not config.setup_complete:
@@ -490,6 +491,7 @@ def _discover_rag_startup_preflight_targets(
     """Discover startup RAG repair targets without starting a vector worker."""
     try:
         from core.config import load_config
+
         config = load_config()
         rag = config.rag
         if not config.setup_complete:
@@ -915,9 +917,11 @@ def cmd_restart(args: argparse.Namespace) -> None:
     daemon_log = _get_daemon_log_path()
 
     print("Waiting for server to start...")
-    restart_wait_timeout = (_RESTART_PORT_WAIT_TIMEOUT * _RESTART_MAX_RETRIES) + (
-        _RESTART_RETRY_DELAY * max(_RESTART_MAX_RETRIES - 1, 0)
-    ) + 30
+    restart_wait_timeout = (
+        (_RESTART_PORT_WAIT_TIMEOUT * _RESTART_MAX_RETRIES)
+        + (_RESTART_RETRY_DELAY * max(_RESTART_MAX_RETRIES - 1, 0))
+        + 30
+    )
     deadline = time.monotonic() + restart_wait_timeout
     started = False
     while time.monotonic() < deadline:
