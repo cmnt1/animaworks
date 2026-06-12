@@ -916,6 +916,7 @@ class SchedulerMixin:
                 pending_failed_retention_days=hk_cfg.pending_failed_retention_days,
                 pending_processing_stale_hours=hk_cfg.pending_processing_stale_hours,
                 background_running_stale_hours=hk_cfg.background_running_stale_hours,
+                cron_queue_stale_minutes=hk_cfg.cron_queue_stale_minutes,
                 current_state_stale_hours=hk_cfg.current_state_stale_hours,
                 taskboard_suppressed_retention_days=hk_cfg.taskboard_suppressed_retention_days,
                 inbox_ttl_hours=inbox_cfg.ttl_hours,

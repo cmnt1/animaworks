@@ -949,6 +949,48 @@ def test_delegated_parent_blocks_when_child_done_is_japanese_start_note(tmp_path
     assert by_key[("hikaru", parent.task_id)].column == BoardColumn.BLOCKED
 
 
+def test_duplicate_delegated_retries_to_same_file_keep_latest(tmp_path: Path) -> None:
+    hikaru = _queue(tmp_path, "hikaru")
+    aoi = _queue(tmp_path, "aoi")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+
+    parents = []
+    for index in range(3):
+        child = aoi.add_task(
+            source="anima",
+            original_instruction="fix create_anjo_1k_product_draft.py and report py_compile",
+            assignee="aoi",
+            summary="fix create_anjo_1k_product_draft.py",
+            task_id=f"child-start-note-{index}",
+        )
+        aoi.update_status(
+            child.task_id,
+            "done",
+            summary="まずは該当ファイルの該当部分を読み取って問題点を特定します。",
+        )
+        parents.append(
+            hikaru.add_delegated_task(
+                original_instruction=f"retry {index}: fix create_anjo_1k_product_draft.py",
+                assignee="aoi",
+                summary=f"[delegate] retry {index}",
+                deadline="1h",
+                meta={"delegated_to": "aoi", "delegated_task_id": child.task_id},
+            )
+        )
+
+    projected = project_all(tmp_path / "animas", store)
+    by_key = {(task.anima_name, task.task_id): task for task in projected}
+
+    assert ("hikaru", parents[0].task_id) not in by_key
+    assert ("hikaru", parents[1].task_id) not in by_key
+    assert by_key[("hikaru", parents[2].task_id)].column == BoardColumn.BLOCKED
+
+    archived = project_all(tmp_path / "animas", store, include_archived=True)
+    archived_by_key = {(task.anima_name, task.task_id): task for task in archived}
+    assert archived_by_key[("hikaru", parents[0].task_id)].tombstone_reason == "duplicate_delegated_retry"
+    assert archived_by_key[("hikaru", parents[1].task_id)].replaced_by == f"hikaru:{parents[2].task_id}"
+
+
 def test_delegated_parent_blocks_when_child_done_is_requirement_only_note(tmp_path: Path) -> None:
     kanna = _queue(tmp_path, "kanna")
     miyu = _queue(tmp_path, "miyu")

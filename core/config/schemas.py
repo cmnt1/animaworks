@@ -596,6 +596,7 @@ class HousekeepingConfig(BaseModel):
     pending_failed_retention_days: int = 14
     pending_processing_stale_hours: int = Field(default=24, ge=1)
     background_running_stale_hours: int = Field(default=48, ge=1)
+    cron_queue_stale_minutes: int = Field(default=30, ge=1)
     current_state_stale_hours: int = Field(default=24, ge=1)
     taskboard_suppressed_retention_days: int = Field(default=30, ge=1)
 

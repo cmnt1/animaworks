@@ -39,6 +39,7 @@ _TERMINAL_QUEUE_STATUSES = {"done", "cancelled", "failed"}
 _HUMAN_BLOCKER_VALUES = {"human", "user", "owner"}
 _HUMAN_BLOCKER_KEYS = ("blocker", "blocked_on", "waiting_for", "waiting_on")
 _TASK_ID_RE = re.compile(r"\b[0-9a-f]{8,16}\b", re.IGNORECASE)
+_FILE_FINGERPRINT_RE = re.compile(r"[\w.-]+\.(?:py|js|ts|tsx|jsx|md|json|ya?ml|toml|sql)\b", re.IGNORECASE)
 _DELEGATED_CHILD_PROGRESS_MARKERS = (
     "まずは該当ファイル",
     "読み取ろう",
@@ -174,6 +175,7 @@ def project_anima(
     _suppress_superseded_cron_runs(projected)
     _suppress_duplicate_failed_crons(projected)
     _suppress_duplicate_delegated_parents(projected)
+    _suppress_duplicate_delegated_retries(projected)
     return sorted(
         [task for task in projected if _should_include(task, include_archived=include_archived)],
         key=_sort_key,
@@ -215,6 +217,7 @@ def project_all(
     _suppress_superseded_cron_runs(projected)
     _suppress_duplicate_failed_crons(projected)
     _suppress_duplicate_delegated_parents(projected)
+    _suppress_duplicate_delegated_retries(projected)
     return sorted(
         [task for task in projected if _should_include(task, include_archived=include_archived)],
         key=_sort_key,
@@ -396,6 +399,55 @@ def _suppress_duplicate_delegated_parents(tasks: list[BoardTask]) -> None:
             task.column = BoardColumn.SUPPRESSED
             task.replaced_by = f"{keeper.anima_name}:{keeper.task_id}"
             task.tombstone_reason = "duplicate_delegated_parent"
+
+
+def _suppress_duplicate_delegated_retries(tasks: list[BoardTask]) -> None:
+    groups: dict[tuple[str, str, str], list[BoardTask]] = {}
+    for task in tasks:
+        if (
+            task.visibility != AttentionVisibility.ACTIVE
+            or task.queue_status != "delegated"
+            or task.column != BoardColumn.BLOCKED
+        ):
+            continue
+        meta = task.meta or {}
+        target = meta.get("delegated_to")
+        child_ids = _delegated_child_ids(meta)
+        if not isinstance(target, str) or not target or not child_ids:
+            continue
+        fingerprint = _delegated_retry_fingerprint(task)
+        if not fingerprint:
+            continue
+        groups.setdefault((task.anima_name, target, fingerprint), []).append(task)
+
+    for duplicates in groups.values():
+        if len(duplicates) <= 1:
+            continue
+        keeper = max(duplicates, key=_task_updated_precedence)
+        for task in duplicates:
+            if task is keeper:
+                continue
+            task.visibility = AttentionVisibility.ARCHIVED
+            task.column = BoardColumn.SUPPRESSED
+            task.replaced_by = f"{keeper.anima_name}:{keeper.task_id}"
+            task.tombstone_reason = "duplicate_delegated_retry"
+
+
+def _delegated_retry_fingerprint(task: BoardTask) -> str | None:
+    meta = task.meta or {}
+    task_desc = meta.get("task_desc")
+    parts = [task.original_instruction or "", task.summary or ""]
+    if isinstance(task_desc, dict):
+        parts.extend(
+            str(value)
+            for value in (task_desc.get("title"), task_desc.get("description"))
+            if isinstance(value, str)
+        )
+    text = "\n".join(parts)
+    matches = sorted({match.group(0).lower() for match in _FILE_FINGERPRINT_RE.finditer(text)})
+    if matches:
+        return "|".join(matches)
+    return None
 
 
 def _mark_serial_pending_backlog(tasks: list[BoardTask]) -> None:

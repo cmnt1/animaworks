@@ -37,6 +37,7 @@ async def run_housekeeping(
     pending_failed_retention_days: int = 14,
     pending_processing_stale_hours: int = 24,
     background_running_stale_hours: int = 48,
+    cron_queue_stale_minutes: int = 30,
     current_state_stale_hours: int = 24,
     taskboard_suppressed_retention_days: int = 30,
     archive_superseded_retention_days: int = 7,
@@ -154,6 +155,7 @@ async def run_housekeeping(
             background_running_stale_hours,
             current_state_stale_hours,
             taskboard_suppressed_retention_days,
+            cron_queue_stale_minutes,
         )
         results["taskboard_stale"] = r
     except Exception:

@@ -24,6 +24,7 @@ def cleanup_taskboard_stale_artifacts(
     background_running_stale_hours: int,
     current_state_stale_hours: int,
     taskboard_suppressed_retention_days: int,
+    cron_queue_stale_minutes: int = 30,
 ) -> dict[str, Any]:
     """Clean runtime artifacts that can resurface stale TaskBoard work."""
     animas_dir = data_dir / "animas"
@@ -45,7 +46,7 @@ def cleanup_taskboard_stale_artifacts(
     background = _cleanup_background_running(animas_dir, background_running_stale_hours)
     results.update({f"background_{key}": value for key, value in background.items()})
 
-    cron_queue = _cleanup_stale_cron_queue_tasks(animas_dir, background_running_stale_hours)
+    cron_queue = _cleanup_stale_cron_queue_tasks(animas_dir, cron_queue_stale_minutes)
     results.update({f"cron_queue_{key}": value for key, value in cron_queue.items()})
 
     current_state = _cleanup_current_state(animas_dir, current_state_stale_hours, store)
@@ -220,8 +221,8 @@ def _cleanup_background_running(animas_dir: Path, stale_hours: int) -> dict[str,
     return {"running_deleted": deleted, "errors": errors}
 
 
-def _cleanup_stale_cron_queue_tasks(animas_dir: Path, stale_hours: int) -> dict[str, int]:
-    cutoff = now_local().timestamp() - (stale_hours * 3600)
+def _cleanup_stale_cron_queue_tasks(animas_dir: Path, stale_minutes: int) -> dict[str, int]:
+    cutoff = now_local().timestamp() - (stale_minutes * 60)
     cancelled = 0
     finalized = 0
     active_artifact = 0

@@ -182,6 +182,62 @@ def test_suppressed_retention_and_background_running_cleanup(tmp_path: Path) -> 
     assert completed.exists()
 
 
+def test_stale_cron_queue_uses_minutes_not_background_hours(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = _anima_dir(data_dir)
+    queue = TaskQueueManager(anima_dir)
+    task = queue.add_task(
+        source="anima",
+        original_instruction="run scheduled summary",
+        assignee="sakura",
+        summary="cron running",
+        status="in_progress",
+        task_id="cron-stale-minutes",
+        meta={"from_cron": True, "cron_task_name": "scheduled summary", "cron_type": "llm"},
+    )
+    old_updated_at = (now_local() - timedelta(minutes=31)).isoformat()
+    queue.queue_path.write_text(
+        queue.queue_path.read_text(encoding="utf-8").replace(
+            '"updated_at": "' + task.updated_at + '"',
+            f'"updated_at": "{old_updated_at}"',
+        ),
+        encoding="utf-8",
+    )
+
+    result = cleanup_taskboard_stale_artifacts(data_dir, 24, 48, 24, 30, cron_queue_stale_minutes=30)
+
+    assert result["cron_queue_cancelled"] == 1
+    assert queue.get_task_by_id("cron-stale-minutes").status == "cancelled"
+
+
+def test_recent_cron_queue_is_not_cancelled_by_minutes_threshold(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = _anima_dir(data_dir)
+    queue = TaskQueueManager(anima_dir)
+    task = queue.add_task(
+        source="anima",
+        original_instruction="run scheduled summary",
+        assignee="sakura",
+        summary="cron running",
+        status="in_progress",
+        task_id="cron-recent",
+        meta={"from_cron": True, "cron_task_name": "scheduled summary", "cron_type": "llm"},
+    )
+    recent_updated_at = (now_local() - timedelta(minutes=29)).isoformat()
+    queue.queue_path.write_text(
+        queue.queue_path.read_text(encoding="utf-8").replace(
+            '"updated_at": "' + task.updated_at + '"',
+            f'"updated_at": "{recent_updated_at}"',
+        ),
+        encoding="utf-8",
+    )
+
+    result = cleanup_taskboard_stale_artifacts(data_dir, 24, 48, 24, 30, cron_queue_stale_minutes=30)
+
+    assert result["cron_queue_cancelled"] == 0
+    assert queue.get_task_by_id("cron-recent").status == "in_progress"
+
+
 def test_stale_current_state_archives_and_resets_when_no_active_visible_task(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = _anima_dir(data_dir)

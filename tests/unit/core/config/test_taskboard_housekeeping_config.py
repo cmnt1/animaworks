@@ -11,6 +11,7 @@ def test_taskboard_housekeeping_config_defaults() -> None:
 
     assert cfg.pending_processing_stale_hours == 24
     assert cfg.background_running_stale_hours == 48
+    assert cfg.cron_queue_stale_minutes == 30
     assert cfg.current_state_stale_hours == 24
     assert cfg.taskboard_suppressed_retention_days == 30
 
@@ -19,12 +20,14 @@ def test_taskboard_housekeeping_config_custom_values() -> None:
     cfg = HousekeepingConfig(
         pending_processing_stale_hours=6,
         background_running_stale_hours=12,
+        cron_queue_stale_minutes=45,
         current_state_stale_hours=18,
         taskboard_suppressed_retention_days=45,
     )
 
     assert cfg.pending_processing_stale_hours == 6
     assert cfg.background_running_stale_hours == 12
+    assert cfg.cron_queue_stale_minutes == 45
     assert cfg.current_state_stale_hours == 18
     assert cfg.taskboard_suppressed_retention_days == 45
 
@@ -34,6 +37,8 @@ def test_destructive_taskboard_housekeeping_thresholds_must_be_positive() -> Non
         HousekeepingConfig(pending_processing_stale_hours=0)
     with pytest.raises(ValidationError):
         HousekeepingConfig(background_running_stale_hours=0)
+    with pytest.raises(ValidationError):
+        HousekeepingConfig(cron_queue_stale_minutes=0)
     with pytest.raises(ValidationError):
         HousekeepingConfig(current_state_stale_hours=0)
     with pytest.raises(ValidationError):
