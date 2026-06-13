@@ -58,6 +58,11 @@ try:
     from runbook_index import write_index as regenerate_runbook_index
 except ImportError:
     regenerate_runbook_index = None
+try:
+    from consumption_metrics import EVENT_ADOPTED, SOURCE_TASKDIARY
+    from consumption_metrics import log_event as log_consumption_event
+except ImportError:
+    log_consumption_event = None
 
 JST = timezone(timedelta(hours=9))
 
@@ -70,6 +75,8 @@ PROJECTS_ROOT = AI_RULES_ROOT / "projects"
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.DOTALL)
 AUTO_MARKER = "<!-- task-diary-inbox:auto-generated -->"
+# `2026-06-08-taskdiary-affiliate.md` -> capture the leading date for the ledger.
+TASKDIARY_FILE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})-taskdiary-")
 
 # Pipeline-only frontmatter keys that must NOT survive into a runbook.
 STRIP_KEYS = {
@@ -283,6 +290,25 @@ def main(argv: list[str] | None = None) -> int:
 
     adopted = sum(1 for r in results if is_new_adopt(r))
     skipped = sum(1 for r in results if r.get("skipped"))
+
+    # consumption ledger (GEN-019 Phase 3): record taskdiary-* candidates that
+    # actually reached a runbook. Best-effort, never fails the sweep.
+    if not args.dry_run and log_consumption_event is not None:
+        for d, r in zip(decisions, results):
+            if not is_new_adopt(r):
+                continue
+            rel = d.get("inbox_file", "")
+            m = TASKDIARY_FILE_RE.search(Path(rel).name)
+            if not m:
+                continue
+            log_consumption_event(
+                source=SOURCE_TASKDIARY,
+                event=EVENT_ADOPTED,
+                project=d.get("project") or "General",
+                count=1,
+                day=m.group(1),
+                extra={"target": r.get("target")},
+            )
     rejected = sum(1 for r in results if r["action"] == "reject" and r.get("ok"))
     failed = sum(1 for r in results if not r.get("ok"))
 
