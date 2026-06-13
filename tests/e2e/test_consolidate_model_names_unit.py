@@ -72,6 +72,12 @@ def _assert_model_in_acompletion(mock_llm: AsyncMock, expected_model: str) -> No
     assert call_kwargs["model"] == expected_model, f"Expected model={expected_model!r}, got {call_kwargs['model']!r}"
 
 
+def _current_consolidation_helper_model() -> str:
+    from core.memory._llm_utils import get_consolidation_llm_kwargs
+
+    return str(get_consolidation_llm_kwargs()["model"])
+
+
 # ══════════════════════════════════════════════════════════════════
 # Phase 1: Memory subsystem — 12 function defaults
 # ══════════════════════════════════════════════════════════════════
@@ -88,7 +94,7 @@ def _assert_model_in_acompletion(mock_llm: AsyncMock, expected_model: str) -> No
 
 
 class TestProceduralDistillerModelDefault:
-    """ProceduralDistiller.classify_and_distill / distill_procedures / weekly_pattern_distill."""
+    """ProceduralDistiller.classify_and_distill / weekly_pattern_distill."""
 
     @pytest.fixture
     def distiller(self, temp_anima_dir: Path):
@@ -108,7 +114,7 @@ class TestProceduralDistillerModelDefault:
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
             await distiller.classify_and_distill("some episodes")
-            _assert_model_in_acompletion(mock_llm, EXPECTED_CONSOLIDATION_MODEL)
+            _assert_model_in_acompletion(mock_llm, _current_consolidation_helper_model())
 
     @pytest.mark.asyncio
     async def test_classify_and_distill_explicit_model(self, distiller):
@@ -118,27 +124,6 @@ class TestProceduralDistillerModelDefault:
             mock_llm.return_value = mock_resp
             await distiller.classify_and_distill("some episodes", model="custom/m")
             _assert_model_in_acompletion(mock_llm, "custom/m")
-
-    # ── distill_procedures ───────────────────────────────────
-
-    @pytest.mark.asyncio
-    async def test_distill_procedures_default_model(self, distiller):
-        """distill_procedures(model='') resolves to get_consolidation_llm_kwargs()['model']."""
-        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_llm.return_value = mock_resp
-            await distiller.distill_procedures("episodes text")
-            # distill_procedures calls classify_and_distill internally
-            _assert_model_in_acompletion(mock_llm, EXPECTED_CONSOLIDATION_MODEL)
-
-    @pytest.mark.asyncio
-    async def test_distill_procedures_explicit_model(self, distiller):
-        """distill_procedures(model='x') uses that model."""
-        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_llm.return_value = mock_resp
-            await distiller.distill_procedures("episodes text", model="openai/gpt-4o")
-            _assert_model_in_acompletion(mock_llm, "openai/gpt-4o")
 
     # ── weekly_pattern_distill ───────────────────────────────
 
@@ -338,48 +323,6 @@ class TestForgettingEngineModelDefault:
         ):
             result = await forgetter.neurogenesis_reorganize(model="explicit/neuro")
             assert result["merged_count"] == 0
-
-
-# ── 6. validation.py ─────────────────────────────────────────────
-
-
-class TestKnowledgeValidatorModelDefault:
-    """KnowledgeValidator.validate."""
-
-    @pytest.fixture
-    def validator(self):
-        from core.memory.validation import KnowledgeValidator
-
-        v = KnowledgeValidator()
-        # Disable NLI model loading
-        v._nli_available = False
-        return v
-
-    @pytest.mark.asyncio
-    async def test_validate_default_model(self, validator):
-        """validate(items, episodes, model='') resolves to get_consolidation_llm_kwargs()['model']."""
-        items = [{"content": "test knowledge", "type": "create", "filename": "t.md"}]
-        mock_resp = _make_mock_llm_response('{"valid": true, "reason": "ok"}')
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_llm.return_value = mock_resp
-            result = await validator.validate(items, "source episodes")
-            _assert_model_in_acompletion(mock_llm, EXPECTED_CONSOLIDATION_MODEL)
-            assert len(result) == 1
-
-    @pytest.mark.asyncio
-    async def test_validate_explicit_model(self, validator):
-        """validate(items, episodes, model='x') uses that model."""
-        items = [{"content": "test knowledge", "type": "create", "filename": "t.md"}]
-        mock_resp = _make_mock_llm_response('{"valid": true, "reason": "ok"}')
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_llm.return_value = mock_resp
-            result = await validator.validate(
-                items,
-                "source episodes",
-                model="custom/validator",
-            )
-            _assert_model_in_acompletion(mock_llm, "custom/validator")
-            assert len(result) == 1
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -111,6 +111,26 @@ class TestInternalEmbed:
         assert len(resp.json()["embeddings"]) == 1
 
     @pytest.mark.anyio
+    async def test_priority_is_passed_to_thread_safe_encode(self, app):
+        """Embed endpoint should propagate priority to the singleton encoder."""
+        with patch(
+            "core.memory.rag.singleton.thread_safe_encode",
+            return_value=[[0.7, 0.8]],
+        ) as mock_encode:
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.post(
+                    "/api/internal/embed",
+                    json={"texts": ["bulk"], "purpose": "document", "priority": "bulk"},
+                )
+
+        assert resp.status_code == 200
+        assert resp.json()["embeddings"] == [[0.7, 0.8]]
+        mock_encode.assert_called_once_with(["bulk"], purpose="document", priority="bulk")
+
+    @pytest.mark.anyio
     async def test_exactly_1000_texts_accepted(self, app):
         """Exactly 1000 texts should be accepted."""
         mock_model = MagicMock()

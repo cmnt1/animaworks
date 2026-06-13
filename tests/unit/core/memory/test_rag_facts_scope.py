@@ -110,6 +110,8 @@ def test_keyword_fallback_searches_active_facts_only(tmp_path: Path) -> None:
     assert len(results) == 1
     assert results[0]["memory_type"] == "facts"
     assert results[0]["fact_id"]
+    assert results[0]["recorded_at"] == "2026-06-03T10:00:00+09:00"
+    assert "confidence" in results[0]
     assert "expired" not in results[0]["content"].lower()
 
 

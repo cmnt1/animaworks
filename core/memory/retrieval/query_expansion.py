@@ -26,6 +26,20 @@ _NUMBER_WORDS: dict[str, int] = {
     "eleven": 11,
     "twelve": 12,
 }
+_JP_NUMBER_WORDS: dict[str, int] = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+    "十" + "一": 11,
+    "十" + "二": 12,
+}
 _STOPWORDS = frozenset(
     {
         "a",
@@ -114,8 +128,9 @@ class _DateRule:
 def expand_query(query: str, *, reference_time: datetime | None = None) -> ExpandedQuery:
     """Expand a user query with deterministic temporal and keyword hints.
 
-    The first-wave implementation intentionally supports English LoCoMo-style
-    relative dates only. Already expanded ISO dates are left untouched.
+    English and Japanese relative-date patterns are applied together so mixed
+    language queries still receive deterministic time hints. Already expanded
+    ISO dates are left untouched.
     """
     original = str(query or "")
     reference = _ensure_reference_time(reference_time)
@@ -290,8 +305,19 @@ def _next_week(ref: date, _match: re.Match[str]) -> tuple[date, date]:
     return start, start + timedelta(days=6)
 
 
+def _previous_week(ref: date, _match: re.Match[str]) -> tuple[date, date]:
+    end = ref - timedelta(days=ref.weekday() + 1)
+    return end - timedelta(days=6), end
+
+
 def _this_month(ref: date, _match: re.Match[str]) -> tuple[date, date]:
     return ref.replace(day=1), ref
+
+
+def _previous_month(ref: date, _match: re.Match[str]) -> tuple[date, date]:
+    first_this_month = ref.replace(day=1)
+    end = first_this_month - timedelta(days=1)
+    return end.replace(day=1), end
 
 
 def _next_month(ref: date, _match: re.Match[str]) -> tuple[date, date]:
@@ -318,6 +344,27 @@ def _next_year(ref: date, _match: re.Match[str]) -> tuple[date, date]:
     return date(ref.year + 1, 1, 1), date(ref.year + 1, 12, 31)
 
 
+def _jp_weeks_ago(ref: date, match: re.Match[str]) -> tuple[date, date]:
+    count = _match_count(match, 1)
+    start = ref - timedelta(days=ref.weekday() + count * 7)
+    return start, start + timedelta(days=6)
+
+
+def _jp_months_ago(ref: date, match: re.Match[str]) -> tuple[date, date]:
+    count = _match_count(match, 1)
+    year = ref.year
+    month = ref.month - count
+    while month <= 0:
+        year -= 1
+        month += 12
+    start = date(year, month, 1)
+    if month == 12:
+        next_start = date(year + 1, 1, 1)
+    else:
+        next_start = date(year, month + 1, 1)
+    return start, next_start - timedelta(days=1)
+
+
 def _shift_year(value: date, years: int) -> date:
     try:
         return value.replace(year=value.year + years)
@@ -331,6 +378,8 @@ def _match_count(match: re.Match[str], default: int) -> int:
         return default
     if raw.isdigit():
         return max(1, int(raw))
+    if raw in _JP_NUMBER_WORDS:
+        return _JP_NUMBER_WORDS[raw]
     return _NUMBER_WORDS.get(raw, default)
 
 
@@ -399,7 +448,25 @@ def _is_numeric_timestamp(value: str) -> bool:
 
 
 _COUNT = r"(?P<count>\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+_JP_COUNT = r"(?P<count>\d{1,3}|[一二三四五六七八九十]{1,3})"
 _DATE_RULES: tuple[_DateRule, ...] = (
+    _DateRule(re.compile(r"(?:一昨日|おととい)"), _day_offset(-2)),
+    _DateRule(re.compile(r"昨日"), _day_offset(-1)),
+    _DateRule(re.compile(r"今日"), _day_offset(0)),
+    _DateRule(re.compile(r"明日"), _day_offset(1)),
+    _DateRule(re.compile(r"先週"), _previous_week),
+    _DateRule(re.compile(r"今週"), _this_week),
+    _DateRule(re.compile(r"来週"), _next_week),
+    _DateRule(re.compile(r"先月"), _previous_month),
+    _DateRule(re.compile(r"今月"), _this_month),
+    _DateRule(re.compile(r"来月"), _next_month),
+    _DateRule(re.compile(r"去年"), _last_year),
+    _DateRule(re.compile(r"今年"), _this_year),
+    _DateRule(re.compile(r"来年"), _next_year),
+    _DateRule(re.compile(rf"{_JP_COUNT}\s*日前"), _ago("day")),
+    _DateRule(re.compile(rf"{_JP_COUNT}\s*週間前"), _jp_weeks_ago),
+    _DateRule(re.compile(rf"{_JP_COUNT}\s*(?:か月|ヶ月|カ月|月)前"), _jp_months_ago),
+    _DateRule(re.compile(rf"{_JP_COUNT}\s*年前"), _ago("year")),
     _DateRule(re.compile(r"\bearlier\s+today\b", re.IGNORECASE), _day_offset(0)),
     _DateRule(re.compile(r"\btoday\b", re.IGNORECASE), _day_offset(0)),
     _DateRule(re.compile(r"\byesterday\b", re.IGNORECASE), _day_offset(-1)),

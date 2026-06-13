@@ -307,7 +307,7 @@ class LegacyRAGBackend(MemoryBackend):
             logger.warning("get_important_chunks failed", exc_info=True)
             return []
 
-    async def record_access(self, results: list[RetrievedMemory]) -> None:
+    async def record_access(self, results: list[RetrievedMemory], *, kind: str = "retrieved") -> None:
         """Record access for Hebbian LTP scoring."""
         retriever = self._ensure_retriever()
         if retriever is None or not results:
@@ -326,7 +326,7 @@ class LegacyRAGBackend(MemoryBackend):
                 )
                 for r in results
             ]
-            await asyncio.to_thread(retriever.record_access, rag_results, self._anima_name)
+            await asyncio.to_thread(retriever.record_access, rag_results, self._anima_name, kind=kind)
         except Exception:
             logger.debug("record_access failed", exc_info=True)
 
@@ -348,6 +348,14 @@ class LegacyRAGBackend(MemoryBackend):
                 total += count
             except Exception:
                 logger.warning("rebuild_index failed for scope=%s", s, exc_info=True)
+
+        if scope is None or scope in {"knowledge", "episodes", "procedures"}:
+            try:
+                from core.memory.bm25 import rebuild_longterm_bm25_index
+
+                await asyncio.to_thread(rebuild_longterm_bm25_index, self._anima_dir)
+            except Exception:
+                logger.warning("Long-term BM25 rebuild failed for scope=%s", scope, exc_info=True)
 
         return total
 

@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ── Problem A: setting_sources=[] ──────────────────────────────────
 
 
@@ -31,7 +30,9 @@ class TestSettingSourcesDisabled:
         its default branch is the empty list.
         """
         import inspect
+
         from core.execution.agent_sdk import AgentSDKExecutor
+
         # Options construction is extracted to _build_sdk_options()
         source = inspect.getsource(AgentSDKExecutor._build_sdk_options)
         assert "setting_sources=" in source, (
@@ -44,16 +45,14 @@ class TestSettingSourcesDisabled:
     def test_execute_streaming_passes_empty_setting_sources(self):
         """execute_streaming() uses _build_sdk_options which includes setting_sources=[]."""
         import inspect
+
         from core.execution.agent_sdk import AgentSDKExecutor
+
         # Verify execute() and execute_streaming() both call _build_sdk_options
         exec_source = inspect.getsource(AgentSDKExecutor.execute)
         stream_source = inspect.getsource(AgentSDKExecutor.execute_streaming)
-        assert "_build_sdk_options" in exec_source, (
-            "execute() must call _build_sdk_options()"
-        )
-        assert "_build_sdk_options" in stream_source, (
-            "execute_streaming() must call _build_sdk_options()"
-        )
+        assert "_build_sdk_options" in exec_source, "execute() must call _build_sdk_options()"
+        assert "_build_sdk_options" in stream_source, "execute_streaming() must call _build_sdk_options()"
 
 
 # ── Problem B: Per-anima ChromaDB isolation ────────────────────────
@@ -63,6 +62,7 @@ class TestSettingSourcesDisabled:
 def _reset_vector_stores():
     """Reset singleton stores before and after each test."""
     from core.memory.rag.singleton import _reset_for_testing
+
     _reset_for_testing()
     yield
     _reset_for_testing()
@@ -74,12 +74,14 @@ class TestGetAnimaVectordbDir:
     def test_returns_correct_path(self, tmp_path: Path, monkeypatch):
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         from core.paths import get_anima_vectordb_dir
+
         result = get_anima_vectordb_dir("yuki")
         assert result == tmp_path / "animas" / "yuki" / "vectordb"
 
     def test_different_animas_different_dirs(self, tmp_path: Path, monkeypatch):
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         from core.paths import get_anima_vectordb_dir
+
         d1 = get_anima_vectordb_dir("yuki")
         d2 = get_anima_vectordb_dir("sakura")
         assert d1 != d2
@@ -96,7 +98,8 @@ class TestPerAnimaVectorStore:
         store_b = MagicMock(name="store_b")
         call_count = 0
 
-        def mock_ctor(persist_dir=None):
+        def mock_ctor(persist_dir=None, anima_name=None):
+            assert anima_name in {"anima_a", "anima_b"}
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -105,6 +108,7 @@ class TestPerAnimaVectorStore:
 
         with patch("core.memory.rag.store.ChromaVectorStore", side_effect=mock_ctor):
             from core.memory.rag.singleton import get_vector_store
+
             a = get_vector_store("anima_a")
             b = get_vector_store("anima_b")
             assert a is not b
@@ -116,6 +120,7 @@ class TestPerAnimaVectorStore:
         mock_store = MagicMock()
         with patch("core.memory.rag.store.ChromaVectorStore", return_value=mock_store):
             from core.memory.rag.singleton import get_vector_store
+
             s1 = get_vector_store("yuki")
             s2 = get_vector_store("yuki")
             assert s1 is s2
@@ -125,6 +130,7 @@ class TestPerAnimaVectorStore:
         mock_store = MagicMock()
         with patch("core.memory.rag.store.ChromaVectorStore", return_value=mock_store) as mock_cls:
             from core.memory.rag.singleton import get_vector_store
+
             get_vector_store(None)
             mock_cls.assert_called_once_with(persist_dir=None)
 
@@ -134,15 +140,17 @@ class TestPerAnimaVectorStore:
         mock_store = MagicMock()
         with patch("core.memory.rag.store.ChromaVectorStore", return_value=mock_store) as mock_cls:
             from core.memory.rag.singleton import get_vector_store
+
             get_vector_store("yuki")
             expected = tmp_path / "animas" / "yuki" / "vectordb"
-            mock_cls.assert_called_once_with(persist_dir=expected)
+            mock_cls.assert_called_once_with(persist_dir=expected, anima_name="yuki")
 
     def test_reset_clears_all_stores(self):
         """_reset_for_testing() clears the per-anima store dict."""
         mock_store = MagicMock()
         with patch("core.memory.rag.store.ChromaVectorStore", return_value=mock_store) as mock_cls:
-            from core.memory.rag.singleton import get_vector_store, _reset_for_testing
+            from core.memory.rag.singleton import _reset_for_testing, get_vector_store
+
             get_vector_store("a")
             get_vector_store("b")
             _reset_for_testing()
@@ -183,6 +191,7 @@ class TestCallersSendAnimaName:
     def test_forgetting_passes_anima_name(self):
         """ForgettingEngine._get_vector_store passes self.anima_name."""
         from core.memory.forgetting import ForgettingEngine
+
         engine = ForgettingEngine.__new__(ForgettingEngine)
         engine.anima_name = "yuki"
 
@@ -198,10 +207,13 @@ class TestCallersSendAnimaName:
         (anima_dir / "knowledge" / "test.md").write_text("test", encoding="utf-8")
 
         from core.memory.consolidation import ConsolidationEngine
+
         engine = ConsolidationEngine(anima_dir, "sakura")
 
-        with patch("core.memory.rag.MemoryIndexer") as MockIndexer, \
-             patch("core.memory.rag.singleton.get_vector_store") as mock_gvs:
+        with (
+            patch("core.memory.rag.MemoryIndexer") as MockIndexer,
+            patch("core.memory.rag.singleton.get_vector_store") as mock_gvs,
+        ):
             mock_gvs.return_value = MagicMock()
             MockIndexer.return_value = MagicMock()
             engine._update_rag_index(["test.md"])
@@ -210,20 +222,26 @@ class TestCallersSendAnimaName:
     def test_priming_passes_anima_name(self):
         """PrimingEngine uses get_vector_store(anima_name) via RetrieverCache."""
         import inspect
+
         from core.memory.priming.utils import RetrieverCache
+
         source = inspect.getsource(RetrieverCache.get_or_create)
         assert "get_vector_store(anima_name)" in source
 
     def test_contradiction_passes_anima_name(self):
         """ContradictionDetector uses get_vector_store(self.anima_name)."""
         import inspect
+
         from core.memory.contradiction import ContradictionDetector
+
         source = inspect.getsource(ContradictionDetector._find_candidates_via_rag)
         assert "get_vector_store(self.anima_name)" in source
 
     def test_distillation_passes_anima_name(self):
         """ProceduralDistiller uses get_vector_store(self.anima_name)."""
         import inspect
+
         from core.memory.distillation import ProceduralDistiller
+
         source = inspect.getsource(ProceduralDistiller._check_rag_duplicate)
         assert "get_vector_store(self.anima_name)" in source

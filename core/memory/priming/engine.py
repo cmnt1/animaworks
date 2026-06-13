@@ -7,7 +7,7 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""PrimingEngine - slim orchestrator for 5-channel memory priming."""
+"""PrimingEngine - slim orchestrator for six-channel memory priming."""
 
 import asyncio
 import logging
@@ -97,6 +97,7 @@ class PrimingEngine:
         self._budget_request = _BUDGET_REQUEST
         self._budget_heartbeat = _BUDGET_HEARTBEAT
         self._heartbeat_context_pct = 0.05
+        self._channel_timeout_seconds = 60.0
         self._get_active_parallel_tasks: Callable[[], dict[str, dict]] | None = None
         self._memory_backend: Any | None = None
         self._memory_backend_init_failed = False
@@ -142,6 +143,26 @@ class PrimingEngine:
             self._budget_heartbeat,
             self._heartbeat_context_pct,
         ) = _budget.load_config_budgets()
+        try:
+            from core.config.models import load_config
+
+            self._channel_timeout_seconds = float(getattr(load_config().priming, "channel_timeout_seconds", 60.0))
+        except Exception:
+            logger.debug("Failed to load priming channel timeout; using default", exc_info=True)
+
+    async def _run_priming_channel(self, name: str, coro):
+        self._load_config_budgets()
+        try:
+            return await asyncio.wait_for(coro, timeout=self._channel_timeout_seconds)
+        except TimeoutError:
+            logger.warning(
+                "Priming channel %s timed out after %.1fs; degrading channel only",
+                name,
+                self._channel_timeout_seconds,
+            )
+            return ""
+        except asyncio.CancelledError:
+            raise
 
     @staticmethod
     def _extract_summary(content: str, metadata: dict) -> str:
@@ -226,19 +247,28 @@ class PrimingEngine:
         )
 
         results = await asyncio.gather(
-            self._channel_a_sender_profile(sender_name),
-            self._channel_b_recent_activity(sender_name, keywords, channel=channel),
-            self._channel_c0_important_knowledge(),
-            channel_c_coro,
-            self._channel_e_pending_tasks(),
-            self._collect_recent_outbound(),
-            self._channel_f_episodes(
-                keywords,
-                message=message,
-                recent_human_messages=recent_human_messages,
+            self._run_priming_channel("A", self._channel_a_sender_profile(sender_name)),
+            self._run_priming_channel(
+                "B",
+                self._channel_b_recent_activity(sender_name, keywords, channel=channel),
             ),
-            self._collect_pending_human_notifications(channel=channel),
-            self._channel_g_graph_context(effective_message),
+            self._run_priming_channel("C0", self._channel_c0_important_knowledge()),
+            self._run_priming_channel("C", channel_c_coro),
+            self._run_priming_channel("E", self._channel_e_pending_tasks()),
+            self._run_priming_channel("outbound", self._collect_recent_outbound()),
+            self._run_priming_channel(
+                "F",
+                self._channel_f_episodes(
+                    keywords,
+                    message=message,
+                    recent_human_messages=recent_human_messages,
+                ),
+            ),
+            self._run_priming_channel(
+                "pending_human_notifications",
+                self._collect_pending_human_notifications(channel=channel),
+            ),
+            self._run_priming_channel("G", self._channel_g_graph_context(effective_message)),
             return_exceptions=True,
         )
 

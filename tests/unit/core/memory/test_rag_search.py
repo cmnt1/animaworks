@@ -79,6 +79,34 @@ class TestGetIndexerLazyInit:
             rag._get_indexer()
             mock_init.assert_called_once()
 
+
+class TestLongtermBM25Refresh:
+    def test_index_file_marks_longterm_bm25_dirty_without_rebuilding(
+        self,
+        rag: RAGMemorySearch,
+        anima_dir: Path,
+        knowledge_dir: Path,
+    ) -> None:
+        from core.memory.bm25 import is_longterm_bm25_dirty, rebuild_longterm_bm25_index, search_longterm_memory_bm25
+
+        (knowledge_dir / "old.md").write_text("# Old\n\nBaseline memo.", encoding="utf-8")
+        rebuild_longterm_bm25_index(anima_dir)
+        assert is_longterm_bm25_dirty(anima_dir) is False
+
+        new_file = knowledge_dir / "new.md"
+        new_file.write_text("# New\n\nZephyrNova launchpad checklist.", encoding="utf-8")
+        with patch.object(rag, "_get_indexer", return_value=None):
+            rag.index_file(new_file, "knowledge")
+
+        assert is_longterm_bm25_dirty(anima_dir) is True
+        hits = search_longterm_memory_bm25(
+            anima_dir,
+            "ZephyrNova",
+            memory_types=("knowledge",),
+            top_k=5,
+        )
+        assert hits == []
+
     def test_get_indexer_only_inits_once(self, rag: RAGMemorySearch) -> None:
         """Second call to _get_indexer() does not call _init_indexer() again."""
 
@@ -186,6 +214,37 @@ class TestSearchMemoryTextKeywordOnly:
         sources = [r["source_file"] for r in results]
         assert any("python.md" in s for s in sources)
         assert any("2026-01-01.md" in s for s in sources)
+
+    def test_search_memory_text_keyword_excludes_superseded_knowledge(
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
+        episodes_dir: Path,
+        procedures_dir: Path,
+        common_knowledge_dir: Path,
+    ) -> None:
+        (knowledge_dir / "active.md").write_text(
+            "---\nvalid_until: ''\n---\n\nkeyword current deployment policy",
+            encoding="utf-8",
+        )
+        (knowledge_dir / "superseded.md").write_text(
+            "---\nvalid_until: '2026-06-10T00:00:00+09:00'\n---\n\nkeyword obsolete deployment policy",
+            encoding="utf-8",
+        )
+
+        with patch.object(rag, "_get_indexer", return_value=None):
+            results = rag.search_memory_text(
+                "keyword deployment",
+                scope="knowledge",
+                knowledge_dir=knowledge_dir,
+                episodes_dir=episodes_dir,
+                procedures_dir=procedures_dir,
+                common_knowledge_dir=common_knowledge_dir,
+            )
+
+        sources = [r["source_file"] for r in results]
+        assert any("active.md" in s for s in sources)
+        assert not any("superseded.md" in s for s in sources)
 
 
 class TestSearchMemoryTextRespectsScope:

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -106,6 +107,16 @@ class TestRunConsolidationRetry:
 class TestDailyConsolidationRetryTrigger:
     """Tests for retry triggering within _handle_daily_consolidation."""
 
+    @staticmethod
+    def _passing_gate() -> SimpleNamespace:
+        return SimpleNamespace(
+            should_run=True,
+            activity_count=5,
+            episode_count=0,
+            carryover_count=0,
+            threshold=1,
+        )
+
     @pytest.mark.asyncio
     async def test_short_duration_triggers_retry(self, tmp_path):
         mgr = _make_lifecycle(tmp_path)
@@ -115,11 +126,18 @@ class TestDailyConsolidationRetryTrigger:
         mock_result.duration_ms = 4600  # < 10_000 threshold
         mock_result.summary = "You've hit your limit"
         mock_anima.run_consolidation = AsyncMock(return_value=mock_result)
-        mock_anima.count_recent_episodes = MagicMock(return_value=5)
+        mock_anima.memory.anima_dir = tmp_path / "animas" / "kotoha"
         mgr.animas["kotoha"] = mock_anima
         mgr._schedule_consolidation_retry = MagicMock()
 
-        with patch("core.config.load_config") as mock_cfg:
+        with (
+            patch("core.config.load_config") as mock_cfg,
+            patch(
+                "core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate",
+                return_value=self._passing_gate(),
+            ),
+            patch("core.lifecycle.system_consolidation.run_daily_consolidation_post_processing", AsyncMock()),
+        ):
             mock_cfg.return_value = MagicMock(consolidation=None)
             await mgr._handle_daily_consolidation()
 
@@ -134,15 +152,17 @@ class TestDailyConsolidationRetryTrigger:
         mock_result.duration_ms = 45000  # Normal
         mock_result.summary = "Consolidation complete"
         mock_anima.run_consolidation = AsyncMock(return_value=mock_result)
-        mock_anima.count_recent_episodes = MagicMock(return_value=5)
         mock_anima.memory.anima_dir = tmp_path / "animas" / "test"
         mgr.animas["test"] = mock_anima
         mgr._schedule_consolidation_retry = MagicMock()
 
         with (
             patch("core.config.load_config") as mock_cfg,
-            patch("core.memory.forgetting.ForgettingEngine"),
-            patch("core.memory.consolidation.ConsolidationEngine"),
+            patch(
+                "core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate",
+                return_value=self._passing_gate(),
+            ),
+            patch("core.lifecycle.system_consolidation.run_daily_consolidation_post_processing", AsyncMock()),
         ):
             mock_cfg.return_value = MagicMock(consolidation=None)
             await mgr._handle_daily_consolidation()
@@ -155,11 +175,18 @@ class TestDailyConsolidationRetryTrigger:
 
         mock_anima = MagicMock()
         mock_anima.run_consolidation = AsyncMock(side_effect=RuntimeError("boom"))
-        mock_anima.count_recent_episodes = MagicMock(return_value=5)
+        mock_anima.memory.anima_dir = tmp_path / "animas" / "kotoha"
         mgr.animas["kotoha"] = mock_anima
         mgr._schedule_consolidation_retry = MagicMock()
 
-        with patch("core.config.load_config") as mock_cfg:
+        with (
+            patch("core.config.load_config") as mock_cfg,
+            patch(
+                "core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate",
+                return_value=self._passing_gate(),
+            ),
+            patch("core.lifecycle.system_consolidation.run_daily_consolidation_post_processing", AsyncMock()),
+        ):
             mock_cfg.return_value = MagicMock(consolidation=None)
             await mgr._handle_daily_consolidation()
 

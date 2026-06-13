@@ -6,6 +6,7 @@
 Validates Room CRUD API and meeting chat SSE streaming through the full
 FastAPI app stack, with mocked ProcessSupervisor to avoid real Anima processes.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,9 +14,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from core.supervisor.ipc import IPCResponse
 from httpx import ASGITransport, AsyncClient
 
+from core.supervisor.ipc import IPCResponse
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -138,9 +139,7 @@ class TestRoomCRUD:
         assert "created_at" in data
 
     @pytest.mark.asyncio
-    async def test_create_room_invalid_too_many_participants(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_create_room_invalid_too_many_participants(self, tmp_path: Path) -> None:
         """422 for > 5 participants."""
         app = _create_app(tmp_path)
         transport = ASGITransport(app=app)
@@ -157,9 +156,7 @@ class TestRoomCRUD:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_create_room_chair_not_in_participants(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_create_room_chair_not_in_participants(self, tmp_path: Path) -> None:
         """400 validation error when chair not in participants."""
         app = _create_app(tmp_path, anima_names=["sakura", "rin"])
         transport = ASGITransport(app=app)
@@ -284,9 +281,7 @@ class TestRoomCRUD:
             assert "rin" not in get_resp.json()["participants"]
 
     @pytest.mark.asyncio
-    async def test_close_room(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_close_room(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """POST /api/rooms/{room_id}/close closes room and generates minutes."""
         ck_dir = tmp_path / "common_knowledge"
         ck_dir.mkdir(parents=True, exist_ok=True)
@@ -398,3 +393,84 @@ class TestMeetingChatStream:
         # Verify done event
         done_events = [e for e in events if e[0] == "done"]
         assert len(done_events) >= 1
+
+    @pytest.mark.asyncio
+    async def test_meeting_redirect_and_mention_process_participant_once(self, tmp_path: Path) -> None:
+        app = _create_app(tmp_path, anima_names=["sakura", "rin"])
+        transport = ASGITransport(app=app)
+        app.state.supervisor.processes = {"sakura": MagicMock(), "rin": MagicMock()}
+        calls: list[tuple[str, dict]] = []
+
+        async def mock_send_request_stream(anima_name, method, params, timeout=60.0):
+            calls.append((anima_name, dict(params)))
+            if anima_name == "sakura":
+                yield IPCResponse(
+                    id="req-chair",
+                    stream=True,
+                    chunk=json.dumps(
+                        {
+                            "type": "meeting_redirect",
+                            "from": "sakura",
+                            "to": "rin",
+                            "content": "Please share status",
+                            "intent": "question",
+                        }
+                    ),
+                    done=False,
+                )
+                yield IPCResponse(
+                    id="req-chair",
+                    stream=True,
+                    chunk=json.dumps({"type": "text_delta", "text": "@rin Please share status"}),
+                    done=False,
+                )
+                yield IPCResponse(
+                    id="req-chair",
+                    stream=True,
+                    done=True,
+                    result={
+                        "response": "@rin Please share status",
+                        "cycle_result": {"summary": "@rin Please share status"},
+                    },
+                )
+                return
+
+            yield IPCResponse(
+                id="req-rin",
+                stream=True,
+                done=True,
+                result={
+                    "response": "Status is green.",
+                    "cycle_result": {"summary": "Status is green."},
+                },
+            )
+
+        app.state.supervisor.send_request_stream = mock_send_request_stream
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            create_resp = await client.post(
+                "/api/rooms",
+                json={"participants": ["sakura", "rin"], "chair": "sakura", "title": "Redirect"},
+            )
+            room_id = create_resp.json()["room_id"]
+
+            resp = await client.post(
+                f"/api/rooms/{room_id}/chat/stream",
+                json={"message": "Please coordinate", "from_person": "human"},
+            )
+            room_resp = await client.get(f"/api/rooms/{room_id}")
+
+        assert resp.status_code == 200
+        assert [name for name, _params in calls] == ["sakura", "rin"]
+        assert sum(1 for name, _params in calls if name == "rin") == 1
+        assert all(call_params["meeting_room_id"] == room_id for _name, call_params in calls)
+        assert all(call_params["meeting_participants"] == ["sakura", "rin"] for _name, call_params in calls)
+
+        events = _parse_sse_events(resp.text)
+        assert sum(1 for name, _payload in events if name == "meeting_redirect") == 1
+
+        conversation = room_resp.json()["conversation"]
+        redirected = [entry for entry in conversation if entry.get("meta", {}).get("type") == "meeting_redirect"]
+        assert len(redirected) == 1
+        assert redirected[0]["speaker"] == "sakura"
+        assert redirected[0]["text"] == "@rin Please share status"

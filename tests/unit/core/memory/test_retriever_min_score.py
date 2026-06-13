@@ -45,7 +45,7 @@ class MockVectorStoreWithScores:
 class MockIndexer:
     """Mock indexer for embedding generation."""
 
-    def _generate_embeddings(self, texts):
+    def _generate_embeddings(self, texts, **_kwargs):
         return [[0.1] * 384 for _ in texts]
 
 

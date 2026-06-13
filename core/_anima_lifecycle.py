@@ -243,6 +243,10 @@ def _consolidation_model_config(base_model_config: Any, consolidation_model: str
     return base_model_config.model_copy(update=updates)
 
 
+def _phase_b_reached_max_iterations(result: CycleResult) -> bool:
+    return bool(result.truncated)
+
+
 class LifecycleMixin:
     """Mixin: heartbeat orchestration, memory consolidation, cron task execution."""
 
@@ -312,6 +316,17 @@ class LifecycleMixin:
                             )
                         except TimeoutError:
                             return self._handle_hard_timeout(_hard_timeout)
+                        except asyncio.CancelledError:
+                            current = asyncio.current_task()
+                            if current is not None and current.cancelling():
+                                raise
+                            logger.warning("[%s] run_heartbeat cancelled by request; runner remains alive", self.name)
+                            return CycleResult(
+                                trigger="heartbeat",
+                                action="cancelled",
+                                summary="Heartbeat cancelled",
+                                duration_ms=0,
+                            )
                         finally:
                             active_session_type.reset(_session_token)
                             _keepalive.cancel()
@@ -552,26 +567,39 @@ class LifecycleMixin:
         start_mono = _time.monotonic()
 
         # ── Phase A: Episode extraction ─────────────────────────
-        chunks = engine.collect_activity_chunks(hours=24, model=consolidation_model)
+        target_date, window_start, window_end = engine.previous_local_day_window(now_local())
+        chunks = engine.collect_activity_chunks(
+            hours=24,
+            model=consolidation_model,
+            since=window_start,
+            until=window_end,
+        )
         episode_parts: list[str] = []
 
         if chunks:
             from core.memory._llm_utils import one_shot_completion
 
+            existing_episode = engine.read_episode_for_date(target_date)
+            existing_episode_context = existing_episode.strip() or "(none)"
+            if len(existing_episode_context) > 12_000:
+                existing_episode_context = existing_episode_context[:12_000] + "\n... (truncated)"
+
             logger.info(
-                "[%s] Phase A: extracting episodes from %d chunk(s) with model=%s",
+                "[%s] Phase A: extracting episodes for %s from %d chunk(s) with model=%s",
                 self.name,
+                target_date.isoformat(),
                 len(chunks),
                 consolidation_model,
             )
 
             for i, chunk in enumerate(chunks):
-                time_range = f"chunk {i + 1}/{len(chunks)}"
+                time_range = f"{target_date.isoformat()} chunk {i + 1}/{len(chunks)}"
                 ep_prompt = load_prompt(
                     "memory/episode_extraction",
                     anima_name=self.name,
                     time_range=time_range,
                     activity_chunk=chunk,
+                    existing_episode=existing_episode_context,
                 )
                 raw = await one_shot_completion(
                     ep_prompt,
@@ -592,30 +620,53 @@ class LifecycleMixin:
         # Merge and write episodes
         if episode_parts:
             merged_episodes = engine.merge_timeline_parts(episode_parts)
-            today = now_local().date()
-            episode_path = engine.episodes_dir / f"{today}.md"
-            episode_path.write_text(merged_episodes, encoding="utf-8")
-            logger.info(
-                "[%s] Phase A complete: wrote %d chars to %s",
-                self.name,
-                len(merged_episodes),
-                episode_path.name,
-            )
+            episode_path = engine.write_consolidated_episode(target_date, merged_episodes)
+            facts_extracted = 0
+            facts_failed = 0
             try:
-                fact_count = await engine.extract_facts_from_text(
+                fact_outcome = await engine.extract_facts_from_text_outcome(
                     merged_episodes,
                     source_episode=f"episodes/{episode_path.name}",
                     source_session_id="consolidation:daily",
                 )
-                if fact_count:
-                    logger.info("[%s] Phase A: stored %d atomic fact(s)", self.name, fact_count)
-            except Exception:
-                logger.debug("[%s] Phase A atomic fact extraction failed", self.name, exc_info=True)
+                facts_extracted = fact_outcome.facts_extracted
+                facts_failed = fact_outcome.facts_failed
+            except Exception as exc:
+                from core.memory.fact_observability import warn_rate_limited
+
+                warn_rate_limited(
+                    logger,
+                    "fact_extraction.phase_a",
+                    "[%s] Phase A atomic fact extraction failed",
+                    self.name,
+                    exc_info=(type(exc), exc, exc.__traceback__),
+                )
+                facts_failed = 1
+            logger.info(
+                "[%s] Phase A complete: wrote %d chars to %s facts_extracted=%d facts_failed=%d",
+                self.name,
+                len(merged_episodes),
+                episode_path.name,
+                facts_extracted,
+                facts_failed,
+            )
 
         # ── Phase B: Knowledge extraction ───────────────────────
         episodes = engine._collect_recent_episodes(hours=24)
+        current_episodes_summary = ""
         if episodes:
-            episodes_summary = "\n\n".join(f"## {e['date']} {e['time']}\n{e['content']}" for e in episodes)
+            current_episodes_summary = "\n\n".join(f"## {e['date']} {e['time']}\n{e['content']}" for e in episodes)
+            engine.record_phase_b_carryover(
+                current_episodes_summary,
+                target_date=target_date,
+                reason="phase_b_pending",
+            )
+        carryover_items = engine.load_phase_b_carryover()
+        carryover_summary = engine.format_phase_b_carryover(carryover_items)
+        if carryover_summary:
+            episodes_summary = carryover_summary
+        elif current_episodes_summary:
+            episodes_summary = current_episodes_summary
         else:
             episodes_summary = t("anima.no_episodes_today")
 
@@ -675,23 +726,41 @@ class LifecycleMixin:
                 agent.set_interrupt_event(self._get_interrupt_event("_background"))
             if hasattr(agent, "_tool_handler"):
                 agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
-            result = await agent.run_cycle(
-                prompt,
-                trigger="consolidation:daily",
-                message_intent="request",
-                max_turns_override=max_turns,
-                model_config_override=consolidation_model_config,
-            )
+            try:
+                result = await agent.run_cycle(
+                    prompt,
+                    trigger="consolidation:daily",
+                    message_intent="request",
+                    max_turns_override=max_turns,
+                    model_config_override=consolidation_model_config,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "consolidation_timeout anima=%s phase=phase_b type=daily carryover_items=%d",
+                    self.name,
+                    len(carryover_items),
+                )
+                raise
 
         autolearn = self._run_autonomous_skill_learning()
         summary = result.summary or ""
+        truncated = _phase_b_reached_max_iterations(result)
+        if truncated:
+            summary = (
+                summary
+                + "\n\n[TRUNCATED] Daily consolidation reached max_turns="
+                + str(max_turns)
+                + "; partial outputs were kept and Phase B carryover will resume on the next trigger."
+            )
+        else:
+            engine.clear_phase_b_carryover()
         if autolearn is not None and autolearn.report_lines:
             summary = (summary + "\n\n" if summary else "") + "\n".join(autolearn.report_lines)
 
         elapsed_ms = int((_time.monotonic() - start_mono) * 1000)
         return CycleResult(
             trigger="consolidation:daily",
-            action="completed",
+            action="truncated" if truncated else "completed",
             summary=summary,
             duration_ms=elapsed_ms,
         )
@@ -880,6 +949,21 @@ class LifecycleMixin:
                             agent.update_model_config(bg_config)
                         try:
                             result = await _run_cron_cycle_with_transient_retries(agent, prompt, task_name=task_name)
+                        except asyncio.CancelledError:
+                            current = asyncio.current_task()
+                            if current is not None and current.cancelling():
+                                raise
+                            logger.warning(
+                                "[%s] run_cron_task cancelled by request; runner remains alive task=%s",
+                                self.name,
+                                task_name,
+                            )
+                            return CycleResult(
+                                trigger=f"cron:{task_name}",
+                                action="cancelled",
+                                summary="Cron task cancelled",
+                                duration_ms=0,
+                            )
                         finally:
                             if original_config is not None:
                                 agent.update_model_config(original_config)
@@ -943,7 +1027,9 @@ class LifecycleMixin:
                         status="done",
                         summary=t("anima.cron_taskboard_done", task=task_name),
                     )
-                    self.memory.archive_and_reset_state()
+                    # Preserve current_state.md across normal cron boundaries.
+                    # Stale idle cleanup is handled by taskboard housekeeping.
+                    self._enforce_state_size_limit()
                     return result
                 except Exception as exc:
                     logger.exception(

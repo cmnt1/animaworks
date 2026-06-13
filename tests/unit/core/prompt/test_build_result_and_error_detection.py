@@ -13,16 +13,12 @@ and bugfix: pending procedures persistence + streaming retry BuildResult extract
 
 from pathlib import Path
 
-import pytest
-
 from core.memory.conversation import (
     _ERROR_PATTERN,
     _RESOLVED_PATTERN,
-    ConversationMemory,
     ConversationTurn,
 )
 from core.prompt.builder import BuildResult
-from core.schemas import ModelConfig
 
 # ── BuildResult tests ──────────────────────────────────────
 
@@ -218,87 +214,6 @@ class TestDoubleCountPrevention:
             old_id = handler.session_id
             handler.reset_session_id()
             assert handler.session_id != old_id
-
-
-# ── Pending procedures persistence tests ─────────────────
-
-
-class TestPendingProceduresPersistence:
-    """Test bugfix: injected_procedures stored/loaded for heartbeat finalization."""
-
-    @pytest.fixture
-    def anima_dir(self, tmp_path: Path) -> Path:
-        d = tmp_path / "animas" / "test-anima"
-        for sub in ("episodes", "knowledge", "procedures", "skills", "state"):
-            (d / sub).mkdir(parents=True)
-        return d
-
-    @pytest.fixture
-    def conv_mem(self, anima_dir: Path) -> ConversationMemory:
-        return ConversationMemory(anima_dir, ModelConfig())
-
-    def test_store_and_load_procedures(self, conv_mem: ConversationMemory) -> None:
-        """Stored procedures should be retrievable via _load_pending_procedures."""
-        procs = [Path("/tmp/proc1.md"), Path("/tmp/proc2.md")]
-        conv_mem.store_injected_procedures(procs, session_id="abc123")
-
-        loaded_procs, session_id = conv_mem._load_pending_procedures()
-        assert len(loaded_procs) == 2
-        assert loaded_procs[0] == Path("/tmp/proc1.md")
-        assert loaded_procs[1] == Path("/tmp/proc2.md")
-        assert session_id == "abc123"
-
-    def test_load_clears_file(self, conv_mem: ConversationMemory) -> None:
-        """_load_pending_procedures should delete the file after reading."""
-        procs = [Path("/tmp/proc.md")]
-        conv_mem.store_injected_procedures(procs)
-
-        conv_mem._load_pending_procedures()
-        assert not conv_mem._pending_procedures_path.exists()
-
-    def test_load_returns_empty_when_no_file(self, conv_mem: ConversationMemory) -> None:
-        """_load_pending_procedures returns empty when no pending file."""
-        procs, sid = conv_mem._load_pending_procedures()
-        assert procs == []
-        assert sid == ""
-
-    def test_store_empty_list_is_noop(self, conv_mem: ConversationMemory) -> None:
-        """Storing empty list should not create the file."""
-        conv_mem.store_injected_procedures([])
-        assert not conv_mem._pending_procedures_path.exists()
-
-    def test_second_load_returns_empty(self, conv_mem: ConversationMemory) -> None:
-        """Second call to _load_pending_procedures returns empty (file was cleared)."""
-        procs = [Path("/tmp/proc.md")]
-        conv_mem.store_injected_procedures(procs, session_id="xyz")
-
-        first_procs, first_sid = conv_mem._load_pending_procedures()
-        assert len(first_procs) == 1
-        assert first_sid == "xyz"
-
-        second_procs, second_sid = conv_mem._load_pending_procedures()
-        assert second_procs == []
-        assert second_sid == ""
-
-    def test_separate_instances_share_file(self, anima_dir: Path) -> None:
-        """Different ConversationMemory instances share the same pending file."""
-        cm1 = ConversationMemory(anima_dir, ModelConfig())
-        cm2 = ConversationMemory(anima_dir, ModelConfig())
-
-        cm1.store_injected_procedures([Path("/tmp/proc.md")], session_id="s1")
-        procs, sid = cm2._load_pending_procedures()
-        assert len(procs) == 1
-        assert sid == "s1"
-
-    def test_corrupt_file_returns_empty(self, conv_mem: ConversationMemory) -> None:
-        """Corrupt JSON in pending file should return empty and clean up."""
-        conv_mem._state_dir.mkdir(parents=True, exist_ok=True)
-        conv_mem._pending_procedures_path.write_text("not valid json")
-
-        procs, sid = conv_mem._load_pending_procedures()
-        assert procs == []
-        assert sid == ""
-        assert not conv_mem._pending_procedures_path.exists()
 
 
 # ── Streaming retry BuildResult extraction test ──────────

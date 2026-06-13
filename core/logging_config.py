@@ -43,6 +43,40 @@ def get_request_id() -> str:
     return ctx.get("request_id", "-")
 
 
+class _AnimaDailyFileHandler(logging.FileHandler):
+    """Write each local day to ``YYYYMMDD.log`` without renaming old files."""
+
+    def __init__(self, log_dir: Path, *, encoding: str = "utf-8") -> None:
+        self.log_dir = log_dir
+        self.current_day = now_local().strftime("%Y%m%d")
+        super().__init__(self.log_dir / f"{self.current_day}.log", encoding=encoding)
+
+    def _update_current_link(self) -> None:
+        current_link = self.log_dir / "current.log"
+        if current_link.exists() or current_link.is_symlink():
+            current_link.unlink()
+        try:
+            current_link.symlink_to(f"{self.current_day}.log")
+        except OSError:
+            current_link.write_text(f"{self.current_day}.log", encoding="utf-8")
+
+    def doRollover(self) -> None:  # noqa: N802 - stdlib handler API
+        new_day = now_local().strftime("%Y%m%d")
+        if new_day == self.current_day:
+            return
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+        self.current_day = new_day
+        self.baseFilename = str(self.log_dir / f"{self.current_day}.log")
+        self.stream = self._open()
+        self._update_current_link()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.doRollover()
+        super().emit(record)
+
+
 # ── Shared Processors ──────────────────────────────────────────
 
 

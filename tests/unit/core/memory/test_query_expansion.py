@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
 from core.memory.retrieval.query_expansion import coerce_reference_time, expand_query, filter_ranked_lists_by_time_hint
-
 
 REFERENCE = datetime(2023, 5, 8, 12, 0, tzinfo=UTC)
 
@@ -42,6 +41,35 @@ def test_expand_query_relative_date_patterns(query: str, expected_start: str, ex
 
 def test_expand_query_yesterday_acceptance_case() -> None:
     expanded = expand_query("What did Caroline do yesterday?", reference_time=REFERENCE)
+
+    assert expanded.time_hint_start == "2023-05-07"
+    assert expanded.time_hint_end == "2023-05-07"
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_start", "expected_end"),
+    [
+        ("昨日の会話を探して", "2023-05-07", "2023-05-07"),
+        ("先週の予定は?", "2023-05-01", "2023-05-07"),
+        ("3日前に何があった?", "2023-05-05", "2023-05-05"),
+    ],
+)
+def test_expand_query_japanese_relative_date_patterns(
+    query: str,
+    expected_start: str,
+    expected_end: str,
+) -> None:
+    expanded = expand_query(query, reference_time=REFERENCE)
+
+    assert expanded.time_hint_start == expected_start
+    assert expanded.time_hint_end == expected_end
+    assert expected_start in expanded.search_text
+    assert expected_end in expanded.search_text
+
+
+def test_expand_query_japanese_uses_reference_timezone_date() -> None:
+    jst = timezone(timedelta(hours=9))
+    expanded = expand_query("昨日のDM", reference_time=datetime(2023, 5, 8, 0, 30, tzinfo=jst))
 
     assert expanded.time_hint_start == "2023-05-07"
     assert expanded.time_hint_end == "2023-05-07"

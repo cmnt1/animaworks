@@ -186,6 +186,12 @@ def resolve_outbound_limits(
 
     role = data.get("role", "administration")
     role_defaults = ROLE_OUTBOUND_DEFAULTS.get(role, fallback)
+    if role not in ROLE_OUTBOUND_DEFAULTS:
+        logger.warning(
+            "Unknown role %r for anima %s; falling back to general outbound limits",
+            role,
+            anima_name,
+        )
 
     result: dict[str, int] = {}
     for field in _FIELDS:
@@ -203,6 +209,17 @@ class RAGConfig(BaseModel):
 
     enabled: bool = True
     embedding_model: str = "intfloat/multilingual-e5-small"
+    embedding_e5_prefix_enabled: bool = Field(
+        default=False,
+        description=(
+            "When enabled, prefix query embeddings with embedding_query_prefix "
+            "and indexed document embeddings with embedding_document_prefix. "
+            "This is intended for E5-family ablations and requires re-indexing "
+            "for document-prefix changes to take effect."
+        ),
+    )
+    embedding_query_prefix: str = "query: "
+    embedding_document_prefix: str = "passage: "
     use_gpu: bool = False
     enable_spreading_activation: bool = True
     max_graph_hops: int = 2
@@ -238,12 +255,14 @@ class RAGConfig(BaseModel):
     repair_poll_interval_seconds: int = 5
     startup_repair_preflight_enabled: bool = True
     startup_repair_window_minutes: int = 1440
+    quick_check_timeout_seconds: float = 10.0
     vector_worker_enabled: bool = True
     vector_worker_host: str = "127.0.0.1"
     vector_worker_port: int = 0
     vector_worker_startup_timeout_seconds: float = 10.0
     vector_worker_request_timeout_seconds: float = 30.0
     vector_worker_restart_backoff_seconds: float = 2.0
+    vector_worker_shutdown_timeout_seconds: float = 30.0
     vector_worker_fallback_direct: bool = False
     rerank_enabled: bool = True
     rerank_candidate_pool: int = 50
@@ -252,6 +271,14 @@ class RAGConfig(BaseModel):
     confidence_threshold: float = 0.35
     rrf_confidence_threshold: float = 0.02
     facts_extraction_enabled: bool = True
+    fact_extraction_timeout_seconds: int = Field(
+        default=120,
+        ge=1,
+        description=(
+            "Default timeout in seconds for LLM calls used by legacy atomic fact extraction; "
+            "per-Anima status.json extraction_timeout overrides this value."
+        ),
+    )
     facts_reconcile_enabled: bool = Field(
         default=True,
         description="Enable legacy atomic fact reconciliation before append; failures fall back to ADD.",
@@ -272,6 +299,20 @@ class RAGConfig(BaseModel):
     access_boost_weight: float = 0.05
     access_boost_cap: float = 0.25
     access_boost_half_life_days: float = 30.0
+
+
+class GPUConfig(BaseModel):
+    """GPU device preferences for local ML components."""
+
+    embedding_device: Literal["auto", "cuda", "cpu"] = "auto"
+    nli_device: Literal["auto", "cuda", "cpu"] = "cpu"
+    reranker_device: Literal["auto", "cuda", "cpu"] = "cpu"
+    embedding_batch_size: int = Field(default=32, ge=1)
+    embedding_bulk_yield_batches: int = Field(
+        default=5,
+        ge=1,
+        description="Maximum consecutive embedding batches bulk work may yield to waiting interactive work.",
+    )
 
 
 class Neo4jConfig(BaseModel):
@@ -336,6 +377,7 @@ class PrimingConfig(BaseModel):
     """Configuration for priming layer (automatic memory retrieval)."""
 
     dynamic_budget: bool = True
+    channel_timeout_seconds: float = Field(default=60.0, ge=0.1)
     budget_greeting: int = 500
     budget_question: int = 2000
     budget_request: int = 3000
@@ -352,6 +394,12 @@ class ConsolidationConfig(BaseModel):
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
     llm_credential: str = ""
     max_turns: int = 30  # Tool-call loop limit for consolidation tasks
+    ipc_timeout_base_seconds: int = Field(default=1800, ge=60)
+    ipc_timeout_per_activity_entry_seconds: float = Field(default=4.0, ge=0.0)
+    ipc_timeout_per_episode_seconds: float = Field(default=120.0, ge=0.0)
+    ipc_timeout_per_carryover_item_seconds: float = Field(default=600.0, ge=0.0)
+    ipc_timeout_max_seconds: int = Field(default=7200, ge=60)
+    weekly_ipc_timeout_seconds: int = Field(default=3600, ge=60)
     weekly_enabled: bool = True  # Phase 3 implementation
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
     duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
@@ -360,6 +408,13 @@ class ConsolidationConfig(BaseModel):
     monthly_time: str = "1:04:00"  # Format: day:HH:MM (day of month)
     indexing_enabled: bool = True  # Daily RAG indexing toggle
     indexing_time: str = "04:00"  # Format: HH:MM
+    knowledge_self_correction_enabled: bool = True
+    knowledge_self_correction_max_contradiction_pairs: int = Field(default=20, ge=0)
+    knowledge_self_correction_max_reconsolidation_files: int = Field(default=5, ge=0)
+    knowledge_self_correction_timeout_seconds: int = Field(default=300, ge=1)
+    knowledge_self_correction_recent_hours: int = Field(default=24, ge=1)
+    weekly_full_contradiction_max_pairs: int = Field(default=50, ge=0)
+    post_processing_cooldown_seconds: int = Field(default=30, ge=0)
 
 
 class ImageGenConfig(BaseModel):
@@ -505,6 +560,12 @@ class ServerConfig(BaseModel):
     keepalive_interval: int = 30  # keep-alive emission interval in seconds
     max_streaming_duration: int = 1800  # max streaming duration before hang (seconds)
     busy_hang_threshold: int = 900  # no-progress timeout for busy processes (seconds)
+    anima_startup_ready_timeout: int = Field(default=120, ge=1)
+    health_check_warmup_seconds: int = Field(default=300, ge=0)
+    runner_warmup_seconds: int = Field(default=180, ge=0)
+    spawn_timeout: int = Field(default=300, ge=1)
+    supervisor_respawn_max_retries: int = Field(default=3, ge=1)
+    supervisor_respawn_retry_interval_seconds: float = Field(default=30.0, ge=0.0)
     stream_checkpoint_enabled: bool = True  # save tool results during streaming
     stream_retry_max: int = 3  # max automatic retries on stream disconnect
     stream_retry_delay_s: float = 5.0  # delay between retries (seconds)
@@ -558,6 +619,7 @@ class ActivityLogConfig(BaseModel):
     rotation_enabled: bool = True
     rotation_mode: Literal["size", "time", "both"] = "size"
     max_size_mb: int = Field(default=1024, ge=0)  # per-anima total, default 1GB
+    max_file_size_mb: int = Field(default=100, ge=0)  # per-file bloat trigger; 0 disables
     max_age_days: int = Field(default=7, ge=0)  # mode="time"|"both" で使用
     rotation_time: str = "05:00"  # 実行時刻 (configured TZ)
 
@@ -586,19 +648,30 @@ class HousekeepingConfig(BaseModel):
     run_time: str = "05:30"
 
     prompt_log_retention_days: int = 3
-    daemon_log_max_size_mb: int = 100
+    daemon_log_max_size_mb: int = 50
     daemon_log_keep_generations: int = 5
+    anima_log_retention_days: int = Field(default=30, ge=1)
+    anima_log_total_max_size_mb: int = Field(default=200, ge=1)
     frontend_log_backup_count: int = 7
     dm_log_archive_retention_days: int = 30
     cron_log_retention_days: int = 30
     shortterm_retention_days: int = 7
     task_results_retention_days: int = 7
     pending_failed_retention_days: int = 14
+    corrupt_vectordb_keep_generations: int = Field(default=2, ge=0)
+    tmp_retention_days: int = Field(default=14, ge=1)
+    backup_retention_days: int = Field(default=90, ge=1)
+    codex_log_max_size_mb: int = Field(default=200, ge=1)
+    codex_tmp_retention_hours: int = Field(default=12, ge=1)
+    anima_tmp_gitdirs_retention_days: int = Field(default=14, ge=1)
+    anima_local_log_retention_days: int = Field(default=30, ge=1)
     pending_processing_stale_hours: int = Field(default=24, ge=1)
     background_running_stale_hours: int = Field(default=48, ge=1)
     cron_queue_stale_minutes: int = Field(default=30, ge=1)
     current_state_stale_hours: int = Field(default=24, ge=1)
     taskboard_suppressed_retention_days: int = Field(default=30, ge=1)
+    suppressed_messages_max_size_mb: int = Field(default=10, ge=1)
+    suppressed_messages_keep_generations: int = Field(default=5, ge=1)
 
 
 class InboxConfig(BaseModel):
@@ -923,6 +996,7 @@ class AnimaWorksConfig(BaseModel):
     animas: dict[str, AnimaModelConfig] = {}
     consolidation: ConsolidationConfig = ConsolidationConfig()
     rag: RAGConfig = RAGConfig()
+    gpu: GPUConfig = GPUConfig()
     memory: MemoryConfig = MemoryConfig()
     skills: SkillsConfig = SkillsConfig()
     prompt: PromptConfig = PromptConfig()
@@ -984,6 +1058,7 @@ __all__ = [
     "ExternalMessagingChannelConfig",
     "ExternalMessagingConfig",
     "GatewaySystemConfig",
+    "GPUConfig",
     "HeartbeatConfig",
     "HousekeepingConfig",
     "HumanNotificationConfig",

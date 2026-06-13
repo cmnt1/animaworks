@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,9 +17,10 @@ Tests cover:
 - Integration with ConsolidationEngine (daily + weekly hooks)
 """
 
+import logging
 from datetime import timedelta
-from core.time_utils import now_jst
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -27,7 +29,7 @@ import pytest
 from core.memory.forgetting import (
     ForgettingEngine,
 )
-
+from core.time_utils import now_jst
 
 # ── Fixtures ────────────────────────────────────────────────────────
 
@@ -79,6 +81,32 @@ def _make_chunk(
     }
 
 
+def _make_indexed_chunk(
+    engine: ForgettingEngine,
+    path: Path,
+    *,
+    doc_id: str,
+    chunk_index: int,
+    content: str,
+    memory_type: str = "knowledge",
+) -> dict[str, Any]:
+    chunk = _make_chunk(
+        doc_id=doc_id,
+        content=content,
+        memory_type=memory_type,
+        source_file=str(path.relative_to(engine.anima_dir)),
+        activation_level="low",
+    )
+    chunk["metadata"].update(
+        {
+            "chunk_index": chunk_index,
+            "source_hash": engine._compute_source_hash(path),
+            "source_mtime_ns": path.stat().st_mtime_ns,
+        }
+    )
+    return chunk
+
+
 # ── _is_protected Tests ─────────────────────────────────────────────
 
 
@@ -109,6 +137,41 @@ class TestIsProtected:
         """Verify that importance='important' is protected regardless of type."""
         meta = {"memory_type": "knowledge", "importance": "important"}
         assert forgetting_engine._is_protected(meta) is True
+
+    def test_is_protected_expired_important_knowledge_can_forget(self, forgetting_engine):
+        """[IMPORTANT] knowledge becomes eligible after the safety-net window."""
+        old_date = (now_jst() - timedelta(days=370)).isoformat()
+        meta = {
+            "memory_type": "knowledge",
+            "importance": "important",
+            "access_count": 0,
+            "updated_at": old_date,
+        }
+        assert forgetting_engine._is_protected(meta) is False
+
+    def test_is_protected_expired_important_procedure_can_forget(self, forgetting_engine):
+        """[IMPORTANT] procedures lose tag protection after the safety-net window."""
+        old_date = (now_jst() - timedelta(days=370)).isoformat()
+        meta = {
+            "memory_type": "procedures",
+            "importance": "important",
+            "access_count": 0,
+            "updated_at": old_date,
+            "version": 1,
+            "protected": False,
+        }
+        assert forgetting_engine._is_protected(meta) is False
+
+    def test_is_protected_expired_important_skills_and_users_stay_protected(self, forgetting_engine):
+        """Permanent memory types stay protected even when [IMPORTANT] expires."""
+        old_date = (now_jst() - timedelta(days=370)).isoformat()
+        base = {
+            "importance": "important",
+            "access_count": 0,
+            "updated_at": old_date,
+        }
+        assert forgetting_engine._is_protected({**base, "memory_type": "skills"}) is True
+        assert forgetting_engine._is_protected({**base, "memory_type": "shared_users"}) is True
 
     def test_is_protected_normal_knowledge(self, forgetting_engine):
         """Verify that memory_type='knowledge', importance='normal' is NOT protected."""
@@ -152,9 +215,11 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["scanned"] == 1
         assert result["marked_low"] == 1
@@ -192,9 +257,11 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["scanned"] == 1
         assert result["marked_low"] == 0
@@ -220,12 +287,48 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
+
+    def test_synaptic_downscaling_marks_retrieved_only_chunks(self, forgetting_engine):
+        """Retrieved-only access does not count as explicit use for downscaling."""
+        old_date = (now_jst() - timedelta(days=120)).isoformat()
+        recent_retrieval = (now_jst() - timedelta(days=1)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="retrieved_only",
+                access_count=50,
+                last_accessed_at=recent_retrieval,
+                updated_at=old_date,
+                activation_level="normal",
+            ),
+        ]
+        chunks[0]["metadata"].update(
+            {
+                "retrieved_count": 250,
+                "used_count": 0,
+                "last_retrieved_at": recent_retrieval,
+                "last_used_at": "",
+            }
+        )
+
+        mock_store = MagicMock()
+        mock_store.update_metadata = MagicMock()
+
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
+
+        assert result["marked_low"] == 3
+        assert mock_store.update_metadata.call_count == 3
 
     def test_synaptic_downscaling_skips_recent(self, forgetting_engine):
         """Test that recently accessed chunks are NOT marked.
@@ -247,9 +350,11 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
@@ -271,9 +376,11 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
@@ -303,15 +410,210 @@ class TestSynapticDownscaling:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(
-                forgetting_engine, "_get_all_chunks", side_effect=side_effect_chunks,
-            ):
-                result = forgetting_engine.synaptic_downscaling()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(
+                forgetting_engine,
+                "_get_all_chunks",
+                side_effect=side_effect_chunks,
+            ),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
 
         # Should have been called for all three collections
         assert call_count["n"] == 3
         assert result["scanned"] == 3
+
+
+# ── Neurogenesis Source Sync Tests ─────────────────────────────────
+
+
+class TestNeurogenesisSourceSync:
+    """Test chunk-level source syncing for neurogenesis merges."""
+
+    def test_find_similar_pairs_batches_embeddings(self, forgetting_engine):
+        chunks = [
+            _make_chunk(doc_id="a", content="alpha"),
+            _make_chunk(doc_id="b", content="alpha duplicate"),
+            _make_chunk(doc_id="c", content="gamma"),
+        ]
+        store = MagicMock()
+
+        def fake_query(*, collection, embedding, top_k):
+            assert collection == "test_anima_knowledge"
+            assert top_k == 5
+            if embedding == [1.0]:
+                return [
+                    SimpleNamespace(document=SimpleNamespace(id="a"), score=1.0),
+                    SimpleNamespace(document=SimpleNamespace(id="b"), score=0.86),
+                ]
+            return []
+
+        store.query.side_effect = fake_query
+
+        with patch(
+            "core.memory.rag.singleton.generate_embeddings",
+            return_value=[[1.0], [2.0], [3.0]],
+        ) as mock_embeddings:
+            pairs = forgetting_engine._find_similar_pairs(chunks, "test_anima_knowledge", store)
+
+        mock_embeddings.assert_called_once_with(
+            ["alpha", "alpha duplicate", "gamma"],
+            purpose="query",
+            priority="bulk",
+        )
+        assert [(a["id"], b["id"], score) for a, b, score in pairs] == [("a", "b", 0.86)]
+
+    def test_sync_replaces_only_target_chunk(self, forgetting_engine, anima_dir):
+        primary = anima_dir / "knowledge" / "primary.md"
+        secondary = anima_dir / "knowledge" / "secondary.md"
+        primary.write_text(
+            "## Keep One\n\nAlpha stays.\n\n## Merge Me\n\nOld duplicate detail.\n\n## Keep Two\n\nGamma stays.",
+            encoding="utf-8",
+        )
+        secondary.write_text("## Merge Source\n\nNew duplicate detail.", encoding="utf-8")
+
+        chunk_a = _make_indexed_chunk(
+            forgetting_engine,
+            primary,
+            doc_id="a",
+            chunk_index=1,
+            content="## Merge Me\n\nOld duplicate detail.",
+        )
+        chunk_b = _make_indexed_chunk(
+            forgetting_engine,
+            secondary,
+            doc_id="b",
+            chunk_index=0,
+            content="## Merge Source\n\nNew duplicate detail.",
+        )
+
+        assert forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merged\n\nCombined detail.")
+
+        updated = primary.read_text(encoding="utf-8")
+        assert "## Keep One\n\nAlpha stays." in updated
+        assert "## Keep Two\n\nGamma stays." in updated
+        assert "## Merged\n\nCombined detail." in updated
+        assert "Old duplicate detail." not in updated
+        assert not secondary.exists()
+
+    def test_sync_preserves_frontmatter(self, forgetting_engine, anima_dir):
+        primary = anima_dir / "knowledge" / "frontmatter.md"
+        secondary = anima_dir / "knowledge" / "dup.md"
+        frontmatter = "---\ntitle: Deployment Notes\nconfidence: 0.8\n---"
+        primary.write_text(
+            f"{frontmatter}\n\n## Merge\n\nOld deploy detail.\n\n## Keep\n\nKeep this.",
+            encoding="utf-8",
+        )
+        secondary.write_text("## Duplicate\n\nNew deploy detail.", encoding="utf-8")
+
+        chunk_a = _make_indexed_chunk(
+            forgetting_engine,
+            primary,
+            doc_id="a",
+            chunk_index=0,
+            content="## Merge\n\nOld deploy detail.",
+        )
+        chunk_b = _make_indexed_chunk(
+            forgetting_engine,
+            secondary,
+            doc_id="b",
+            chunk_index=0,
+            content="## Duplicate\n\nNew deploy detail.",
+        )
+
+        assert forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merge\n\nMerged deploy detail.")
+
+        updated = primary.read_text(encoding="utf-8")
+        assert updated.startswith(frontmatter)
+        assert "confidence: 0.8" in updated
+        assert "Merged deploy detail." in updated
+        assert "## Keep\n\nKeep this." in updated
+
+    def test_sync_skips_when_source_changed_since_index(
+        self,
+        forgetting_engine,
+        anima_dir,
+        caplog,
+    ):
+        primary = anima_dir / "knowledge" / "changed.md"
+        secondary = anima_dir / "knowledge" / "secondary.md"
+        primary.write_text("## Merge\n\nOld indexed detail.", encoding="utf-8")
+        secondary.write_text("## Duplicate\n\nSecondary detail.", encoding="utf-8")
+
+        chunk_a = _make_indexed_chunk(
+            forgetting_engine,
+            primary,
+            doc_id="a",
+            chunk_index=0,
+            content="## Merge\n\nOld indexed detail.",
+        )
+        chunk_b = _make_indexed_chunk(
+            forgetting_engine,
+            secondary,
+            doc_id="b",
+            chunk_index=0,
+            content="## Duplicate\n\nSecondary detail.",
+        )
+        primary.write_text("## Merge\n\nUser edited after indexing.", encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING, logger="animaworks.forgetting"):
+            result = forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merged\n\nShould skip.")
+
+        assert result is False
+        assert primary.read_text(encoding="utf-8") == "## Merge\n\nUser edited after indexing."
+        assert "source file content changed since indexing" in caplog.text
+        assert not (anima_dir / "archive" / "merged").exists()
+
+    @pytest.mark.asyncio
+    async def test_merge_reject_skips_llm_merge(self, forgetting_engine):
+        with patch(
+            "core.memory._llm_utils.one_shot_completion",
+            new=AsyncMock(return_value="MERGE_REJECT\nDifferent topics."),
+        ):
+            merged = await forgetting_engine._merge_chunks_llm(
+                {"id": "a", "content": "A"},
+                {"id": "b", "content": "B"},
+                0.91,
+                "test-model",
+            )
+
+        assert merged is None
+
+    def test_secondary_partial_absorption_keeps_file_unarchived(self, forgetting_engine, anima_dir):
+        primary = anima_dir / "knowledge" / "primary.md"
+        secondary = anima_dir / "knowledge" / "secondary.md"
+        primary.write_text("## Primary\n\nPrimary duplicate.", encoding="utf-8")
+        secondary.write_text(
+            "## Keep One\n\nFirst survives.\n\n## Remove Me\n\nDuplicate absorbed.\n\n## Keep Two\n\nSecond survives.",
+            encoding="utf-8",
+        )
+
+        chunk_a = _make_indexed_chunk(
+            forgetting_engine,
+            primary,
+            doc_id="a",
+            chunk_index=0,
+            content="## Primary\n\nPrimary duplicate.",
+        )
+        chunk_b = _make_indexed_chunk(
+            forgetting_engine,
+            secondary,
+            doc_id="b",
+            chunk_index=1,
+            content="## Remove Me\n\nDuplicate absorbed.",
+        )
+
+        assert forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merged\n\nMerged duplicate.")
+
+        secondary_text = secondary.read_text(encoding="utf-8")
+        assert "## Keep One\n\nFirst survives." in secondary_text
+        assert "## Keep Two\n\nSecond survives." in secondary_text
+        assert "Duplicate absorbed." not in secondary_text
+
+        archive_names = [path.name for path in (anima_dir / "archive" / "merged").iterdir()]
+        assert any(name.startswith("primary_") for name in archive_names)
+        assert not any(name.startswith("secondary_") for name in archive_names)
 
 
 # ── Complete Forgetting Tests ───────────────────────────────────────
@@ -351,9 +653,11 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 1
         assert len(result["archived_files"]) == 1
@@ -395,13 +699,50 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 0
         assert len(result["archived_files"]) == 0
         mock_store.delete_documents.assert_not_called()
+
+    def test_complete_forgetting_deletes_retrieved_only_chunks(self, forgetting_engine, anima_dir):
+        """Retrieved-only access does not prevent complete forgetting."""
+        old_low_since = (now_jst() - timedelta(days=120)).isoformat()
+        recent_retrieval = (now_jst() - timedelta(days=1)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="retrieved_low",
+                access_count=50,
+                last_accessed_at=recent_retrieval,
+                activation_level="low",
+                low_activation_since=old_low_since,
+                source_file="knowledge/retrieved.md",
+            ),
+        ]
+        chunks[0]["metadata"].update(
+            {
+                "retrieved_count": 250,
+                "used_count": 0,
+                "last_retrieved_at": recent_retrieval,
+                "last_used_at": "",
+            }
+        )
+
+        mock_store = MagicMock()
+        mock_store.delete_documents = MagicMock()
+
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
+
+        assert result["forgotten_chunks"] == 3
+        assert mock_store.delete_documents.call_count == 3
 
     def test_complete_forgetting_skips_protected(self, forgetting_engine, anima_dir):
         """Test that protected chunks are not forgotten even if low-activation."""
@@ -419,9 +760,11 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 0
         mock_store.delete_documents.assert_not_called()
@@ -440,9 +783,11 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 0
         mock_store.delete_documents.assert_not_called()
@@ -466,12 +811,93 @@ class TestCompleteForgetting:
         mock_store = MagicMock()
         mock_store.delete_documents = MagicMock()
 
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks):
-                result = forgetting_engine.complete_forgetting()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.complete_forgetting()
 
         assert result["forgotten_chunks"] == 0
         mock_store.delete_documents.assert_not_called()
+
+    def test_complete_forgetting_emits_funnel_log(self, forgetting_engine, caplog):
+        """Complete forgetting logs diagnostic funnel counts."""
+        old_low_since = (now_jst() - timedelta(days=120)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="forget_me",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old_low_since,
+            ),
+        ]
+
+        mock_store = MagicMock()
+        mock_store.delete_documents.return_value = True
+
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+            caplog.at_level(logging.INFO, logger="animaworks.forgetting"),
+        ):
+            forgetting_engine.complete_forgetting()
+
+        assert "forgetting_funnel: anima=test_anima stage=complete" in caplog.text
+        assert "scanned=3" in caplog.text
+        assert "marked=3" in caplog.text
+        assert "forgotten=3" in caplog.text
+
+
+class TestEpisodeRetentionArchival:
+    """Test deterministic retention archival for old episode files."""
+
+    def test_archive_expired_episodes_moves_files_and_deletes_rag(self, forgetting_engine, anima_dir):
+        old_date = (now_jst().date() - timedelta(days=45)).isoformat()
+        recent_date = (now_jst().date() - timedelta(days=5)).isoformat()
+        old_file = anima_dir / "episodes" / f"{old_date}.md"
+        recent_file = anima_dir / "episodes" / f"{recent_date}.md"
+        old_file.write_text("# Old episode\n\nArchive me.", encoding="utf-8")
+        recent_file.write_text("# Recent episode\n\nKeep me.", encoding="utf-8")
+
+        mock_store = MagicMock()
+        mock_store.get_by_metadata.return_value = [
+            SimpleNamespace(document=SimpleNamespace(id="test_anima/episodes/old#0")),
+        ]
+        mock_store.delete_documents.return_value = True
+
+        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
+            result = forgetting_engine.archive_expired_episodes(retention_days=30)
+
+        assert result["scanned"] == 2
+        assert result["archived_count"] == 1
+        assert result["archived_files"] == [f"episodes/{old_date}.md"]
+        assert result["deleted_indexed_chunks"] == 1
+        assert not old_file.exists()
+        assert recent_file.exists()
+        assert (anima_dir / "archive" / "episodes" / f"{old_date}.md").exists()
+        mock_store.get_by_metadata.assert_called_once_with(
+            "test_anima_episodes",
+            {"source_file": f"episodes/{old_date}.md"},
+            limit=10_000,
+        )
+        mock_store.delete_documents.assert_called_once_with(
+            "test_anima_episodes",
+            ["test_anima/episodes/old#0"],
+        )
+
+    def test_archive_expired_episodes_archives_when_rag_unavailable(self, forgetting_engine, anima_dir):
+        old_date = (now_jst().date() - timedelta(days=45)).isoformat()
+        old_file = anima_dir / "episodes" / f"{old_date}.md"
+        old_file.write_text("# Old episode\n\nArchive me.", encoding="utf-8")
+
+        with patch.object(forgetting_engine, "_get_vector_store", return_value=None):
+            result = forgetting_engine.archive_expired_episodes(retention_days=30)
+
+        assert result["archived_count"] == 1
+        assert result["deleted_indexed_chunks"] == 0
+        assert result["index_delete_failures"] == 0
+        assert result["index_skipped_reason"] == "rag_unavailable"
+        assert not old_file.exists()
 
 
 # ── Consolidation Integration Tests ─────────────────────────────────
@@ -524,11 +950,22 @@ class TestConsolidationForgettingHooks:
 
         mock_downscaling_result = {"scanned": 10, "marked_low": 2}
 
-        with patch("core.config.load_config", return_value=mock_config), \
-             patch(
-                 "core.memory.forgetting.ForgettingEngine"
-             ) as MockForgettingEngine, \
-             patch("core.memory.consolidation.ConsolidationEngine"):
+        gate = SimpleNamespace(
+            should_run=True,
+            activity_count=3,
+            episode_count=0,
+            carryover_count=0,
+            threshold=1,
+        )
+
+        with (
+            patch("core.config.load_config", return_value=mock_config),
+            patch("core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate", return_value=gate),
+            patch("core.lifecycle.system_consolidation.run_knowledge_self_correction_if_enabled", AsyncMock()),
+            patch("core.lifecycle.system_consolidation.detect_communities_if_neo4j", AsyncMock()),
+            patch("core.memory.forgetting.ForgettingEngine") as MockForgettingEngine,
+            patch("core.memory.consolidation.ConsolidationEngine"),
+        ):
             mock_forgetter = MagicMock()
             mock_forgetter.synaptic_downscaling.return_value = mock_downscaling_result
             MockForgettingEngine.return_value = mock_forgetter
@@ -574,11 +1011,12 @@ class TestConsolidationForgettingHooks:
 
         mock_reorg_result = {"merged_count": 3, "merged_pairs": ["a+b", "c+d", "e+f"]}
 
-        with patch("core.config.load_config", return_value=mock_config), \
-             patch(
-                 "core.memory.forgetting.ForgettingEngine"
-             ) as MockForgettingEngine, \
-             patch("core.memory.consolidation.ConsolidationEngine"):
+        with (
+            patch("core.config.load_config", return_value=mock_config),
+            patch("core.lifecycle.system_consolidation.detect_communities_if_neo4j", AsyncMock()),
+            patch("core.memory.forgetting.ForgettingEngine") as MockForgettingEngine,
+            patch("core.memory.consolidation.ConsolidationEngine"),
+        ):
             mock_forgetter = MagicMock()
             mock_forgetter.neurogenesis_reorganize = AsyncMock(
                 return_value=mock_reorg_result,
@@ -614,20 +1052,37 @@ class TestMonthlyForgettingHook:
     async def test_monthly_forget_calls_complete_forgetting(self, consolidation_engine):
         """Test that monthly_forget() calls ForgettingEngine.complete_forgetting()."""
         mock_result = {"forgotten_chunks": 5, "archived_files": ["a.md", "b.md"]}
+        retention_result = {
+            "retention_days": 17,
+            "scanned": 3,
+            "archived_count": 1,
+            "archived_files": ["episodes/old.md"],
+            "archive_destinations": ["archive/episodes/old.md"],
+            "deleted_indexed_chunks": 1,
+            "skipped_undated": 0,
+            "index_delete_failures": 0,
+        }
 
-        with patch(
-            "core.memory.forgetting.ForgettingEngine"
-        ) as MockForgettingEngine:
+        with patch("core.memory.forgetting.ForgettingEngine") as MockForgettingEngine:
             mock_forgetter = MagicMock()
             mock_forgetter.complete_forgetting.return_value = mock_result
+            mock_forgetter.archive_expired_episodes.return_value = retention_result
             MockForgettingEngine.return_value = mock_forgetter
 
-            with patch.object(consolidation_engine, "_rebuild_rag_index"):
+            config = SimpleNamespace(
+                consolidation=SimpleNamespace(episode_retention_days=17),
+            )
+            with (
+                patch("core.config.load_config", return_value=config),
+                patch.object(consolidation_engine, "_rebuild_rag_index"),
+            ):
                 result = await consolidation_engine.monthly_forget()
 
         mock_forgetter.complete_forgetting.assert_called_once()
+        mock_forgetter.archive_expired_episodes.assert_called_once_with(17)
         assert result["forgotten_chunks"] == 5
-        assert len(result["archived_files"]) == 2
+        assert len(result["archived_files"]) == 3
+        assert result["episode_retention"] == retention_result
 
 
 if __name__ == "__main__":

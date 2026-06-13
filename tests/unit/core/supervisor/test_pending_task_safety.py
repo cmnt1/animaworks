@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.memory.task_queue import TaskQueueManager
+from core.messenger import Messenger
 from core.schemas import ModelConfig
 from core.supervisor.pending_executor import PendingTaskExecutor
 from core.taskboard.models import AttentionDecision
@@ -374,6 +375,37 @@ class TestExecuteLLMTaskFailureHandling:
         content = result_path.read_text()
         assert "FAILED:" in content
         assert "task_too_broad_for_model" in content
+
+    @pytest.mark.asyncio
+    async def test_completion_notification_can_be_self_addressed(self, tmp_path: Path) -> None:
+        """Task completion notifications may target the submitting anima itself."""
+        executor = _make_executor(tmp_path)
+        shared_dir = tmp_path / "shared"
+        executor._anima.messenger = Messenger(shared_dir, "test-anima")
+
+        async def _run_cycle_streaming(*_args, **_kwargs):
+            yield {
+                "type": "cycle_done",
+                "cycle_result": {"summary": "task finished", "action": "responded"},
+            }
+
+        executor._anima.agent.run_cycle_streaming = _run_cycle_streaming
+        task_desc = {
+            "task_id": "self-complete",
+            "title": "Self completion",
+            "description": "notify the submitter",
+            "reply_to": "test-anima",
+        }
+
+        result = await executor._run_llm_task(task_desc)
+
+        assert result == "task finished"
+        inbox_files = list((shared_dir / "inbox" / "test-anima").glob("*.json"))
+        assert len(inbox_files) == 1
+        delivered = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+        assert delivered["from_person"] == "test-anima"
+        assert delivered["to_person"] == "test-anima"
+        assert "self-complete" in delivered["content"]
 
 
 # ── TestI18nTemplate ─────────────────────────────────────────

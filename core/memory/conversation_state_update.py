@@ -14,13 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from core.i18n import t
-from core.memory.conversation_models import (
-    _ERROR_PATTERN,
-    _RESOLVED_PATTERN,
-    ConversationTurn,
-    ParsedSessionSummary,
-)
-from core.time_utils import now_iso
+from core.memory.conversation_models import ParsedSessionSummary
 
 logger = logging.getLogger("animaworks.conversation_memory")
 
@@ -67,70 +61,6 @@ def _update_state_from_summary(
             "Session summary contained %d new_tasks (auto-registration disabled)",
             len(parsed.new_tasks),
         )
-
-
-def _auto_track_procedure_outcomes(
-    anima_dir: Path,
-    memory_mgr: Any,
-    new_turns: list[ConversationTurn],
-    injected_procedures: list[Path] | None = None,
-    session_id: str = "",
-) -> None:
-    """Auto-track outcomes for procedures that were injected during this session."""
-    try:
-        if not injected_procedures:
-            return
-
-        # Only check the LAST assistant turn, not all turns
-        assistant_turns = [t for t in new_turns if t.role == "assistant"]
-        if assistant_turns:
-            last_turn = assistant_turns[-1]
-            has_error = bool(_ERROR_PATTERN.search(last_turn.content))
-            if has_error and _RESOLVED_PATTERN.search(last_turn.content):
-                has_error = False  # Resolution context overrides error detection
-        else:
-            has_error = False
-
-        for proc_path in injected_procedures:
-            if not proc_path.exists():
-                continue
-
-            meta = memory_mgr.read_procedure_metadata(proc_path)
-            if not meta:
-                continue
-
-            # Skip if already reported via explicit tool in this session
-            if session_id and meta.get("_reported_session_id") == session_id:
-                logger.debug(
-                    "Skipping auto-track for %s: already reported in session %s",
-                    proc_path.name,
-                    session_id,
-                )
-                continue
-
-            if has_error:
-                meta["failure_count"] = meta.get("failure_count", 0) + 1
-            else:
-                meta["success_count"] = meta.get("success_count", 0) + 1
-
-            meta["last_used"] = now_iso()
-
-            s = meta.get("success_count", 0)
-            f = meta.get("failure_count", 0)
-            meta["confidence"] = s / max(1, s + f)
-
-            body = memory_mgr.read_procedure_content(proc_path)
-            memory_mgr.write_procedure_with_meta(proc_path, body, meta)
-
-            logger.debug(
-                "Auto-tracked procedure outcome: %s success=%s confidence=%.2f",
-                proc_path.name,
-                not has_error,
-                meta["confidence"],
-            )
-
-    except Exception:
-        logger.debug("Failed to auto-track procedure outcomes", exc_info=True)
 
 
 def _record_resolutions(

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,48 +11,48 @@ from __future__ import annotations
 """Integration tests for lifecycle consolidation setup."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 
 class TestLifecycleConsolidationIntegration:
-    """Test lifecycle manager's system cron setup."""
+    """Test lifecycle consolidation setup."""
 
     @pytest.mark.asyncio
-    async def test_system_crons_registered_on_start(self):
-        """Test that system crons are registered when lifecycle manager starts."""
-        from core.lifecycle import LifecycleManager
+    async def test_system_crons_registered_on_supervisor(self, tmp_path: Path):
+        """System-wide crons are registered by ProcessSupervisor."""
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-        manager = LifecycleManager()
+        from core.supervisor.manager import ProcessSupervisor
+        from core.time_utils import get_app_timezone
 
-        # Start the manager (needs to be in async context)
-        manager.start()
+        supervisor = ProcessSupervisor(
+            animas_dir=tmp_path / "animas",
+            shared_dir=tmp_path / "shared",
+            run_dir=tmp_path / "run",
+        )
+        supervisor.scheduler = AsyncIOScheduler(timezone=get_app_timezone())
+        supervisor._setup_system_crons()
 
-        try:
-            # Check that system cron jobs were registered
-            jobs = manager.scheduler.get_jobs()
-            job_ids = [job.id for job in jobs]
+        jobs = supervisor.scheduler.get_jobs()
+        job_ids = [job.id for job in jobs]
 
-            assert "system_daily_consolidation" in job_ids
-            assert "system_weekly_integration" in job_ids
+        assert "system_daily_consolidation" in job_ids
+        assert "system_weekly_integration" in job_ids
 
-            # Check daily consolidation job details
-            daily_job = next(j for j in jobs if j.id == "system_daily_consolidation")
-            assert daily_job.name == "System: Daily Consolidation"
+        daily_job = next(j for j in jobs if j.id == "system_daily_consolidation")
+        assert daily_job.name == "System: Daily Consolidation"
 
-            # Check weekly integration job details
-            weekly_job = next(j for j in jobs if j.id == "system_weekly_integration")
-            assert weekly_job.name == "System: Weekly Integration"
-
-        finally:
-            manager.shutdown()
+        weekly_job = next(j for j in jobs if j.id == "system_weekly_integration")
+        assert weekly_job.name == "System: Weekly Integration"
 
     @pytest.mark.asyncio
     async def test_handle_daily_consolidation_with_config(self, tmp_path: Path):
         """Test daily consolidation handler respects config settings."""
-        from core.lifecycle import LifecycleManager
         from core.anima import DigitalAnima
+        from core.lifecycle import LifecycleManager
 
         manager = LifecycleManager()
 
@@ -83,8 +84,8 @@ class TestLifecycleConsolidationIntegration:
     @pytest.mark.asyncio
     async def test_handle_daily_consolidation_with_anima(self, tmp_path: Path):
         """Test daily consolidation runs for registered anima via run_consolidation."""
-        from core.lifecycle import LifecycleManager
         from core.anima import DigitalAnima
+        from core.lifecycle import LifecycleManager
 
         manager = LifecycleManager()
 
@@ -98,9 +99,6 @@ class TestLifecycleConsolidationIntegration:
         mock_anima.name = "test_anima"
         mock_anima.memory = MagicMock()
         mock_anima.memory.anima_dir = anima_dir
-        # count_recent_episodes returns enough episodes to proceed
-        mock_anima.count_recent_episodes.return_value = 3
-
         # run_consolidation side-effect: simulate knowledge file creation
         mock_result = MagicMock()
         mock_result.duration_ms = 1234
@@ -110,8 +108,7 @@ class TestLifecycleConsolidationIntegration:
             # Simulate the Anima writing a knowledge file during consolidation
             kf = knowledge_dir / "test-knowledge.md"
             kf.write_text(
-                "---\nauto_consolidated: true\n---\n# Test Knowledge\n\n"
-                "Test content from consolidation\n",
+                "---\nauto_consolidated: true\n---\n# Test Knowledge\n\nTest content from consolidation\n",
                 encoding="utf-8",
             )
             return mock_result
@@ -128,13 +125,20 @@ class TestLifecycleConsolidationIntegration:
         mock_consolidation_cfg.max_turns = 30
         mock_config.consolidation = mock_consolidation_cfg
 
-        with patch("core.config.load_config", return_value=mock_config), \
-             patch("core.memory.forgetting.ForgettingEngine"), \
-             patch("core.memory.consolidation.ConsolidationEngine"):
-            await manager._handle_daily_consolidation()
+        gate = SimpleNamespace(
+            should_run=True,
+            activity_count=3,
+            episode_count=0,
+            carryover_count=0,
+            threshold=1,
+        )
 
-        # Verify anima.count_recent_episodes was called
-        mock_anima.count_recent_episodes.assert_called_once_with(hours=24)
+        with (
+            patch("core.config.load_config", return_value=mock_config),
+            patch("core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate", return_value=gate),
+            patch("core.lifecycle.system_consolidation.run_daily_consolidation_post_processing", AsyncMock()),
+        ):
+            await manager._handle_daily_consolidation()
 
         # Verify anima.run_consolidation was called
         mock_anima.run_consolidation.assert_called_once()
@@ -145,6 +149,14 @@ class TestLifecycleConsolidationIntegration:
         content = knowledge_file.read_text(encoding="utf-8")
         assert "Test Knowledge" in content
         assert "auto_consolidated: true" in content
+
+
+def test_resolve_post_processing_cooldown_seconds() -> None:
+    from core.lifecycle.system_consolidation import resolve_post_processing_cooldown_seconds
+
+    assert resolve_post_processing_cooldown_seconds(SimpleNamespace(post_processing_cooldown_seconds=12)) == 12.0
+    assert resolve_post_processing_cooldown_seconds(SimpleNamespace(post_processing_cooldown_seconds=-1)) == 0.0
+    assert resolve_post_processing_cooldown_seconds(SimpleNamespace(post_processing_cooldown_seconds="bad")) == 30.0
 
 
 if __name__ == "__main__":

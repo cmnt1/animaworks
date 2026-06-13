@@ -183,3 +183,27 @@ class TestRAGSearchScopeAllPipeline:
                 common_knowledge_dir=rag_search._anima_dir / "common_knowledge",
             )
         assert rag_search.last_search_meta["abstain"] is False
+
+    def test_keyword_fallback_includes_knowledge_metadata(self, rag_search: RAGMemorySearch) -> None:
+        knowledge_file = rag_search._anima_dir / "knowledge" / "vendor.md"
+        knowledge_file.write_text(
+            "---\n"
+            "updated_at: 2026-06-03T10:11:12+09:00\n"
+            "origin: external_web\n"
+            "---\n\n"
+            "# Vendor\n\nVendor policy changed.",
+            encoding="utf-8",
+        )
+
+        results = rag_search._keyword_search_fallback(
+            "vendor",
+            "knowledge",
+            0,
+            knowledge_dir=rag_search._anima_dir / "knowledge",
+            episodes_dir=rag_search._anima_dir / "episodes",
+            procedures_dir=rag_search._anima_dir / "procedures",
+            common_knowledge_dir=rag_search._anima_dir / "common_knowledge",
+        )
+
+        assert results[0]["updated_at"] == "2026-06-03T10:11:12+09:00"
+        assert results[0]["origin"] == "external_web"

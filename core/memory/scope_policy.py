@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from core.memory.search_metadata import format_result_metadata_line
+
 NEO4J_SCOPE_MAP: dict[str, str] = {
     "knowledge": "fact",
     "episodes": "episode",
@@ -73,6 +75,10 @@ class SearchResultItem:
 
 def format_graph_memory_entry(mem: Any, index: int) -> str:
     """Format a Neo4j RetrievedMemory entry for search_memory output."""
+    metadata = getattr(mem, "metadata", {}) if isinstance(getattr(mem, "metadata", {}), dict) else {}
+    metadata_line = format_result_metadata_line({**metadata, "source_file": getattr(mem, "source", "")})
+    if metadata_line:
+        return f"\n[{index}] score={mem.score:.2f} | {mem.source}\n{metadata_line}\n{mem.content}\n"
     return f"\n[{index}] score={mem.score:.2f} | {mem.source}\n{mem.content}\n"
 
 
@@ -83,7 +89,10 @@ def format_legacy_memory_entry(result: dict[str, Any], index: int) -> str:
     chunk_idx = result.get("chunk_index", 0)
     total_chunks = result.get("total_chunks", 1)
     content = result.get("content", "")
+    metadata_line = format_result_metadata_line(result)
     entry_header = f"[{index}] score={score:.2f} | {source} | chunk {chunk_idx + 1}/{total_chunks}"
+    if metadata_line:
+        return f"\n{entry_header}\n{metadata_line}\n{content}\n"
     return f"\n{entry_header}\n{content}\n"
 
 

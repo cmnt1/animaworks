@@ -65,12 +65,11 @@ animaworks/
 │   ├── paths.py               # Path resolution
 │   ├── messenger.py           # Inter-Anima message send/receive
 │   ├── lifecycle/             # Heartbeat, cron, Inbox (package, APScheduler)
-│   │   ├── __init__.py        #   LifecycleManager (Scheduler/Inbox/rate limiting mixins)
+│   │   ├── __init__.py        #   LifecycleManager compatibility and mixin re-exports
 │   │   ├── scheduler.py       #   Schedule registration
 │   │   ├── inbox_watcher.py   #   Inbox monitoring
 │   │   ├── rate_limiter.py    #   Message chaining and cooldown
-│   │   ├── system_crons.py    #   Server-wide scheduled jobs
-│   │   └── system_consolidation.py # Cross-org consolidation triggers
+│   │   └── system_consolidation.py # System consolidation handlers used by ProcessSupervisor
 │   ├── outbound.py            # Unified outbound routing (Slack/Chatwork/internal auto-detection)
 │   ├── background.py          # Background task management
 │   ├── asset_reconciler.py    # Automatic asset generation
@@ -742,7 +741,7 @@ Use the `intent` field on `send_message` to state the purpose. Use DMs only for 
 | intent | Description | Use |
 |--------|-------------|-----|
 | `report` | Report upward | Progress and issues (MUST) |
-| `delegation` | Delegate to subordinate | Works with delegate_task |
+| `delegation` | Deprecated for `send_message` | Use `delegate_task` instead |
 | `question` | Question or consultation | Coordination with peers |
 
 ### Board (Shared Channels)
@@ -947,7 +946,7 @@ Group 6: Meta settings
 
 **Tiered System Prompt:** Adjusts prompt content in 4 tiers based on context window (T1 FULL 128k+ / T2 STANDARD 32k–128k / T3 LIGHT 16k–32k / T4 MINIMAL <16k).
 
-**Skill injection (progressive disclosure):** Skills are not loaded wholesale by the main priming body. Active skill context, the Skill Router, Skill Hub, the `skill` tool, and `read_memory_file` provide the body or pointer only when needed. Message-type budgets still apply to the surrounding priming context: greeting=500, question=2000, request=3000, heartbeat=200 (`PrimingConfig` defaults).
+**Skill injection (progressive disclosure):** Skills are not loaded wholesale by the main priming body. Active skill context, the Skill Router, Skill Hub, and `read_memory_file` provide the body or pointer only when needed. Message-type budgets still apply to the surrounding priming context: greeting=500, question=2000, request=3000, heartbeat=200 (`PrimingConfig` defaults).
 
 Including "Making decisions without searching memory is prohibited" in `behavior_rules` is the key to the success of archive-based memory (validated experimentally).
 
@@ -966,7 +965,7 @@ Including "Making decisions without searching memory is prohibited" in `behavior
 - **Board/shared channels** — Slack-style shared channels. REST API for channel posts, mentions, DM history
 - **Unified outbound routing** — Auto-resolves recipient names to internal Anima or external platforms (Slack/Chatwork) for delivery
 - **Heartbeat, cron, TaskExec, TaskBoard** — Schedule management via APScheduler. TaskBoard and TaskExec manage queued, running, deferred, suppressed, and completed work
-- **Inter-Anima messaging** — Text communication via Messenger. intent control (report/delegation/question); 3-layer rate limiting
+- **Inter-Anima messaging** — Text communication via Messenger. intent control (report/question; delegation uses `delegate_task`); 3-layer rate limiting
 - **Supervisor tools** — Auto-enabled for Animas with subordinates (see tool list below)
 - **Unified configuration** — config.json + Pydantic validation. status.json SSoT; models.json for execution mode override
 - **Credential Vault** — `vault.json` + `vault.key` (PyNaCl SealedBox, `core/config/vault.py`). Tools: `vault_get` / `vault_store` / `vault_list`
@@ -975,7 +974,7 @@ Including "Making decisions without searching memory is prohibited" in `behavior
 - **FastAPI server** — REST (`/api`) + dashboard WebSocket (`/ws`) + voice (`/ws/voice/{name}`) + first-run setup wizard (`/setup`) + SPA (`#/chat`, etc.) + Workspace (`/workspace`). Internal embed/vector API centralizes child-process RAG; meeting room API + SSE; `StreamRegistry` / `ConfigReloadManager`; Slack Socket Mode integration
 - **Voice chat** — WebSocket /ws/voice/{name}. STT (faster-whisper) → Chat IPC → TTS (VOICEVOX/ElevenLabs/SBV2)
 - **Anima creation** — From template / blank (_blank) / MD file (create --from-md)
-- **Skill progressive disclosure** — Active skill context, Skill Router, and `skill` / `read_memory_file` load full text only when needed
+- **Skill progressive disclosure** — Active skill context, Skill Router, Skill Hub, and `read_memory_file` load full text only when needed
 - **External messaging integration** — Slack Socket Mode (real-time bidirectional), Chatwork Webhook (inbound)
 - **TaskBoard / persistent task queue** — TaskBoard is primary for current, processing, deferred, suppressed, background, and completed work; task_queue.jsonl remains as compatibility fallback. Includes staleness detection, DAG parallel execution (`submit_tasks`), and delegation prompt context
 - **Resolution registry** — Cross-Anima issue resolution tracking via shared/resolutions.jsonl
@@ -1001,7 +1000,7 @@ Internal tools provided by the framework. Combines Claude Code–compatible tool
 
 | Tool | Description |
 |------|-------------|
-| `send_message` | Inter-Anima DM (intent required: report/delegation/question) |
+| `send_message` | Inter-Anima DM (intent required: report/question; delegation intent is rejected, use `delegate_task`) |
 | `post_channel` | Post to Board (shared channel) |
 | `read_channel` | Read Board |
 | `manage_channel` | Channel management (create, ACL) |
@@ -1021,7 +1020,6 @@ Internal tools provided by the framework. Combines Claude Code–compatible tool
 
 | Tool | Description |
 |------|-------------|
-| `skill` | Skill lookup (progressive disclosure: names only → full text on demand) |
 | `create_skill` | Create a new skill |
 
 **Vault:**

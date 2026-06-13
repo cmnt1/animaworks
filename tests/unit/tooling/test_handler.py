@@ -181,8 +181,10 @@ class TestHandleRouting:
     def test_read_memory_file(self, handler: ToolHandler, anima_dir: Path):
         (anima_dir / "knowledge").mkdir(exist_ok=True)
         (anima_dir / "knowledge" / "test.md").write_text("content here", encoding="utf-8")
+        handler._record_memory_file_used = MagicMock()
         result = handler.handle("read_memory_file", {"path": "knowledge/test.md"})
         assert result == "content here"
+        handler._record_memory_file_used.assert_called_once_with("knowledge/test.md")
 
     def test_read_memory_file_not_found(self, handler: ToolHandler):
         result = handler.handle("read_memory_file", {"path": "nonexistent.md"})
@@ -226,6 +228,7 @@ class TestHandleRouting:
         assert "File not found" in result
 
     def test_write_memory_file_overwrite(self, handler: ToolHandler, anima_dir: Path):
+        handler._mark_longterm_bm25_dirty = MagicMock()
         result = handler.handle(
             "write_memory_file",
             {"path": "knowledge/new.md", "content": "new content"},
@@ -234,6 +237,7 @@ class TestHandleRouting:
         written = (anima_dir / "knowledge" / "new.md").read_text(encoding="utf-8")
         assert "new content" in written
         assert written.startswith("---")  # auto-frontmatter
+        handler._mark_longterm_bm25_dirty.assert_called_once_with("knowledge/new.md")
 
     def test_write_memory_file_append(self, handler: ToolHandler, anima_dir: Path):
         (anima_dir / "knowledge").mkdir(exist_ok=True)
@@ -484,10 +488,10 @@ class TestFileOperations:
         - 128K+ converges to CC's 25K token / 75K char / 937 line cap.
         """
         cases = [
-            (8_000, 60, 4_800),       # 20% scaling
-            (32_000, 240, 19_200),     # 20% scaling
-            (128_000, 937, 75_000),    # token hard cap (CC compatible)
-            (200_000, 937, 75_000),    # token hard cap (CC compatible)
+            (8_000, 60, 4_800),  # 20% scaling
+            (32_000, 240, 19_200),  # 20% scaling
+            (128_000, 937, 75_000),  # token hard cap (CC compatible)
+            (200_000, 937, 75_000),  # token hard cap (CC compatible)
             (1_000_000, 937, 75_000),  # token hard cap (CC compatible)
         ]
         for ctx, expected_lines, expected_chars in cases:
@@ -1904,12 +1908,14 @@ class TestWriteMemoryFileEpisodeWarning:
         handler: ToolHandler,
         anima_dir: Path,
     ):
+        handler._mark_longterm_bm25_dirty = MagicMock()
         result = handler.handle(
             "write_memory_file",
             {"path": "episodes/2026-02-17.md", "content": "## 10:00 — テスト\n"},
         )
         assert "Written to" in result
         assert "WARNING" not in result
+        handler._mark_longterm_bm25_dirty.assert_called_once_with("episodes/2026-02-17.md")
 
     def test_suffixed_episode_no_warning(
         self,

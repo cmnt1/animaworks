@@ -1,0 +1,90 @@
+{
+  "schema": "locomo-issue231-retrieval-ablation-record-v1",
+  "recorded_at": "2026-06-11T21:45:00+09:00",
+  "status": "valid_standard_protocol_ablation",
+  "standard_protocol": {
+    "protocol_version": "locomo-integrity-v1",
+    "mode": "scope_all",
+    "conversations": 10,
+    "rows": 1540,
+    "exclude_cat5": true,
+    "judge_enabled": true,
+    "answer_model": "azure/gpt-4.1",
+    "judge_model": "azure/gpt-4o",
+    "judge_model_independent": true,
+    "leakage_alias_map_enabled": false,
+    "category_branches_enabled": false,
+    "category_dependent_normalization_enabled": false,
+    "max_questions": 0,
+    "max_error_rate": 0.02
+  },
+  "baseline": {
+    "name": "current_default_no_prefix",
+    "source_record": "benchmarks/results/locomo_standard_protocol_baseline_20260611.json",
+    "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-12-v2",
+    "embedding_e5_prefix_enabled": false,
+    "valid": true,
+    "errors": 0,
+    "overall_f1": 0.4521181619017066,
+    "overall_judge": 0.6048701298701299,
+    "by_category": {
+      "multi_hop": {"f1": 0.3527128712105149, "judge": 0.4734042553191489, "count": 282},
+      "temporal": {"f1": 0.48089492730788613, "judge": 0.6433021806853583, "count": 321},
+      "complex": {"f1": 0.21653524970266716, "judge": 0.421875, "count": 96},
+      "open_domain": {"f1": 0.501358244958354, "judge": 0.6551724137931034, "count": 841}
+    }
+  },
+  "ablations": [
+    {
+      "name": "multilingual_cross_encoder_no_prefix",
+      "raw_output_file": "benchmarks/results/locomo-issue231-mmarco-20260611/2026-06-11T18-28-49_scope_all.json",
+      "run_log": "benchmarks/results/locomo-issue231-mmarco-20260611/run.log",
+      "command": "LOCOMO_LLM_CREDENTIAL=azure LOCOMO_JUDGE_LLM_CREDENTIAL=azure AZURE_API_VERSION=2025-01-01-preview CUDA_VISIBLE_DEVICES= ANIMAWORKS_DATA_DIR=/tmp/animaworks-locomo-issue231-mmarco-20260611 uv run python -m benchmarks.locomo.runner --standard-protocol --answer-model azure/gpt-4.1 --judge-model azure/gpt-4o --answer-timeout 120 --answer-max-retries 1 --checkpoint-every 25 --cross-encoder-model cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 --output benchmarks/results/locomo-issue231-mmarco-20260611",
+      "cross_encoder_model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+      "embedding_e5_prefix_enabled": false,
+      "valid": true,
+      "errors": 0,
+      "wall_time_seconds": 5836.9,
+      "overall_f1": 0.4769797411962495,
+      "overall_judge": 0.6327922077922078,
+      "delta_vs_baseline": {
+        "overall_f1": 0.02486157929454291,
+        "overall_judge": 0.02792207792207793
+      },
+      "by_category": {
+        "multi_hop": {"f1": 0.4019327198826319, "judge": 0.5336879432624113, "count": 282},
+        "temporal": {"f1": 0.5054313909638865, "judge": 0.6635514018691588, "count": 321},
+        "complex": {"f1": 0.21978565317494866, "judge": 0.453125, "count": 96},
+        "open_domain": {"f1": 0.5206431334496071, "judge": 0.6747919143876338, "count": 841}
+      }
+    },
+    {
+      "name": "default_cross_encoder_e5_prefix",
+      "raw_output_file": "benchmarks/results/locomo-issue231-e5-prefix-20260611/2026-06-11T20-07-06_scope_all.json",
+      "run_log": "benchmarks/results/locomo-issue231-e5-prefix-20260611/run.log",
+      "command": "LOCOMO_LLM_CREDENTIAL=azure LOCOMO_JUDGE_LLM_CREDENTIAL=azure AZURE_API_VERSION=2025-01-01-preview CUDA_VISIBLE_DEVICES= ANIMAWORKS_DATA_DIR=/tmp/animaworks-locomo-issue231-e5-prefix-20260611 uv run python -m benchmarks.locomo.runner --standard-protocol --answer-model azure/gpt-4.1 --judge-model azure/gpt-4o --answer-timeout 120 --answer-max-retries 1 --checkpoint-every 25 --embedding-e5-prefix --output benchmarks/results/locomo-issue231-e5-prefix-20260611",
+      "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-12-v2",
+      "embedding_e5_prefix_enabled": true,
+      "valid": true,
+      "errors": 0,
+      "wall_time_seconds": 5757.7,
+      "overall_f1": 0.4534807072932864,
+      "overall_judge": 0.6064935064935065,
+      "delta_vs_baseline": {
+        "overall_f1": 0.001362545391579779,
+        "overall_judge": 0.0016233766233766387
+      },
+      "by_category": {
+        "multi_hop": {"f1": 0.35420495826920645, "judge": 0.4645390070921986, "count": 282},
+        "temporal": {"f1": 0.478700108718795, "judge": 0.6433021806853583, "count": 321},
+        "complex": {"f1": 0.2196247749823864, "judge": 0.4270833333333333, "count": 96},
+        "open_domain": {"f1": 0.5038380234277083, "judge": 0.6605231866825209, "count": 841}
+      }
+    }
+  ],
+  "conclusion": {
+    "reranker": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 improved the standard primary judge score by 2.79 percentage points and improved all category judge scores.",
+    "embedding_e5_prefix": "E5 query/passage prefixes were neutral overall in this run (+0.16 percentage points judge) and reduced multi_hop judge score versus baseline; keep disabled by default."
+  },
+  "generated_result_note": "Full per-question JSON files and run logs are generated benchmark artifacts under the gitignored benchmarks/results/ output directories. This file is the committed ablation record."
+}

@@ -653,6 +653,21 @@ class AnimaRunner:
             result = await handler(request.params)
             return IPCResponse(id=request.id, result=result)
 
+        except asyncio.CancelledError:
+            if self.shutdown_event.is_set():
+                raise
+            logger.warning(
+                "IPC request cancelled without runner shutdown: %s (id=%s)",
+                request.method,
+                request.id,
+            )
+            return IPCResponse(
+                id=request.id,
+                error={
+                    "code": "REQUEST_CANCELLED",
+                    "message": "Request was cancelled; runner remains alive",
+                },
+            )
         except Exception as e:
             logger.exception("Error handling request %s: %s", request.method, e)
             return IPCResponse(id=request.id, error={"code": "EXECUTION_ERROR", "message": str(e)})
@@ -689,6 +704,8 @@ class AnimaRunner:
         attachment_paths = params.get("attachment_paths") or None
         thread_id = params.get("thread_id", "default")
         source = params.get("source", "")
+        meeting_room_id = params.get("meeting_room_id", "")
+        meeting_participants = params.get("meeting_participants") or None
 
         result = await self.anima.process_message(
             message,
@@ -699,6 +716,8 @@ class AnimaRunner:
             thread_id=thread_id,
             include_cycle_result=True,
             source=source,
+            meeting_room_id=meeting_room_id,
+            meeting_participants=meeting_participants,
         )
         cycle_result: dict[str, Any] = {}
         response_text = result

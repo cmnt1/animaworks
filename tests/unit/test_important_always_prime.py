@@ -215,6 +215,35 @@ class TestChannelC0ImportantKnowledge:
         assert "📌" in result
 
     @pytest.mark.asyncio
+    async def test_output_includes_metadata_for_external_important_knowledge(self, temp_anima_dir):
+        doc = Document(
+            id="c1",
+            content="# External Rule\n\nDetails here.",
+            metadata={
+                "importance": "important",
+                "source_file": "knowledge/external-rule.md",
+                "anima": "test",
+                "memory_type": "knowledge",
+                "updated_at": "2026-06-03T10:11:12+09:00",
+                "origin": "external_web",
+            },
+        )
+
+        mock_retriever = MagicMock()
+        mock_retriever.get_important_chunks.return_value = [SearchResult(document=doc, score=1.0)]
+
+        with patch.object(
+            PrimingEngine,
+            "_get_or_create_retriever",
+            return_value=mock_retriever,
+        ):
+            engine = PrimingEngine(temp_anima_dir)
+            result = await engine._channel_c0_important_knowledge()
+
+        assert "updated: 2026-06-03 | origin: external_web" in result
+        assert 'read_memory_file(path="knowledge/external-rule.md")' in result
+
+    @pytest.mark.asyncio
     async def test_budget_trims_when_over_500_tokens(self, temp_anima_dir):
         """When total exceeds 500 tokens (~2000 chars), output is trimmed."""
         budget_chars = _BUDGET_IMPORTANT_KNOWLEDGE * _CHARS_PER_TOKEN

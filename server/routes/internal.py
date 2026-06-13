@@ -8,7 +8,7 @@ import concurrent.futures
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -19,7 +19,7 @@ from server.events import emit
 logger = logging.getLogger("animaworks.routes.internal")
 
 _native_executor = concurrent.futures.ThreadPoolExecutor(
-    max_workers=1,
+    max_workers=4,
     thread_name_prefix="native-ops",
 )
 
@@ -33,6 +33,8 @@ class MessageSentNotification(BaseModel):
 
 class EmbedRequest(BaseModel):
     texts: list[str]
+    purpose: Literal["document", "query"] = "document"
+    priority: Literal["interactive", "bulk"] = "interactive"
 
 
 class VectorQueryRequest(BaseModel):
@@ -82,6 +84,13 @@ class VectorCollectionRequest(BaseModel):
 
 class VectorListCollectionsRequest(BaseModel):
     anima_name: str | None = None
+
+
+class VectorQuickCheckRequest(BaseModel):
+    anima_name: str
+    timeout_seconds: float = 10.0
+    source: str = "internal_vector_quick_check"
+    record_repair: bool = True
 
 
 def create_internal_router() -> APIRouter:
@@ -165,13 +174,14 @@ def create_internal_router() -> APIRouter:
         if not body.texts:
             return {"embeddings": []}
 
+        from functools import partial
+
         from core.memory.rag.singleton import thread_safe_encode
 
         loop = asyncio.get_running_loop()
         embeddings = await loop.run_in_executor(
             _native_executor,
-            thread_safe_encode,
-            body.texts,
+            partial(thread_safe_encode, body.texts, purpose=body.purpose, priority=body.priority),
         )
         return {"embeddings": embeddings}
 
@@ -198,7 +208,12 @@ def create_internal_router() -> APIRouter:
                 logger.warning("Vector worker unavailable for %s: %s", path, exc)
             return JSONResponse(status_code=503, content={"detail": "Vector worker unavailable"})
         if response.status_code >= 400:
-            return JSONResponse(status_code=response.status_code, content=response.data)
+            source_headers = dict(getattr(response, "headers", None) or {})
+            headers = {}
+            retry_after = source_headers.get("Retry-After") or source_headers.get("retry-after")
+            if retry_after:
+                headers["Retry-After"] = retry_after
+            return JSONResponse(status_code=response.status_code, content=response.data, headers=headers)
         return response.data
 
     @router.post("/internal/vector/query")
@@ -236,5 +251,9 @@ def create_internal_router() -> APIRouter:
     @router.post("/internal/vector/list-collections")
     async def vector_list_collections(body: VectorListCollectionsRequest, request: Request):
         return await _require_vector_worker(request, "/list-collections", body)
+
+    @router.post("/internal/vector/quick-check")
+    async def vector_quick_check(body: VectorQuickCheckRequest, request: Request):
+        return await _require_vector_worker(request, "/quick-check", body)
 
     return router

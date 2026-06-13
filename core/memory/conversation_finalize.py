@@ -29,11 +29,12 @@ from core.memory.conversation_models import (
     ConversationTurn,
     ParsedSessionSummary,
 )
+from core.memory.fact_observability import warn_rate_limited
 from core.paths import load_prompt
 from core.time_utils import ensure_aware, now_local, today_local
 
 logger = logging.getLogger("animaworks.conversation_memory")
-_FACT_EXTRACTION_TASKS: set[asyncio.Task[None]] = set()
+_FACT_EXTRACTION_TASKS: set[asyncio.Task[tuple[int, int]]] = set()
 
 
 def _gather_activity_context(anima_dir: Path, turns: list[ConversationTurn]) -> str:
@@ -101,11 +102,11 @@ async def _extract_session_facts_nonfatal(
     source_episode: str,
     source_session_id: str,
     reference_time: str | None,
-) -> None:
+) -> tuple[int, int]:
     try:
-        from core.memory.fact_extraction import extract_and_store_facts
+        from core.memory.fact_extraction import extract_and_store_facts_with_outcome
 
-        stored = await extract_and_store_facts(
+        outcome = await extract_and_store_facts_with_outcome(
             anima_dir,
             text,
             source_episode=source_episode,
@@ -113,13 +114,28 @@ async def _extract_session_facts_nonfatal(
             reference_time=reference_time,
             origin="conversation",
         )
-        if stored:
-            logger.info("Stored %d atomic fact(s) from session finalization", len(stored))
-    except Exception:
-        logger.debug("Session atomic fact extraction failed", exc_info=True)
+        logger.info(
+            ("Session atomic fact extraction complete: facts_extracted=%d facts_failed=%d source_session_id=%s"),
+            outcome.facts_extracted,
+            outcome.facts_failed,
+            source_session_id,
+        )
+        return outcome.facts_extracted, outcome.facts_failed
+    except Exception as exc:
+        warn_rate_limited(
+            logger,
+            "fact_extraction.session",
+            "Session atomic fact extraction failed",
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        logger.info(
+            "Session atomic fact extraction complete: facts_extracted=0 facts_failed=1 source_session_id=%s",
+            source_session_id,
+        )
+        return 0, 1
 
 
-def _finish_fact_task(task: asyncio.Task[None]) -> None:
+def _finish_fact_task(task: asyncio.Task[tuple[int, int]]) -> None:
     _FACT_EXTRACTION_TASKS.discard(task)
     try:
         task.exception()
@@ -132,15 +148,15 @@ def _schedule_session_fact_extraction(
     turns: list[ConversationTurn],
     *,
     session_id: str,
-) -> None:
+) -> str:
     try:
         from core.memory.fact_extraction import _facts_extraction_enabled, format_turns_for_fact_extraction
 
         if not _facts_extraction_enabled():
-            return
+            return "disabled"
         text = format_turns_for_fact_extraction(turns)
         if not text.strip():
-            return
+            return "skipped_empty"
         reference_time = turns[-1].timestamp if turns else None
         task = asyncio.create_task(
             _extract_session_facts_nonfatal(
@@ -153,10 +169,22 @@ def _schedule_session_fact_extraction(
         )
         _FACT_EXTRACTION_TASKS.add(task)
         task.add_done_callback(_finish_fact_task)
-    except RuntimeError:
-        logger.debug("No running loop for session atomic fact extraction", exc_info=True)
-    except Exception:
-        logger.debug("Failed to schedule session atomic fact extraction", exc_info=True)
+        return "scheduled"
+    except RuntimeError as exc:
+        warn_rate_limited(
+            logger,
+            "fact_extraction.session_schedule",
+            "No running loop for session atomic fact extraction",
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+    except Exception as exc:
+        warn_rate_limited(
+            logger,
+            "fact_extraction.session_schedule",
+            "Failed to schedule session atomic fact extraction",
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+    return "failed"
 
 
 def _parse_session_summary(raw: str) -> ParsedSessionSummary:
@@ -225,13 +253,38 @@ def _parse_session_summary(raw: str) -> ParsedSessionSummary:
     )
 
 
+def _normalize_current_status(status: str) -> str:
+    """Normalize LLM-extracted session status before writing it to state."""
+    value = status.strip()
+    if value.lower() in {"idle", "status: idle"}:
+        return "status: idle"
+    return value
+
+
+def _maybe_update_idle_current_state(memory_mgr: Any, current_status: str) -> None:
+    """Write finalized status only when current_state.md has no richer context.
+
+    Session finalization already writes an episode summary. Replacing an
+    existing working-memory document here can erase agent-maintained plans,
+    blockers, and operating context. Keep non-idle state intact; use the
+    extracted status only to initialize an empty/idle state.
+    """
+    new_status = _normalize_current_status(current_status)
+    if not new_status:
+        return
+
+    current_state = memory_mgr.read_current_state().strip()
+    if current_state.lower() in {"", "idle", "status: idle"}:
+        memory_mgr.update_state(new_status)
+
+
 async def finalize_session(
     anima_dir: Path,
     state: ConversationState,
     model_config: Any,
     save_fn: Callable[[], None],
     min_turns: int = 3,
-    injected_procedures: list[Path] | None = None,
+    injected_procedures: list[str] | None = None,
     session_id: str = "",
 ) -> bool:
     """Finalize the current conversation session (differential).
@@ -243,6 +296,7 @@ async def finalize_session(
     Returns:
         True if session was finalized and written to episodes/, False if skipped.
     """
+    del injected_procedures, session_id
     new_turns = state.turns[state.last_finalized_turn_index :]
     if len(new_turns) < min_turns:
         logger.debug(
@@ -269,10 +323,9 @@ async def finalize_session(
     time_str = timestamp.strftime("%H:%M")
     episode_entry = f"## {time_str} — {parsed.title}\n\n{parsed.episode_body}\n"
     memory_mgr.append_episode(episode_entry)
-    _schedule_session_fact_extraction(anima_dir, new_turns, session_id=session_id)
+    fact_extraction_status = _schedule_session_fact_extraction(anima_dir, new_turns, session_id="")
 
     from core.memory.conversation_state_update import (
-        _auto_track_procedure_outcomes,
         _record_resolutions,
         _update_state_from_summary,
     )
@@ -282,15 +335,6 @@ async def finalize_session(
 
     if parsed.resolved_items:
         _record_resolutions(anima_dir, memory_mgr, parsed.resolved_items)
-
-    if injected_procedures:
-        _auto_track_procedure_outcomes(
-            anima_dir,
-            memory_mgr,
-            new_turns,
-            injected_procedures=injected_procedures,
-            session_id=session_id,
-        )
 
     # If a previous finalization wrote an episode but compression failed, the
     # already-finalized raw turns remain before last_finalized_turn_index.
@@ -331,20 +375,22 @@ async def finalize_session(
 
     save_fn()
 
-    # Only archive+reset current_state.md when the session explicitly emitted a
-    # "### 現在の状態 / Current State" section. An observe-only session (e.g. a
-    # heartbeat that just surveys, or a light inbox reply) emits none — and
-    # unconditionally overwriting with "status: idle" in that case destroys a
-    # handoff another session wrote (a "ready_to_execute" plan). Preserve the
-    # existing state instead; stale state with no active task is later cleaned
-    # up by taskboard housekeeping, which guards on active tasks.
+    # Only update current_state.md when the session explicitly emitted a status.
+    # _maybe_update_idle_current_state preserves any non-idle handoff state
+    # (e.g. a "ready_to_execute" plan another session wrote) and only writes the
+    # extracted status into an empty/idle state.
     if parsed.current_status:
-        memory_mgr.archive_and_reset_state(parsed.current_status.strip() or "status: idle")
+        _maybe_update_idle_current_state(memory_mgr, parsed.current_status)
 
     logger.info(
-        "Session finalized: %d new turns summarized and written to episodes/%s.md",
+        (
+            "Session finalized: %d new turns summarized and written to episodes/%s.md "
+            "fact_extraction=%s facts_extracted=0 facts_failed=%d"
+        ),
         len(new_turns),
         today_local().isoformat(),
+        fact_extraction_status,
+        int(fact_extraction_status == "failed"),
     )
 
     return True
@@ -357,7 +403,6 @@ async def finalize_if_session_ended(
     needs_compression_fn: Callable[[], bool],
     compress_fn: Callable[[], Awaitable[Any]],
     finalize_session_fn: Callable[..., Awaitable[bool]],
-    load_pending_fn: Callable[[], tuple[list[Path], str]],
     anima_name: str = "",
 ) -> bool:
     """Finalize if session has ended (10-minute idle gap).
@@ -398,5 +443,4 @@ async def finalize_if_session_ended(
         if not is_idle:
             return False
 
-        procedures, session_id = load_pending_fn()
-        return await finalize_session_fn(procedures or None, session_id)
+        return await finalize_session_fn()

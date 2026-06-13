@@ -991,6 +991,11 @@ class SchedulerManager:
                     "result": result.model_dump(),
                 },
             )
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise
+            logger.warning("Scheduled heartbeat cancelled without scheduler shutdown: %s", self._anima_name)
         except Exception:
             logger.exception("Scheduled heartbeat failed: %s", self._anima_name)
         finally:
@@ -1113,6 +1118,11 @@ class SchedulerManager:
                     )
             else:
                 logger.warning("Unknown cron type '%s' for task '%s'", task.type, task.name)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise
+            logger.warning("Cron task cancelled without scheduler shutdown: %s -> %s", self._anima_name, task.name)
         except Exception:
             logger.exception("Cron task failed: %s -> %s", self._anima_name, task.name)
         finally:

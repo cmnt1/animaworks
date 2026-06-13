@@ -138,6 +138,41 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
     return jobs
 
 
+async def _vector_worker_status(request: Request) -> dict:
+    manager = getattr(request.app.state, "vector_worker", None)
+    if manager is None:
+        return {"enabled": False, "status": "missing", "write_circuit_breakers": []}
+    if not getattr(manager, "enabled", False):
+        return {"enabled": False, "status": "disabled", "write_circuit_breakers": []}
+    try:
+        status_method = getattr(manager, "status", None)
+        if status_method is None:
+            return {"enabled": True, "status": "unknown", "write_circuit_breakers": []}
+        data = await status_method()
+        if isinstance(data, dict):
+            data.setdefault("enabled", True)
+            data.setdefault("write_circuit_breakers", [])
+            return data
+    except Exception:
+        logger.warning("Failed to fetch vector worker status", exc_info=True)
+    return {"enabled": True, "status": "unavailable", "write_circuit_breakers": []}
+
+
+def _gpu_status() -> dict[str, object]:
+    try:
+        from core.gpu import get_gpu_status
+
+        return get_gpu_status()
+    except Exception:
+        logger.warning("Failed to collect GPU status", exc_info=True)
+        return {
+            "embedding_device": "cpu",
+            "degraded": False,
+            "last_error": None,
+            "detected_at": None,
+        }
+
+
 async def _reschedule_all_heartbeats(supervisor) -> None:
     """Tell all running Anima processes to reschedule their heartbeats.
 
@@ -195,6 +230,8 @@ def create_system_router() -> APIRouter:
             "processes": process_statuses,
             "scheduler_running": supervisor.is_scheduler_running(),
             "slack_socket_mode": "running" if slack_socket_ok else ("failed" if slack_enabled else "disabled"),
+            "vector_worker": await _vector_worker_status(request),
+            "gpu": _gpu_status(),
         }
 
     @router.post("/system/reload")

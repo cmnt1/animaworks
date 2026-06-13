@@ -728,6 +728,27 @@ export function createStreamingController(ctx) {
           }
           currentStreamingMsg = null;
         },
+        onMeetingRedirect: ({ from, to, content }) => {
+          if (_meetingTextAnimator) {
+            _meetingTextAnimator.flush();
+            _meetingTextAnimator.stop();
+            _meetingTextAnimator = null;
+          }
+          if (currentStreamingMsg) {
+            delete currentStreamingMsg._displayText;
+            currentStreamingMsg.streaming = false;
+            currentStreamingMsg = null;
+          }
+          mgr.getSession("meeting", roomId).messages.push({
+            role: "assistant",
+            speaker: from || "",
+            speakerRole: from === room.chair ? "chair" : "participant",
+            from_person: from || "",
+            text: `@${to || ""} ${content || ""}`.trim(),
+            timestamp: new Date().toISOString(),
+          });
+          renderFull();
+        },
         onDone: () => {
           if (_meetingTextAnimator) {
             _meetingTextAnimator.flush();

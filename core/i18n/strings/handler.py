@@ -312,6 +312,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "配下のstatus.json, identity.md, injection.md, state/, task_queue.jsonl",
         "en": "Descendant status.json, identity.md, injection.md, state/, task_queue.jsonl",
     },
+    "handler.disabled_open_delegations_alerted": {
+        "ja": "未完了の委譲タスク {count} 件を再割当が必要なタスクとして上司側に記録しました。",
+        "en": "Recorded {count} open delegated task(s) as needing reassignment for the supervisor.",
+    },
     "handler.description_field_required": {
         "ja": "`description` フィールドが必要です。",
         "en": "The `description` field is required.",
@@ -356,6 +360,14 @@ STRINGS: dict[str, dict[str, str]] = {
             "Error: DM intent must be 'report' or 'question' only. Use Board (post_channel tool) for acknowledgments, thanks, or FYI."
         ),
     },
+    "handler.dm_self_addressed_error": {
+        "ja": (
+            "Error: 自分自身へのDM送信はできません。自分用のメモは write_memory_file、作業管理は update_task またはタスクキューを使用してください。"
+        ),
+        "en": (
+            "Error: You cannot send a DM to yourself. Use write_memory_file for notes to self, or update_task/the task queue for work tracking."
+        ),
+    },
     "handler.dm_max_recipients": {
         "ja": (
             "Error: 1回のrunでDMを送れるのは最大{limit}人までです。{limit}人以上への伝達はBoardを使用してください（post_channel ツール）。"
@@ -369,6 +381,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.dm_sent": {
         "ja": "DM送信済み",
         "en": "DM sent",
+    },
+    "handler.meeting_dm_redirected": {
+        "ja": "{to} 宛のDMは会議チャンネルへリダイレクトしました。",
+        "en": "DM to {to} was redirected into the meeting channel.",
     },
     "handler.meeting_tool_blocked": {
         "ja": "会議中は {tool} を使用できません。会議内で @メンション を使って発言してください。",

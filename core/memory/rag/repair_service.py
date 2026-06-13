@@ -11,6 +11,7 @@ internal consistency errors, the safest recovery is to quarantine the
 broken vectordb and rebuild it from source memory files.
 """
 
+import asyncio
 import logging
 import os
 import re
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from core.memory.rag import repair_state
-from core.memory.rag.repair_rebuild import full_reindex, quarantine_vectordb
+from core.memory.rag.repair_rebuild import full_reindex, quarantine_vectordb, reset_worker_vector_store
 from core.memory.rag.repair_types import RepairResult
 from core.memory.rag.repair_utils import (
     SINGLE_SHOT_REASONS,
@@ -53,7 +54,6 @@ _KNOWN_CORRUPTION_REASONS = {
     "hnsw_corruption",
     "native_segfault",
     "startup_chroma_crash_preflight",
-    "startup_unclean_exit_preflight",
     "vector_worker_crash",
 }
 
@@ -180,10 +180,21 @@ class RAGRepairService:
         cutoff = utc_now() - self.window
         with self._lock:
             in_memory = list(self._signals.get(anima_name, []))
-        if self._contains_recent_signal(in_memory, cutoff, include_shared=include_shared):
-            return True
         state = repair_state.read_state(anima_name)
-        return self._contains_recent_signal(state.get("recent_signals", []), cutoff, include_shared=include_shared)
+        last_success = parse_dt(state.get("last_success_at"))
+        if self._contains_recent_signal(
+            in_memory,
+            cutoff,
+            include_shared=include_shared,
+            last_success=last_success,
+        ):
+            return True
+        return self._contains_recent_signal(
+            state.get("recent_signals", []),
+            cutoff,
+            include_shared=include_shared,
+            last_success=last_success,
+        )
 
     def list_repairable_animas(self, *, animas_dir: Path | None = None) -> list[str]:
         """Return enabled anima names that can safely be considered for repair."""
@@ -204,6 +215,9 @@ class RAGRepairService:
         *,
         window_minutes: int | None = None,
         include_logs: bool = True,
+        include_quick_check: bool = True,
+        quick_check_timeout_seconds: float = 10.0,
+        quick_check_source: str = "startup_quick_check",
         animas_dir: Path | None = None,
         log_paths: list[Path] | None = None,
     ) -> list[str]:
@@ -221,24 +235,55 @@ class RAGRepairService:
         cutoff = utc_now() - (timedelta(minutes=window_minutes) if window_minutes is not None else self.window)
         repairable = self.list_repairable_animas(animas_dir=animas_dir)
         repairable_set = set(repairable)
+        last_success_by_anima: dict[str, datetime | None] = {}
         suspects: set[str] = set()
 
         for anima_name in repairable:
             state = repair_state.read_state(anima_name, animas_dir=animas_dir)
+            last_success_by_anima[anima_name] = parse_dt(state.get("last_success_at"))
             if self._state_is_suspect(state, cutoff):
                 suspects.add(anima_name)
+
+        if include_quick_check:
+            from core.memory.rag.sqlite_health import check_anima_vectordb_health_via_worker_or_direct
+
+            for anima_name in repairable:
+                try:
+                    health = check_anima_vectordb_health_via_worker_or_direct(
+                        anima_name,
+                        timeout_seconds=quick_check_timeout_seconds,
+                        source=quick_check_source,
+                        record_repair=False,
+                    )
+                except Exception:
+                    logger.debug("RAG quick_check failed while discovering suspect DBs: %s", anima_name, exc_info=True)
+                    continue
+                if health.corrupt:
+                    suspects.add(anima_name)
 
         if include_logs:
             for line in self._iter_recent_corruption_log_lines(
                 cutoff=cutoff,
                 log_paths=log_paths,
             ):
+                log_at = self._log_line_timestamp(line)
                 owners = self._owners_from_log_line(line, repairable=repairable)
                 if owners:
-                    suspects.update(owner for owner in owners if owner in repairable_set)
+                    suspects.update(
+                        owner
+                        for owner in owners
+                        if owner in repairable_set
+                        and self._after_last_success_or_unknown(log_at, last_success_by_anima.get(owner))
+                    )
                 elif "chromadb_rust_bindings" in line.lower() or "native_segfault" in line.lower():
                     suspects.update(
-                        anima_name for anima_name in repairable if (animas_dir / anima_name / "vectordb").exists()
+                        anima_name
+                        for anima_name in repairable
+                        if (animas_dir / anima_name / "vectordb").exists()
+                        and self._after_last_success_or_unknown(
+                            log_at,
+                            last_success_by_anima.get(anima_name),
+                        )
                     )
 
         return [name for name in repairable if name in suspects]
@@ -253,7 +298,32 @@ class RAGRepairService:
     ) -> dict[str, RepairResult]:
         """Synchronously repair multiple animas while preserving per-anima guards."""
         results: dict[str, RepairResult] = {}
-        for anima_name in sorted(dict.fromkeys(anima_names)):
+        targets = sorted(dict.fromkeys(anima_names))
+        try:
+            from core import startup_progress
+
+            track_startup = startup_progress.is_active()
+        except Exception:
+            startup_progress = None  # type: ignore[assignment]
+            track_startup = False
+
+        if track_startup and startup_progress is not None:
+            startup_progress.set_phase(
+                "repairing",
+                detail=", ".join(targets),
+                done_count=0,
+                total_count=len(targets),
+            )
+
+        for index, anima_name in enumerate(targets):
+            if startup_progress is not None:
+                startup_progress.raise_if_cancelled()
+                if track_startup:
+                    startup_progress.update_progress(
+                        detail=anima_name,
+                        done_count=index,
+                        total_count=len(targets),
+                    )
             results[anima_name] = self.repair_anima_if_allowed(
                 anima_name,
                 reason=reason,
@@ -261,6 +331,12 @@ class RAGRepairService:
                 source=source,
                 include_shared=include_shared,
             )
+            if track_startup and startup_progress is not None:
+                startup_progress.update_progress(
+                    detail=anima_name,
+                    done_count=index + 1,
+                    total_count=len(targets),
+                )
         return results
 
     def repair_blocker(self, anima_name: str, *, reason: str) -> RepairResult | None:
@@ -268,10 +344,35 @@ class RAGRepairService:
         return self._request_blocked(anima_name, reason=reason)
 
     @staticmethod
-    def _contains_recent_signal(signals: list[dict[str, Any]], cutoff: datetime, *, include_shared: bool) -> bool:
+    def _after_last_success(at: datetime, last_success: datetime | None) -> bool:
+        return last_success is None or at > last_success
+
+    @staticmethod
+    def _after_last_success_or_unknown(at: datetime | None, last_success: datetime | None) -> bool:
+        return last_success is None if at is None else RAGRepairService._after_last_success(at, last_success)
+
+    @staticmethod
+    def _signal_reason_is_corruption(signal: dict[str, Any]) -> bool:
+        reason = signal.get("reason")
+        if not isinstance(reason, str) or not reason:
+            return True
+        return reason in _KNOWN_CORRUPTION_REASONS
+
+    @staticmethod
+    def _contains_recent_signal(
+        signals: list[dict[str, Any]],
+        cutoff: datetime,
+        *,
+        include_shared: bool,
+        last_success: datetime | None = None,
+    ) -> bool:
         for signal in signals:
+            if not RAGRepairService._signal_reason_is_corruption(signal):
+                continue
             at = parse_dt(signal.get("at"))
             if at is None or at < cutoff:
+                continue
+            if not RAGRepairService._after_last_success(at, last_success):
                 continue
             if include_shared or not bool(signal.get("shared")):
                 return True
@@ -294,11 +395,14 @@ class RAGRepairService:
     def _state_is_suspect(state: dict[str, Any], cutoff: datetime) -> bool:
         if not state:
             return False
+        last_success = parse_dt(state.get("last_success_at"))
         signals = state.get("recent_signals")
         if isinstance(signals, list):
             for signal in signals:
+                if not RAGRepairService._signal_reason_is_corruption(signal):
+                    continue
                 at = parse_dt(signal.get("at"))
-                if at is not None and at >= cutoff:
+                if at is not None and at >= cutoff and RAGRepairService._after_last_success(at, last_success):
                     return True
 
         reason = state.get("reason") or state.get("last_reason")
@@ -309,7 +413,7 @@ class RAGRepairService:
             return False
         for key in ("updated_at", "last_failure_at", "last_attempt_at", "requested_at"):
             at = parse_dt(state.get(key))
-            if at is not None and at >= cutoff:
+            if at is not None and at >= cutoff and RAGRepairService._after_last_success(at, last_success):
                 return True
         return False
 
@@ -353,11 +457,15 @@ class RAGRepairService:
         return lines
 
     @staticmethod
-    def _log_line_is_recent(line: str, cutoff: datetime) -> bool:
+    def _log_line_timestamp(line: str) -> datetime | None:
         match = _TIMESTAMP_RE.search(line)
         if not match:
-            return True
-        at = parse_dt(match.group("ts").replace("Z", "+00:00"))
+            return None
+        return parse_dt(match.group("ts").replace("Z", "+00:00"))
+
+    @staticmethod
+    def _log_line_is_recent(line: str, cutoff: datetime) -> bool:
+        at = RAGRepairService._log_line_timestamp(line)
         return at is None or at >= cutoff
 
     @staticmethod
@@ -497,8 +605,10 @@ class RAGRepairService:
         include_shared: bool = False,
     ) -> RepairResult:
         """Synchronously quarantine and rebuild one anima's RAG index."""
+        from core import startup_progress
         from core.paths import get_animas_dir
 
+        startup_progress.raise_if_cancelled()
         anima_dir = get_animas_dir() / anima_name
         if not anima_dir.is_dir():
             return RepairResult(
@@ -544,6 +654,9 @@ class RAGRepairService:
                     last_source=source,
                     last_error=None,
                 )
+                if startup_progress.is_active():
+                    startup_progress.set_phase("repairing", detail=anima_name)
+                startup_progress.raise_if_cancelled()
                 quarantine_path = quarantine_vectordb(anima_name)
                 repair_state.update_repair_state(
                     anima_name,
@@ -552,6 +665,9 @@ class RAGRepairService:
                     pid=os.getpid(),
                     last_quarantine_path=str(quarantine_path) if quarantine_path else None,
                 )
+                if startup_progress.is_active():
+                    startup_progress.set_phase("indexing", detail=anima_name, reset_counts=True)
+                startup_progress.raise_if_cancelled()
                 chunks = full_reindex(anima_name, include_shared=include_shared)
                 from core.memory.rag.singleton import reset_vector_store
 
@@ -562,6 +678,7 @@ class RAGRepairService:
                     pid=os.getpid(),
                     last_chunks_indexed=chunks,
                 )
+                reset_worker_vector_store(anima_name)
                 reset_vector_store(anima_name)
                 repair_state.update_repair_state(
                     anima_name,
@@ -590,6 +707,8 @@ class RAGRepairService:
                     stage="complete",
                     state_path=str(repair_state.state_path(anima_name)),
                 )
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
                 from core.memory.rag.singleton import reset_vector_store
 

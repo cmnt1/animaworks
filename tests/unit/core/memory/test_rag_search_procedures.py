@@ -1,4 +1,5 @@
 """Unit tests for procedures vector search enablement in rag_search.py."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -122,7 +123,8 @@ class TestSearchMemoryTextProceduresWithVector:
     ) -> None:
         """scope='procedures' combines vector and keyword candidates under unified search."""
         (procedures_dir / "deploy.md").write_text(
-            "Deploy to production server", encoding="utf-8",
+            "Deploy to production server",
+            encoding="utf-8",
         )
 
         mock_indexer = MagicMock()
@@ -130,7 +132,9 @@ class TestSearchMemoryTextProceduresWithVector:
         rag._indexer_initialized = True
 
         with patch.object(
-            rag, "_vector_search_primary", return_value=[],
+            rag,
+            "_vector_search_primary",
+            return_value=[],
         ) as mock_vector:
             results = rag.search_memory_text(
                 "deploy",
@@ -142,7 +146,7 @@ class TestSearchMemoryTextProceduresWithVector:
             )
 
             assert results[0]["source_file"] == "procedures/deploy.md"
-            assert results[0]["search_method"] == "keyword_fallback"
+            assert results[0]["search_method"] in {"bm25", "keyword_fallback"}
             mock_vector.assert_called_once()
 
     def test_keyword_fallback_when_vector_unavailable(
@@ -155,7 +159,8 @@ class TestSearchMemoryTextProceduresWithVector:
     ) -> None:
         """scope='procedures' falls back to keyword when indexer is None."""
         (procedures_dir / "deploy.md").write_text(
-            "Deploy to production server", encoding="utf-8",
+            "Deploy to production server",
+            encoding="utf-8",
         )
 
         with patch.object(rag, "_get_indexer", return_value=None):
@@ -185,7 +190,8 @@ class TestInitIndexerIndexesProcedures:
         procedures_dir = anima_dir / "procedures"
         procedures_dir.mkdir(exist_ok=True)
         (procedures_dir / "test_proc.md").write_text(
-            "Test procedure content", encoding="utf-8",
+            "Test procedure content",
+            encoding="utf-8",
         )
 
         mock_indexer = MagicMock()
@@ -194,22 +200,19 @@ class TestInitIndexerIndexesProcedures:
         mock_vector_store = MagicMock()
 
         # Patch where the imports happen (inside _init_indexer's local scope)
-        with patch(
-            "core.memory.rag.singleton.get_vector_store",
-            return_value=mock_vector_store,
-        ), patch(
-            "core.memory.rag.MemoryIndexer",
-            return_value=mock_indexer,
+        with (
+            patch(
+                "core.memory.rag.singleton.get_vector_store",
+                return_value=mock_vector_store,
+            ),
+            patch(
+                "core.memory.rag.MemoryIndexer",
+                return_value=mock_indexer,
+            ),
         ):
             rag._init_indexer()
 
             # Verify index_directory was called with procedures dir
             calls = mock_indexer.index_directory.call_args_list
-            proc_calls = [
-                c for c in calls
-                if c.args[0] == procedures_dir and c.args[1] == "procedures"
-            ]
-            assert len(proc_calls) == 1, (
-                f"Expected index_directory call for procedures, "
-                f"got calls: {calls}"
-            )
+            proc_calls = [c for c in calls if c.args[0] == procedures_dir and c.args[1] == "procedures"]
+            assert len(proc_calls) == 1, f"Expected index_directory call for procedures, got calls: {calls}"

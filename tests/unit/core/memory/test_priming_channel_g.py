@@ -214,6 +214,35 @@ class TestPrimingEngineChannelG:
 
         assert "Alice → Bob: knows" in result.graph_context
 
+    async def test_channel_g_timeout_degrades_only_that_channel(self, tmp_path) -> None:
+        from core.memory.priming.engine import PrimingEngine
+
+        engine = PrimingEngine(tmp_path)
+        engine._config_loaded = True
+        engine._channel_timeout_seconds = 0.01
+
+        async def slow_graph_context(_query: str) -> str:
+            import asyncio
+
+            await asyncio.sleep(1)
+            return "late graph context"
+
+        with (
+            patch.object(engine, "_channel_a_sender_profile", new_callable=AsyncMock, return_value="profile"),
+            patch.object(engine, "_channel_b_recent_activity", new_callable=AsyncMock, return_value=""),
+            patch.object(engine, "_channel_c0_important_knowledge", new_callable=AsyncMock, return_value=""),
+            patch.object(engine, "_channel_c_related_knowledge", new_callable=AsyncMock, return_value=("", "")),
+            patch.object(engine, "_channel_e_pending_tasks", new_callable=AsyncMock, return_value=""),
+            patch.object(engine, "_collect_recent_outbound", new_callable=AsyncMock, return_value=""),
+            patch.object(engine, "_channel_f_episodes", new_callable=AsyncMock, return_value=""),
+            patch.object(engine, "_collect_pending_human_notifications", new_callable=AsyncMock, return_value=""),
+            patch.object(engine, "_channel_g_graph_context", side_effect=slow_graph_context),
+        ):
+            result = await engine.prime_memories("test message")
+
+        assert result.sender_profile == "profile"
+        assert result.graph_context == ""
+
     async def test_channel_g_empty_when_no_backend(self, tmp_path) -> None:
         from core.memory.priming.engine import PrimingEngine
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -18,8 +19,8 @@ import yaml
 from core.memory.contradiction import (
     ContradictionDetector,
     ContradictionPair,
+    ContradictionResult,
 )
-
 
 # ── Fixtures ────────────────────────────────────────────────
 
@@ -74,15 +75,15 @@ class TestNLIContradictionCheck:
         self, detector: ContradictionDetector,
     ) -> None:
         """When NLI is unavailable, return no contradiction."""
-        detector._nli_validator = None
+        detector._nli_model = None
 
-        # Patch KnowledgeValidator to simulate unavailable NLI
-        mock_validator = MagicMock()
-        mock_validator._nli_check.return_value = ("neutral", 0.0)
+        # Patch SharedNLIModel to simulate unavailable NLI
+        mock_nli = MagicMock()
+        mock_nli.check.return_value = ("neutral", 0.0)
 
         with patch(
-            "core.memory.validation.KnowledgeValidator",
-            return_value=mock_validator,
+            "core.memory.nli.SharedNLIModel",
+            return_value=mock_nli,
         ):
             is_contradiction, score, is_entailment = (
                 await detector._check_contradiction_nli("text A", "text B")
@@ -97,12 +98,12 @@ class TestNLIContradictionCheck:
         self, detector: ContradictionDetector,
     ) -> None:
         """NLI detecting contradiction in either direction triggers flag."""
-        mock_validator = MagicMock()
-        mock_validator._nli_check.side_effect = [
+        mock_nli = MagicMock()
+        mock_nli.check.side_effect = [
             ("contradiction", 0.85),  # A as premise, B as hypothesis
             ("neutral", 0.30),        # B as premise, A as hypothesis
         ]
-        detector._nli_validator = mock_validator
+        detector._nli_model = mock_nli
 
         is_contradiction, score, is_entailment = (
             await detector._check_contradiction_nli(
@@ -120,12 +121,12 @@ class TestNLIContradictionCheck:
         self, detector: ContradictionDetector,
     ) -> None:
         """Contradiction score below threshold is not flagged."""
-        mock_validator = MagicMock()
-        mock_validator._nli_check.side_effect = [
+        mock_nli = MagicMock()
+        mock_nli.check.side_effect = [
             ("contradiction", 0.40),  # Below NLI_CONTRADICTION_THRESHOLD
             ("neutral", 0.30),
         ]
-        detector._nli_validator = mock_validator
+        detector._nli_model = mock_nli
 
         is_contradiction, score, is_entailment = (
             await detector._check_contradiction_nli("text A", "text B")
@@ -138,12 +139,12 @@ class TestNLIContradictionCheck:
         self, detector: ContradictionDetector,
     ) -> None:
         """Contradiction detected in reverse direction is also caught."""
-        mock_validator = MagicMock()
-        mock_validator._nli_check.side_effect = [
+        mock_nli = MagicMock()
+        mock_nli.check.side_effect = [
             ("neutral", 0.30),        # A->B: no contradiction
             ("contradiction", 0.78),  # B->A: contradiction
         ]
-        detector._nli_validator = mock_validator
+        detector._nli_model = mock_nli
 
         is_contradiction, score, is_entailment = (
             await detector._check_contradiction_nli("text A", "text B")
@@ -158,12 +159,12 @@ class TestNLIContradictionCheck:
         self, detector: ContradictionDetector,
     ) -> None:
         """NLI entailment above threshold is flagged as is_entailment."""
-        mock_validator = MagicMock()
-        mock_validator._nli_check.side_effect = [
+        mock_nli = MagicMock()
+        mock_nli.check.side_effect = [
             ("entailment", 0.85),  # A->B: entailment
             ("neutral", 0.30),     # B->A: neutral
         ]
-        detector._nli_validator = mock_validator
+        detector._nli_model = mock_nli
 
         is_contradiction, score, is_entailment = (
             await detector._check_contradiction_nli("text A", "text B")
@@ -177,12 +178,12 @@ class TestNLIContradictionCheck:
         self, detector: ContradictionDetector,
     ) -> None:
         """Entailment below threshold does not set is_entailment."""
-        mock_validator = MagicMock()
-        mock_validator._nli_check.side_effect = [
+        mock_nli = MagicMock()
+        mock_nli.check.side_effect = [
             ("entailment", 0.50),  # Below NLI_ENTAILMENT_THRESHOLD
             ("neutral", 0.30),
         ]
-        detector._nli_validator = mock_validator
+        detector._nli_model = mock_nli
 
         is_contradiction, score, is_entailment = (
             await detector._check_contradiction_nli("text A", "text B")
@@ -731,6 +732,42 @@ class TestScanContradictions:
     """Test the full scan pipeline with mocked NLI and LLM."""
 
     @pytest.mark.asyncio
+    async def test_scan_respects_llm_pair_limit(
+        self,
+        detector: ContradictionDetector,
+    ) -> None:
+        candidates = [
+            (Path(f"a-{idx}.md"), f"text A {idx}", Path(f"b-{idx}.md"), f"text B {idx}")
+            for idx in range(5)
+        ]
+
+        with (
+            patch.object(detector, "_find_candidate_pairs", return_value=candidates),
+            patch.object(
+                detector,
+                "_check_contradiction_nli",
+                new_callable=AsyncMock,
+                return_value=(False, 0.0, False),
+            ),
+            patch.object(
+                detector,
+                "_check_contradiction_llm",
+                new_callable=AsyncMock,
+                return_value=ContradictionResult(False, "coexist", "none"),
+            ) as mock_llm,
+        ):
+            results = await detector.scan_contradictions(
+                model="test-model",
+                max_llm_checks=2,
+            )
+
+        assert results == []
+        assert mock_llm.await_count == 2
+        assert detector.last_scan_stats["candidate_pairs"] == 5
+        assert detector.last_scan_stats["llm_checks"] == 2
+        assert detector.last_scan_stats["limit_reached"] is True
+
+    @pytest.mark.asyncio
     async def test_scan_detects_contradiction(
         self, detector: ContradictionDetector, anima_dir: Path,
     ) -> None:
@@ -745,12 +782,12 @@ class TestScanContradictions:
         )
 
         # Mock NLI to detect contradiction
-        mock_validator = MagicMock()
-        mock_validator._nli_check.side_effect = [
+        mock_nli = MagicMock()
+        mock_nli.check.side_effect = [
             ("contradiction", 0.85),  # A->B
             ("neutral", 0.30),        # B->A
         ]
-        detector._nli_validator = mock_validator
+        detector._nli_model = mock_nli
 
         # Mock LLM to confirm and propose supersede
         mock_response = MagicMock()
@@ -791,9 +828,9 @@ class TestScanContradictions:
         )
 
         # Mock NLI: no contradiction
-        mock_validator = MagicMock()
-        mock_validator._nli_check.return_value = ("neutral", 0.30)
-        detector._nli_validator = mock_validator
+        mock_nli = MagicMock()
+        mock_nli.check.return_value = ("neutral", 0.30)
+        detector._nli_model = mock_nli
 
         # Mock LLM: no contradiction
         mock_response = MagicMock()
@@ -833,12 +870,12 @@ class TestScanContradictions:
         )
 
         # Mock NLI to return entailment (consistent texts)
-        mock_validator = MagicMock()
-        mock_validator._nli_check.side_effect = [
+        mock_nli = MagicMock()
+        mock_nli.check.side_effect = [
             ("entailment", 0.90),  # A->B: entailment
             ("entailment", 0.85),  # B->A: entailment
         ]
-        detector._nli_validator = mock_validator
+        detector._nli_model = mock_nli
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -875,12 +912,12 @@ class TestScanContradictions:
         )
 
         # Mock NLI to return neutral (uncertain)
-        mock_validator = MagicMock()
-        mock_validator._nli_check.side_effect = [
+        mock_nli = MagicMock()
+        mock_nli.check.side_effect = [
             ("neutral", 0.50),  # A->B: neutral
             ("neutral", 0.45),  # B->A: neutral
         ]
-        detector._nli_validator = mock_validator
+        detector._nli_model = mock_nli
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -16,6 +15,7 @@ def test_rag_startup_preflight_repairs_suspects() -> None:
             repair_enabled=True,
             startup_repair_preflight_enabled=True,
             startup_repair_window_minutes=30,
+            quick_check_timeout_seconds=4.0,
         ),
     )
     service = MagicMock()
@@ -27,7 +27,11 @@ def test_rag_startup_preflight_repairs_suspects() -> None:
     ):
         _run_rag_startup_preflight()
 
-    service.discover_suspect_animas.assert_called_once_with(window_minutes=30)
+    service.discover_suspect_animas.assert_called_once_with(
+        window_minutes=30,
+        quick_check_timeout_seconds=4.0,
+        quick_check_source="startup_quick_check",
+    )
     service.request_repair.assert_called_once_with(
         "sora",
         reason="startup_chroma_crash_preflight",
@@ -36,19 +40,16 @@ def test_rag_startup_preflight_repairs_suspects() -> None:
     )
 
 
-def test_rag_startup_preflight_skips_unclean_exit_without_suspects(data_dir: Path) -> None:
+def test_rag_startup_preflight_ignores_unclean_exit_without_suspects() -> None:
     from cli.commands.server import _run_rag_startup_preflight
 
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    (anima_dir / "identity.md").write_text("# sora", encoding="utf-8")
-    (anima_dir / "vectordb").mkdir()
     config = SimpleNamespace(
         setup_complete=True,
         rag=SimpleNamespace(
             repair_enabled=True,
             startup_repair_preflight_enabled=True,
             startup_repair_window_minutes=30,
+            quick_check_timeout_seconds=4.0,
         ),
     )
     service = MagicMock()

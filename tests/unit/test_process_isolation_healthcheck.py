@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import timedelta
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -28,7 +27,7 @@ from core.supervisor.manager import (
     RestartPolicy,
 )
 from core.supervisor.process_handle import ProcessHandle, ProcessState
-
+from core.time_utils import now_jst
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -238,6 +237,44 @@ class TestFailedLogSpamSuppression:
         assert handle.state == ProcessState.FAILED
 
     @pytest.mark.asyncio
+    async def test_hang_kill_is_followed_by_respawn_transaction(
+        self, supervisor: ProcessSupervisor, handle: ProcessHandle,
+    ):
+        """Hung process recovery should kill first, then run respawn transaction."""
+        supervisor.processes["test-anima"] = handle
+        new_handle = MagicMock(spec=ProcessHandle)
+        new_handle.get_pid.return_value = 54321
+
+        handle.kill = AsyncMock()
+        supervisor._respawn_anima_transaction = AsyncMock(return_value=new_handle)  # type: ignore[method-assign]
+        supervisor._maybe_repair_rag_before_restart = AsyncMock(return_value=False)  # type: ignore[method-assign]
+
+        await supervisor._handle_process_hang("test-anima", handle)
+
+        handle.kill.assert_awaited_once()
+        supervisor._respawn_anima_transaction.assert_awaited_once_with("test-anima")
+
+    @pytest.mark.asyncio
+    async def test_respawn_failure_retries_three_times_then_visible_error(
+        self, supervisor: ProcessSupervisor,
+    ):
+        """Spawn failure should retry to the policy limit and expose error status."""
+        from core.exceptions import ProcessError
+
+        supervisor.restart_policy.max_retries = 3
+        supervisor.restart_policy.backoff_base_sec = 0
+        supervisor.start_anima = AsyncMock(side_effect=ProcessError("spawn boom"))  # type: ignore[method-assign]
+
+        result = await supervisor._respawn_anima_transaction("test-anima")
+
+        assert result is None
+        assert supervisor.start_anima.await_count == 3
+        assert "test-anima" in supervisor._permanently_failed
+        status = supervisor.get_process_status("test-anima")
+        assert status["status"] == "error"
+        assert "spawn boom" in status["error"]
+
+    @pytest.mark.asyncio
     async def test_permanently_failed_skips_health_check(
         self, supervisor: ProcessSupervisor, handle: ProcessHandle, caplog,
     ):
@@ -312,9 +349,7 @@ class TestFailedLogSpamSuppression:
         # NOT added to _permanently_failed
         handle.stats.started_at = now_jst() - timedelta(seconds=60)
 
-        with patch.object(
-            supervisor, "_handle_process_failure", new_callable=AsyncMock,
-        ) as mock_failure:
+        with patch.object(supervisor, "_handle_process_failure", new_callable=AsyncMock):
             await supervisor._check_process_health("test-anima", handle)
             await asyncio.sleep(0)
 

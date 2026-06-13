@@ -390,6 +390,7 @@ class CycleMixin:
                 context_threshold=tracker.threshold,
                 tool_call_records=_tool_records_to_dicts(result),
                 usage=_b_usage,
+                truncated=result.truncated,
             )
 
         # ── Mode C: Codex SDK ─────────────────────────────
@@ -463,6 +464,7 @@ class CycleMixin:
                 context_threshold=tracker.threshold,
                 tool_call_records=_tool_records_to_dicts(result),
                 usage=_c_usage,
+                truncated=result.truncated,
             )
 
         # ── Mode D: Cursor Agent CLI ─────────────────────
@@ -528,6 +530,7 @@ class CycleMixin:
                 context_threshold=tracker.threshold,
                 tool_call_records=_tool_records_to_dicts(result),
                 usage=_d_usage,
+                truncated=result.truncated,
             )
 
         # ── Mode G: Gemini CLI ─────────────────────────────
@@ -579,6 +582,7 @@ class CycleMixin:
                 context_threshold=tracker.threshold,
                 tool_call_records=_tool_records_to_dicts(result),
                 usage=_g_usage,
+                truncated=result.truncated,
             )
 
         # ── Mode A: LiteLLM tool_use loop ─────────────────
@@ -630,6 +634,7 @@ class CycleMixin:
                 context_threshold=tracker.threshold,
                 tool_call_records=_tool_records_to_dicts(result),
                 usage=_a_usage,
+                truncated=result.truncated,
             )
 
         # ── Mode S: Claude Agent SDK ──────────────────────
@@ -770,6 +775,7 @@ class CycleMixin:
             total_turns=total_turns,
             tool_call_records=accumulated_tool_records,
             usage=_cycle_usage,
+            truncated=result.truncated,
         )
 
     # ── Streaming ──────────────────────────────────────────
@@ -1045,6 +1051,7 @@ class CycleMixin:
             "cache_write_tokens": 0,
         }
         terminal_error_message = ""
+        stream_truncated = False
         current_prompt = prompt
         current_system_prompt = system_prompt
         retry_count = 0
@@ -1079,6 +1086,8 @@ class CycleMixin:
                         # Capture force_chain from S mode auto-compact
                         if chunk.get("force_chain", False):
                             _stream_force_chain = True
+                        if chunk.get("truncated", False):
+                            stream_truncated = True
                         stream_succeeded = True
                     elif chunk["type"] == "tool_end" and checkpoint_enabled:
                         record = chunk.get("record")
@@ -1376,5 +1385,6 @@ class CycleMixin:
                 total_turns=total_turns,
                 tool_call_records=all_tool_call_records,
                 usage=_final_usage,
+                truncated=stream_truncated,
             ).model_dump(mode="json"),
         }

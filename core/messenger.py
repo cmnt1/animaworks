@@ -208,9 +208,7 @@ class Messenger:
         is_internal = False
         animas_dir: Path | None = None
         if msg_type not in ("ack", "error", "system_alert"):
-            from core.paths import get_animas_dir
-
-            animas_dir = get_animas_dir()
+            animas_dir = self.shared_dir.parent / "animas"
             is_internal = (animas_dir / to).is_dir() if animas_dir.exists() else False
             if is_internal:
                 from core.cascade_limiter import get_depth_limiter

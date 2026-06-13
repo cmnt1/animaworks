@@ -243,7 +243,15 @@ class RoomManager:
 
     # ── Conversation history ────────────────────────────────
 
-    def append_message(self, room_id: str, speaker: str, role: str, text: str) -> None:
+    def append_message(
+        self,
+        room_id: str,
+        speaker: str,
+        role: str,
+        text: str,
+        *,
+        meta: dict | None = None,
+    ) -> None:
         """Append a message to the room's conversation history.
 
         Args:
@@ -251,18 +259,47 @@ class RoomManager:
             speaker: Speaker name (Anima or human).
             role: One of 'chair', 'participant', 'human'.
             text: Message text.
+            meta: Optional machine-readable metadata for non-standard entries.
         """
-        room = self.get_room(room_id)
-        if room is None:
+        from core.meeting_room_store import append_room_message
+
+        if self.get_room(room_id) is None:
             raise ValueError(t("room_manager.room_not_found", room_id=room_id))
-        entry = {
-            "speaker": speaker,
-            "role": role,
-            "text": text,
-            "ts": datetime.now().isoformat(),
-        }
-        room.conversation.append(entry)
-        self.save_room(room_id)
+        append_room_message(
+            self._data_dir,
+            room_id,
+            speaker,
+            role,
+            text,
+            meta=meta,
+        )
+        self.load_room(room_id)
+
+    def append_meeting_redirect(
+        self,
+        room_id: str,
+        *,
+        from_name: str,
+        to_name: str,
+        content: str,
+        intent: str = "",
+        redirect_id: str = "",
+    ) -> None:
+        """Append a meeting-local redirect to the room's conversation history."""
+        from core.meeting_room_store import append_meeting_redirect
+
+        if self.get_room(room_id) is None:
+            raise ValueError(t("room_manager.room_not_found", room_id=room_id))
+        append_meeting_redirect(
+            self._data_dir,
+            room_id,
+            from_name=from_name,
+            to_name=to_name,
+            content=content,
+            intent=intent,
+            redirect_id=redirect_id,
+        )
+        self.load_room(room_id)
 
     @staticmethod
     def _format_entries(messages: list[dict]) -> str:

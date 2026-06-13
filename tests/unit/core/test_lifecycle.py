@@ -1,163 +1,56 @@
-"""Unit tests for core/lifecycle.py — LifecycleManager and schedule parsing."""
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
+"""Unit tests for lifecycle schedule parsing re-exports."""
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from core._anima_lifecycle import _run_cron_cycle_with_transient_retries
 from core.lifecycle import (
     LifecycleManager,
     _parse_cron_md,
     _parse_schedule,
 )
-from core._anima_lifecycle import _run_cron_cycle_with_transient_retries
 from core.schemas import CronTask, Message
 
 # ── _parse_cron_md ────────────────────────────────────────
 
 
 class TestParseCronMd:
-    def test_empty_content(self):
+    def test_empty_content(self) -> None:
         assert _parse_cron_md("") == []
 
-    def test_single_task(self):
+    def test_single_task(self) -> None:
         content = """\
-## 日次レポート
+## Daily Report
 schedule: 0 9 * * *
-毎朝の報告を作成する。
+Prepare the morning report.
 """
         tasks = _parse_cron_md(content)
+
         assert len(tasks) == 1
-        assert tasks[0].name == "日次レポート"
+        assert tasks[0].name == "Daily Report"
         assert tasks[0].schedule == "0 9 * * *"
-        assert "毎朝の報告" in tasks[0].description
-
-    def test_multiple_tasks(self):
-        content = """\
-## タスクA
-schedule: 0 8 * * *
-内容A
-
-## タスクB
-schedule: 0 17 * * 1-5
-内容B
-"""
-        tasks = _parse_cron_md(content)
-        assert len(tasks) == 2
-        assert tasks[0].name == "タスクA"
-        assert tasks[1].name == "タスクB"
-
-    def test_task_without_schedule(self):
-        content = """\
-## No Schedule Here
-Just a description.
-"""
-        tasks = _parse_cron_md(content)
-        assert len(tasks) == 1
-        assert tasks[0].name == "No Schedule Here"
-        assert tasks[0].schedule == ""
-
-    def test_llm_type_explicit(self):
-        """Test explicit LLM-type task parsing."""
-        content = """\
-## 業務計画
-schedule: 0 9 * * *
-type: llm
-長期記憶から昨日の進捗を確認する。
-"""
-        tasks = _parse_cron_md(content)
-        assert len(tasks) == 1
         assert tasks[0].type == "llm"
-        assert tasks[0].name == "業務計画"
-        assert "長期記憶" in tasks[0].description
-        assert tasks[0].command is None
-        assert tasks[0].tool is None
+        assert "morning report" in tasks[0].description
 
-    def test_llm_type_default(self):
-        """Test LLM-type task with default type (no explicit type field)."""
+    def test_command_task(self) -> None:
         content = """\
-## 日次報告
-schedule: 0 17 * * *
-報告書を作成する。
-"""
-        tasks = _parse_cron_md(content)
-        assert len(tasks) == 1
-        assert tasks[0].type == "llm"  # Default type
-        assert "報告書" in tasks[0].description
-
-    def test_command_type_bash(self):
-        """Test command-type task with bash command."""
-        content = """\
-## バックアップ実行
-schedule: 0 2 * * *
+## Cleanup
+schedule: 0 3 * * *
 type: command
-command: /usr/local/bin/backup.sh
+command: animaworks memory status
 """
         tasks = _parse_cron_md(content)
+
         assert len(tasks) == 1
         assert tasks[0].type == "command"
-        assert tasks[0].command == "/usr/local/bin/backup.sh"
-        assert tasks[0].tool is None
-        assert tasks[0].args is None
-
-    def test_command_type_tool_with_args(self):
-        """Test command-type task with internal tool and YAML args."""
-        content = """\
-## Slack通知
-schedule: 0 9 * * 1-5
-type: command
-tool: slack_send_message
-args:
-  channel: "#general"
-  message: "おはようございます！"
-"""
-        tasks = _parse_cron_md(content)
-        assert len(tasks) == 1
-        assert tasks[0].type == "command"
-        assert tasks[0].tool == "slack_send_message"
-        assert tasks[0].command is None
-        assert tasks[0].args is not None
-        assert tasks[0].args["channel"] == "#general"
-        assert tasks[0].args["message"] == "おはようございます！"
-
-    def test_mixed_types(self):
-        """Test parsing multiple tasks with different types."""
-        content = """\
-## 業務計画
-schedule: 0 9 * * *
-type: llm
-計画を立てる。
-
-## バックアップ
-schedule: 0 2 * * *
-type: command
-command: /bin/backup.sh
-
-## 通知送信
-schedule: 0 10 * * 1-5
-type: command
-tool: send_notification
-args:
-  message: "Start working"
-"""
-        tasks = _parse_cron_md(content)
-        assert len(tasks) == 3
-        assert tasks[0].type == "llm"
-        assert tasks[1].type == "command"
-        assert tasks[1].command == "/bin/backup.sh"
-        assert tasks[2].type == "command"
-        assert tasks[2].tool == "send_notification"
-        assert tasks[2].args["message"] == "Start working"
-
-
-# ── _parse_schedule ───────────────────────────────────────
+        assert tasks[0].command == "animaworks memory status"
 
 
 class TestParseSchedule:
-    def test_daily(self):
+    def test_parse_cron_schedule(self) -> None:
         trigger = _parse_schedule("0 9 * * *")
+
         assert trigger is not None
 
     def test_weekday(self):

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -17,7 +18,6 @@ Modified files under test:
   - core/memory/distillation.py
   - core/memory/forgetting.py
   - core/memory/reconsolidation.py
-  - core/memory/validation.py
   - core/prompt/context.py
   - core/lifecycle.py
   - core/supervisor/manager.py
@@ -28,7 +28,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 
 # ── Test 1: Config-driven model resolution end-to-end ────────────────────
 # NOTE: TestConfigDrivenModelResolution was removed.
@@ -109,7 +108,7 @@ class TestContextTrackerIntegration:
 class TestNoHardcodedModelDefaults:
     """Verify that refactoring removed all hardcoded model name defaults."""
 
-    # The 9 modified files
+    # The modified files
     MODIFIED_FILES = [
         "core/lifecycle.py",
         "core/memory/consolidation.py",
@@ -117,7 +116,6 @@ class TestNoHardcodedModelDefaults:
         "core/memory/distillation.py",
         "core/memory/forgetting.py",
         "core/memory/reconsolidation.py",
-        "core/memory/validation.py",
         "core/prompt/context.py",
         "core/supervisor/manager.py",
     ]
@@ -213,7 +211,6 @@ class TestNoHardcodedModelDefaults:
             "core/memory/distillation.py",
             "core/memory/forgetting.py",
             "core/memory/reconsolidation.py",
-            "core/memory/validation.py",
         ]
 
         fallback_pattern = re.compile(

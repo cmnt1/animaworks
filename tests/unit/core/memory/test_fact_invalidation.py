@@ -8,6 +8,7 @@ import pytest
 
 from core.memory import fact_invalidation as fact_invalidation_module
 from core.memory import fact_invalidation_llm
+from core.memory.fact_config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
 from core.memory.fact_invalidation import (
     FactCandidate,
     ReconcileAction,
@@ -436,7 +437,7 @@ def test_reconcile_config_and_vector_candidate_search(
             ]
 
     monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name: FakeVectorStore())
-    monkeypatch.setattr("core.memory.rag.singleton.generate_embeddings", lambda texts: [[0.1, 0.2]])
+    monkeypatch.setattr("core.memory.rag.singleton.generate_embeddings", lambda texts, **_kwargs: [[0.1, 0.2]])
 
     candidates = fact_invalidation_module._search_fact_candidates(anima_dir, new, 5)
 
@@ -490,10 +491,18 @@ def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
 def test_llm_helper_config_fallbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     defaults = SimpleNamespace(anima_defaults=SimpleNamespace(background_model="", model="config-model"))
     monkeypatch.setattr("core.config.models.load_config", lambda: defaults)
-    assert fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice") == ("config-model", {}, 30)
+    assert fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice") == (
+        "config-model",
+        {},
+        DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS,
+    )
 
     monkeypatch.setattr(
         "core.config.models.load_config",
         lambda: (_ for _ in ()).throw(RuntimeError("config failed")),
     )
-    assert fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice") == ("claude-sonnet-4-6", {}, 30)
+    assert fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice") == (
+        "claude-sonnet-4-6",
+        {},
+        DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS,
+    )

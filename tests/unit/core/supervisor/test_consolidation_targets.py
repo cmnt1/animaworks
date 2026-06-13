@@ -19,6 +19,8 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -150,6 +152,7 @@ class _TimeoutHandle:
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.timeouts: list[float] = []
 
     async def send_request(
         self,
@@ -158,6 +161,7 @@ class _TimeoutHandle:
         timeout: float = 60.0,
     ) -> IPCResponse:
         self.calls.append(method)
+        self.timeouts.append(timeout)
         if method == "run_consolidation":
             raise TimeoutError("consolidation timed out")
         return IPCResponse(id="fake", result={})
@@ -166,12 +170,63 @@ class _TimeoutHandle:
 class _RecentEpisodesEngine:
     """Minimal consolidation engine stub with work to do."""
 
+    rebuild_calls: list[tuple[str, str]] = []
+    ingest_calls: list[tuple[str, int]] = []
+
     def __init__(self, anima_dir: Path, anima_name: str) -> None:
         self.anima_dir = anima_dir
         self.anima_name = anima_name
 
     def _collect_recent_episodes(self, hours: int) -> list[str]:
         return ["episode"]
+
+    def count_recent_activity_entries(self, hours: int = 24, **_kwargs) -> int:
+        return 0
+
+    def count_pending_phase_b_carryover(self) -> int:
+        return 0
+
+    def _rebuild_rag_index(self) -> None:
+        self.rebuild_calls.append((self.anima_name, str(self.anima_dir)))
+
+    async def ingest_recent_to_backend(self, hours: int) -> dict[str, int]:
+        self.ingest_calls.append((self.anima_name, hours))
+        return {"episodes": 0, "knowledge": 0, "errors": 0}
+
+
+def test_consolidation_ipc_timeout_scales_with_daily_workload(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    cfg = SimpleNamespace(
+        ipc_timeout_base_seconds=1800,
+        ipc_timeout_per_activity_entry_seconds=4.0,
+        ipc_timeout_per_episode_seconds=120.0,
+        ipc_timeout_per_carryover_item_seconds=600.0,
+        ipc_timeout_max_seconds=7200,
+    )
+    gate = SimpleNamespace(activity_count=300, episode_count=2, carryover_count=1)
+
+    timeout = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
+
+    assert timeout == 3840.0
+
+
+def test_consolidation_ipc_timeout_respects_max_and_weekly_override(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    cfg = SimpleNamespace(
+        ipc_timeout_base_seconds=1800,
+        ipc_timeout_per_activity_entry_seconds=10.0,
+        ipc_timeout_per_episode_seconds=100.0,
+        ipc_timeout_per_carryover_item_seconds=1000.0,
+        ipc_timeout_max_seconds=2000,
+        weekly_ipc_timeout_seconds=4800,
+    )
+    gate = SimpleNamespace(activity_count=300, episode_count=2, carryover_count=1)
+
+    daily = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
+    weekly = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="weekly")
+
+    assert daily == 2000.0
+    assert weekly == 4800.0
 
 
 @pytest.mark.asyncio
@@ -180,27 +235,41 @@ async def test_daily_consolidation_timeout_logs_once_and_continues(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Timeouts should not be re-logged by the outer exception handler."""
+    """Timeouts still run framework-side post-processing before continuing."""
     sup = _make_supervisor(tmp_path)
     _create_anima_dir(sup.animas_dir, "mio")
     handle = _TimeoutHandle()
     sup.processes["mio"] = handle
+    _RecentEpisodesEngine.rebuild_calls = []
+    _RecentEpisodesEngine.ingest_calls = []
+    mock_forgetter = MagicMock()
+    mock_forgetter.synaptic_downscaling.return_value = {"scanned": 1}
     monkeypatch.setattr(
         "core.memory.consolidation.ConsolidationEngine",
         _RecentEpisodesEngine,
     )
+    monkeypatch.setattr("core.memory.forgetting.ForgettingEngine", lambda *_args: mock_forgetter)
+    monkeypatch.setattr(
+        "core.lifecycle.system_consolidation.run_knowledge_self_correction_if_enabled",
+        AsyncMock(),
+    )
+    monkeypatch.setattr("core.lifecycle.system_consolidation.detect_communities_if_neo4j", AsyncMock())
 
     with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
         await sup._run_daily_consolidation()
 
     assert handle.calls == ["run_consolidation", "interrupt"]
-    assert "Daily consolidation timed out for mio" in caplog.text
+    assert "consolidation_timeout anima=mio phase=phase_b type=daily" in caplog.text
     assert "Daily consolidation failed for mio" not in caplog.text
+    mock_forgetter.synaptic_downscaling.assert_called_once()
+    assert _RecentEpisodesEngine.rebuild_calls == [("mio", str(sup.animas_dir / "mio"))]
+    assert _RecentEpisodesEngine.ingest_calls == [("mio", 48)]
 
 
 @pytest.mark.asyncio
 async def test_weekly_consolidation_timeout_logs_once_and_continues(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Weekly timeout handling should mirror daily timeout handling."""
@@ -208,10 +277,13 @@ async def test_weekly_consolidation_timeout_logs_once_and_continues(
     _create_anima_dir(sup.animas_dir, "mio")
     handle = _TimeoutHandle()
     sup.processes["mio"] = handle
+    postprocess = AsyncMock()
+    monkeypatch.setattr("core.lifecycle.system_consolidation.run_weekly_integration_post_processing", postprocess)
 
     with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
         await sup._run_weekly_integration()
 
     assert handle.calls == ["run_consolidation", "interrupt"]
-    assert "Weekly consolidation timed out for mio" in caplog.text
+    assert "consolidation_timeout anima=mio phase=phase_b type=weekly" in caplog.text
     assert "Weekly integration failed for mio" not in caplog.text
+    postprocess.assert_awaited_once()

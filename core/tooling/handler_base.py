@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextvars
 import logging
 import re
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,11 @@ active_session_type: contextvars.ContextVar[str] = contextvars.ContextVar(
 meeting_mode: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "meeting_mode",
     default=False,
+)
+
+meeting_context: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "meeting_context",
+    default=None,
 )
 
 # Type alias for the message-sent callback (from, to, content).
@@ -79,6 +85,8 @@ _PROTECTED_FILES = frozenset(
         "permissions.json",
         "identity.md",
         "bootstrap.md",
+        "state/bm25_longterm_index.json",
+        "state/bm25_longterm_index.dirty",
     }
 )
 
@@ -133,6 +141,46 @@ def build_outgoing_origin_chain(
     if ORIGIN_ANIMA not in chain:
         chain.append(ORIGIN_ANIMA)
     return chain[:MAX_ORIGIN_CHAIN_LENGTH]
+
+
+def record_meeting_redirect(
+    *,
+    from_name: str,
+    to_name: str,
+    content: str,
+    intent: str = "",
+) -> dict[str, str]:
+    """Record a meeting-local DM redirect for the process_message stream."""
+    redirect_id = uuid.uuid4().hex
+    redirect = {
+        "redirect_id": redirect_id,
+        "from": from_name,
+        "to": to_name,
+        "content": content,
+        "intent": intent,
+        "ts": now_iso(),
+    }
+    ctx = meeting_context.get()
+    if isinstance(ctx, dict):
+        room_id = str(ctx.get("room_id") or "")
+        meetings_dir = str(ctx.get("meetings_dir") or "")
+        if room_id and meetings_dir:
+            from core.meeting_room_store import append_meeting_redirect
+
+            append_meeting_redirect(
+                Path(meetings_dir),
+                room_id,
+                from_name=from_name,
+                to_name=to_name,
+                content=content,
+                intent=intent,
+                redirect_id=redirect_id,
+            )
+            redirect["room_id"] = room_id
+        redirects = ctx.setdefault("redirects", [])
+        if isinstance(redirects, list):
+            redirects.append(redirect)
+    return redirect
 
 
 def _error_result(

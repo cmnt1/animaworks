@@ -22,7 +22,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from core.memory.rag import indexer_delete
 from core.memory.rag.episode_time import apply_episode_heading_event_time
@@ -35,6 +35,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger("animaworks.rag.indexer")
 
 INDEX_META_FILE = "index_meta.json"
+
+
+def access_tracking_metadata() -> dict[str, str | int | float]:
+    """Return default split access-tracking metadata for new chunks."""
+    return {
+        "access_count": 0,
+        "retrieved_count": 0,
+        "used_count": 0,
+        "last_accessed_at": "",
+        "last_retrieved_at": "",
+        "last_used_at": "",
+    }
 
 
 @dataclass
@@ -229,6 +241,9 @@ class MemoryIndexer:
         Returns:
             Number of chunks indexed
         """
+        from core import startup_progress
+
+        startup_progress.raise_if_cancelled()
         if not file_path.exists():
             logger.warning("File not found: %s", file_path)
             return 0
@@ -302,6 +317,11 @@ class MemoryIndexer:
             self.delete_indexed_file(file_path, memory_type)
             return 0
 
+        source_mtime_ns = file_path.stat().st_mtime_ns
+        for chunk in chunks:
+            chunk.metadata["source_hash"] = file_hash
+            chunk.metadata["source_mtime_ns"] = source_mtime_ns
+
         # Generate embeddings
         embeddings = self._generate_embeddings([chunk.content for chunk in chunks])
 
@@ -360,8 +380,38 @@ class MemoryIndexer:
         patterns = {"facts": "*.jsonl", "skills": "SKILL.md", "common_skills": "SKILL.md"}
         md_files = sorted(directory.rglob(patterns.get(memory_type, "*.md")))
         total_chunks = 0
-        for md_file in md_files:
+        try:
+            from core import startup_progress
+
+            track_startup = startup_progress.is_active()
+        except Exception:
+            startup_progress = None  # type: ignore[assignment]
+            track_startup = False
+
+        if track_startup and startup_progress is not None:
+            startup_progress.set_phase(
+                "indexing",
+                detail=str(directory),
+                done_count=0,
+                total_count=len(md_files),
+            )
+
+        for index, md_file in enumerate(md_files):
+            if startup_progress is not None:
+                startup_progress.raise_if_cancelled()
+                if track_startup:
+                    startup_progress.update_progress(
+                        detail=str(md_file),
+                        done_count=index,
+                        total_count=len(md_files),
+                    )
             total_chunks += self.index_file(md_file, memory_type, force=force)
+            if track_startup and startup_progress is not None:
+                startup_progress.update_progress(
+                    detail=str(md_file),
+                    done_count=index + 1,
+                    total_count=len(md_files),
+                )
 
         logger.info(
             "Indexed directory %s: %d total chunks (type=%s)",
@@ -504,8 +554,7 @@ class MemoryIndexer:
                 "source_file": "state/conversation.json",
                 "chunk_index": chunk_idx,
                 "importance": "normal",
-                "access_count": 0,
-                "last_accessed_at": "",
+                **access_tracking_metadata(),
                 "activation_level": "normal",
                 "low_activation_since": "",
                 "valid_until": "",
@@ -529,8 +578,7 @@ class MemoryIndexer:
                         "source_file": "state/conversation.json",
                         "chunk_index": chunk_idx,
                         "importance": "normal",
-                        "access_count": 0,
-                        "last_accessed_at": "",
+                        **access_tracking_metadata(),
                         "activation_level": "normal",
                         "low_activation_since": "",
                         "valid_until": "",
@@ -548,8 +596,7 @@ class MemoryIndexer:
                 "source_file": "state/conversation.json",
                 "chunk_index": 0,
                 "importance": "normal",
-                "access_count": 0,
-                "last_accessed_at": "",
+                **access_tracking_metadata(),
                 "activation_level": "normal",
                 "low_activation_since": "",
                 "valid_until": "",
@@ -920,8 +967,7 @@ class MemoryIndexer:
             metadata["tags"] = flattened_tags[:10]  # Limit to 10 tags
 
         # Access tracking (Hebbian LTP analog)
-        metadata["access_count"] = 0
-        metadata["last_accessed_at"] = ""
+        metadata.update(access_tracking_metadata())
 
         # Activation level (for forgetting mechanism)
         metadata["activation_level"] = "normal"
@@ -970,7 +1016,13 @@ class MemoryIndexer:
 
         return metadata
 
-    def _generate_embeddings(self, texts: list[str]) -> list[list[float]]:
+    def _generate_embeddings(
+        self,
+        texts: list[str],
+        *,
+        purpose: Literal["document", "query"] = "document",
+        priority: Literal["interactive", "bulk"] | None = None,
+    ) -> list[list[float]]:
         """Generate embeddings for a batch of texts.
 
         Delegates to ``generate_embeddings()`` which routes to the HTTP
@@ -982,7 +1034,8 @@ class MemoryIndexer:
         logger.debug("Generating embeddings for %d texts", len(texts))
         from core.memory.rag.singleton import generate_embeddings
 
-        return generate_embeddings(texts)
+        resolved_priority = priority or ("interactive" if purpose == "query" else "bulk")
+        return generate_embeddings(texts, purpose=purpose, priority=resolved_priority)
 
     @staticmethod
     def _compute_file_hash(file_path: Path) -> str:

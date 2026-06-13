@@ -167,6 +167,7 @@ class TestReportKnowledgeOutcome:
             },
         )
         handler = self._make_handler(anima_dir)
+        handler._record_memory_file_used = MagicMock()
         result = handler._handle_report_knowledge_outcome(
             {
                 "path": "knowledge/topic.md",
@@ -184,6 +185,7 @@ class TestReportKnowledgeOutcome:
         assert meta["failure_count"] == 0
         assert meta["confidence"] == 1.0
         assert meta["last_used"] != ""
+        handler._record_memory_file_used.assert_called_once_with("knowledge/topic.md")
 
     def test_failure_increments_and_recalculates(self, anima_dir: Path) -> None:
         _write_knowledge(

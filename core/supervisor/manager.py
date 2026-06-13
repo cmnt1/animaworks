@@ -46,9 +46,9 @@ logger = logging.getLogger(__name__)
 class RestartPolicy:
     """Process restart policy configuration."""
 
-    max_retries: int = 5  # Maximum restart attempts
-    backoff_base_sec: float = 2.0  # Initial backoff delay
-    backoff_max_sec: float = 60.0  # Maximum backoff delay
+    max_retries: int = 3  # Maximum restart attempts
+    backoff_base_sec: float = 30.0  # Initial backoff delay
+    backoff_max_sec: float = 30.0  # Maximum backoff delay
     reset_after_sec: float = 300.0  # Stable runtime to reset counter
 
 
@@ -61,6 +61,8 @@ class HealthConfig:
     max_missed_pings: int = 6  # Consecutive misses before hang
     startup_grace_sec: float = 30.0  # Grace period after startup
     busy_hang_threshold_sec: float = 900.0  # 15 min: no-progress timeout for busy processes
+    health_check_warmup_seconds: float = 300.0  # Global warmup after startup reaches ready
+    runner_warmup_seconds: float = 180.0  # Per-runner warmup after spawn/restart
 
 
 @dataclass
@@ -125,6 +127,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         self._recently_stopped: dict[str, float] = {}  # anima_name → monotonic timestamp
         self._start_failed_times: dict[str, float] = {}
         self._start_fail_counts: dict[str, int] = {}
+        self._starting_since: dict[str, float] = {}
+        self._failure_reasons: dict[str, str] = {}
         self._bootstrap_retry_counts: dict[str, int] = {}
         self._bootstrap_max_retries: int = 3
         self._bootstrap_retries_file = self.animas_dir / ".bootstrap_retries.json"
@@ -134,6 +138,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         # Defaults to 1800s (30 min) to accommodate long tool executions
         # while still catching truly stuck streams.
         self._max_streaming_duration_sec: int = 1800
+        self._anima_startup_ready_timeout: float = 120.0
+        self._spawn_timeout_sec: float = 300.0
         try:
             from core.config import load_config
 
@@ -143,8 +149,21 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 "max_streaming_duration",
                 1800,
             )
+            self._anima_startup_ready_timeout = float(
+                getattr(srv, "anima_startup_ready_timeout", 120),
+            )
+            self._spawn_timeout_sec = float(getattr(srv, "spawn_timeout", 300))
+            if restart_policy is None:
+                retry_count = int(getattr(srv, "supervisor_respawn_max_retries", 3))
+                retry_interval = float(getattr(srv, "supervisor_respawn_retry_interval_seconds", 30.0))
+                self.restart_policy.max_retries = max(1, retry_count)
+                self.restart_policy.backoff_base_sec = max(0.0, retry_interval)
+                self.restart_policy.backoff_max_sec = max(0.0, retry_interval)
+            if health_config is None:
+                self.health_config.health_check_warmup_seconds = float(getattr(srv, "health_check_warmup_seconds", 300))
+                self.health_config.runner_warmup_seconds = float(getattr(srv, "runner_warmup_seconds", 180))
         except (ConfigError, ConfigNotFoundError):
-            logger.debug("Config load failed for max_streaming_duration", exc_info=True)
+            logger.debug("Config load failed for server process timeouts", exc_info=True)
 
         # Locks for system consolidation jobs (prevent double execution)
         self._system_job_locks: dict[str, asyncio.Lock] = {
@@ -362,6 +381,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             return
 
         self._starting.add(anima_name)
+        self._starting_since[anima_name] = time.monotonic()
+        self._failure_reasons.pop(anima_name, None)
         try:
             self._cleanup_stale_runtime_files(anima_name)
 
@@ -376,11 +397,14 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 shared_dir=self.shared_dir,
                 log_dir=self.log_dir,
                 child_env_urls=self.child_env_urls,
+                startup_ready_timeout=self._anima_startup_ready_timeout,
             )
 
             try:
                 await handle.start()
                 self.processes[anima_name] = handle
+                self._start_fail_counts.pop(anima_name, None)
+                self._start_failed_times.pop(anima_name, None)
                 logger.info("Anima process started: %s (PID %s)", anima_name, handle.get_pid())
 
                 # Check if bootstrap is needed and launch in background
@@ -421,6 +445,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 raise ProcessError(f"Failed to start process {anima_name}: {e}") from e
         finally:
             self._starting.discard(anima_name)
+            self._starting_since.pop(anima_name, None)
 
     async def _run_bootstrap(self, anima_name: str) -> None:
         """Run bootstrap for an anima in the background.
@@ -676,6 +701,64 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         finally:
             self._restarting.discard(anima_name)
 
+    async def _mark_process_error(self, anima_name: str, reason: str, handle: ProcessHandle | None = None) -> None:
+        """Record a visible process error even when no live handle remains."""
+        if handle is None:
+            handle = self.processes.get(anima_name)
+        if handle is not None:
+            handle.state = ProcessState.FAILED
+        self._failure_reasons[anima_name] = reason
+        self._permanently_failed.add(anima_name)
+        try:
+            self._failed_log_times[anima_name] = asyncio.get_running_loop().time()
+        except RuntimeError:
+            self._failed_log_times[anima_name] = time.monotonic()
+        await self._broadcast_event(
+            "anima.status",
+            {"name": anima_name, "status": "error", "error": reason},
+        )
+
+    async def _respawn_anima_transaction(self, anima_name: str) -> ProcessHandle | None:
+        """Stop any old process and retry spawn until success or explicit error."""
+        last_error = ""
+        max_attempts = max(1, int(self.restart_policy.max_retries))
+        retry_interval = max(0.0, float(self.restart_policy.backoff_base_sec))
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                if anima_name in self.processes:
+                    await self.stop_anima(anima_name)
+                await self.start_anima(anima_name)
+                new_handle = self.processes.get(anima_name)
+                if new_handle is None:
+                    raise ProcessError(f"spawn completed without a process handle for {anima_name}")
+                self._start_fail_counts.pop(anima_name, None)
+                self._start_failed_times.pop(anima_name, None)
+                self._failure_reasons.pop(anima_name, None)
+                self._permanently_failed.discard(anima_name)
+                self._failed_log_times.pop(anima_name, None)
+                return new_handle
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                self._start_fail_counts[anima_name] = attempt
+                self._start_failed_times[anima_name] = time.monotonic()
+                self._failure_reasons[anima_name] = last_error
+                logger.error(
+                    "Respawn attempt failed for %s (%d/%d): %s",
+                    anima_name,
+                    attempt,
+                    max_attempts,
+                    exc,
+                )
+                if attempt < max_attempts and retry_interval > 0:
+                    await asyncio.sleep(retry_interval)
+
+        await self._mark_process_error(
+            anima_name,
+            last_error or f"respawn failed after {max_attempts} attempts",
+        )
+        return None
+
     async def shutdown_all(self) -> None:
         """Shutdown all processes gracefully."""
         logger.info("Shutting down all processes")
@@ -885,6 +968,35 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         """Get status of a Anima process."""
         handle = self.processes.get(anima_name)
         if not handle:
+            starting_since = self._starting_since.get(anima_name)
+            if starting_since is not None:
+                elapsed = time.monotonic() - starting_since
+                if elapsed > self._spawn_timeout_sec:
+                    reason = f"spawn exceeded timeout ({self._spawn_timeout_sec:.0f}s)"
+                    self._failure_reasons[anima_name] = reason
+                    self._permanently_failed.add(anima_name)
+                    return {
+                        "status": "error",
+                        "error": reason,
+                        "state_since": starting_since,
+                        "spawn_started_at": starting_since,
+                        "uptime_sec": elapsed,
+                    }
+                return {
+                    "status": "starting",
+                    "state_since": starting_since,
+                    "spawn_started_at": starting_since,
+                    "uptime_sec": elapsed,
+                }
+
+            if anima_name in self._permanently_failed or anima_name in self._failure_reasons:
+                return {
+                    "status": "error",
+                    "error": self._failure_reasons.get(anima_name, "process failed"),
+                    "restart_count": self._restart_counts.get(anima_name, 0),
+                    "start_fail_count": self._start_fail_counts.get(anima_name, 0),
+                }
+
             status = {"status": "not_found"}
             try:
                 from core.bootstrap_state import get_bootstrap_status
@@ -904,6 +1016,12 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             return status
 
         uptime = (now_local() - ensure_aware(handle.stats.started_at)).total_seconds()
+        status_value = "bootstrapping" if self.is_bootstrapping(anima_name) else handle.state.value
+        if handle.state in (ProcessState.STARTING, ProcessState.RESTARTING) and uptime > self._spawn_timeout_sec:
+            status_value = "error"
+            reason = f"spawn exceeded timeout ({self._spawn_timeout_sec:.0f}s)"
+            self._failure_reasons[anima_name] = reason
+            self._permanently_failed.add(anima_name)
 
         bootstrap_status: dict[str, Any] = {}
         try:
@@ -914,10 +1032,12 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             logger.debug("Failed to read bootstrap status for %s", anima_name, exc_info=True)
 
         return {
-            "status": "bootstrapping" if self.is_bootstrapping(anima_name) else handle.state.value,
+            "status": status_value,
+            "error": self._failure_reasons.get(anima_name),
             "pid": handle.get_pid(),
             "uptime_sec": uptime,
             "restart_count": self._restart_counts.get(anima_name, 0),
+            "start_fail_count": self._start_fail_counts.get(anima_name, 0),
             "missed_pings": handle.stats.missed_pings,
             "last_busy_since": (handle.stats.last_busy_since.isoformat() if handle.stats.last_busy_since else None),
             "bootstrapping": self.is_bootstrapping(anima_name),
@@ -931,4 +1051,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
 
     def get_all_status(self) -> dict[str, dict]:
         """Get status of all processes."""
-        return {name: self.get_process_status(name) for name in self.processes}
+        names = (
+            set(self.processes) | set(self._starting_since) | set(self._permanently_failed) | set(self._failure_reasons)
+        )
+        return {name: self.get_process_status(name) for name in sorted(names)}

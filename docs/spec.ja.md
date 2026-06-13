@@ -65,12 +65,11 @@ animaworks/
 │   ├── paths.py               # パス解決
 │   ├── messenger.py           # Anima間メッセージ送受信
 │   ├── lifecycle/             # ハートビート・cron・Inbox（パッケージ、APScheduler）
-│   │   ├── __init__.py        #   LifecycleManager（Scheduler/Inbox/レート制限等ミックスイン統合）
+│   │   ├── __init__.py        #   LifecycleManager 互換層と lifecycle mixin 再エクスポート
 │   │   ├── scheduler.py       #   スケジュール登録
 │   │   ├── inbox_watcher.py   #   Inbox 監視
 │   │   ├── rate_limiter.py    #   メッセージ連鎖・クールダウン
-│   │   ├── system_crons.py    #   サーバ単位の定期ジョブ
-│   │   └── system_consolidation.py # 組織横断 consolidation トリガー
+│   │   └── system_consolidation.py # ProcessSupervisor が使うシステム consolidation ハンドラ
 │   ├── outbound.py            # 統一アウトバウンドルーティング（Slack/Chatwork/内部自動判定）
 │   ├── background.py          # バックグラウンドタスク管理
 │   ├── asset_reconciler.py    # アセット自動生成
@@ -738,7 +737,7 @@ git push（承認必要）, rm -rf, docker
 | intent | 説明 | 用途 |
 |--------|------|------|
 | `report` | 上位への報告 | 進捗・問題報告（MUST） |
-| `delegation` | 部下への委任 | delegate_task と連動 |
+| `delegation` | `send_message` では非推奨 | `delegate_task` を使う |
 | `question` | 質問・相談 | 同僚への連携・調整 |
 
 ### Board（共有チャネル）
@@ -943,7 +942,7 @@ Group 6: メタ設定
 
 **段階的システムプロンプト（Tiered System Prompt）:** コンテキストウィンドウに応じて4段階（T1 FULL 128k+ / T2 STANDARD 32k〜128k / T3 LIGHT 16k〜32k / T4 MINIMAL 16k未満）でプロンプト内容を調整する。
 
-**スキル注入（段階開示）:** スキルは現在のPriming本体で自動注入せず、active skill context、Skill Router、Skill Hub、`skill` ツール、`read_memory_file` を通じて必要時に読み込む。大量のスキルを常に全文注入せず、名前・説明・ポインタを起点に段階的に読む。
+**スキル注入（段階開示）:** スキルは現在のPriming本体で自動注入せず、active skill context、Skill Router、Skill Hub、`read_memory_file` を通じて必要時に読み込む。大量のスキルを常に全文注入せず、名前・説明・ポインタを起点に段階的に読む。
 
 「記憶を検索せずに判断するのは禁止」を `behavior_rules` に含めることが書庫型記憶の成功の鍵（実験で検証済み）。
 
@@ -964,7 +963,7 @@ Group 6: メタ設定
 - **Board/共有チャネル** — Slack型共有チャネル。チャネル投稿・メンション・DM履歴のREST API
 - **統一アウトバウンドルーティング** — 宛先名から内部Anima/外部プラットフォーム（Slack/Chatwork）を自動解決して配送
 - **ハートビート・cron・TaskExec** — APSchedulerによるスケジュール管理。state/pending/ のタスクはTaskExecが3秒ポーリングで実行
-- **Anima間メッセージ** — Messenger経由のテキスト通信。intent制御（report/delegation/question）、3層レート制限
+- **Anima間メッセージ** — Messenger経由のテキスト通信。intent制御（report/question、委任は `delegate_task` を使用）、3層レート制限
 - **スーパーバイザーツール** — 部下を持つAnimaに自動有効化（下記ツール一覧参照）
 - **統合設定** — config.json + Pydanticバリデーション。status.json SSoT、models.json で実行モードオーバーライド
 - **クレデンシャルVault** — `vault.json` + `vault.key`（PyNaCl SealedBox、`core/config/vault.py`）。ツール: `vault_get` / `vault_store` / `vault_list`
@@ -972,7 +971,7 @@ Group 6: メタ設定
 - **FastAPIサーバー** — REST（`/api`）+ ダッシュボード WebSocket（`/ws`）+ 音声（`/ws/voice/{name}`）+ 初回セットアップウィザード（`/setup`）+ SPA（`#/chat` 等）+ Workspace（`/workspace`）。内部 embed/vector API で子プロセス RAG を集約、会議室 API+SSE、`StreamRegistry` / `ConfigReloadManager`、Slack Socket Mode 統合
 - **音声チャット** — WebSocket /ws/voice/{name}。STT（faster-whisper）→ Chat IPC → TTS（VOICEVOX/ElevenLabs/SBV2）
 - **Anima生成** — テンプレート / 空白（_blank）/ MDファイル（create --from-md）からの生成
-- **スキル段階開示** — マッチしたスキル名のみ注入。全文は `skill` ツールでオンデマンド読み込み
+- **スキル段階開示** — マッチしたスキル名やポインタのみ注入。全文は `read_memory_file` でオンデマンド読み込み
 - **外部メッセージング統合** — Slack Socket Mode（リアルタイム双方向）, Chatwork Webhook（受信）
 - **永続タスクキュー** — task_queue.jsonl。滞留検知・DAG並列実行（submit_tasks）・委任プロンプト注入
 - **解決レジストリ** — shared/resolutions.jsonlによるAnima横断の課題解決追跡
@@ -998,7 +997,7 @@ Group 6: メタ設定
 
 | ツール | 説明 |
 |--------|------|
-| `send_message` | Anima間DM送信（intent必須: report/delegation/question） |
+| `send_message` | Anima間DM送信（intent必須: report/question。delegation intent は拒否されるため `delegate_task` を使う） |
 | `post_channel` | Board（共有チャネル）への投稿 |
 | `read_channel` | Board読み取り |
 | `manage_channel` | チャネル管理（作成・ACL設定） |
@@ -1018,7 +1017,6 @@ Group 6: メタ設定
 
 | ツール | 説明 |
 |--------|------|
-| `skill` | スキル参照（段階開示: 名前一覧→全文オンデマンド） |
 | `create_skill` | 新規スキルの作成 |
 
 **Vault:**

@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import sys
+import threading
+import time
 import types
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ── Helpers ────────────────────────────────────────────────────────
 
@@ -79,6 +80,7 @@ class TestGenerateEmbeddingsLocal:
             ["hello", "world"],
             convert_to_numpy=True,
             show_progress_bar=False,
+            batch_size=32,
         )
 
     def test_local_mode_returns_lists(
@@ -120,7 +122,26 @@ class TestGenerateEmbeddingsHTTP:
         assert result == [[0.1, 0.2], [0.3, 0.4]]
         mock_post.assert_called_once_with(
             "http://127.0.0.1:18500/api/internal/embed",
-            json={"texts": ["hello", "world"]},
+            json={"texts": ["hello", "world"], "purpose": "document", "priority": "interactive"},
+            timeout=30.0,
+        )
+
+    def test_http_mode_propagates_bulk_priority(self, monkeypatch):
+        """HTTP embedding requests should include caller priority."""
+        monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://localhost/embed")
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"embeddings": [[0.1]]}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.post", return_value=mock_response) as mock_post:
+            from core.memory.rag.singleton import generate_embeddings
+
+            assert generate_embeddings(["bulk"], priority="bulk") == [[0.1]]
+
+        mock_post.assert_called_once_with(
+            "http://localhost/embed",
+            json={"texts": ["bulk"], "purpose": "document", "priority": "bulk"},
             timeout=30.0,
         )
 
@@ -204,7 +225,7 @@ class TestIndexerDelegation:
             result = indexer._generate_embeddings(["hello"])
 
         assert result == [[0.1, 0.2]]
-        mock_gen.assert_called_once_with(["hello"])
+        mock_gen.assert_called_once_with(["hello"], purpose="document", priority="bulk")
 
     def test_indexer_skips_model_init_when_embed_url_set(self, tmp_path, monkeypatch):
         """When ANIMAWORKS_EMBED_URL is set, indexer skips model loading."""
@@ -227,3 +248,64 @@ class TestIndexerDelegation:
 
             mock_init.assert_not_called()
             assert indexer.embedding_model is None
+
+
+class TestEmbeddingPriority:
+    def test_bulk_yields_between_batches_to_waiting_interactive(self, monkeypatch):
+        """A waiting interactive encode should run before the next bulk batch."""
+        from core.memory.rag import singleton
+
+        singleton._reset_for_testing()
+        monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
+        monkeypatch.setattr(singleton, "_get_embedding_batch_size", lambda: 1)
+        monkeypatch.setattr(singleton, "_get_bulk_yield_batches", lambda: 5)
+
+        first_bulk_started = threading.Event()
+        release_first_bulk = threading.Event()
+        call_order: list[tuple[str, ...]] = []
+
+        class FakeModel:
+            def encode(self, texts, **_kwargs):
+                batch = tuple(texts)
+                call_order.append(batch)
+                if batch == ("bulk-1",):
+                    first_bulk_started.set()
+                    assert release_first_bulk.wait(timeout=2)
+                return [[float(len(call_order))] for _ in texts]
+
+        monkeypatch.setattr(singleton, "get_embedding_model", lambda: FakeModel())
+
+        bulk_result: list[list[float]] = []
+        interactive_result: list[list[float]] = []
+
+        def run_bulk():
+            bulk_result.extend(singleton.thread_safe_encode(["bulk-1", "bulk-2"], priority="bulk"))
+
+        def run_interactive():
+            interactive_result.extend(singleton.thread_safe_encode(["interactive"], priority="interactive"))
+
+        bulk_thread = threading.Thread(target=run_bulk)
+        bulk_thread.start()
+        assert first_bulk_started.wait(timeout=2)
+
+        interactive_thread = threading.Thread(target=run_interactive)
+        interactive_thread.start()
+
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            with singleton._priority_condition:
+                if singleton._interactive_waiters > 0:
+                    break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("interactive encode did not enter priority wait")
+
+        release_first_bulk.set()
+        bulk_thread.join(timeout=2)
+        interactive_thread.join(timeout=2)
+
+        assert not bulk_thread.is_alive()
+        assert not interactive_thread.is_alive()
+        assert call_order == [("bulk-1",), ("interactive",), ("bulk-2",)]
+        assert len(bulk_result) == 2
+        assert len(interactive_result) == 1

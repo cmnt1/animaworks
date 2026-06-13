@@ -13,8 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.locomo.adapter import SEARCH_MODES, AnimaWorksLoCoMoAdapter, load_dataset
-from benchmarks.locomo.llm_config import default_answer_model
+from benchmarks.locomo.llm_config import default_answer_model, resolve_locomo_judge_litellm_kwargs
 from benchmarks.locomo.metrics import CATEGORY_NAMES, compute_summary, eval_by_category, llm_judge_sync
+from benchmarks.locomo.protocol import (
+    PROTOCOL_VERSION,
+    apply_standard_protocol_args,
+    attach_standard_protocol_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +31,7 @@ _DEFAULT_DATA = _ROOT / "benchmarks" / "locomo" / "data" / "locomo10.json"
 _DEFAULT_OUTPUT = _ROOT / "benchmarks" / "locomo" / "results"
 
 EMBEDDING_MODEL_DEFAULT = "intfloat/multilingual-e5-small"
-
+CROSS_ENCODER_MODEL_DEFAULT = "cross-encoder/ms-marco-MiniLM-L-12-v2"
 _REFERENCE_SCORES: dict[str, dict[str, float]] = {
     "Mem0": {
         "overall": 66.88,
@@ -86,6 +91,16 @@ def _print_summary(mode: str, summary: dict[str, Any], *, total_count: int) -> N
         f"| {'OVERALL':<12} | {of1 * 100.0:5.1f}% | {oj_str:>7} | {total_count:7d} |",
     )
     lines.append("+--------------+--------+-------+---------+")
+    error_rate = float(summary.get("error_rate", 0.0) or 0.0)
+    if error_rate:
+        lines.append(f"Error rate: {error_rate * 100.0:.1f}%")
+    protocol = summary.get("standard_protocol")
+    if isinstance(protocol, dict):
+        primary = protocol.get("primary_value")
+        primary_text = f"{float(primary) * 100.0:.1f}%" if primary is not None else "n/a"
+        lines.append(
+            f"Standard primary ({protocol.get('primary_metric', 'cat5_excluded.overall_judge')}): {primary_text}"
+        )
     print("\n" + "\n".join(lines))
 
 
@@ -150,6 +165,7 @@ def _write_result_json(
     config: dict[str, Any],
     summary: dict[str, Any],
     results: list[dict[str, Any]],
+    errors: int = 0,
 ) -> Path:
     """Write one mode's JSON results; creates ``out_dir`` on first use."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -160,6 +176,8 @@ def _write_result_json(
         "config": config,
         "summary": summary,
         "results": results,
+        "errors": errors,
+        "error_rate": summary.get("error_rate", 0.0),
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("Wrote %s", path)
@@ -221,6 +239,17 @@ def _run_qa_loop(
     errors = 0
     litellm_warned = False
     max_questions = int(getattr(args, "max_questions", 0) or 0)
+    judge_model = str(getattr(args, "judge_model", "gpt-4o") or "gpt-4o")
+    judge_completion_kwargs: dict[str, Any] = {}
+    if bool(getattr(args, "judge", False)):
+        try:
+            judge_model, judge_completion_kwargs = resolve_locomo_judge_litellm_kwargs(judge_model)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not resolve judge model %s; using LiteLLM defaults: %s", judge_model, exc)
+            judge_completion_kwargs = {}
+        judge_timeout = getattr(args, "answer_timeout", None)
+        if judge_timeout is not None:
+            judge_completion_kwargs = {**judge_completion_kwargs, "timeout": float(judge_timeout)}
 
     def _warn_litellm(exc: Exception) -> None:
         nonlocal litellm_warned
@@ -230,7 +259,7 @@ def _run_qa_loop(
         print(
             f"\nWarning: LiteLLM/API call failed ({exc!r}). "
             "Set API keys or provider credentials. "
-            "Continuing with empty predictions / F1-only.\n",
+            "Continuing with explicit error rows excluded from score aggregates.\n",
             file=sys.stderr,
         )
 
@@ -280,13 +309,35 @@ def _run_qa_loop(
                 if not question or not answer:
                     continue
 
+                benchmark_category = category if bool(getattr(args, "enable_locomo_category_branches", False)) else None
+                base_result: dict[str, Any] = {
+                    "sample_id": str(sample_id),
+                    "question_index": j,
+                    "category": category,
+                    "question": question,
+                    "reference": answer,
+                    "benchmark_category_used": benchmark_category is not None,
+                }
+
                 try:
-                    context = adapter.retrieve(question, category=category)
+                    context = adapter.retrieve(question, category=benchmark_category)
                 except Exception as exc:
                     errors += 1
                     logger.exception("retrieve failed: %s", exc)
                     _warn_litellm(exc)
-                    context = []
+                    results.append(
+                        {
+                            **base_result,
+                            "status": "error",
+                            "error_stage": "retrieve",
+                            "error_message": str(exc),
+                            "prediction": "",
+                            "f1": None,
+                            "judge_score": None,
+                            "context_count": 0,
+                        }
+                    )
+                    continue
 
                 prediction = ""
                 try:
@@ -294,42 +345,59 @@ def _run_qa_loop(
                         question,
                         context,
                         model=str(args.answer_model),
-                        category=category,
+                        category=benchmark_category,
                     )
                 except Exception as exc:
                     errors += 1
                     logger.exception("answer failed: %s", exc)
                     _warn_litellm(exc)
+                    results.append(
+                        {
+                            **base_result,
+                            "status": "error",
+                            "error_stage": "answer",
+                            "error_message": str(exc),
+                            "prediction": "",
+                            "f1": None,
+                            "judge_score": None,
+                            "context_count": len(context),
+                        }
+                    )
+                    continue
 
                 f1 = float(eval_by_category(prediction, answer, category))
 
                 judge_score: float | None = None
+                judge_error = ""
                 if bool(getattr(args, "judge", False)):
                     try:
                         judge_result = llm_judge_sync(
                             question,
                             answer,
                             prediction,
-                            model=str(args.judge_model),
+                            model=judge_model,
+                            completion_kwargs=judge_completion_kwargs,
                         )
+                        if judge_result.get("verdict") == "error":
+                            raise RuntimeError("llm_judge returned verdict=error")
                         judge_score = float(judge_result["score"])
                     except Exception as exc:
                         errors += 1
                         logger.exception("llm_judge failed: %s", exc)
                         _warn_litellm(exc)
                         judge_score = None
+                        judge_error = str(exc)
 
                 result: dict[str, Any] = {
-                    "sample_id": str(sample_id),
-                    "question_index": j,
-                    "category": category,
-                    "question": question,
-                    "reference": answer,
+                    **base_result,
+                    "status": "ok",
                     "prediction": prediction,
                     "f1": f1,
                     "judge_score": judge_score,
                     "context_count": len(context),
                 }
+                if judge_error:
+                    result["judge_error"] = judge_error
                 raw_prediction = getattr(adapter, "_last_raw_answer", None)
                 normalized_prediction = getattr(adapter, "_last_normalized_answer", None)
                 abstain_reason = getattr(adapter, "_last_abstain_reason", "")
@@ -383,6 +451,7 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         ``results``, and ``config``; ``error_count`` is the number of recoverable failures
         (ingest, retrieve, answer, judge, or per-question).
     """
+    apply_standard_protocol_args(args)
     data_path = _resolve_path(Path(args.data))
     if not data_path.is_file():
         print(
@@ -416,9 +485,13 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         print(f"{'=' * 60}")
 
         mode_results: list[dict[str, Any]] = []
+        enable_locomo_alias = bool(getattr(args, "enable_locomo_alias", False))
+        enable_category_branches = bool(getattr(args, "enable_locomo_category_branches", False))
         config_block: dict[str, Any] = {
+            "protocol_version": PROTOCOL_VERSION,
             "search_mode": mode,
             "top_k": int(args.top_k),
+            "exclude_cat5": bool(getattr(args, "exclude_cat5", False)),
             "answer_model": str(args.answer_model),
             "answer_timeout": getattr(args, "answer_timeout", None),
             "answer_max_retries": int(getattr(args, "answer_max_retries", 2) or 0),
@@ -428,8 +501,15 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             "judge_enabled": bool(args.judge),
             "conversations": n_conv,
             "embedding_model": EMBEDDING_MODEL_DEFAULT,
+            "embedding_e5_prefix_enabled": bool(getattr(args, "embedding_e5_prefix_enabled", False)),
+            "cross_encoder_model": str(getattr(args, "cross_encoder_model", CROSS_ENCODER_MODEL_DEFAULT)),
+            "leakage_alias_map_enabled": enable_locomo_alias,
+            "category_branches_enabled": enable_category_branches,
+            "category_dependent_normalization_enabled": enable_category_branches,
+            "standard_protocol_requested": bool(getattr(args, "standard_protocol", False)),
         }
         try:
+
             def checkpoint_writer(
                 current_results: list[dict[str, Any]],
                 current_errors: int,
@@ -452,6 +532,10 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 top_k=int(args.top_k),
                 answer_timeout=getattr(args, "answer_timeout", None),
                 answer_max_retries=int(getattr(args, "answer_max_retries", 2) or 0),
+                enable_locomo_alias=enable_locomo_alias,
+                enable_locomo_category_branches=enable_category_branches,
+                cross_encoder_model=str(getattr(args, "cross_encoder_model", CROSS_ENCODER_MODEL_DEFAULT)),
+                embedding_e5_prefix_enabled=bool(getattr(args, "embedding_e5_prefix_enabled", False)),
             ) as adapter:
                 mode_results, mode_errors = _run_qa_loop(
                     adapter=adapter,
@@ -468,6 +552,7 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             continue
 
         summary = compute_summary(mode_results)
+        attach_standard_protocol_summary(summary, config_block)
         all_results[mode] = {
             "summary": summary,
             "results": mode_results,
@@ -484,6 +569,7 @@ def run_benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             config=config_block,
             summary=summary,
             results=mode_results,
+            errors=mode_errors,
         )
 
     t_elapsed = time.perf_counter() - t_total0
@@ -567,6 +653,36 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="answer retries after the first attempt (default: 2 = 3 total attempts)",
     )
     p.add_argument(
+        "--cross-encoder-model",
+        type=str,
+        default=CROSS_ENCODER_MODEL_DEFAULT,
+        dest="cross_encoder_model",
+        help=f"cross-encoder reranker model for scope_all (default: {CROSS_ENCODER_MODEL_DEFAULT})",
+    )
+    p.add_argument(
+        "--embedding-e5-prefix",
+        action="store_true",
+        dest="embedding_e5_prefix_enabled",
+        help="enable E5 query:/passage: prefixes before benchmark indexing and retrieval",
+    )
+    p.add_argument(
+        "--enable-locomo-alias",
+        action="store_true",
+        dest="enable_locomo_alias",
+        help="enable historical LoCoMo alias-map expansion; default off because it contains test-set leakage",
+    )
+    p.add_argument(
+        "--enable-locomo-category-branches",
+        action="store_true",
+        dest="enable_locomo_category_branches",
+        help="enable gold-category-specific retrieval and answer normalization branches; default off",
+    )
+    p.add_argument(
+        "--standard-protocol",
+        action="store_true",
+        help="run the canonical integrity protocol: 10 conversations, judge on, cat5 excluded, leakage flags off",
+    )
+    p.add_argument(
         "--checkpoint-every",
         type=int,
         default=0,
@@ -599,6 +715,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def main() -> None:
     """CLI entry: parse args, run benchmark, print totals."""
     args = _build_arg_parser().parse_args()
+    apply_standard_protocol_args(args)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",

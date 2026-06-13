@@ -202,8 +202,10 @@ class CycleResult(BaseModel):
     context_threshold: float = 0.0
     session_chained: bool = False
     total_turns: int = 0
+    truncated: bool = False
     tool_call_records: list[ToolCallRecordDict] = Field(default_factory=list)
     images: list[dict[str, str]] = Field(default_factory=list)
+    meeting_redirects: list[dict[str, str]] = Field(default_factory=list)
     cron_skill_rejections: list[dict[str, str]] = Field(default_factory=list)
     cron_skill_warnings: list[dict[str, str]] = Field(default_factory=list)
     usage: dict[str, int] | None = None

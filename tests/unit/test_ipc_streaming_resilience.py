@@ -165,6 +165,7 @@ class TestHandleProcessFailureSetsRestarting:
         supervisor.restart_policy.backoff_base_sec = 0.01
         supervisor.restart_policy.backoff_max_sec = 0.01
         supervisor.processes = {}
+        supervisor._maybe_repair_rag_before_restart = AsyncMock(return_value=False)
 
         handle = ProcessHandle(
             anima_name="test-anima",
@@ -176,17 +177,15 @@ class TestHandleProcessFailureSetsRestarting:
         handle.state = ProcessState.FAILED
         supervisor.processes["test-anima"] = handle
 
-        # Mock restart_anima to be a no-op
-        supervisor.restart_anima = AsyncMock()
+        # Mock respawn transaction to be a no-op
+        supervisor._respawn_anima_transaction = AsyncMock(return_value=handle)
 
         await supervisor._handle_process_failure("test-anima", handle)
 
         # The state should have been set to RESTARTING during the call
-        # (it may have been changed back by restart_anima, but we can check
-        #  that restart_anima was called — which proves RESTARTING was set)
-        supervisor.restart_anima.assert_awaited_once_with(
-            "test-anima", _reset_counters=False,
-        )
+        # (it may have been changed back by respawn, but the transaction call
+        # proves the RESTARTING path was entered)
+        supervisor._respawn_anima_transaction.assert_awaited_once_with("test-anima")
 
     @pytest.mark.asyncio
     async def test_health_check_skips_restarting(self, tmp_path: Path):

@@ -5,20 +5,23 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.tooling.handler import ToolHandler, meeting_mode
+from core.messenger import Messenger
+from core.tooling.handler import ToolHandler
+from core.tooling.handler_base import meeting_context
 from core.tooling.handler_base import meeting_mode as meeting_mode_var
 from server.room_manager import SUMMARY_THRESHOLD, RoomManager
-
 
 # ── ToolHandler meeting mode tests ──────────────────────────
 
 
-def _make_handler(tmp_path: Path) -> ToolHandler:
+def _make_handler(tmp_path: Path, messenger=None) -> ToolHandler:
     """Create a ToolHandler with minimal mocked dependencies."""
     anima_dir = tmp_path / "animas" / "test"
     anima_dir.mkdir(parents=True)
@@ -31,7 +34,7 @@ def _make_handler(tmp_path: Path) -> ToolHandler:
     handler = ToolHandler(
         anima_dir=anima_dir,
         memory=memory,
-        messenger=None,
+        messenger=messenger,
         tool_registry=[],
     )
     return handler
@@ -41,7 +44,6 @@ class TestMeetingModeToolBlocking:
     """Verify that blocked tools return error in meeting mode."""
 
     BLOCKED_TOOLS = [
-        "send_message",
         "post_channel",
         "delegate_task",
         "call_human",
@@ -65,7 +67,7 @@ class TestMeetingModeToolBlocking:
         assert meeting_mode_var.get() is False
         # These will fail with missing args/messenger, not with meeting block message
         try:
-            result = handler.handle(tool_name, {})
+            handler.handle(tool_name, {})
         except Exception:
             pass  # Expected — we only care it doesn't return meeting block
         # If it returns a string, it should NOT contain the meeting block message
@@ -96,6 +98,169 @@ class TestMeetingModeToolBlocking:
 
     def test_meeting_mode_default_is_false(self):
         assert meeting_mode_var.get() is False
+
+    def test_send_message_redirects_to_meeting_channel(self, tmp_path):
+        messenger = MagicMock()
+        messenger.anima_name = "test"
+        handler = _make_handler(tmp_path, messenger=messenger)
+        context = {"room_id": "room-1", "participants": ["rin"], "redirects": []}
+
+        meeting_token = meeting_mode_var.set(True)
+        context_token = meeting_context.set(context)
+        try:
+            with patch(
+                "core.config.models.resolve_outbound_limits",
+                return_value={"max_recipients_per_run": 5},
+            ):
+                result = handler.handle(
+                    "send_message",
+                    {"to": "rin", "content": "Please review this", "intent": "question"},
+                )
+        finally:
+            meeting_context.reset(context_token)
+            meeting_mode_var.reset(meeting_token)
+
+        assert "rin" in result
+        assert len(context["redirects"]) == 1
+        redirect = context["redirects"][0]
+        assert redirect["from"] == "test"
+        assert redirect["to"] == "rin"
+        assert redirect["content"] == "Please review this"
+        assert redirect["intent"] == "question"
+        assert redirect["ts"]
+        messenger.send.assert_not_called()
+
+    def test_meeting_redirects_are_durable_and_exempt_from_dm_limit(self, tmp_path):
+        messenger = MagicMock()
+        messenger.anima_name = "test"
+        handler = _make_handler(tmp_path, messenger=messenger)
+        meetings_dir = tmp_path / "meetings"
+        room = RoomManager(meetings_dir).create_room(
+            ["test", "rin", "mei", "kai", "yui"],
+            chair="test",
+            created_by="human",
+        )
+        context = {
+            "room_id": room.room_id,
+            "meetings_dir": str(meetings_dir),
+            "participants": ["test", "rin", "mei", "kai", "yui"],
+            "redirects": [],
+        }
+
+        meeting_token = meeting_mode_var.set(True)
+        context_token = meeting_context.set(context)
+        try:
+            with patch(
+                "core.config.models.resolve_outbound_limits",
+                return_value={"max_recipients_per_run": 2},
+            ):
+                results = [
+                    handler.handle("send_message", {"to": name, "content": f"Question for {name}", "intent": "question"})
+                    for name in ("rin", "mei", "kai", "yui")
+                ]
+        finally:
+            meeting_context.reset(context_token)
+            meeting_mode_var.reset(meeting_token)
+
+        assert all("Error" not in result for result in results)
+        assert len(context["redirects"]) == 4
+        data = json.loads((meetings_dir / f"{room.room_id}.json").read_text(encoding="utf-8"))
+        redirect_entries = [
+            entry for entry in data["conversation"] if entry.get("meta", {}).get("type") == "meeting_redirect"
+        ]
+        assert [entry["meta"]["to"] for entry in redirect_entries] == ["rin", "mei", "kai", "yui"]
+        assert redirect_entries[0]["text"] == "@rin Question for rin"
+        assert redirect_entries[0]["meta"]["dedup_key"].startswith("meeting_redirect:")
+        messenger.send.assert_not_called()
+
+    def test_normal_dm_recipient_limit_still_applies(self, tmp_path):
+        animas_dir = tmp_path / "animas"
+        for name in ("rin", "mei", "kai"):
+            (animas_dir / name).mkdir(parents=True, exist_ok=True)
+        messenger = Messenger(tmp_path / "shared", "test")
+        handler = _make_handler(tmp_path, messenger=messenger)
+        config = SimpleNamespace(
+            animas={
+                "test": SimpleNamespace(supervisor=None, aliases=[]),
+                "rin": SimpleNamespace(supervisor=None, aliases=[]),
+                "mei": SimpleNamespace(supervisor=None, aliases=[]),
+                "kai": SimpleNamespace(supervisor=None, aliases=[]),
+            },
+            external_messaging=SimpleNamespace(user_aliases={}, preferred_channel="slack"),
+        )
+
+        with (
+            patch("core.paths.get_animas_dir", return_value=animas_dir),
+            patch("core.config.models.load_config", return_value=config),
+            patch(
+                "core.config.models.resolve_outbound_limits",
+                return_value={
+                    "max_recipients_per_run": 2,
+                    "max_outbound_per_hour": 100,
+                    "max_outbound_per_day": 1000,
+                },
+            ),
+        ):
+            first = handler.handle("send_message", {"to": "rin", "content": "One", "intent": "question"})
+            second = handler.handle("send_message", {"to": "mei", "content": "Two", "intent": "question"})
+            third = handler.handle("send_message", {"to": "kai", "content": "Three", "intent": "question"})
+
+        assert "Message sent to rin" in first
+        assert "Message sent to mei" in second
+        assert "2" in third
+        assert not list((tmp_path / "shared" / "inbox" / "kai").glob("*.json"))
+
+    def test_meeting_redirect_duplicate_is_not_appended_twice(self, tmp_path):
+        messenger = MagicMock()
+        messenger.anima_name = "test"
+        handler = _make_handler(tmp_path, messenger=messenger)
+        meetings_dir = tmp_path / "meetings"
+        room = RoomManager(meetings_dir).create_room(["test", "rin"], chair="test", created_by="human")
+        context = {
+            "room_id": room.room_id,
+            "meetings_dir": str(meetings_dir),
+            "participants": ["test", "rin"],
+            "redirects": [],
+        }
+
+        meeting_token = meeting_mode_var.set(True)
+        context_token = meeting_context.set(context)
+        try:
+            first = handler.handle("send_message", {"to": "rin", "content": "Please review", "intent": "question"})
+            second = handler.handle("send_message", {"to": "rin", "content": "Please review again", "intent": "question"})
+        finally:
+            meeting_context.reset(context_token)
+            meeting_mode_var.reset(meeting_token)
+
+        assert "rin" in first
+        assert "Error" in second
+        data = json.loads((meetings_dir / f"{room.room_id}.json").read_text(encoding="utf-8"))
+        redirect_entries = [
+            entry for entry in data["conversation"] if entry.get("meta", {}).get("type") == "meeting_redirect"
+        ]
+        assert len(redirect_entries) == 1
+        assert redirect_entries[0]["text"] == "@rin Please review"
+
+    def test_send_message_to_nonparticipant_is_blocked_in_meeting(self, tmp_path):
+        messenger = MagicMock()
+        messenger.anima_name = "test"
+        handler = _make_handler(tmp_path, messenger=messenger)
+        context = {"room_id": "room-1", "participants": ["rin"], "redirects": []}
+
+        meeting_token = meeting_mode_var.set(True)
+        context_token = meeting_context.set(context)
+        try:
+            result = handler.handle(
+                "send_message",
+                {"to": "outsider", "content": "Side channel", "intent": "question"},
+            )
+        finally:
+            meeting_context.reset(context_token)
+            meeting_mode_var.reset(meeting_token)
+
+        assert "会議中" in result or "not available during meetings" in result
+        assert context["redirects"] == []
+        messenger.send.assert_not_called()
 
 
 class TestMeetingModeContextVarReset:

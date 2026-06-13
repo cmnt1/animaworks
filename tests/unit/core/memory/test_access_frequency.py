@@ -48,11 +48,7 @@ def _setup_collection_get(store, data_map: dict[str, dict] | None = None):
 
     def _get_by_ids(collection, ids):
         col_data = data_map.get(collection, {})
-        return [
-            Document(id=did, content="", metadata=col_data.get(did, {}))
-            for did in ids
-            if did in col_data
-        ]
+        return [Document(id=did, content="", metadata=col_data.get(did, {})) for did in ids if did in col_data]
 
     store.get_by_ids = MagicMock(side_effect=_get_by_ids)
 
@@ -249,7 +245,43 @@ class TestRecordAccess:
         assert ids_arg == ["doc1"]
         assert len(metas_arg) == 1
         assert metas_arg[0]["access_count"] == 4  # 3 + 1
+        assert metas_arg[0]["used_count"] == 4  # legacy access_count migrated as used
+        assert metas_arg[0]["retrieved_count"] == 0
         assert metas_arg[0]["last_accessed_at"] == fixed_now.isoformat()
+        assert metas_arg[0]["last_used_at"] == fixed_now.isoformat()
+
+    def test_record_access_retrieved_uses_weak_weight(self, retriever, mock_vector_store):
+        """Retrieved-only hits get weak access weight and do not increment used_count."""
+        _setup_collection_get(
+            mock_vector_store,
+            {
+                "test_anima_knowledge": {
+                    "doc1": {
+                        "access_count": 0,
+                        "retrieved_count": 0,
+                        "used_count": 0,
+                    }
+                },
+            },
+        )
+
+        result = _make_result(
+            doc_id="doc1",
+            memory_type="knowledge",
+            anima="test_anima",
+        )
+
+        fixed_now = datetime(2026, 2, 15, 12, 0, 0)
+        with patch("core.memory.rag.retriever.now_iso", return_value=fixed_now.isoformat()):
+            retriever.record_access([result], "test_anima", kind="retrieved")
+
+        metas_arg = mock_vector_store.update_metadata.call_args[0][2]
+        assert metas_arg[0]["access_count"] == pytest.approx(0.2)
+        assert metas_arg[0]["retrieved_count"] == 1
+        assert metas_arg[0]["used_count"] == 0
+        assert metas_arg[0]["last_accessed_at"] == fixed_now.isoformat()
+        assert metas_arg[0]["last_retrieved_at"] == fixed_now.isoformat()
+        assert "last_used_at" not in metas_arg[0]
 
     def test_record_access_groups_by_collection(self, retriever, mock_vector_store):
         """Test that record_access groups results by collection.
@@ -360,7 +392,11 @@ class TestIndexerMetadata:
 
         # Verify access frequency fields
         assert metadata["access_count"] == 0
+        assert metadata["retrieved_count"] == 0
+        assert metadata["used_count"] == 0
         assert metadata["last_accessed_at"] == ""
+        assert metadata["last_retrieved_at"] == ""
+        assert metadata["last_used_at"] == ""
 
         # Verify activation level fields
         assert metadata["activation_level"] == "normal"

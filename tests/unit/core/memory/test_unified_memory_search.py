@@ -226,6 +226,27 @@ def test_unified_search_passes_access_boost_config_to_pipeline(
     assert CapturingPipeline.calls[0]["access_boost"] == "access-config"
 
 
+def test_knowledge_bm25_keyword_list_is_merged_in_pipeline(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_returns["knowledge"] = [
+        {"doc_id": "vector-k", "content": "semantic hit", "score": 0.8, "search_method": "vector"},
+    ]
+    fake_rag.keyword_returns["knowledge"] = [
+        {"doc_id": "bm25-k", "content": "ZephyrNova exact hit", "score": 3.0, "search_method": "bm25"},
+    ]
+
+    results = _searcher(fake_rag).search("ZephyrNova", scope="knowledge", limit=3, trigger="chat")
+
+    assert [item["doc_id"] for item in results] == ["vector-k", "bm25-k"]
+    ranked_lists = CapturingPipeline.calls[0]["ranked_lists"]
+    assert any(item.get("search_method") == "bm25" for ranked_list in ranked_lists for item in ranked_list)
+    assert fake_rag.keyword_scopes == ["knowledge"]
+
+
 def test_tool_and_priming_overlap_share_top_doc_ids(
     fake_rag: FakeRAGSearch,
     monkeypatch: pytest.MonkeyPatch,

@@ -489,6 +489,8 @@ class ExecutionResult:
             when PreCompact blocks SDK auto-compact and the subsequent
             PreToolUse returns ``continue_=False``.
         usage: Token usage for this session.  Populated by each executor.
+        truncated: True when execution stopped because its turn/iteration
+            budget was exhausted before normal completion.
     """
 
     text: str
@@ -500,6 +502,7 @@ class ExecutionResult:
     usage: TokenUsage | None = None
     session_rotated: bool = False
     session_rotation_pending: bool = False
+    truncated: bool = False
 
 
 class BaseExecutor(ABC):
@@ -781,4 +784,5 @@ class BaseExecutor(ABC):
             "full_text": result.text,
             "result_message": result.result_message,
             "tool_call_records": [asdict(r) for r in result.tool_call_records],
+            "truncated": result.truncated,
         }

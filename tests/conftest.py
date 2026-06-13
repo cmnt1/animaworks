@@ -85,6 +85,12 @@ def _allow_direct_chroma_for_tests(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def _disable_external_sync_for_tests(monkeypatch: pytest.MonkeyPatch):
+    """Prevent tests from sending board posts to real external services."""
+    monkeypatch.setenv("ANIMAWORKS_DISABLE_EXTERNAL_SYNC", "1")
+
+
+@pytest.fixture(autouse=True)
 def _restore_load_auth():
     """Restore server.app.load_auth after tests that monkey-patch it.
 

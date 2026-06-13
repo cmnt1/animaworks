@@ -11,9 +11,10 @@ from core.config.models import (
     AnimaWorksConfig,
     BackgroundTaskConfig,
     BackgroundToolConfig,
+    GPUConfig,
+    PrimingConfig,
     ServerConfig,
 )
-
 
 # ── ServerConfig ─────────────────────────────────────────────
 
@@ -24,6 +25,12 @@ class TestServerConfig:
         sc = ServerConfig()
         assert sc.ipc_stream_timeout == 60
         assert sc.keepalive_interval == 30
+        assert sc.anima_startup_ready_timeout == 120
+        assert sc.health_check_warmup_seconds == 300
+        assert sc.runner_warmup_seconds == 180
+        assert sc.spawn_timeout == 300
+        assert sc.supervisor_respawn_max_retries == 3
+        assert sc.supervisor_respawn_retry_interval_seconds == 30.0
 
     def test_server_config_rejects_invalid_intervals(self):
         """keepalive_interval must be less than ipc_stream_timeout."""
@@ -40,6 +47,36 @@ class TestServerConfig:
         sc = ServerConfig(keepalive_interval=15, ipc_stream_timeout=120)
         assert sc.keepalive_interval == 15
         assert sc.ipc_stream_timeout == 120
+
+    def test_server_config_custom_anima_startup_ready_timeout(self):
+        sc = ServerConfig(anima_startup_ready_timeout=300)
+        assert sc.anima_startup_ready_timeout == 300
+
+    def test_server_config_custom_warmup_and_respawn_settings(self):
+        sc = ServerConfig(
+            health_check_warmup_seconds=10,
+            runner_warmup_seconds=20,
+            spawn_timeout=30,
+            supervisor_respawn_max_retries=4,
+            supervisor_respawn_retry_interval_seconds=0.5,
+        )
+        assert sc.health_check_warmup_seconds == 10
+        assert sc.runner_warmup_seconds == 20
+        assert sc.spawn_timeout == 30
+        assert sc.supervisor_respawn_max_retries == 4
+        assert sc.supervisor_respawn_retry_interval_seconds == 0.5
+
+
+class TestPrimingConfig:
+    def test_channel_timeout_default(self):
+        pc = PrimingConfig()
+        assert pc.channel_timeout_seconds == 60.0
+
+
+class TestGPUConfig:
+    def test_embedding_bulk_yield_batches_default(self):
+        gpu = GPUConfig()
+        assert gpu.embedding_bulk_yield_batches == 5
 
 
 # ── BackgroundTaskConfig ─────────────────────────────────────

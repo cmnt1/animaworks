@@ -4,7 +4,7 @@
 """E2E tests for the restart bug fix (_handle_process_failure flow).
 
 Verifies:
-- _handle_process_failure calls restart_anima and populates processes[name]
+- _handle_process_failure respawns the Anima and populates processes[name]
 - _restarting set is cleaned up in the finally block
 - _handle_process_hang kills the process then delegates to _handle_process_failure
 - Max retries exceeded sets state to FAILED without restarting
@@ -38,8 +38,32 @@ def supervisor(tmp_path: Path) -> ProcessSupervisor:
     )
 
 
+def _mock_respawn(
+    supervisor: ProcessSupervisor,
+    new_handle: MagicMock | None = None,
+    *,
+    start_error: Exception | None = None,
+) -> MagicMock:
+    """Mock the stop/start pair used by _respawn_anima_transaction."""
+    handle = new_handle or MagicMock()
+    handle.get_pid.return_value = 99999
+    handle.state = ProcessState.RUNNING
+
+    async def mock_stop(anima_name: str) -> None:
+        supervisor.processes.pop(anima_name, None)
+
+    async def mock_start(anima_name: str) -> None:
+        if start_error is not None:
+            raise start_error
+        supervisor.processes[anima_name] = handle
+
+    supervisor.stop_anima = AsyncMock(side_effect=mock_stop)
+    supervisor.start_anima = AsyncMock(side_effect=mock_start)
+    return handle
+
+
 class TestFailureToRestartFlow:
-    """Full _handle_process_failure -> restart_anima flow."""
+    """Full _handle_process_failure -> respawn transaction flow."""
 
     async def test_failure_triggers_restart_and_populates_processes(
         self, supervisor: ProcessSupervisor,
@@ -52,23 +76,15 @@ class TestFailureToRestartFlow:
         old_handle.state = ProcessState.FAILED
         supervisor.processes[name] = old_handle
 
-        # Create the new handle that restart_anima will install
-        new_handle = MagicMock()
-        new_handle.get_pid.return_value = 99999
-        new_handle.state = ProcessState.RUNNING
-
-        async def mock_restart(anima_name: str, **kwargs) -> None:
-            supervisor.processes[anima_name] = new_handle
-
-        supervisor.restart_anima = AsyncMock(side_effect=mock_restart)
+        # Create the new handle that the respawn transaction will install
+        new_handle = _mock_respawn(supervisor)
 
         with patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock):
             await supervisor._handle_process_failure(name, old_handle)
 
-        # restart_anima was called (not blocked by _restarting guard)
-        supervisor.restart_anima.assert_awaited_once_with(
-            name, _reset_counters=False,
-        )
+        # stop/start were called by the respawn transaction
+        supervisor.stop_anima.assert_awaited_once_with(name)
+        supervisor.start_anima.assert_awaited_once_with(name)
 
         # processes[name] has the new handle (no KeyError)
         assert supervisor.processes[name] is new_handle
@@ -79,16 +95,14 @@ class TestFailureToRestartFlow:
     async def test_restarting_set_is_cleaned_even_on_restart_error(
         self, supervisor: ProcessSupervisor,
     ):
-        """_restarting is cleaned up even if restart_anima raises."""
+        """_restarting is cleaned up even if respawn fails."""
         name = "crash-anima"
 
         old_handle = MagicMock()
         old_handle.state = ProcessState.RUNNING
         supervisor.processes[name] = old_handle
 
-        supervisor.restart_anima = AsyncMock(
-            side_effect=RuntimeError("restart failed"),
-        )
+        _mock_respawn(supervisor, start_error=RuntimeError("restart failed"))
 
         with patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock):
             await supervisor._handle_process_failure(name, old_handle)
@@ -109,13 +123,15 @@ class TestFailureToRestartFlow:
         supervisor._restarting.add(name)
 
         handle = MagicMock()
-        supervisor.restart_anima = AsyncMock()
+        supervisor.stop_anima = AsyncMock()
+        supervisor.start_anima = AsyncMock()
 
         with patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock):
             await supervisor._handle_process_failure(name, handle)
 
-        # restart_anima should NOT have been called
-        supervisor.restart_anima.assert_not_awaited()
+        # respawn should NOT have been attempted
+        supervisor.stop_anima.assert_not_awaited()
+        supervisor.start_anima.assert_not_awaited()
 
 
 class TestHangToRestartFlow:
@@ -132,15 +148,11 @@ class TestHangToRestartFlow:
         hung_handle.state = ProcessState.RUNNING
         supervisor.processes[name] = hung_handle
 
-        # Set up restart side-effect
+        # Set up respawn side-effect
         new_handle = MagicMock()
         new_handle.get_pid.return_value = 88888
         new_handle.state = ProcessState.RUNNING
-
-        async def mock_restart(anima_name: str, **kwargs) -> None:
-            supervisor.processes[anima_name] = new_handle
-
-        supervisor.restart_anima = AsyncMock(side_effect=mock_restart)
+        _mock_respawn(supervisor, new_handle)
 
         with patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock):
             await supervisor._handle_process_hang(name, hung_handle)
@@ -148,10 +160,9 @@ class TestHangToRestartFlow:
         # kill() was called on the hung handle
         hung_handle.kill.assert_awaited_once()
 
-        # restart_anima was called (via _handle_process_failure)
-        supervisor.restart_anima.assert_awaited_once_with(
-            name, _reset_counters=False,
-        )
+        # stop/start were called by _handle_process_failure
+        supervisor.stop_anima.assert_awaited_once_with(name)
+        supervisor.start_anima.assert_awaited_once_with(name)
 
         # New handle is in processes
         assert supervisor.processes[name] is new_handle
@@ -176,13 +187,15 @@ class TestMaxRetriesExceeded:
         # Set restart count to max (default max_retries=5)
         supervisor._restart_counts[name] = supervisor.restart_policy.max_retries
 
-        supervisor.restart_anima = AsyncMock()
+        supervisor.stop_anima = AsyncMock()
+        supervisor.start_anima = AsyncMock()
 
         with patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock):
             await supervisor._handle_process_failure(name, handle)
 
-        # restart_anima should NOT be called
-        supervisor.restart_anima.assert_not_awaited()
+        # respawn should NOT be attempted
+        supervisor.stop_anima.assert_not_awaited()
+        supervisor.start_anima.assert_not_awaited()
 
         # State should be FAILED
         assert handle.state == ProcessState.FAILED
@@ -200,14 +213,7 @@ class TestMaxRetriesExceeded:
         handle.state = ProcessState.RUNNING
         supervisor.processes[name] = handle
 
-        new_handle = MagicMock()
-        new_handle.get_pid.return_value = 77777
-        new_handle.state = ProcessState.RUNNING
-
-        async def mock_restart(anima_name: str) -> None:
-            supervisor.processes[anima_name] = new_handle
-
-        supervisor.restart_anima = AsyncMock(side_effect=mock_restart)
+        _mock_respawn(supervisor)
 
         # Start with count=0 (no previous restarts)
         assert supervisor._restart_counts.get(name, 0) == 0

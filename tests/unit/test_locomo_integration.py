@@ -326,8 +326,60 @@ class TestRunnerWithMockedAdapter:
         assert first["top_retrieval_score"] == 0.9
         result_files = list((tmp_path / "results").glob("*.json"))
         assert len(result_files) == 1
+        payload = json.loads(result_files[0].read_text(encoding="utf-8"))
+        assert payload["config"]["leakage_alias_map_enabled"] is False
+        assert payload["config"]["category_branches_enabled"] is False
+        assert payload["summary"]["standard_protocol"]["leakage_free"] is True
+        assert payload["summary"]["error_rate"] == 0.0
 
     def test_run_benchmark_with_judge(self, tmp_path):
+        import argparse
+
+        data_file = _make_dataset_file(tmp_path)
+
+        mock_adapter = MagicMock()
+        mock_adapter.__enter__ = MagicMock(return_value=mock_adapter)
+        mock_adapter.__exit__ = MagicMock(return_value=False)
+        mock_adapter.ingest_conversation.return_value = 3
+        mock_adapter.retrieve.return_value = [{"content": "Paris trip", "score": 0.9, "metadata": {}}]
+        mock_adapter.answer.return_value = "Paris"
+        judge_mock = MagicMock(return_value={"verdict": "correct", "score": 1.0})
+
+        with (
+            patch("benchmarks.locomo.runner.AnimaWorksLoCoMoAdapter", return_value=mock_adapter),
+            patch(
+                "benchmarks.locomo.runner.resolve_locomo_judge_litellm_kwargs",
+                return_value=("openai/deepseek-chat", {"api_base": "http://proxy.example/v1", "api_key": "dummy"}),
+            ),
+            patch("benchmarks.locomo.runner.llm_judge_sync", judge_mock),
+        ):
+            from benchmarks.locomo.runner import run_benchmark
+
+            args = argparse.Namespace(
+                data=str(data_file),
+                output=str(tmp_path / "results_judge"),
+                mode="vector",
+                conversations=1,
+                top_k=5,
+                judge=True,
+                judge_model="deepseek-chat",
+                answer_model="gpt-4o-mini",
+                answer_timeout=42,
+                verbose=False,
+            )
+            results, errors = run_benchmark(args)
+
+        assert "vector" in results
+        judge_scores = [r["judge_score"] for r in results["vector"]["results"] if r["judge_score"] is not None]
+        assert len(judge_scores) > 0
+        assert judge_mock.call_args.kwargs["model"] == "openai/deepseek-chat"
+        assert judge_mock.call_args.kwargs["completion_kwargs"] == {
+            "api_base": "http://proxy.example/v1",
+            "api_key": "dummy",
+            "timeout": 42.0,
+        }
+
+    def test_judge_verdict_error_counts_as_error_without_zeroing_f1(self, tmp_path):
         import argparse
 
         data_file = _make_dataset_file(tmp_path)
@@ -343,14 +395,14 @@ class TestRunnerWithMockedAdapter:
             patch("benchmarks.locomo.runner.AnimaWorksLoCoMoAdapter", return_value=mock_adapter),
             patch(
                 "benchmarks.locomo.runner.llm_judge_sync",
-                return_value={"verdict": "correct", "score": 1.0},
+                return_value={"verdict": "error", "score": 0.0},
             ),
         ):
             from benchmarks.locomo.runner import run_benchmark
 
             args = argparse.Namespace(
                 data=str(data_file),
-                output=str(tmp_path / "results_judge"),
+                output=str(tmp_path / "results_judge_error"),
                 mode="vector",
                 conversations=1,
                 top_k=5,
@@ -361,9 +413,14 @@ class TestRunnerWithMockedAdapter:
             )
             results, errors = run_benchmark(args)
 
-        assert "vector" in results
-        judge_scores = [r["judge_score"] for r in results["vector"]["results"] if r["judge_score"] is not None]
-        assert len(judge_scores) > 0
+        assert errors > 0
+        first = results["vector"]["results"][0]
+        assert first["status"] == "ok"
+        assert first["f1"] == 1.0
+        assert first["judge_score"] is None
+        assert first["judge_error"]
+        assert results["vector"]["summary"]["judge_error_count"] > 0
+        assert results["vector"]["summary"]["error_count"] > 0
 
     def test_run_benchmark_all_modes(self, tmp_path):
         import argparse
@@ -435,6 +492,11 @@ class TestRunnerWithMockedAdapter:
 
         assert errors > 0
         assert "vector" in results
+        first = results["vector"]["results"][0]
+        assert first["status"] == "error"
+        assert first["error_stage"] == "retrieve"
+        assert results["vector"]["summary"]["scored_count"] == 0
+        assert results["vector"]["summary"]["error_count"] > 0
 
 
 # ── Metrics llm_judge_sync mock tests ──────────
@@ -452,6 +514,28 @@ class TestLlmJudgeSync:
             result = llm_judge_sync("Q", "ref", "pred", model="test")
             assert result["verdict"] == "correct"
             assert result["score"] == 1.0
+
+    def test_forwards_completion_kwargs(self):
+        from benchmarks.locomo.metrics import llm_judge_sync
+
+        mock_resp = MagicMock()
+        mock_resp.choices = [MagicMock()]
+        mock_resp.choices[0].message.content = "CORRECT"
+
+        with patch("litellm.completion", return_value=mock_resp) as completion:
+            result = llm_judge_sync(
+                "Q",
+                "ref",
+                "pred",
+                model="openai/deepseek-chat",
+                completion_kwargs={"api_base": "http://proxy.example/v1", "api_key": "dummy", "timeout": 30},
+            )
+
+        assert result["verdict"] == "correct"
+        assert completion.call_args.kwargs["api_base"] == "http://proxy.example/v1"
+        assert completion.call_args.kwargs["api_key"] == "dummy"
+        assert completion.call_args.kwargs["timeout"] == 30
+        assert completion.call_args.kwargs["max_tokens"] == 16
 
     def test_incorrect_verdict(self):
         from benchmarks.locomo.metrics import llm_judge_sync

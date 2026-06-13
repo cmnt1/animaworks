@@ -7,6 +7,7 @@ import logging
 import re
 import string
 from collections import Counter
+from collections.abc import Mapping
 from typing import Any
 
 try:
@@ -190,6 +191,7 @@ async def llm_judge(
     prediction: str,
     *,
     model: str = "gpt-4o",
+    completion_kwargs: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """LLM-based answer quality judgment via LiteLLM.
 
@@ -198,6 +200,7 @@ async def llm_judge(
         reference: Gold reference answer.
         prediction: System answer to score.
         model: LiteLLM model id.
+        completion_kwargs: Optional provider kwargs forwarded to LiteLLM.
 
     Returns:
         ``{"verdict": str, "score": float}``. On total API failure, verdict
@@ -211,12 +214,14 @@ async def llm_judge(
     import litellm  # noqa: PLC0415
 
     last_err: Exception | None = None
+    call_kwargs = _judge_completion_kwargs(completion_kwargs)
     for attempt in range(1, _JUDGE_RETRIES + 1):
         try:
             resp = await litellm.acompletion(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
+                **call_kwargs,
             )
             content = (resp.choices[0].message.content or "").strip()
             verdict, score = _parse_judge_verdict(content)
@@ -242,6 +247,7 @@ def llm_judge_sync(
     prediction: str,
     *,
     model: str = "gpt-4o",
+    completion_kwargs: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Synchronous wrapper for :func:`llm_judge`; avoids per-call asyncio.run overhead.
 
@@ -255,12 +261,14 @@ def llm_judge_sync(
         prediction=prediction,
     )
     last_err: Exception | None = None
+    call_kwargs = _judge_completion_kwargs(completion_kwargs)
     for attempt in range(1, _JUDGE_RETRIES + 1):
         try:
             resp = _litellm.completion(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
+                **call_kwargs,
             )
             content = (resp.choices[0].message.content or "").strip()
             verdict, score = _parse_judge_verdict(content)
@@ -277,10 +285,16 @@ def llm_judge_sync(
     return {"verdict": "error", "score": 0.0}
 
 
+def _judge_completion_kwargs(completion_kwargs: Mapping[str, Any] | None) -> dict[str, Any]:
+    kwargs = dict(completion_kwargs or {})
+    kwargs.setdefault("max_tokens", 16)
+    return kwargs
+
+
 # ── Summary aggregation ──────────
 
 
-def compute_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
+def compute_summary(results: list[dict[str, Any]], *, include_cat5_excluded: bool = True) -> dict[str, Any]:
     """Aggregate per-item F1 and optional judge scores by category and overall.
 
     Args:
@@ -290,15 +304,36 @@ def compute_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     Returns:
         ``overall_f1``, ``overall_judge``, and ``by_category`` averages.
     """
-    if not results:
-        return {
+    total_count = len(results)
+    error_count = sum(1 for row in results if _row_has_error(row))
+    excluded_error_count = sum(1 for row in results if _row_excluded_from_scores(row))
+    judge_error_count = sum(1 for row in results if row.get("judge_error"))
+    scored_rows = [row for row in results if not _row_excluded_from_scores(row)]
+    scored_count = len(scored_rows)
+    error_rate = (error_count / total_count) if total_count else 0.0
+
+    if not scored_rows:
+        summary: dict[str, Any] = {
             "overall_f1": 0.0,
             "overall_judge": None,
             "by_category": {},
+            "total_count": total_count,
+            "scored_count": 0,
+            "error_count": error_count,
+            "excluded_error_count": excluded_error_count,
+            "judge_error_count": judge_error_count,
+            "error_rate": error_rate,
+            "invalid_due_to_error_rate": error_rate > 0.02,
         }
+        if include_cat5_excluded:
+            summary["cat5_excluded"] = compute_summary(
+                [row for row in results if int(row.get("category", 0) or 0) != 5],
+                include_cat5_excluded=False,
+            )
+        return summary
 
-    overall_f1 = sum(r["f1"] for r in results) / len(results)
-    js = [r["judge_score"] for r in results if r.get("judge_score") is not None]
+    overall_f1 = sum(float(r["f1"]) for r in scored_rows) / scored_count
+    js = [r["judge_score"] for r in scored_rows if r.get("judge_score") is not None]
     overall_judge: float | None
     if js:
         overall_judge = sum(js) / len(js)
@@ -306,7 +341,7 @@ def compute_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
         overall_judge = None
 
     by_acc: dict[str, tuple[float, int, float, int]] = {}
-    for r in results:
+    for r in scored_rows:
         cat = int(r["category"])
         name = CATEGORY_NAMES.get(cat, f"category_{cat}")
         f1_sum, f1_cnt, j_sum, j_cnt = by_acc.get(name, (0.0, 0, 0.0, 0))
@@ -324,8 +359,36 @@ def compute_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
         j_avg: float | None = (j_sum / j_cnt) if j_cnt else None
         out_by[name] = {"f1": avg_f1, "judge": j_avg, "count": f1_cnt}
 
-    return {
+    summary = {
         "overall_f1": overall_f1,
         "overall_judge": overall_judge,
         "by_category": out_by,
+        "total_count": total_count,
+        "scored_count": scored_count,
+        "error_count": error_count,
+        "excluded_error_count": excluded_error_count,
+        "judge_error_count": judge_error_count,
+        "error_rate": error_rate,
+        "invalid_due_to_error_rate": error_rate > 0.02,
     }
+    if include_cat5_excluded:
+        summary["cat5_excluded"] = compute_summary(
+            [row for row in results if int(row.get("category", 0) or 0) != 5],
+            include_cat5_excluded=False,
+        )
+    return summary
+
+
+def _row_has_error(row: dict[str, Any]) -> bool:
+    return (
+        row.get("status") == "error"
+        or bool(row.get("error_stage"))
+        or bool(row.get("error_message"))
+        or bool(row.get("judge_error"))
+    )
+
+
+def _row_excluded_from_scores(row: dict[str, Any]) -> bool:
+    if row.get("status") == "error" or row.get("error_stage"):
+        return True
+    return not isinstance(row.get("f1"), int | float)

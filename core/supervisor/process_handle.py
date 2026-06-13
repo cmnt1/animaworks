@@ -77,6 +77,7 @@ class ProcessHandle:
         shared_dir: Path,
         log_dir: Path | None = None,
         child_env_urls: dict[str, str] | None = None,
+        startup_ready_timeout: float = 120.0,
     ):
         self.anima_name = anima_name
         self.socket_path = socket_path
@@ -84,6 +85,7 @@ class ProcessHandle:
         self.shared_dir = shared_dir
         self.log_dir = log_dir
         self._child_env_urls = child_env_urls or {}
+        self.startup_ready_timeout = startup_ready_timeout
 
         self.state = ProcessState.STOPPED
         self.process: subprocess.Popen | None = None
@@ -186,7 +188,7 @@ class ProcessHandle:
 
             # Wait for Anima to finish initialization (RAG model loading
             # etc.) by polling the ping endpoint until status is "ok"
-            await self._wait_for_ready(timeout=120.0)
+            await self._wait_for_ready(timeout=self.startup_ready_timeout)
 
             self.state = ProcessState.RUNNING
             logger.info("Process running: %s", self.anima_name)

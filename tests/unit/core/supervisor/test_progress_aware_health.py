@@ -66,6 +66,51 @@ class TestProgressAwareBusyHang:
     """Tests for progress-aware busy hang detection."""
 
     @pytest.mark.asyncio
+    async def test_global_startup_ready_warmup_suppresses_ping(self, tmp_path: Path):
+        """Health checks should not ping/restart during ready+warmup."""
+        from core import startup_progress
+
+        startup_progress._reset_for_testing()
+        startup_progress.begin_startup("booting")
+        startup_progress.set_phase("ready")
+
+        handle = _make_handle(tmp_path)
+        handle.ping = AsyncMock(return_value={"success": False})
+        config = HealthConfig(
+            startup_grace_sec=0.0,
+            health_check_warmup_seconds=300.0,
+            runner_warmup_seconds=0.0,
+        )
+        sup = _make_supervisor(config)
+        sup._handle_process_hang = AsyncMock()
+
+        try:
+            await sup._check_process_health("test-anima", handle)
+        finally:
+            startup_progress._reset_for_testing()
+
+        handle.ping.assert_not_called()
+        sup._handle_process_hang.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_runner_warmup_suppresses_ping(self, tmp_path: Path):
+        """A freshly spawned runner should get an individual health warmup."""
+        handle = _make_handle(tmp_path, started_minutes_ago=0)
+        handle.ping = AsyncMock(return_value={"success": False})
+        config = HealthConfig(
+            startup_grace_sec=0.0,
+            health_check_warmup_seconds=0.0,
+            runner_warmup_seconds=180.0,
+        )
+        sup = _make_supervisor(config)
+        sup._handle_process_hang = AsyncMock()
+
+        await sup._check_process_health("test-anima", handle)
+
+        handle.ping.assert_not_called()
+        sup._handle_process_hang.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_busy_with_recent_progress_not_killed(self, tmp_path: Path):
         """Process busy with recent progress should NOT be killed."""
         handle = _make_handle(tmp_path)

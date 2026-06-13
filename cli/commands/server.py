@@ -45,6 +45,10 @@ _RESTART_RETRY_DELAY = int(os.environ.get("ANIMAWORKS_RESTART_RETRY_DELAY", "5")
 _RESTART_PORT_WAIT_TIMEOUT = int(os.environ.get("ANIMAWORKS_RESTART_PORT_WAIT_TIMEOUT", "900"))
 _PID_WATCHDOG_STOP = threading.Event()
 
+# systemd unit templates set RestartPreventExitStatus=3 so an
+# already-running process does not trigger Restart=on-failure loops.
+EXIT_ALREADY_RUNNING = 3
+
 
 def _maybe_log_rag_preflight_blocked(result: object) -> None:
     status = getattr(result, "status", None)
@@ -334,7 +338,7 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
         if _is_port_listening(check_host, args.port):
             print(f"Error: Server is already running (pid={existing_pid}).")
             print("Use 'animaworks stop' first, or 'animaworks restart'.")
-            sys.exit(1)
+            sys.exit(EXIT_ALREADY_RUNNING)
         if not _cleanup_unreachable_server_process(existing_pid, host=args.host, port=args.port):
             sys.exit(1)
     elif existing_pid is not None:
@@ -345,13 +349,19 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
         if _is_port_listening(check_host, args.port):
             print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
             print("Use 'animaworks stop' first, or 'animaworks restart'.")
-            sys.exit(1)
+            sys.exit(EXIT_ALREADY_RUNNING)
         if not _cleanup_unreachable_server_process(orphan_pid, host=args.host, port=args.port):
             sys.exit(1)
 
     cmd = [sys.executable, "-m", "cli", "start", "--foreground", "--host", args.host, "--port", str(args.port)]
 
     log_path = _get_daemon_log_path()
+    try:
+        from core.memory.housekeeping import _rotate_daemon_log
+
+        _rotate_daemon_log(log_path, max_size_mb=50, keep_generations=5)
+    except Exception:
+        logger.debug("Failed to rotate daemon log before spawn: %s", log_path, exc_info=True)
     log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
 
     proc = subprocess.Popen(
@@ -456,27 +466,40 @@ def _pin_native_threads() -> None:
 def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
     """Repair suspected corrupt RAG DBs before the server imports Chroma."""
     try:
+        from core import startup_progress
         from core.config import load_config
 
+        startup_progress.set_phase("preflight", detail="Checking RAG vector databases", reset_counts=True)
+        startup_progress.raise_if_cancelled()
         config = load_config()
         rag = config.rag
         if not config.setup_complete:
+            startup_progress.update_progress(detail="Setup is not complete", done_count=0, total_count=0)
             return
         if not bool(getattr(rag, "repair_enabled", True)):
+            startup_progress.update_progress(detail="RAG repair is disabled", done_count=0, total_count=0)
             return
         if not bool(getattr(rag, "startup_repair_preflight_enabled", True)):
+            startup_progress.update_progress(detail="RAG startup preflight is disabled", done_count=0, total_count=0)
             return
 
         from core.memory.rag.repair import get_repair_service
 
         service = get_repair_service()
         window_minutes = int(getattr(rag, "startup_repair_window_minutes", 1440))
-        suspects = service.discover_suspect_animas(window_minutes=window_minutes)
+        quick_check_timeout = float(getattr(rag, "quick_check_timeout_seconds", 10.0))
+        suspects = service.discover_suspect_animas(
+            window_minutes=window_minutes,
+            quick_check_timeout_seconds=quick_check_timeout,
+            quick_check_source="startup_quick_check",
+        )
+        startup_progress.raise_if_cancelled()
         reason = "startup_chroma_crash_preflight"
         if not suspects and force_all_vectordb:
             logger.info("RAG startup preflight: unclean exit observed, but no suspect DBs found")
         if not suspects:
             logger.info("RAG startup preflight: no suspect DBs found")
+            startup_progress.update_progress(detail="No suspect vector databases found", done_count=0, total_count=0)
             return
 
         _request_rag_startup_preflight_targets(service, suspects, reason=reason)
@@ -573,18 +596,15 @@ def _start_foreground(args: argparse.Namespace) -> None:
 
     check_host = _check_host(args.host)
     existing_pid = _read_pid()
-    unclean_previous_exit = False
     if existing_pid is not None and _is_process_alive(existing_pid):
         if _is_port_listening(check_host, args.port):
             print(f"Error: Server is already running (pid={existing_pid}).")
             print("Use 'animaworks stop' first, or 'animaworks restart'.")
-            sys.exit(1)
+            sys.exit(EXIT_ALREADY_RUNNING)
         if not _cleanup_unreachable_server_process(existing_pid, host=args.host, port=args.port):
             sys.exit(1)
-        unclean_previous_exit = True
     elif existing_pid is not None:
         logger.info("Stale PID file found (pid=%d). Cleaning up.", existing_pid)
-        unclean_previous_exit = True
         _remove_pid_file()
 
     orphan_pid = _find_server_pid_by_process()
@@ -592,18 +612,15 @@ def _start_foreground(args: argparse.Namespace) -> None:
         if _is_port_listening(check_host, args.port):
             print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
             print("Use 'animaworks stop' first, or 'animaworks restart'.")
-            sys.exit(1)
+            sys.exit(EXIT_ALREADY_RUNNING)
         if not _cleanup_unreachable_server_process(orphan_pid, host=args.host, port=args.port):
             sys.exit(1)
-        unclean_previous_exit = True
 
     orphan_count = _kill_orphan_runners()
     if orphan_count:
-        unclean_previous_exit = True
         print(f"Killed {orphan_count} orphan runner process(es) from previous server.")
 
     ensure_runtime_dir()
-    _run_rag_startup_preflight_via_worker(force_all_vectordb=unclean_previous_exit)
     _write_pid_file()
     atexit.register(_remove_pid_file)
     _start_pid_watchdog()
@@ -617,7 +634,7 @@ def _start_foreground(args: argparse.Namespace) -> None:
     if not config.setup_complete:
         print(f"Open http://{display_host}:{args.port}/setup/ to configure your animas and settings.")
     else:
-        print(f"Dashboard ready at http://{display_host}:{args.port}/")
+        print(f"Dashboard starting at http://{display_host}:{args.port}/")
 
     try:
         app = create_app(get_animas_dir(), get_shared_dir())
@@ -794,6 +811,21 @@ while time.monotonic() < scan_deadline:
     if _find_server_process() is None:
         break
     time.sleep(0.5)
+
+lingering_pid = _find_server_process()
+if lingering_pid is not None:
+    _log(f"Lingering server process still detected (pid={{lingering_pid}}); force-stopping before restart")
+    try:
+        terminate_pid(lingering_pid, force=True, include_children=True)
+    except (OSError, ProcessLookupError):
+        pass
+    kill_deadline = time.monotonic() + 5
+    while time.monotonic() < kill_deadline and _alive(lingering_pid):
+        time.sleep(0.2)
+    if _alive(lingering_pid):
+        _write_status(False, f"Lingering server process still alive after force-stop: pid={{lingering_pid}}")
+        _log("FAILED: lingering server process survived force-stop")
+        sys.exit(1)
 
 time.sleep(0.5)
 

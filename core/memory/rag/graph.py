@@ -268,7 +268,7 @@ class KnowledgeGraph:
 
             try:
                 content = node_path.read_text(encoding="utf-8")
-                embedding = self.indexer._generate_embeddings([content])[0]
+                embedding = self.indexer._generate_embeddings([content], purpose="query")[0]
 
                 results = self.vector_store.query(
                     collection=collection_name,
@@ -602,7 +602,7 @@ class KnowledgeGraph:
             node_id = self._make_node_id(file_rel_keys[file_path], mt)
             try:
                 content = file_path.read_text(encoding="utf-8")
-                embedding = self.indexer._generate_embeddings([content])[0]
+                embedding = self.indexer._generate_embeddings([content], purpose="query")[0]
 
                 results = self.vector_store.query(
                     collection=collection_name,
@@ -905,7 +905,7 @@ class KnowledgeGraph:
             except ValueError:
                 source_file_value = f"{memory_type}/{stem}.md"
             query_text = stem.replace("-", " ").replace("_", " ")
-            embedding = self.indexer._generate_embeddings([f"{memory_type} {query_text}"])[0]
+            embedding = self.indexer._generate_embeddings([f"{memory_type} {query_text}"], purpose="query")[0]
             results = self.vector_store.query(
                 collection=collection_name,
                 embedding=embedding,
@@ -916,7 +916,7 @@ class KnowledgeGraph:
                 return results[0].document.content
 
             # 2nd attempt: stem-based vector search without filter
-            embedding_fallback = self.indexer._generate_embeddings([query_text])[0]
+            embedding_fallback = self.indexer._generate_embeddings([query_text], purpose="query")[0]
             results = self.vector_store.query(
                 collection=collection_name,
                 embedding=embedding_fallback,

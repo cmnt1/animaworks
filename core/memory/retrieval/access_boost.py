@@ -80,11 +80,11 @@ def _candidate_last_accessed_at(candidate: dict[str, Any]) -> Any:
     return ""
 
 
-def _coerce_access_count(value: Any) -> int:
+def _coerce_access_count(value: Any) -> float:
     try:
-        return max(0, int(str(value)))
+        return max(0.0, float(str(value)))
     except (TypeError, ValueError):
-        return 0
+        return 0.0
 
 
 def _recency_factor(

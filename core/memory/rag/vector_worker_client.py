@@ -30,6 +30,7 @@ _VECTOR_WORKER_MARKER = "core.memory.rag.vector_worker"
 class VectorWorkerResponse:
     status_code: int
     data: dict[str, Any]
+    headers: dict[str, str] | None = None
 
 
 class VectorWorkerUnavailable(RuntimeError):
@@ -68,6 +69,7 @@ class VectorWorkerManager:
         startup_timeout: float = 10.0,
         request_timeout: float = 30.0,
         restart_backoff: float = 2.0,
+        shutdown_timeout: float = 30.0,
         fallback_direct: bool = True,
     ) -> None:
         self.enabled = enabled
@@ -77,6 +79,7 @@ class VectorWorkerManager:
         self.startup_timeout = startup_timeout
         self.request_timeout = request_timeout
         self.restart_backoff = restart_backoff
+        self.shutdown_timeout = shutdown_timeout
         self.fallback_direct = fallback_direct
         self.process: subprocess.Popen[bytes] | None = None
         self.base_url: str | None = None
@@ -95,6 +98,7 @@ class VectorWorkerManager:
             startup_timeout=float(getattr(rag, "vector_worker_startup_timeout_seconds", 10.0)),
             request_timeout=float(getattr(rag, "vector_worker_request_timeout_seconds", 30.0)),
             restart_backoff=float(getattr(rag, "vector_worker_restart_backoff_seconds", 2.0)),
+            shutdown_timeout=float(getattr(rag, "vector_worker_shutdown_timeout_seconds", 30.0)),
             fallback_direct=bool(getattr(rag, "vector_worker_fallback_direct", False)),
         )
 
@@ -114,8 +118,12 @@ class VectorWorkerManager:
             return
         proc.terminate()
         try:
-            await asyncio.to_thread(proc.wait, timeout=5)
+            await asyncio.to_thread(proc.wait, timeout=self.shutdown_timeout)
         except subprocess.TimeoutExpired:
+            logger.warning(
+                "Vector worker did not exit after %.1fs; sending SIGKILL",
+                self.shutdown_timeout,
+            )
             proc.kill()
             await asyncio.to_thread(proc.wait, timeout=5)
 
@@ -136,8 +144,32 @@ class VectorWorkerManager:
         except ValueError:
             data = {"detail": resp.text}
         return VectorWorkerResponse(
-            status_code=resp.status_code, data=data if isinstance(data, dict) else {"data": data}
+            status_code=resp.status_code,
+            data=data if isinstance(data, dict) else {"data": data},
+            headers=dict(resp.headers),
         )
+
+    async def status(self) -> dict[str, Any]:
+        """Return vector worker status, including open write circuit breakers."""
+        if not self.enabled:
+            return {"enabled": False, "status": "disabled", "write_circuit_breakers": []}
+        await self._ensure_running()
+        assert self.base_url is not None
+        try:
+            async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout) as client:
+                resp = await client.get("/status")
+        except httpx.RequestError as exc:
+            self._record_crash_if_exited({})
+            raise VectorWorkerUnavailable(str(exc)) from exc
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {"detail": resp.text}
+        if not isinstance(data, dict):
+            data = {"data": data}
+        data.setdefault("enabled", True)
+        data.setdefault("write_circuit_breakers", [])
+        return data
 
     async def _ensure_running(self, *, payload: dict[str, Any] | None = None) -> None:
         if self._is_running():
@@ -163,6 +195,12 @@ class VectorWorkerManager:
         self.base_url = f"http://{self.host}:{port}"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         log_path = self.log_dir / "vector-worker.log"
+        try:
+            from core.memory.housekeeping import _rotate_daemon_log
+
+            _rotate_daemon_log(log_path, max_size_mb=50, keep_generations=5)
+        except Exception:
+            logger.debug("Failed to rotate vector worker log before spawn: %s", log_path, exc_info=True)
         log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
         env = os.environ.copy()
         env.pop("ANIMAWORKS_VECTOR_URL", None)

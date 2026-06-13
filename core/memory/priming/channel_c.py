@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE, _CHARS_PER_TOKEN
 from core.memory.priming.utils import build_queries
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
+from core.memory.search_metadata import format_result_metadata_line
 
 if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever
@@ -110,8 +111,11 @@ def format_pointer_result(
     if body:
         summary = f"{summary} - {body}" if summary else body
     summary = _single_line(summary)
+    metadata_line = format_result_metadata_line({**metadata, "source_file": metadata.get("source_file") or path})
+    metadata_block = f"{metadata_line}\n" if metadata_line else ""
     return (
         f"--- Result {index} [{label}] (score: {score:.3f}) ---\n"
+        f"{metadata_block}"
         f"{summary}\n"
         f"  -> read_memory_file(path={_quote_path(path)})\n"
     )
@@ -168,12 +172,22 @@ async def channel_c0_important_knowledge(
             if not rel_path:
                 continue
             if body:
-                line = (
-                    f"📌 {_single_line(title)} — {_single_line(body, 100)}\n"
-                    f"  → read_memory_file(path={_quote_path(rel_path)})"
+                metadata_line = format_result_metadata_line(
+                    {**meta, "source_file": meta.get("source_file") or rel_path}
                 )
+                heading = f"📌 {_single_line(title)} — {_single_line(body, 100)}"
+                if metadata_line:
+                    line = f"{heading}\n  {metadata_line}\n  → read_memory_file(path={_quote_path(rel_path)})"
+                else:
+                    line = f"{heading}\n  → read_memory_file(path={_quote_path(rel_path)})"
             else:
-                line = f"📌 {_single_line(title)} → read_memory_file(path={_quote_path(rel_path)})"
+                metadata_line = format_result_metadata_line(
+                    {**meta, "source_file": meta.get("source_file") or rel_path}
+                )
+                if metadata_line:
+                    line = f"📌 {_single_line(title)}\n  {metadata_line}\n  → read_memory_file(path={_quote_path(rel_path)})"
+                else:
+                    line = f"📌 {_single_line(title)} → read_memory_file(path={_quote_path(rel_path)})"
             lines.append((len(line), line))
         lines.sort(key=lambda x: x[0])
         out: list[str] = []

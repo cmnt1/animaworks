@@ -79,3 +79,41 @@ async def test_legacy_unified_search_returns_real_active_facts(tmp_path: Path) -
     assert facts
     assert facts[0].metadata["memory_type"] == "facts"
     assert "espresso" in facts[0].content
+
+
+def test_legacy_unified_search_excludes_superseded_knowledge_keyword_fallback(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "test"
+    common_knowledge = tmp_path / "common_knowledge"
+    common_skills = tmp_path / "common_skills"
+    for path in (
+        anima_dir / "knowledge",
+        anima_dir / "episodes",
+        anima_dir / "procedures",
+        common_knowledge,
+        common_skills,
+    ):
+        path.mkdir(parents=True)
+
+    (anima_dir / "knowledge" / "active.md").write_text(
+        "---\nvalid_until: ''\n---\n\nAlice espresso preference is current.",
+        encoding="utf-8",
+    )
+    (anima_dir / "knowledge" / "superseded.md").write_text(
+        "---\nvalid_until: '2026-02-01T00:00:00+09:00'\n---\n\nAlice espresso preference is obsolete.",
+        encoding="utf-8",
+    )
+
+    rag = RAGMemorySearch(anima_dir, common_knowledge, common_skills)
+    results = rag.search_memory_text(
+        "Alice espresso preference",
+        scope="knowledge",
+        knowledge_dir=anima_dir / "knowledge",
+        episodes_dir=anima_dir / "episodes",
+        procedures_dir=anima_dir / "procedures",
+        common_knowledge_dir=common_knowledge,
+        result_limit=5,
+    )
+
+    sources = [item["source_file"] for item in results]
+    assert any("active.md" in source for source in sources)
+    assert not any("superseded.md" in source for source in sources)

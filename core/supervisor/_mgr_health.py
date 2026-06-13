@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime as _dt
 from pathlib import Path
 from typing import Any
@@ -129,6 +130,29 @@ class HealthMixin:
             )
             asyncio.create_task(self._handle_process_hang(anima_name, handle))
 
+    def _health_warmup_reason(self, anima_name: str, handle: ProcessHandle) -> str | None:
+        """Return a reason to suppress unresponsive-runner restarts, if any."""
+        try:
+            from core import startup_progress
+
+            snapshot = startup_progress.snapshot()
+            if snapshot.get("status") == "starting":
+                return f"server startup phase={snapshot.get('phase')}"
+            ready_at = snapshot.get("ready_at")
+            if isinstance(ready_at, int | float) and ready_at > 0:
+                elapsed = time.time() - float(ready_at)
+                warmup = float(getattr(self.health_config, "health_check_warmup_seconds", 0.0))
+                if elapsed < warmup:
+                    return f"server startup warmup {elapsed:.0f}s/{warmup:.0f}s"
+        except Exception:
+            logger.debug("Failed to inspect startup progress for health warmup", exc_info=True)
+
+        uptime = (now_local() - ensure_aware(handle.stats.started_at)).total_seconds()
+        runner_warmup = float(getattr(self.health_config, "runner_warmup_seconds", 0.0))
+        if uptime < runner_warmup:
+            return f"runner warmup {uptime:.0f}s/{runner_warmup:.0f}s"
+        return None
+
     async def _health_check_loop(self) -> None:
         """Periodically pings all processes and handles failures."""
         logger.info("Health check loop started")
@@ -226,24 +250,17 @@ class HealthMixin:
                     asyncio.create_task(self._handle_process_hang(anima_name, handle))
             return
 
-        # Skip if in startup grace period
-        uptime = (now_local() - ensure_aware(handle.stats.started_at)).total_seconds()
-        if uptime < self.health_config.startup_grace_sec:
-            logger.debug("Skipping health check for %s (startup grace)", anima_name)
-            return
-
-        # Reset restart counter after stable uptime
-        if uptime > self.restart_policy.reset_after_sec:
-            if self._restart_counts.get(anima_name, 0) > 0:
-                self._restart_counts[anima_name] = 0
-                logger.info(
-                    "Restart counter reset for %s (stable for %.0fs)",
-                    anima_name,
-                    uptime,
-                )
-
         # Direct state check: detect IPC connection loss
         if handle.state == ProcessState.FAILED:
+            if handle.is_alive():
+                warmup_reason = self._health_warmup_reason(anima_name, handle)
+                if warmup_reason:
+                    logger.warning(
+                        "Suppressing failed-state restart for %s during %s",
+                        anima_name,
+                        warmup_reason,
+                    )
+                    return
             logger.error(
                 "Process in FAILED state (IPC connection lost): %s",
                 anima_name,
@@ -263,6 +280,27 @@ class HealthMixin:
             )
             asyncio.create_task(self._handle_process_failure(anima_name, handle))
             return
+
+        warmup_reason = self._health_warmup_reason(anima_name, handle)
+        if warmup_reason:
+            logger.debug("Skipping health check for %s (%s)", anima_name, warmup_reason)
+            return
+
+        # Skip if in startup grace period
+        uptime = (now_local() - ensure_aware(handle.stats.started_at)).total_seconds()
+        if uptime < self.health_config.startup_grace_sec:
+            logger.debug("Skipping health check for %s (startup grace)", anima_name)
+            return
+
+        # Reset restart counter after stable uptime
+        if uptime > self.restart_policy.reset_after_sec:
+            if self._restart_counts.get(anima_name, 0) > 0:
+                self._restart_counts[anima_name] = 0
+                logger.info(
+                    "Restart counter reset for %s (stable for %.0fs)",
+                    anima_name,
+                    uptime,
+                )
 
         # Ping process
         ping_result = await handle.ping(
@@ -364,9 +402,11 @@ class HealthMixin:
                     "Max restart retries exceeded for %s. Manual intervention required.",
                     anima_name,
                 )
-                handle.state = ProcessState.FAILED
-                self._permanently_failed.add(anima_name)
-                self._failed_log_times[anima_name] = asyncio.get_running_loop().time()
+                await self._mark_process_error(
+                    anima_name,
+                    f"max restart retries exceeded ({count}/{self.restart_policy.max_retries})",
+                    handle,
+                )
                 return
 
             repaired = await self._maybe_repair_rag_before_restart(anima_name, handle)
@@ -391,9 +431,8 @@ class HealthMixin:
             await asyncio.sleep(backoff)
 
             self._restart_counts[anima_name] = count + 1
-            await self.restart_anima(anima_name, _reset_counters=False)
+            new_handle = await self._respawn_anima_transaction(anima_name)
 
-            new_handle = self.processes.get(anima_name)
             if new_handle:
                 logger.info(
                     "Process restarted: %s (PID %s, retry=%d/%d)",
@@ -404,13 +443,15 @@ class HealthMixin:
                 )
             else:
                 logger.error(
-                    "Restart completed but no handle found: %s",
+                    "Restart transaction failed with no handle: %s",
                     anima_name,
                 )
+                handle.state = ProcessState.FAILED
 
         except Exception as e:
             logger.error("Failed to restart %s: %s", anima_name, e)
             handle.state = ProcessState.FAILED
+            await self._mark_process_error(anima_name, f"{type(e).__name__}: {e}", handle)
         finally:
             self._restarting.discard(anima_name)
 

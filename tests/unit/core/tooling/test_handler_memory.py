@@ -12,8 +12,8 @@ from core.tooling.handler_memory import MemoryToolsMixin
 # ── Fixtures ─────────────────────────────────────────────
 
 
-def _make_result(source: str, content: str, score: float = 0.9) -> dict:
-    return {
+def _make_result(source: str, content: str, score: float = 0.9, **overrides) -> dict:
+    result = {
         "source_file": source,
         "content": content,
         "score": score,
@@ -21,6 +21,8 @@ def _make_result(source: str, content: str, score: float = 0.9) -> dict:
         "total_chunks": 1,
         "search_method": "vector",
     }
+    result.update(overrides)
+    return result
 
 
 class _FakeHandler(MemoryToolsMixin):
@@ -91,3 +93,81 @@ class TestSearchMemoryCountHeader:
         output = handler._handle_search_memory({"query": "x", "offset": 10})
 
         assert output == "No more results for 'x' at offset=10."
+
+    def test_knowledge_metadata_line_shows_updated_and_external_origin(self) -> None:
+        handler = _FakeHandler(
+            [
+                _make_result(
+                    "knowledge/vendor.md",
+                    "Vendor policy changed.",
+                    memory_type="knowledge",
+                    updated_at="2026-06-03T10:11:12+09:00",
+                    origin="external_web",
+                    confidence=0.99,
+                )
+            ]
+        )
+
+        output = handler._handle_search_memory({"query": "vendor"})
+
+        assert "updated: 2026-06-03 | origin: external_web" in output
+        assert "confidence" not in output
+
+    def test_internal_knowledge_origin_is_omitted(self) -> None:
+        handler = _FakeHandler(
+            [
+                _make_result(
+                    "knowledge/internal.md",
+                    "Internal note.",
+                    memory_type="knowledge",
+                    updated_at="2026-06-03T10:11:12+09:00",
+                    origin="consolidation",
+                )
+            ]
+        )
+
+        output = handler._handle_search_memory({"query": "internal"})
+
+        assert "updated: 2026-06-03" in output
+        assert "origin: consolidation" not in output
+
+    def test_fact_metadata_line_shows_valid_period_and_recorded_at(self) -> None:
+        handler = _FakeHandler(
+            [
+                _make_result(
+                    "facts/2026-06-03.jsonl",
+                    "Alice is evaluating LoCoMo.",
+                    memory_type="facts",
+                    valid_at_iso="2026-06-03T10:00:00+09:00",
+                    valid_until="",
+                    recorded_at="2026-06-03T10:01:00+09:00",
+                    confidence=0.85,
+                )
+            ]
+        )
+
+        output = handler._handle_search_memory({"query": "locomo"})
+
+        assert "valid: 2026-06-03〜present | recorded: 2026-06-03" in output
+        assert "confidence" not in output
+
+    def test_metadata_counts_toward_output_limit(self, monkeypatch) -> None:
+        monkeypatch.setattr("core.tooling.handler_memory._SEARCH_MAX_TOKENS", 24)
+        monkeypatch.setattr("core.tooling.handler_memory._SEARCH_MAX_LINES", 8)
+        monkeypatch.setattr("core.tooling.handler_memory._SEARCH_MIN_RESULTS", 1)
+        results = [
+            _make_result(
+                f"knowledge/file{i}.md",
+                "x" * 120,
+                memory_type="knowledge",
+                updated_at="2026-06-03T10:00:00+09:00",
+                origin="external_web",
+            )
+            for i in range(3)
+        ]
+        handler = _FakeHandler(results)
+
+        output = handler._handle_search_memory({"query": "limit"})
+
+        assert "knowledge/file0.md" in output
+        assert "(truncated" in output

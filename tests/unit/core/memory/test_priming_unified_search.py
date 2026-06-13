@@ -52,6 +52,37 @@ async def test_channel_c_uses_unified_search_without_direct_retriever(tmp_path: 
 
 
 @pytest.mark.asyncio
+async def test_channel_c_includes_metadata_for_external_knowledge(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "test"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    searcher = _fake_unified_search(
+        [
+            {
+                "doc_id": "test/knowledge/vendor.md#0",
+                "source_file": "knowledge/vendor.md",
+                "content": "## Vendor\n\nExternal policy.",
+                "score": 0.9,
+                "memory_type": "knowledge",
+                "updated_at": "2026-06-03T10:11:12+09:00",
+                "origin": "external_web",
+            },
+        ]
+    )
+
+    with patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=searcher):
+        medium, untrusted = await channel_c_related_knowledge(
+            anima_dir,
+            anima_dir / "knowledge",
+            lambda: MagicMock(),
+            ["vendor"],
+        )
+
+    assert medium == ""
+    assert "updated: 2026-06-03 | origin: external_web" in untrusted
+    assert 'read_memory_file(path="knowledge/vendor.md")' in untrusted
+
+
+@pytest.mark.asyncio
 async def test_channel_f_uses_unified_search_without_direct_retriever(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "test"
     (anima_dir / "episodes").mkdir(parents=True)

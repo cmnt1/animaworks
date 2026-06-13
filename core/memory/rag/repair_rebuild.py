@@ -15,12 +15,29 @@ from pathlib import Path
 logger = logging.getLogger("animaworks.rag.repair")
 
 
+def reset_worker_vector_store(anima_name: str) -> bool:
+    """Reset the vector worker's cached store for an anima when configured."""
+    if not os.environ.get("ANIMAWORKS_VECTOR_URL"):
+        return False
+    try:
+        from core.memory.rag.http_store import HttpVectorStore
+        from core.memory.rag.singleton import get_vector_store
+
+        store = get_vector_store(anima_name)
+        if isinstance(store, HttpVectorStore):
+            return store.reset_store()
+    except Exception:
+        logger.debug("Failed to reset vector worker store for %s", anima_name, exc_info=True)
+    return False
+
+
 def quarantine_vectordb(anima_name: str) -> Path | None:
     import gc
 
     from core.memory.rag.singleton import reset_vector_store
     from core.paths import get_anima_vectordb_dir
 
+    reset_worker_vector_store(anima_name)
     reset_vector_store(anima_name)
     gc.collect()
 
@@ -41,6 +58,7 @@ def quarantine_vectordb(anima_name: str) -> Path | None:
 
 
 def full_reindex(anima_name: str, *, include_shared: bool) -> int:
+    from core.memory.bm25 import rebuild_longterm_bm25_index
     from core.memory.rag import MemoryIndexer
     from core.memory.rag.singleton import get_vector_store
     from core.paths import get_animas_dir, get_common_knowledge_dir, get_common_skills_dir, get_data_dir
@@ -62,6 +80,9 @@ def full_reindex(anima_name: str, *, include_shared: bool) -> int:
     state_dir = anima_dir / "state"
     if (state_dir / "conversation.json").is_file():
         total_chunks += indexer.index_conversation_summary(state_dir, anima_name, force=True)
+
+    bm25_result = rebuild_longterm_bm25_index(anima_dir)
+    logger.info("Rebuilt long-term BM25 index for %s: documents=%d", anima_name, bm25_result.documents)
 
     if include_shared:
         base_dir = get_data_dir()

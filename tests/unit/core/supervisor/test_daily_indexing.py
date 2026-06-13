@@ -101,6 +101,31 @@ async def test_daily_indexing_incremental(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_daily_indexing_rebuilds_longterm_bm25(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
+
+    mock_store = MagicMock()
+    with (
+        patch("core.paths.get_data_dir", return_value=tmp_path),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
+        patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
+        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
+        patch("core.memory.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
+    ):
+        mock_indexer = MagicMock()
+        mock_indexer.index_directory = MagicMock(return_value=0)
+        mock_indexer.index_conversation_summary = MagicMock(return_value=0)
+        mock_indexer_cls.return_value = mock_indexer
+        mock_rebuild.return_value = MagicMock(documents=1)
+
+        await sup._run_daily_indexing()
+
+    mock_rebuild.assert_called_once_with(sup.animas_dir / "sakura")
+
+
+@pytest.mark.asyncio
 async def test_daily_indexing_skips_repair_locked_anima(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
@@ -164,6 +189,37 @@ async def test_daily_indexing_skips_on_model_change(tmp_path: Path) -> None:
             "core.memory.rag.singleton.get_embedding_model_name",
             return_value="intfloat/multilingual-e5-small",
         ),
+        patch("core.memory.rag.singleton.get_vector_store", side_effect=track_chroma),
+    ):
+        await sup._run_daily_indexing()
+
+    assert chroma_called is False
+
+
+@pytest.mark.asyncio
+async def test_daily_indexing_skips_on_e5_prefix_change(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    _create_anima_dir(sup.animas_dir, "sakura")
+
+    (tmp_path / "index_meta.json").write_text(
+        json.dumps({"embedding_model": "intfloat/multilingual-e5-small", "embedding_e5_prefix": False}),
+        encoding="utf-8",
+    )
+
+    chroma_called = False
+
+    def track_chroma(*args, **kwargs):
+        nonlocal chroma_called
+        chroma_called = True
+        return MagicMock()
+
+    with (
+        patch("core.paths.get_data_dir", return_value=tmp_path),
+        patch(
+            "core.memory.rag.singleton.get_embedding_model_name",
+            return_value="intfloat/multilingual-e5-small",
+        ),
+        patch("core.memory.rag.singleton.get_embedding_e5_prefix_enabled", return_value=True),
         patch("core.memory.rag.singleton.get_vector_store", side_effect=track_chroma),
     ):
         await sup._run_daily_indexing()

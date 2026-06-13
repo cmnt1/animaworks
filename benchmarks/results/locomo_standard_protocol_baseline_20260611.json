@@ -1,0 +1,62 @@
+{
+  "schema": "locomo-standard-baseline-record-v1",
+  "recorded_at": "2026-06-11T12:32:45+09:00",
+  "status": "valid_10_conversation_baseline",
+  "valid_baseline": true,
+  "standard_protocol": {
+    "protocol_version": "locomo-integrity-v1",
+    "mode": "scope_all",
+    "conversations": 10,
+    "primary_metric": "cat5_excluded.overall_judge",
+    "secondary_metric": "overall_f1",
+    "exclude_cat5": true,
+    "leakage_alias_map_enabled": false,
+    "category_branches_enabled": false,
+    "category_dependent_normalization_enabled": false,
+    "max_questions": 0,
+    "max_error_rate": 0.02,
+    "judge_must_differ_from_answer_model": true
+  },
+  "run": {
+    "command": "LOCOMO_LLM_CREDENTIAL=azure LOCOMO_JUDGE_LLM_CREDENTIAL=azure AZURE_API_VERSION=2025-01-01-preview CUDA_VISIBLE_DEVICES= ANIMAWORKS_DATA_DIR=/tmp/animaworks-locomo-standard-213-azure-gpt41-gpt4o uv run python -m benchmarks.locomo.runner --standard-protocol --answer-model azure/gpt-4.1 --judge-model azure/gpt-4o --answer-timeout 120 --answer-max-retries 1 --checkpoint-every 25 --output benchmarks/results/locomo-standard-20260611-azure-gpt41-gpt4o",
+    "output_file": "benchmarks/results/locomo-standard-20260611-azure-gpt41-gpt4o/2026-06-11T10-57-00_scope_all.json",
+    "checkpoint_file": "benchmarks/results/locomo-standard-20260611-azure-gpt41-gpt4o/2026-06-11T10-57-00_scope_all.partial.json",
+    "answer_model": "azure/gpt-4.1",
+    "judge_model": "azure/gpt-4o",
+    "judge_model_independent": true,
+    "rows": 1540,
+    "errors": 0,
+    "error_rate": 0.0,
+    "standard_protocol_valid": true,
+    "wall_time_seconds": 5745.7,
+    "generated_result_note": "The full per-question JSON is a generated benchmark artifact under the gitignored benchmarks/results/ output directory; this file is the committed baseline record."
+  },
+  "metrics": {
+    "overall_f1": 0.4521181619017066,
+    "overall_judge": 0.6048701298701299,
+    "standard_primary": 0.6048701298701299,
+    "standard_secondary": 0.4521181619017066,
+    "by_category": {
+      "multi_hop": {
+        "f1": 0.3527128712105149,
+        "judge": 0.4734042553191489,
+        "count": 282
+      },
+      "temporal": {
+        "f1": 0.48089492730788613,
+        "judge": 0.6433021806853583,
+        "count": 321
+      },
+      "complex": {
+        "f1": 0.21653524970266716,
+        "judge": 0.421875,
+        "count": 96
+      },
+      "open_domain": {
+        "f1": 0.501358244958354,
+        "judge": 0.6551724137931034,
+        "count": 841
+      }
+    }
+  }
+}
