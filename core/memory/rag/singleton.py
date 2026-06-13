@@ -418,12 +418,29 @@ def reset_vector_store(anima_name: str | None = None) -> None:
     legacy/shared store keyed by ``None``.  Any cached HTTP client is
     closed when possible so callers can reconnect after server-side
     repair.
+
+    Closing a native ChromaDB client destroys chromadb's process-global
+    system cache (verified with chromadb 1.5.9), which silently invalidates
+    every *other* live PersistentClient in this process. If we closed only the
+    target, the sibling animas' cached stores would keep pointing at the
+    destroyed cache and their next access would fail with "disk I/O error" /
+    "file is not a database" — corrupting their DBs. This is what turned a
+    single rebuild's reset into a worker-wide corruption cascade. So whenever a
+    native store is closed, drop (and close) every cached native store; each is
+    recreated lazily with a fresh client and cache on next use.
     """
     global _init_failed
 
     with _lock:
-        store = _vector_stores.pop(anima_name, None)
-        _close_store(store, anima_name)
+        target = _vector_stores.pop(anima_name, None)
+        closed_native = target is not None
+        _close_store(target, anima_name)
+
+        if closed_native:
+            siblings = list(_vector_stores.items())
+            _vector_stores.clear()
+            for sibling_name, sibling_store in siblings:
+                _close_store(sibling_store, sibling_name)
 
         http_keys = [key for key in _http_stores if key[1] == anima_name]
         for key in http_keys:

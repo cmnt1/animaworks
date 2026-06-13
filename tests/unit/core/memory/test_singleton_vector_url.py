@@ -71,6 +71,39 @@ def test_returns_none_when_chroma_init_fails(monkeypatch):
     assert store is None
 
 
+def test_reset_native_store_drops_all_native_siblings(monkeypatch):
+    """Resetting one native store must drop every cached native store.
+
+    chromadb 1.5.9's client.close() destroys a process-global system cache, so
+    leaving sibling clients cached would let them fail with disk I/O errors and
+    corrupt their DBs. Reset must drop+close them all so they recreate fresh.
+    """
+    os.environ.pop("ANIMAWORKS_VECTOR_URL", None)
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+    from core.memory.rag import singleton
+
+    closed: list[str] = []
+
+    def _make(name: str) -> MagicMock:
+        store = MagicMock()
+        store.close = MagicMock(side_effect=lambda n=name: closed.append(n))
+        return store
+
+    stores = {"a": _make("a"), "b": _make("b")}
+
+    def _create(*args, anima_name=None, **kwargs):
+        return stores[anima_name]
+
+    with patch("core.memory.rag.store.create_chroma_vector_store", side_effect=_create):
+        assert get_vector_store("a") is stores["a"]
+        assert get_vector_store("b") is stores["b"]
+        singleton.reset_vector_store("a")
+
+    assert "a" not in singleton._vector_stores
+    assert "b" not in singleton._vector_stores  # sibling dropped too
+    assert set(closed) == {"a", "b"}  # both closed
+
+
 def test_per_anima_db_failure_does_not_poison_other_animas(monkeypatch):
     """A corrupt per-anima DB must not latch the global flag and disable others.
 
