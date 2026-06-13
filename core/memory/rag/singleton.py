@@ -21,6 +21,8 @@ import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from sentence_transformers import SentenceTransformer
 
     from core.memory.rag.http_store import HttpVectorStore
@@ -138,6 +140,26 @@ def _get_configured_model_name() -> str:
         return "intfloat/multilingual-e5-small"
 
 
+def _resolve_model_cache_dir() -> Path:
+    """Resolve the directory used to cache the embedding model.
+
+    The model is a static, read-only asset, so it should not live inside the
+    per-runtime ``ANIMAWORKS_DATA_DIR`` (which tests redirect to a fresh temp
+    dir per case).  ``ANIMAWORKS_MODEL_CACHE_DIR`` lets deployments and CI point
+    every process at a single shared, pre-warmed cache; otherwise it falls back
+    to the runtime data dir for backward compatibility.
+    """
+    from pathlib import Path
+
+    override = os.environ.get("ANIMAWORKS_MODEL_CACHE_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+
+    from core.paths import get_data_dir
+
+    return get_data_dir() / "models"
+
+
 def _cuda_available_safely() -> bool:
     """Return whether CUDA can be initialized without raising.
 
@@ -194,9 +216,7 @@ def get_embedding_model(model_name: str | None = None) -> SentenceTransformer:
 
         from sentence_transformers import SentenceTransformer
 
-        from core.paths import get_data_dir
-
-        cache_dir = get_data_dir() / "models"
+        cache_dir = _resolve_model_cache_dir()
         cache_dir.mkdir(parents=True, exist_ok=True)
         try:
             from core.config import load_config

@@ -50,6 +50,13 @@ jobs:
     timeout-minutes: 20
     needs: unit-tests
 
+    env:
+      # Static, read-only model assets live in a stable cache shared across the
+      # job (decoupled from the per-test ANIMAWORKS_DATA_DIR temp dirs).
+      ANIMAWORKS_MODEL_CACHE_DIR: ${{ github.workspace }}/.cache/animaworks-models
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+      HF_HUB_DISABLE_TELEMETRY: "1"
+
     steps:
       - uses: actions/checkout@v4
 
@@ -71,7 +78,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[test,all-tools]"
 
+      - name: Cache embedding models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache/animaworks-models
+            ${{ github.workspace }}/.cache/huggingface
+          key: ${{ runner.os }}-hfmodels-${{ hashFiles('core/memory/rag/singleton.py', 'core/memory/retrieval/reranker.py') }}
+          restore-keys: |
+            ${{ runner.os }}-hfmodels-
+
+      - name: Pre-download embedding models
+        run: python scripts/ci/prefetch_models.py
+
       - name: Run e2e tests
+        env:
+          # Models are pre-fetched above; run offline so flaky HuggingFace HEAD
+          # checks (HTTP 429) cannot stall tests past the pytest timeout.
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
         run: |
           pytest tests/e2e/ -x -q --timeout=60 -m "not live and not azure and not ollama"
 

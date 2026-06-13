@@ -144,6 +144,9 @@ swe/results/
 # Temp output
 .cmd_output/
 
+# Local model / HuggingFace caches (e.g. scripts/ci/prefetch_models.py)
+.cache/
+
 # Local Codex app metadata
 .codex/
 .claude/worktrees/
