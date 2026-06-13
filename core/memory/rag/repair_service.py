@@ -21,12 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from core.memory.rag import repair_state
-from core.memory.rag.repair_rebuild import (
-    full_reindex,
-    quarantine_vectordb,
-    reset_worker_vector_store,
-    verify_rebuilt_vectordb,
-)
+from core.memory.rag.repair_rebuild import atomic_rebuild_vectordb
 from core.memory.rag.repair_types import RepairResult
 from core.memory.rag.repair_utils import (
     SINGLE_SHOT_REASONS,
@@ -669,36 +664,13 @@ class RAGRepairService:
                     last_error=None,
                 )
                 if startup_progress.is_active():
-                    startup_progress.set_phase("repairing", detail=anima_name)
-                startup_progress.raise_if_cancelled()
-                quarantine_path = quarantine_vectordb(anima_name)
-                repair_state.update_repair_state(
-                    anima_name,
-                    status="repairing",
-                    stage="reindex",
-                    pid=os.getpid(),
-                    last_quarantine_path=str(quarantine_path) if quarantine_path else None,
-                )
-                if startup_progress.is_active():
                     startup_progress.set_phase("indexing", detail=anima_name, reset_counts=True)
                 startup_progress.raise_if_cancelled()
-                chunks = full_reindex(anima_name, include_shared=include_shared)
-                from core.memory.rag.singleton import reset_vector_store
-
-                repair_state.update_repair_state(
-                    anima_name,
-                    status="repairing",
-                    stage="reset_store",
-                    pid=os.getpid(),
-                    last_chunks_indexed=chunks,
-                )
-                reset_worker_vector_store(anima_name)
-                reset_vector_store(anima_name)
-                # Verify the rebuilt DB actually holds its data before declaring
-                # success. A stub (chunks indexed but no collections) must be a
-                # failure so the cooldown engages instead of a false success that
-                # immediately re-triggers another repair.
-                verify_rebuilt_vectordb(anima_name, expected_chunks=chunks)
+                # Build the new DB in a staging dir and atomically swap it in.
+                # The live DB stays intact during the (slow) reindex, so a failed
+                # build never destroys the existing data, readers never see a
+                # half-built DB, and the worker is only reset at the swap.
+                chunks, quarantine_path = atomic_rebuild_vectordb(anima_name, include_shared=include_shared)
                 repair_state.update_repair_state(
                     anima_name,
                     status="success",
