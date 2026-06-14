@@ -29,6 +29,9 @@ class _FakeEmbeddingModel:
         *,
         convert_to_numpy: bool = True,
         show_progress_bar: bool = False,
+        batch_size: int | None = None,
+        purpose: str = "document",
+        priority: str | None = None,
     ) -> list[list[float]]:
         return [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for _ in texts]
 
