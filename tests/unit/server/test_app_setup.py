@@ -40,6 +40,14 @@ def _make_app(setup_complete: bool, tmp_path: Path):
         from server.app import create_app
         app = create_app(animas_dir, shared_dir)
 
+    # The startup readiness gate (added after setup_guard) returns 503 until
+    # startup_progress reports "ready".  These tests exercise the setup/auth
+    # guards, not the readiness gate, and never run the app lifespan, so pin the
+    # phase to "ready" to stay isolated from any phase left over by other tests.
+    from core import startup_progress
+
+    startup_progress._reset_for_testing()
+
     return app
 
 
