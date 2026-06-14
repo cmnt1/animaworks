@@ -316,7 +316,7 @@ class TestNeo4jGraphBackendIngest:
     def no_embedding_model_load(self, monkeypatch):
         from core.memory.backend.neo4j_graph import Neo4jGraphBackend
 
-        async def fake_embed_texts(_self, texts):
+        async def fake_embed_texts(_self, texts, *, purpose="document", priority=None):
             return [[0.0] * 8 for _ in texts]
 
         monkeypatch.setattr(Neo4jGraphBackend, "_embed_texts", fake_embed_texts)

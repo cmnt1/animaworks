@@ -78,7 +78,9 @@ async def test_neo4j_backend_live_ingest_and_cleanup(tmp_path: Path, monkeypatch
     orphan_entity_uuid = f"{group_id}:orphan-entity"
     driver = None
 
-    async def _empty_embeddings(texts: list[str]) -> list[list[float]]:
+    async def _empty_embeddings(
+        texts: list[str], *, purpose: str = "document", priority: str | None = None
+    ) -> list[list[float]]:
         return [[] for _ in texts]
 
     monkeypatch.setattr(backend, "_get_extractor", lambda: _StubExtractor())
