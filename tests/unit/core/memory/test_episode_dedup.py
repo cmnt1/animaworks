@@ -371,12 +371,19 @@ class TestFinalizeSession:
         assert MemoryManager(anima_dir).read_current_state() == handoff
 
     @pytest.mark.asyncio
-    async def test_finalize_resets_state_when_status_section_present(self, conv_memory, anima_dir):
-        """A summary that emits '### 現在の状態' archives+resets current_state.md."""
+    async def test_finalize_preserves_state_when_status_section_present(self, conv_memory, anima_dir):
+        """A '### 現在の状態' section must not clobber a non-idle handoff state.
+
+        ``_maybe_update_idle_current_state`` only initializes an empty/idle
+        ``current_state.md``; an existing non-idle plan is preserved so that
+        finalization cannot erase agent-maintained working memory, even when the
+        session summary emits an explicit status.
+        """
         from core.memory.manager import MemoryManager
 
         mm = MemoryManager(anima_dir)
-        mm.update_state("status: in_progress\nplan: old work")
+        original_state = "status: in_progress\nplan: old work"
+        mm.update_state(original_state)
 
         state = conv_memory.load()
         state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(4)]
@@ -392,7 +399,7 @@ class TestFinalizeSession:
             result = await conv_memory.finalize_session(min_turns=3)
 
         assert result is True
-        assert MemoryManager(anima_dir).read_current_state() == "status: idle"
+        assert MemoryManager(anima_dir).read_current_state() == original_state
 
 
 # ── finalize_if_session_ended tests ───────────────────────────
