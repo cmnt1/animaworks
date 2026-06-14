@@ -377,8 +377,13 @@ class TestExecuteLLMTaskFailureHandling:
         assert "task_too_broad_for_model" in content
 
     @pytest.mark.asyncio
-    async def test_completion_notification_can_be_self_addressed(self, tmp_path: Path) -> None:
-        """Task completion notifications may target the submitting anima itself."""
+    async def test_completion_notification_skipped_when_self_addressed(self, tmp_path: Path) -> None:
+        """A self-directed completion notification is suppressed.
+
+        When an Anima submits a task for itself, a completion DM back to self is
+        pure noise (and the body often carries human-directed content that gets
+        misrouted), so _run_llm_task drops the reply_to and sends nothing.
+        """
         executor = _make_executor(tmp_path)
         shared_dir = tmp_path / "shared"
         executor._anima.messenger = Messenger(shared_dir, "test-anima")
@@ -400,12 +405,9 @@ class TestExecuteLLMTaskFailureHandling:
         result = await executor._run_llm_task(task_desc)
 
         assert result == "task finished"
-        inbox_files = list((shared_dir / "inbox" / "test-anima").glob("*.json"))
-        assert len(inbox_files) == 1
-        delivered = json.loads(inbox_files[0].read_text(encoding="utf-8"))
-        assert delivered["from_person"] == "test-anima"
-        assert delivered["to_person"] == "test-anima"
-        assert "self-complete" in delivered["content"]
+        inbox_dir = shared_dir / "inbox" / "test-anima"
+        inbox_files = list(inbox_dir.glob("*.json")) if inbox_dir.exists() else []
+        assert inbox_files == []
 
 
 # ── TestI18nTemplate ─────────────────────────────────────────
