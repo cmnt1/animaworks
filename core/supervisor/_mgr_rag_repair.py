@@ -37,6 +37,28 @@ class RAGRepairMixin:
             if reason is None:
                 return False
 
+            # Evidence-based suspicion ("recent_rag_corruption") can be a
+            # transient cache-poisoning false positive: the DB raised sqlite-level
+            # corruption errors ("Failed to get segments", "file is not a
+            # database") while the on-disk store stayed intact. Quarantining and
+            # rebuilding a healthy DB on that soft evidence is wasted work that
+            # loads the vector worker and feeds the repair churn. If quick_check
+            # confirms the SQLite store is intact, skip the repair and just
+            # restart. Hard signals (native_segfault from the exit code) are NOT
+            # gated — a crash in native chroma code warrants a rebuild even when
+            # SQLite looks fine (the fault may be in an hnsw segment).
+            if reason == "recent_rag_corruption":
+                from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
+
+                persist_dir = self.animas_dir / anima_name / "vectordb"
+                if quick_check_chroma_sqlite(persist_dir).status == "ok":
+                    logger.info(
+                        "Skipping pre-restart RAG repair; on-disk SQLite passed quick_check "
+                        "(transient cache poisoning, no rebuild needed): anima=%s",
+                        anima_name,
+                    )
+                    return False
+
             logger.warning(
                 "RAG corruption suspected before restart: anima=%s reason=%s exit_code=%s",
                 anima_name,
