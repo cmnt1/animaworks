@@ -9,6 +9,7 @@ from __future__ import annotations
 
 """Channel F: Episode memory search (vector search)."""
 
+import asyncio
 import json
 import logging
 from collections.abc import Callable
@@ -110,7 +111,7 @@ async def channel_f_episodes(
             logger.debug("Failed to load rag.min_retrieval_score from config, using default")
 
         if get_memory_backend is not None:
-            backend = get_memory_backend()
+            backend = await asyncio.to_thread(get_memory_backend)
             if backend is not None:
                 from core.memory.backend.neo4j_graph import Neo4jGraphBackend
 
@@ -168,7 +169,8 @@ async def channel_f_episodes(
             return ""
 
         searcher = UnifiedMemorySearch(anima_dir)
-        results = searcher.search_many(
+        results = await asyncio.to_thread(
+            searcher.search_many,
             queries,
             scope="episodes",
             limit=5,

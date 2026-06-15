@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import core.memory.priming.channel_c as channel_c_module
+import core.memory.priming.channel_f as channel_f_module
 from core.memory.priming.channel_c import channel_c_related_knowledge
 from core.memory.priming.channel_f import channel_f_episodes
 
@@ -49,6 +51,42 @@ async def test_channel_c_uses_unified_search_without_direct_retriever(tmp_path: 
     assert untrusted == ""
     searcher.search_many.assert_called_once()
     direct_retriever.search.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_channel_c_runs_unified_search_in_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    anima_dir = tmp_path / "animas" / "test"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    searcher = _fake_unified_search(
+        [
+            {
+                "doc_id": "test/knowledge/deploy.md#0",
+                "source_file": "knowledge/deploy.md",
+                "content": "## Deploy\n\nUse the release checklist.",
+                "score": 0.9,
+                "origin": "system",
+            },
+        ]
+    )
+    threaded_funcs = []
+
+    async def inline_to_thread(func, /, *args, **kwargs):
+        threaded_funcs.append(func)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(channel_c_module.asyncio, "to_thread", inline_to_thread)
+
+    with patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=searcher):
+        medium, untrusted = await channel_c_related_knowledge(
+            anima_dir,
+            anima_dir / "knowledge",
+            lambda: MagicMock(),
+            ["deploy"],
+        )
+
+    assert 'read_memory_file(path="knowledge/deploy.md")' in medium
+    assert untrusted == ""
+    assert any(func is searcher.search_many for func in threaded_funcs)
 
 
 @pytest.mark.asyncio
@@ -112,6 +150,42 @@ async def test_channel_f_uses_unified_search_without_direct_retriever(tmp_path: 
     assert "Full body should not be injected" not in output
     searcher.search_many.assert_called_once()
     direct_retriever.search.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_channel_f_runs_unified_search_in_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    anima_dir = tmp_path / "animas" / "test"
+    (anima_dir / "episodes").mkdir(parents=True)
+    searcher = _fake_unified_search(
+        [
+            {
+                "doc_id": "test/episodes/2026-03-01.md#0",
+                "source_file": "episodes/2026-03-01.md",
+                "content": "# Deploy outage\n\nFull body should not be injected.",
+                "score": 0.82,
+            },
+        ]
+    )
+    threaded_funcs = []
+
+    async def inline_to_thread(func, /, *args, **kwargs):
+        threaded_funcs.append(func)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(channel_f_module.asyncio, "to_thread", inline_to_thread)
+
+    with patch("core.memory.priming.channel_f.UnifiedMemorySearch", return_value=searcher):
+        output = await channel_f_episodes(
+            anima_dir,
+            anima_dir / "episodes",
+            lambda: MagicMock(),
+            ["deploy"],
+            message="deploy outage",
+        )
+
+    assert 'read_memory_file(path="episodes/2026-03-01.md")' in output
+    assert "Full body should not be injected" not in output
+    assert any(func is searcher.search_many for func in threaded_funcs)
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 """Channel C: Related knowledge and important knowledge search."""
 
+import asyncio
 import json
 import logging
 import re
@@ -155,11 +156,15 @@ async def channel_c0_important_knowledge(
     if not knowledge_dir.is_dir():
         return ""
     try:
-        retriever = get_retriever()
+        retriever = await asyncio.to_thread(get_retriever)
         if retriever is None:
             return ""
         anima_name = anima_dir.name
-        results = retriever.get_important_chunks(anima_name, include_shared=True)
+        results = await asyncio.to_thread(
+            retriever.get_important_chunks,
+            anima_name,
+            include_shared=True,
+        )
         if not results:
             return ""
         budget_chars = _BUDGET_IMPORTANT_KNOWLEDGE * _CHARS_PER_TOKEN
@@ -246,8 +251,9 @@ async def channel_c_related_knowledge(
         except Exception:
             logger.debug("Failed to load rag.min_retrieval_score from config, using default")
 
-        searcher = _build_unified_searcher(anima_dir, get_retriever)
-        results = searcher.search_many(
+        searcher = await asyncio.to_thread(_build_unified_searcher, anima_dir, get_retriever)
+        results = await asyncio.to_thread(
+            searcher.search_many,
             queries,
             scope="common_knowledge",
             limit=5,
