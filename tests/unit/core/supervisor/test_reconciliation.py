@@ -11,6 +11,8 @@ be killed either.
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -199,3 +201,38 @@ class TestReconcileOnDiskIncomplete:
         sup.stop_anima.assert_called_once_with("ghost")
         # hinata should be started (enabled + not running)
         sup.start_anima.assert_called_once_with("hinata")
+
+
+class TestConfigFreshness:
+    """Tests for content-hash based config freshness detection."""
+
+    def test_mtime_only_change_does_not_refresh_but_content_change_does(
+        self,
+        tmp_path: Path,
+        caplog,
+    ) -> None:
+        sup = _make_supervisor(tmp_path)
+        config_path = tmp_path / "config.json"
+        config_path.write_text('{"setting": 1}\n', encoding="utf-8")
+
+        with (
+            patch("core.config.models.get_config_path", return_value=config_path),
+            patch("core.config.models.load_config") as load_config,
+        ):
+            sup._check_config_freshness()
+
+            new_mtime = config_path.stat().st_mtime + 10
+            os.utime(config_path, (new_mtime, new_mtime))
+            with caplog.at_level(logging.INFO, logger="core.supervisor._mgr_reconcile"):
+                sup._check_config_freshness()
+
+            load_config.assert_not_called()
+            assert "config.json changed" not in caplog.text
+
+            caplog.clear()
+            config_path.write_text('{"setting": 2}\n', encoding="utf-8")
+            with caplog.at_level(logging.INFO, logger="core.supervisor._mgr_reconcile"):
+                sup._check_config_freshness()
+
+        load_config.assert_called_once()
+        assert "Reconciliation: config.json changed, cache refreshed" in caplog.text
