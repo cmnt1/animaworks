@@ -26,6 +26,7 @@
   "azure/*":                 { "mode": "A", "context_window": 128000 },
 
   "google/*":                { "mode": "A", "context_window": 1000000 },
+  "antigravity/*":           { "mode": "A", "context_window": 1000000 },
   "vertex_ai/*":             { "mode": "A", "context_window": 1000000 },
 
   "opencode-go/glm-5.1":            { "mode": "A", "context_window": 202752 },

@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core.config.model_mode import resolve_tool_use_capability
 from core.config.models import (
     DEFAULT_LOCAL_LLM_MODEL,
     AnimaDefaults,
@@ -757,10 +758,14 @@ class TestResolveExecutionModeWildcard:
         config = AnimaWorksConfig()
         assert resolve_execution_mode(config, "openai/gpt-4.1") == "A"
         assert resolve_execution_mode(config, "google/gemini-2.5-pro") == "A"
+        assert resolve_execution_mode(config, "antigravity/gemini-2.5-flash") == "A"
         assert resolve_execution_mode(config, "zai/zai-model") == "A"
         assert resolve_execution_mode(config, "minimax/some-model") == "A"
         assert resolve_execution_mode(config, "moonshot/kimi") == "A"
         assert resolve_execution_mode(config, "opencode-go/glm-5.1") == "A"
+
+    def test_antigravity_tool_use_capability_high(self):
+        assert resolve_tool_use_capability("antigravity/gemini-2.5-flash") == "high"
 
     def test_openai_codex_provider_routes_to_c(self):
         config = AnimaWorksConfig()
