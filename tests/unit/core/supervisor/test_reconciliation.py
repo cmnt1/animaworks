@@ -8,15 +8,16 @@ that have identity.md but are missing status.json (incomplete / factory-in-progr
 These animas must NOT be auto-started, but if already running they must NOT
 be killed either.
 """
+
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 from core.supervisor.manager import ProcessSupervisor
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -50,9 +51,7 @@ def _create_anima_dir(
     if has_identity:
         (d / "identity.md").write_text(f"# {name}", encoding="utf-8")
     if has_status:
-        (d / "status.json").write_text(
-            json.dumps({"enabled": enabled}), encoding="utf-8"
-        )
+        (d / "status.json").write_text(json.dumps({"enabled": enabled}), encoding="utf-8")
     return d
 
 
@@ -79,9 +78,7 @@ class TestReconcileOnDiskIncomplete:
     async def test_running_anima_with_status_json_enabled_not_killed(self, tmp_path: Path):
         """A running anima with status.json enabled=true must NOT be stopped."""
         sup = _make_supervisor(tmp_path)
-        _create_anima_dir(
-            sup.animas_dir, "sakura", has_identity=True, has_status=True, enabled=True
-        )
+        _create_anima_dir(sup.animas_dir, "sakura", has_identity=True, has_status=True, enabled=True)
 
         sup.processes["sakura"] = MagicMock()
         sup.stop_anima = AsyncMock()
@@ -108,9 +105,7 @@ class TestReconcileOnDiskIncomplete:
     async def test_running_anima_disabled_is_stopped(self, tmp_path: Path):
         """A running anima with status.json enabled=false MUST be stopped."""
         sup = _make_supervisor(tmp_path)
-        _create_anima_dir(
-            sup.animas_dir, "sakura", has_identity=True, has_status=True, enabled=False
-        )
+        _create_anima_dir(sup.animas_dir, "sakura", has_identity=True, has_status=True, enabled=False)
 
         sup.processes["sakura"] = MagicMock()
         sup.stop_anima = AsyncMock()
@@ -168,22 +163,16 @@ class TestReconcileOnDiskIncomplete:
         sup = _make_supervisor(tmp_path)
 
         # sakura: running, has identity but NO status.json -> protected
-        _create_anima_dir(
-            sup.animas_dir, "sakura", has_identity=True, has_status=False
-        )
+        _create_anima_dir(sup.animas_dir, "sakura", has_identity=True, has_status=False)
 
         # kotoha: running, has identity + status enabled -> kept
-        _create_anima_dir(
-            sup.animas_dir, "kotoha", has_identity=True, has_status=True, enabled=True
-        )
+        _create_anima_dir(sup.animas_dir, "kotoha", has_identity=True, has_status=True, enabled=True)
 
         # ghost: running, NO directory at all -> killed
         # (no directory created)
 
         # hinata: NOT running, has identity + status enabled -> started
-        _create_anima_dir(
-            sup.animas_dir, "hinata", has_identity=True, has_status=True, enabled=True
-        )
+        _create_anima_dir(sup.animas_dir, "hinata", has_identity=True, has_status=True, enabled=True)
 
         sup.processes["sakura"] = MagicMock()
         sup.processes["kotoha"] = MagicMock()
@@ -199,3 +188,38 @@ class TestReconcileOnDiskIncomplete:
         sup.stop_anima.assert_called_once_with("ghost")
         # hinata should be started (enabled + not running)
         sup.start_anima.assert_called_once_with("hinata")
+
+
+class TestConfigFreshness:
+    """Tests for content-hash based config freshness detection."""
+
+    def test_mtime_only_change_does_not_refresh_but_content_change_does(
+        self,
+        tmp_path: Path,
+        caplog,
+    ) -> None:
+        sup = _make_supervisor(tmp_path)
+        config_path = tmp_path / "config.json"
+        config_path.write_text('{"setting": 1}\n', encoding="utf-8")
+
+        with (
+            patch("core.config.models.get_config_path", return_value=config_path),
+            patch("core.config.models.load_config") as load_config,
+        ):
+            sup._check_config_freshness()
+
+            new_mtime = config_path.stat().st_mtime + 10
+            os.utime(config_path, (new_mtime, new_mtime))
+            with caplog.at_level(logging.INFO, logger="core.supervisor._mgr_reconcile"):
+                sup._check_config_freshness()
+
+            load_config.assert_not_called()
+            assert "config.json changed" not in caplog.text
+
+            caplog.clear()
+            config_path.write_text('{"setting": 2}\n', encoding="utf-8")
+            with caplog.at_level(logging.INFO, logger="core.supervisor._mgr_reconcile"):
+                sup._check_config_freshness()
+
+        load_config.assert_called_once()
+        assert "Reconciliation: config.json changed, cache refreshed" in caplog.text

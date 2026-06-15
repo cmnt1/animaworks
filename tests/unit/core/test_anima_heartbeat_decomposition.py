@@ -866,7 +866,7 @@ class TestExecuteHeartbeatCycle:
             dp.agent.run_cycle_streaming = mock_stream
 
             with (
-                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core._anima_heartbeat.StreamingJournal") as MockSJ,
                 patch("core.anima.ActivityLogger"),
                 patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             ):
@@ -882,6 +882,7 @@ class TestExecuteHeartbeatCycle:
             assert isinstance(result, CycleResult)
             assert result.trigger == "heartbeat"
             assert result.action == "responded"
+            MockSJ.return_value.finalize.assert_called_once_with(summary="Some text")
         finally:
             _stop_patches(mocks)
 

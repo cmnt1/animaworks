@@ -404,13 +404,26 @@ class TestParseHeartbeatConfig:
 
     def test_basic_active_hours(self):
         """Parse active hours from heartbeat content."""
-        start, end = parse_heartbeat_config("30分ごとにチェック\n9:00-22:00")
+        start, end = parse_heartbeat_config("## 活動時間\n9:00-22:00")
         assert start == 9
         assert end == 22
 
     def test_defaults_without_time_range(self):
         """None returned when no time range in content."""
         start, end = parse_heartbeat_config("15分間隔")
+        assert start is None
+        assert end is None
+
+    def test_ignores_time_range_like_history_outside_active_hours(self):
+        """PR history text outside the active-hours section is not parsed."""
+        content = """# Heartbeat
+## 活動時間
+24時間（サーバー設定タイムゾーン）
+
+## 通知履歴
+- #2841,#2842,#2843:1-2日
+"""
+        start, end = parse_heartbeat_config(content)
         assert start is None
         assert end is None
 
@@ -641,9 +654,9 @@ class TestBlankTemplateFormat:
 
     def test_blank_template_parses_correctly(self):
         """Updated blank template with schedule: lines parses correctly."""
-        content = (
-            Path(__file__).resolve().parents[3] / "templates/ja/anima_templates/_blank/cron.md"
-        ).read_text(encoding="utf-8")
+        content = (Path(__file__).resolve().parents[3] / "templates/ja/anima_templates/_blank/cron.md").read_text(
+            encoding="utf-8"
+        )
         # Replace {name} placeholder
         content = content.replace("{name}", "test")
         tasks = parse_cron_md(content)
@@ -658,9 +671,9 @@ class TestBlankTemplateFormat:
 
     def test_blank_template_schedules_are_valid(self):
         """All schedules in the blank template are valid cron expressions."""
-        content = (
-            Path(__file__).resolve().parents[3] / "templates/ja/anima_templates/_blank/cron.md"
-        ).read_text(encoding="utf-8")
+        content = (Path(__file__).resolve().parents[3] / "templates/ja/anima_templates/_blank/cron.md").read_text(
+            encoding="utf-8"
+        )
         content = content.replace("{name}", "test")
         tasks = parse_cron_md(content)
         for task in tasks:

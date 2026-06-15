@@ -32,6 +32,56 @@ _CRON_EXPR_RE = re.compile(r"^[\d\*\/\-\,]+(\s+[\d\*\/\-\,]+){4}$")
 
 # ── Heartbeat parsing ────────────────────────────────────
 
+_HEARTBEAT_ACTIVE_HOUR_HEADINGS = {
+    "活動時間",
+    "稼働時間",
+    "active hours",
+    "활동 시간",
+    "활동시간",
+}
+
+_HEARTBEAT_TIME_RANGE_RE = re.compile(r"(?<![\d#])(\d{1,2}):\d{0,2}\s*-\s*(\d{1,2})(?::\d{0,2})?(?!\d)")
+_MARKDOWN_HEADING_RE = re.compile(r"^#{1,6}\s+\S")
+
+
+def _normalize_heading_text(line: str) -> str:
+    """Return normalized markdown heading/label text for section matching."""
+    text = line.strip()
+    text = re.sub(r"^#{1,6}\s*", "", text)
+    return text.strip().lower()
+
+
+def _extract_active_hours_section(content: str) -> str:
+    """Extract the heartbeat active-hours section body, if present."""
+    lines = content.splitlines()
+    start_index: int | None = None
+
+    for idx, line in enumerate(lines):
+        heading = _normalize_heading_text(line)
+        if heading in _HEARTBEAT_ACTIVE_HOUR_HEADINGS:
+            start_index = idx + 1
+            break
+
+    if start_index is None:
+        return ""
+
+    section_lines: list[str] = []
+    for line in lines[start_index:]:
+        stripped = line.strip()
+        if _MARKDOWN_HEADING_RE.match(stripped):
+            break
+        section_lines.append(line)
+    return "\n".join(section_lines)
+
+
+def _valid_heartbeat_hours(start: int, end: int) -> bool:
+    """Validate active-hour bounds.
+
+    End hour may be 24 so ranges such as ``0:00 - 24:00`` can represent a
+    full day and still map cleanly to APScheduler's 0-23 hour range.
+    """
+    return 0 <= start <= 23 and 0 <= end <= 24
+
 
 def parse_heartbeat_config(content: str) -> tuple[int | None, int | None]:
     """Parse heartbeat.md content to extract active hours.
@@ -43,9 +93,26 @@ def parse_heartbeat_config(content: str) -> tuple[int | None, int | None]:
         Tuple of (active_start_hour, active_end_hour).
         Both are None if no time range found in content.
     """
-    m = re.search(r"(\d{1,2}):\d{0,2}\s*-\s*(\d{1,2})", content)
-    if m:
-        return int(m.group(1)), int(m.group(2))
+    search_targets: list[str] = []
+    active_hours_section = _extract_active_hours_section(content)
+    if active_hours_section:
+        search_targets.append(active_hours_section)
+
+    for line in content.splitlines():
+        heading = _normalize_heading_text(line)
+        for label in _HEARTBEAT_ACTIVE_HOUR_HEADINGS:
+            if heading.startswith(f"{label}:") or heading.startswith(f"{label}："):
+                parts = re.split(r"[:：]", line, maxsplit=1)
+                if len(parts) == 2:
+                    search_targets.append(parts[1])
+                break
+
+    for target in search_targets:
+        m = _HEARTBEAT_TIME_RANGE_RE.search(target)
+        if m:
+            start, end = int(m.group(1)), int(m.group(2))
+            if _valid_heartbeat_hours(start, end):
+                return start, end
     return None, None
 
 

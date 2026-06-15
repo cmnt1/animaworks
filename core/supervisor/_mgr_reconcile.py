@@ -301,15 +301,17 @@ class ReconcileMixin:
         trigger is the ``POST /api/system/hot-reload`` API endpoint.
         """
         try:
+            import hashlib
+
             from core.config.models import get_config_path, load_config
 
             config_path = get_config_path()
-            mtime = config_path.stat().st_mtime
-            if not hasattr(self, "_last_config_mtime"):
-                self._last_config_mtime = mtime
+            content_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()
+            if not hasattr(self, "_last_config_hash"):
+                self._last_config_hash = content_hash
                 return
-            if mtime != self._last_config_mtime:
-                self._last_config_mtime = mtime
+            if content_hash != self._last_config_hash:
+                self._last_config_hash = content_hash
                 load_config()
                 logger.info("Reconciliation: config.json changed, cache refreshed")
         except Exception:

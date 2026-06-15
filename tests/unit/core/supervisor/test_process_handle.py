@@ -77,6 +77,20 @@ class TestPingCounter:
 
         assert handle.stats.missed_pings >= 3
 
+    @pytest.mark.asyncio
+    async def test_ping_timeout_increments_without_warning(self, handle: ProcessHandle, caplog):
+        """Timeouts still count as missed pings but no longer emit per-occurrence warnings."""
+        handle.state = ProcessState.RUNNING
+        handle.stats.missed_pings = 0
+        handle.send_request = AsyncMock(side_effect=TimeoutError)
+
+        with caplog.at_level("WARNING"):
+            result = await handle.ping(timeout=0.01)
+
+        assert result is False
+        assert handle.stats.missed_pings == 1
+        assert "Ping timeout for test-anima" not in caplog.text
+
 
 class TestIsAlive:
     """Tests for Bug #3: is_alive() must detect dead IPC connections."""
