@@ -439,10 +439,7 @@ def _pending_task_json_exists(anima_dir: Path, task_id: str) -> bool:
     if not task_id:
         return False
     pending_dir = anima_dir / "state" / "pending"
-    return any(
-        (pending_dir / rel / f"{task_id}.json").exists()
-        for rel in ("", "processing", "deferred", "suppressed")
-    )
+    return any((pending_dir / rel / f"{task_id}.json").exists() for rel in ("", "processing", "deferred", "suppressed"))
 
 
 def _move_with_collision(path: Path, target_dir: Path, *, collision_label: str) -> Path:
