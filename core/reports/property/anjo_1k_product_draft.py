@@ -190,6 +190,23 @@ def data_dir_for_ymd(root: Path, ymd: str) -> Path:
     return root / ymd[0:4] / ymd[4:6] / ymd[6:8]
 
 
+def get_prev_minimini_count(prev_date: str) -> int | None:
+    """Get minimini listing count from the previous day's product JSON, if available."""
+    prev_ymd = prev_date.replace("-", "")
+    prev_dir = data_dir_for_ymd(PRODUCT_DATA_ROOT, prev_ymd)
+    if not prev_dir.exists():
+        return None
+    for path in prev_dir.glob(f"P-*_{SLUG_PREFIX}-{prev_ymd}_data.json"):
+        try:
+            d = json.loads(path.read_text(encoding="utf-8"))
+            count = d.get("minimini_url_snapshot", {}).get("listing_count")
+            if count is not None:
+                return int(count)
+        except Exception:
+            pass
+    return None
+
+
 def build_comments(data: dict) -> list[str]:
     lc = data["listing_count"]
     rent = data["rent"]
@@ -224,6 +241,7 @@ def render_markdown(
     updated: str,
     confirmed: str,
     task_results_dir: Path = TASK_RESULTS_DIR,
+    prev_minimini_count: int | None = None,
 ) -> str:
     d = data["latest_date"]
     prev = data["prev_date"]
@@ -239,6 +257,30 @@ def render_markdown(
     )
     comments = "\n".join(f"- {comment}" for comment in build_comments(data))
     evidence_path = task_results_dir / f"anjo-1k-daily-products-draft-{d.replace('-', '')}.json"
+
+    # minimini section
+    minimini = data.get("minimini_url_snapshot") or {}
+    minimini_count = minimini.get("listing_count")
+    minimini_summary_line = ""
+    minimini_section = ""
+    if minimini_count is not None:
+        if prev_minimini_count is not None:
+            diff = int(minimini_count) - int(prev_minimini_count)
+            diff_str = f"（前日比 {'+' if diff > 0 else ''}{diff}件）"
+        else:
+            diff_str = ""
+        minimini_summary_line = f"\n- minimini掲載件数: **{minimini_count}件**{diff_str}"
+        minimini_section = f"""
+## minimini掲載状況
+
+| 項目 | 値 |
+|---|---|
+| 掲載件数 | {minimini_count}件{diff_str} |
+| 取得日時 | {minimini.get("fetched_at", "-")} |
+| 取得方法 | {minimini.get("method", "-")} |
+| 取得URL | {minimini.get("url", "-")} |
+| HTTPステータス | {minimini.get("http_status", "-")} |
+"""
 
     return f"""---
 type: product
@@ -280,7 +322,7 @@ formal_evidence_path: {evidence_path}
 - 平均坪単価: **{yen(unit["latest"]["mean"])}円/坪**（前日比 {signed(unit["change_mean"], "円/坪")}）
 - 中央値坪単価: **{yen(unit["latest"]["median"])}円/坪**
 - 掲載日数中央値: **{vac["median_obs_days"]}日**
-- 7日以上掲載比率: **{vac["pct_listings_7plus_days"]}%**
+- 7日以上掲載比率: **{vac["pct_listings_7plus_days"]}%**{minimini_summary_line}
 
 ## 主要指標（最新日 vs 前日）
 | 指標 | 最新日（{d}） | 前日（{prev}） | 前日比 |
@@ -298,7 +340,7 @@ formal_evidence_path: {evidence_path}
 
 ## コメント
 {comments}
-
+{minimini_section}
 ## データソース
 - 参照JSON: `{source_json}`
 - Obsidian格納JSON: `{copy_json}`
@@ -480,7 +522,9 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(evidence, ensure_ascii=False))
             return 0 if evidence["status"] == "done" else 1
         created = frontmatter_value(old_text, "created", datetime.now(JST).replace(microsecond=0).isoformat())
-        confirmed = frontmatter_value(old_text, "confirmed", "false") or "false"
+        # Never propagate confirmed:true from an existing file. Only a human reviewer (sakura) can
+        # set confirmed:true after promotion to status:完了. Anima generation always emits false.
+        confirmed = "false"
     else:
         product_id = max_product_id() + 1
         code = f"P-{product_id:05d}"
@@ -496,6 +540,7 @@ def main(argv: list[str] | None = None) -> int:
     if not sha256_matches(copy_json, digest):
         raise RuntimeError("Copied JSON SHA-256 mismatch")
 
+    prev_minimini_count = get_prev_minimini_count(data.get("prev_date", ""))
     updated = datetime.now(JST).replace(microsecond=0).isoformat()
     out_md.write_text(
         render_markdown(
@@ -509,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
             updated,
             confirmed,
             task_results_dir=task_results_dir,
+            prev_minimini_count=prev_minimini_count,
         ),
         encoding="utf-8",
         newline="\n",
