@@ -34,6 +34,7 @@ _CRON_EXPR_RE = re.compile(r"^[\d\*\/\-\,]+(\s+[\d\*\/\-\,]+){4}$")
 
 _HEARTBEAT_ACTIVE_HOUR_HEADINGS = {
     "活動時間",
+    "稼働時間",
     "active hours",
     "활동 시간",
     "활동시간",
@@ -94,15 +95,26 @@ def parse_heartbeat_config(content: str) -> tuple[int | None, int | None]:
         Tuple of (active_start_hour, active_end_hour).
         Both are None if no time range found in content.
     """
+    search_targets: list[str] = []
     active_hours_section = _extract_active_hours_section(content)
-    if not active_hours_section:
-        return None, None
+    if active_hours_section:
+        search_targets.append(active_hours_section)
 
-    m = _HEARTBEAT_TIME_RANGE_RE.search(active_hours_section)
-    if m:
-        start, end = int(m.group(1)), int(m.group(2))
-        if _valid_heartbeat_hours(start, end):
-            return start, end
+    for line in content.splitlines():
+        heading = _normalize_heading_text(line)
+        for label in _HEARTBEAT_ACTIVE_HOUR_HEADINGS:
+            if heading.startswith(f"{label}:") or heading.startswith(f"{label}："):
+                parts = re.split(r"[:：]", line, maxsplit=1)
+                if len(parts) == 2:
+                    search_targets.append(parts[1])
+                break
+
+    for target in search_targets:
+        m = _HEARTBEAT_TIME_RANGE_RE.search(target)
+        if m:
+            start, end = int(m.group(1)), int(m.group(2))
+            if _valid_heartbeat_hours(start, end):
+                return start, end
     return None, None
 
 

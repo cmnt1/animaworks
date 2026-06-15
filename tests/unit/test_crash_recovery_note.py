@@ -9,12 +9,13 @@ Tests:
 """
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-
+from core._anima_lifecycle import LifecycleMixin
 
 # ── i18n template tests ──────────────────────────────────────────
 
@@ -188,7 +189,7 @@ class TestRecoverStreamingJournalRecoveryNote:
             trigger="heartbeat",
             started_at="2026-03-05T10:00:00+09:00",
             last_event_at="",
-            recovered_text="",
+            recovered_text="partial heartbeat output",
             tool_calls=[],
         )
 
@@ -276,26 +277,20 @@ class TestHeartbeatUnreadCount:
 
     def test_unread_count_passed_to_failure_handler(self):
         """Source code should call messenger.unread_count() before failure handler."""
-        import inspect
-        from core._anima_lifecycle import LifecycleMixin
-
         source = inspect.getsource(LifecycleMixin.run_heartbeat)
         assert "messenger.unread_count()" in source
         assert "await self._handle_heartbeat_failure(exc, [], _unread)" in source
 
     def test_unread_count_falls_back_to_zero_on_error(self):
         """If messenger.unread_count() raises, should fallback to 0."""
-        import inspect
-        from core._anima_lifecycle import LifecycleMixin
-
         source = inspect.getsource(LifecycleMixin.run_heartbeat)
         assert "_unread = 0" in source
         # Verify try/except wraps the count_unread call
         lines = source.split("\n")
-        unread_init_idx = next(i for i, l in enumerate(lines) if "_unread = 0" in l)
-        try_idx = next(i for i, l in enumerate(lines) if i > unread_init_idx and "try:" in l)
-        unread_call_idx = next(i for i, l in enumerate(lines) if i > try_idx and "unread_count()" in l)
-        except_idx = next(i for i, l in enumerate(lines) if i > unread_call_idx and "except OSError:" in l)
+        unread_init_idx = next(i for i, line in enumerate(lines) if "_unread = 0" in line)
+        try_idx = next(i for i, line in enumerate(lines) if i > unread_init_idx and "try:" in line)
+        unread_call_idx = next(i for i, line in enumerate(lines) if i > try_idx and "unread_count()" in line)
+        except_idx = next(i for i, line in enumerate(lines) if i > unread_call_idx and "except OSError:" in line)
         assert unread_init_idx < try_idx < unread_call_idx < except_idx
 
 
