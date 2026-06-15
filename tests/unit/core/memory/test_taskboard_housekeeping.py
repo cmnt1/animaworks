@@ -238,6 +238,47 @@ def test_recent_cron_queue_is_not_cancelled_by_minutes_threshold(tmp_path: Path)
     assert queue.get_task_by_id("cron-recent").status == "in_progress"
 
 
+def test_missing_taskboard_metadata_archived_unless_pending_json_exists(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = _anima_dir(data_dir)
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id="missing-task",
+        actor="test",
+        column="todo",
+    )
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id="pending-task",
+        actor="test",
+        column="todo",
+    )
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id="archive-only",
+        actor="test",
+        column="todo",
+    )
+    (anima_dir / "state" / "task_queue_archive.jsonl").write_text(
+        json.dumps({"task_id": "archive-only", "status": "done", "summary": "done"}) + "\n",
+        encoding="utf-8",
+    )
+    _write_json(
+        anima_dir / "state" / "pending" / "pending-task.json",
+        {"task_id": "pending-task"},
+    )
+
+    result = cleanup_taskboard_stale_artifacts(data_dir, 24, 48, 24, 30)
+
+    assert result["metadata_archived"] == 2
+    assert result["metadata_pending_json"] == 1
+    assert store.get_metadata("sakura", "missing-task").visibility == "archived"
+    assert store.get_metadata("sakura", "missing-task").tombstone_reason == "queue_missing_without_pending_json"
+    assert store.get_metadata("sakura", "archive-only").visibility == "archived"
+    assert store.get_metadata("sakura", "pending-task").visibility == "active"
+
+
 def test_stale_current_state_archives_and_resets_when_no_active_visible_task(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = _anima_dir(data_dir)

@@ -235,6 +235,38 @@ class TestTaskBoardList:
         assert default_resp.json()["tasks"] == []
         assert missing_resp.json()["tasks"][0]["task_id"] == "missing-task"
         assert missing_resp.json()["tasks"][0]["queue_missing"] is True
+        assert missing_resp.json()["tasks"][0]["display_title"] == "欠落タスク: alice:missing-task"
+        assert missing_resp.json()["tasks"][0]["diagnostic_summary"] == (
+            "TaskQueue本体が見つからないため、TaskBoardメタデータから復元表示しています。"
+        )
+
+    async def test_missing_delegated_child_uses_parent_title(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["alice", "bob"])
+        _queue(app, "alice").add_task(
+            source="anima",
+            original_instruction="parent instruction",
+            assignee="alice",
+            summary="[委譲] missing child follow-up",
+            task_id="parent-task",
+            meta={"delegated_to": "bob", "delegated_task_id": "missing-child"},
+        )
+        _store(app).upsert_metadata(
+            anima_name="bob",
+            task_id="missing-child",
+            actor="planner",
+            column="todo",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/task-board", params={"include_missing": "true"})
+
+        child = next(task for task in resp.json()["tasks"] if task["task_id"] == "missing-child")
+        assert child["queue_missing"] is True
+        assert child["display_title"] == "[委譲] missing child follow-up"
+        assert child["diagnostic_summary"] == (
+            "TaskQueue本体が見つからないため、TaskBoardメタデータから復元表示しています。"
+        )
 
 
 class TestTaskBoardPatch:

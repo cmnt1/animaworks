@@ -477,6 +477,8 @@ def _task_to_response(task: BoardTask) -> dict[str, Any]:
     data["summary"] = _task_display_text(data.get("summary"))
     data["display_title"] = _task_display_title(task, fallback_summary=data.get("summary"))
     data["diagnostic_summary"] = data["summary"] if _is_diagnostic_summary(raw_summary) else None
+    if task.queue_missing and not data["diagnostic_summary"]:
+        data["diagnostic_summary"] = "TaskQueue本体が見つからないため、TaskBoardメタデータから復元表示しています。"
     if task.is_from_cron and task.queue_status == "in_progress" and task.column == BoardColumn.BLOCKED:
         data["diagnostic_summary"] = "古いcron実行中が停止扱いになっています。再実行または環境確認が必要です。"
     related_tasks = data.get("related_tasks")
@@ -524,6 +526,11 @@ def _task_display_title(task: BoardTask, *, fallback_summary: Any) -> str | None
     if isinstance(instruction, str) and instruction.strip():
         first_line = next((line.strip() for line in instruction.splitlines() if line.strip()), "")
         return first_line[:180] if first_line else None
+    if task.queue_missing:
+        for related in task.related_tasks:
+            if related.title and related.title.strip():
+                return related.title.strip()
+        return f"欠落タスク: {task.anima_name}:{task.task_id}"
     return fallback_summary if isinstance(fallback_summary, str) else None
 
 

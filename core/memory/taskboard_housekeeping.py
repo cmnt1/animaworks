@@ -49,6 +49,9 @@ def cleanup_taskboard_stale_artifacts(
     cron_queue = _cleanup_stale_cron_queue_tasks(animas_dir, cron_queue_stale_minutes)
     results.update({f"cron_queue_{key}": value for key, value in cron_queue.items()})
 
+    metadata = _cleanup_missing_taskboard_metadata(animas_dir, store)
+    results.update({f"metadata_{key}": value for key, value in metadata.items()})
+
     current_state = _cleanup_current_state(animas_dir, current_state_stale_hours, store)
     results.update({f"current_state_{key}": value for key, value in current_state.items()})
 
@@ -352,6 +355,55 @@ def _taskboard_store_for_housekeeping(data_dir: Path) -> Any | None:
         return None
 
 
+def _cleanup_missing_taskboard_metadata(animas_dir: Path, store: Any | None) -> dict[str, int]:
+    """Archive active TaskBoard metadata rows whose executable queue body is gone."""
+    if store is None:
+        return {"archived": 0, "pending_json": 0, "errors": 0}
+
+    archived = 0
+    pending_json = 0
+    errors = 0
+
+    try:
+        from core.taskboard.models import AttentionVisibility, BoardColumn
+    except Exception:
+        logger.debug("TaskBoard models unavailable for missing metadata cleanup", exc_info=True)
+        return {"archived": 0, "pending_json": 0, "errors": 1}
+
+    for metadata in store.list_metadata():
+        try:
+            if metadata.visibility != AttentionVisibility.ACTIVE:
+                continue
+            anima_dir = animas_dir / metadata.anima_name
+            if not anima_dir.is_dir():
+                continue
+            if _active_queue_task_exists(anima_dir, metadata.task_id):
+                continue
+            if _pending_task_json_exists(anima_dir, metadata.task_id):
+                pending_json += 1
+                continue
+            store.upsert_metadata(
+                anima_name=metadata.anima_name,
+                task_id=metadata.task_id,
+                actor="taskboard_housekeeping",
+                event_type="archived",
+                visibility=AttentionVisibility.ARCHIVED,
+                column=BoardColumn.SUPPRESSED,
+                tombstone_reason="queue_missing_without_pending_json",
+            )
+            archived += 1
+        except Exception:
+            errors += 1
+            logger.warning(
+                "Failed to archive missing TaskBoard metadata: %s:%s",
+                getattr(metadata, "anima_name", "?"),
+                getattr(metadata, "task_id", "?"),
+                exc_info=True,
+            )
+
+    return {"archived": archived, "pending_json": pending_json, "errors": errors}
+
+
 def _read_json_object(path: Path) -> tuple[dict[str, Any], bool]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -367,6 +419,30 @@ def _task_id_from_payload(payload: dict[str, Any], path: Path) -> str:
     if isinstance(task_id, str) and task_id:
         return task_id
     return path.stem
+
+
+def _active_queue_task_exists(anima_dir: Path, task_id: str) -> bool:
+    if not task_id:
+        return False
+    try:
+        from core.memory.task_queue import TaskQueueManager
+
+        if TaskQueueManager(anima_dir).get_task_by_id(task_id) is not None:
+            return True
+    except Exception:
+        logger.debug("Failed to inspect task_queue for %s/%s", anima_dir.name, task_id, exc_info=True)
+        return True
+    return False
+
+
+def _pending_task_json_exists(anima_dir: Path, task_id: str) -> bool:
+    if not task_id:
+        return False
+    pending_dir = anima_dir / "state" / "pending"
+    return any(
+        (pending_dir / rel / f"{task_id}.json").exists()
+        for rel in ("", "processing", "deferred", "suppressed")
+    )
 
 
 def _move_with_collision(path: Path, target_dir: Path, *, collision_label: str) -> Path:
