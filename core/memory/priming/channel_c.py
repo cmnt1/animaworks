@@ -242,11 +242,6 @@ async def channel_c_related_knowledge(
         return ("", "")
 
     try:
-        retriever = get_retriever()
-        if retriever is None:
-            logger.debug("Channel C: Retriever unavailable")
-            return ("", "")
-
         anima_name = anima_dir.name
 
         _min_score: float | None = None
