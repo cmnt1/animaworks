@@ -62,3 +62,39 @@ reviewer: sakura
     assert evidence["script_sha256"] == provenance["script_sha256"]
     assert evidence["script_py_compile_ok"] is True
     assert evidence["read_after_write_checks"]["script_preflight_ok"] is True
+
+
+def test_get_prev_minimini_count_ignores_untrusted_patterns(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(report, "PRODUCT_DATA_ROOT", tmp_path)
+    prev_dir = tmp_path / "2026" / "06" / "16"
+    write_text(
+        prev_dir / "P-00001_anjo-1k-20260616_data.json",
+        """{
+  "minimini_url_snapshot": {
+    "fetch_status": "success",
+    "listing_count": 30,
+    "pattern_used": "([0-9][0-9,]*)件"
+  }
+}
+""",
+    )
+
+    assert report.get_prev_minimini_count("2026-06-16") is None
+
+
+def test_get_prev_minimini_count_accepts_strict_kensu_pattern(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(report, "PRODUCT_DATA_ROOT", tmp_path)
+    prev_dir = tmp_path / "2026" / "06" / "16"
+    write_text(
+        prev_dir / "P-00001_anjo-1k-20260616_data.json",
+        """{
+  "minimini_url_snapshot": {
+    "fetch_status": "success",
+    "listing_count": 19,
+    "pattern_used": "p.kensu strong count"
+  }
+}
+""",
+    )
+
+    assert report.get_prev_minimini_count("2026-06-16") == 19

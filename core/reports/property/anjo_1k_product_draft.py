@@ -36,6 +36,12 @@ SLUG_PREFIX = "anjo-1k"
 DISCORD_THREAD_ID = "1491411026263146658"
 SCRAPE_STATUS_TABLE = "dbo.T_Suumo_Scrape_Status"
 TARGET_CITY_ID = 1
+TRUSTED_MINIMINI_COUNT_PATTERNS = {
+    "p.kensu strong count",
+    "pagetitle_sub p.kensu strong count",
+    "count text label",
+    "count text range label",
+}
 
 
 def source_file_path() -> Path:
@@ -191,7 +197,7 @@ def data_dir_for_ymd(root: Path, ymd: str) -> Path:
 
 
 def get_prev_minimini_count(prev_date: str) -> int | None:
-    """Get minimini listing count from the previous day's product JSON, if available."""
+    """Get a trusted minimini listing count from the previous day's product JSON."""
     prev_ymd = prev_date.replace("-", "")
     prev_dir = data_dir_for_ymd(PRODUCT_DATA_ROOT, prev_ymd)
     if not prev_dir.exists():
@@ -199,7 +205,12 @@ def get_prev_minimini_count(prev_date: str) -> int | None:
     for path in prev_dir.glob(f"P-*_{SLUG_PREFIX}-{prev_ymd}_data.json"):
         try:
             d = json.loads(path.read_text(encoding="utf-8"))
-            count = d.get("minimini_url_snapshot", {}).get("listing_count")
+            snapshot = d.get("minimini_url_snapshot", {})
+            if snapshot.get("fetch_status") != "success":
+                continue
+            if snapshot.get("pattern_used") not in TRUSTED_MINIMINI_COUNT_PATTERNS:
+                continue
+            count = snapshot.get("listing_count")
             if count is not None:
                 return int(count)
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
