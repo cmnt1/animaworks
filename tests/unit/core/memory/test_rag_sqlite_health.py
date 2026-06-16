@@ -11,6 +11,7 @@ from core.memory.rag.sqlite_health import (
     configure_chroma_sqlite_pragmas,
     prepare_chroma_sqlite_for_startup,
     quick_check_chroma_sqlite,
+    rebuild_chroma_fts5_indexes,
     request_repair_for_sqlite_health,
 )
 
@@ -53,6 +54,18 @@ def test_configure_chroma_sqlite_pragmas_missing_db_is_healthy(tmp_path: Path) -
 
     assert result.ok is True
     assert result.status == "missing"
+
+
+def test_rebuild_chroma_fts5_indexes_uses_valid_fts5_rebuild_syntax(tmp_path: Path) -> None:
+    db_path = chroma_sqlite_path(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE VIRTUAL TABLE embedding_fulltext_search USING fts5(string_value)")
+        conn.execute("INSERT INTO embedding_fulltext_search(string_value) VALUES ('alpha beta')")
+
+    result = rebuild_chroma_fts5_indexes(tmp_path)
+
+    assert result.ok is True
+    assert result.status == "ok"
 
 
 def test_quick_check_reports_corrupt_result_from_runner(tmp_path: Path) -> None:

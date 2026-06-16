@@ -80,6 +80,46 @@ def quick_check_chroma_sqlite(
     return SQLiteHealthResult(db_path=db_path, ok=False, status="corrupt", details=normalized)
 
 
+def rebuild_chroma_fts5_indexes(
+    persist_dir: Path,
+    *,
+    timeout_seconds: float = DEFAULT_QUICK_CHECK_TIMEOUT_SECONDS,
+) -> SQLiteHealthResult:
+    """Rebuild Chroma FTS5 indexes, then return a fresh health check.
+
+    SQLite can report ``malformed inverted index`` for an FTS5 virtual table
+    even when the ordinary table pages are readable. Rebuilding the FTS5
+    virtual table is the narrowest repair for that failure and avoids a full
+    destructive quarantine/reindex loop.
+    """
+    db_path = chroma_sqlite_path(persist_dir)
+    if not db_path.exists():
+        return SQLiteHealthResult(db_path=db_path, ok=True, status="missing")
+
+    try:
+        with _connect(db_path, timeout_seconds) as conn:
+            conn.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
+            fts_tables = _fts5_table_names(conn)
+            for table in fts_tables:
+                quoted = _quote_identifier(table)
+                conn.execute(f"INSERT INTO {quoted}({quoted}) VALUES ('rebuild')")
+            conn.commit()
+    except sqlite3.OperationalError as exc:
+        if _sqlite_busy_or_locked(exc):
+            return SQLiteHealthResult(db_path=db_path, ok=False, status="busy", error=str(exc))
+        if _sqlite_unavailable(exc):
+            return SQLiteHealthResult(db_path=db_path, ok=False, status="unavailable", error=str(exc))
+        return SQLiteHealthResult(db_path=db_path, ok=False, status="corrupt", error=str(exc))
+    except sqlite3.DatabaseError as exc:
+        return SQLiteHealthResult(db_path=db_path, ok=False, status="corrupt", error=str(exc))
+    except OSError as exc:
+        if _sqlite_unavailable(exc):
+            return SQLiteHealthResult(db_path=db_path, ok=False, status="unavailable", error=str(exc))
+        return SQLiteHealthResult(db_path=db_path, ok=False, status="unreadable", error=str(exc))
+
+    return quick_check_chroma_sqlite(persist_dir, timeout_seconds=timeout_seconds)
+
+
 def configure_chroma_sqlite_pragmas(
     persist_dir: Path,
     *,
@@ -286,6 +326,23 @@ def _run_quick_check(db_path: Path, timeout_seconds: float) -> tuple[str, ...]:
 def _connect(db_path: Path, timeout_seconds: float) -> sqlite3.Connection:
     uri = f"file:{db_path}?mode=rw"
     return sqlite3.connect(uri, uri=True, timeout=timeout_seconds)
+
+
+def _fts5_table_names(conn: sqlite3.Connection) -> tuple[str, ...]:
+    rows = conn.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND upper(sql) LIKE 'CREATE VIRTUAL TABLE%USING FTS5%'
+        ORDER BY name
+        """
+    ).fetchall()
+    return tuple(str(row[0]) for row in rows)
+
+
+def _quote_identifier(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
 
 
 def _sqlite_busy_or_locked(exc: sqlite3.OperationalError) -> bool:

@@ -881,6 +881,73 @@ def test_atomic_rebuild_stub_fails_and_keeps_live_db(data_dir: Path, monkeypatch
     assert state["consecutive_failures"] == 1
 
 
+def test_atomic_rebuild_repairs_staged_fts5_malformed_index(data_dir: Path, monkeypatch):
+    """A staged DB with only a malformed FTS5 index is repaired before swap."""
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "knowledge" / "topic.md").write_text("# Topic\n\n## A\n\nbody", encoding="utf-8")
+    (anima_dir / "state").mkdir()
+    vectordb = anima_dir / "vectordb"
+    vectordb.mkdir()
+    (vectordb / "live.bin").write_text("live-data", encoding="utf-8")
+
+    bad_health = SQLiteHealthResult(
+        db_path=vectordb / "chroma.sqlite3",
+        ok=False,
+        status="corrupt",
+        details=("malformed inverted index for FTS5 table main.embedding_fulltext_search",),
+    )
+    good_health = SQLiteHealthResult(db_path=vectordb / "chroma.sqlite3", ok=True, status="ok", details=("ok",))
+    fts_rebuilds: list[Path] = []
+
+    _patch_atomic_build(monkeypatch, chunks_per_dir=3)
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
+    monkeypatch.setattr("core.memory.rag.sqlite_health.quick_check_chroma_sqlite", lambda _persist_dir: bad_health)
+    monkeypatch.setattr(
+        "core.memory.rag.sqlite_health.rebuild_chroma_fts5_indexes",
+        lambda persist_dir: fts_rebuilds.append(persist_dir) or good_health,
+    )
+
+    service = RAGRepairService(enabled=True, threshold=2, window_minutes=5, cooldown_minutes=60)
+    result = service.repair_anima("sora", reason="chroma_corruption", source="test")
+
+    assert result.ok
+    assert len(fts_rebuilds) == 1
+    assert fts_rebuilds[0].name.startswith("vectordb.staging-")
+    assert vectordb.exists()
+    assert not (vectordb / "live.bin").exists()
+
+
+def test_atomic_rebuild_fails_when_sqlite_health_remains_corrupt(data_dir: Path, monkeypatch):
+    """A staged DB that remains corrupt must not replace the live DB."""
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "knowledge" / "topic.md").write_text("# Topic\n\n## A\n\nbody", encoding="utf-8")
+    (anima_dir / "state").mkdir()
+    vectordb = anima_dir / "vectordb"
+    vectordb.mkdir()
+    (vectordb / "live.bin").write_text("live-data", encoding="utf-8")
+
+    bad_health = SQLiteHealthResult(
+        db_path=vectordb / "chroma.sqlite3",
+        ok=False,
+        status="corrupt",
+        details=("database disk image is malformed",),
+    )
+
+    _patch_atomic_build(monkeypatch, chunks_per_dir=3)
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
+    monkeypatch.setattr("core.memory.rag.sqlite_health.quick_check_chroma_sqlite", lambda _persist_dir: bad_health)
+
+    service = RAGRepairService(enabled=True, threshold=2, window_minutes=5, cooldown_minutes=60)
+    result = service.repair_anima("sora", reason="chroma_corruption", source="test")
+
+    assert result.status == "failed"
+    assert "failed SQLite quick_check" in (result.error or "")
+    assert (vectordb / "live.bin").read_text(encoding="utf-8") == "live-data"
+    assert not list(anima_dir.glob("vectordb.staging-*"))
+
+
 def test_record_chroma_error_suppressed_during_active_repair(data_dir: Path):
     """Corruption signals must be ignored while a repair is already in flight.
 

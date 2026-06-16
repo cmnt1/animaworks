@@ -110,6 +110,41 @@ def verify_rebuilt_vectordb(anima_name: str, *, expected_chunks: int) -> None:
         )
 
 
+def verify_rebuilt_sqlite_health(anima_name: str, persist_dir: Path) -> None:
+    """Confirm a rebuilt Chroma SQLite DB passes quick_check.
+
+    Collection presence alone is not enough: Chroma can list collections while
+    SQLite's FTS5 search index is malformed. That condition immediately trips
+    startup quick_check and re-enters supervised repair, so treat it as part of
+    the rebuild success contract.
+    """
+    from core.memory.rag.sqlite_health import quick_check_chroma_sqlite, rebuild_chroma_fts5_indexes
+
+    health = quick_check_chroma_sqlite(persist_dir)
+    if health.corrupt and _is_fts5_malformed(health):
+        logger.warning(
+            "Rebuilt vector DB has malformed FTS5 index; rebuilding FTS5 before swap: anima=%s db=%s detail=%s",
+            anima_name,
+            health.db_path,
+            health.error or health.details,
+        )
+        health = rebuild_chroma_fts5_indexes(persist_dir)
+
+    if not health.ok:
+        raise RebuildVerificationError(
+            f"rebuilt vector DB for {anima_name} failed SQLite quick_check: "
+            f"status={health.status} detail={health.error or health.details}"
+        )
+
+
+def _is_fts5_malformed(health) -> bool:
+    detail = " ".join(str(item) for item in (health.details or ()))
+    if health.error:
+        detail = f"{detail} {health.error}"
+    lower = detail.lower()
+    return "malformed inverted index" in lower and "fts5 table" in lower
+
+
 def _reindex_into_store(vector_store, anima_name: str, *, include_shared: bool) -> int:
     """Index an anima's memory (and optionally shared collections) into a store."""
     from core.memory.bm25 import rebuild_longterm_bm25_index
@@ -205,6 +240,7 @@ def atomic_rebuild_vectordb(anima_name: str, *, include_shared: bool) -> tuple[i
         finally:
             store.close()
             gc.collect()
+        verify_rebuilt_sqlite_health(anima_name, staging)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)  # never leave a half-built staging dir
         raise
