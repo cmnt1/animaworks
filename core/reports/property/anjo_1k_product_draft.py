@@ -202,8 +202,8 @@ def get_prev_minimini_count(prev_date: str) -> int | None:
             count = d.get("minimini_url_snapshot", {}).get("listing_count")
             if count is not None:
                 return int(count)
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            continue
     return None
 
 
