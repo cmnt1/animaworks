@@ -676,9 +676,9 @@ class InboxMixin:
                         try:
                             if _rc_path.exists():
                                 _rc = json.loads(_rc_path.read_text(encoding="utf-8"))
-                        except Exception:
-                            logger.debug(
-                                "[%s] Failed to read inbox_read_counts.json",
+                        except (json.JSONDecodeError, OSError):
+                            logger.warning(
+                                "[%s] Failed to read inbox_read_counts.json, using empty counts",
                                 self.name,
                                 exc_info=True,
                             )
