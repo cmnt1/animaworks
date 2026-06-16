@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,6 +23,23 @@ except ImportError:
 _EPISODES_TOP_K = 10
 _DEFAULT_TOP_K = 5
 WEIGHT_TOKEN_OVERLAP = 0.1
+
+
+def _keyword_token_matches(token: str, content_lower: str) -> bool:
+    """Return True when a keyword token matches content directly or as a compound term."""
+    if token in content_lower:
+        return True
+    if len(token) < 4:
+        return False
+    for content_token in re.findall(r"[\w]+", content_lower, re.UNICODE):
+        if len(content_token) >= 3 and content_token in token:
+            return True
+    if any("\u3040" <= ch <= "\u30ff" or "\u4e00" <= ch <= "\u9fff" for ch in token):
+        for size in (8, 6, 4):
+            for start in range(0, max(0, len(token) - size + 1)):
+                if token[start : start + size] in content_lower:
+                    return True
+    return False
 
 
 # ── Shared-index change detection helpers ─────────────────
@@ -631,7 +649,7 @@ class RAGMemorySearch:
                 score = r.score
                 if tokens:
                     content_lower = r.content.lower()
-                    matched = sum(1 for tok in tokens if tok in content_lower)
+                    matched = sum(1 for tok in tokens if _keyword_token_matches(tok, content_lower))
                     overlap_ratio = matched / len(tokens)
                     score += WEIGHT_TOKEN_OVERLAP * overlap_ratio
 
@@ -763,7 +781,7 @@ class RAGMemorySearch:
                 except OSError:
                     continue
                 content_lower = content.lower()
-                matched = sum(1 for tok in tokens if tok in content_lower)
+                matched = sum(1 for tok in tokens if _keyword_token_matches(tok, content_lower))
                 if matched == 0:
                     continue
                 score = matched / len(tokens)
@@ -796,7 +814,7 @@ class RAGMemorySearch:
                     summary = conv_data.get("compressed_summary", "")
                     if summary:
                         content_lower = summary.lower()
-                        matched = sum(1 for tok in tokens if tok in content_lower)
+                        matched = sum(1 for tok in tokens if _keyword_token_matches(tok, content_lower))
                         if matched > 0:
                             score = matched / len(tokens)
                             file_scores["conversation_summary"] = {

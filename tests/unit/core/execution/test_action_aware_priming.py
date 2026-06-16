@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -77,7 +76,12 @@ class TestActionAwarePrimingHook:
         hook = self._build_hook(anima_dir, session_stats)
         with patch("core.memory.rag.singleton.get_vector_store", return_value=None):
             result = await hook(
-                {"hook_event_name": "PreToolUse", "tool_name": "call_human", "tool_input": {"message": "test"}, "tool_use_id": "t1"},
+                {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "call_human",
+                    "tool_input": {"message": "test"},
+                    "tool_use_id": "t1",
+                },
                 "t1",
                 {"signal": None},
             )
@@ -143,7 +147,12 @@ class TestActionAwarePrimingHook:
 
         hook = self._build_hook(anima_dir, session_stats)
         blocked = await hook(
-            {"hook_event_name": "PreToolUse", "tool_name": "call_human", "tool_input": {"message": "test"}, "tool_use_id": "t2"},
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "call_human",
+                "tool_input": {"message": "test"},
+                "tool_use_id": "t2",
+            },
             "t2",
             {"signal": None},
         )
@@ -151,7 +160,12 @@ class TestActionAwarePrimingHook:
 
         action_gate.record_memory_read(anima_dir, "procedures/check.md")
         allowed = await hook(
-            {"hook_event_name": "PreToolUse", "tool_name": "call_human", "tool_input": {"message": "test"}, "tool_use_id": "t3"},
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "call_human",
+                "tool_input": {"message": "test"},
+                "tool_use_id": "t3",
+            },
             "t3",
             {"signal": None},
         )
@@ -172,12 +186,22 @@ class TestActionAwarePrimingHook:
 
         hook = self._build_hook(anima_dir, session_stats)
         first = await hook(
-            {"hook_event_name": "PreToolUse", "tool_name": "send_message", "tool_input": {"content": "test"}, "tool_use_id": "t3"},
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "send_message",
+                "tool_input": {"content": "test"},
+                "tool_use_id": "t3",
+            },
             "t3",
             {"signal": None},
         )
         second = await hook(
-            {"hook_event_name": "PreToolUse", "tool_name": "send_message", "tool_input": {"content": "test"}, "tool_use_id": "t4"},
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "send_message",
+                "tool_input": {"content": "test"},
+                "tool_use_id": "t4",
+            },
             "t4",
             {"signal": None},
         )
@@ -216,9 +240,12 @@ class TestActionAwarePrimingHook:
         assert session_stats["action_gate_denied_count"] == 3
 
     @pytest.mark.asyncio
-    async def test_session_stats_none_graceful(self, anima_dir):
+    async def test_session_stats_none_graceful(self, anima_dir, monkeypatch):
         """When session_stats is None, hook should not crash."""
         from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.memory import action_gate
+
+        monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [])
 
         hook = _build_pre_tool_hook(
             anima_dir,

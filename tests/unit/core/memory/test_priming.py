@@ -250,14 +250,14 @@ def test_keyword_extraction_english_stopwords_still_excluded(temp_anima_dir):
 
 @pytest.mark.asyncio
 async def test_channel_c_top_k(temp_anima_dir):
-    """Channel C must call unified search with limit=5."""
+    """Channel C must ask unified search for 5 related knowledge hits."""
     engine = PrimingEngine(temp_anima_dir)
 
     from unittest.mock import MagicMock, patch
 
     mock_searcher = MagicMock()
     mock_searcher.search_many.return_value = []
-    mock_searcher.last_search_meta = {}
+    mock_searcher.last_search_meta = {"abstain": False, "abstain_reason": ""}
 
     with patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=mock_searcher):
         await engine._channel_c_related_knowledge(["test"], message="")
@@ -276,7 +276,7 @@ async def test_channel_c_query_includes_message(temp_anima_dir):
 
     mock_searcher = MagicMock()
     mock_searcher.search_many.return_value = []
-    mock_searcher.last_search_meta = {}
+    mock_searcher.last_search_meta = {"abstain": False, "abstain_reason": ""}
 
     msg = "このIssueを裏で実装して"
 
@@ -284,12 +284,10 @@ async def test_channel_c_query_includes_message(temp_anima_dir):
         await engine._channel_c_related_knowledge(["Issue", "裏", "実装"], message=msg)
 
     call_kwargs = mock_searcher.search_many.call_args
-    queries = call_kwargs.args[0] if call_kwargs.args else call_kwargs.kwargs.get("queries")
+    queries = call_kwargs.kwargs.get("queries") or call_kwargs[0][0]
     assert len(queries) == 2, f"Expected 2 dual queries, got {len(queries)}"
-    q1 = queries[0]
-    q2 = queries[1]
-    assert q1.startswith(msg[:200])
-    assert "Issue" in q2
+    assert queries[0].startswith(msg[:200])
+    assert "Issue" in queries[1]
 
 
 @pytest.mark.asyncio
@@ -301,14 +299,14 @@ async def test_channel_c_query_keyword_only_when_no_message(temp_anima_dir):
 
     mock_searcher = MagicMock()
     mock_searcher.search_many.return_value = []
-    mock_searcher.last_search_meta = {}
+    mock_searcher.last_search_meta = {"abstain": False, "abstain_reason": ""}
 
     with patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=mock_searcher):
         await engine._channel_c_related_knowledge(["Issue", "実装"], message="")
 
     call_kwargs = mock_searcher.search_many.call_args
-    actual_queries = call_kwargs.args[0] if call_kwargs.args else call_kwargs.kwargs.get("queries")
-    assert actual_queries == ["Issue 実装"]
+    queries = call_kwargs.kwargs.get("queries") or call_kwargs[0][0]
+    assert queries == ["Issue 実装"]
 
 
 if __name__ == "__main__":
