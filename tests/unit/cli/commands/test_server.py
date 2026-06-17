@@ -177,7 +177,7 @@ class TestStopServer:
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server.terminate_pid")
+    @patch("cli.commands.server.request_process_shutdown")
     @patch("cli.commands.server._is_process_alive", side_effect=[True, False])
     @patch("cli.commands.server._read_pid", return_value=12345)
     def test_successful_stop(
@@ -193,11 +193,11 @@ class TestStopServer:
 
         result = _stop_server()
         assert result is True
-        mock_terminate.assert_called_once_with(12345, force=False, include_children=False)
+        mock_terminate.assert_called_once_with(12345, include_children=False)
         mock_orphans.assert_called_once()
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server.terminate_pid", side_effect=ProcessLookupError)
+    @patch("cli.commands.server.request_process_shutdown", side_effect=ProcessLookupError)
     @patch("cli.commands.server._is_process_alive", return_value=True)
     @patch("cli.commands.server._read_pid", return_value=12345)
     def test_process_already_exited_on_kill(
@@ -215,7 +215,7 @@ class TestStopServer:
         assert "already exited" in capsys.readouterr().out
         mock_orphans.assert_called_once()
 
-    @patch("cli.commands.server.terminate_pid", side_effect=PermissionError)
+    @patch("cli.commands.server.request_process_shutdown", side_effect=PermissionError)
     @patch("cli.commands.server._is_process_alive", return_value=True)
     @patch("cli.commands.server._read_pid", return_value=12345)
     def test_permission_error(self, mock_pid, mock_alive, mock_terminate, capsys):
@@ -227,7 +227,7 @@ class TestStopServer:
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server.terminate_pid")
+    @patch("cli.commands.server.request_process_shutdown")
     @patch("cli.commands.server._is_process_alive", side_effect=[True, False])
     @patch("cli.commands.server._find_server_pid_by_process", return_value=54321)
     @patch("cli.commands.server._read_pid", return_value=None)
@@ -249,7 +249,7 @@ class TestStopServer:
         out = capsys.readouterr().out
         assert "PID file missing" in out
         assert "54321" in out
-        mock_terminate.assert_called_once_with(54321, force=False, include_children=False)
+        mock_terminate.assert_called_once_with(54321, include_children=False)
         mock_orphans.assert_called_once()
 
     # ── Force mode tests ─────────────────────────────────
@@ -257,6 +257,7 @@ class TestStopServer:
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._remove_pid_file")
     @patch("cli.commands.server.terminate_pid")
+    @patch("cli.commands.server.request_process_shutdown")
     @patch("time.sleep")
     @patch("time.monotonic")
     @patch("cli.commands.server._is_process_alive")
@@ -267,6 +268,7 @@ class TestStopServer:
         mock_alive,
         mock_monotonic,
         mock_sleep,
+        mock_shutdown,
         mock_terminate,
         mock_remove,
         mock_orphans,
@@ -296,14 +298,10 @@ class TestStopServer:
         out = capsys.readouterr().out
         assert "SIGKILL" in out
         assert "force-killed" in out
-        assert mock_terminate.call_count == 2
-        assert mock_terminate.call_args_list[0].args == (12345,)
-        assert mock_terminate.call_args_list[0].kwargs == {
-            "force": False,
-            "include_children": False,
-        }
-        assert mock_terminate.call_args_list[1].args == (12345,)
-        assert mock_terminate.call_args_list[1].kwargs == {
+        mock_shutdown.assert_called_once_with(12345, include_children=False)
+        assert mock_terminate.call_count == 1
+        assert mock_terminate.call_args.args == (12345,)
+        assert mock_terminate.call_args.kwargs == {
             "force": True,
             "include_children": True,
         }
@@ -329,7 +327,7 @@ class TestStopServer:
         mock_orphans.assert_called_once()
 
     @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server.terminate_pid")
+    @patch("cli.commands.server.request_process_shutdown")
     @patch("cli.commands.server._read_pid", return_value=12345)
     def test_non_force_timeout_returns_false(self, mock_pid, mock_terminate, mock_alive, capsys):
         """Without --force, timeout returns False without SIGKILL."""
@@ -379,6 +377,57 @@ class TestUnreachableServerCleanup:
 
         assert result is False
         mock_terminate.assert_not_called()
+
+
+class TestSupervisorShutdownRequest:
+    @patch("cli.commands.server.urllib.request.urlopen")
+    @patch("cli.commands.server._is_port_listening", return_value=False)
+    def test_skips_when_port_is_not_listening(self, mock_port, mock_urlopen):
+        from cli.commands.server import _request_supervisor_shutdown
+
+        assert _request_supervisor_shutdown(host="127.0.0.1", port=18500) is False
+        mock_urlopen.assert_not_called()
+
+    @patch("cli.commands.server._is_port_listening", return_value=True)
+    def test_posts_internal_shutdown_endpoint(self, mock_port):
+        from cli.commands.server import _request_supervisor_shutdown
+
+        response = MagicMock()
+        response.status = 200
+        context = MagicMock()
+        context.__enter__.return_value = response
+        context.__exit__.return_value = None
+
+        with patch("cli.commands.server.urllib.request.urlopen", return_value=context) as mock_urlopen:
+            assert _request_supervisor_shutdown(host="0.0.0.0", port=18500, timeout=3.0) is True
+
+        request = mock_urlopen.call_args.args[0]
+        assert request.full_url == "http://127.0.0.1:18500/api/system/internal/shutdown-supervisor"
+        assert request.get_method() == "POST"
+        assert mock_urlopen.call_args.kwargs == {"timeout": 3.0}
+
+
+class TestOrphanRunnerCleanup:
+    @patch("core.paths.get_data_dir")
+    @patch("cli.commands.server.terminate_matching_processes", return_value=15)
+    def test_kill_orphan_runners_collapses_runner_process_trees(self, mock_terminate, mock_data_dir, tmp_path):
+        from cli.commands.server import _kill_orphan_runners
+
+        mock_data_dir.return_value = tmp_path / ".animaworks"
+
+        count = _kill_orphan_runners()
+
+        assert count == 15
+        assert mock_terminate.call_count == 1
+        assert mock_terminate.call_args.args == (("core.supervisor.runner",),)
+        kwargs = mock_terminate.call_args.kwargs
+        assert kwargs["path_contains"] == str(tmp_path / ".animaworks")
+        assert isinstance(kwargs["exclude_pids"], set)
+        assert len(kwargs["exclude_pids"]) == 2
+        assert kwargs["force"] is False
+        assert kwargs["include_children"] is True
+        assert kwargs["require_python"] is True
+        assert kwargs["collapse_descendants"] is True
 
 
 class TestCmdStart:
@@ -605,7 +654,7 @@ class TestCmdStop:
 
         args = argparse.Namespace(force=False)
         cmd_stop(args)
-        mock_stop.assert_called_once_with(force=False)
+        mock_stop.assert_called_once_with(force=False, host="127.0.0.1", port=18500)
 
     @patch("cli.commands.server._stop_server", return_value=False)
     def test_stop_failure(self, mock_stop):
@@ -621,7 +670,7 @@ class TestCmdStop:
 
         args = argparse.Namespace(force=True)
         cmd_stop(args)
-        mock_stop.assert_called_once_with(force=True)
+        mock_stop.assert_called_once_with(force=True, host="127.0.0.1", port=18500)
 
 
 # ── cmd_restart ──────────────────────────────────────────
@@ -652,7 +701,12 @@ class TestCmdRestart:
         cmd_restart(args)
 
         mock_helper.assert_called_once_with(args, 12345)
-        mock_stop.assert_called_once_with(force=False, extra_exclude_pids={99999})
+        mock_stop.assert_called_once_with(
+            force=False,
+            extra_exclude_pids={99999},
+            host="0.0.0.0",
+            port=18500,
+        )
         out = capsys.readouterr().out
         assert "99999" in out
 
@@ -678,7 +732,12 @@ class TestCmdRestart:
         args = argparse.Namespace(host="0.0.0.0", port=18500, force=True)
         cmd_restart(args)
 
-        mock_stop.assert_called_once_with(force=True, extra_exclude_pids={99999})
+        mock_stop.assert_called_once_with(
+            force=True,
+            extra_exclude_pids={99999},
+            host="0.0.0.0",
+            port=18500,
+        )
 
     @patch("cli.commands.server._get_daemon_log_path", return_value=Path("/tmp/daemon.log"))
     @patch("cli.commands.server._is_port_listening", return_value=True)
@@ -778,6 +837,7 @@ class TestSpawnRestartHelper:
         helper_code = mock_popen.call_args.args[0][2]
         assert "find_matching_pids" in helper_code
         assert "_RESTART_HELPER_CMD_MARKERS" in helper_code
+        assert "api/system/internal/shutdown-supervisor" in helper_code
         assert "terminate_pid" in helper_code
         assert "Lingering server process still detected" in helper_code
         assert "include_children=True" in helper_code

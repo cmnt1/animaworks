@@ -65,6 +65,28 @@ def terminate_pid(pid: int, *, force: bool = False, include_children: bool = Fal
     _terminate_psutil_process(proc, force=force)
 
 
+def request_process_shutdown(pid: int, *, include_children: bool = False) -> None:
+    """Ask a process to shut down gracefully before falling back to terminate.
+
+    On Windows, ``psutil.Process.terminate()`` uses TerminateProcess and does
+    not give uvicorn/FastAPI a chance to run lifespan shutdown.  Processes
+    launched via :func:`subprocess_session_kwargs` are in a new process group,
+    so CTRL_BREAK is the closest equivalent to SIGTERM there.
+    """
+    if os.name == "nt":
+        ctrl_break = getattr(signal, "CTRL_BREAK_EVENT", None)
+        if ctrl_break is not None:
+            try:
+                os.kill(pid, ctrl_break)
+                return
+            except (ProcessLookupError, PermissionError):
+                raise
+            except OSError:
+                pass
+
+    terminate_pid(pid, force=False, include_children=include_children)
+
+
 def terminate_subprocess(proc: subprocess.Popen[Any], *, force: bool = False, include_children: bool = True) -> None:
     """Terminate a ``subprocess.Popen`` instance."""
     terminate_pid(proc.pid, force=force, include_children=include_children)
@@ -123,6 +145,28 @@ def find_first_matching_pid(
     return matches[0] if matches else None
 
 
+def _collapse_descendant_matches(pids: list[int]) -> list[int]:
+    """Return only top-level PIDs when matched processes contain descendants."""
+    matched = set(pids)
+    collapsed: list[int] = []
+    for pid in pids:
+        try:
+            proc = psutil.Process(pid)
+            parent = proc.parent()
+            skip = False
+            while parent is not None:
+                if parent.pid in matched:
+                    skip = True
+                    break
+                parent = parent.parent()
+            if skip:
+                continue
+        except psutil.Error:
+            pass
+        collapsed.append(pid)
+    return collapsed
+
+
 def terminate_matching_processes(
     markers: Iterable[str],
     *,
@@ -131,6 +175,7 @@ def terminate_matching_processes(
     force: bool = False,
     include_children: bool = False,
     require_python: bool = True,
+    collapse_descendants: bool = False,
 ) -> int:
     """Terminate all matching processes and return the number targeted."""
     matches = find_matching_pids(
@@ -139,6 +184,8 @@ def terminate_matching_processes(
         exclude_pids=exclude_pids,
         require_python=require_python,
     )
+    if collapse_descendants:
+        matches = _collapse_descendant_matches(matches)
     for pid in matches:
         terminate_pid(pid, force=force, include_children=include_children)
     return len(matches)

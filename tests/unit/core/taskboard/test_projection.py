@@ -90,6 +90,85 @@ def test_projection_status_to_column_mapping(tmp_path: Path) -> None:
     assert by_status["failed"].visibility == AttentionVisibility.ACTIVE
 
 
+def test_blocked_status_overrides_stale_column_metadata(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "mira")
+    task = manager.add_task(
+        source="anima",
+        original_instruction="blocked but old metadata still says todo",
+        assignee="mira",
+        summary="blocked but old metadata still says todo",
+        task_id="blocked-old-todo",
+    )
+    manager.update_status(task.task_id, "blocked", summary="BLOCKED: needs final evidence")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="mira",
+        task_id=task.task_id,
+        actor="test",
+        column="todo",
+    )
+
+    projected = project_anima(manager.anima_dir, store)
+
+    assert projected[0].queue_status == "blocked"
+    assert projected[0].column == BoardColumn.BLOCKED
+
+
+def test_terminal_status_overrides_stale_active_metadata(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "mira")
+    task = manager.add_task(
+        source="anima",
+        original_instruction="cancelled but old metadata still says todo",
+        assignee="mira",
+        summary="cancelled but old metadata still says todo",
+        task_id="cancelled-old-todo",
+    )
+    manager.update_status(task.task_id, "cancelled", summary="cancelled")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="mira",
+        task_id=task.task_id,
+        actor="test",
+        visibility="active",
+        column="todo",
+    )
+
+    assert project_anima(manager.anima_dir, store) == []
+
+    archived = project_anima(manager.anima_dir, store, include_archived=True)
+    assert archived[0].queue_status == "cancelled"
+    assert archived[0].visibility == AttentionVisibility.ARCHIVED
+    assert archived[0].column == BoardColumn.DONE
+
+
+def test_missing_queue_metadata_is_diagnostic_not_active_work(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "hikaru"
+    (anima_dir / "state").mkdir(parents=True)
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="hikaru",
+        task_id="missing-task",
+        actor="test",
+        visibility="active",
+        column="waiting",
+    )
+
+    assert project_anima(anima_dir, store, include_missing=True) == []
+
+    diagnostic = project_anima(
+        anima_dir,
+        store,
+        include_missing=True,
+        include_archived=True,
+    )
+
+    assert len(diagnostic) == 1
+    assert diagnostic[0].queue_missing is True
+    assert diagnostic[0].visibility == AttentionVisibility.ARCHIVED
+    assert diagnostic[0].column == BoardColumn.SUPPRESSED
+    assert diagnostic[0].tombstone_reason == "queue_missing_without_queue"
+
+
 def test_stale_active_tasks_go_to_review_without_mutating_queue_status(tmp_path: Path) -> None:
     manager = _queue(tmp_path, "sakura")
     task = manager.add_task(
@@ -312,6 +391,51 @@ def test_duplicate_failed_crons_keep_latest_only(tmp_path: Path) -> None:
     assert archived_by_id[first.task_id].tombstone_reason == "superseded_cron_run"
 
 
+def test_tombstoned_latest_cron_suppresses_older_failed_crons(tmp_path: Path) -> None:
+    manager = _queue(tmp_path, "sakura")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    meta = {"from_cron": True, "cron_task_name": "daily review", "cron_type": "command"}
+
+    first = manager.add_task(
+        source="anima",
+        original_instruction="run daily review",
+        assignee="sakura",
+        summary="cron running",
+        task_id="cron-failed-1",
+        meta=meta,
+    )
+    manager.update_status(first.task_id, "failed", summary="cron failed")
+    second = manager.add_task(
+        source="anima",
+        original_instruction="run daily review",
+        assignee="sakura",
+        summary="cron running",
+        task_id="cron-failed-2",
+        meta=meta,
+    )
+    manager.update_status(second.task_id, "failed", summary="cron failed again")
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id=second.task_id,
+        visibility=AttentionVisibility.TOMBSTONED,
+        actor="owner",
+        event_type="tombstoned",
+    )
+
+    projected = project_anima(manager.anima_dir, store)
+
+    assert projected == []
+
+    archived = project_anima(manager.anima_dir, store, include_archived=True)
+    archived_by_id = {task.task_id: task for task in archived}
+
+    assert archived_by_id[first.task_id].visibility == AttentionVisibility.ARCHIVED
+    assert archived_by_id[first.task_id].column == BoardColumn.SUPPRESSED
+    assert archived_by_id[first.task_id].replaced_by == f"sakura:{second.task_id}"
+    assert archived_by_id[first.task_id].tombstone_reason == "superseded_cron_run"
+    assert archived_by_id[second.task_id].visibility == AttentionVisibility.TOMBSTONED
+
+
 def test_newer_failed_cron_suppresses_older_running_cron(tmp_path: Path) -> None:
     manager = _queue(tmp_path, "sakura")
     store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
@@ -437,9 +561,13 @@ def test_missing_queue_metadata_is_hidden_unless_requested(tmp_path: Path) -> No
     assert project_anima(anima_dir, store) == []
 
     projected = project_anima(anima_dir, store, include_missing=True)
-    assert len(projected) == 1
-    assert projected[0].queue_missing is True
-    assert projected[0].column == BoardColumn.REVIEW
+    assert projected == []
+
+    diagnostic = project_anima(anima_dir, store, include_missing=True, include_archived=True)
+    assert len(diagnostic) == 1
+    assert diagnostic[0].queue_missing is True
+    assert diagnostic[0].visibility == AttentionVisibility.ARCHIVED
+    assert diagnostic[0].column == BoardColumn.SUPPRESSED
 
 
 def test_compute_needs_human_detects_known_signals() -> None:

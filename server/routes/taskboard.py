@@ -19,7 +19,7 @@ from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.routes.taskboard")
 
-_ACTIVE_QUEUE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
+_CANCELLABLE_QUEUE_STATUSES = {"pending", "in_progress", "blocked", "delegated", "failed"}
 _SUPPRESSED_VISIBILITIES = {
     AttentionVisibility.EXPIRED,
     AttentionVisibility.ARCHIVED,
@@ -169,7 +169,7 @@ def summarize_task_board(
         animas_dir,
         store,
         anima_names=anima_names,
-        include_missing=True,
+        include_missing=False,
         include_archived=True,
     )
     summary = {
@@ -314,7 +314,7 @@ def _patch_task_board(
     if (
         payload.visibility in _CANCEL_QUEUE_VISIBILITIES
         and queue_entry is not None
-        and queue_entry.status in _ACTIVE_QUEUE_STATUSES
+        and queue_entry.status in _CANCELLABLE_QUEUE_STATUSES
     ):
         reason = f": {payload.reason}" if payload.reason else ""
         queue.update_status(task_id, "cancelled", summary=f"{payload.visibility.value} by TaskBoard{reason}")

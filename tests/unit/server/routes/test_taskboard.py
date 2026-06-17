@@ -259,10 +259,15 @@ class TestTaskBoardList:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/task-board", params={"include_missing": "true"})
+            resp = await client.get(
+                "/api/task-board",
+                params={"include_missing": "true", "include_archived": "true"},
+            )
 
         child = next(task for task in resp.json()["tasks"] if task["task_id"] == "missing-child")
         assert child["queue_missing"] is True
+        assert child["visibility"] == "archived"
+        assert child["column"] == "suppressed"
         assert child["display_title"] == "[委譲] missing child follow-up"
         assert child["diagnostic_summary"] == (
             "TaskQueue本体が見つからないため、TaskBoardメタデータから復元表示しています。"
@@ -297,6 +302,32 @@ class TestTaskBoardPatch:
 
         events = _store(app).list_events(anima_name="alice", task_id=task.task_id)
         assert events[-1]["event_type"] == "archived"
+
+    async def test_archiving_failed_task_cancels_queue_entry(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["alice"])
+        queue = _queue(app, "alice")
+        task = queue.add_task(
+            source="anima",
+            original_instruction="failed cron",
+            assignee="alice",
+            summary="failed cron",
+            task_id="task-failed",
+        )
+        queue.update_status(task.task_id, "failed", summary="cron failed")
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.patch(
+                f"/api/task-board/alice/{task.task_id}",
+                json={"visibility": "tombstoned", "reason": "duplicate cron noise", "actor": "tadasi"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["task"]
+        assert data["visibility"] == "archived"
+        assert data["queue_status"] == "cancelled"
+        assert queue.get_task_by_id(task.task_id).status == "cancelled"
+        assert queue.get_task_by_id(task.task_id).summary == "tombstoned by TaskBoard: duplicate cron noise"
 
     async def test_authenticated_user_overrides_request_actor(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
@@ -434,6 +465,29 @@ class TestTaskSummaryCompatibility:
         assert board_data["blocked"] == 0
         assert board_data["failed_review"] == 1
         assert board_data["total_active"] == 1
+
+    async def test_summary_ignores_missing_metadata_rows_by_default(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["alice"])
+        _store(app).upsert_metadata(
+            anima_name="alice",
+            task_id="missing-waiting",
+            actor="planner",
+            visibility="active",
+            column="waiting",
+            source_ref="task_queue:alice:missing-waiting",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            board_resp = await client.get("/api/task-board/summary")
+            list_resp = await client.get("/api/task-board")
+            missing_resp = await client.get("/api/task-board", params={"include_missing": "true"})
+
+        assert board_resp.json()["delegated"] == 0
+        assert board_resp.json()["total_active"] == 0
+        assert list_resp.json()["tasks"] == []
+        assert missing_resp.json()["counts"]["active"] == 0
+        assert missing_resp.json()["tasks"] == []
 
     async def test_summary_counts_blocked_child_parent_as_tracking_not_blocked(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["sakura", "hikaru"])

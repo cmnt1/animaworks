@@ -66,6 +66,34 @@ class TestHotReloadAllEndpoint:
         mock_mgr.reload_all.assert_awaited_once()
 
 
+class TestInternalSupervisorShutdownEndpoint:
+    def test_calls_supervisor_shutdown_all(self):
+        supervisor = MagicMock()
+        supervisor.processes = {"sakura": object(), "kanna": object()}
+        supervisor.get_all_status.return_value = {}
+        supervisor.is_scheduler_running.return_value = False
+        supervisor.scheduler = None
+        supervisor.shutdown_all = AsyncMock()
+        app = _create_test_app(supervisor=supervisor)
+        client = TestClient(app)
+
+        resp = client.post("/api/system/internal/shutdown-supervisor")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok", "processes_before_shutdown": 2}
+        supervisor.shutdown_all.assert_awaited_once()
+
+    def test_returns_503_when_supervisor_missing(self):
+        app = _create_test_app(supervisor=MagicMock())
+        app.state.supervisor = None
+        client = TestClient(app)
+
+        resp = client.post("/api/system/internal/shutdown-supervisor")
+
+        assert resp.status_code == 503
+        assert resp.json()["status"] == "unavailable"
+
+
 class TestHotReloadSlackEndpoint:
     """Tests for POST /api/system/hot-reload/slack."""
 

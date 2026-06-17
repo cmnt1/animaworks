@@ -155,7 +155,7 @@ def project_anima(
             anima_name=resolved_anima_name,
             metadata=metadata_by_task_id.get(task.task_id),
         )
-        if _should_include(board_task, include_archived=include_archived):
+        if _should_include(board_task, include_archived=include_archived) or _needed_for_cron_suppression(board_task):
             projected.append(board_task)
 
     if include_missing:
@@ -495,7 +495,7 @@ def _suppress_duplicate_failed_crons(tasks: list[BoardTask]) -> None:
 def _suppress_superseded_cron_runs(tasks: list[BoardTask]) -> None:
     groups: dict[tuple[str, str], list[BoardTask]] = {}
     for task in tasks:
-        if task.visibility != AttentionVisibility.ACTIVE or not task.is_from_cron or not task.cron_task_name:
+        if not task.is_from_cron or not task.cron_task_name:
             continue
         if task.queue_status not in {"pending", "in_progress", "blocked", "failed", "delegated"}:
             continue
@@ -507,6 +507,8 @@ def _suppress_superseded_cron_runs(tasks: list[BoardTask]) -> None:
         keeper = max(duplicates, key=_task_updated_precedence)
         for task in duplicates:
             if task is keeper:
+                continue
+            if task.visibility != AttentionVisibility.ACTIVE:
                 continue
             task.visibility = AttentionVisibility.ARCHIVED
             task.column = BoardColumn.SUPPRESSED
@@ -683,6 +685,15 @@ def _project_queue_task(
     task_meta = task.meta or {}
     is_from_cron = bool(task_meta.get("from_cron"))
     cron_task_name = task_meta.get("cron_task_name") if is_from_cron else None
+    if task.status in ARCHIVED_QUEUE_STATUSES:
+        # Queue terminal state is authoritative. Old TaskBoard metadata should
+        # not keep completed/cancelled queue rows visible as active work.
+        visibility = AttentionVisibility.ARCHIVED
+        column = default_column
+    if task.status in {"blocked", "failed"} and column in {BoardColumn.TODO, BoardColumn.RUNNING, BoardColumn.WAITING}:
+        # Durable execution state should not be shown as fresh work just
+        # because an older board column override still says "todo" or "waiting".
+        column = BoardColumn.BLOCKED
     if task.status == "pending" and column == BoardColumn.TODO and _is_stale_queue_task(task):
         # Stale active work needs triage, but it is not the same thing as a
         # queue task explicitly marked blocked.
@@ -760,6 +771,15 @@ def _is_stale_queue_task(task: TaskEntry) -> bool:
 
 
 def _project_missing_task(metadata: TaskBoardMetadata) -> BoardTask:
+    if metadata.visibility in {
+        AttentionVisibility.ARCHIVED,
+        AttentionVisibility.EXPIRED,
+        AttentionVisibility.TOMBSTONED,
+    }:
+        visibility = metadata.visibility
+    else:
+        visibility = AttentionVisibility.ARCHIVED
+    tombstone_reason = metadata.tombstone_reason or "queue_missing_without_queue"
     needs_human, needs_human_reason = compute_needs_human(
         assignee=metadata.anima_name,
         queue_status=None,
@@ -771,8 +791,8 @@ def _project_missing_task(metadata: TaskBoardMetadata) -> BoardTask:
         task_id=metadata.task_id,
         queue_missing=True,
         assignee=metadata.anima_name,
-        visibility=metadata.visibility,
-        column=metadata.column or BoardColumn.SUPPRESSED,
+        visibility=visibility,
+        column=BoardColumn.SUPPRESSED,
         position=metadata.position,
         expires_at=metadata.expires_at,
         snoozed_until=metadata.snoozed_until,
@@ -781,7 +801,7 @@ def _project_missing_task(metadata: TaskBoardMetadata) -> BoardTask:
         surface_count=metadata.surface_count,
         source_ref=metadata.source_ref or _source_ref(metadata.anima_name, metadata.task_id),
         replaced_by=metadata.replaced_by,
-        tombstone_reason=metadata.tombstone_reason,
+        tombstone_reason=tombstone_reason,
         board_updated_at=metadata.updated_at,
         board_updated_by=metadata.updated_by,
         needs_human=needs_human,
@@ -793,6 +813,16 @@ def _should_include(task: BoardTask, *, include_archived: bool) -> bool:
     if include_archived:
         return True
     return task.visibility == AttentionVisibility.ACTIVE
+
+
+def _needed_for_cron_suppression(task: BoardTask) -> bool:
+    """Keep hidden cron rows long enough to suppress older duplicate runs."""
+    return (
+        task.is_from_cron
+        and bool(task.cron_task_name)
+        and task.visibility in {AttentionVisibility.ARCHIVED, AttentionVisibility.TOMBSTONED}
+        and task.queue_status in {"pending", "in_progress", "blocked", "failed", "delegated"}
+    )
 
 
 def _resolve_source_ref(

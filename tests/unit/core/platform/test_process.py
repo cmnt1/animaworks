@@ -52,6 +52,29 @@ class TestTerminatePid:
         ):
             process.terminate_pid(99999)
 
+    def test_windows_request_process_shutdown_prefers_ctrl_break(self):
+        with (
+            patch("core.platform.process.os.name", "nt"),
+            patch("core.platform.process.signal.CTRL_BREAK_EVENT", 1, create=True),
+            patch("core.platform.process.os.kill") as mock_kill,
+            patch("core.platform.process.terminate_pid") as mock_terminate,
+        ):
+            process.request_process_shutdown(12345)
+
+        mock_kill.assert_called_once_with(12345, 1)
+        mock_terminate.assert_not_called()
+
+    def test_windows_request_process_shutdown_falls_back_to_terminate(self):
+        with (
+            patch("core.platform.process.os.name", "nt"),
+            patch("core.platform.process.signal.CTRL_BREAK_EVENT", 1, create=True),
+            patch("core.platform.process.os.kill", side_effect=OSError),
+            patch("core.platform.process.terminate_pid") as mock_terminate,
+        ):
+            process.request_process_shutdown(12345, include_children=True)
+
+        mock_terminate.assert_called_once_with(12345, force=False, include_children=True)
+
 
 class TestFindMatchingPids:
     def test_filters_by_marker_user_and_python(self):
@@ -100,3 +123,29 @@ class TestFindMatchingPids:
 
         assert count == 3
         assert mock_terminate.call_count == 3
+
+    def test_terminate_matching_processes_can_collapse_matched_descendants(self):
+        parent = SimpleNamespace(pid=1, parent=lambda: None)
+        child = SimpleNamespace(pid=2, parent=lambda: parent)
+        sibling = SimpleNamespace(pid=3, parent=lambda: None)
+
+        def fake_process(pid: int):
+            return {1: parent, 2: child, 3: sibling}[pid]
+
+        with (
+            patch("core.platform.process.find_matching_pids", return_value=[1, 2, 3]),
+            patch("core.platform.process.psutil.Process", side_effect=fake_process),
+            patch("core.platform.process.terminate_pid") as mock_terminate,
+        ):
+            count = process.terminate_matching_processes(
+                ("runner",),
+                force=True,
+                include_children=True,
+                collapse_descendants=True,
+            )
+
+        assert count == 2
+        assert mock_terminate.call_args_list[0].args == (1,)
+        assert mock_terminate.call_args_list[0].kwargs == {"force": True, "include_children": True}
+        assert mock_terminate.call_args_list[1].args == (3,)
+        assert mock_terminate.call_args_list[1].kwargs == {"force": True, "include_children": True}

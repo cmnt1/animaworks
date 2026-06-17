@@ -13,10 +13,13 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from core.platform.process import (
     find_matching_pids,
+    request_process_shutdown,
     subprocess_session_kwargs,
     terminate_matching_processes,
     terminate_pid,
@@ -149,6 +152,8 @@ def _stop_server(
     *,
     force: bool = False,
     extra_exclude_pids: set[int] | None = None,
+    host: str = "127.0.0.1",
+    port: int = 18500,
 ) -> bool:
     """Send SIGTERM to the running server and wait for it to exit.
 
@@ -190,8 +195,10 @@ def _stop_server(
             return True
 
     print(f"Stopping server (pid={pid})...")
+    if _request_supervisor_shutdown(host=host, port=port):
+        print("Supervisor shutdown requested.")
     try:
-        terminate_pid(pid, force=False, include_children=False)
+        request_process_shutdown(pid, include_children=False)
     except ProcessLookupError:
         print("Server already exited.")
         _remove_pid_file()
@@ -243,6 +250,21 @@ def _stop_server(
 
 # ── Orphan runner cleanup ─────────────────────────────────
 
+def _request_supervisor_shutdown(*, host: str, port: int, timeout: float = 30.0) -> bool:
+    """Ask the running server to stop supervised runners before process exit."""
+    check_host = _check_host(host)
+    if not _is_port_listening(check_host, port):
+        return False
+    url = f"http://{check_host}:{port}/api/system/internal/shutdown-supervisor"
+    request = urllib.request.Request(url, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - loopback endpoint
+            return 200 <= int(response.status) < 300
+    except (OSError, urllib.error.URLError, TimeoutError):
+        logger.debug("Supervisor shutdown request failed for %s", url, exc_info=True)
+        return False
+
+
 _RUNNER_CMD_MARKER = "core.supervisor.runner"
 
 
@@ -262,8 +284,9 @@ def _kill_orphan_runners() -> int:
         path_contains=data_prefix,
         exclude_pids={os.getpid(), os.getppid()},
         force=False,
-        include_children=False,
+        include_children=True,
         require_python=True,
+        collapse_descendants=True,
     )
     if killed:
         time.sleep(1)
@@ -663,7 +686,11 @@ def cmd_serve(args: argparse.Namespace) -> None:
 def cmd_stop(args: argparse.Namespace) -> None:
     """Stop the running AnimaWorks server."""
     force = getattr(args, "force", False)
-    if not _stop_server(force=force):
+    if not _stop_server(
+        force=force,
+        host=getattr(args, "host", "127.0.0.1"),
+        port=getattr(args, "port", 18500),
+    ):
         sys.exit(1)
 
 
@@ -716,12 +743,13 @@ def _spawn_restart_helper(args: argparse.Namespace, old_pid: int | None) -> int:
     data_dir = str(get_data_dir())
 
     helper_code = f"""
-import json, os, socket, sys, time, subprocess, traceback
+import json, os, socket, sys, time, subprocess, traceback, urllib.error, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from core.platform.process import (
     find_matching_pids,
     is_process_alive,
+    request_process_shutdown,
     subprocess_session_kwargs,
     terminate_pid,
 )
@@ -791,10 +819,31 @@ def _is_port_listening(h, p):
     except OSError:
         return False
 
+def _request_supervisor_shutdown():
+    check_host = "127.0.0.1" if host == "0.0.0.0" else host
+    if not _is_port_listening(check_host, port):
+        return False
+    url = f"http://{{check_host}}:{{port}}/api/system/internal/shutdown-supervisor"
+    request = urllib.request.Request(url, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return 200 <= int(response.status) < 300
+    except (OSError, urllib.error.URLError, TimeoutError):
+        return False
+
 _log(f"Started (pid={{os.getpid()}}, old_pid={{old_pid}})")
 
 # Phase 1: Wait for old server to exit
 if old_pid is not None:
+    if _request_supervisor_shutdown():
+        _log("Requested supervisor shutdown from old server")
+    _log(f"Requesting graceful shutdown for old server pid={{old_pid}}")
+    try:
+        request_process_shutdown(old_pid, include_children=False)
+    except ProcessLookupError:
+        pass
+    except Exception as e:
+        _log(f"Graceful shutdown request failed for old server pid={{old_pid}}: {{e}}")
     _log(f"Waiting for old server (pid={{old_pid}}) to exit...")
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline and _alive(old_pid):
@@ -936,7 +985,12 @@ def cmd_restart(args: argparse.Namespace) -> None:
     print(f"Restart helper spawned (pid={helper_pid}). Stopping server...")
 
     force = getattr(args, "force", False)
-    _stop_server(force=force, extra_exclude_pids={helper_pid})
+    _stop_server(
+        force=force,
+        extra_exclude_pids={helper_pid},
+        host=getattr(args, "host", "127.0.0.1"),
+        port=getattr(args, "port", 18500),
+    )
 
     removed = _clear_pycache()
     if removed:

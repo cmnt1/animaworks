@@ -201,6 +201,34 @@ async def _reload_activity_schedules(supervisor) -> None:
 def create_system_router() -> APIRouter:
     router = APIRouter()
 
+    @router.post("/system/internal/shutdown-supervisor")
+    async def shutdown_supervisor_for_cli(request: Request):
+        """Stop supervised Anima runners before an external CLI stops uvicorn.
+
+        Windows process termination does not reliably deliver a graceful ASGI
+        shutdown.  The local CLI calls this endpoint first so runner processes
+        are stopped by the in-process supervisor instead of being left behind
+        for orphan cleanup.
+        """
+        client_host = request.client.host if request.client else ""
+        if client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+            return JSONResponse(
+                {"status": "forbidden", "detail": "loopback only"},
+                status_code=403,
+            )
+
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is None or not hasattr(supervisor, "shutdown_all"):
+            return JSONResponse(
+                {"status": "unavailable", "detail": "supervisor not initialized"},
+                status_code=503,
+            )
+
+        processes = getattr(supervisor, "processes", {}) or {}
+        process_count = len(processes) if hasattr(processes, "__len__") else None
+        await supervisor.shutdown_all()
+        return {"status": "ok", "processes_before_shutdown": process_count}
+
     @router.get("/shared/users")
     async def list_shared_users(request: Request):
         """List registered user names from shared/users/."""
