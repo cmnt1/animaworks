@@ -882,7 +882,14 @@ def test_atomic_rebuild_stub_fails_and_keeps_live_db(data_dir: Path, monkeypatch
 
 
 def test_atomic_rebuild_repairs_staged_fts5_malformed_index(data_dir: Path, monkeypatch):
-    """A staged DB with only a malformed FTS5 index is repaired before swap."""
+    """A DB with only a malformed FTS5 index is repaired before and after swap.
+
+    ``atomic_rebuild_vectordb`` verifies SQLite health twice: once on the staging
+    dir before the swap, and once on the live dir after the swap (the Windows
+    copytree-move path can leave the moved DB needing an FTS5 rebuild). With
+    quick_check stubbed to always report a malformed FTS5 index, both
+    verifications trigger a rebuild — on the staging dir, then the live dir.
+    """
     anima_dir = data_dir / "animas" / "sora"
     (anima_dir / "knowledge").mkdir(parents=True)
     (anima_dir / "knowledge" / "topic.md").write_text("# Topic\n\n## A\n\nbody", encoding="utf-8")
@@ -912,8 +919,9 @@ def test_atomic_rebuild_repairs_staged_fts5_malformed_index(data_dir: Path, monk
     result = service.repair_anima("sora", reason="chroma_corruption", source="test")
 
     assert result.ok
-    assert len(fts_rebuilds) == 1
-    assert fts_rebuilds[0].name.startswith("vectordb.staging-")
+    assert len(fts_rebuilds) == 2
+    assert fts_rebuilds[0].name.startswith("vectordb.staging-")  # pre-swap staging dir
+    assert fts_rebuilds[1].name == "vectordb"  # post-swap live dir
     assert vectordb.exists()
     assert not (vectordb / "live.bin").exists()
 
