@@ -17,7 +17,7 @@ import pytest
 from core.memory import MemoryManager
 from core.messenger import Messenger
 from core.time_utils import now_jst
-from core.tooling.handler import ToolHandler
+from core.tooling.handler import ToolHandler, active_session_type
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -91,6 +91,43 @@ class TestPostChannelPerRunGuard:
             mock_cfg.return_value.heartbeat.channel_post_cooldown_s = 0
             result2 = handler.handle("post_channel", {"channel": "general", "text": "After reset"})
         assert "Posted to #general" in result2
+
+
+class TestHeartbeatOkPostSuppression:
+    """Heartbeat の異常なし投稿を Board/Discord に流さない。"""
+
+    def test_heartbeat_ok_summary_is_not_posted(self, tmp_path: Path) -> None:
+        handler, _, shared_dir = _make_handler(tmp_path)
+        token = active_session_type.set("heartbeat")
+        try:
+            result = handler.handle(
+                "post_channel",
+                {
+                    "channel": "general",
+                    "text": "【Heartbeat】HEARTBEAT_OK - Inbox: 0件 - アクティブタスク: 0件",
+                },
+            )
+        finally:
+            active_session_type.reset(token)
+
+        assert "Skipped routine HEARTBEAT_OK" in result
+        assert not (shared_dir / "channels" / "general.jsonl").exists()
+
+    def test_heartbeat_report_with_blocker_is_still_posted(self, tmp_path: Path) -> None:
+        handler, _, _ = _make_handler(tmp_path)
+        token = active_session_type.set("heartbeat")
+        try:
+            result = handler.handle(
+                "post_channel",
+                {
+                    "channel": "general",
+                    "text": "【Heartbeat】blocked: provider error detected",
+                },
+            )
+        finally:
+            active_session_type.reset(token)
+
+        assert "Posted to #general" in result
 
 
 # ── post_channel cross-run guard ────────────────────────────

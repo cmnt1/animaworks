@@ -37,6 +37,18 @@ _OPS_ESCALATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+_HEARTBEAT_OK_RE = re.compile(r"\bHEARTBEAT_OK\b", re.IGNORECASE)
+_HEARTBEAT_REPORTABLE_RE = re.compile(
+    r"(blocked|failed|error|overdue|stale|異常|失敗|エラー|停止|ブロック|未承認|未提出|"
+    r"Inbox\s*[:：]\s*[1-9]|未読\s*[1-9]|アクティブタスク\s*[:：]\s*[1-9]|"
+    r"active\s+tasks?\s*[:：]\s*[1-9]|pending\s*[:：]\s*[1-9])",
+    re.IGNORECASE,
+)
+
+
+def _is_routine_heartbeat_ok_post(text: str) -> bool:
+    return bool(_HEARTBEAT_OK_RE.search(text)) and not bool(_HEARTBEAT_REPORTABLE_RE.search(text))
+
 
 class CommsToolsMixin:
     """Message sending, channel posting/reading, DM history, and human notification."""
@@ -426,6 +438,14 @@ class CommsToolsMixin:
         text = args.get("text", "")
         if not channel or not text:
             return _error_result("InvalidArguments", "channel and text are required")
+
+        if active_session_type.get() == "heartbeat" and _is_routine_heartbeat_ok_post(text):
+            logger.info(
+                "Skipping routine HEARTBEAT_OK channel post: anima=%s channel=%s",
+                self._anima_name,
+                channel,
+            )
+            return "Skipped routine HEARTBEAT_OK channel post: no Board/Discord report needed"
 
         fallback_from_ops = False
         if channel == "ops" and not self._has_ops_human_escalation():
