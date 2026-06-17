@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
@@ -103,3 +103,50 @@ class TestInternalMessageSent:
                 json={"from_person": "alice", "to_person": "bob"},
             )
         assert resp.status_code == 200
+
+    @patch("core.outbound_auto.BoardDiscordSync")
+    async def test_channel_message_sent_syncs_to_discord(self, mock_sync_cls):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        mock_sync = MagicMock()
+        mock_sync_cls.return_value = mock_sync
+
+        with patch.dict("os.environ", {"ANIMAWORKS_DISABLE_EXTERNAL_SYNC": "0"}):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/internal/message-sent",
+                    json={
+                        "from_person": "cmnt",
+                        "to_person": "#channel:affiliate",
+                        "content": "Owner instruction",
+                        "source": "human",
+                    },
+                )
+
+        assert resp.status_code == 200
+        mock_sync.sync_board_post.assert_called_once_with(
+            board_name="affiliate",
+            text="Owner instruction",
+            from_person="cmnt",
+            source="human",
+        )
+
+    @patch("core.outbound_auto.BoardDiscordSync")
+    async def test_channel_message_sent_respects_external_sync_disable(self, mock_sync_cls):
+        app = _make_test_app()
+        app.state.disable_external_sync = True
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/message-sent",
+                json={
+                    "from_person": "cmnt",
+                    "to_person": "#channel:affiliate",
+                    "content": "Owner instruction",
+                    "source": "human",
+                },
+            )
+
+        assert resp.status_code == 200
+        mock_sync_cls.assert_not_called()

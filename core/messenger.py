@@ -343,8 +343,12 @@ class Messenger:
         text: str,
         source: str = "anima",
         from_name: str | None = None,
-    ) -> None:
-        """Post a message to a shared channel (append-only JSONL)."""
+    ) -> bool:
+        """Post a message to a shared channel (append-only JSONL).
+
+        Returns True when the message was written, False when ACL or I/O
+        prevented the post.
+        """
         _validate_name(channel, "channel name")
 
         poster = from_name or self.anima_name
@@ -356,7 +360,7 @@ class Messenger:
                 self.anima_name,
                 channel,
             )
-            return
+            return False
 
         # Validate Anima-authored posts: from_name must be a known anima or "human".
         if source == "anima" and poster != "human":
@@ -370,7 +374,7 @@ class Messenger:
                         poster,
                         channel,
                     )
-                    return
+                    return False
             except Exception:
                 pass
         channels_dir = self.shared_dir / "channels"
@@ -389,8 +393,10 @@ class Messenger:
             with filepath.open("a", encoding="utf-8") as f:
                 f.write(entry + "\n")
             logger.info("Channel post: %s -> #%s", poster, channel)
+            return True
         except OSError:
             logger.warning("Failed to post to channel: %s", channel)
+            return False
 
     def last_post_by(self, anima_name: str, channel: str) -> dict | None:
         """Return the last post by *anima_name* in *channel*, or None.

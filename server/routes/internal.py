@@ -7,6 +7,7 @@ import asyncio
 import concurrent.futures
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -29,6 +30,7 @@ class MessageSentNotification(BaseModel):
     to_person: str
     content: str = ""
     message_id: str = ""
+    source: str = ""
 
 
 class EmbedRequest(BaseModel):
@@ -117,6 +119,25 @@ def create_internal_router() -> APIRouter:
 
         # Note: replied_to tracking is now managed by each Anima process.
         # The server no longer holds live DigitalAnima objects.
+
+        if body.to_person.startswith("#channel:"):
+            channel = body.to_person.removeprefix("#channel:")
+            sync_disabled = os.environ.get("ANIMAWORKS_DISABLE_EXTERNAL_SYNC") == "1" or bool(
+                getattr(request.app.state, "disable_external_sync", False)
+            )
+            if channel and not sync_disabled:
+                try:
+                    from core.outbound_auto import BoardDiscordSync
+
+                    sync = BoardDiscordSync()
+                    sync.sync_board_post(
+                        board_name=channel,
+                        text=body.content,
+                        from_person=body.from_person,
+                        source=body.source or "anima",
+                    )
+                except Exception:
+                    logger.debug("Board-Discord sync failed for CLI post #%s", channel, exc_info=True)
 
         return {"status": "ok"}
 

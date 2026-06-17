@@ -46,7 +46,7 @@ class TestCmdBoardRead:
         cmd_board_read(args)
 
         mock_messenger.read_channel.assert_called_once_with(
-            "general", limit=20, human_only=False,
+            "general", limit=20, human_only=False, source="human",
         )
 
         captured = capsys.readouterr()
@@ -90,7 +90,7 @@ class TestCmdBoardRead:
         cmd_board_read(args)
 
         mock_messenger.read_channel.assert_called_once_with(
-            "general", limit=5, human_only=True,
+            "general", limit=5, human_only=True, source="human",
         )
 
     @patch("core.messenger.Messenger")
@@ -118,6 +118,7 @@ class TestCmdBoardRead:
 class TestCmdBoardPost:
     """Tests for cmd_board_post — posting to shared channels."""
 
+    @patch("cli.commands.board._is_human_alias", return_value=False)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
     @patch("core.messenger.Messenger")
@@ -125,7 +126,7 @@ class TestCmdBoardPost:
     @patch("core.init.ensure_runtime_dir")
     def test_post_success(
         self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify, capsys,
+        mock_fanout, mock_notify, mock_is_human_alias, capsys,
     ):
         """cmd_board_post calls post_channel and prints confirmation."""
         from cli.commands.board import cmd_board_post
@@ -144,6 +145,7 @@ class TestCmdBoardPost:
         captured = capsys.readouterr()
         assert "Posted to #general" in captured.out
 
+    @patch("cli.commands.board._is_human_alias", return_value=False)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
     @patch("core.messenger.Messenger")
@@ -151,7 +153,7 @@ class TestCmdBoardPost:
     @patch("core.init.ensure_runtime_dir")
     def test_post_triggers_fanout(
         self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify,
+        mock_fanout, mock_notify, mock_is_human_alias,
     ):
         """cmd_board_post calls _fanout_board_mentions with correct args."""
         from cli.commands.board import cmd_board_post
@@ -168,6 +170,7 @@ class TestCmdBoardPost:
             mock_messenger, "alice", "dev", "Hey @bob check this",
         )
 
+    @patch("cli.commands.board._is_human_alias", return_value=False)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
     @patch("core.messenger.Messenger")
@@ -175,7 +178,7 @@ class TestCmdBoardPost:
     @patch("core.init.ensure_runtime_dir")
     def test_post_triggers_server_notification(
         self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify,
+        mock_fanout, mock_notify, mock_is_human_alias,
     ):
         """cmd_board_post notifies the running server."""
         from cli.commands.board import cmd_board_post
@@ -188,8 +191,9 @@ class TestCmdBoardPost:
         )
         cmd_board_post(args)
 
-        mock_notify.assert_called_once_with("alice", "general", "Hello!")
+        mock_notify.assert_called_once_with("alice", "general", "Hello!", source="anima")
 
+    @patch("cli.commands.board._is_human_alias", return_value=False)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
     @patch("core.messenger.Messenger")
@@ -197,7 +201,7 @@ class TestCmdBoardPost:
     @patch("core.init.ensure_runtime_dir")
     def test_post_messenger_constructed_with_from_anima(
         self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify,
+        mock_fanout, mock_notify, mock_is_human_alias,
     ):
         """cmd_board_post constructs Messenger with from_anima name."""
         from cli.commands.board import cmd_board_post
@@ -211,6 +215,66 @@ class TestCmdBoardPost:
         cmd_board_post(args)
 
         mock_messenger_cls.assert_called_once_with(Path("/tmp/shared"), "sakura")
+
+    @patch("cli.commands.board._is_human_alias", return_value=True)
+    @patch("cli.commands.board._notify_server_board_posted")
+    @patch("cli.commands.board._fanout_board_mentions")
+    @patch("core.messenger.Messenger")
+    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
+    @patch("core.init.ensure_runtime_dir")
+    def test_post_human_alias_uses_human_source(
+        self, mock_ensure, mock_shared, mock_messenger_cls,
+        mock_fanout, mock_notify, mock_is_human_alias,
+    ):
+        """Configured human aliases post through the human ACL path."""
+        from cli.commands.board import cmd_board_post
+
+        mock_messenger = MagicMock()
+        mock_messenger_cls.return_value = mock_messenger
+
+        args = argparse.Namespace(
+            from_anima="cmnt", channel="affiliate", text="Owner instruction",
+        )
+        cmd_board_post(args)
+
+        mock_messenger.post_channel.assert_called_once_with(
+            "affiliate",
+            "Owner instruction",
+            source="human",
+            from_name="cmnt",
+        )
+        mock_notify.assert_called_once_with(
+            "cmnt",
+            "affiliate",
+            "Owner instruction",
+            source="human",
+        )
+
+    @patch("cli.commands.board._is_human_alias", return_value=False)
+    @patch("cli.commands.board._notify_server_board_posted")
+    @patch("cli.commands.board._fanout_board_mentions")
+    @patch("core.messenger.Messenger")
+    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
+    @patch("core.init.ensure_runtime_dir")
+    def test_post_denied_does_not_notify_or_fanout(
+        self, mock_ensure, mock_shared, mock_messenger_cls,
+        mock_fanout, mock_notify, mock_is_human_alias, capsys,
+    ):
+        """Failed board posts must not fan out or sync externally."""
+        from cli.commands.board import cmd_board_post
+
+        mock_messenger = MagicMock()
+        mock_messenger.post_channel.return_value = False
+        mock_messenger_cls.return_value = mock_messenger
+
+        args = argparse.Namespace(
+            from_anima="alice", channel="affiliate", text="Should not sync",
+        )
+        cmd_board_post(args)
+
+        assert "Post denied or failed for #affiliate" in capsys.readouterr().out
+        mock_fanout.assert_not_called()
+        mock_notify.assert_not_called()
 
 
 # ── cmd_board_dm_history ─────────────────────────────────
@@ -281,6 +345,36 @@ class TestCmdBoardDmHistory:
         cmd_board_dm_history(args)
 
         mock_messenger.read_dm_history.assert_called_once_with("bob", limit=50)
+
+
+class TestNotifyServerBoardPosted:
+    @patch("time.sleep")
+    @patch("httpx.post")
+    @patch("cli.commands.server._is_process_alive", return_value=True)
+    @patch("cli.commands.server._read_pid", return_value=12345)
+    def test_retries_transient_server_unavailable(
+        self,
+        mock_read_pid,
+        mock_is_alive,
+        mock_post,
+        mock_sleep,
+    ):
+        from cli.commands.board import _notify_server_board_posted
+
+        first = MagicMock(status_code=503)
+        second = MagicMock(status_code=200)
+        mock_post.side_effect = [first, second]
+
+        _notify_server_board_posted(
+            "cmnt",
+            "affiliate",
+            "Owner instruction",
+            source="human",
+        )
+
+        assert mock_post.call_count == 2
+        mock_sleep.assert_called_once_with(1.0)
+        assert mock_post.call_args.kwargs["json"]["source"] == "human"
 
 
 # ── _fanout_board_mentions ───────────────────────────────

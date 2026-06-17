@@ -71,6 +71,7 @@ class TestDiscordGatewayManagerRouting:
         mock_cfg.external_messaging.discord.default_anima = "sakura"
         mock_cfg.external_messaging.discord.board_mapping = {"ops-ch": "ops", "finance-ch": "finance"}
         mock_cfg.external_messaging.discord.system_agents = {}
+        mock_cfg.external_messaging.user_aliases = {"cmnt": MagicMock()}
 
         monkeypatch.setattr(
             "server.discord_gateway.load_config",
@@ -163,6 +164,34 @@ class TestDiscordGatewayManagerRouting:
             board_mapping=_mock_config.external_messaging.discord.board_mapping,
             source="system_agent",
         )
+        MockMessenger.return_value.receive_external.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_human_alias_webhook_echo_is_ignored(
+        self,
+        manager: DiscordGatewayManager,
+    ):
+        message = MagicMock()
+        message.id = "human-alias-webhook-001"
+        message.author.id = "webhook-author-1"
+        message.author.display_name = "cmnt"
+        message.author.name = "cmnt"
+        message.webhook_id = "webhook-1"
+        message.mentions = []
+        message.content = "Owner instruction echoed from webhook"
+        message.channel.id = "ch1"
+        message.channel.parent_id = None
+        message.channel.name = "affiliate"
+        message.guild = object()
+        message.reference = None
+
+        with (
+            patch("server.discord_gateway._route_to_board") as route_to_board,
+            patch("server.discord_gateway.Messenger") as MockMessenger,
+        ):
+            await manager._handle_message(message)
+
+        route_to_board.assert_not_called()
         MockMessenger.return_value.receive_external.assert_not_called()
 
     @pytest.mark.asyncio
