@@ -250,6 +250,7 @@ def _stop_server(
 
 # ── Orphan runner cleanup ─────────────────────────────────
 
+
 def _request_supervisor_shutdown(*, host: str, port: int, timeout: float = 30.0) -> bool:
     """Ask the running server to stop supervised runners before process exit."""
     check_host = _check_host(host)
