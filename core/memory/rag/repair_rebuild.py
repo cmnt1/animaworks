@@ -145,6 +145,42 @@ def _is_fts5_malformed(health) -> bool:
     return "malformed inverted index" in lower and "fts5 table" in lower
 
 
+def _release_direct_chroma_store(store) -> None:
+    """Release a direct Chroma store before moving its persistence directory."""
+    import gc
+
+    close = getattr(store, "close", None)
+    if callable(close):
+        close()
+    try:
+        from chromadb.api.client import SharedSystemClient
+
+        SharedSystemClient.clear_system_cache()
+    except Exception:
+        logger.debug("Failed to clear ChromaDB system cache for staged rebuild", exc_info=True)
+    gc.collect()
+
+
+def _replace_live_with_staging(staging: Path, live: Path) -> None:
+    """Move a staged vector DB into place, tolerating delayed Windows handles."""
+    try:
+        staging.rename(live)
+        return
+    except OSError:
+        if live.exists():
+            raise
+        logger.warning(
+            "Direct staging rename failed; copying staged vector DB into place and leaving cleanup best-effort: %s",
+            staging,
+            exc_info=True,
+        )
+    shutil.copytree(staging, live)
+    try:
+        shutil.rmtree(staging)
+    except OSError:
+        logger.warning("Leaving stale staged vector DB for later cleanup: %s", staging, exc_info=True)
+
+
 def _reindex_into_store(vector_store, anima_name: str, *, include_shared: bool) -> int:
     """Index an anima's memory (and optionally shared collections) into a store."""
     from core.memory.bm25 import rebuild_longterm_bm25_index
@@ -215,8 +251,6 @@ def atomic_rebuild_vectordb(anima_name: str, *, include_shared: bool) -> tuple[i
     only the vector writes go to the local staging store. Returns
     ``(chunks_indexed, archive_path)``.
     """
-    import gc
-
     from core.memory.rag.singleton import reset_vector_store
     from core.memory.rag.store import create_chroma_vector_store
     from core.paths import get_anima_vectordb_dir
@@ -238,8 +272,8 @@ def atomic_rebuild_vectordb(anima_name: str, *, include_shared: bool) -> tuple[i
                     f"staged vector DB for {anima_name} has no collections despite indexing {chunks} chunks"
                 )
         finally:
-            store.close()
-            gc.collect()
+            _release_direct_chroma_store(store)
+            store = None
         verify_rebuilt_sqlite_health(anima_name, staging)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)  # never leave a half-built staging dir
@@ -266,7 +300,8 @@ def atomic_rebuild_vectordb(anima_name: str, *, include_shared: bool) -> tuple[i
             suffix += 1
             archive = archive_dir / f"vectordb-corrupt-{stamp}-{suffix}"
         shutil.move(str(live), str(archive))
-    shutil.move(str(staging), str(live))
+    _replace_live_with_staging(staging, live)
+    verify_rebuilt_sqlite_health(anima_name, live)
     reset_worker_vector_store(anima_name)
     reset_vector_store(anima_name)
     return chunks, archive
