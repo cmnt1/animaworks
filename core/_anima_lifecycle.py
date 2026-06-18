@@ -297,17 +297,10 @@ class LifecycleMixin:
                     from core.tooling.handler import active_session_type
 
                     heartbeat_text = "\n\n".join(parts)
-                    try:
-                        from core.supervisor.memory_probe import sample_process_memory
-
-                        sample_process_memory(
-                            anima_name=self.name,
-                            stage="heartbeat_after_prompt",
-                            run_dir=self.shared_dir.parent / "run",
-                            extra={"parts": len(parts), "prompt_chars": len(heartbeat_text)},
-                        )
-                    except Exception:
-                        logger.debug("[%s] heartbeat memory sample failed after prompt", self.name, exc_info=True)
+                    self._sample_heartbeat_memory(
+                        "heartbeat_after_prompt",
+                        {"parts": len(parts), "prompt_chars": len(heartbeat_text)},
+                    )
                     prior_msgs = self._build_prior_messages(heartbeat_text)
                     _hard_timeout = _load_cfg().heartbeat.hard_timeout_seconds
                     agent = _agent_for_lane(self, "background")
@@ -342,17 +335,10 @@ class LifecycleMixin:
                             active_session_type.reset(_session_token)
                             _keepalive.cancel()
 
-                    try:
-                        from core.supervisor.memory_probe import sample_process_memory
-
-                        sample_process_memory(
-                            anima_name=self.name,
-                            stage="heartbeat_after_execute",
-                            run_dir=self.shared_dir.parent / "run",
-                            extra={"summary_chars": len(result.summary or ""), "action": result.action},
-                        )
-                    except Exception:
-                        logger.debug("[%s] heartbeat memory sample failed after execute", self.name, exc_info=True)
+                    self._sample_heartbeat_memory(
+                        "heartbeat_after_execute",
+                        {"summary_chars": len(result.summary or ""), "action": result.action},
+                    )
 
                     return result
 
@@ -375,6 +361,22 @@ class LifecycleMixin:
             self._notify_lock_released()
             # Signal pending task execution after heartbeat completes
             self._trigger_pending_task_execution()
+
+    # ── Heartbeat helpers ─────────────────────────────────────
+
+    def _sample_heartbeat_memory(self, stage: str, extra: dict[str, Any]) -> None:
+        """Best-effort process-memory sampling during a heartbeat cycle."""
+        try:
+            from core.supervisor.memory_probe import sample_process_memory
+
+            sample_process_memory(
+                anima_name=self.name,
+                stage=stage,
+                run_dir=self.shared_dir.parent / "run",
+                extra=extra,
+            )
+        except Exception:
+            logger.debug("[%s] heartbeat memory sample failed (%s)", self.name, stage, exc_info=True)
 
     # ── Hard timeout helper ───────────────────────────────────
 
