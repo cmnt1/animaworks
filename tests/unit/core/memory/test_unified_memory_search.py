@@ -113,6 +113,32 @@ def test_heartbeat_policy_disables_rerank(fake_rag: FakeRAGSearch, monkeypatch: 
     assert CapturingPipeline.calls[0]["rerank_enabled"] is False
 
 
+@pytest.mark.parametrize(
+    ("trigger", "scope_name", "expected_pool"),
+    [
+        ("inbox", "facts", 30),
+        ("task", "facts", 30),
+        ("cron", "facts", 30),
+    ],
+)
+def test_autonomous_policies_disable_rerank(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+    trigger: str,
+    scope_name: str,
+    expected_pool: int,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_returns[scope_name] = [{"doc_id": "fact-1", "content": "fact", "score": 0.8}]
+
+    results = _searcher(fake_rag).search("query", scope="all", limit=3, trigger=trigger)
+
+    assert results[0]["doc_id"] == "fact-1"
+    assert CapturingPipeline.calls[0]["pool_k"] == expected_pool
+    assert CapturingPipeline.calls[0]["rerank_enabled"] is False
+
+
 def test_explicit_scope_restricts_trigger_scopes(fake_rag: FakeRAGSearch, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
     monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])

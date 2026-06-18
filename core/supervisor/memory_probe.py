@@ -9,12 +9,16 @@ from __future__ import annotations
 import gc
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
 import psutil
 
+from core.platform.locks import file_lock
 from core.time_utils import now_iso
+
+_write_lock = threading.Lock()
 
 
 def _to_int(value: Any) -> int | None:
@@ -84,6 +88,13 @@ def sample_process_memory(
     memory_dir = run_dir / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
     path = memory_dir / "process_samples.jsonl"
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(sample, ensure_ascii=False, default=str) + "\n")
+    lock_path = memory_dir / "process_samples.lock"
+    line = json.dumps(sample, ensure_ascii=False, default=str) + "\n"
+    with (
+        _write_lock,
+        lock_path.open("a+", encoding="utf-8") as lock_fh,
+        file_lock(lock_fh, exclusive=True),
+        path.open("a", encoding="utf-8") as fh,
+    ):
+        fh.write(line)
     return sample

@@ -53,7 +53,7 @@ TRIGGER_POLICIES: dict[str, TriggerPolicy] = {
     ),
     "inbox": TriggerPolicy(
         pool_k=30,
-        rerank=True,
+        rerank=False,
         scopes=("facts", "episodes", "activity_log"),
     ),
     "heartbeat": TriggerPolicy(
@@ -63,12 +63,12 @@ TRIGGER_POLICIES: dict[str, TriggerPolicy] = {
     ),
     "task": TriggerPolicy(
         pool_k=30,
-        rerank=True,
+        rerank=False,
         scopes=("facts", "procedures", "knowledge"),
     ),
     "cron": TriggerPolicy(
         pool_k=30,
-        rerank=True,
+        rerank=False,
         scopes=("facts", "episodes", "knowledge", "activity_log"),
     ),
     "tool": TriggerPolicy(
