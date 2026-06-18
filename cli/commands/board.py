@@ -13,7 +13,6 @@ import time
 
 from core.i18n import t
 
-
 logger = logging.getLogger("animaworks")
 
 

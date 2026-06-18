@@ -707,10 +707,7 @@ class DiscordGatewayManager:
             author_name = message.author.display_name or message.author.name
             ignored_webhook_names = {n.lower() for n in self._known_anima_names}
             try:
-                ignored_webhook_names.update(
-                    alias.lower()
-                    for alias in load_config().external_messaging.user_aliases
-                )
+                ignored_webhook_names.update(alias.lower() for alias in load_config().external_messaging.user_aliases)
             except Exception:
                 logger.debug("Failed to load human aliases for Discord webhook echo guard", exc_info=True)
             if author_name.lower() in ignored_webhook_names:
