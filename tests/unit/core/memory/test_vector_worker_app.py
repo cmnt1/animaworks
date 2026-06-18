@@ -578,10 +578,21 @@ def test_vector_worker_latched_store_ambiguous_health_does_not_retry(
                     "metadatas": [{"kind": "updated"}],
                 },
             )
+            blocked_by_backoff = client.post(
+                "/update-metadata",
+                json={
+                    "anima_name": "sora",
+                    "collection": "knowledge",
+                    "ids": ["doc1"],
+                    "metadatas": [{"kind": "updated"}],
+                },
+            )
 
     assert resp.status_code == 503
     assert resp.json() == {"detail": "Vector store unavailable"}
-    get_store.assert_called_once_with("sora")
+    assert blocked_by_backoff.status_code == 503
+    assert blocked_by_backoff.json() == {"detail": "Vector store unavailable"}
+    assert get_store.call_count == 2
     mocks.health_check.assert_called_once()
     mocks.clear_init_failed.assert_not_called()
     mocks.reset_store.assert_not_called()

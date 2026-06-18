@@ -177,10 +177,12 @@ def _try_recover_latched_store(anima_name: str | None) -> Any | None:
             record_repair=True,
         )
         if health.status not in _LATCH_RECOVERY_RETRY_STATUSES:
+            _set_latched_store_recovery_backoff(anima_name)
             logger.info(
-                "Skipping latched vector-store recovery for owner=%s: health_status=%s",
+                "Skipping latched vector-store recovery for owner=%s: health_status=%s; backing off for %.1fs",
                 anima_name,
                 health.status,
+                _LATCH_RECOVERY_BACKOFF_SECONDS,
             )
             return None
 
