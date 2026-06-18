@@ -16,6 +16,7 @@ from datetime import datetime as _dt
 from pathlib import Path
 from typing import Any
 
+from core.supervisor.memory_probe import sample_process_memory
 from core.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import ensure_aware, now_local
 
@@ -24,6 +25,29 @@ logger = logging.getLogger(__name__)
 
 class HealthMixin:
     """Health-check loop, failure handling, and hang detection."""
+
+    def _sample_child_memory(
+        self,
+        anima_name: str,
+        handle: ProcessHandle,
+        *,
+        stage: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        run_dir = getattr(self, "run_dir", None)
+        pid = handle.get_pid()
+        if run_dir is None or pid is None:
+            return
+        try:
+            sample_process_memory(
+                anima_name=anima_name,
+                stage=stage,
+                run_dir=Path(run_dir),
+                pid=pid,
+                extra=extra,
+            )
+        except Exception:
+            logger.debug("Child memory sample failed: %s stage=%s", anima_name, stage, exc_info=True)
 
     def is_bootstrapping(self, anima_name: str) -> bool:
         """Return True if the anima is currently in bootstrap mode."""
@@ -280,6 +304,13 @@ class HealthMixin:
             )
             asyncio.create_task(self._handle_process_failure(anima_name, handle))
             return
+
+        self._sample_child_memory(
+            anima_name,
+            handle,
+            stage="supervisor_health",
+            extra={"state": handle.state.value, "streaming": handle.is_streaming},
+        )
 
         warmup_reason = self._health_warmup_reason(anima_name, handle)
         if warmup_reason:

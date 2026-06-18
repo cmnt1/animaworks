@@ -142,6 +142,24 @@ class TestLineNumbers:
         d = entry.to_dict()
         assert "_line_number" not in d
 
+    def test_recent_limit_keeps_newest_entries_across_days(
+        self, tmp_path: Path
+    ) -> None:
+        """recent(limit=N) should keep the newest N entries without retaining all entries."""
+        anima_dir = tmp_path / "test-anima"
+        now = now_jst()
+        yesterday = now - timedelta(days=1)
+        entries = [
+            {"ts": yesterday.isoformat(), "type": "tool_use", "summary": "Yesterday", "content": ""},
+            {"ts": (now - timedelta(seconds=2)).isoformat(), "type": "tool_use", "summary": "Today 1", "content": ""},
+            {"ts": (now - timedelta(seconds=1)).isoformat(), "type": "tool_use", "summary": "Today 2", "content": ""},
+        ]
+        _write_activity(anima_dir, entries)
+
+        recent = ActivityLogger(anima_dir).recent(days=2, limit=2)
+
+        assert [entry.summary for entry in recent] == ["Today 1", "Today 2"]
+
 
 # ── format_for_priming basics ─────────────────────────────
 

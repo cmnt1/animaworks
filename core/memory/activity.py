@@ -26,6 +26,7 @@ import json  # noqa: F401  — kept at module level for mock.patch compat
 import logging
 import math
 import os  # noqa: F401  — kept at module level for mock.patch compat
+from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -394,16 +395,70 @@ class ActivityLogger(
         Returns:
             List of :class:`ActivityEntry` in chronological order.
         """
-        entries = self._load_entries(
-            days=days,
-            types=types,
-            involving=involving,
-        )
+        if limit <= 0:
+            return self._load_entries(
+                days=days,
+                types=types,
+                involving=involving,
+            )
 
-        if len(entries) > limit:
-            entries = entries[-limit:]
+        entries: deque[ActivityEntry] = deque(maxlen=limit)
+        now = now_local()
+        today = now.date()
+        type_set = _resolve_type_filter(types)
 
-        return entries
+        for day_offset in reversed(range(max(0, days))):
+            target = today - timedelta(days=day_offset)
+            path = self._log_dir / f"{target.isoformat()}.jsonl"
+            if not path.exists():
+                continue
+            try:
+                with path.open(encoding="utf-8", errors="replace") as fh:
+                    for line_num, line in enumerate(fh, start=1):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if len(line) > self._MAX_CONTENT_CHARS * 2:
+                            logger.warning(
+                                "Skipping oversized line (%s chars) at %s:%d",
+                                f"{len(line):,}",
+                                path.name,
+                                line_num,
+                            )
+                            continue
+                        try:
+                            raw = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(raw, dict):
+                            continue
+                        if "event" in raw and "type" not in raw:
+                            raw["type"] = raw.pop("event")
+                        if type_set and raw.get("type") not in type_set:
+                            continue
+                        if involving and not self._involves(raw, involving):
+                            continue
+                        if "timestamp" in raw and "ts" not in raw:
+                            raw["ts"] = raw.pop("timestamp")
+                        if "from" in raw:
+                            raw["from_person"] = raw.pop("from")
+                        if "to" in raw:
+                            raw["to_person"] = raw.pop("to")
+                        try:
+                            entry = ActivityEntry(
+                                **{k: v for k, v in raw.items() if k in ActivityEntry.__dataclass_fields__}
+                            )
+                        except (TypeError, ValueError, KeyError):
+                            logger.debug("Skipping malformed entry at line %d in %s", line_num, path)
+                            continue
+                        entry._line_number = line_num
+                        entries.append(entry)
+            except OSError:
+                logger.exception("Failed to read activity log %s", path)
+
+        result = list(entries)
+        result.sort(key=lambda e: e.ts)
+        return result
 
     def recent_page(
         self,

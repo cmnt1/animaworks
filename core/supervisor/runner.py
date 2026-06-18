@@ -35,6 +35,7 @@ from core.memory.streaming_journal import StreamingJournal
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer
+from core.supervisor.memory_probe import sample_process_memory
 from core.supervisor.pending_executor import PendingTaskExecutor
 from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.streaming_handler import StreamingIPCHandler
@@ -639,6 +640,33 @@ class AnimaRunner:
         tmp.write_text(json.dumps(event, default=str, ensure_ascii=False), encoding="utf-8")
         tmp.rename(events_dir / filename)  # Atomic rename
 
+    def _sample_memory(self, stage: str, *, method: str = "", extra: dict[str, Any] | None = None) -> None:
+        """Best-effort runner RSS/working-set sample."""
+        try:
+            merged_extra = {"method": method} if method else {}
+            if extra:
+                merged_extra.update(extra)
+            sample_process_memory(
+                anima_name=self.anima_name,
+                stage=stage,
+                run_dir=self.shared_dir.parent / "run",
+                extra=merged_extra or None,
+            )
+        except Exception:
+            logger.debug("Memory sample failed for %s stage=%s", self.anima_name, stage, exc_info=True)
+
+    async def _wrap_stream_with_memory_samples(
+        self,
+        stream: AsyncIterator[IPCResponse],
+        *,
+        method: str,
+    ) -> AsyncIterator[IPCResponse]:
+        try:
+            async for response in stream:
+                yield response
+        finally:
+            self._sample_memory("ipc_stream_end", method=method)
+
     # ── IPC Handlers ──────────────────────────────────────────────
 
     async def _handle_request(self, request: IPCRequest) -> IPCResponse | AsyncIterator[IPCResponse]:
@@ -649,10 +677,15 @@ class AnimaRunner:
         For streaming requests (process_message with stream=True), returns
         an AsyncIterator[IPCResponse] instead of a single IPCResponse.
         """
+        if request.method != "ping":
+            self._sample_memory("ipc_start", method=request.method)
         try:
             # Check for streaming process_message
             if request.method == "process_message" and request.params.get("stream") and self._streaming_handler:
-                return self._streaming_handler.handle_stream(request)
+                return self._wrap_stream_with_memory_samples(
+                    self._streaming_handler.handle_stream(request),
+                    method=request.method,
+                )
 
             handler = self._get_handler(request.method)
             if not handler:
@@ -661,6 +694,13 @@ class AnimaRunner:
                 )
 
             result = await handler(request.params)
+            if request.method != "ping":
+                result_bytes = 0
+                try:
+                    result_bytes = len(json.dumps(result, default=str).encode("utf-8", errors="replace"))
+                except (TypeError, ValueError):
+                    pass
+                self._sample_memory("ipc_end", method=request.method, extra={"result_bytes": result_bytes})
             return IPCResponse(id=request.id, result=result)
 
         except asyncio.CancelledError:

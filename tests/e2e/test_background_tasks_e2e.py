@@ -111,6 +111,7 @@ class TestBackgroundTaskManagerLifecycle:
         await asyncio.wait_for(callback_called.wait(), timeout=5.0)
 
         # Verify final state
+        assert mgr.memory_task_count() == 0
         task = mgr.get_task(task_id)
         assert task is not None
         assert task.status == TaskStatus.COMPLETED
@@ -165,6 +166,7 @@ class TestBackgroundTaskManagerFailurePath:
         # Wait for completion (will fail internally)
         await asyncio.wait_for(callback_called.wait(), timeout=5.0)
 
+        assert mgr.memory_task_count() == 0
         task = mgr.get_task(task_id)
         assert task is not None
         assert task.status == TaskStatus.FAILED

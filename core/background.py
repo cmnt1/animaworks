@@ -281,6 +281,10 @@ class BackgroundTaskManager:
         """Return the number of currently running background tasks."""
         return sum(1 for t in self._tasks.values() if t.status == TaskStatus.RUNNING)
 
+    def memory_task_count(self) -> int:
+        """Return the number of task records currently retained in memory."""
+        return len(self._tasks)
+
     # ── Internal execution ───────────────────────────────────
 
     async def _run_task(
@@ -325,6 +329,11 @@ class BackgroundTaskManager:
                         "on_complete callback failed for task %s",
                         task.task_id,
                     )
+            # Completed task payloads can contain large stdout/stderr/tool
+            # results. They are already persisted above, so do not retain them
+            # in the long-lived runner heap.
+            if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                self._tasks.pop(task.task_id, None)
 
     async def _run_task_async(
         self,
@@ -362,6 +371,11 @@ class BackgroundTaskManager:
                         "on_complete callback failed for task %s",
                         task.task_id,
                     )
+            # Completed task payloads can contain large stdout/stderr/tool
+            # results. They are already persisted above, so do not retain them
+            # in the long-lived runner heap.
+            if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                self._tasks.pop(task.task_id, None)
 
     # ── Persistence ──────────────────────────────────────────
 
