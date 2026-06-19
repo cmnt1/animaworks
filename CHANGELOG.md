@@ -7,9 +7,79 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-19
+
+### Added
+
+#### Memory & Retrieval
+- Unified legacy memory retrieval across `search_memory`, priming, and backend search paths.
+- Legacy atomic facts, fact reconciliation, temporal validity, entity registry, and entity-aware graph expansion.
+- Long-term BM25, query expansion, access boost, temporal boost, confidence gating, and freshness metadata for memory results.
+- LoCoMo retrieval diagnostics, fact index ablations, multihop retrieval orchestration, and standard baseline artifacts.
+
+#### RAG & Vector Reliability
+- Atomic build-then-swap RAG repair rebuilds that keep the live vector database available until replacement.
+- SQLite `quick_check` gating so transient Chroma/vector-worker errors do not trigger destructive repair loops.
+- Vector-worker recovery for latched per-Anima store initialization failures.
+- Startup RAG preflight progress tracking and a startup progress page while heavy indexing or repair runs.
+- File watcher deletion cleanup so removed memory files also remove stale vector chunks.
+
+#### Runtime Operations
+- GPU device configuration, GPU failure detection, CPU fallback, and a GPU power guard script for high-load local deployments.
+- Runtime temporary-file inspection and cleanup commands via `animaworks tmp list` and `animaworks tmp clean`.
+- One-shot runtime cleanup and invalid episode quarantine scripts for operational maintenance.
+- CI auto-fix loop tooling for local SWE-style repair runs.
+
+#### Codex Mode
+- Mode C migration to the Codex App Server SDK event stream.
+- Codex reasoning summaries and plan updates surfaced through the existing chat thinking stream.
+- Codex YOLO runtime refresh command for Codex-mode Animas.
+
 ### Changed
 
-- Default local NLI and cross-encoder reranker execution to CPU via the new `gpu` config section, while preserving `rag.use_gpu` compatibility for embeddings.
+- This is a stability-focused release for the legacy memory backend, RAG/vector-worker path, and supervisor startup behavior; Neo4j remains experimental and opt-in.
+- Local NLI and cross-encoder reranker execution now default to CPU through the `gpu` config section, while embedding GPU behavior preserves `rag.use_gpu` compatibility.
+- Startup repair is restricted to evidence-backed corruption suspects instead of broad rebuilds from stale or ambiguous signals.
+- RAG repair, daily indexing, and vector-worker resets now coordinate around active repair locks and health checks.
+- Consolidation and session finalization now preserve source chunks, daily episode notes, current state, and post-processing even when parts of the pipeline fail.
+- Chat history loading, collapsed activity rendering, and thread scrolling behavior were hardened.
+
+### Fixed
+
+#### Stability
+- Prevented one corrupt Anima vector database from causing worker-wide vector outages.
+- Prevented `Failed to get segments` and file-descriptor exhaustion symptoms from being treated as confirmed database corruption when SQLite health checks pass.
+- Fixed vector-worker file-descriptor exhaustion and stale native handles.
+- Prevented post-rebuild thundering herd indexing from starving or killing runner processes.
+- Hardened Anima startup against RAG vector backpressure and made the parent startup acknowledgement gate opt-in for compatibility.
+- Preserved busy cron/task progress through ping timeouts and supervisor health churn.
+- Prevented already-running systemd starts from entering restart loops.
+- Finalized heartbeat streaming journals on all paths and discarded empty recovery artifacts.
+
+#### Memory & Consolidation
+- Fixed stale RAG chunks after watched file deletion.
+- Fixed long-term BM25 indexing and rebuild coverage.
+- Fixed fact extraction observability and failure handling so extraction errors remain non-fatal.
+- Fixed knowledge self-correction, forgetting effectiveness, neurogenesis merge source preservation, and consolidation timeout de-duplication.
+- Fixed common-knowledge keyword scope and fallback behavior.
+
+#### Codex & Execution
+- Restored Codex YOLO runtime defaults.
+- Routed consolidation, helper, and LoCoMo judge credentials through the configured credential paths.
+- Deduplicated completion references and skill usage references by canonical path.
+
+#### UI / Docs / Tooling
+- Fixed chat activity collapse, history scrolling, and hidden thread history loading.
+- Added runtime bloat retention safeguards and broader docs drift guards.
+- Synchronized Korean reference templates with CI expectations.
+
+### Upgrade Notes
+
+- Python 3.12 or 3.13 remains the supported runtime range. Python 3.14 is still risky because of ChromaDB compatibility.
+- Existing `rag.use_gpu` embedding behavior is preserved. New local NLI/reranker defaults are CPU unless explicitly changed in the `gpu` config section.
+- Existing legacy memory data is used in place; no manual migration is required for normal upgrades.
+- Neo4j remains experimental and must stay explicitly enabled where used.
+- Run `animaworks tmp list` before and after upgrade on long-running hosts if runtime disk usage has grown.
 
 ## [0.8.0] - 2026-05-22
 
@@ -1525,7 +1595,8 @@ memory, and decision-making criteria.
 - Moved model mode patterns from config.json to models.json
 - Tool permissions changed from whitelist to default-allow (blacklist) model
 
-[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/xuiltul/animaworks/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/xuiltul/animaworks/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/xuiltul/animaworks/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/xuiltul/animaworks/compare/v0.6.2...v0.6.3

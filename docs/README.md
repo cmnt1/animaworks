@@ -71,6 +71,7 @@ This page is your starting point for understanding the whole picture.
 
 | Version | Description |
 |---------|-------------|
+| [v0.9](release/v0.9.md) | Stability release for RAG/vector-worker reliability, legacy memory retrieval, Codex streaming, startup hardening, and operational cleanup |
 | [v0.5](release/v0.5.md) | Full RAG migration, 4-phase provenance security, Workspace UI overhaul, streaming performance 3–5x improvement |
 
 ---
