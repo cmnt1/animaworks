@@ -9,9 +9,51 @@ Verifies the full AgentCore integration with CodexSDKExecutor using
 mocked Codex SDK.  No real Codex CLI or API key required.
 """
 
+import sys
+import types
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+def _install_fake_openai_codex() -> None:
+    """Provide the optional Codex SDK surface used by these E2E tests.
+
+    CI intentionally does not install the ``openai-codex`` extra.  These
+    tests patch CodexSDKExecutor._create_codex_client, but executor selection
+    still checks import availability before that patch is reached.
+    """
+    if sys.modules.get("openai_codex") is not None:
+        return
+
+    fake_openai_codex = types.ModuleType("openai_codex")
+    fake_openai_codex.AsyncCodex = MagicMock(name="AsyncCodex")
+    fake_openai_codex.CodexConfig = MagicMock(name="CodexConfig")
+    fake_openai_codex.ApprovalMode = SimpleNamespace(deny_all="deny_all")
+    fake_openai_codex.Sandbox = SimpleNamespace(full_access="full_access", workspace_write="workspace_write")
+
+    fake_generated = types.ModuleType("openai_codex.generated")
+    fake_v2_all = types.ModuleType("openai_codex.generated.v2_all")
+
+    class ReasoningSummary:
+        def __init__(self, root):
+            self.root = root
+
+    fake_v2_all.ReasoningSummary = ReasoningSummary
+    fake_v2_all.ReasoningSummaryValue = SimpleNamespace(
+        auto=SimpleNamespace(value="auto"),
+        concise=SimpleNamespace(value="concise"),
+        detailed=SimpleNamespace(value="detailed"),
+        none=SimpleNamespace(value="none"),
+    )
+
+    sys.modules["openai_codex"] = fake_openai_codex
+    sys.modules["openai_codex.generated"] = fake_generated
+    sys.modules["openai_codex.generated.v2_all"] = fake_v2_all
+
+
+_install_fake_openai_codex()
 
 
 def _mock_codex(start_thread):
