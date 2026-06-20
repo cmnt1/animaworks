@@ -111,6 +111,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/tools/property_portal_scraper.py": 30,
     "core/reports/property/anjo_1k_product_draft.py": 17,
     "core/reports/property/daily_sale_product_report.py": 24,
+    # review-surfacer: ja status labels, reminder + Discord-post prompt templates
+    "core/reports/pending_review_surfacer.py": 8,
     "core/tools/_slack_cli.py": 1,
     # mock task data with Japanese titles
     "server/routes/animas.py": 24,
