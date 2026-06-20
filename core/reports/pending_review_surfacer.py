@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -21,7 +20,7 @@ import argparse
 import json
 import logging
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -285,7 +284,7 @@ def surface_pending_reviews(
             "constraints": [],
             "file_paths": [item["path"]],
             "submitted_by": "review_surfacer",
-            "submitted_at": datetime.now(timezone.utc).isoformat(),
+            "submitted_at": datetime.now(UTC).isoformat(),
             "reply_to": "",
             "source": "review_surfacer",
             "working_directory": "",
