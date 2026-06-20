@@ -57,6 +57,11 @@ In either case:
 - Record delegation between Anima in the task queue and update relay_chain
 - When a task is complete, update status via `update_task`
 
+#### Delegation Follow-Through (MUST)
+- **"I delegated it" / "tracking" is NOT a completion report**: For tasks that require a final deliverable (auto-post, delivery, etc.), never make delegation or a status update your final answer. Delegation is a means, not the result.
+- **When chased, advance — don't restate state**: If prompted again on the same task, do not repeat "tracking." Either (a) if the delegatee's deliverable is done/awaiting-review, read it yourself and perform the next stage (review → promote → post), or (b) if it is stalled, find the root cause and concretely clear it.
+- **A delegatee's completion is not your completion**: When a delegatee produces the deliverable, you (the origin of the relay_chain) are responsible for closing the final stage (verify, post, report to human). When `task_tracker` shows done/awaiting-review, act on it immediately rather than leaving it.
+
 #### Avoiding Duplicate Reports
 - **No re-reporting resolved items**: Do not re-investigate or re-report issues listed in the "Resolved Items (org-wide)" section
 - **Check before reporting**: Before sending a report, verify the topic is not already in the resolved list
@@ -67,3 +72,10 @@ In either case:
 - **Manage tasks** using `backlog_task` / `update_task` tools, which write to `task_queue.jsonl`. Do not write task lists in current_state.md
 - current_state.md is preserved across normal heartbeat, cron, and conversation boundaries. Keep it concise; stale or oversized content may be archived by housekeeping or size trimming
 - Write important knowledge or procedures to `knowledge/` or `procedures/`, not current_state.md
+
+### Editing Deliverables / Frontmatter (MUST)
+When promoting a deliverable's markdown frontmatter (e.g. status awaiting-review → done, filling `submitted`), do not corrupt the file. A corrupted file disappears from the Obsidian ledger (Base) and downstream steps stall silently.
+- **Edit in place**: Overwrite the value of an existing key. **Never append a duplicate key** (e.g. two `status:` lines makes the YAML invalid and unparseable).
+- **Preserve UTF-8**: Do not use Windows PowerShell `Set-Content` / `Add-Content` bare (without `-Encoding utf8`) — it writes cp932/UTF-16 and mojibakes Japanese. Use Python with `encoding="utf-8"`, or PowerShell with explicit `-Encoding utf8`.
+- **Read back and verify**: Confirm required keys like `type: product` appear exactly once and text is not garbled.
+- For routine report promotion/posting, prefer a deterministic script (same family as the generator) over hand-editing.

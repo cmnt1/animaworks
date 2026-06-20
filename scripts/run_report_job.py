@@ -16,6 +16,9 @@ if str(PROJECT_DIR) not in sys.path:
 JOBS = {
     "anjo-1k-daily": "core.reports.property.anjo_1k_product_draft",
     "daily-sale-info": "core.reports.property.daily_sale_product_report",
+    # Loop-closer: nudge reviewers about product drafts stuck in レビュー待ち so
+    # daily auto-post reports don't silently stall waiting on a throttled heartbeat.
+    "pending-review-surface": "core.reports.pending_review_surfacer",
 }
 
 
