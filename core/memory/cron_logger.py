@@ -6,12 +6,30 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from datetime import timedelta
 from pathlib import Path
 
 from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.memory")
+
+# Per-file locks shared across all CronLogger instances in this process, so
+# concurrent appends to the same daily log file are serialized (the append +
+# read-modify-write truncation below is not atomic on its own).
+_FILE_LOCKS: dict[str, threading.Lock] = {}
+_FILE_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(path: Path) -> threading.Lock:
+    key = str(path)
+    with _FILE_LOCKS_GUARD:
+        lock = _FILE_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _FILE_LOCKS[key] = lock
+        return lock
+
 
 # ── CronLogger ────────────────────────────────────────────
 
@@ -54,17 +72,18 @@ class CronLogger:
             },
             ensure_ascii=False,
         )
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(entry + "\n")
-            f.flush()
-            os.fsync(f.fileno())
+        with _lock_for(path):
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(entry + "\n")
+                f.flush()
+                os.fsync(f.fileno())
 
-        # Keep file bounded — use atomic write for truncation
-        lines = path.read_text(encoding="utf-8").strip().splitlines()
-        if len(lines) > self._MAX_LINES:
-            from core.memory._io import atomic_write_text
+            # Keep file bounded — use atomic write for truncation
+            lines = path.read_text(encoding="utf-8").strip().splitlines()
+            if len(lines) > self._MAX_LINES:
+                from core.memory._io import atomic_write_text
 
-            atomic_write_text(path, "\n".join(lines[-self._MAX_LINES :]) + "\n")
+                atomic_write_text(path, "\n".join(lines[-self._MAX_LINES :]) + "\n")
 
     def append_cron_command_log(
         self,
@@ -115,17 +134,18 @@ class CronLogger:
             },
             ensure_ascii=False,
         )
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(entry + "\n")
-            f.flush()
-            os.fsync(f.fileno())
+        with _lock_for(path):
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(entry + "\n")
+                f.flush()
+                os.fsync(f.fileno())
 
-        # Keep file bounded — use atomic write for truncation
-        lines = path.read_text(encoding="utf-8").strip().splitlines()
-        if len(lines) > self._MAX_LINES:
-            from core.memory._io import atomic_write_text
+            # Keep file bounded — use atomic write for truncation
+            lines = path.read_text(encoding="utf-8").strip().splitlines()
+            if len(lines) > self._MAX_LINES:
+                from core.memory._io import atomic_write_text
 
-            atomic_write_text(path, "\n".join(lines[-self._MAX_LINES :]) + "\n")
+                atomic_write_text(path, "\n".join(lines[-self._MAX_LINES :]) + "\n")
 
     def read_cron_log(self, days: int = 1) -> str:
         """Read cron logs for the last *days* days."""
