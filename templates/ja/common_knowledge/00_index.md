@@ -28,10 +28,10 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 
 | 困りごと | 参照先 |
 |---------|--------|
-| メッセージの送り方がわからない | `communication/messaging-guide.md` |
+| メッセージの送り方がわからない | `reference/communication/messaging-guide.md` |
 | Board（共有チャネル）の使い方がわからない | `communication/board-guide.md` |
 | どのチャネルで周知するか迷う（#ops / #general / 部門チャネル / スレッド） | `communication/broadcasting-guide.md` |
-| 指示の出し方・報告の仕方がわからない | `communication/instruction-patterns.md` / `communication/reporting-guide.md` |
+| 指示の出し方・報告の仕方がわからない | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
 | 委譲・完了報告・エスカレーションの必須項目を確認したい | `communication/message-quality-protocol.md` |
 | メッセージ送信が制限された | `communication/sending-limits.md` |
 | 人間への通知方法がわからない | `communication/call-human-guide.md` |
@@ -42,17 +42,17 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | 困りごと | 参照先 |
 |---------|--------|
 | 組織構造・誰に連絡すべきかわからない | `reference/organization/structure.md` ※技術リファレンス |
-| 役割と責任範囲を確認したい | `organization/roles.md` |
+| 役割と責任範囲を確認したい | `reference/organization/roles.md` |
 | 階層間の通信ルールがわからない | `organization/hierarchy-rules.md` |
 
 ### タスク・運用
 
 | 困りごと | 参照先 |
 |---------|--------|
-| タスク管理の方法がわからない | `operations/task-management.md` |
+| タスク管理の方法がわからない | `reference/operations/task-management.md` |
 | 完了前検証（completion_gate）の仕組みを知りたい | `operations/completion-gate-guide.md` |
 | タスクボード（人間向けダッシュボード）を使いたい | `operations/task-board-guide.md` |
-| ハートビートやcronの設定がわからない | `operations/heartbeat-cron-guide.md` |
+| ハートビートやcronの設定がわからない | `reference/operations/heartbeat-cron-guide.md` |
 | Heartbeatの観測経路・policy blocked回避を確認したい | `operations/heartbeat-observe-guide.md` |
 | 送信・投稿・記憶書き込み前に確認ルールを入れたい | `operations/action-rules-guide.md` |
 | 長時間ツールの実行方法がわからない | `operations/background-tasks.md` |
@@ -65,7 +65,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 
 | 困りごと | 参照先 |
 |---------|--------|
-| ツールの使い方・呼び出し方がわからない | `operations/tool-usage-overview.md` |
+| ツールの使い方・呼び出し方がわからない | `reference/operations/tool-usage-overview.md` |
 | machine ツールの使い方がわからない | `operations/machine/tool-usage.md` |
 | 自分のロールでの machine ワークフローが知りたい | `operations/machine/workflow-{pdm,engineer,reviewer,tester}.md` |
 | 目的別にチーム（ロール・ハンドオフ）を設計したい | `team-design/guide.md` |
@@ -89,14 +89,14 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 |---------|--------|
 | Animaとは何か知りたい | `anatomy/what-is-anima.md` |
 | 自分の構成ファイルの役割を知りたい | `reference/anatomy/anima-anatomy.md` ※技術リファレンス |
-| 記憶の仕組み・種類を知りたい | `anatomy/memory-system.md` |
+| 記憶の仕組み・種類を知りたい | `reference/anatomy/memory-system.md` |
 
 ### トラブルシューティング
 
 | 困りごと | 参照先 |
 |---------|--------|
-| ツールやコマンドが使えない / エラーが出る | `troubleshooting/common-issues.md` |
-| タスクがブロックされた / 判断に迷う | `troubleshooting/escalation-flowchart.md` |
+| ツールやコマンドが使えない / エラーが出る | `reference/troubleshooting/common-issues.md` |
+| タスクがブロックされた / 判断に迷う | `reference/troubleshooting/escalation-flowchart.md` |
 | Gmail ツールの認証設定がうまくいかない | `reference/troubleshooting/gmail-credential-setup.md` ※技術リファレンス |
 
 ### セキュリティ
@@ -109,7 +109,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 
 | 困りごと | 参照先 |
 |---------|--------|
-| AnimaWorksで何ができるか知りたい | `usecases/usecase-overview.md` |
+| AnimaWorksで何ができるか知りたい | `reference/usecases/usecase-overview.md` |
 
 **上記に該当しない場合** → `search_memory(query="キーワード", scope="common_knowledge")` で検索する
 
@@ -246,30 +246,30 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | キーワード | 参照先 |
 |-----------|--------|
 | 基礎, 入門, 全体像, エッセンシャル, 始め方, 概要 | `anatomy/essentials.md` |
-| メッセージ, send_message, 送信, 返信, スレッド, inbox | `communication/messaging-guide.md` |
+| メッセージ, send_message, 送信, 返信, スレッド, inbox | `reference/communication/messaging-guide.md` |
 | Board, チャネル, post_channel, read_channel | `communication/board-guide.md` |
 | 周知, ブロードキャスト, 全体共有, #ops, #general, 部門チャネル, スレッド, エスカレーション | `communication/broadcasting-guide.md` |
 | DM履歴, read_dm_history, 過去の会話 | `communication/board-guide.md` |
-| 指示, 委任, タスク依頼, デリゲーション | `communication/instruction-patterns.md` |
-| 報告, 日報, サマリー, 完了報告, エスカレーション | `communication/reporting-guide.md` |
+| 指示, 委任, タスク依頼, デリゲーション | `reference/communication/instruction-patterns.md` |
+| 報告, 日報, サマリー, 完了報告, エスカレーション | `reference/communication/reporting-guide.md` |
 | 品質プロトコル, 必須項目, 検証根拠, 完了条件, 委譲チェック | `communication/message-quality-protocol.md` |
 | レート制限, 送信制限, 30通, 100通, 1ラウンドルール | `communication/sending-limits.md` |
 | call_human, 人間通知, 人間に連絡, 通知チャネル | `communication/call-human-guide.md` |
 | Slack, ボットトークン, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
 | 組織, supervisor, 上司, 部下, 同僚 | `reference/organization/structure.md` |
-| 役割, 責任, speciality, 専門 | `organization/roles.md` |
+| 役割, 責任, speciality, 専門 | `reference/organization/roles.md` |
 | 階層, 通信経路, org_dashboard, ping_subordinate | `organization/hierarchy-rules.md` |
-| delegate_task, タスク委譲, task_tracker | `organization/hierarchy-rules.md`, `operations/task-management.md` |
-| sync_delegated, 委譲同期, 自動同期 | `operations/task-management.md`, `operations/task-delegation-guide.md` |
-| タスク, current_state, pending, 進捗, 優先順位 | `operations/task-management.md` |
-| タスクキュー, submit_tasks, update_task, TaskExec, animaworks-tool task list | `operations/task-management.md` |
+| delegate_task, タスク委譲, task_tracker | `organization/hierarchy-rules.md`, `reference/operations/task-management.md` |
+| sync_delegated, 委譲同期, 自動同期 | `reference/operations/task-management.md`, `operations/task-delegation-guide.md` |
+| タスク, current_state, pending, 進捗, 優先順位 | `reference/operations/task-management.md` |
+| タスクキュー, submit_tasks, update_task, TaskExec, animaworks-tool task list | `reference/operations/task-management.md` |
 | タスクボード, ダッシュボード, 人間向け | `operations/task-board-guide.md` |
 | completion_gate, 完了検証, 事前チェック, Stop hook | `operations/completion-gate-guide.md` |
 | 設定, config, status.json, SSoT, reload | `reference/operations/project-setup.md` |
-| ハートビート, heartbeat, 定期チェック | `operations/heartbeat-cron-guide.md` |
-| cron, スケジュール, 定時タスク | `operations/heartbeat-cron-guide.md` |
-| ツール, animaworks-tool, MCP, skill | `operations/tool-usage-overview.md` |
-| 実行モード, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `operations/tool-usage-overview.md` |
+| ハートビート, heartbeat, 定期チェック | `reference/operations/heartbeat-cron-guide.md` |
+| cron, スケジュール, 定時タスク | `reference/operations/heartbeat-cron-guide.md` |
+| ツール, animaworks-tool, MCP, skill | `reference/operations/tool-usage-overview.md` |
+| 実行モード, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `reference/operations/tool-usage-overview.md` |
 | バックグラウンド, submit, 長時間ツール | `operations/background-tasks.md` |
 | machine, machine run, 外部エージェント, 計画書 | `operations/machine/tool-usage.md` |
 | 調査, investigation, PdM, plan.md | `operations/machine/workflow-pdm.md` |
@@ -296,18 +296,18 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | Anima, 自分, 構成, 設計, ライフサイクル | `anatomy/what-is-anima.md` |
 | identity, injection, 人格, 行動指針, 不変, 可変 | `reference/anatomy/anima-anatomy.md` |
 | permissions.json, bootstrap, heartbeat.md, cron.md | `reference/anatomy/anima-anatomy.md` |
-| 記憶, memory, episodes, knowledge, procedures | `anatomy/memory-system.md` |
-| Priming, RAG, Consolidation, Forgetting, 忘却 | `anatomy/memory-system.md` |
-| consolidation, 2-phase, multipass, エラートレース | `anatomy/memory-system.md` |
-| search_memory, write_memory_file, 記憶検索 | `anatomy/memory-system.md` |
-| skills, スキル検索, common_skills, search_memory scope="skills" | `anatomy/memory-system.md`, `operations/tool-usage-overview.md` |
-| activity_log, BM25, RRF, 直近のログ検索 | `anatomy/memory-system.md`, `troubleshooting/common-issues.md` |
+| 記憶, memory, episodes, knowledge, procedures | `reference/anatomy/memory-system.md` |
+| Priming, RAG, Consolidation, Forgetting, 忘却 | `reference/anatomy/memory-system.md` |
+| consolidation, 2-phase, multipass, エラートレース | `reference/anatomy/memory-system.md` |
+| search_memory, write_memory_file, 記憶検索 | `reference/anatomy/memory-system.md` |
+| skills, スキル検索, common_skills, search_memory scope="skills" | `reference/anatomy/memory-system.md`, `reference/operations/tool-usage-overview.md` |
+| activity_log, BM25, RRF, 直近のログ検索 | `reference/anatomy/memory-system.md`, `reference/troubleshooting/common-issues.md` |
 | プロンプトインジェクション, trust, untrusted, 境界タグ | `security/prompt-injection-awareness.md` |
-| エラー, 問題, 動かない, 権限, ブロックコマンド | `troubleshooting/common-issues.md` |
-| フローチャート, 判断, 迷い, 緊急, セキュリティ | `troubleshooting/escalation-flowchart.md` |
+| エラー, 問題, 動かない, 権限, ブロックコマンド | `reference/troubleshooting/common-issues.md` |
+| フローチャート, 判断, 迷い, 緊急, セキュリティ | `reference/troubleshooting/escalation-flowchart.md` |
 | Gmail, token.json, OAuth, pickle | `reference/troubleshooting/gmail-credential-setup.md` |
-| ティア, tiered, T1, T2, T3, T4 | `troubleshooting/common-issues.md` |
-| ユースケース, 活用例, 何ができる | `usecases/usecase-overview.md` |
+| ティア, tiered, T1, T2, T3, T4 | `reference/troubleshooting/common-issues.md` |
+| ユースケース, 活用例, 何ができる | `reference/usecases/usecase-overview.md` |
 
 ---
 
@@ -318,7 +318,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 search_memory(query="メッセージ 送信", scope="common_knowledge")
 
 # パスを直接指定
-read_memory_file(path="common_knowledge/communication/messaging-guide.md")
+read_memory_file(path="reference/communication/messaging-guide.md")
 
 # 技術リファレンスを参照
 read_memory_file(path="reference/anatomy/anima-anatomy.md")

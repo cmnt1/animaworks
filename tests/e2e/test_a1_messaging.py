@@ -30,6 +30,7 @@ class TestSModeMessagingPrompt:
         prompt = build_system_prompt(memory, execution_mode="s")
 
         assert "send_message" in prompt
+        # bash send should NOT appear (abolished)
         assert "bash send" not in prompt
 
     def test_a_mode_prompt_has_send_message_tool(self, data_dir, make_anima):

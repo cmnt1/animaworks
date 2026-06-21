@@ -1,60 +1,76 @@
 # Reference — Technical Reference Index
 
-Detailed technical specifications and admin configuration guides for AnimaWorks.
-Not indexed by RAG. Use `read_memory_file(path="reference/...")` to read directly when needed.
+Detailed technical specifications and administrator-oriented guides for AnimaWorks.
+These files are outside the RAG search target; read them directly with `read_memory_file(path="reference/...")`.
 
-## How to Access
+## Reference files
 
-```
-read_memory_file(path="reference/00_index.md")          # This index
-read_memory_file(path="reference/anatomy/anima-anatomy.md")  # Example
-```
+### anatomy/ — Architecture
 
-## Categories
+| File | Title |
+|------|-------|
+| `anatomy/anima-anatomy.md` | Anima Anatomy — Complete File Reference |
+| `anatomy/memory-system.md` | Memory System Guide |
+| `anatomy/priming-channels.md` | Priming Channels Technical Reference |
+| `anatomy/working-memory.md` | Working Memory (state/) Technical Reference |
 
-### anatomy/ — File Structure & Architecture
+### communication/ — Messaging and integrations
 
-| File | Content |
-|------|---------|
-| `anima-anatomy.md` | Complete guide to Anima configuration files (roles, change rules, encapsulation) |
-| `working-memory.md` | Working memory (state/) technical reference (current_state.md spec, size limits, migration) |
-| `priming-channels.md` | Priming engine full channel technical spec (budgets, search sources, dynamic adjustment) |
+| File | Title |
+|------|-------|
+| `communication/instruction-patterns.md` | Instruction Patterns |
+| `communication/messaging-guide.md` | Complete Messaging Guide |
+| `communication/reporting-guide.md` | Reporting and Escalation Guide |
+| `communication/slack-bot-token-guide.md` | Slack Bot Token Configuration Guide |
 
-### communication/ — External Integration Setup
+### internals/ — Framework internals
 
-| File | Content |
-|------|---------|
-| `slack-bot-token-guide.md` | Slack bot token configuration (per-Anima vs shared) |
+| File | Title |
+|------|-------|
+| `internals/common-knowledge-access-paths.md` | common_knowledge Access Paths |
 
-### internals/ — Framework Internals
+### operations/ — Operations and administration
 
-| File | Content |
-|------|---------|
-| `common-knowledge-access-paths.md` | 5 access paths for common_knowledge and RAG indexing mechanism |
+| File | Title |
+|------|-------|
+| `operations/browser-automation-guide.md` | Browser Automation Guide |
+| `operations/heartbeat-cron-guide.md` | Scheduled execution: configuration and operations |
+| `operations/mode-s-auth-guide.md` | Mode S (Agent SDK) Authentication Mode Configuration Guide |
+| `operations/model-guide.md` | Model Selection and Configuration Guide |
+| `operations/project-setup.md` | Project Setup |
+| `operations/task-management.md` | Task Management |
+| `operations/tool-usage-overview.md` | Tool Usage Guide |
+| `operations/voice-chat-guide.md` | Voice Chat Guide |
 
-### operations/ — Admin & Operations Setup
+### organization/ — Organization structure
 
-| File | Content |
-|------|---------|
-| `project-setup.md` | Project initial setup (`animaworks init`, directory structure) |
-| `model-guide.md` | Model selection, execution modes, context window details |
-| `mode-s-auth-guide.md` | Mode S authentication modes (API/Bedrock/Vertex/Max) |
-| `voice-chat-guide.md` | Voice chat architecture, STT/TTS, installation |
-| `browser-automation-guide.md` | Headless browser automation with agent-browser |
+| File | Title |
+|------|-------|
+| `organization/roles.md` | Roles and Responsibilities |
+| `organization/structure.md` | How Organization Structure Works |
 
-### organization/ — Organization Structure Internals
+### troubleshooting/ — Troubleshooting
 
-| File | Content |
-|------|---------|
-| `structure.md` | Organization data sources, supervisor/speciality resolution |
+| File | Title |
+|------|-------|
+| `troubleshooting/common-issues.md` | Common Issues and Troubleshooting |
+| `troubleshooting/escalation-flowchart.md` | Flowchart for When You're Stuck |
+| `troubleshooting/gmail-credential-setup.md` | Gmail Tool Credential Setup Guide |
 
-### troubleshooting/ — Credential Setup
+### usecases/ — Use case guides
 
-| File | Content |
-|------|---------|
-| `gmail-credential-setup.md` | Gmail Tool OAuth credential setup procedure |
+| File | Title |
+|------|-------|
+| `usecases/usecase-communication.md` | Use Case: Communication Automation |
+| `usecases/usecase-customer-support.md` | Use Case: Customer Support |
+| `usecases/usecase-development.md` | Use Case: Software Development Support |
+| `usecases/usecase-knowledge.md` | Use Case: Knowledge Management & Documentation |
+| `usecases/usecase-monitoring.md` | Use Case: Infrastructure & Service Monitoring |
+| `usecases/usecase-overview.md` | AnimaWorks Use Case Guide |
+| `usecases/usecase-research.md` | Use Case: Research, Investigation & Analysis |
+| `usecases/usecase-secretary.md` | Use Case: Secretary & Administrative Support |
 
 ## Related
 
-- Everyday practical guides → `common_knowledge/00_index.md`
-- Common skills → `common_skills/`
+- Daily practical guides -> `common_knowledge/00_index.md`
+- Common skills -> `common_skills/`

@@ -15,6 +15,7 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import structlog
@@ -52,6 +53,20 @@ _NOISY_PATHS = frozenset(
         "/ws",
     }
 )
+
+
+def _get_app_version() -> str:
+    try:
+        return version("animaworks")
+    except PackageNotFoundError:
+        pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        try:
+            match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.MULTILINE)
+            if match:
+                return match.group(1)
+        except Exception:
+            logger.debug("Failed to read application version from pyproject.toml", exc_info=True)
+    return "0.0.0"
 
 
 async def _call_optional_async(obj: object | None, method_name: str) -> None:
@@ -882,7 +897,7 @@ def create_app(
     *,
     force_startup_repair_all_vectordb: bool = False,
 ) -> FastAPI:
-    app = FastAPI(title="AnimaWorks", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="AnimaWorks", version=_get_app_version(), lifespan=lifespan)
 
     ws_manager = WebSocketManager()
 

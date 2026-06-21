@@ -13,7 +13,10 @@ import logging
 import os
 import signal
 import subprocess
+import sys
+import types
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -39,6 +42,47 @@ try:
     CHROMADB_AVAILABLE = True
 except ImportError:
     CHROMADB_AVAILABLE = False
+
+
+@pytest.fixture
+def fake_openai_codex_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install a small fake ``openai_codex`` package for optional Mode C tests."""
+
+    class _CodexConfig:
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    class _AsyncCodex:
+        def __init__(self, config: _CodexConfig) -> None:
+            self.config = config
+
+    class _ReasoningSummary:
+        def __init__(self, root: Any) -> None:
+            self.root = root
+
+    def reasoning_value(value: str) -> SimpleNamespace:
+        return SimpleNamespace(value=value)
+
+    openai_codex = types.ModuleType("openai_codex")
+    openai_codex.AsyncCodex = _AsyncCodex
+    openai_codex.CodexConfig = _CodexConfig
+    openai_codex.ApprovalMode = SimpleNamespace(deny_all=SimpleNamespace(value="deny_all"))
+    openai_codex.Sandbox = SimpleNamespace(full_access="full_access", workspace_write="workspace_write")
+
+    generated = types.ModuleType("openai_codex.generated")
+    v2_all = types.ModuleType("openai_codex.generated.v2_all")
+    v2_all.ReasoningSummary = _ReasoningSummary
+    v2_all.ReasoningSummaryValue = SimpleNamespace(
+        auto=reasoning_value("auto"),
+        concise=reasoning_value("concise"),
+        detailed=reasoning_value("detailed"),
+    )
+
+    monkeypatch.setitem(sys.modules, "openai_codex", openai_codex)
+    monkeypatch.setitem(sys.modules, "openai_codex.generated", generated)
+    monkeypatch.setitem(sys.modules, "openai_codex.generated.v2_all", v2_all)
 
 
 # ── CLI options ───────────────────────────────────────────

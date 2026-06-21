@@ -71,6 +71,7 @@
 
 | バージョン | 概要 |
 |-----------|------|
+| [v0.9](release/v0.9.ja.md) | RAG/vector-worker安定化、legacy記憶検索、Codex streaming、起動強化、運用クリーンアップ |
 | [v0.5](release/v0.5.ja.md) | RAG全面移行、セキュリティ多層化（Provenance 4フェーズ）、Workspace UI全面刷新、ストリーミング高速化 |
 
 ---

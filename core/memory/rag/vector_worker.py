@@ -12,7 +12,9 @@ import concurrent.futures
 import functools
 import logging
 import os
+import threading
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -28,6 +30,13 @@ _CIRCUIT_FAILURE_THRESHOLD = int(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_FAILU
 _CIRCUIT_BACKOFF_BASE_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_BACKOFF_BASE_SECONDS", "1"))
 _CIRCUIT_BACKOFF_MAX_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_BACKOFF_MAX_SECONDS", "300"))
 _write_circuit_breakers: dict[str, dict[str, Any]] = {}
+_VECTOR_ACTION_ERROR = object()
+_LATCH_RECOVERY_BACKOFF_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_LATCH_RECOVERY_BACKOFF_SECONDS", "5"))
+_LATCH_RECOVERY_RETRY_STATUSES = {"ok", "missing"}
+_ACTIVE_REPAIR_STATUSES = {"requested", "stopping", "repairing"}
+_latched_store_recovery_lock = threading.Lock()
+_latched_store_recovery_backoff_until: dict[str, float] = {}
+_latched_store_recovery_in_progress: set[str] = set()
 
 _native_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=1,
@@ -95,6 +104,132 @@ async def _run_native(fn, *args, **kwargs):
     loop = asyncio.get_running_loop()
     call = functools.partial(fn, *args, **kwargs)
     return await loop.run_in_executor(_native_executor, call)
+
+
+def _has_active_repair_state(anima_name: str) -> bool:
+    try:
+        from core.memory.rag import repair_state
+
+        return repair_state.read_state(anima_name).get("status") in _ACTIVE_REPAIR_STATUSES
+    except Exception:
+        logger.debug("Failed to read RAG repair state for owner=%s", anima_name, exc_info=True)
+        return True
+
+
+def _begin_latched_store_recovery(anima_name: str) -> bool:
+    now = time.monotonic()
+    with _latched_store_recovery_lock:
+        retry_at = float(_latched_store_recovery_backoff_until.get(anima_name) or 0.0)
+        if retry_at > now:
+            return False
+        if retry_at:
+            _latched_store_recovery_backoff_until.pop(anima_name, None)
+        if anima_name in _latched_store_recovery_in_progress:
+            return False
+        _latched_store_recovery_in_progress.add(anima_name)
+        return True
+
+
+def _end_latched_store_recovery(anima_name: str) -> None:
+    with _latched_store_recovery_lock:
+        _latched_store_recovery_in_progress.discard(anima_name)
+
+
+def _set_latched_store_recovery_backoff(anima_name: str) -> None:
+    with _latched_store_recovery_lock:
+        _latched_store_recovery_backoff_until[anima_name] = time.monotonic() + _LATCH_RECOVERY_BACKOFF_SECONDS
+
+
+def _clear_latched_store_recovery_backoff(anima_name: str) -> None:
+    with _latched_store_recovery_lock:
+        _latched_store_recovery_backoff_until.pop(anima_name, None)
+
+
+def _try_recover_latched_store(anima_name: str | None) -> Any | None:
+    if anima_name is None:
+        return None
+
+    from core.memory.rag.singleton import (
+        clear_vector_store_init_failed,
+        get_vector_store,
+        is_global_vector_store_init_failed,
+        is_vector_store_init_failed,
+    )
+
+    if is_global_vector_store_init_failed() or not is_vector_store_init_failed(anima_name):
+        return None
+    if _has_active_repair_state(anima_name):
+        return None
+    if not _begin_latched_store_recovery(anima_name):
+        return None
+
+    try:
+        if is_global_vector_store_init_failed() or not is_vector_store_init_failed(anima_name):
+            return None
+        if _has_active_repair_state(anima_name):
+            return None
+
+        from core.memory.rag.sqlite_health import check_anima_vectordb_health
+
+        health = check_anima_vectordb_health(
+            anima_name,
+            source="worker_store_unavailable",
+            record_repair=True,
+        )
+        if health.status not in _LATCH_RECOVERY_RETRY_STATUSES:
+            _set_latched_store_recovery_backoff(anima_name)
+            logger.info(
+                "Skipping latched vector-store recovery for owner=%s: health_status=%s; backing off for %.1fs",
+                anima_name,
+                health.status,
+                _LATCH_RECOVERY_BACKOFF_SECONDS,
+            )
+            return None
+
+        clear_vector_store_init_failed(anima_name)
+        store = get_vector_store(anima_name)
+        if store is not None:
+            _clear_latched_store_recovery_backoff(anima_name)
+            _clear_owner_write_circuit_breakers(anima_name)
+            logger.info("Recovered latched vector store for owner=%s", anima_name)
+            return store
+
+        _set_latched_store_recovery_backoff(anima_name)
+        logger.warning(
+            "Latched vector-store recovery did not reopen a store for owner=%s; backing off for %.1fs",
+            anima_name,
+            _LATCH_RECOVERY_BACKOFF_SECONDS,
+        )
+        return None
+    except Exception:
+        _set_latched_store_recovery_backoff(anima_name)
+        logger.warning("Latched vector-store recovery failed for owner=%s", anima_name, exc_info=True)
+        return None
+    finally:
+        _end_latched_store_recovery(anima_name)
+
+
+def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> Any | None:
+    from core.memory.rag.singleton import get_vector_store, reset_vector_store
+
+    try:
+        store = get_vector_store(anima_name)
+        if store is None:
+            store = _try_recover_latched_store(anima_name)
+            if store is None:
+                return None
+        return action(store)
+    except Exception:
+        logger.warning("Vector worker native store action failed for owner=%s", anima_name or "shared", exc_info=True)
+        try:
+            reset_vector_store(anima_name)
+        except Exception:
+            logger.debug(
+                "Vector worker failed to reset native store after action failure for owner=%s",
+                anima_name or "shared",
+                exc_info=True,
+            )
+        return _VECTOR_ACTION_ERROR
 
 
 def _vector_write_failed(operation: str, collection: str) -> JSONResponse:
@@ -211,6 +346,10 @@ def _write_success_response(anima_name: str | None, collection: str) -> dict[str
     return {"status": "ok"}
 
 
+def _is_vector_action_error(value: Any) -> bool:
+    return value is _VECTOR_ACTION_ERROR
+
+
 def _write_failure_response(anima_name: str | None, collection: str, operation: str) -> JSONResponse:
     state = _record_vector_write_failure(anima_name, collection, operation)
     return JSONResponse(
@@ -249,6 +388,8 @@ async def _close_native_vector_stores() -> None:
 def create_app() -> FastAPI:
     os.environ.pop("ANIMAWORKS_VECTOR_URL", None)
     _write_circuit_breakers.clear()
+    _latched_store_recovery_backoff_until.clear()
+    _latched_store_recovery_in_progress.clear()
     from core.memory.rag.direct_access import enable_direct_chroma_for_process
 
     enable_direct_chroma_for_process()
@@ -282,31 +423,29 @@ def create_app() -> FastAPI:
 
     @app.post("/query")
     async def vector_query(body: VectorQueryRequest):
-        from core.memory.rag.singleton import get_vector_store
-
-        store = get_vector_store(body.anima_name)
-        if store is None:
-            return {"results": []}
         results = await _run_native(
-            store.query,
-            body.collection,
-            body.embedding,
-            body.top_k,
-            body.filter_metadata,
+            _call_vector_store,
+            body.anima_name,
+            lambda store: store.query(
+                body.collection,
+                body.embedding,
+                body.top_k,
+                body.filter_metadata,
+            ),
         )
+        if results is None:
+            return {"results": []}
+        if _is_vector_action_error(results):
+            return {"results": []}
         return _search_results_payload(results)
 
     @app.post("/upsert")
     async def vector_upsert(body: VectorUpsertRequest):
-        from core.memory.rag.singleton import get_vector_store
         from core.memory.rag.store import Document
 
         breaker = _before_vector_write(body.anima_name, body.collection)
         if breaker is not None:
             return breaker
-        store = get_vector_store(body.anima_name)
-        if store is None:
-            return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         docs = [
             Document(
                 id=d["id"],
@@ -316,109 +455,126 @@ def create_app() -> FastAPI:
             )
             for d in body.documents
         ]
-        ok = await _run_native(store.upsert, body.collection, docs)
-        if not ok:
+        ok = await _run_native(
+            _call_vector_store,
+            body.anima_name,
+            lambda store: store.upsert(body.collection, docs),
+        )
+        if ok is None:
+            return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
+        if _is_vector_action_error(ok) or not ok:
             return _write_failure_response(body.anima_name, body.collection, "upsert")
         return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/update-metadata")
     async def vector_update_metadata(body: VectorUpdateMetadataRequest):
-        from core.memory.rag.singleton import get_vector_store
-
         breaker = _before_vector_write(body.anima_name, body.collection)
         if breaker is not None:
             return breaker
-        store = get_vector_store(body.anima_name)
-        if store is None:
-            return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         ok = await _run_native(
-            store.update_metadata,
-            body.collection,
-            body.ids,
-            body.metadatas,
+            _call_vector_store,
+            body.anima_name,
+            lambda store: store.update_metadata(
+                body.collection,
+                body.ids,
+                body.metadatas,
+            ),
         )
-        if not ok:
+        if ok is None:
+            return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
+        if _is_vector_action_error(ok) or not ok:
             return _write_failure_response(body.anima_name, body.collection, "update-metadata")
         return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/delete-documents")
     async def vector_delete_documents(body: VectorDeleteDocumentsRequest):
-        from core.memory.rag.singleton import get_vector_store
-
         breaker = _before_vector_write(body.anima_name, body.collection)
         if breaker is not None:
             return breaker
-        store = get_vector_store(body.anima_name)
-        if store is None:
+        ok = await _run_native(
+            _call_vector_store,
+            body.anima_name,
+            lambda store: store.delete_documents(body.collection, body.ids),
+        )
+        if ok is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        ok = await _run_native(store.delete_documents, body.collection, body.ids)
-        if not ok:
+        if _is_vector_action_error(ok) or not ok:
             return _write_failure_response(body.anima_name, body.collection, "delete-documents")
         return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/get-by-metadata")
     async def vector_get_by_metadata(body: VectorGetByMetadataRequest):
-        from core.memory.rag.singleton import get_vector_store
-
-        store = get_vector_store(body.anima_name)
-        if store is None:
-            return {"results": []}
         results = await _run_native(
-            store.get_by_metadata,
-            body.collection,
-            body.where,
-            body.limit,
+            _call_vector_store,
+            body.anima_name,
+            lambda store: store.get_by_metadata(
+                body.collection,
+                body.where,
+                body.limit,
+            ),
         )
+        if results is None:
+            return {"results": []}
+        if _is_vector_action_error(results):
+            return {"results": []}
         return _search_results_payload(results)
 
     @app.post("/get-by-ids")
     async def vector_get_by_ids(body: VectorGetByIdsRequest):
-        from core.memory.rag.singleton import get_vector_store
-
-        store = get_vector_store(body.anima_name)
-        if store is None:
+        docs = await _run_native(
+            _call_vector_store,
+            body.anima_name,
+            lambda store: store.get_by_ids(body.collection, body.ids),
+        )
+        if docs is None:
             return {"documents": []}
-        docs = await _run_native(store.get_by_ids, body.collection, body.ids)
+        if _is_vector_action_error(docs):
+            return {"documents": []}
         return {"documents": [{"id": d.id, "content": d.content, "metadata": d.metadata} for d in docs]}
 
     @app.post("/create-collection")
     async def vector_create_collection(body: VectorCollectionRequest):
-        from core.memory.rag.singleton import get_vector_store
-
         breaker = _before_vector_write(body.anima_name, body.collection)
         if breaker is not None:
             return breaker
-        store = get_vector_store(body.anima_name)
-        if store is None:
+        ok = await _run_native(
+            _call_vector_store,
+            body.anima_name,
+            lambda store: store.create_collection(body.collection),
+        )
+        if ok is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        ok = await _run_native(store.create_collection, body.collection)
-        if not ok:
+        if _is_vector_action_error(ok) or not ok:
             return _write_failure_response(body.anima_name, body.collection, "create-collection")
         return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/delete-collection")
     async def vector_delete_collection(body: VectorCollectionRequest):
-        from core.memory.rag.singleton import get_vector_store
-
         breaker = _before_vector_write(body.anima_name, body.collection)
         if breaker is not None:
             return breaker
-        store = get_vector_store(body.anima_name)
-        if store is None:
+        ok = await _run_native(
+            _call_vector_store,
+            body.anima_name,
+            lambda store: store.delete_collection(body.collection),
+        )
+        if ok is None:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
-        ok = await _run_native(store.delete_collection, body.collection)
-        if not ok:
+        if _is_vector_action_error(ok) or not ok:
             return _write_failure_response(body.anima_name, body.collection, "delete-collection")
         return _write_success_response(body.anima_name, body.collection)
 
     @app.post("/list-collections")
     async def vector_list_collections(body: VectorListCollectionsRequest):
-        from core.memory.rag.singleton import get_vector_store
-
-        store = get_vector_store(body.anima_name)
-        if store is None:
+        collections = await _run_native(
+            _call_vector_store,
+            body.anima_name,
+            lambda store: store.list_collections(),
+        )
+        if collections is None:
             return {"collections": []}
-        collections = await _run_native(store.list_collections)
+        if _is_vector_action_error(collections):
+            return {"collections": []}
         return {"collections": collections}
 
     @app.post("/quick-check")

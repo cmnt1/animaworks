@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.priming import PrimingEngine, PrimingResult, _BUDGET_PENDING_TASKS
+from core.memory.priming import _BUDGET_PENDING_TASKS, PrimingEngine, PrimingResult
 
 
 @pytest.fixture
@@ -45,6 +45,7 @@ class TestChannelE:
     @pytest.mark.asyncio
     async def test_channel_e_with_tasks(self, temp_anima_dir):
         from core.memory.task_queue import TaskQueueManager
+
         manager = TaskQueueManager(temp_anima_dir)
         manager.add_task(
             source="human",
@@ -119,8 +120,9 @@ class TestChannelEOverflowInbox:
 
 class TestPrimeMemoriesIncludesChannelE:
     @pytest.mark.asyncio
-    async def test_prime_memories_returns_pending_tasks(self, temp_anima_dir):
+    async def test_prime_memories_returns_pending_tasks(self, temp_anima_dir, monkeypatch):
         from core.memory.task_queue import TaskQueueManager
+
         manager = TaskQueueManager(temp_anima_dir)
         manager.add_task(
             source="human",
@@ -131,6 +133,22 @@ class TestPrimeMemoriesIncludesChannelE:
         )
 
         engine = PrimingEngine(temp_anima_dir)
+        monkeypatch.setattr(engine, "_channel_a_sender_profile", lambda sender_name: _empty_text())
+        monkeypatch.setattr(engine, "_channel_b_recent_activity", lambda sender_name, keywords, **kwargs: _empty_text())
+        monkeypatch.setattr(engine, "_channel_c0_important_knowledge", _empty_text)
+        monkeypatch.setattr(engine, "_channel_c_related_knowledge", lambda keywords, **kwargs: _empty_pair())
+        monkeypatch.setattr(engine, "_collect_recent_outbound", _empty_text)
+        monkeypatch.setattr(engine, "_channel_f_episodes", lambda keywords, **kwargs: _empty_text())
+        monkeypatch.setattr(engine, "_collect_pending_human_notifications", lambda **kwargs: _empty_text())
+        monkeypatch.setattr(engine, "_channel_g_graph_context", lambda message: _empty_text())
         result = await engine.prime_memories("hello", sender_name="test")
         assert result.pending_tasks != ""
         assert "Important task" in result.pending_tasks
+
+
+async def _empty_text() -> str:
+    return ""
+
+
+async def _empty_pair() -> tuple[str, str]:
+    return ("", "")

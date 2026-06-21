@@ -584,6 +584,17 @@ def _build_group4(
                         match_confidence=candidate.confidence,
                     )
                 )
+            if not catalog_entries:
+                for meta in all_skills:
+                    catalog_entries.append(
+                        _format_skill_catalog_line(
+                            meta,
+                            path=_skill_catalog_pointer(meta),
+                            common_label=common_label,
+                            procedure_label=procedure_label,
+                            desc_limit=_DESC_LIMIT,
+                        )
+                    )
         else:
             for meta in all_skills:
                 catalog_entries.append(

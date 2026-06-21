@@ -3,58 +3,74 @@
 AnimaWorks の詳細な技術仕様・管理者向け設定ガイドの一覧。
 RAG 検索対象外。必要なときに `read_memory_file(path="reference/...")` で直接参照すること。
 
-## 参照方法
+## Reference files
 
-```
-read_memory_file(path="reference/00_index.md")          # この目次
-read_memory_file(path="reference/anatomy/anima-anatomy.md")  # 例
-```
+### anatomy/ — 構成・アーキテクチャ
 
-## カテゴリ
+| File | Title |
+|------|-------|
+| `anatomy/anima-anatomy.md` | Anima 構成ファイル完全ガイド |
+| `anatomy/memory-system.md` | 記憶システムガイド |
+| `anatomy/priming-channels.md` | Priming チャネル技術リファレンス |
+| `anatomy/working-memory.md` | ワーキングメモリ（state/）技術リファレンス |
 
-### anatomy/ — 構成ファイル・アーキテクチャ
+### communication/ — メッセージング・連携
 
-| ファイル | 内容 |
-|---------|------|
-| `anima-anatomy.md` | Anima構成ファイル完全ガイド（全ファイルの役割・変更ルール・カプセル化） |
-| `working-memory.md` | ワーキングメモリ（state/）技術リファレンス（current_state.md仕様・サイズ制御・マイグレーション） |
-| `priming-channels.md` | Primingエンジン全チャネル技術仕様（バジェット・検索ソース・動的調整） |
-
-### communication/ — 外部連携設定
-
-| ファイル | 内容 |
-|---------|------|
-| `slack-bot-token-guide.md` | Slack ボットトークンの設定方法（Per-Anima vs 共有） |
+| File | Title |
+|------|-------|
+| `communication/instruction-patterns.md` | 指示の出し方パターン集 |
+| `communication/messaging-guide.md` | メッセージ送信の完全ガイド |
+| `communication/reporting-guide.md` | 報告・エスカレーションの方法 |
+| `communication/slack-bot-token-guide.md` | Slack ボットトークン設定ガイド |
 
 ### internals/ — フレームワーク内部仕様
 
-| ファイル | 内容 |
-|---------|------|
-| `common-knowledge-access-paths.md` | common_knowledge の5つの参照経路とRAGインデックスの仕組み |
+| File | Title |
+|------|-------|
+| `internals/common-knowledge-access-paths.md` | common_knowledge の参照経路 |
 
 ### operations/ — 管理・運用設定
 
-| ファイル | 内容 |
-|---------|------|
-| `project-setup.md` | プロジェクト初期設定（`animaworks init`・ディレクトリ構成） |
-| `model-guide.md` | モデル選択・実行モード・コンテキストウィンドウの技術詳細 |
-| `mode-s-auth-guide.md` | Mode S 認証モード設定（API/Bedrock/Vertex/Max） |
-| `voice-chat-guide.md` | 音声チャットのアーキテクチャ・STT/TTS・インストール |
-| `browser-automation-guide.md` | agent-browserによるヘッドレスブラウザ操作 |
+| File | Title |
+|------|-------|
+| `operations/browser-automation-guide.md` | ブラウザ操作ガイド |
+| `operations/heartbeat-cron-guide.md` | 定期実行の設定と運用 |
+| `operations/mode-s-auth-guide.md` | Mode S（Agent SDK）認証モード設定ガイド |
+| `operations/model-guide.md` | モデル選択・設定ガイド |
+| `operations/project-setup.md` | プロジェクト設定方法 |
+| `operations/task-management.md` | タスク管理の方法 |
+| `operations/tool-usage-overview.md` | ツール使用ガイド |
+| `operations/voice-chat-guide.md` | 音声チャット（Voice Chat）ガイド |
 
-### organization/ — 組織構造の仕組み
+### organization/ — 組織構造
 
-| ファイル | 内容 |
-|---------|------|
-| `structure.md` | 組織構造のデータソース・supervisor/speciality の解決方法 |
+| File | Title |
+|------|-------|
+| `organization/roles.md` | 役割と責任範囲 |
+| `organization/structure.md` | 組織構造の仕組み |
 
-### troubleshooting/ — 認証・資格情報設定
+### troubleshooting/ — トラブルシューティング
 
-| ファイル | 内容 |
-|---------|------|
-| `gmail-credential-setup.md` | Gmail Tool OAuth認証設定の手順 |
+| File | Title |
+|------|-------|
+| `troubleshooting/common-issues.md` | よくある問題と対処法 |
+| `troubleshooting/escalation-flowchart.md` | 困ったときのフローチャート |
+| `troubleshooting/gmail-credential-setup.md` | Gmail Tool 認証設定ガイド |
 
-## 関連
+### usecases/ — ユースケースガイド
+
+| File | Title |
+|------|-------|
+| `usecases/usecase-communication.md` | ユースケース: コミュニケーション自動化 |
+| `usecases/usecase-customer-support.md` | ユースケース: カスタマーサポート |
+| `usecases/usecase-development.md` | ユースケース: ソフトウェア開発支援 |
+| `usecases/usecase-knowledge.md` | ユースケース: ナレッジ管理・ドキュメント整備 |
+| `usecases/usecase-monitoring.md` | ユースケース: インフラ・サービス監視 |
+| `usecases/usecase-overview.md` | AnimaWorks ユースケースガイド |
+| `usecases/usecase-research.md` | ユースケース: 調査・リサーチ・分析 |
+| `usecases/usecase-secretary.md` | ユースケース: 秘書・事務サポート |
+
+## Related
 
 - 日常の実用ガイド → `common_knowledge/00_index.md`
 - 共通スキル → `common_skills/`

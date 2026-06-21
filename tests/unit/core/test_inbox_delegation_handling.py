@@ -13,9 +13,12 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from core._anima_inbox import (
+    _append_episode_off_loop,
     _check_task_state,
     _extract_task_id,
     _handle_delegation_dms,
@@ -61,6 +64,19 @@ def _setup_anima_dir(tmp_path: Path) -> Path:
     (anima_dir / "state" / "pending" / "failed").mkdir(parents=True)
     (anima_dir / "state" / "task_results").mkdir(parents=True)
     return anima_dir
+
+
+# ── Async episode append ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_append_episode_off_loop_uses_to_thread() -> None:
+    memory = MagicMock()
+
+    with patch("core._anima_inbox.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+        await _append_episode_off_loop(memory, "episode", origin="anima")
+
+    mock_to_thread.assert_awaited_once_with(memory.append_episode, "episode", origin="anima")
 
 
 # ── _extract_task_id ──────────────────────────────────────────
@@ -277,32 +293,35 @@ class TestHandleDelegationDms:
             _activity=activity,
         )
 
-    def test_archives_when_task_completed(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_archives_when_task_completed(self, tmp_path: Path) -> None:
         mixin = self._make_anima_mixin(tmp_path)
         (mixin.anima_dir / "state" / "task_results" / "abc123def456.md").write_text("done")
 
         msg = _make_message(intent="delegation", meta={"task_id": "abc123def456"})
         items = [_make_inbox_item(msg, tmp_path)]
 
-        _handle_delegation_dms(mixin, items)
+        await _handle_delegation_dms(mixin, items)
 
         mixin.messenger.archive_paths.assert_called_once_with(items)
         mixin._activity.log.assert_called_once()
         assert mixin._activity.log.call_args[1]["meta"]["delegation_state"] == "completed"
 
-    def test_archives_when_task_pending(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_archives_when_task_pending(self, tmp_path: Path) -> None:
         mixin = self._make_anima_mixin(tmp_path)
         (mixin.anima_dir / "state" / "pending" / "abc123def456.json").write_text("{}")
 
         msg = _make_message(intent="delegation", meta={"task_id": "abc123def456"})
         items = [_make_inbox_item(msg, tmp_path)]
 
-        _handle_delegation_dms(mixin, items)
+        await _handle_delegation_dms(mixin, items)
 
         mixin.messenger.archive_paths.assert_called_once()
         assert not (mixin.anima_dir / "state" / "pending" / "abc123def456_rescue.json").exists()
 
-    def test_rescues_when_task_missing(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_rescues_when_task_missing(self, tmp_path: Path) -> None:
         mixin = self._make_anima_mixin(tmp_path)
 
         msg = _make_message(
@@ -313,7 +332,7 @@ class TestHandleDelegationDms:
         )
         items = [_make_inbox_item(msg, tmp_path)]
 
-        _handle_delegation_dms(mixin, items)
+        await _handle_delegation_dms(mixin, items)
 
         pending_file = mixin.anima_dir / "state" / "pending" / "abc123def456.json"
         assert pending_file.exists()
@@ -323,7 +342,8 @@ class TestHandleDelegationDms:
         mixin.messenger.archive_paths.assert_called_once()
         assert mixin._activity.log.call_args[1]["meta"]["delegation_state"] == "missing"
 
-    def test_records_episode(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_records_episode(self, tmp_path: Path) -> None:
         mixin = self._make_anima_mixin(tmp_path)
         (mixin.anima_dir / "state" / "pending" / "abc123def456.json").write_text("{}")
 
@@ -334,11 +354,12 @@ class TestHandleDelegationDms:
         )
         items = [_make_inbox_item(msg, tmp_path)]
 
-        _handle_delegation_dms(mixin, items)
+        await _handle_delegation_dms(mixin, items)
 
         mixin.memory.append_episode.assert_called_once()
 
-    def test_handles_multiple_delegation_dms(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_handles_multiple_delegation_dms(self, tmp_path: Path) -> None:
         mixin = self._make_anima_mixin(tmp_path)
         (mixin.anima_dir / "state" / "pending" / "aaa111bbb222.json").write_text("{}")
 
@@ -348,7 +369,7 @@ class TestHandleDelegationDms:
         ]
         items = [_make_inbox_item(m, tmp_path) for m in msgs]
 
-        _handle_delegation_dms(mixin, items)
+        await _handle_delegation_dms(mixin, items)
 
         assert mixin._activity.log.call_count == 2
         rescue_file = mixin.anima_dir / "state" / "pending" / "ccc333ddd444.json"

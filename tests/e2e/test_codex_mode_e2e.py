@@ -14,6 +14,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _fake_openai_codex_sdk(fake_openai_codex_sdk):
+    pass
+
+
 def _mock_codex(start_thread):
     codex = MagicMock()
     codex.thread_start = AsyncMock(return_value=start_thread)

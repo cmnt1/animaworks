@@ -17,7 +17,7 @@ python3 scripts/doc_freshness.py
 ```
 === Stale Documents: 42/52 ===
 
-[HIGH] templates/ja/common_knowledge/operations/task-management.md
+[HIGH] templates/ja/reference/operations/task-management.md
        Reason: core/background.py changed 2026-02-20 (doc: 2026-02-10, 10d stale)
 [MED ] templates/ja/common_skills/cron-management/SKILL.md
        Reason: core/schedule_parser.py changed 2026-02-22 (doc: 2026-02-18, 4d stale)
@@ -33,7 +33,7 @@ python3 scripts/doc_freshness.py --category common_skills
 python3 scripts/doc_freshness.py --category common_knowledge
 
 # 特定ファイルだけチェック
-python3 scripts/doc_freshness.py --file common_knowledge/operations/task-management.md
+python3 scripts/doc_freshness.py --file reference/operations/task-management.md
 
 # マッピング外のドキュメントも含める
 python3 scripts/doc_freshness.py --all
@@ -42,7 +42,7 @@ python3 scripts/doc_freshness.py --all
 python3 scripts/doc_freshness.py --since 2026-02-15
 ```
 
-`--category` の選択肢: `common_skills`, `common_knowledge`, `docs`
+`--category` の選択肢: `common_skills`, `common_knowledge`, `reference`, `docs`
 
 ### JSON出力
 

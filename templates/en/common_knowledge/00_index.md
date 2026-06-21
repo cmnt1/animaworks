@@ -28,10 +28,10 @@ After reading, use the index below to find details on each topic.
 
 | Problem | Reference |
 |---------|-----------|
-| Don't know how to send messages | `communication/messaging-guide.md` |
+| Don't know how to send messages | `reference/communication/messaging-guide.md` |
 | Don't know how to use Board (shared channels) | `communication/board-guide.md` |
 | Unsure which channel to broadcast to (#ops / #general / department / thread) | `communication/broadcasting-guide.md` |
-| Don't know how to give instructions or report | `communication/instruction-patterns.md` / `communication/reporting-guide.md` |
+| Don't know how to give instructions or report | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
 | Want to check required fields for delegation/reports/escalation | `communication/message-quality-protocol.md` |
 | Message sending was limited | `communication/sending-limits.md` |
 | Don't know how to notify humans | `communication/call-human-guide.md` |
@@ -42,17 +42,17 @@ After reading, use the index below to find details on each topic.
 | Problem | Reference |
 |---------|-----------|
 | Don't know the org structure or who to contact | `reference/organization/structure.md` (→ reference) |
-| Want to check roles and responsibilities | `organization/roles.md` |
+| Want to check roles and responsibilities | `reference/organization/roles.md` |
 | Don't know communication rules across hierarchy | `organization/hierarchy-rules.md` |
 
 ### Tasks & Operations
 
 | Problem | Reference |
 |---------|-----------|
-| Don't know how to manage tasks | `operations/task-management.md` |
+| Don't know how to manage tasks | `reference/operations/task-management.md` |
 | Want to know how completion_gate verification works | `operations/completion-gate-guide.md` |
 | Want to use the task board (human-facing dashboard) | `operations/task-board-guide.md` |
-| Don't know how to configure Heartbeat or cron | `operations/heartbeat-cron-guide.md` |
+| Don't know how to configure Heartbeat or cron | `reference/operations/heartbeat-cron-guide.md` |
 | Want to confirm Heartbeat observation path / policy-block avoidance | `operations/heartbeat-observe-guide.md` |
 | Want pre-action checks before sending, posting, or memory writes | `operations/action-rules-guide.md` |
 | Don't know how to run long-running tools | `operations/background-tasks.md` |
@@ -64,7 +64,7 @@ After reading, use the index below to find details on each topic.
 
 | Problem | Reference |
 |---------|-----------|
-| Don't know how to use or call tools | `operations/tool-usage-overview.md` |
+| Don't know how to use or call tools | `reference/operations/tool-usage-overview.md` |
 | Don't know how to use the machine tool | `operations/machine/tool-usage.md` |
 | Want to know the machine workflow for my role | `operations/machine/workflow-{pdm,engineer,reviewer,tester}.md` |
 | Want to design a team by purpose (roles, handoffs) | `team-design/guide.md` |
@@ -88,14 +88,14 @@ After reading, use the index below to find details on each topic.
 |---------|-----------|
 | Want to know what an Anima is | `anatomy/what-is-anima.md` |
 | Want to understand your configuration files | `reference/anatomy/anima-anatomy.md` (→ reference) |
-| Want to understand how memory works | `anatomy/memory-system.md` |
+| Want to understand how memory works | `reference/anatomy/memory-system.md` |
 
 ### Troubleshooting
 
 | Problem | Reference |
 |---------|-----------|
-| Tools or commands don't work / getting errors | `troubleshooting/common-issues.md` |
-| Task is blocked / unsure what to do | `troubleshooting/escalation-flowchart.md` |
+| Tools or commands don't work / getting errors | `reference/troubleshooting/common-issues.md` |
+| Task is blocked / unsure what to do | `reference/troubleshooting/escalation-flowchart.md` |
 | Gmail tool credential setup not working | `reference/troubleshooting/gmail-credential-setup.md` (→ reference) |
 
 ### Security
@@ -108,7 +108,7 @@ After reading, use the index below to find details on each topic.
 
 | Problem | Reference |
 |---------|-----------|
-| Want to know what AnimaWorks can do | `usecases/usecase-overview.md` |
+| Want to know what AnimaWorks can do | `reference/usecases/usecase-overview.md` |
 
 **None of the above?** → Search with `search_memory(query="keyword", scope="common_knowledge")`
 
@@ -245,30 +245,30 @@ Per-role templates under `team-design/infrastructure/{director,monitor}/`: `inje
 | Keywords | Reference |
 |----------|-----------|
 | basics, intro, overview, essential, getting started | `anatomy/essentials.md` |
-| message, send_message, reply, thread, inbox | `communication/messaging-guide.md` |
+| message, send_message, reply, thread, inbox | `reference/communication/messaging-guide.md` |
 | Board, channel, post_channel, read_channel | `communication/board-guide.md` |
 | broadcast, broadcasting, org-wide sharing, #ops, #general, department channel, thread, escalation | `communication/broadcasting-guide.md` |
 | DM history, read_dm_history, past conversation | `communication/board-guide.md` |
-| instruction, delegation, task request | `communication/instruction-patterns.md` |
-| report, daily report, summary, escalation | `communication/reporting-guide.md` |
+| instruction, delegation, task request | `reference/communication/instruction-patterns.md` |
+| report, daily report, summary, escalation | `reference/communication/reporting-guide.md` |
 | quality protocol, required fields, verification evidence, completion criteria, delegation check | `communication/message-quality-protocol.md` |
 | rate limit, sending limit, 30/hour, 100/day, one-round rule | `communication/sending-limits.md` |
 | call_human, human notification, notify human | `communication/call-human-guide.md` |
 | Slack, bot token, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
 | organization, supervisor, subordinate, peer | `reference/organization/structure.md` |
-| role, responsibility, speciality, specialty | `organization/roles.md` |
+| role, responsibility, speciality, specialty | `reference/organization/roles.md` |
 | hierarchy, communication path, org_dashboard, ping_subordinate | `organization/hierarchy-rules.md` |
-| delegate_task, task delegation, task_tracker | `organization/hierarchy-rules.md`, `operations/task-management.md` |
-| sync_delegated, delegation sync, auto-sync | `operations/task-management.md`, `operations/task-delegation-guide.md` |
-| task, current_state, pending, progress, priority | `operations/task-management.md` |
-| task queue, submit_tasks, update_task, TaskExec, animaworks-tool task list | `operations/task-management.md` |
+| delegate_task, task delegation, task_tracker | `organization/hierarchy-rules.md`, `reference/operations/task-management.md` |
+| sync_delegated, delegation sync, auto-sync | `reference/operations/task-management.md`, `operations/task-delegation-guide.md` |
+| task, current_state, pending, progress, priority | `reference/operations/task-management.md` |
+| task queue, submit_tasks, update_task, TaskExec, animaworks-tool task list | `reference/operations/task-management.md` |
 | task board, dashboard, human-facing | `operations/task-board-guide.md` |
 | completion_gate, pre-completion verification, Stop hook | `operations/completion-gate-guide.md` |
 | config, status.json, SSoT, reload, settings | `reference/operations/project-setup.md` |
-| Heartbeat, heartbeat, periodic check | `operations/heartbeat-cron-guide.md` |
-| cron, schedule, scheduled task | `operations/heartbeat-cron-guide.md` |
-| tool, animaworks-tool, MCP, skill | `operations/tool-usage-overview.md` |
-| execution mode, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `operations/tool-usage-overview.md` |
+| Heartbeat, heartbeat, periodic check | `reference/operations/heartbeat-cron-guide.md` |
+| cron, schedule, scheduled task | `reference/operations/heartbeat-cron-guide.md` |
+| tool, animaworks-tool, MCP, skill | `reference/operations/tool-usage-overview.md` |
+| execution mode, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `reference/operations/tool-usage-overview.md` |
 | background, submit, long-running tool | `operations/background-tasks.md` |
 | workspace, working_directory, project directory | `operations/workspace-guide.md` |
 | machine, machine run, external agent, plan document | `operations/machine/tool-usage.md` |
@@ -295,18 +295,18 @@ Per-role templates under `team-design/infrastructure/{director,monitor}/`: `inje
 | Anima, self, anatomy, composition, lifecycle | `anatomy/what-is-anima.md` |
 | identity, injection, personality, guidelines, immutable, mutable | `reference/anatomy/anima-anatomy.md` |
 | permissions.json, bootstrap, heartbeat.md, cron.md | `reference/anatomy/anima-anatomy.md` |
-| memory, episodes, knowledge, procedures, skills | `anatomy/memory-system.md` |
-| Priming, RAG, Consolidation, Forgetting | `anatomy/memory-system.md` |
-| consolidation, 2-phase, multipass, error trace | `anatomy/memory-system.md` |
-| search_memory, write_memory_file, memory search | `anatomy/memory-system.md` |
-| skills, skill search, common_skills, search_memory scope="skills" | `anatomy/memory-system.md`, `operations/tool-usage-overview.md` |
-| activity_log, BM25, RRF, recent log search | `anatomy/memory-system.md`, `troubleshooting/common-issues.md` |
+| memory, episodes, knowledge, procedures, skills | `reference/anatomy/memory-system.md` |
+| Priming, RAG, Consolidation, Forgetting | `reference/anatomy/memory-system.md` |
+| consolidation, 2-phase, multipass, error trace | `reference/anatomy/memory-system.md` |
+| search_memory, write_memory_file, memory search | `reference/anatomy/memory-system.md` |
+| skills, skill search, common_skills, search_memory scope="skills" | `reference/anatomy/memory-system.md`, `reference/operations/tool-usage-overview.md` |
+| activity_log, BM25, RRF, recent log search | `reference/anatomy/memory-system.md`, `reference/troubleshooting/common-issues.md` |
 | prompt injection, trust, untrusted, boundary tag | `security/prompt-injection-awareness.md` |
-| error, problem, not working, permission, blocked command | `troubleshooting/common-issues.md` |
-| flowchart, decision, unsure, urgent, security | `troubleshooting/escalation-flowchart.md` |
+| error, problem, not working, permission, blocked command | `reference/troubleshooting/common-issues.md` |
+| flowchart, decision, unsure, urgent, security | `reference/troubleshooting/escalation-flowchart.md` |
 | Gmail, token.json, OAuth, pickle | `reference/troubleshooting/gmail-credential-setup.md` |
-| tier, tiered, T1, T2, T3, T4 | `troubleshooting/common-issues.md` |
-| use case, examples, what can it do | `usecases/usecase-overview.md` |
+| tier, tiered, T1, T2, T3, T4 | `reference/troubleshooting/common-issues.md` |
+| use case, examples, what can it do | `reference/usecases/usecase-overview.md` |
 
 ---
 
@@ -317,7 +317,7 @@ Per-role templates under `team-design/infrastructure/{director,monitor}/`: `inje
 search_memory(query="message sending", scope="common_knowledge")
 
 # Specify path directly
-read_memory_file(path="common_knowledge/communication/messaging-guide.md")
+read_memory_file(path="reference/communication/messaging-guide.md")
 
 # Read a technical reference
 read_memory_file(path="reference/anatomy/anima-anatomy.md")

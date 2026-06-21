@@ -71,7 +71,7 @@ _JA_ONLY: frozenset[str] = frozenset(
 
 DOC_SOURCE_MAP: dict[str, list[str]] = {
     # ── common_knowledge — communication ──
-    "common_knowledge/communication/messaging-guide.md": [
+    "reference/communication/messaging-guide.md": [
         "core/messenger.py",
         "core/outbound.py",
     ],
@@ -79,11 +79,11 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/messenger.py",
         "server/routes/channels.py",
     ],
-    "common_knowledge/communication/instruction-patterns.md": [
+    "reference/communication/instruction-patterns.md": [
         "core/messenger.py",
         "core/tooling/handler_comms.py",
     ],
-    "common_knowledge/communication/reporting-guide.md": [
+    "reference/communication/reporting-guide.md": [
         "core/messenger.py",
         "core/outbound.py",
     ],
@@ -92,7 +92,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/memory/activity.py",
     ],
     # ── common_knowledge — operations ──
-    "common_knowledge/operations/task-management.md": [
+    "reference/operations/task-management.md": [
         "core/background.py",
         "core/tooling/",
         "core/memory/task_queue.py",
@@ -103,7 +103,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/_anima_heartbeat.py",
         "core/execution/_sdk_hooks.py",
     ],
-    "common_knowledge/operations/heartbeat-cron-guide.md": [
+    "reference/operations/heartbeat-cron-guide.md": [
         "core/background.py",
         "core/schedule_parser.py",
         "core/_anima_heartbeat.py",
@@ -112,6 +112,9 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/background.py",
         "core/supervisor/pending_executor.py",
     ],
+    "common_knowledge/operations/task-board-guide.md": [
+        "server/routes/tasks.py",
+    ],
     "common_knowledge/operations/completion-gate-guide.md": [
         "core/execution/_completion_gate.py",
         "core/execution/_sdk_hooks.py",
@@ -119,19 +122,19 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tooling/schemas/completion_gate.py",
         "core/i18n/strings/tooling.py",
     ],
-    "common_knowledge/operations/mode-s-auth-guide.md": [
+    "reference/operations/mode-s-auth-guide.md": [
         "core/execution/agent_sdk.py",
         "core/execution/_sdk_security.py",
     ],
-    "common_knowledge/operations/project-setup.md": [
+    "reference/operations/project-setup.md": [
         "core/init.py",
         "cli/commands/init_cmd.py",
     ],
-    "common_knowledge/operations/tool-usage-overview.md": [
+    "reference/operations/tool-usage-overview.md": [
         "core/tooling/",
         "core/tools/",
     ],
-    "common_knowledge/operations/voice-chat-guide.md": [
+    "reference/operations/voice-chat-guide.md": [
         "core/voice/",
         "server/routes/voice.py",
     ],
@@ -141,13 +144,13 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/background.py",
         "core/lifecycle.py",
     ],
-    "common_knowledge/anatomy/anima-anatomy.md": [
+    "reference/anatomy/anima-anatomy.md": [
         "core/anima_factory.py",
         "core/init.py",
         "core/prompt/builder.py",
         "core/schedule_parser.py",
     ],
-    "common_knowledge/anatomy/memory-system.md": [
+    "reference/anatomy/memory-system.md": [
         "core/memory/",
         "core/memory/bm25.py",
         "core/memory/priming.py",
@@ -160,11 +163,11 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tooling/handler_org.py",
         "core/tooling/schemas.py",
     ],
-    "common_knowledge/organization/roles.md": [
+    "reference/organization/roles.md": [
         "templates/_shared/",
         "core/anima_factory.py",
     ],
-    "common_knowledge/organization/structure.md": [
+    "reference/organization/structure.md": [
         "core/org_sync.py",
         "core/anima_factory.py",
     ],
@@ -174,8 +177,8 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/execution/_sanitize.py",
     ],
     # ── common_knowledge — troubleshooting ──
-    "common_knowledge/troubleshooting/common-issues.md": ["core/"],
-    "common_knowledge/troubleshooting/escalation-flowchart.md": [
+    "reference/troubleshooting/common-issues.md": ["core/"],
+    "reference/troubleshooting/escalation-flowchart.md": [
         "core/notification/",
         "core/tooling/handler_comms.py",
     ],

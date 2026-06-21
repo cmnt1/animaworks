@@ -175,6 +175,7 @@ class ProcessHandle:
 
             child_env = os.environ.copy()
             child_env.update(self._child_env_urls)
+            child_env["ANIMAWORKS_EXPECT_STARTUP_ACK"] = "1"
 
             self.process = subprocess.Popen(
                 cmd,
@@ -196,6 +197,7 @@ class ProcessHandle:
             # Wait for Anima to finish initialization (RAG model loading
             # etc.) by polling the ping endpoint until status is "ok"
             await self._wait_for_ready(timeout=self.startup_ready_timeout)
+            await self._send_startup_ack()
 
             self.state = ProcessState.RUNNING
             logger.info("Process running: %s", self.anima_name)
@@ -269,6 +271,19 @@ class ProcessHandle:
             await asyncio.sleep(1.0)
 
         raise TimeoutError(f"Anima '{self.anima_name}' not ready within {timeout}s")
+
+    async def _send_startup_ack(self, timeout: float = 5.0) -> None:
+        """Tell the child runner the supervisor has observed readiness."""
+        if not self.ipc_client:
+            raise IPCConnectionError(f"IPC client not initialized for {self.anima_name}")
+
+        request = IPCRequest(id=f"startup_ack_{uuid.uuid4().hex[:8]}", method="startup_ack", params={})
+        response = await self.ipc_client.send_request(request, timeout=timeout)
+        if response.error:
+            message = response.error.get("message") or response.error
+            raise ProcessError(f"Startup ack failed for {self.anima_name}: {message}")
+        if not response.result or response.result.get("status") != "acknowledged":
+            raise ProcessError(f"Startup ack was not acknowledged for {self.anima_name}")
 
     async def send_request(self, method: str, params: dict, timeout: float = 60.0) -> IPCResponse:
         """

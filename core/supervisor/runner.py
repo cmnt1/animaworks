@@ -73,6 +73,8 @@ class AnimaRunner:
         self._orphan_cleanup_task: asyncio.Task | None = None
         self.shutdown_event = asyncio.Event()
         self._ready_event = asyncio.Event()
+        self._startup_ack_event = asyncio.Event()
+        self._expects_startup_ack = os.environ.get("ANIMAWORKS_EXPECT_STARTUP_ACK") == "1"
         self._started_at = now_local()
         self._lock_file: Any | None = None
 
@@ -248,6 +250,7 @@ class AnimaRunner:
             cleanup_tmp_files(self._anima_dir / "knowledge")
 
             self._ready_event.set()
+            logger.info("Anima process ready: %s", self.anima_name)
 
             # Startup idle-compress: in-memory compaction timers are lost
             # on process restart; run compress here so stale conversations
@@ -259,21 +262,25 @@ class AnimaRunner:
                 name=f"startup-idle-compress-{self.anima_name}",
             )
 
+            if self._expects_startup_ack:
+                await self._wait_for_startup_ack()
+                if self.shutdown_event.is_set():
+                    logger.info(
+                        "Shutdown requested before autonomous services started: %s",
+                        self.anima_name,
+                    )
+                    await self.shutdown_event.wait()
+                    return
+            else:
+                logger.info(
+                    "Startup ack not required by parent; starting autonomous services: %s",
+                    self.anima_name,
+                )
+
             # Start autonomous scheduler (heartbeat + cron)
-            self._scheduler_mgr.setup()
+            self._start_autonomous_services()
 
-            # Start inbox watcher
-            self.inbox_watcher_task = asyncio.create_task(self._inbox_limiter.inbox_watcher_loop())
-
-            # Start pending task watcher (picks up animaworks-tool submit)
-            self.pending_task_watcher_task = asyncio.create_task(self._pending_executor.watcher_loop())
-
-            self._orphan_cleanup_task = asyncio.create_task(
-                self._orphan_cleanup_loop(),
-                name=f"orphan-cleanup-{self.anima_name}",
-            )
-
-            logger.info("Anima process ready: %s", self.anima_name)
+            logger.info("Autonomous services started: %s", self.anima_name)
 
             # Wait for shutdown signal
             await self.shutdown_event.wait()
@@ -300,6 +307,40 @@ class AnimaRunner:
 
         finally:
             await self._cleanup()
+
+    async def _wait_for_startup_ack(self) -> None:
+        """Wait until the parent supervisor confirms it observed readiness."""
+        ack_task = asyncio.create_task(
+            self._startup_ack_event.wait(),
+            name=f"startup-ack-wait-{self.anima_name}",
+        )
+        shutdown_task = asyncio.create_task(
+            self.shutdown_event.wait(),
+            name=f"startup-ack-shutdown-{self.anima_name}",
+        )
+        try:
+            await asyncio.wait(
+                {ack_task, shutdown_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            for task in (ack_task, shutdown_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(ack_task, shutdown_task, return_exceptions=True)
+
+    def _start_autonomous_services(self) -> None:
+        """Start autonomous background services after startup ack."""
+        if not self._scheduler_mgr or not self._inbox_limiter or not self._pending_executor:
+            raise ProcessError("Runner delegates are not initialized")
+
+        self._scheduler_mgr.setup()
+        self.inbox_watcher_task = asyncio.create_task(self._inbox_limiter.inbox_watcher_loop())
+        self.pending_task_watcher_task = asyncio.create_task(self._pending_executor.watcher_loop())
+        self._orphan_cleanup_task = asyncio.create_task(
+            self._orphan_cleanup_loop(),
+            name=f"orphan-cleanup-{self.anima_name}",
+        )
 
     def _recover_streaming_journal(self) -> None:
         """Recover partial response from orphaned streaming journals.
@@ -734,6 +775,7 @@ class AnimaRunner:
             "run_consolidation": self._handle_run_consolidation,
             "get_status": self._handle_get_status,
             "ping": self._handle_ping,
+            "startup_ack": self._handle_startup_ack,
             "reload_config": self._handle_reload_config,
             "reschedule_heartbeat": self._handle_reschedule_heartbeat,
             "reload_activity_schedule": self._handle_reload_activity_schedule,
@@ -920,6 +962,11 @@ class AnimaRunner:
             "last_progress_at": last_progress_at,
             "busy_since": busy_since,
         }
+
+    async def _handle_startup_ack(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle parent supervisor acknowledgement of startup readiness."""
+        self._startup_ack_event.set()
+        return {"status": "acknowledged"}
 
     async def _handle_reload_config(self, params: dict[str, Any]) -> dict[str, Any]:
         """Hot-reload ModelConfig from status.json."""

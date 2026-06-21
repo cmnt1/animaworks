@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "animaworks"
-version = "0.8.0"
+version = "0.9.2"
 description = "AnimaWorks - Digital Anima Framework with library-type memory"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -28,8 +28,6 @@ dependencies = [
     # 再発に備え scripts/restore_claude_binary.ps1 + バックアップ binary を保持。
     "claude-agent-sdk>=0.1.40; platform_system != 'Windows'",
     "anthropic>=0.42.0",
-    "openai-codex>=0.1.0b3,<0.2",
-    "openai-codex-cli-bin==0.137.0a4",
     "litellm>=1.82.6",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",

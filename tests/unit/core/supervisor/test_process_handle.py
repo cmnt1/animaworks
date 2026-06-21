@@ -307,6 +307,7 @@ class TestStartBaseException:
             patch.object(handle, "_wait_for_socket", new_callable=AsyncMock),
             patch("core.supervisor.process_handle.IPCClient") as mock_client_cls,
             patch.object(handle, "_wait_for_ready", new_callable=AsyncMock) as mock_ready,
+            patch.object(handle, "_send_startup_ack", new_callable=AsyncMock) as mock_ack,
         ):
             mock_proc = MagicMock()
             mock_proc.pid = 99999
@@ -317,6 +318,8 @@ class TestStartBaseException:
             await handle.start()
 
         mock_ready.assert_awaited_once_with(timeout=300.0)
+        mock_ack.assert_awaited_once()
+        assert mock_popen.call_args.kwargs["env"]["ANIMAWORKS_EXPECT_STARTUP_ACK"] == "1"
         assert handle.state == ProcessState.RUNNING
 
     @pytest.mark.asyncio

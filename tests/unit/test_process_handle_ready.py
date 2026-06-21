@@ -106,6 +106,39 @@ class TestWaitForReady:
             await handle._wait_for_ready(timeout=5.0)
 
 
+class TestStartupAck:
+    """Tests for parent-to-child startup acknowledgement."""
+
+    @pytest.mark.asyncio
+    async def test_send_startup_ack_uses_ipc_before_running(self, handle: ProcessHandle):
+        """Startup ack should use the raw IPC client while state is still STARTING."""
+        mock_client = AsyncMock()
+        mock_client.send_request.return_value = IPCResponse(
+            id="startup_ack_12345678",
+            result={"status": "acknowledged"},
+        )
+        handle.ipc_client = mock_client
+
+        await handle._send_startup_ack()
+
+        mock_client.send_request.assert_awaited_once()
+        request = mock_client.send_request.call_args.args[0]
+        assert request.method == "startup_ack"
+        assert request.params == {}
+
+    @pytest.mark.asyncio
+    async def test_send_startup_ack_rejects_unexpected_response(self, handle: ProcessHandle):
+        mock_client = AsyncMock()
+        mock_client.send_request.return_value = IPCResponse(
+            id="startup_ack_12345678",
+            result={"status": "ignored"},
+        )
+        handle.ipc_client = mock_client
+
+        with pytest.raises(ProcessError, match="not acknowledged"):
+            await handle._send_startup_ack()
+
+
 class TestWaitForSocketEarlyExit:
     """Tests for _wait_for_socket early exit detection."""
 

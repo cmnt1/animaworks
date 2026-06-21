@@ -7,6 +7,7 @@ fixed system prompt.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -39,6 +40,11 @@ def _fake_load_prompt(name: str, **kwargs: object) -> str:
     if name == "memory_guide":
         return "knowledge={knowledge_count} procedures={procedure_count}".format(**kwargs)
     return ""
+
+
+def _strip_available_skills(text: str) -> str:
+    """Remove the skill catalog, which may list procedure metadata."""
+    return re.sub(r"<available_skills>.*?</available_skills>", "", text, flags=re.DOTALL)
 
 
 class TestDKPromptInjectionRemovalE2E:
@@ -77,10 +83,11 @@ class TestDKPromptInjectionRemovalE2E:
             result = build_system_prompt(memory, message="test")
 
         prompt = result.system_prompt
+        prompt_without_skill_catalog = _strip_available_skills(prompt)
         assert "dk_procedures" not in prompt
         assert "dk_knowledge" not in prompt
         assert "REST API design patterns" not in prompt
-        assert "Docker deployment steps" not in prompt
+        assert "Docker deployment steps" not in prompt_without_skill_catalog
         assert "API patterns for REST design." not in prompt
         assert "Step-by-step deploy guide." not in prompt
         assert "knowledge=1 procedures=1" in prompt

@@ -71,6 +71,40 @@ def test_returns_none_when_chroma_init_fails(monkeypatch):
     assert store is None
 
 
+def test_failed_native_store_init_is_cached_until_reset(monkeypatch):
+    """Repeated calls for one broken anima should not re-run heavy startup checks."""
+    os.environ.pop("ANIMAWORKS_VECTOR_URL", None)
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+    from core.memory.rag import singleton
+
+    with patch("core.memory.rag.store.create_chroma_vector_store", side_effect=RuntimeError("corrupt db")) as create:
+        assert get_vector_store("broken") is None
+        assert get_vector_store("broken") is None
+        singleton.reset_vector_store("broken")
+        assert get_vector_store("broken") is None
+
+    assert create.call_count == 2
+
+
+def test_failed_native_store_init_cache_is_per_anima(monkeypatch):
+    """One anima's cached init failure must not suppress a healthy sibling."""
+    os.environ.pop("ANIMAWORKS_VECTOR_URL", None)
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+    healthy = MagicMock()
+
+    def _create(*args, anima_name=None, **kwargs):
+        if anima_name == "broken":
+            raise RuntimeError("corrupt db")
+        return healthy
+
+    with patch("core.memory.rag.store.create_chroma_vector_store", side_effect=_create) as create:
+        assert get_vector_store("broken") is None
+        assert get_vector_store("broken") is None
+        assert get_vector_store("healthy") is healthy
+
+    assert create.call_count == 2
+
+
 def test_reset_native_store_drops_all_native_siblings(monkeypatch):
     """Resetting one native store must drop every cached native store.
 
@@ -149,3 +183,24 @@ def test_chroma_vector_store_constructor_requires_direct_allow(monkeypatch, tmp_
 
     with pytest.raises(RuntimeError, match="Direct ChromaDB access is disabled"):
         ChromaVectorStore(persist_dir=tmp_path / "vectordb")
+
+
+def test_clear_vector_store_init_failed_only_clears_per_anima_latch() -> None:
+    """Clearing one anima's init latch must not mask global Chroma init failure."""
+    from core.memory.rag import singleton
+
+    singleton._init_failed = True
+    singleton._vector_store_init_failed.update({"sora", "rin", None})
+
+    assert singleton.is_global_vector_store_init_failed() is True
+    assert singleton.is_vector_store_init_failed("sora") is True
+    assert singleton.is_vector_store_init_failed("rin") is True
+    assert singleton.is_vector_store_init_failed(None) is True
+
+    assert singleton.clear_vector_store_init_failed("sora") is True
+
+    assert singleton.is_vector_store_init_failed("sora") is False
+    assert singleton.is_vector_store_init_failed("rin") is True
+    assert singleton.is_vector_store_init_failed(None) is True
+    assert singleton.is_global_vector_store_init_failed() is True
+    assert singleton.clear_vector_store_init_failed("sora") is False

@@ -28,9 +28,9 @@ Heartbeat / Cron / machine / 팀 설계 / 메모리 / 비용 최적화의 핵심
 
 | 문제 | 참조 |
 |------|------|
-| 메시지 보내는 방법을 모르겠다 | `communication/messaging-guide.md` |
+| 메시지 보내는 방법을 모르겠다 | `reference/communication/messaging-guide.md` |
 | Board(공유 channel) 사용법을 모르겠다 | `communication/board-guide.md` |
-| 지시나 보고 방법을 모르겠다 | `communication/instruction-patterns.md` / `communication/reporting-guide.md` |
+| 지시나 보고 방법을 모르겠다 | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
 | 메시지 전송이 제한되었다 | `communication/sending-limits.md` |
 | 사람에게 알리는 방법을 모르겠다 | `communication/call-human-guide.md` |
 | Slack 봇 토큰 설정을 모르겠다 | `reference/communication/slack-bot-token-guide.md` (→ reference) |
@@ -40,16 +40,16 @@ Heartbeat / Cron / machine / 팀 설계 / 메모리 / 비용 최적화의 핵심
 | 문제 | 참조 |
 |------|------|
 | 조직 구조나 누구에게 연락해야 하는지 모르겠다 | `reference/organization/structure.md` (→ reference) |
-| 역할과 책임 범위를 확인하고 싶다 | `organization/roles.md` |
+| 역할과 책임 범위를 확인하고 싶다 | `reference/organization/roles.md` |
 | 계층 간 커뮤니케이션 규칙을 모르겠다 | `organization/hierarchy-rules.md` |
 
 ### 태스크 및 운영
 
 | 문제 | 참조 |
 |------|------|
-| 태스크 관리 방법을 모르겠다 | `operations/task-management.md` |
+| 태스크 관리 방법을 모르겠다 | `reference/operations/task-management.md` |
 | 태스크 보드(사람용 대시보드)를 사용하고 싶다 | `operations/task-board-guide.md` |
-| heartbeat이나 cron 설정을 모르겠다 | `operations/heartbeat-cron-guide.md` |
+| heartbeat이나 cron 설정을 모르겠다 | `reference/operations/heartbeat-cron-guide.md` |
 | Heartbeat 관찰 경로 / policy blocked 회피를 확인하고 싶다 | `operations/heartbeat-observe-guide.md` |
 | 전송·게시·메모리 쓰기 전에 확인 규칙을 넣고 싶다 | `operations/action-rules-guide.md` |
 | 장시간 실행 도구 사용법을 모르겠다 | `operations/background-tasks.md` |
@@ -61,7 +61,7 @@ Heartbeat / Cron / machine / 팀 설계 / 메모리 / 비용 최적화의 핵심
 
 | 문제 | 참조 |
 |------|------|
-| 도구 사용법이나 호출 방법을 모르겠다 | `operations/tool-usage-overview.md` |
+| 도구 사용법이나 호출 방법을 모르겠다 | `reference/operations/tool-usage-overview.md` |
 | machine 도구 사용법을 모르겠다 | `operations/machine/tool-usage.md` |
 | 내 역할에서 machine 워크플로를 알고 싶다 | `operations/machine/workflow-{pdm,engineer,reviewer,tester}.md` |
 | 목적별로 팀(역할·핸드오프)을 설계하고 싶다 | `team-design/guide.md` |
@@ -85,14 +85,14 @@ Heartbeat / Cron / machine / 팀 설계 / 메모리 / 비용 최적화의 핵심
 |------|------|
 | Anima가 무엇인지 알고 싶다 | `anatomy/what-is-anima.md` |
 | 자신의 구성 파일 역할을 알고 싶다 | `reference/anatomy/anima-anatomy.md` (→ reference) |
-| 기억 시스템의 구조와 종류를 알고 싶다 | `anatomy/memory-system.md` |
+| 기억 시스템의 구조와 종류를 알고 싶다 | `reference/anatomy/memory-system.md` |
 
 ### 트러블슈팅
 
 | 문제 | 참조 |
 |------|------|
-| 도구나 명령어가 동작하지 않는다 / 오류가 발생한다 | `troubleshooting/common-issues.md` |
-| 태스크가 블로킹되었다 / 판단이 어렵다 | `troubleshooting/escalation-flowchart.md` |
+| 도구나 명령어가 동작하지 않는다 / 오류가 발생한다 | `reference/troubleshooting/common-issues.md` |
+| 태스크가 블로킹되었다 / 판단이 어렵다 | `reference/troubleshooting/escalation-flowchart.md` |
 | Gmail 도구 인증 설정이 안 된다 | `reference/troubleshooting/gmail-credential-setup.md` (→ reference) |
 
 ### 보안
@@ -105,7 +105,7 @@ Heartbeat / Cron / machine / 팀 설계 / 메모리 / 비용 최적화의 핵심
 
 | 문제 | 참조 |
 |------|------|
-| AnimaWorks로 무엇을 할 수 있는지 알고 싶다 | `usecases/usecase-overview.md` |
+| AnimaWorks로 무엇을 할 수 있는지 알고 싶다 | `reference/usecases/usecase-overview.md` |
 
 **위에 해당하지 않는 경우** → `search_memory(query="키워드", scope="common_knowledge")`로 검색하세요
 
@@ -239,26 +239,26 @@ Heartbeat / Cron / machine / 팀 설계 / 메모리 / 비용 최적화의 핵심
 | 키워드 | 참조 |
 |--------|------|
 | 기초, 입문, 전체 개요, 에센셜, 시작하기 | `anatomy/essentials.md` |
-| 메시지, send_message, 전송, 답장, 스레드, inbox | `communication/messaging-guide.md` |
+| 메시지, send_message, 전송, 답장, 스레드, inbox | `reference/communication/messaging-guide.md` |
 | Board, channel, post_channel, read_channel | `communication/board-guide.md` |
 | DM 이력, read_dm_history, 이전 대화 | `communication/board-guide.md` |
-| 지시, 위임, 태스크 의뢰 | `communication/instruction-patterns.md` |
-| 보고, 일일 보고, 요약, 에스컬레이션 | `communication/reporting-guide.md` |
+| 지시, 위임, 태스크 의뢰 | `reference/communication/instruction-patterns.md` |
+| 보고, 일일 보고, 요약, 에스컬레이션 | `reference/communication/reporting-guide.md` |
 | 레이트 제한, 전송 제한, 30통, 100통, 1라운드 규칙 | `communication/sending-limits.md` |
 | call_human, 사람 알림, 사람에게 연락 | `communication/call-human-guide.md` |
 | Slack, 봇 토큰, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
 | 조직, supervisor, 상사, 부하, 동료 | `reference/organization/structure.md` |
-| 역할, 책임, speciality, 전문 | `organization/roles.md` |
+| 역할, 책임, speciality, 전문 | `reference/organization/roles.md` |
 | 계층, 커뮤니케이션 경로, org_dashboard, ping_subordinate | `organization/hierarchy-rules.md` |
-| delegate_task, 태스크 위임, task_tracker | `organization/hierarchy-rules.md`, `operations/task-management.md` |
-| 태스크, current_state, pending, 진행, 우선순위 | `operations/task-management.md` |
-| 태스크 큐, submit_tasks, update_task, TaskExec, animaworks-tool task list | `operations/task-management.md` |
+| delegate_task, 태스크 위임, task_tracker | `organization/hierarchy-rules.md`, `reference/operations/task-management.md` |
+| 태스크, current_state, pending, 진행, 우선순위 | `reference/operations/task-management.md` |
+| 태스크 큐, submit_tasks, update_task, TaskExec, animaworks-tool task list | `reference/operations/task-management.md` |
 | 태스크 보드, 대시보드, 사람용 | `operations/task-board-guide.md` |
 | 설정, config, status.json, SSoT, reload | `reference/operations/project-setup.md` |
-| heartbeat, 정기 점검 | `operations/heartbeat-cron-guide.md` |
-| cron, 스케줄, 정시 태스크 | `operations/heartbeat-cron-guide.md` |
-| 도구, animaworks-tool, MCP, skill | `operations/tool-usage-overview.md` |
-| 실행 모드, S-mode, A-mode, B-mode, C-mode | `operations/tool-usage-overview.md` |
+| heartbeat, 정기 점검 | `reference/operations/heartbeat-cron-guide.md` |
+| cron, 스케줄, 정시 태스크 | `reference/operations/heartbeat-cron-guide.md` |
+| 도구, animaworks-tool, MCP, skill | `reference/operations/tool-usage-overview.md` |
+| 실행 모드, S-mode, A-mode, B-mode, C-mode | `reference/operations/tool-usage-overview.md` |
 | 백그라운드, submit, 장시간 도구 | `operations/background-tasks.md` |
 | 워크스페이스, workspace, 작업 디렉토리, working_directory | `operations/workspace-guide.md` |
 | machine, machine run, 외부 에이전트, 계획서 | `operations/machine/tool-usage.md` |
@@ -285,15 +285,15 @@ Heartbeat / Cron / machine / 팀 설계 / 메모리 / 비용 최적화의 핵심
 | Anima, 자기 자신, 구성, 설계, 라이프사이클 | `anatomy/what-is-anima.md` |
 | identity, injection, 인격, 행동 지침, 불변, 가변 | `reference/anatomy/anima-anatomy.md` |
 | permissions.json, bootstrap, heartbeat.md, cron.md | `reference/anatomy/anima-anatomy.md` |
-| 기억, memory, episodes, knowledge, procedures | `anatomy/memory-system.md` |
-| Priming, RAG, Consolidation, Forgetting | `anatomy/memory-system.md` |
-| search_memory, write_memory_file, 기억 검색 | `anatomy/memory-system.md` |
+| 기억, memory, episodes, knowledge, procedures | `reference/anatomy/memory-system.md` |
+| Priming, RAG, Consolidation, Forgetting | `reference/anatomy/memory-system.md` |
+| search_memory, write_memory_file, 기억 검색 | `reference/anatomy/memory-system.md` |
 | 프롬프트 인젝션, trust, untrusted, 경계 태그 | `security/prompt-injection-awareness.md` |
-| 오류, 문제, 동작하지 않음, 권한, 차단된 명령어 | `troubleshooting/common-issues.md` |
-| 플로차트, 판단, 고민, 긴급, 보안 | `troubleshooting/escalation-flowchart.md` |
+| 오류, 문제, 동작하지 않음, 권한, 차단된 명령어 | `reference/troubleshooting/common-issues.md` |
+| 플로차트, 판단, 고민, 긴급, 보안 | `reference/troubleshooting/escalation-flowchart.md` |
 | Gmail, token.json, OAuth, pickle | `reference/troubleshooting/gmail-credential-setup.md` |
-| 티어, tiered, T1, T2, T3, T4 | `troubleshooting/common-issues.md` |
-| 활용 사례, 사례, 무엇을 할 수 있나 | `usecases/usecase-overview.md` |
+| 티어, tiered, T1, T2, T3, T4 | `reference/troubleshooting/common-issues.md` |
+| 활용 사례, 사례, 무엇을 할 수 있나 | `reference/usecases/usecase-overview.md` |
 
 ---
 
