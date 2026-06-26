@@ -190,19 +190,13 @@ def _convert_anjo_unit_price_data(data: dict, *, use_sqm_unit_price: bool) -> di
             if isinstance(section, dict):
                 for metric_name in ("mean", "median"):
                     if metric_name in section:
-                        section[metric_name] = _convert_unit_price_value(
-                            section[metric_name], use_sqm_unit_price=True
-                        )
+                        section[metric_name] = _convert_unit_price_value(section[metric_name], use_sqm_unit_price=True)
         for metric_name in ("change_mean", "change_median"):
             if metric_name in unit_price:
-                unit_price[metric_name] = _convert_unit_price_value(
-                    unit_price[metric_name], use_sqm_unit_price=True
-                )
+                unit_price[metric_name] = _convert_unit_price_value(unit_price[metric_name], use_sqm_unit_price=True)
     for row in converted.get("trend_7d", []):
         if isinstance(row, dict) and row.get("avg_unit_price") is not None:
-            row["avg_unit_price"] = _convert_unit_price_value(
-                row["avg_unit_price"], use_sqm_unit_price=True
-            )
+            row["avg_unit_price"] = _convert_unit_price_value(row["avg_unit_price"], use_sqm_unit_price=True)
     return converted
 
 
