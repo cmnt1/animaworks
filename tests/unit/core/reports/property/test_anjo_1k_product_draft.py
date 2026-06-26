@@ -172,15 +172,13 @@ def test_render_markdown_switches_to_sqm_from_20260626() -> None:
         prev_minimini_count=25,
     )
 
-    expected_mean = f"{round(2153.8 / report.TSUBO_TO_SQM, 1):,.1f}"
-    expected_median = f"{round(1915.7 / report.TSUBO_TO_SQM, 1):,.1f}"
-    expected_trend = f"{round(2180.5 / report.TSUBO_TO_SQM, 1):,.1f}"
-
+    # Source unit_price (Base_Rent / Ocu_Area) is already per-㎡, so the switch
+    # only relabels 坪→㎡; the numeric values must stay unchanged.
     assert "平均平米単価" in markdown
     assert "中央値平米単価" in markdown
     assert "円/㎡" in markdown
-    assert expected_mean in markdown
-    assert expected_median in markdown
-    assert expected_trend in markdown
-    assert "2,153.8" not in markdown
-    assert "1,915.7" not in markdown
+    assert "平均坪単価" not in markdown
+    assert "円/坪" not in markdown
+    assert "2,153.8" in markdown
+    assert "1,915.7" in markdown
+    assert "2,180.5" in markdown
