@@ -11,6 +11,7 @@ import re
 import runpy
 import shutil
 import sys
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -36,6 +37,8 @@ SLUG_PREFIX = "anjo-1k"
 DISCORD_THREAD_ID = "1491411026263146658"
 SCRAPE_STATUS_TABLE = "dbo.T_Suumo_Scrape_Status"
 TARGET_CITY_ID = 1
+TSUBO_TO_SQM = 3.305785
+SQM_UNIT_PRICE_CUTOFF = "2026-06-26"
 TRUSTED_MINIMINI_COUNT_PATTERNS = {
     "p.kensu strong count",
     "pagetitle_sub p.kensu strong count",
@@ -161,6 +164,48 @@ def frontmatter_value(text: str, key: str, default: str = "") -> str:
     return m.group(1).strip() if m else default
 
 
+def report_uses_sqm_unit_price(report_date: str) -> bool:
+    return report_date >= SQM_UNIT_PRICE_CUTOFF
+
+
+def _convert_unit_price_value(value: object, *, use_sqm_unit_price: bool) -> object:
+    if value is None:
+        return None
+    if not isinstance(value, (int, float)):
+        return value
+    numeric = float(value)
+    if use_sqm_unit_price:
+        numeric /= TSUBO_TO_SQM
+    return round(numeric, 1)
+
+
+def _convert_anjo_unit_price_data(data: dict, *, use_sqm_unit_price: bool) -> dict:
+    if not use_sqm_unit_price:
+        return data
+    converted = deepcopy(data)
+    unit_price = converted.get("unit_price")
+    if isinstance(unit_price, dict):
+        for section_name in ("latest", "prev"):
+            section = unit_price.get(section_name)
+            if isinstance(section, dict):
+                for metric_name in ("mean", "median"):
+                    if metric_name in section:
+                        section[metric_name] = _convert_unit_price_value(
+                            section[metric_name], use_sqm_unit_price=True
+                        )
+        for metric_name in ("change_mean", "change_median"):
+            if metric_name in unit_price:
+                unit_price[metric_name] = _convert_unit_price_value(
+                    unit_price[metric_name], use_sqm_unit_price=True
+                )
+    for row in converted.get("trend_7d", []):
+        if isinstance(row, dict) and row.get("avg_unit_price") is not None:
+            row["avg_unit_price"] = _convert_unit_price_value(
+                row["avg_unit_price"], use_sqm_unit_price=True
+            )
+    return converted
+
+
 def max_product_id() -> int:
     ids: list[int] = []
     for path in PRODUCT_ROOT.rglob("P-*.md"):
@@ -257,6 +302,8 @@ def render_markdown(
     d = data["latest_date"]
     prev = data["prev_date"]
     meta = data["meta"]
+    use_sqm_unit_price = report_uses_sqm_unit_price(d)
+    data = _convert_anjo_unit_price_data(data, use_sqm_unit_price=use_sqm_unit_price)
     lc = data["listing_count"]
     rent = data["rent"]
     unit = data["unit_price"]
@@ -293,7 +340,7 @@ def render_markdown(
 | HTTPステータス | {minimini.get("http_status", "-")} |
 """
 
-    return f"""---
+    markdown = f"""---
 type: product
 id: {product_id}
 code: {code}
@@ -365,6 +412,15 @@ formal_evidence_path: {evidence_path}
 ## レビュー依頼
 Sakuraはこの下書きを確認し、問題がなければ frontmatter の `status` を `完了`、`submitted` を `{d}` に更新したうえで、Discordスレッド `{DISCORD_THREAD_ID}` に完成報告してください。
 """
+
+    if use_sqm_unit_price:
+        markdown = (
+            markdown.replace("平均坪単価", "平均平米単価")
+            .replace("中央値坪単価", "中央値平米単価")
+            .replace("坪単価", "平米単価")
+            .replace("円/坪", "円/㎡")
+        )
+    return markdown
 
 
 def write_evidence(

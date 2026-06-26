@@ -98,3 +98,89 @@ def test_get_prev_minimini_count_accepts_strict_kensu_pattern(tmp_path: Path, mo
     )
 
     assert report.get_prev_minimini_count("2026-06-16") == 19
+
+
+def test_render_markdown_switches_to_sqm_from_20260626() -> None:
+    assert report.report_uses_sqm_unit_price("2026-06-26") is True
+    assert report.report_uses_sqm_unit_price("2026-06-25") is False
+
+    data = {
+        "latest_date": "2026-06-26",
+        "prev_date": "2026-06-25",
+        "meta": {
+            "latest_date_in_db": "2026-06-26",
+            "extraction_time": "2026-06-26T00:00:00",
+            "rent_column_used": "Base_Rent / Ocu_Area",
+            "data_range": {"min_date": "2026-06-20", "max_date": "2026-06-26"},
+        },
+        "listing_count": {"latest": 120, "prev": 118, "change": 2},
+        "rent": {
+            "latest": {"mean": 65000, "median": 62000},
+            "prev": {"mean": 64000, "median": 61000},
+            "change_mean": 1000,
+            "change_median": 1000,
+        },
+        "unit_price": {
+            "latest": {"mean": 2153.8, "median": 1915.7},
+            "prev": {"mean": 2100.0, "median": 1880.0},
+            "change_mean": 53.8,
+            "change_median": 35.7,
+        },
+        "vacancy_proxy": {"median_obs_days": 12, "pct_listings_7plus_days": 25.0},
+        "trend_7d": [
+            {
+                "date": "2026-06-20",
+                "listing_count": 80,
+                "avg_rent": 60000,
+                "median_rent": 59000,
+                "avg_unit_price": 2153.8,
+            },
+            {
+                "date": "2026-06-21",
+                "listing_count": 82,
+                "avg_rent": 60500,
+                "median_rent": 59500,
+                "avg_unit_price": 2200.0,
+            },
+            {
+                "date": "2026-06-22",
+                "listing_count": 84,
+                "avg_rent": 61000,
+                "median_rent": 60000,
+                "avg_unit_price": 2180.5,
+            },
+        ],
+        "minimini_url_snapshot": {
+            "listing_count": 12,
+            "fetched_at": "2026-06-26T00:00:00+09:00",
+            "method": "p.kensu strong count",
+            "url": "https://example.com",
+            "http_status": 200,
+        },
+    }
+
+    markdown = report.render_markdown(
+        159,
+        "P-00159",
+        data,
+        Path(r"E:\dummy\source.json"),
+        Path(r"E:\dummy\copy.json"),
+        "0" * 64,
+        "2026-06-26T00:00:00+09:00",
+        "2026-06-26T00:00:00+09:00",
+        "false",
+        prev_minimini_count=25,
+    )
+
+    expected_mean = f"{round(2153.8 / report.TSUBO_TO_SQM, 1):,.1f}"
+    expected_median = f"{round(1915.7 / report.TSUBO_TO_SQM, 1):,.1f}"
+    expected_trend = f"{round(2180.5 / report.TSUBO_TO_SQM, 1):,.1f}"
+
+    assert "平均平米単価" in markdown
+    assert "中央値平米単価" in markdown
+    assert "円/㎡" in markdown
+    assert expected_mean in markdown
+    assert expected_median in markdown
+    assert expected_trend in markdown
+    assert "2,153.8" not in markdown
+    assert "1,915.7" not in markdown
