@@ -307,8 +307,15 @@ def _read_claude_token() -> str | None:
     return best_token
 
 
-def _relogin_claude() -> tuple[dict[str, Any], int]:
-    """Try token refresh first; fall back to Claude Code CLI login guidance."""
+def _relogin_claude(launch_terminal: bool = True) -> tuple[dict[str, Any], int]:
+    """Try token refresh first; fall back to Claude Code CLI login guidance.
+
+    When *launch_terminal* is False (automatic callers such as the usage
+    governor or the dashboard auto-refresh), a silent token refresh is still
+    attempted, but no interactive CMD ``/login`` window is ever spawned — the
+    caller only gets guidance to re-authenticate manually. Only an explicit
+    user action (pressing the "再認証" button) should pass True.
+    """
     _clear_usage_cache("claude")
     executable = get_claude_executable()
     login_cmd = f"{executable} /login" if executable else "claude login"
@@ -324,7 +331,7 @@ def _relogin_claude() -> tuple[dict[str, Any], int]:
 
     best_path, best_token, best_refresh, best_expires = _select_best_claude_credential()
     if not best_path or not best_token:
-        launched = _launch_claude_login_terminal(executable)
+        launched = _launch_claude_login_terminal(executable) if launch_terminal else False
         return (
             {
                 "success": launched,
@@ -354,7 +361,7 @@ def _relogin_claude() -> tuple[dict[str, Any], int]:
         )
 
     if not best_refresh:
-        launched = _launch_claude_login_terminal(executable)
+        launched = _launch_claude_login_terminal(executable) if launch_terminal else False
         return (
             {
                 "success": launched,
@@ -382,7 +389,7 @@ def _relogin_claude() -> tuple[dict[str, Any], int]:
             200,
         )
 
-    launched = _launch_claude_login_terminal(executable)
+    launched = _launch_claude_login_terminal(executable) if launch_terminal else False
     return (
         {
             "success": launched,
@@ -1105,8 +1112,18 @@ def create_usage_router() -> APIRouter:
         return payload
 
     @router.post("/usage/claude/relogin")
-    async def relogin_claude() -> JSONResponse:
-        payload, status_code = _relogin_claude()
+    async def relogin_claude(request: Request) -> JSONResponse:
+        # Only an explicit user action (pressing the "再認証" button, which sends
+        # {"interactive": true}) may spawn the interactive CMD /login window.
+        # Automatic callers (e.g. dashboard auto-refresh on rate_limited) omit
+        # the flag and get a silent token refresh only.
+        interactive = False
+        try:
+            body = await request.json()
+            interactive = bool((body or {}).get("interactive"))
+        except Exception:
+            pass
+        payload, status_code = _relogin_claude(launch_terminal=interactive)
         if payload.get("success"):
             try:
                 from core.auth_alert import clear_alert

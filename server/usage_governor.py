@@ -1254,16 +1254,19 @@ class UsageGovernor:
         claude_error = usage_data.get("claude", {}).get("error", "")
         if claude_error in ("rate_limited", "unauthorized", "no_credentials"):
             if self._state.can_relogin("claude"):
-                logger.info("Governor: Claude usage fetch failed (%s), attempting relogin", claude_error)
-                relogin_result, _status = _relogin_claude()
+                logger.info("Governor: Claude usage fetch failed (%s), attempting silent token refresh", claude_error)
+                # Automatic path: never spawn an interactive CMD /login window.
+                # Only a silent token refresh is attempted; if that fails the
+                # user must re-authenticate manually via the "再認証" button.
+                relogin_result, _status = _relogin_claude(launch_terminal=False)
                 success = bool(relogin_result.get("success"))
                 self._state.record_relogin("claude", success=success)
                 if success:
-                    logger.info("Governor: relogin succeeded, retrying usage fetch")
+                    logger.info("Governor: token refresh succeeded, retrying usage fetch")
                     usage_data["claude"] = _fetch_claude_usage(skip_cache=True)
                 else:
                     logger.warning(
-                        "Governor: relogin failed — %s",
+                        "Governor: token refresh failed, manual re-auth required — %s",
                         relogin_result.get("message", "unknown"),
                     )
             else:

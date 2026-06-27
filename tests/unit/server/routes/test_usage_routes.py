@@ -184,3 +184,57 @@ def test_relogin_claude_does_not_launch_terminal_when_token_is_fresh(monkeypatch
     assert "already fresh" in payload["message"]
     assert launched == []
     assert "claude" not in usage_routes._CACHE
+
+
+def test_relogin_claude_no_terminal_when_launch_disabled_and_refresh_fails(monkeypatch):
+    """Automatic callers (launch_terminal=False) must never spawn a CMD window,
+    even when the token is expired and the silent refresh fails."""
+    launched: list[str] = []
+    expired_at = int(time.time() * 1000) - 10 * 60 * 1000
+
+    monkeypatch.setattr(usage_routes, "_CACHE", {"claude": ({"stale": True}, time.time())})
+    monkeypatch.setattr(usage_routes, "get_claude_executable", lambda: "C:\\Tools\\claude.exe")
+    monkeypatch.setattr(
+        usage_routes,
+        "_select_best_claude_credential",
+        lambda: (Path("credentials.json"), "access-token", "refresh-token", expired_at),
+    )
+    # Silent refresh fails → would normally fall through to launching a terminal.
+    monkeypatch.setattr(usage_routes, "_refresh_claude_token", lambda path, refresh: None)
+    monkeypatch.setattr(
+        usage_routes,
+        "_launch_claude_login_terminal",
+        lambda executable: launched.append(executable) or True,
+    )
+
+    payload, _status = usage_routes._relogin_claude(launch_terminal=False)
+
+    assert payload["success"] is False
+    assert payload["terminal_launched"] is False
+    assert launched == []  # no CMD window spawned
+
+
+def test_relogin_claude_launches_terminal_when_interactive_and_refresh_fails(monkeypatch):
+    """Explicit user action (launch_terminal=True) still opens the CMD window
+    when the token is expired and the refresh fails."""
+    launched: list[str] = []
+    expired_at = int(time.time() * 1000) - 10 * 60 * 1000
+
+    monkeypatch.setattr(usage_routes, "_CACHE", {"claude": ({"stale": True}, time.time())})
+    monkeypatch.setattr(usage_routes, "get_claude_executable", lambda: "C:\\Tools\\claude.exe")
+    monkeypatch.setattr(
+        usage_routes,
+        "_select_best_claude_credential",
+        lambda: (Path("credentials.json"), "access-token", "refresh-token", expired_at),
+    )
+    monkeypatch.setattr(usage_routes, "_refresh_claude_token", lambda path, refresh: None)
+    monkeypatch.setattr(
+        usage_routes,
+        "_launch_claude_login_terminal",
+        lambda executable: launched.append(executable) or True,
+    )
+
+    payload, _status = usage_routes._relogin_claude(launch_terminal=True)
+
+    assert payload["terminal_launched"] is True
+    assert launched == ["C:\\Tools\\claude.exe"]

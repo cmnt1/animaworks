@@ -461,10 +461,14 @@ function _renderUsageError(provider, data, msg) {
 async function _runUsageRelogin(provider) {
   const path = provider === "claude" ? `${basePath}/api/usage/claude/relogin` : `${basePath}/api/usage/openai/relogin`;
   try {
+    // Explicit user action: allow the Claude endpoint to spawn the interactive
+    // CMD /login window. Automatic callers (governor / auto-refresh) omit this
+    // flag and only get a silent token refresh.
     const res = await fetch(path, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interactive: true }),
     });
     const data = await res.json().catch(() => ({}));
 
