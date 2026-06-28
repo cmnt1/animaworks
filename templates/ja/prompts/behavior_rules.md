@@ -73,9 +73,9 @@ Default: do not narrate routine, low-risk tool calls
 - current_state.md は通常の Heartbeat / cron / 会話境界では保持されます。簡潔に保ち、古い内容や上限超過分は housekeeping またはサイズ制御でアーカイブされる場合があります
 - 重要な知識や手順は `knowledge/` や `procedures/` に書き、current_state.md には残さないこと
 
-### 成果物・frontmatter の編集（MUST）
-成果物 md（`_products/` 配下など）の frontmatter を昇格（例: status をレビュー待ち→完了、submitted の記入）する際は、ファイルを壊さないこと。壊れると Obsidian の台帳（Base）から消え、後工程が静かに止まる。
+### Obsidian Vault ノート・frontmatter の編集（MUST）
+Obsidian Vault 配下の md ノートの frontmatter や本文を編集する際は、ファイルを壊さないこと。壊れると Obsidian の台帳（Base）から消え、後工程が静かに止まる。**成果物 md（`_products/` 配下）だけでなく、`_notes/Projects/` のタスクノート（`daily_ops_copy_id` を持つ Projects DB ノート）も含む。週次ミーティングの計画反映で「次アクション期限」「今週タスク」等を書き戻す場合も同じルールを守る。**
 - **インプレース更新**: 既存キーは値を書き換える。**同じキーを追記して重複させない**（`status:` を2行にする等は YAML 不正でパース不能になる）。
-- **UTF-8 を保持**: Windows PowerShell の `Set-Content` / `Add-Content` を素（`-Encoding utf8` 無し）で使わない。cp932/UTF-16 で書かれて文字化けする。必要なら Python で `encoding="utf-8"`、PowerShell なら `-Encoding utf8` を明示する。
-- **書き換え後は読み直して検証**: `type: product` 等の必須キーが1個だけ残り、日本語が化けていないことを確認する。
-- 定型レポートの昇格・投稿は、可能なら手編集ではなく確定的スクリプト（生成ジョブと同系統）を使う。
+- **UTF-8（BOM なし）を保持**: Windows PowerShell の `Set-Content` / `Add-Content` を素（`-Encoding utf8` 無し）で使わない。既定で cp932/ANSI で書かれて文字化けする（例: 「カテゴリ」→「繧ｫ繝・ざ繝ｪ」の cp932 二重エンコード破損）。必ず Python で `encoding="utf-8"`、または PowerShell 7 で `-Encoding utf8`（BOM なし UTF-8）を明示する。**読み込みも同様に encoding を明示する**（既定 cp932 で UTF-8 ファイルを読むと読み込み時点で文字化けする）。
+- **書き換え後は読み直して検証**: `type: product` / `カテゴリ` / `is_root` 等の必須キーが1個だけ残り、日本語（frontmatter のキーと値）が化けていないことを確認する。
+- 定型レポートの昇格・投稿、タスクノートの計画反映は、可能なら手編集ではなく確定的スクリプト（生成ジョブと同系統、`encoding="utf-8"` 固定）を使う。

@@ -73,9 +73,9 @@ In either case:
 - current_state.md is preserved across normal heartbeat, cron, and conversation boundaries. Keep it concise; stale or oversized content may be archived by housekeeping or size trimming
 - Write important knowledge or procedures to `knowledge/` or `procedures/`, not current_state.md
 
-### Editing Deliverables / Frontmatter (MUST)
-When promoting a deliverable's markdown frontmatter (e.g. status awaiting-review → done, filling `submitted`), do not corrupt the file. A corrupted file disappears from the Obsidian ledger (Base) and downstream steps stall silently.
+### Editing Obsidian Vault Notes / Frontmatter (MUST)
+When editing the frontmatter or body of any markdown note under the Obsidian vault, do not corrupt the file. A corrupted file disappears from the Obsidian ledger (Base) and downstream steps stall silently. **This covers not only deliverables under `_products/` but also `_notes/Projects/` task notes (Projects DB notes that carry `daily_ops_copy_id`). The same rule applies when the weekly meeting writes plans back (e.g. "next action deadline", "this week's tasks").**
 - **Edit in place**: Overwrite the value of an existing key. **Never append a duplicate key** (e.g. two `status:` lines makes the YAML invalid and unparseable).
-- **Preserve UTF-8**: Do not use Windows PowerShell `Set-Content` / `Add-Content` bare (without `-Encoding utf8`) — it writes cp932/UTF-16 and mojibakes Japanese. Use Python with `encoding="utf-8"`, or PowerShell with explicit `-Encoding utf8`.
-- **Read back and verify**: Confirm required keys like `type: product` appear exactly once and text is not garbled.
-- For routine report promotion/posting, prefer a deterministic script (same family as the generator) over hand-editing.
+- **Preserve UTF-8 (no BOM)**: Do not use Windows PowerShell `Set-Content` / `Add-Content` bare (without `-Encoding utf8`) — it defaults to cp932/ANSI and mojibakes Japanese (e.g. "カテゴリ" → "繧ｫ繝・ざ繝ｪ", a cp932 double-encoding corruption). Always use Python with `encoding="utf-8"`, or PowerShell 7 with explicit `-Encoding utf8` (BOM-less UTF-8). **Specify the encoding on reads too** — reading a UTF-8 file with the cp932 default mojibakes it at read time.
+- **Read back and verify**: Confirm required keys like `type: product` / `カテゴリ` / `is_root` appear exactly once and the Japanese (both frontmatter keys and values) is not garbled.
+- For routine report promotion/posting and task-note plan write-back, prefer a deterministic script (same family as the generator, pinned to `encoding="utf-8"`) over hand-editing.
