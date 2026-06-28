@@ -1535,6 +1535,3 @@ class CycleMixin:
                 truncated=stream_truncated,
             ).model_dump(mode="json"),
         }
-
-
-

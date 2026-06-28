@@ -44,6 +44,7 @@ async def _with_wall_timeout(stream: AsyncIterator[Any], timeout: float) -> Asyn
         async for item in stream:
             yield item
 
+
 # ── Pydantic Models ──────────────────────────────────────────
 
 
@@ -233,7 +234,9 @@ def _build_meeting_task_context(room: MeetingRoom) -> str:
         try:
             note_path = Path(room.project_note_path)
             if note_path.is_file():
-                note_excerpt = _truncate_text(note_path.read_text(encoding="utf-8", errors="replace"), MEETING_TASK_CONTEXT_MAX_CHARS)
+                note_excerpt = _truncate_text(
+                    note_path.read_text(encoding="utf-8", errors="replace"), MEETING_TASK_CONTEXT_MAX_CHARS
+                )
         except OSError:
             logger.warning("Failed to read meeting project note: %s", room.project_note_path, exc_info=True)
 
@@ -483,7 +486,7 @@ async def _meeting_stream(
                 if ipc_response.result and not full_response:
                     full_response = ipc_response.result.get("response", "")
 
-        except TimeoutError as e:
+        except TimeoutError:
             speaker_failed = True
             logger.warning("Meeting stream timed out for %s after %.1fs", target_name, _timeout)
             yield _format_sse(
@@ -578,14 +581,10 @@ def create_room_router() -> APIRouter:
             raise HTTPException(status_code=400, detail=str(e)) from None
 
     @router.get("")
-    async def list_rooms(
-        request: Request, include_closed: bool = False, include_archived: bool = False
-    ):
+    async def list_rooms(request: Request, include_closed: bool = False, include_archived: bool = False):
         """List meeting rooms."""
         room_manager = _get_room_manager(request)
-        rooms = room_manager.list_rooms(
-            include_closed=include_closed, include_archived=include_archived
-        )
+        rooms = room_manager.list_rooms(include_closed=include_closed, include_archived=include_archived)
         return [
             _room_payload(r)
             | {

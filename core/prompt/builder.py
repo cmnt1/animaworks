@@ -814,7 +814,7 @@ def build_system_prompt(
                     "When you need to read a file or run a check, actually issue the tool call in "
                     "this same turn — do not merely announce that you will do it and then stop. "
                     "Never end your turn on a statement of intent or a progress note (e.g. \"I'll "
-                    "read the files now\", \"let me check the DB\", \"I'll look into it\"); keep "
+                    'read the files now", "let me check the DB", "I\'ll look into it"); keep '
                     "going — call the tools, read the results, and only then write your reply. Your "
                     "turn is complete ONLY when your visible reply contains the actual answer or "
                     "findings, not a plan to produce them. If there is nothing to verify, answer "
