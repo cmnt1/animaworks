@@ -38,6 +38,12 @@ from core.tooling.schemas import submit_tasks_enabled_for_trigger
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 
+# Native write tools hard-blocked during meeting turns. Meeting turns are
+# read-only by design; the meeting prompt profile already instructs this, and
+# this set enforces it for SDK-native file mutation tools as a safety net.
+# Communication/delegation tools are blocked separately in the tool handler.
+_MEETING_BLOCKED_WRITE_TOOLS: frozenset[str] = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
+
 
 # ── Subordinate management ───────────────────────────────────
 
@@ -675,6 +681,29 @@ def _build_pre_tool_hook(
                     permissionDecisionReason=_t("sdk_hooks.agent_task_blocked"),
                 )
             )
+
+        # Meeting turns are read-only — hard-block native write tools.
+        if tool_name in _MEETING_BLOCKED_WRITE_TOOLS:
+            from core.tooling.handler_base import meeting_mode
+
+            if meeting_mode.get():
+                from core.i18n import t as _t
+
+                _log_tool_use(
+                    anima_dir,
+                    tool_name,
+                    tool_input,
+                    tool_use_id=tool_use_id,
+                    blocked=True,
+                    block_reason="meeting read-only",
+                )
+                return SyncHookJSONOutput(
+                    hookSpecificOutput=PreToolUseHookSpecificOutput(
+                        hookEventName="PreToolUse",
+                        permissionDecision="deny",
+                        permissionDecisionReason=_t("sdk_hooks.meeting_write_blocked"),
+                    )
+                )
 
         # submit_tasks intercept → DAG batch to pending
         if tool_name in ("submit_tasks", "mcp__aw__submit_tasks"):

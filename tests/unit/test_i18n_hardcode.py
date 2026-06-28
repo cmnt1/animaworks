@@ -119,7 +119,9 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "server/routes/external_tasks.py": 8,
     # meeting/room feature — Japanese meeting prompts and labels
     "server/room_manager.py": 12,
-    "server/routes/room.py": 4,
+    "server/routes/room.py": 5,
+    # project-task board: Japanese column/field labels (カテゴリ, タスク名, ステータス…)
+    "server/project_tasks.py": 11,
     # LLM extraction + dedupe + invalidation + community prompt templates — intentionally Japanese for ja locale
     "core/memory/extraction/prompts/ja.py": 7,
     # auth-failure / token-expiry messages surfaced to the dashboard
