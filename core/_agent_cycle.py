@@ -26,7 +26,13 @@ from core.execution.session_context import RuntimeSessionContext, runtime_sessio
 from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
 from core.i18n import t
 from core.memory.shortterm import SessionState, ShortTermMemory
-from core.prompt.builder import build_system_prompt, inject_shortterm
+from core.prompt.builder import (
+    MEETING_DONE_SENTINEL,
+    PROMPT_PROFILE_MEETING,
+    TIER_MICRO,
+    build_system_prompt,
+    inject_shortterm,
+)
 from core.prompt.context import CHARS_PER_TOKEN, ContextTracker
 from core.schemas import CycleResult, ImageData, ModelConfig
 from core.time_utils import now_iso
@@ -36,6 +42,27 @@ logger = logging.getLogger("animaworks.agent")
 
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
 _STREAM_RETRY_AFTER_BUFFER_S = 1.0
+
+# Meeting turns can end on a bare acknowledgement ("I'll check") because the Agent
+# SDK closes a turn on any text-only message. When that happens we re-invoke the
+# model (same resumable session) with a nudge to actually deliver findings, up to
+# this many times, before giving up and returning whatever we have.
+_MEETING_CONT_MAX_RETRIES = 2
+
+# The server wraps each meeting speaker's whole stream in a fixed wall-clock budget
+# (server.routes.room.MEETING_MIN_STREAM_TIMEOUT = 180s). Each continuation pass
+# runs inside that same budget, so we must not START a new pass once we are close
+# to it — otherwise the server emits STREAM_TIMEOUT and discards the work. This
+# deadline (seconds of elapsed wall time in the child) leaves margin for an
+# in-flight continuation pass to finish and stream back under the server budget.
+_MEETING_CONT_DEADLINE_S = 120.0
+
+
+def _strip_meeting_sentinel(text: str) -> str:
+    """Remove the meeting completion sentinel (and any now-empty line) from text."""
+    if not text or MEETING_DONE_SENTINEL not in text:
+        return text
+    return text.replace(MEETING_DONE_SENTINEL, "").rstrip()
 
 
 def _update_tracker_from_prompt_estimate(
@@ -135,6 +162,7 @@ class CycleMixin:
         max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
+        prompt_tier_override: str | None = None,
     ) -> CycleResult:
         """Run one agent cycle with autonomous memory search.
 
@@ -158,6 +186,7 @@ class CycleMixin:
                 max_turns_override=max_turns_override,
                 thread_id=thread_id,
                 model_config_override=model_config_override,
+                prompt_tier_override=prompt_tier_override,
             )
 
     async def _run_cycle_inner(
@@ -170,6 +199,7 @@ class CycleMixin:
         max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
+        prompt_tier_override: str | None = None,
     ) -> CycleResult:
         session_type = resolve_runtime_session_type(trigger)
         ctx = RuntimeSessionContext.create(
@@ -190,6 +220,7 @@ class CycleMixin:
                     max_turns_override=max_turns_override,
                     thread_id=thread_id,
                     model_config_override=model_config_override,
+                    prompt_tier_override=prompt_tier_override,
                 )
                 result.session_type = ctx.session_type
                 result.thread_id = ctx.thread_id
@@ -214,6 +245,7 @@ class CycleMixin:
         max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
+        prompt_tier_override: str | None = None,
     ) -> CycleResult:
         start = time.monotonic()
         active_model_config = model_config_override or self.model_config
@@ -259,7 +291,8 @@ class CycleMixin:
             active_model_config.model,
             overrides=self._load_context_window_overrides(),
         )
-        _prompt_tier = resolve_prompt_tier(_ctx_window)
+        _prompt_profile = PROMPT_PROFILE_MEETING if prompt_tier_override == PROMPT_PROFILE_MEETING else ""
+        _prompt_tier = TIER_MICRO if _prompt_profile else prompt_tier_override or resolve_prompt_tier(_ctx_window)
 
         # ── Priming: Automatic memory retrieval ────────────────
         priming_section, pending_human_notifications = await self._run_priming(
@@ -297,6 +330,8 @@ class CycleMixin:
             context_window=_ctx_window,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
+            prompt_tier=_prompt_tier,
+            prompt_profile=_prompt_profile,
         )
         system_prompt = build_result.system_prompt
         logger.debug("System prompt assembled, length=%d tier=%s", len(system_prompt), _prompt_tier)
@@ -311,6 +346,8 @@ class CycleMixin:
             trigger=trigger,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
+            prompt_tier=_prompt_tier,
+            prompt_profile=_prompt_profile,
         )
 
         if uses_chat_session and shortterm.has_pending():
@@ -654,6 +691,8 @@ class CycleMixin:
             trigger=trigger,
             context_window=_ctx_window,
             pending_human_notifications=pending_human_notifications,
+            prompt_tier=_prompt_tier,
+            prompt_profile=_prompt_profile,
         )
         if use_fallback:
             executor = self._create_fallback_executor(active_model_config)
@@ -790,6 +829,7 @@ class CycleMixin:
         max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
+        prompt_tier_override: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Streaming version of run_cycle.
 
@@ -816,16 +856,16 @@ class CycleMixin:
                         max_turns_override=max_turns_override,
                         thread_id=thread_id,
                         model_config_override=model_config_override,
+                        prompt_tier_override=prompt_tier_override,
                     ):
                         if chunk.get("type") == "cycle_done":
                             cycle_result = chunk.get("cycle_result")
                             if isinstance(cycle_result, dict):
-                                cycle_result["session_type"] = cycle_result.get("session_type") or ctx.session_type
-                                cycle_result["thread_id"] = cycle_result.get("thread_id") or ctx.thread_id
-                                cycle_result["request_id"] = cycle_result.get("request_id") or ctx.request_id
-                                cycle_result["tool_session_id"] = (
-                                    cycle_result.get("tool_session_id") or ctx.tool_session_id
-                                )
+                                cycle_result["trigger"] = ctx.trigger
+                                cycle_result["session_type"] = ctx.session_type
+                                cycle_result["thread_id"] = ctx.thread_id
+                                cycle_result["request_id"] = ctx.request_id
+                                cycle_result["tool_session_id"] = ctx.tool_session_id
                         yield chunk
                 finally:
                     from core.tooling.handler import active_session_type
@@ -845,6 +885,7 @@ class CycleMixin:
         max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
+        prompt_tier_override: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Streaming implementation scoped by ``run_cycle_streaming``."""
         start = time.monotonic()
@@ -900,6 +941,7 @@ class CycleMixin:
                 max_turns_override=max_turns_override,
                 thread_id=thread_id,
                 model_config_override=model_config_override,
+                prompt_tier_override=prompt_tier_override,
             )
             yield {"type": "text_delta", "text": cycle.summary}
             yield {
@@ -916,7 +958,8 @@ class CycleMixin:
             active_model_config.model,
             overrides=self._load_context_window_overrides(),
         )
-        _prompt_tier_s = _rpt(_ctx_window_s)
+        _prompt_profile_s = PROMPT_PROFILE_MEETING if prompt_tier_override == PROMPT_PROFILE_MEETING else ""
+        _prompt_tier_s = TIER_MICRO if _prompt_profile_s else prompt_tier_override or _rpt(_ctx_window_s)
 
         # ── Streaming executor (S / A / all modes) ───────────────
         priming_section, pending_human_notifications = await self._run_priming(
@@ -954,6 +997,8 @@ class CycleMixin:
             context_window=_ctx_window_s,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
+            prompt_tier=_prompt_tier_s,
+            prompt_profile=_prompt_profile_s,
         )
         system_prompt = build_result.system_prompt
 
@@ -966,6 +1011,9 @@ class CycleMixin:
             mode=mode,
             trigger=trigger,
             pending_human_notifications=pending_human_notifications,
+            thread_id=thread_id,
+            prompt_tier=_prompt_tier_s,
+            prompt_profile=_prompt_profile_s,
         )
 
         if uses_chat_session and shortterm.has_pending():
@@ -988,6 +1036,8 @@ class CycleMixin:
             context_window=_ctx_window_s,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
+            prompt_tier=_prompt_tier_s,
+            prompt_profile=_prompt_profile_s,
         )
         if use_fallback:
             logger.warning("Streaming fallback: using blocking S Fallback for oversized prompt")
@@ -999,6 +1049,7 @@ class CycleMixin:
                 max_turns_override=max_turns_override,
                 thread_id=thread_id,
                 model_config_override=model_config_override,
+                prompt_tier_override=prompt_tier_override,
             )
             yield {"type": "text_delta", "text": cycle.summary}
             yield {
@@ -1056,6 +1107,28 @@ class CycleMixin:
         current_system_prompt = system_prompt
         retry_count = 0
 
+        # Meeting turns hide the completion sentinel from the live stream. The
+        # sentinel can arrive split across text_delta chunks, so we hold back a
+        # tail that could be the start of the sentinel until we see more text.
+        _is_meeting_turn = _prompt_profile_s == PROMPT_PROFILE_MEETING
+        _mtg_carry = ""
+        _sentinel_seen = False
+
+        def _filter_meeting_delta(text: str) -> str:
+            """For meeting turns, strip the sentinel from a live text_delta, holding
+            back any tail that might be a partial sentinel for the next chunk."""
+            nonlocal _mtg_carry
+            if not _is_meeting_turn:
+                return text
+            buf = _mtg_carry + text
+            buf = buf.replace(MEETING_DONE_SENTINEL, "")
+            for hold in range(len(MEETING_DONE_SENTINEL) - 1, 0, -1):
+                if buf.endswith(MEETING_DONE_SENTINEL[:hold]):
+                    _mtg_carry = buf[-hold:]
+                    return buf[:-hold]
+            _mtg_carry = ""
+            return buf
+
         while True:
             completed_tools: list[dict[str, Any]] = []
             text_parts_this_attempt: list[str] = []
@@ -1077,6 +1150,8 @@ class CycleMixin:
                     if chunk["type"] == "done":
                         full_text_parts.append(chunk["full_text"])
                         text_parts_this_attempt.append(chunk["full_text"])
+                        if _is_meeting_turn and MEETING_DONE_SENTINEL in chunk["full_text"]:
+                            _sentinel_seen = True
                         result_message = chunk["result_message"]
                         # Accumulate tool call records from executor
                         all_tool_call_records.extend(chunk.get("tool_call_records", []))
@@ -1119,7 +1194,13 @@ class CycleMixin:
                         yield chunk
                     else:
                         if chunk["type"] == "text_delta":
-                            text_parts_this_attempt.append(chunk.get("text", ""))
+                            _delta_text = chunk.get("text", "")
+                            text_parts_this_attempt.append(_delta_text)
+                            if _is_meeting_turn:
+                                _emit = _filter_meeting_delta(_delta_text)
+                                if _emit:
+                                    yield {**chunk, "text": _emit}
+                                continue
                         elif chunk["type"] == "thinking_delta":
                             thinking_text_parts.append(chunk.get("text", ""))
                         yield chunk
@@ -1271,6 +1352,8 @@ class CycleMixin:
                     context_window=_ctx_window_s,
                     pending_human_notifications=pending_human_notifications,
                     thread_id=thread_id,
+                    prompt_tier=_prompt_tier_s,
+                    prompt_profile=_prompt_profile_s,
                 ).system_prompt
 
                 await asyncio.sleep(actual_delay)
@@ -1280,6 +1363,70 @@ class CycleMixin:
                 # Clear checkpoint on success
                 shortterm.clear_checkpoint()
                 break
+
+        # ── Meeting continuation guard ────────────────────
+        # A meeting turn can end on a bare acknowledgement ("I'll check") because
+        # the Agent SDK closes a turn on any text-only message. If the model has
+        # not yet signalled completion (sentinel absent), re-invoke it in the same
+        # resumable session with a nudge to actually deliver findings, bounded by
+        # a small retry cap.
+        if _is_meeting_turn and not terminal_error_message and getattr(active_executor, "supports_streaming", True):
+            _mtg_cont = 0
+            while (
+                not _sentinel_seen
+                and _mtg_cont < _MEETING_CONT_MAX_RETRIES
+                and (time.monotonic() - start) < _MEETING_CONT_DEADLINE_S
+            ):
+                _mtg_cont += 1
+                nudge = t("agent.meeting_continue_nudge", sentinel=MEETING_DONE_SENTINEL)
+                logger.info(
+                    "Meeting continuation nudge %d/%d (no findings yet) trigger=%s",
+                    _mtg_cont,
+                    _MEETING_CONT_MAX_RETRIES,
+                    trigger,
+                )
+                yield {"type": "meeting_continue", "attempt": _mtg_cont}
+                _cont_done = False
+                try:
+                    async for chunk in active_executor.execute_streaming(
+                        current_system_prompt,
+                        nudge,
+                        tracker,
+                        images=None,
+                        prior_messages=None,
+                        max_turns_override=max_turns_override,
+                        trigger=trigger,
+                        thread_id=thread_id,
+                    ):
+                        if self._progress_callback:
+                            self._progress_callback()
+                        if chunk["type"] == "done":
+                            full_text_parts.append(chunk["full_text"])
+                            if MEETING_DONE_SENTINEL in chunk["full_text"]:
+                                _sentinel_seen = True
+                            result_message = chunk["result_message"]
+                            all_tool_call_records.extend(chunk.get("tool_call_records", []))
+                            _merge_stream_usage(_stream_usage, chunk.get("usage"))
+                            transcript_replied = chunk.get("replied_to_from_transcript", set())
+                            if transcript_replied:
+                                self._tool_handler.merge_replied_to(transcript_replied)
+                            if chunk.get("truncated", False):
+                                stream_truncated = True
+                            _cont_done = True
+                        elif chunk["type"] == "text_delta":
+                            _emit = _filter_meeting_delta(chunk.get("text", ""))
+                            if _emit:
+                                yield {**chunk, "text": _emit}
+                        elif chunk["type"] == "thinking_delta":
+                            thinking_text_parts.append(chunk.get("text", ""))
+                            yield chunk
+                        else:
+                            yield chunk
+                except Exception:
+                    logger.warning("Meeting continuation stream failed", exc_info=True)
+                    break
+                if not _cont_done:
+                    break
 
         if not uses_chat_session:
             shortterm.clear_checkpoint()
@@ -1344,6 +1491,8 @@ class CycleMixin:
         )
 
         full_text = "\n".join(full_text_parts)
+        if _is_meeting_turn:
+            full_text = _strip_meeting_sentinel(full_text)
         thinking_text = "".join(thinking_text_parts)
         final_action = "error" if terminal_error_message else "responded"
         final_summary = full_text or terminal_error_message
@@ -1386,3 +1535,6 @@ class CycleMixin:
                 truncated=stream_truncated,
             ).model_dump(mode="json"),
         }
+
+
+

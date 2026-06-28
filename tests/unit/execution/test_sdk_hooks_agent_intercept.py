@@ -309,6 +309,82 @@ class TestPreToolHookAgentHardBlock:
             assert output.get("permissionDecision") != "deny"
 
 
+# ── PreToolUse hook: meeting read-only native-write hard-block ──────────
+
+
+class TestPreToolHookMeetingWriteBlock:
+    """Meeting turns are read-only: native write tools must be hard-blocked."""
+
+    def _build_hook(self, anima_dir: Path):
+        from core.execution._sdk_hooks import _build_pre_tool_hook
+
+        return _build_pre_tool_hook(anima_dir, has_subordinates=False)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit", "NotebookEdit"])
+    async def test_write_tools_blocked_in_meeting(self, anima_dir: Path, tool_name: str):
+        """Native write tools are denied while meeting_mode is active."""
+        from core.tooling.handler_base import meeting_mode
+
+        hook = self._build_hook(anima_dir)
+        token = meeting_mode.set(True)
+        try:
+            mock_context = MagicMock()
+            input_data = {
+                "tool_name": tool_name,
+                "tool_input": {"file_path": str(anima_dir / "notes.md"), "content": "x"},
+            }
+            result = await hook(input_data, f"tu_meeting_{tool_name}", mock_context)
+        finally:
+            meeting_mode.reset(token)
+
+        output = result.get("hookSpecificOutput")
+        assert output is not None
+        assert output["permissionDecision"] == "deny"
+        assert "BLOCKED" in output["permissionDecisionReason"]
+
+    @pytest.mark.asyncio
+    async def test_write_allowed_outside_meeting(self, anima_dir: Path):
+        """Write must pass through when meeting_mode is not active."""
+        from core.tooling.handler_base import meeting_mode
+
+        # Ensure default (no meeting) state.
+        assert meeting_mode.get() is False
+
+        hook = self._build_hook(anima_dir)
+        mock_context = MagicMock()
+        input_data = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(anima_dir / "notes.md"), "content": "x"},
+        }
+        result = await hook(input_data, "tu_nonmeeting_write", mock_context)
+
+        output = result.get("hookSpecificOutput")
+        if output is not None:
+            assert output.get("permissionDecision") != "deny"
+
+    @pytest.mark.asyncio
+    async def test_read_allowed_in_meeting(self, anima_dir: Path):
+        """Read-only tools must remain allowed during meetings."""
+        from core.tooling.handler_base import meeting_mode
+
+        hook = self._build_hook(anima_dir)
+        token = meeting_mode.set(True)
+        try:
+            mock_context = MagicMock()
+            input_data = {
+                "tool_name": "Read",
+                "tool_input": {"file_path": str(anima_dir / "identity.md")},
+            }
+            result = await hook(input_data, "tu_meeting_read", mock_context)
+        finally:
+            meeting_mode.reset(token)
+
+        output = result.get("hookSpecificOutput")
+        if output is not None:
+            assert output.get("permissionDecision") != "deny"
+
+
 # ── PreToolUse hook: submit_tasks intercept deny reason ─────────────────
 
 

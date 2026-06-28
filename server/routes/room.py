@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -18,12 +20,29 @@ from core.config import load_config
 from core.exceptions import AnimaNotFoundError
 from core.exceptions import IPCConnectionError as IPCConnError
 from core.execution.base import strip_thinking_tags
-from core.paths import get_common_knowledge_dir
+from core.paths import get_common_knowledge_dir, get_shared_dir
+from server.project_tasks import grouped_project_tasks
 from server.room_manager import MeetingRoom, RoomManager
 from server.routes.chat_chunk_handler import _chunk_to_event, _format_sse
 from server.routes.chat_emotion import extract_emotion
 
 logger = logging.getLogger(__name__)
+# Meeting turns may now use read-only tools to verify before answering, so a
+# speaker's whole stream needs a larger wall-clock budget than the old
+# reference-only turns. Keep the child-side continuation deadline
+# (_agent_cycle._MEETING_CONT_DEADLINE_S) comfortably under MIN.
+MEETING_MIN_STREAM_TIMEOUT = 180.0
+MEETING_MAX_STREAM_TIMEOUT = 300.0
+MEETING_CONTEXT_MAX_MESSAGES = 8
+MEETING_CONTEXT_MAX_CHARS = 6000
+MEETING_CONTEXT_ENTRY_MAX_CHARS = 900
+MEETING_TASK_CONTEXT_MAX_CHARS = 4000
+
+
+async def _with_wall_timeout(stream: AsyncIterator[Any], timeout: float) -> AsyncIterator[Any]:
+    async with asyncio.timeout(timeout):
+        async for item in stream:
+            yield item
 
 # ── Pydantic Models ──────────────────────────────────────────
 
@@ -34,6 +53,10 @@ class CreateRoomRequest(BaseModel):
     participants: list[str]
     chair: str
     title: str = ""
+    project_department: str = ""
+    project_task_code: str = ""
+    project_note_path: str = ""
+    project_task_title: str = ""
 
     @field_validator("participants")
     @classmethod
@@ -58,6 +81,31 @@ class AddParticipantRequest(BaseModel):
     name: str
 
 
+class UpdateRoomRequest(BaseModel):
+    """Request body for updating meeting room metadata."""
+
+    title: str = ""
+
+
+class ArchiveRoomRequest(BaseModel):
+    """Request body for archiving/unarchiving a meeting room."""
+
+    archived: bool = True
+
+
+class ActionItemInput(BaseModel):
+    """A single action item from the confirmation UI."""
+
+    assignee: str = ""
+    text: str = ""
+
+
+class ActionItemsRequest(BaseModel):
+    """Request body for saving the confirmed action item list."""
+
+    items: list[ActionItemInput] = []
+
+
 # ── Helpers ─────────────────────────────────────────────────
 
 
@@ -79,6 +127,130 @@ def _get_created_by(request: Request) -> str:
     return "human"
 
 
+def _room_payload(room: MeetingRoom, *, include_conversation: bool = False) -> dict[str, Any]:
+    """Serialize a meeting room for API responses."""
+    payload: dict[str, Any] = {
+        "room_id": room.room_id,
+        "participants": room.participants,
+        "chair": room.chair,
+        "title": room.title,
+        "created_at": room.created_at.isoformat(),
+        "closed": room.closed,
+        "archived": room.archived,
+        "closed_at": room.closed_at.isoformat() if room.closed_at else None,
+        "project_department": room.project_department,
+        "project_task_code": room.project_task_code,
+        "project_note_path": room.project_note_path,
+        "project_task_title": room.project_task_title,
+        "action_items": room.action_items,
+    }
+    if include_conversation:
+        payload["conversation"] = room.conversation
+    return payload
+
+
+def _is_all_participants_request(message: str) -> bool:
+    """Return True when the latest user message asks everyone to respond."""
+    normalized = message.lower()
+    markers = (
+        "@all",
+        "everyone",
+        "everybody",
+        "all participants",
+        "each participant",
+        "each of you",
+        "\u305d\u308c\u305e\u308c",  # それぞれ
+        "\u5168\u54e1",  # 全員
+        "\u5404\u81ea",  # 各自
+        "\u307f\u3093\u306a",  # みんな
+        "\u4e00\u4eba\u305a\u3064",  # 一人ずつ
+        "\u5404\u30e1\u30f3\u30d0\u30fc",  # 各メンバー
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _truncate_text(text: str, max_chars: int) -> str:
+    """Trim long meeting entries so one verbose turn cannot dominate the prompt."""
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n...[truncated]"
+
+
+def _build_compact_meeting_context(room: MeetingRoom) -> str:
+    """Build bounded meeting context without invoking another LLM.
+
+    Meeting turns must be low-latency. The normal summarizer can call an
+    external SDK and, when that fails, falls back to very large history. Keep
+    this path deterministic and capped.
+    """
+    entries = room.conversation[-MEETING_CONTEXT_MAX_MESSAGES:]
+    formatted_entries: list[str] = []
+    for entry in entries:
+        speaker = str(entry.get("speaker") or "")
+        role = str(entry.get("role") or "")
+        text = _truncate_text(str(entry.get("text") or ""), MEETING_CONTEXT_ENTRY_MAX_CHARS)
+        if not text:
+            continue
+        label = f"{speaker} ({role})" if role else speaker
+        formatted_entries.append(f"[{label}] {text}")
+
+    selected: list[str] = []
+    total = 0
+    truncated = False
+    for line in reversed(formatted_entries):
+        added = len(line) + (1 if selected else 0)
+        if selected and total + added > MEETING_CONTEXT_MAX_CHARS:
+            truncated = True
+            break
+        if not selected and added > MEETING_CONTEXT_MAX_CHARS:
+            selected.append(_truncate_text(line, MEETING_CONTEXT_MAX_CHARS))
+            truncated = len(line) > MEETING_CONTEXT_MAX_CHARS
+            break
+        selected.append(line)
+        total += added
+
+    selected.reverse()
+    context = "\n".join(selected).strip()
+    return f"[older meeting context truncated]\n{context}" if truncated else context
+
+
+def _build_meeting_task_context(room: MeetingRoom) -> str:
+    """Return bounded project/task context for the meeting prompt.
+
+    This is deliberate preloaded meeting material, not an invitation for the
+    Anima to browse files or search memory during its speaking turn.
+    """
+    lines: list[str] = []
+    if room.project_department:
+        lines.append(f"- Department: {room.project_department}")
+    if room.project_task_code:
+        title = f" {room.project_task_title}" if room.project_task_title else ""
+        lines.append(f"- Task: {room.project_task_code}{title}")
+
+    note_excerpt = ""
+    if room.project_note_path:
+        try:
+            note_path = Path(room.project_note_path)
+            if note_path.is_file():
+                note_excerpt = _truncate_text(note_path.read_text(encoding="utf-8", errors="replace"), MEETING_TASK_CONTEXT_MAX_CHARS)
+        except OSError:
+            logger.warning("Failed to read meeting project note: %s", room.project_note_path, exc_info=True)
+
+    if note_excerpt:
+        lines.append("\nProject note excerpt:\n" + note_excerpt)
+
+    if not lines:
+        return ""
+
+    return "\n".join(
+        [
+            "Meeting task context (reference; you may also verify with read-only tools before answering):",
+            *lines,
+        ]
+    )
+
+
 async def _build_message_for_anima(
     room_manager: RoomManager,
     room: MeetingRoom,
@@ -91,10 +263,25 @@ async def _build_message_for_anima(
 
     Includes meeting context (conversation history) and role-specific prompt.
     """
-    context = await room_manager.get_summarized_context(room.room_id)
+    context = _build_compact_meeting_context(room)
+    task_context = _build_meeting_task_context(room)
+    target_directive = f"""Meeting response directive:
+- You are {target_name}; answer as yourself, not as another participant.
+- Latest human request: {human_message}
+- If the latest request asks everyone/every participant to respond, give your own direct response now.
+- Do not repeat, summarize, or endorse the previous participant's response unless you add a distinct point.
+- Do not say you are waiting for the chair unless the human explicitly asked you to wait.
+- If a fact can be checked, verify it FIRST with read-only tools (Read/Grep/Glob, the Obsidian vault, memory search) and answer from what you actually find this turn. Prefer fresh verification over reusing data fetched in an earlier turn. File writes/edits and external messaging are disabled for this turn.
+- Always produce a visible final reply; never finish with only thinking/internal reasoning.
+- Keep the response concise and actionable."""
+    context = f"{target_directive}\n\n{context}" if context else target_directive
+    task_section = f"\n\n## タスク前提\n\n{task_context}" if task_context else ""
     if is_chair:
         chair_prompt = room_manager.build_chair_prompt(room)
-        return f"""{chair_prompt}
+        return f"""{target_directive}
+
+{chair_prompt}
+{task_section}
 
 ## 会議の流れ
 
@@ -103,6 +290,7 @@ async def _build_message_for_anima(
 上記の会議の流れを踏まえて、議長として応答してください。"""
     else:
         return f"""あなたは会議に参加しています。以下の会議の流れを踏まえて意見を述べてください。
+{task_section}
 
 ## 会議の流れ
 
@@ -130,16 +318,22 @@ async def _meeting_stream(
     # Append human message to conversation
     room_manager.append_message(room_id, from_person, "human", message)
 
-    # Determine targets: @mentions or chair
+    # Determine targets: @mentions, everyone-request, or meeting round.
     mentions = room_manager.extract_mentions(message, room.participants)
     if mentions:
         targets = [t for t in mentions if t in room.participants]
+    elif len(room.participants) > 1:
+        targets = [t for t in room.participants if t != room.chair]
+        if room.chair in room.participants:
+            targets.append(room.chair)
     else:
         targets = [room.chair] if room.chair in room.participants else []
 
     if not targets:
         yield _format_sse("done", {"summary": "No targets to respond"})
         return
+
+    yield _format_sse("speaker_queue", {"speakers": targets})
 
     # Verify all targets exist in supervisor
     for t in targets:
@@ -154,7 +348,8 @@ async def _meeting_stream(
         _config = load_config()
         _timeout = float(_config.server.ipc_stream_timeout)
     except Exception:
-        _timeout = 60.0
+        _timeout = MEETING_MIN_STREAM_TIMEOUT
+    _timeout = min(max(_timeout, MEETING_MIN_STREAM_TIMEOUT), MEETING_MAX_STREAM_TIMEOUT)
 
     queue: list[str] = list(targets)
     processed_targets: set[str] = set()
@@ -188,20 +383,40 @@ async def _meeting_stream(
         yield _format_sse("speaker_start", {"speaker": target_name, "role": role})
 
         full_response = ""
+        text_delta_seen = False
+        speaker_failed = False
 
         try:
-            async for ipc_response in supervisor.send_request_stream(
-                anima_name=target_name,
-                method="process_message",
-                params=params,
-                timeout=_timeout,
+            async for ipc_response in _with_wall_timeout(
+                supervisor.send_request_stream(
+                    anima_name=target_name,
+                    method="process_message",
+                    params=params,
+                    timeout=_timeout,
+                ),
+                _timeout,
             ):
+                if ipc_response.error:
+                    err = ipc_response.error
+                    speaker_failed = True
+                    yield _format_sse(
+                        "error",
+                        {
+                            "code": err.get("code", "STREAM_ERROR"),
+                            "message": err.get("message", "Stream error"),
+                            "speaker": target_name,
+                        },
+                    )
+                    break
+
                 if ipc_response.done:
                     result = ipc_response.result or {}
-                    full_response = result.get("response", "")
+                    done_response = result.get("response", "")
                     cycle_result = result.get("cycle_result", {})
-                    if cycle_result and not full_response:
-                        full_response = cycle_result.get("summary", "")
+                    if cycle_result and not done_response:
+                        done_response = cycle_result.get("summary", "")
+                    if done_response and not text_delta_seen:
+                        full_response = done_response
                     break
 
                 if ipc_response.chunk:
@@ -214,7 +429,8 @@ async def _meeting_stream(
                             evt_name, evt_payload = result
                             # Don't yield "done" from cycle_done — we yield our own at the end
                             if evt_name == "done":
-                                full_response = evt_payload.get("summary", full_response) or full_response
+                                if not text_delta_seen:
+                                    full_response = evt_payload.get("summary", full_response) or full_response
                                 continue
                             if evt_name == "meeting_redirect":
                                 redirect_from = str(evt_payload.get("from") or target_name)
@@ -254,8 +470,10 @@ async def _meeting_stream(
                             evt_payload["speaker"] = target_name
                             yield _format_sse(evt_name, evt_payload)
                             if evt_name == "text_delta":
+                                text_delta_seen = True
                                 full_response += evt_payload.get("text", "")
                     except json.JSONDecodeError:
+                        text_delta_seen = True
                         yield _format_sse(
                             "text_delta",
                             {"text": ipc_response.chunk, "speaker": target_name},
@@ -265,7 +483,20 @@ async def _meeting_stream(
                 if ipc_response.result and not full_response:
                     full_response = ipc_response.result.get("response", "")
 
-        except (AnimaNotFoundError, IPCConnError, TimeoutError) as e:
+        except TimeoutError as e:
+            speaker_failed = True
+            logger.warning("Meeting stream timed out for %s after %.1fs", target_name, _timeout)
+            yield _format_sse(
+                "error",
+                {
+                    "code": "STREAM_TIMEOUT",
+                    "message": f"Timed out waiting for {target_name} after {_timeout:.0f}s",
+                    "speaker": target_name,
+                },
+            )
+            full_response = ""
+        except (AnimaNotFoundError, IPCConnError) as e:
+            speaker_failed = True
             logger.warning("Meeting stream error for %s: %s", target_name, e)
             yield _format_sse(
                 "error",
@@ -278,14 +509,26 @@ async def _meeting_stream(
         leaked, clean_text = strip_thinking_tags(clean_text)
         if leaked:
             clean_text = clean_text.strip()
+        clean_text = clean_text.strip()
 
-        # Append to conversation
-        room_manager.append_message(
-            room_id,
-            target_name,
-            "chair" if is_chair else "participant",
-            clean_text,
-        )
+        if clean_text:
+            # Append to conversation
+            room_manager.append_message(
+                room_id,
+                target_name,
+                "chair" if is_chair else "participant",
+                clean_text,
+            )
+        elif not speaker_failed:
+            speaker_failed = True
+            yield _format_sse(
+                "error",
+                {
+                    "code": "EMPTY_RESPONSE",
+                    "message": f"No response from {target_name}",
+                    "speaker": target_name,
+                },
+            )
 
         # Yield speaker_end
         yield _format_sse("speaker_end", {"speaker": target_name})
@@ -299,6 +542,10 @@ async def _meeting_stream(
             for m in new_mentions:
                 if m != target_name and m in room.participants and m not in processed_targets and m not in queue:
                     queue.append(m)
+        elif is_chair and speaker_failed:
+            for participant in room.participants:
+                if participant != target_name and participant not in processed_targets and participant not in queue:
+                    queue.append(participant)
 
     yield _format_sse("done", {"summary": "Meeting round complete"})
 
@@ -321,35 +568,37 @@ def create_room_router() -> APIRouter:
                 chair=body.chair,
                 created_by=created_by,
                 title=body.title,
+                project_department=body.project_department,
+                project_task_code=body.project_task_code,
+                project_note_path=body.project_note_path,
+                project_task_title=body.project_task_title,
             )
-            return {
-                "room_id": room.room_id,
-                "participants": room.participants,
-                "chair": room.chair,
-                "title": room.title,
-                "created_at": room.created_at.isoformat(),
-                "closed": room.closed,
-            }
+            return _room_payload(room)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from None
 
     @router.get("")
-    async def list_rooms(request: Request, include_closed: bool = False):
+    async def list_rooms(
+        request: Request, include_closed: bool = False, include_archived: bool = False
+    ):
         """List meeting rooms."""
         room_manager = _get_room_manager(request)
-        rooms = room_manager.list_rooms(include_closed=include_closed)
+        rooms = room_manager.list_rooms(
+            include_closed=include_closed, include_archived=include_archived
+        )
         return [
-            {
-                "room_id": r.room_id,
-                "participants": r.participants,
-                "chair": r.chair,
-                "title": r.title,
-                "created_at": r.created_at.isoformat(),
-                "closed": r.closed,
-                "closed_at": r.closed_at.isoformat() if r.closed_at else None,
+            _room_payload(r)
+            | {
+                "message_count": len(r.conversation),
+                "last_message_at": r.conversation[-1].get("ts") if r.conversation else r.created_at.isoformat(),
             }
             for r in rooms
         ]
+
+    @router.get("/project-tasks")
+    async def list_project_tasks(include_completed: bool = False):
+        """List selectable Obsidian Projects DB tasks."""
+        return grouped_project_tasks(include_completed=include_completed)
 
     @router.get("/{room_id}")
     async def get_room(room_id: str, request: Request):
@@ -358,16 +607,17 @@ def create_room_router() -> APIRouter:
         room = room_manager.get_room(room_id)
         if room is None:
             raise HTTPException(status_code=404, detail="Room not found")
-        return {
-            "room_id": room.room_id,
-            "participants": room.participants,
-            "chair": room.chair,
-            "title": room.title,
-            "created_at": room.created_at.isoformat(),
-            "closed": room.closed,
-            "closed_at": room.closed_at.isoformat() if room.closed_at else None,
-            "conversation": room.conversation,
-        }
+        return _room_payload(room, include_conversation=True)
+
+    @router.patch("/{room_id}")
+    async def update_room(room_id: str, body: UpdateRoomRequest, request: Request):
+        """Update room metadata such as title."""
+        room_manager = _get_room_manager(request)
+        try:
+            room = room_manager.update_room_title(room_id, body.title)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        return _room_payload(room, include_conversation=True)
 
     @router.post("/{room_id}/participants")
     async def add_participant(room_id: str, body: AddParticipantRequest, request: Request):
@@ -409,6 +659,57 @@ def create_room_router() -> APIRouter:
         except Exception as e:
             logger.warning("Failed to generate minutes for room %s: %s", room_id, e)
             return {"ok": True, "minutes_path": None}
+
+    @router.post("/{room_id}/archive")
+    async def archive_room(room_id: str, body: ArchiveRoomRequest, request: Request):
+        """Archive or unarchive a meeting room."""
+        room_manager = _get_room_manager(request)
+        try:
+            room = room_manager.set_room_archived(room_id, body.archived)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        return _room_payload(room)
+
+    @router.delete("/{room_id}")
+    async def delete_room(room_id: str, request: Request):
+        """Delete a meeting room permanently."""
+        room_manager = _get_room_manager(request)
+        try:
+            room_manager.delete_room(room_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        return {"ok": True}
+
+    @router.post("/{room_id}/action-items/extract")
+    async def extract_action_items(room_id: str, request: Request):
+        """Draft action items from the transcript via LLM (not persisted)."""
+        room_manager = _get_room_manager(request)
+        try:
+            items = await room_manager.extract_action_items(room_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from None
+        return {"items": items}
+
+    @router.put("/{room_id}/action-items")
+    async def save_action_items(room_id: str, body: ActionItemsRequest, request: Request):
+        """Persist the confirmed action item list."""
+        room_manager = _get_room_manager(request)
+        items = [{"assignee": i.assignee, "text": i.text} for i in body.items]
+        try:
+            room = room_manager.set_action_items(room_id, items)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        return _room_payload(room)
+
+    @router.post("/{room_id}/action-items/dispatch")
+    async def dispatch_action_items(room_id: str, request: Request):
+        """Deliver unsent action items to each assignee's inbox."""
+        room_manager = _get_room_manager(request)
+        try:
+            delivered = room_manager.dispatch_action_items(room_id, get_shared_dir())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        return {"ok": True, "delivered": delivered}
 
     @router.post("/{room_id}/chat/stream")
     async def meeting_chat_stream(

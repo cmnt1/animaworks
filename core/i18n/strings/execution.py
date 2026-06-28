@@ -34,6 +34,22 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "ストリームが{retry_count}回切断されました。最大リトライ回数に達しました。",
         "en": "Stream disconnected {retry_count} time(s). Max retries reached.",
     },
+    "agent.meeting_continue_nudge": {
+        "ja": (
+            "あなたはまだ実際の調査結果・回答を出していません（意図表明や了承だけで止まっています）。"
+            "今すぐ読み取り専用ツール（Read/Grep/Glob、Obsidian vault 参照、メモリ検索）を実際に呼び出し、"
+            "得られた具体的な内容をこのターンで報告してください。"
+            "結果が出たら、メッセージの末尾に {sentinel} を単独行で付けてください。"
+            "「確認します」「これから読みます」などの宣言で終わらないこと。"
+        ),
+        "en": (
+            "You have not delivered the actual findings/answer yet (you stopped at an "
+            "acknowledgement or a statement of intent). Right now, actually call your read-only "
+            "tools (Read/Grep/Glob, the Obsidian vault, memory search) and report the concrete "
+            "results in this turn. When you have the results, end your message with {sentinel} on "
+            "its own line. Do not end on a statement of intent like 'I'll check' or 'let me read'."
+        ),
+    },
     "assisted.intent_reprompt": {
         "ja": (
             'ツールを使う意図があるようですが、実際にツールが呼び出されていません。必要な操作を以下の形式で出力してください:\n\n```json\n{"tool": "ツール名", "arguments": {"引数名": "値"}}\n```'
@@ -138,6 +154,18 @@ STRINGS: dict[str, dict[str, str]] = {
             '• **Heavy work**: Use `animaworks-tool machine run "instruction" -d workspace_path` for an external agent\n'
             "• **Delegation**: Use `delegate_task` to delegate to a subordinate (they execute it)\n"
             "Use these instead of Agent/Task."
+        ),
+    },
+    "sdk_hooks.meeting_write_blocked": {
+        "ja": (
+            "BLOCKED: ミーティング中は読み取り専用です。ファイルの書き込み・編集はできません。"
+            "参照（Read/Grep/メモリ検索）で確認した上で発言してください。"
+            "決定事項の実行・配信は会議終了後のアクションアイテム配信フローで行われます。"
+        ),
+        "en": (
+            "BLOCKED: Meeting turns are read-only. File writes/edits are not allowed. "
+            "Verify facts with read-only tools (Read/Grep/memory search) before replying. "
+            "Decisions are executed and delivered after the meeting via the action-items dispatch flow."
         ),
     },
     "action_rule.deny_reason": {

@@ -68,6 +68,14 @@ TIER_STANDARD = "standard"
 TIER_LIGHT = "light"
 TIER_MINIMAL = "minimal"
 TIER_MICRO = "micro"
+PROMPT_PROFILE_MEETING = "meeting"
+
+# Completion sentinel for meeting turns. The model appends this once its reply
+# contains the actual findings/answer (not a plan). The execution loop uses its
+# presence to decide whether the turn is done or needs a continuation nudge, and
+# strips it from the visible/saved reply. Keep it distinctive and unlikely to
+# appear in natural text.
+MEETING_DONE_SENTINEL = "[[MTG_DONE]]"
 
 
 def resolve_prompt_tier(context_window: int) -> str:
@@ -159,6 +167,7 @@ def _build_group1(
     _ss: dict[str, str],
     *,
     tier: str = TIER_FULL,
+    include_injection: bool = True,
 ) -> list[SectionEntry]:
     """Group 1: Environment, identity, injection, time, behaviour rules."""
     out: list[SectionEntry] = []
@@ -191,7 +200,7 @@ def _build_group1(
     if identity:
         _add(identity, "identity", 1)
 
-    injection = memory.read_injection()
+    injection = memory.read_injection() if include_injection else ""
     if injection:
         _add(injection, "injection", 1)
         try:
@@ -720,6 +729,8 @@ def build_system_prompt(
     system_budget: int | None = None,
     pending_human_notifications: str = "",
     thread_id: str = "default",
+    prompt_tier: str | None = None,
+    prompt_profile: str = "",
 ) -> BuildResult:
     """Construct the full system prompt from Markdown files.
 
@@ -729,7 +740,8 @@ def build_system_prompt(
     data_dir = get_data_dir()
     budget = _compute_system_budget(context_window, system_budget)
     scale = min(context_window / _REFERENCE_WINDOW, 1.0)
-    tier = resolve_prompt_tier(context_window)
+    tier = prompt_tier or resolve_prompt_tier(context_window)
+    is_meeting_profile = prompt_profile == PROMPT_PROFILE_MEETING
     _ss = _load_section_strings()
     _fs = _load_fallback_strings()
 
@@ -768,7 +780,67 @@ def build_system_prompt(
     permissions = memory.read_permissions()
 
     # Assemble sections from all 6 groups
-    sections = _build_group1(pd, data_dir, memory, is_task, prompt_store, _ss, tier=tier)
+    sections = _build_group1(
+        pd,
+        data_dir,
+        memory,
+        is_task,
+        prompt_store,
+        _ss,
+        tier=tier,
+        include_injection=not is_meeting_profile,
+    )
+    if is_meeting_profile:
+        sections.append(
+            SectionEntry(
+                id="meeting_response_profile",
+                priority=1,
+                kind="rigid",
+                content=(
+                    "## Meeting Response Profile\n"
+                    "You are taking a meeting turn, replying as yourself using your identity and the "
+                    "supplied meeting context.\n"
+                    "Read-only tools are fully enabled during meetings. Before answering, if a fact "
+                    "can be checked, check it first: read files (including the Obsidian vault you have "
+                    "access to, e.g. the project DB), search your memory, run read-only Grep/Glob/Bash, "
+                    "and inspect data. Do not claim you cannot access something during a meeting — any "
+                    "earlier rule that meetings are tool-restricted no longer applies. Reach for the "
+                    "tool and verify rather than answering from memory alone or deferring to someone "
+                    "else.\n"
+                    "The only restriction is that you may not make changes during the meeting: no "
+                    "writing or editing files, no delegating tasks, no posting to channels, and no "
+                    "messaging other participants. Decisions are executed and delivered after the "
+                    "meeting via the action-items dispatch flow, not during your turn.\n"
+                    "When you need to read a file or run a check, actually issue the tool call in "
+                    "this same turn — do not merely announce that you will do it and then stop. "
+                    "Never end your turn on a statement of intent or a progress note (e.g. \"I'll "
+                    "read the files now\", \"let me check the DB\", \"I'll look into it\"); keep "
+                    "going — call the tools, read the results, and only then write your reply. Your "
+                    "turn is complete ONLY when your visible reply contains the actual answer or "
+                    "findings, not a plan to produce them. If there is nothing to verify, answer "
+                    "directly.\n"
+                    "Keep the final answer concise and write it in the same language as the "
+                    "meeting.\n"
+                    "IMPORTANT: Once — and only once — your reply contains the actual findings or "
+                    "answer, end your message with the marker " + MEETING_DONE_SENTINEL + " on its "
+                    "own line. Do NOT output this marker if you are only acknowledging or stating a "
+                    "plan; in that case keep working and call your tools first."
+                ),
+            )
+        )
+        allocated = _allocate_sections(sections, budget)
+        prompt = _assemble_with_tags(allocated)
+        logger.debug(
+            "Meeting system prompt built: %d/%d sections, total_len=%d, budget=%d, tier=%s, cw=%d",
+            len(allocated),
+            len(sections),
+            len(prompt),
+            budget,
+            tier,
+            context_window,
+        )
+        return BuildResult(system_prompt=prompt)
+
     sections += _build_group2(memory, permissions, is_background_auto, is_task, _ss)
     sections += _build_group3(
         pd,
