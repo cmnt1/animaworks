@@ -94,14 +94,10 @@ def list_project_tasks(vault_root: Path | None = None, *, include_completed: boo
     return sorted(tasks, key=_task_sort_key)
 
 
-def grouped_project_tasks(
-    vault_root: Path | None = None, *, include_completed: bool = False
-) -> dict[str, object]:
+def grouped_project_tasks(vault_root: Path | None = None, *, include_completed: bool = False) -> dict[str, object]:
     """Return tasks plus department groupings for the meeting setup UI."""
     tasks = list_project_tasks(vault_root, include_completed=include_completed)
-    departments = sorted(
-        {task.department for task in tasks if not task.corrupt}, key=_department_sort_key
-    )
+    departments = sorted({task.department for task in tasks if not task.corrupt}, key=_department_sort_key)
     return {
         "departments": departments,
         "tasks": [task.to_dict() for task in tasks],
