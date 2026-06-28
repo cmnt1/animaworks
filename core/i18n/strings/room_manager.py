@@ -26,4 +26,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "この会議室は閉鎖されています",
         "en": "This meeting room is closed",
     },
+    "room_manager.action_item_invalid_assignee": {
+        "ja": "担当者 '{name}' は参加者ではありません",
+        "en": "Assignee '{name}' is not a participant",
+    },
+    "room_manager.untitled_meeting": {
+        "ja": "無題の会議",
+        "en": "Untitled meeting",
+    },
+    "room_manager.action_item_message": {
+        "ja": "【会議の決定事項】「{meeting}」での合意に基づくあなたへの依頼です。\n\n{task}",
+        "en": '[Meeting action item] A task assigned to you from "{meeting}".\n\n{task}',
+    },
 }

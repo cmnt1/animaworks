@@ -14,7 +14,7 @@ import json
 import logging
 import re
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -44,8 +44,15 @@ class MeetingRoom:
     conversation: list[dict]  # Shared conversation history
     # Each entry: {"speaker": "sakura", "role": "chair"|"participant"|"human", "text": "...", "ts": "ISO8601"}
     closed: bool = False
+    archived: bool = False
     title: str = ""
     closed_at: datetime | None = None
+    project_department: str = ""
+    project_task_code: str = ""
+    project_note_path: str = ""
+    project_task_title: str = ""
+    action_items: list[dict] = field(default_factory=list)
+    # Each entry: {"id": str, "assignee": str, "text": str, "status": "draft"|"sent"}
 
     def to_dict(self) -> dict:
         """Serialize for JSON persistence."""
@@ -70,8 +77,14 @@ class MeetingRoom:
             created_at=created_at,
             conversation=d.get("conversation", []),
             closed=d.get("closed", False),
+            archived=d.get("archived", False),
             title=d.get("title", ""),
             closed_at=closed_at,
+            project_department=d.get("project_department", ""),
+            project_task_code=d.get("project_task_code", ""),
+            project_note_path=d.get("project_note_path", ""),
+            project_task_title=d.get("project_task_title", ""),
+            action_items=d.get("action_items", []),
         )
 
 
@@ -100,6 +113,10 @@ class RoomManager:
         chair: str,
         created_by: str,
         title: str = "",
+        project_department: str = "",
+        project_task_code: str = "",
+        project_note_path: str = "",
+        project_task_title: str = "",
     ) -> MeetingRoom:
         """Create a new meeting room.
 
@@ -108,6 +125,10 @@ class RoomManager:
             chair: Chair Anima name (must be in participants).
             created_by: Human user name who created the room.
             title: Optional meeting title.
+            project_department: Projects DB category/department.
+            project_task_code: Projects DB task code.
+            project_note_path: Source Obsidian note path.
+            project_task_title: Projects DB task title.
 
         Returns:
             The created MeetingRoom.
@@ -130,6 +151,10 @@ class RoomManager:
             conversation=[],
             closed=False,
             title=title,
+            project_department=project_department,
+            project_task_code=project_task_code,
+            project_note_path=project_note_path,
+            project_task_title=project_task_title,
         )
         self._rooms[room_id] = room
         self.save_room(room_id)
@@ -146,11 +171,45 @@ class RoomManager:
         """Get a room by ID."""
         return self._rooms.get(room_id)
 
-    def list_rooms(self, include_closed: bool = False) -> list[MeetingRoom]:
-        """List rooms, optionally including closed ones."""
-        if include_closed:
-            return list(self._rooms.values())
-        return [r for r in self._rooms.values() if not r.closed]
+    def update_room_title(self, room_id: str, title: str) -> MeetingRoom:
+        """Update a room title and persist it."""
+        room = self.get_room(room_id)
+        if room is None:
+            raise ValueError(t("room_manager.room_not_found", room_id=room_id))
+        room.title = title.strip()
+        self.save_room(room_id)
+        logger.info("Updated meeting room %s title", room_id)
+        return room
+
+    def list_rooms(self, include_closed: bool = False, include_archived: bool = False) -> list[MeetingRoom]:
+        """List rooms, optionally including closed and/or archived ones."""
+        rooms = list(self._rooms.values())
+        if not include_archived:
+            rooms = [r for r in rooms if not r.archived]
+        if not include_closed:
+            rooms = [r for r in rooms if not r.closed]
+        return rooms
+
+    def set_room_archived(self, room_id: str, archived: bool) -> MeetingRoom:
+        """Archive or unarchive a room and persist it."""
+        room = self.get_room(room_id)
+        if room is None:
+            raise ValueError(t("room_manager.room_not_found", room_id=room_id))
+        room.archived = archived
+        self.save_room(room_id)
+        logger.info("Set room %s archived=%s", room_id, archived)
+        return room
+
+    def delete_room(self, room_id: str) -> None:
+        """Delete a room from memory and disk."""
+        self._validate_room_id(room_id)
+        self._rooms.pop(room_id, None)
+        path = self._data_dir / f"{room_id}.json"
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to delete room file %s", path, exc_info=True)
+        logger.info("Deleted room %s", room_id)
 
     def add_participant(self, room_id: str, name: str) -> None:
         """Add a participant to the room.
@@ -528,8 +587,174 @@ class RoomManager:
         logger.info("Generated meeting minutes: %s", out_path)
         return out_path
 
+    # ── Action items ────────────────────────────────────────
+
+    async def extract_action_items(self, room_id: str) -> list[dict]:
+        """Draft action items from the meeting transcript via LLM.
+
+        Returns a list of {"assignee", "text"} draft entries (not persisted).
+        Assignees are constrained to room participants. Returns [] on failure.
+        """
+        from core.memory._llm_utils import one_shot_completion
+
+        room = self.get_room(room_id)
+        if room is None:
+            raise ValueError(t("room_manager.room_not_found", room_id=room_id))
+        if not room.conversation:
+            return []
+
+        formatted = self._format_entries(room.conversation)
+        participants = ", ".join(room.participants)
+        system = (
+            "You extract concrete action items from a meeting transcript. "
+            "Output ONLY a JSON array. Each element is an object with two string "
+            'fields: "assignee" (who will do it) and "task" (what to do, imperative). '
+            f"The assignee MUST be exactly one of these participant names: {participants}. "
+            "Write the task in the same language as the transcript. "
+            "If there are no clear action items, output []."
+        )
+        result = await one_shot_completion(
+            formatted,
+            system_prompt=system,
+            max_tokens=800,
+        )
+        if not result:
+            return []
+
+        valid_names = {p.lower(): p for p in room.participants}
+        items: list[dict] = []
+        for entry in _parse_json_array(result):
+            assignee = str(entry.get("assignee", "")).strip()
+            text = str(entry.get("task", "")).strip()
+            if not text:
+                continue
+            canonical = valid_names.get(assignee.lower())
+            if canonical is None:
+                continue
+            items.append({"assignee": canonical, "text": text})
+        return items
+
+    def set_action_items(self, room_id: str, items: list[dict]) -> MeetingRoom:
+        """Persist the confirmed action item list (replaces existing).
+
+        Each input item needs {"assignee", "text"}; assignees must be participants.
+        Preserves "sent" status for items whose (assignee, text) already exist.
+        """
+        room = self.get_room(room_id)
+        if room is None:
+            raise ValueError(t("room_manager.room_not_found", room_id=room_id))
+
+        sent_keys = {(i.get("assignee"), i.get("text")) for i in room.action_items if i.get("status") == "sent"}
+        valid = set(room.participants)
+        new_items: list[dict] = []
+        for entry in items:
+            assignee = str(entry.get("assignee", "")).strip()
+            text = str(entry.get("text", "")).strip()
+            if not text:
+                continue
+            if assignee not in valid:
+                raise ValueError(t("room_manager.action_item_invalid_assignee", name=assignee))
+            status = "sent" if (assignee, text) in sent_keys else "draft"
+            new_items.append(
+                {
+                    "id": uuid.uuid4().hex[:12],
+                    "assignee": assignee,
+                    "text": text,
+                    "status": status,
+                }
+            )
+        room.action_items = new_items
+        self.save_room(room_id)
+        logger.info("Set %d action items for room %s", len(new_items), room_id)
+        return room
+
+    def dispatch_action_items(self, room_id: str, shared_dir: Path) -> int:
+        """Deliver unsent action items to each assignee's inbox (sender = chair).
+
+        Returns the number of items delivered.
+        """
+        from core.messenger import Messenger
+
+        room = self.get_room(room_id)
+        if room is None:
+            raise ValueError(t("room_manager.room_not_found", room_id=room_id))
+        if not room.chair:
+            raise ValueError(t("room_manager.chair_not_in_participants"))
+
+        sender = Messenger(Path(shared_dir), room.chair)
+        meeting_label = room.title or t("room_manager.untitled_meeting")
+        delivered = 0
+        woken: set[str] = set()
+        for item in room.action_items:
+            if item.get("status") == "sent":
+                continue
+            assignee = item.get("assignee", "")
+            text = item.get("text", "")
+            if not assignee or not text:
+                continue
+            content = t(
+                "room_manager.action_item_message",
+                meeting=meeting_label,
+                task=text,
+            )
+            msg = sender.send(
+                to=assignee,
+                content=content,
+                intent="meeting_action_item",
+                meta={"room_id": room_id, "meeting_title": meeting_label},
+            )
+            if getattr(msg, "type", "") == "error":
+                logger.warning("Action item delivery to %s blocked: %s", assignee, msg.content)
+                continue
+            item["status"] = "sent"
+            delivered += 1
+            woken.add(assignee)
+        # Writing to the inbox alone does not make an anima act; the supervisor's
+        # inbox-wake dispatcher only triggers process_inbox when a wake file
+        # exists at run/inbox_wake/{anima}.
+        self._wake_animas(Path(shared_dir), woken)
+        self.save_room(room_id)
+        logger.info("Dispatched %d action items for room %s", delivered, room_id)
+        return delivered
+
+    @staticmethod
+    def _wake_animas(shared_dir: Path, names: set[str]) -> None:
+        """Drop wake files so the supervisor triggers each anima's process_inbox."""
+        if not names:
+            return
+        wake_dir = shared_dir.parent / "run" / "inbox_wake"
+        try:
+            wake_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.warning("Failed to create inbox wake dir %s", wake_dir, exc_info=True)
+            return
+        for name in names:
+            try:
+                (wake_dir / name).write_text(name, encoding="utf-8")
+            except OSError:
+                logger.warning("Failed to write inbox wake file for %s", name, exc_info=True)
+
 
 # ── Helpers ────────────────────────────────────────────────
+
+
+def _parse_json_array(raw: str) -> list[dict]:
+    """Best-effort parse of an LLM response into a list of dicts."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+    start = text.find("[")
+    end = text.rfind("]")
+    if start == -1 or end == -1 or end < start:
+        return []
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [x for x in parsed if isinstance(x, dict)]
 
 
 def _sanitize_filename(s: str) -> str:
