@@ -288,6 +288,8 @@ class PrimingMixin:
         trigger: str,
         pending_human_notifications: str = "",
         thread_id: str = "default",
+        prompt_tier: str | None = None,
+        prompt_profile: str = "",
     ) -> str:
         """Ensure system prompt fits context window, shrinking budget if needed.
 
@@ -334,6 +336,8 @@ class PrimingMixin:
                 system_budget=reduced_budget,
                 pending_human_notifications="" if shrink <= 0.25 else pending_human_notifications,
                 thread_id=thread_id,
+                prompt_tier=prompt_tier,
+                prompt_profile=prompt_profile,
             )
             best_prompt = build_result.system_prompt
             new_sys_bytes = len(best_prompt.encode("utf-8"))
@@ -382,6 +386,8 @@ class PrimingMixin:
         context_window: int = 200_000,
         pending_human_notifications: str = "",
         thread_id: str = "default",
+        prompt_tier: str | None = None,
+        prompt_profile: str = "",
     ) -> tuple[str, str, bool]:
         """Check combined prompt size and shrink if necessary.
 
@@ -420,6 +426,8 @@ class PrimingMixin:
                     context_window=context_window,
                     pending_human_notifications=pending_human_notifications,
                     thread_id=thread_id,
+                    prompt_tier=prompt_tier,
+                    prompt_profile=prompt_profile,
                 ).system_prompt
             except Exception:
                 logger.exception("Forced compression failed")
