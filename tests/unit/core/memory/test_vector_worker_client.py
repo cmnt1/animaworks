@@ -182,3 +182,36 @@ def test_http_vector_store_suspends_writes_after_worker_circuit_429(monkeypatch)
     assert store.upsert("sora_knowledge", [Document(id="d1", content="c", embedding=[0.1])]) is False
     assert store.upsert("sora_knowledge", [Document(id="d2", content="c", embedding=[0.2])]) is False
     assert client.calls == 1
+
+
+def test_http_vector_store_suspends_writes_after_worker_unavailable_503() -> None:
+    class FakeResponse:
+        status_code = 503
+        text = "worker unavailable"
+        headers: dict[str, str] = {}
+
+        def raise_for_status(self) -> None:
+            import httpx
+
+            raise httpx.HTTPStatusError("503", request=MagicMock(), response=MagicMock(status_code=503))
+
+        def json(self) -> dict[str, str]:
+            return {"detail": "Vector worker unavailable"}
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def post(self, path, json):
+            self.calls += 1
+            return FakeResponse()
+
+    client = FakeClient()
+    store = HttpVectorStore("http://vector", anima_name="sora")
+    store._client = client  # noqa: SLF001
+
+    doc = Document(id="d1", content="c", embedding=[0.1])
+
+    assert store.upsert("sora_knowledge", [doc]) is False
+    assert store.upsert("sora_knowledge", [doc]) is False
+    assert client.calls == 1
