@@ -78,4 +78,4 @@ Obsidian Vault 配下の md ノートの frontmatter や本文を編集する際
 - **インプレース更新**: 既存キーは値を書き換える。**同じキーを追記して重複させない**（`status:` を2行にする等は YAML 不正でパース不能になる）。
 - **UTF-8（BOM なし）を保持**: Windows PowerShell の `Set-Content` / `Add-Content` を素（`-Encoding utf8` 無し）で使わない。既定で cp932/ANSI で書かれて文字化けする（例: 「カテゴリ」→「繧ｫ繝・ざ繝ｪ」の cp932 二重エンコード破損）。必ず Python で `encoding="utf-8"`、または PowerShell 7 で `-Encoding utf8`（BOM なし UTF-8）を明示する。**読み込みも同様に encoding を明示する**（既定 cp932 で UTF-8 ファイルを読むと読み込み時点で文字化けする）。
 - **書き換え後は読み直して検証**: `type: product` / `カテゴリ` / `is_root` 等の必須キーが1個だけ残り、日本語（frontmatter のキーと値）が化けていないことを確認する。
-- 定型レポートの昇格・投稿、タスクノートの計画反映は、可能なら手編集ではなく確定的スクリプト（生成ジョブと同系統、`encoding="utf-8"` 固定）を使う。
+- 定型レポートの昇格・投稿、タスクノートの計画反映は、可能なら手編集ではなく確定的スクリプト（生成ジョブと同系統、`encoding="utf-8"` 固定）を使う。**`_notes/Projects/` タスクノートの frontmatter 書き戻し（「次アクション期限」「今週タスク」等）は `python scripts/update_task_note.py --note <パス> --set "キー=値"` を使うこと** — インプレース更新・BOM なし UTF-8（LF）・書き込み後の mojibake 検証（失敗時は非ゼロ終了）まで自動で行う。手書きの上書きは避ける。

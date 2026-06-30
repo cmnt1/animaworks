@@ -388,11 +388,17 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
         logger.debug("Failed to rotate daemon log before spawn: %s", log_path, exc_info=True)
     log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
 
+    # Belt-and-suspenders against cp932-default file I/O on JP Windows: force the
+    # daemon (and any subprocess it spawns) into Python UTF-8 mode so a stray
+    # encoding-less open()/read_text() can't double-encode Obsidian notes. Code
+    # paths still pin encoding="utf-8" explicitly; this is a backstop, not the fix.
+    daemon_env = {**os.environ, "PYTHONUTF8": "1"}
     proc = subprocess.Popen(
         cmd,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         cwd=Path(__file__).resolve().parent.parent.parent,
+        env=daemon_env,
         **subprocess_session_kwargs(),
     )
     log_file.close()
