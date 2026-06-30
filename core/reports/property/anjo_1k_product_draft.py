@@ -265,8 +265,7 @@ def build_roof_tree_section(data: dict) -> tuple[str, str]:
     if count and listings:
         top = listings[0]
         summary_line = (
-            f"\n- ROOF TREE該当: **{count}件**"
-            f"（予測比 差額 {signed(top.get('diff_vs_predicted'), '円')}・負=割安）"
+            f"\n- ROOF TREE該当: **{count}件**（予測比 差額 {signed(top.get('diff_vs_predicted'), '円')}・負=割安）"
         )
         rows = "\n".join(
             f"| {x.get('rank')} | {x.get('bname')} | {yen(x.get('base_rent'))}円 "
@@ -281,10 +280,7 @@ def build_roof_tree_section(data: dict) -> tuple[str, str]:
         decomp_groups = hm.get("decomp_groups") or ["面積", "築年", "設備", "駅力", "徒歩分", "その他"]
         decomp_rows = "\n".join(
             f"| {x.get('bname')} | {yen((x.get('decomposition') or {}).get('基準'))}円 "
-            + "".join(
-                f"| {signed((x.get('decomposition') or {}).get(g), '円')} "
-                for g in decomp_groups
-            )
+            + "".join(f"| {signed((x.get('decomposition') or {}).get(g), '円')} " for g in decomp_groups)
             + f"| {yen(x.get('predicted_rent'))}円 | {yen(x.get('rent_total'))}円 "
             f"| {signed(x.get('diff_vs_predicted'), '円')} |"
             for x in listings
