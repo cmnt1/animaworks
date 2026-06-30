@@ -246,6 +246,130 @@ def build_comments(data: dict) -> list[str]:
     return comments
 
 
+def pct(value: object) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, (int, float)):
+        return f"{value:+.1f}%"
+    return f"{value}"
+
+
+def build_roof_tree_section(data: dict) -> tuple[str, str]:
+    """Return (summary_line, section) for own-property (ROOF TREE) monitoring."""
+    roof = data.get("roof_tree")
+    if not roof:
+        return "", ""
+    count = roof.get("count") or 0
+    listings = roof.get("listings") or []
+    mref = roof.get("market_ref") or {}
+    if count and listings:
+        top = listings[0]
+        summary_line = (
+            f"\n- ROOF TREE該当: **{count}件**"
+            f"（予測比 差額 {signed(top.get('diff_vs_predicted'), '円')}・負=割安）"
+        )
+        rows = "\n".join(
+            f"| {x.get('rank')} | {x.get('bname')} | {yen(x.get('base_rent'))}円 "
+            f"| {yen(x.get('cmn_fee'))}円 | {yen(x.get('rent_total'))}円 | {yen(x.get('ocu_area'))}㎡ "
+            f"| {yen(x.get('unit_price'))}円/㎡ | {yen(x.get('predicted_rent'))}円 "
+            f"| {signed(x.get('diff_vs_predicted'), '円')} | {pct(x.get('dev_vs_mean_pct'))} "
+            f"| {pct(x.get('dev_vs_median_pct'))} | {x.get('baddress') or '-'} "
+            f"| {x.get('bage') or '-'} | {x.get('floor') or '-'} |"
+            for x in listings
+        )
+        hm = roof.get("hedonic_model") or {}
+        decomp_groups = hm.get("decomp_groups") or ["面積", "築年", "設備", "駅力", "徒歩分", "その他"]
+        decomp_rows = "\n".join(
+            f"| {x.get('bname')} | {yen((x.get('decomposition') or {}).get('基準'))}円 "
+            + "".join(
+                f"| {signed((x.get('decomposition') or {}).get(g), '円')} "
+                for g in decomp_groups
+            )
+            + f"| {yen(x.get('predicted_rent'))}円 | {yen(x.get('rent_total'))}円 "
+            f"| {signed(x.get('diff_vs_predicted'), '円')} |"
+            for x in listings
+        )
+        section = f"""
+## ROOF TREE 自社物件モニタリング
+
+- 抽出条件: 物件名に「{roof.get("match_term")}」を含む（{roof.get("normalization")}）
+- 該当件数: **{count}件**
+- 賃料/割安度の定義: {roof.get("rent_basis")}
+- 市場参照（最新日・賃料合計ベース）: 平均単価 {yen(mref.get("mean_unit_price"))}円/㎡ ・ 中央値単価 {yen(mref.get("median_unit_price"))}円/㎡
+
+| 順位 | 物件名 | 家賃 | 管理費 | 賃料合計 | 専有面積 | 単価 | 予測賃料 | 差額(賃料合計−予測) | 対平均乖離 | 対中央値乖離 | 所在地 | 築年数 | 階 |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|
+{rows}
+
+### 予測賃料の成分分解（ヘドニックモデル）
+- モデル: {hm.get("method") or "-"}（{hm.get("model_artifact") or "-"}）
+- 学習精度: R²={hm.get("r2")} ／ 学習サンプル {yen(hm.get("n_samples"))}件 ／ 設備ダミー {hm.get("n_amenity_cols")}列
+- 予測賃料を「基準（切片）＋面積・築年・設備・駅力・徒歩分・その他」の各成分の寄与額（円）に分解しています。各成分は最寄駅・徒歩分・専有面積・築年数・設備の各説明変数の係数寄与です。
+
+| 物件名 | 基準 | 面積 | 築年 | 設備 | 駅力 | 徒歩分 | その他 | 予測賃料(推定) | 実賃料合計 | 差額 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+{decomp_rows}
+
+- {hm.get("note") or ""}
+- 差額（賃料合計−予測）が負に大きいほどモデル比割安。魅力度順位は差額の昇順。
+"""
+    else:
+        summary_line = "\n- ROOF TREE該当: **0件**（当日データに該当物件なし）"
+        section = f"""
+## ROOF TREE 自社物件モニタリング
+
+- 抽出条件: 物件名に「{roof.get("match_term")}」を含む（{roof.get("normalization")}）
+- 該当件数: **0件**（{data.get("latest_date")} 時点で安城市1Kに該当物件は掲載されていません）
+"""
+    return summary_line, section
+
+
+def build_minimini_listing_section(minimini: dict) -> str:
+    """Return a newest-first MINIMINI room listing table (own properties highlighted)."""
+    listings = (minimini or {}).get("listings") or {}
+    rooms = listings.get("rooms") or []
+    if not rooms:
+        return ""
+
+    def cell(value: object) -> str:
+        if value is None or value == "":
+            return "-"
+        return str(value).replace("|", "\\|")
+
+    rows = []
+    for i, r in enumerate(rooms, 1):
+        own = r.get("is_own")
+        name = cell(r.get("bname"))
+        name = f"**【自社】{name}**" if own else name
+        detail = r.get("detail_url")
+        detail_cell = f"[詳細]({detail})" if detail else "-"
+        rows.append(
+            f"| {i} | {name} | {cell(r.get('address'))} | {cell(r.get('station'))} "
+            f"| {cell(r.get('floor'))} | {cell(r.get('rent'))} | {cell(r.get('mgmt_fee'))} "
+            f"| {cell(r.get('deposit'))} | {cell(r.get('key_money'))} | {cell(r.get('layout'))} "
+            f"| {cell(r.get('area'))} | {cell(r.get('parking'))} | {cell(r.get('move_in'))} | {detail_cell} |"
+        )
+    body = "\n".join(rows)
+    enriched = listings.get("parking_enriched") or {}
+    park_note = ""
+    if enriched:
+        park_note = (
+            f"\n- 駐車場は各物件の詳細ページから取得"
+            f"（取得 {enriched.get('fetched', 0)}件／失敗 {enriched.get('failed', 0)}件）。"
+            f"「◯◯円」=敷地内月額、「近隣」=近隣斡旋、「無」=なし、空欄=未取得。"
+        )
+    return f"""
+
+### minimini掲載一覧（{listings.get("sort", "新着順")}）
+- 建物数: **{listings.get("building_count")}棟** ／ 部屋数: **{listings.get("room_count")}件**（うち自社 {listings.get("own_room_count", 0)}件）
+- 並び順はページ既定の新着順（掲載順）。自社物件（{listings.get("own_term")}）は **【自社】** で強調。{park_note}
+
+| 新着順 | 建物名 | 所在地 | 最寄駅 | 階数 | 賃料 | 管理費 | 敷金 | 礼金 | 間取り | 専有面積 | 駐車場 | 入居可能時期 | 詳細 |
+|---:|---|---|---|---|---:|---:|---|---|---|---:|---|---|---|
+{body}
+"""
+
+
 def render_markdown(
     product_id: int,
     code: str,
@@ -297,7 +421,10 @@ def render_markdown(
 | 取得方法 | {minimini.get("method", "-")} |
 | 取得URL | {minimini.get("url", "-")} |
 | HTTPステータス | {minimini.get("http_status", "-")} |
-"""
+{build_minimini_listing_section(minimini)}"""
+
+    # ROOF TREE (own-property) section
+    roof_summary_line, roof_section = build_roof_tree_section(data)
 
     markdown = f"""---
 type: product
@@ -339,7 +466,7 @@ formal_evidence_path: {evidence_path}
 - 平均坪単価: **{yen(unit["latest"]["mean"])}円/坪**（前日比 {signed(unit["change_mean"], "円/坪")}）
 - 中央値坪単価: **{yen(unit["latest"]["median"])}円/坪**
 - 掲載日数中央値: **{vac["median_obs_days"]}日**
-- 7日以上掲載比率: **{vac["pct_listings_7plus_days"]}%**{minimini_summary_line}
+- 7日以上掲載比率: **{vac["pct_listings_7plus_days"]}%**{minimini_summary_line}{roof_summary_line}
 
 ## 主要指標（最新日 vs 前日）
 | 指標 | 最新日（{d}） | 前日（{prev}） | 前日比 |
@@ -357,7 +484,7 @@ formal_evidence_path: {evidence_path}
 
 ## コメント
 {comments}
-{minimini_section}
+{minimini_section}{roof_section}
 ## データソース
 - 参照JSON: `{source_json}`
 - Obsidian格納JSON: `{copy_json}`
