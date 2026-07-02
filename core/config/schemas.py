@@ -507,6 +507,7 @@ class ExternalMessagingChannelConfig(BaseModel):
     auto_response: bool = False  # auto-post LLM responses back to originating platform
     board_mapping: dict[str, str] = {}  # channel_id → animaworks_board_name (auto-populated)
     board_outbound_sync: list[str] = []  # board names to sync outbound to this platform (whitelist)
+    board_outbound_sync_all: bool = False  # when whitelist is empty, opt in to syncing all mapped boards
     guild_id: str = ""  # Discord guild snowflake ID (Discord only)
     channel_members: dict[str, list[str]] = {}  # channel_id → [anima_name, ...] (Discord only)
 

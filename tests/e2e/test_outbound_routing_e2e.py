@@ -13,6 +13,7 @@ import pytest
 
 from core.config.models import (
     AnimaWorksConfig,
+    ExternalMessagingChannelConfig,
     ExternalMessagingConfig,
     UserAliasConfig,
     save_config,
@@ -207,6 +208,44 @@ class TestSendMessageToAlias:
         # Fallback guidance: plain text instead of JSON error
         assert "nobody" in result
         assert "send_message で送信できません" in result
+
+
+# ── TestBoardSlackSyncRouting ────────────────────────────
+
+
+class TestBoardSlackSyncRouting:
+    def test_post_channel_empty_outbound_sync_does_not_call_slack(
+        self,
+        make_anima,
+        make_handler,
+    ):
+        cfg = AnimaWorksConfig(
+            external_messaging=ExternalMessagingConfig(
+                slack=ExternalMessagingChannelConfig(
+                    enabled=True,
+                    board_mapping={"CWARNING": "warning-room"},
+                    board_outbound_sync=[],
+                    board_outbound_sync_all=False,
+                )
+            )
+        )
+        cfg.heartbeat.channel_post_cooldown_s = 0
+        sakura_dir = make_anima("sakura")
+        handler = make_handler(sakura_dir)
+
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.outbound_auto._resolve_bot_token") as mock_token,
+            patch("core.outbound_auto.httpx.AsyncClient") as mock_client,
+        ):
+            result = handler.handle(
+                "post_channel",
+                {"channel": "warning-room", "text": "internal only"},
+            )
+
+        assert result == "Posted to #warning-room"
+        mock_token.assert_not_called()
+        mock_client.assert_not_called()
 
 
 # ── TestRobustRecipientHandling ──────────────────────────

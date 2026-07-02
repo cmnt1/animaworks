@@ -10,7 +10,10 @@ from unittest.mock import patch
 
 import pytest
 
-from core.config.models import ExternalMessagingConfig, UserAliasConfig
+from core.config.models import (
+    ExternalMessagingConfig,
+    UserAliasConfig,
+)
 from core.exceptions import RecipientNotFoundError
 from core.outbound import (
     ResolvedRecipient,
@@ -19,7 +22,6 @@ from core.outbound import (
     resolve_recipient,
     send_external,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────
 
@@ -360,6 +362,7 @@ class TestExternalMessagingConfig:
         assert cfg.preferred_channel == "slack"
         assert cfg.user_aliases == {}
         assert cfg.slack.enabled is True
+        assert cfg.slack.board_outbound_sync_all is False
 
     def test_full_round_trip(self):
         cfg = ExternalMessagingConfig(

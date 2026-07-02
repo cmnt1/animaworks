@@ -336,7 +336,11 @@ class BoardSlackSync:
         if not slack_cfg.enabled:
             return None
 
-        if slack_cfg.board_outbound_sync and board_name not in slack_cfg.board_outbound_sync:
+        outbound_whitelist = getattr(slack_cfg, "board_outbound_sync", [])
+        if outbound_whitelist:
+            if board_name not in outbound_whitelist:
+                return None
+        elif not getattr(slack_cfg, "board_outbound_sync_all", False):
             return None
 
         # Reverse lookup: board_name -> slack_channel_id
