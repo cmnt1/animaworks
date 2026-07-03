@@ -192,6 +192,25 @@ def get_memory_llm_kwargs_for_model(
     ``openai/deepseek-v4-flash``. Existing provider-prefixed ids are preserved.
     """
     kwargs = get_llm_kwargs_for_model(model, credential=credential)
+
+    # Memory-pipeline callers default their model to
+    # ``anima_defaults.background_model`` without threading a credential.  When
+    # that model is served by a custom gateway (e.g. vllm-lb), provider-prefix
+    # resolution yields no usable key/endpoint, so fall back to
+    # ``anima_defaults.background_credential`` — mirroring the consolidation
+    # credential special-case in get_llm_kwargs_for_model.
+    if not credential and not kwargs.get("api_key") and not kwargs.get("api_base"):
+        try:
+            from core.config import load_config
+
+            defaults = load_config().anima_defaults
+            bg_model = getattr(defaults, "background_model", None)
+            bg_cred = getattr(defaults, "background_credential", None)
+            if bg_cred and bg_model and str(kwargs.get("model") or "") == str(bg_model):
+                kwargs = get_llm_kwargs_for_model(model, credential=bg_cred)
+        except Exception:
+            logger.debug("background_credential fallback failed", exc_info=True)
+
     if llm_extra:
         kwargs.update(llm_extra)
 
@@ -666,6 +685,23 @@ async def one_shot_completion(
     guard = get_rate_guard()
     family = provider_family_of(resolved_model)
 
+    # codex/* models are served by the Codex CLI backend only — LiteLLM has no
+    # provider for them, so route straight to the Codex SDK stage instead of
+    # burning a guaranteed-failure LiteLLM attempt first.
+    if _is_codex_model(resolved_model):
+        if not _sdk_stage_guarded(guard, guard_key(family, "codex"), "one-shot", "Codex SDK"):
+            try:
+                return await _try_codex_sdk(
+                    prompt,
+                    system_prompt=system_prompt,
+                    model=resolved_model,
+                    max_tokens=max_tokens,
+                    llm_kwargs=llm_kwargs,
+                )
+            except Exception as e:
+                logger.warning("Codex SDK one-shot failed: %s", e)
+        return None
+
     # 1. Try LiteLLM (under the fleet rate guard, keyed on the LiteLLM realm)
     outcome, text = await _litellm_stage_with_guard(
         prompt,
@@ -730,6 +766,23 @@ async def one_shot_completion_with_model_config(
 
     guard = get_rate_guard()
     family = provider_family_of(resolved_model)
+
+    # codex/* models are Codex-CLI-only; skip the guaranteed-failure LiteLLM stage.
+    if _is_codex_model(resolved_model):
+        if not _sdk_stage_guarded(
+            guard, guard_key(family, "codex"), "active-model one-shot", "Codex SDK"
+        ):
+            try:
+                return await _try_codex_sdk(
+                    prompt,
+                    system_prompt=system_prompt,
+                    model=resolved_model,
+                    max_tokens=max_tokens,
+                    llm_kwargs=llm_kwargs,
+                )
+            except Exception as e:
+                logger.warning("Codex SDK active-model one-shot failed: %s", e)
+        return None
 
     outcome, text = await _litellm_stage_with_guard(
         prompt,

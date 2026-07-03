@@ -247,7 +247,7 @@ class TestOneShotCompletion:
     """Tests for one_shot_completion() and its fallback behavior."""
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
+    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
     @patch("core.memory._llm_utils._try_agent_sdk")
     @patch("core.memory._llm_utils._try_litellm")
     async def test_litellm_success(
@@ -410,20 +410,20 @@ class TestOneShotCompletion:
     @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
     @patch("core.memory._llm_utils._try_codex_sdk")
     @patch("core.memory._llm_utils._try_litellm")
-    async def test_codex_model_falls_back_to_codex_sdk(
+    async def test_codex_model_routes_directly_to_codex_sdk(
         self,
         mock_try_litellm: MagicMock,
         mock_try_codex_sdk: MagicMock,
         mock_get_kwargs: MagicMock,
     ) -> None:
+        """codex/* models skip the LiteLLM stage entirely (no provider exists)."""
         mock_get_kwargs.return_value = {"model": "codex/gpt-5.4-mini"}
-        mock_try_litellm.side_effect = RuntimeError("LiteLLM failed")
-        mock_try_codex_sdk.return_value = "Codex fallback text"
+        mock_try_codex_sdk.return_value = "Codex direct text"
 
         result = await llm_utils.one_shot_completion("Hi", model="codex/gpt-5.4-mini")
 
-        assert result == "Codex fallback text"
-        mock_try_litellm.assert_called_once()
+        assert result == "Codex direct text"
+        mock_try_litellm.assert_not_called()
         mock_try_codex_sdk.assert_called_once()
 
 
