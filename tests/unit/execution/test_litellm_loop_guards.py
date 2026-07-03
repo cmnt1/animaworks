@@ -146,9 +146,8 @@ class TestInLoopRetry:
 
     async def test_auth_error_raises_immediately(self, executor):
         mock = AsyncMock(side_effect=_AuthError("invalid api key"))
-        with patch("litellm.acompletion", mock):
-            with pytest.raises(LLMAPIError):
-                await executor.execute("test", system_prompt="sys")
+        with patch("litellm.acompletion", mock), pytest.raises(LLMAPIError):
+            await executor.execute("test", system_prompt="sys")
         assert mock.call_count == 1
 
     async def test_rate_error_reports_to_guard(self, executor, _mock_rate_guard):
@@ -162,9 +161,8 @@ class TestInLoopRetry:
 
     async def test_retry_budget_exhausted_raises(self, executor):
         mock = AsyncMock(side_effect=_RateLimitError("too many requests"))
-        with patch("litellm.acompletion", mock):
-            with pytest.raises(LLMAPIError):
-                await executor.execute("test", system_prompt="sys")
+        with patch("litellm.acompletion", mock), pytest.raises(LLMAPIError):
+            await executor.execute("test", system_prompt="sys")
         # 1 initial + MAX_LLM_RETRIES(3)
         assert mock.call_count == 4
 
@@ -331,9 +329,8 @@ class TestStreamingRetry:
         assert done and "Streamed answer" in done[0]["full_text"]
 
     async def test_error_after_first_yield_is_not_retried(self, ollama_executor):
-        from core.prompt.context import ContextTracker
-
         from core.exceptions import StreamDisconnectedError
+        from core.prompt.context import ContextTracker
 
         tc = make_tool_call("search_memory", {"query": "x"})
         resp_tool = make_litellm_response(content="working on it", tool_calls=[tc])
@@ -342,15 +339,15 @@ class TestStreamingRetry:
         with (
             patch("litellm.acompletion", mock),
             patch("core.execution._litellm_streaming.decorrelated_jitter", return_value=0.0),
+            pytest.raises(StreamDisconnectedError),
         ):
-            with pytest.raises(StreamDisconnectedError):
-                await self._collect(
-                    ollama_executor.execute_streaming(
-                        system_prompt="sys",
-                        prompt="test",
-                        tracker=ContextTracker(model="ollama/qwen3:8b"),
-                    )
+            await self._collect(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="test",
+                    tracker=ContextTracker(model="ollama/qwen3:8b"),
                 )
+            )
         # iteration 0 succeeded, iteration 1 failed once — no retry attempts
         # (pre-existing fail-fast behavior preserved after partial yield)
         assert mock.call_count == 2

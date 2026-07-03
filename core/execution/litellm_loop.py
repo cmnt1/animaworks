@@ -51,6 +51,7 @@ from core.execution._litellm_tools import (  # noqa: F401
 )
 from core.execution._session import build_continuation_prompt, handle_session_chaining
 from core.execution._streaming import try_parse_text_tool_call
+from core.execution.backoff import decorrelated_jitter
 from core.execution.base import (
     BaseExecutor,
     ExecutionResult,
@@ -58,7 +59,6 @@ from core.execution.base import (
     ToolCallRecord,
     strip_thinking_tags,
 )
-from core.execution.backoff import decorrelated_jitter
 from core.execution.error_classifier import FailoverReason, classify_llm_error, provider_family_of
 from core.execution.loop_guards import (
     EmptyResponseTracker,

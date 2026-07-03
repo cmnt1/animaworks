@@ -28,6 +28,7 @@ from core.execution._streaming import (
     stream_error_boundary,
     try_parse_text_tool_call,
 )
+from core.execution.backoff import decorrelated_jitter
 from core.execution.base import (
     RepetitionDetector,
     StreamingThinkFilter,
@@ -37,7 +38,6 @@ from core.execution.base import (
     strip_untagged_thinking,
     supports_streaming_tool_use,
 )
-from core.execution.backoff import decorrelated_jitter
 from core.execution.error_classifier import FailoverReason, classify_llm_error, provider_family_of
 from core.execution.loop_guards import LlmCallInterrupted, call_llm_with_retry
 from core.execution.rate_guard import get_rate_guard
