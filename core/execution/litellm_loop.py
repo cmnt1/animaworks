@@ -58,7 +58,7 @@ from core.execution.base import (
     ToolCallRecord,
     strip_thinking_tags,
 )
-from core.execution.error_classifier import FailoverReason, classify_llm_error, provider_family_of
+from core.execution.error_classifier import FailoverReason, classify_llm_error, guard_key, provider_family_of
 from core.execution.rate_guard import get_rate_guard
 from core.execution.reminder import (
     SystemReminderQueue,
@@ -155,16 +155,18 @@ class LiteLLMExecutor(
         max_iterations = max_turns_override or self._model_config.max_turns
 
         # Pre-flight rate-guard query.  This is observability-only: the session
-        # continues even when the family is guarded and relies on LiteLLM's own
+        # continues even when the realm is guarded and relies on LiteLLM's own
         # retries — the guard's job is fleet-wide suppression at the one-shot
-        # layer, not deferring Mode A cycles.
+        # layer, not deferring Mode A cycles.  Mode A authenticates with the API
+        # key, so it is keyed on the ``api`` realm.
         _guard_family = provider_family_of(self._model_config.model)
+        _guard_key = guard_key(_guard_family, "api")
         _guard = get_rate_guard()
-        _guard_blocked = _guard.blocked_remaining(_guard_family)
+        _guard_blocked = _guard.blocked_remaining(_guard_key)
         if _guard_blocked > 0:
             logger.info(
                 "A session start: %s rate-guarded for %.0fs (continuing; retries apply)",
-                _guard_family,
+                _guard_key,
                 _guard_blocked,
             )
 
@@ -238,7 +240,7 @@ class LiteLLMExecutor(
                 reason, hint = classify_llm_error(e, provider_family=_guard_family)
                 if reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
                     _guard.report_block(
-                        _guard_family,
+                        _guard_key,
                         hint.backoff_s or _guard.config.default_block_seconds,
                         reason.value,
                     )

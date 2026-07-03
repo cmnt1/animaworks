@@ -497,6 +497,21 @@ async def _try_codex_sdk(
 _MAX_INLINE_RETRY_WAIT_S = 15.0
 
 
+def _mode_s_realm() -> str:
+    """Resolve the Mode-S auth realm for guard keying (``max`` when unset).
+
+    Mirrors ``_build_sdk_env``'s ``config.anima_defaults.mode_s_auth`` lookup so
+    the one-shot Agent SDK stage is keyed on the same credential pool the SDK
+    actually authenticates against.
+    """
+    try:
+        from core.config import load_config
+
+        return load_config().anima_defaults.mode_s_auth or "max"
+    except Exception:
+        return "max"
+
+
 async def _litellm_stage_with_guard(
     prompt: str,
     *,
@@ -507,8 +522,12 @@ async def _litellm_stage_with_guard(
     log_prefix: str,
     guard: Any,
     family: str,
+    guard_key: str,
 ) -> tuple[str, str | None]:
     """Run the LiteLLM one-shot stage under the fleet rate guard.
+
+    ``guard_key`` is the ``<family>:api`` realm key used for guard queries and
+    reports; ``family`` is the coarse family passed to the classifier.
 
     Returns ``(outcome, text)`` where ``outcome`` is:
       - ``"success"`` — ``text`` is the completion.
@@ -520,9 +539,9 @@ async def _litellm_stage_with_guard(
     from core.execution.backoff import decorrelated_jitter
     from core.execution.error_classifier import FailoverReason, classify_llm_error
 
-    blocked = guard.blocked_remaining(family)
+    blocked = guard.blocked_remaining(guard_key)
     if blocked > 0:
-        logger.info("%s LiteLLM skipped: %s rate-guarded for %.0fs", log_prefix, family, blocked)
+        logger.info("%s LiteLLM skipped: %s rate-guarded for %.0fs", log_prefix, guard_key, blocked)
         return "fallback", None
 
     try:
@@ -547,7 +566,7 @@ async def _litellm_stage_with_guard(
     if reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
         cfg = guard.config
         # Report the full block to the fleet (report_block clamps to the max).
-        guard.report_block(family, hint.backoff_s or cfg.default_block_seconds, reason.value)
+        guard.report_block(guard_key, hint.backoff_s or cfg.default_block_seconds, reason.value)
         # Compute the wait once; retry in-process only when it fits the live
         # budget, otherwise fall back immediately.
         wait_s = hint.backoff_s if hint.backoff_s is not None else decorrelated_jitter(0.0)
@@ -567,7 +586,7 @@ async def _litellm_stage_with_guard(
                 retry_reason, retry_hint = classify_llm_error(retry_exc, provider_family=family)
                 if retry_reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
                     guard.report_block(
-                        family,
+                        guard_key,
                         retry_hint.backoff_s or cfg.default_block_seconds,
                         retry_reason.value,
                     )
@@ -598,16 +617,17 @@ async def _litellm_stage_with_guard(
     return "fallback", None
 
 
-def _sdk_stage_guarded(guard: Any, family: str, log_prefix: str, backend: str) -> bool:
-    """Return True when the SDK *backend* should be skipped (family guarded).
+def _sdk_stage_guarded(guard: Any, stage_key: str, log_prefix: str, backend: str) -> bool:
+    """Return True when the SDK *backend* should be skipped (realm guarded).
 
-    Aligns the one-shot chain with the "all backends guarded → None" edge case:
-    an Anthropic 429 must not be retried against the same shared credential via
-    the Agent SDK, nor an OpenAI block via the Codex SDK.
+    ``stage_key`` is the backend's own ``<family>:<realm>`` key: the Agent SDK
+    uses the Mode-S auth realm and the Codex SDK the ``codex`` realm, so an
+    API-key 429 does not skip an independently-authenticated SDK, while calls
+    sharing a realm still protect each other.
     """
-    blocked = guard.blocked_remaining(family)
+    blocked = guard.blocked_remaining(stage_key)
     if blocked > 0:
-        logger.info("%s %s skipped: %s rate-guarded for %.0fs", log_prefix, backend, family, blocked)
+        logger.info("%s %s skipped: %s rate-guarded for %.0fs", log_prefix, backend, stage_key, blocked)
         return True
     return False
 
@@ -640,13 +660,13 @@ async def one_shot_completion(
     llm_kwargs = get_llm_kwargs_for_model(model, credential=credential)
     resolved_model = llm_kwargs["model"]
 
-    from core.execution.error_classifier import provider_family_of
+    from core.execution.error_classifier import guard_key, provider_family_of
     from core.execution.rate_guard import get_rate_guard
 
     guard = get_rate_guard()
     family = provider_family_of(resolved_model)
 
-    # 1. Try LiteLLM (under the fleet rate guard)
+    # 1. Try LiteLLM (under the fleet rate guard, keyed on the API realm)
     outcome, text = await _litellm_stage_with_guard(
         prompt,
         system_prompt=system_prompt,
@@ -656,14 +676,17 @@ async def one_shot_completion(
         log_prefix="one-shot",
         guard=guard,
         family=family,
+        guard_key=guard_key(family, "api"),
     )
     if outcome == "success":
         return text
     if outcome == "terminal":
         return None
 
-    # 2. Try Agent SDK (Anthropic models only), unless the family is guarded.
-    if _is_anthropic_model(resolved_model) and not _sdk_stage_guarded(guard, family, "one-shot", "Agent SDK"):
+    # 2. Try Agent SDK (Anthropic models only), unless the Mode-S realm is guarded.
+    if _is_anthropic_model(resolved_model) and not _sdk_stage_guarded(
+        guard, guard_key(family, _mode_s_realm()), "one-shot", "Agent SDK"
+    ):
         try:
             return await _try_agent_sdk(
                 prompt,
@@ -674,7 +697,9 @@ async def one_shot_completion(
         except Exception as e:
             logger.warning("Agent SDK one-shot fallback also failed: %s", e)
 
-    if _is_codex_model(resolved_model) and not _sdk_stage_guarded(guard, family, "one-shot", "Codex SDK"):
+    if _is_codex_model(resolved_model) and not _sdk_stage_guarded(
+        guard, guard_key(family, "codex"), "one-shot", "Codex SDK"
+    ):
         try:
             return await _try_codex_sdk(
                 prompt,
@@ -700,7 +725,7 @@ async def one_shot_completion_with_model_config(
     llm_kwargs = get_llm_kwargs_for_model_config(model_config)
     resolved_model = llm_kwargs["model"]
 
-    from core.execution.error_classifier import provider_family_of
+    from core.execution.error_classifier import guard_key, provider_family_of
     from core.execution.rate_guard import get_rate_guard
 
     guard = get_rate_guard()
@@ -715,6 +740,7 @@ async def one_shot_completion_with_model_config(
         log_prefix="active-model one-shot",
         guard=guard,
         family=family,
+        guard_key=guard_key(family, "api"),
     )
     if outcome == "success":
         return text
@@ -722,7 +748,7 @@ async def one_shot_completion_with_model_config(
         return None
 
     if _is_anthropic_model(resolved_model) and not _sdk_stage_guarded(
-        guard, family, "active-model one-shot", "Agent SDK"
+        guard, guard_key(family, _mode_s_realm()), "active-model one-shot", "Agent SDK"
     ):
         try:
             return await _try_agent_sdk(
@@ -735,7 +761,7 @@ async def one_shot_completion_with_model_config(
             logger.warning("Agent SDK active-model one-shot fallback also failed: %s", e)
 
     if _is_codex_model(resolved_model) and not _sdk_stage_guarded(
-        guard, family, "active-model one-shot", "Codex SDK"
+        guard, guard_key(family, "codex"), "active-model one-shot", "Codex SDK"
     ):
         try:
             return await _try_codex_sdk(

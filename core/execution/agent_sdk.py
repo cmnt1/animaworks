@@ -120,7 +120,7 @@ from core.execution._sdk_stream import (  # noqa: F401
     process_stream_messages,
 )
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord
-from core.execution.error_classifier import provider_family_of
+from core.execution.error_classifier import guard_key, provider_family_of
 from core.execution.rate_guard import get_rate_guard
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import CHARS_PER_TOKEN, ContextTracker
@@ -308,18 +308,22 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         return (self._model_config.mode_s_auth or "max") == "max"
 
     def _rate_guard_preflight(self) -> None:
-        """Log when this model's family is rate-guarded (start-time suppression only).
+        """Log when this model's realm is rate-guarded (start-time suppression only).
 
-        The SDK owns its internal retries, so a guarded family does not defer
-        the session — this is observability so a fleet-wide throttle is visible
-        at session start.
+        The SDK owns its internal retries, so a guarded realm does not defer the
+        session — this is observability so a fleet-wide throttle is visible at
+        session start.  Keyed on the Mode-S auth realm the SDK authenticates
+        against (``max``/``api``/``bedrock``/``vertex``), which is independent of
+        the API-key ``api`` realm used by LiteLLM.
         """
         family = provider_family_of(self._model_config.model)
-        blocked = get_rate_guard().blocked_remaining(family)
+        realm = self._model_config.mode_s_auth or "max"
+        key = guard_key(family, realm)
+        blocked = get_rate_guard().blocked_remaining(key)
         if blocked > 0:
             logger.info(
                 "S session start: %s rate-guarded for %.0fs (continuing; SDK retries apply)",
-                family,
+                key,
                 blocked,
             )
 

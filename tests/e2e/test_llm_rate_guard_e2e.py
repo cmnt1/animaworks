@@ -96,21 +96,23 @@ async def test_rate_error_records_block_in_shared_file(shared_data_dir: Path) ->
     with patch("litellm.acompletion", mock), pytest.raises(LLMAPIError):
         await executor.execute("hello", system_prompt="sys")
 
+    # Mode A authenticates with the API key, so the block is keyed on the
+    # ``anthropic:api`` realm (not the Max-auth SDK realm).
     state = json.loads(_guard_file(shared_data_dir).read_text())
-    assert "anthropic" in state
-    assert state["anthropic"]["reason"] == "rate_limit"
-    assert state["anthropic"]["blocked_until"] > 0
+    assert "anthropic:api" in state
+    assert state["anthropic:api"]["reason"] == "rate_limit"
+    assert state["anthropic:api"]["blocked_until"] > 0
 
 
 async def test_guarded_family_start_continues_not_deferred(
     shared_data_dir: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # A peer process has already recorded a block.
+    # A peer process has already recorded a block on the API realm.
     from core.execution.rate_guard import get_rate_guard
 
-    get_rate_guard().report_block("anthropic", 300, "rate_limit")
-    assert get_rate_guard().blocked_remaining("anthropic") > 0
+    get_rate_guard().report_block("anthropic:api", 300, "rate_limit")
+    assert get_rate_guard().blocked_remaining("anthropic:api") > 0
 
     executor = _make_executor(shared_data_dir / "animas" / "yuki")
     resp = make_litellm_response(content="done")

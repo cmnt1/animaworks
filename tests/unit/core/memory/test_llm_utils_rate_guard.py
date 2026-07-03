@@ -45,6 +45,13 @@ def _no_backoff_sleep():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _fixed_mode_s_realm():
+    """Pin the Mode-S auth realm to ``max`` so SDK-stage keys are deterministic."""
+    with patch("core.memory._llm_utils._mode_s_realm", return_value="max"):
+        yield
+
+
 async def test_content_policy_returns_none_without_fallback(tmp_path: Path) -> None:
     guard = _make_guard(tmp_path)
     with (
@@ -59,9 +66,9 @@ async def test_content_policy_returns_none_without_fallback(tmp_path: Path) -> N
     mock_sdk.assert_not_called()
 
 
-async def test_rate_limit_reports_guard_and_skips_same_family_backends(tmp_path: Path) -> None:
-    # After a 429 the anthropic family is guarded, so the Agent SDK (same shared
-    # credential) must be skipped too — the "all backends guarded → None" case.
+async def test_api_rate_limit_does_not_block_mode_s_sdk(tmp_path: Path) -> None:
+    # The key requirement: a 429 on the API key (anthropic:api) must NOT block
+    # the independently-authenticated Agent SDK (anthropic:max).
     guard = _make_guard(tmp_path)
     mock_litellm = AsyncMock(side_effect=_ApiError("Too Many Requests", status_code=429))
     with (
@@ -72,16 +79,69 @@ async def test_rate_limit_reports_guard_and_skips_same_family_backends(tmp_path:
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
 
+    assert result == "sdk"
+    mock_sdk.assert_called_once()
+    assert mock_litellm.await_count == 2  # initial + one short-backoff retry
+    assert guard.blocked_remaining("anthropic:api") > 0
+    assert guard.blocked_remaining("anthropic:max") == 0.0
+
+
+async def test_prior_api_block_skips_litellm_but_runs_max_sdk(tmp_path: Path) -> None:
+    guard = _make_guard(tmp_path)
+    guard.report_block("anthropic:api", 300, "rate_limit")  # a peer already blocked the API realm
+    mock_litellm = AsyncMock(return_value="should-not-run")
+    with (
+        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
+        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+    ):
+        result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
+
+    assert result == "sdk"
+    mock_litellm.assert_not_called()
+    mock_sdk.assert_called_once()
+
+
+async def test_mode_s_realm_block_skips_agent_sdk(tmp_path: Path) -> None:
+    # Same-realm protection: a block on anthropic:max skips the Agent SDK stage.
+    guard = _make_guard(tmp_path)
+    guard.report_block("anthropic:max", 300, "rate_limit")
+    mock_litellm = AsyncMock(side_effect=RuntimeError("weird"))  # unknown → fall through to SDK stage
+    with (
+        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
+        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+    ):
+        result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
+
     assert result is None
+    assert mock_litellm.await_count == 1  # LiteLLM ran (api realm free)
+    mock_sdk.assert_not_called()          # but the max-realm SDK stage was skipped
+
+
+async def test_all_realms_guarded_returns_none(tmp_path: Path) -> None:
+    guard = _make_guard(tmp_path)
+    guard.report_block("anthropic:api", 300, "rate_limit")
+    guard.report_block("anthropic:max", 300, "rate_limit")
+    mock_litellm = AsyncMock(return_value="should-not-run")
+    with (
+        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
+        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+    ):
+        result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
+
+    assert result is None
+    mock_litellm.assert_not_called()
     mock_sdk.assert_not_called()
-    # Initial attempt + one short-backoff retry (jitter < 15s).
-    assert mock_litellm.await_count == 2
-    assert guard.blocked_remaining("anthropic") > 0
 
 
 async def test_large_retry_after_skips_inline_retry(tmp_path: Path) -> None:
-    # A Retry-After beyond the inline budget is reported to the fleet but the
-    # in-process retry is skipped (single attempt) to protect the live path.
+    # A Retry-After beyond the inline budget reports the full fleet block but
+    # skips the in-process retry; the SDK (max realm) still runs.
     guard = _make_guard(tmp_path)
     mock_litellm = AsyncMock(
         side_effect=_ApiError("Too Many Requests", status_code=429, headers={"retry-after": "300"})
@@ -94,10 +154,10 @@ async def test_large_retry_after_skips_inline_retry(tmp_path: Path) -> None:
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
 
-    assert result is None
+    assert result == "sdk"
     assert mock_litellm.await_count == 1  # no inline retry for a >15s wait
-    mock_sdk.assert_not_called()
-    assert guard.blocked_remaining("anthropic") > 60  # full (clamped) block, not the 60s default
+    mock_sdk.assert_called_once()
+    assert guard.blocked_remaining("anthropic:api") > 60  # full (clamped) block
 
 
 async def test_auth_error_logs_error_and_falls_back(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -111,34 +171,17 @@ async def test_auth_error_logs_error_and_falls_back(tmp_path: Path, caplog: pyte
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
 
-    # auth does not block the family, so the SDK fallback still runs.
+    # auth does not block any realm, so the SDK fallback still runs.
     assert result == "sdk"
     mock_sdk.assert_called_once()
-    assert guard.blocked_remaining("anthropic") == 0.0
+    assert guard.blocked_remaining("anthropic:api") == 0.0
     assert any(rec.levelno == logging.ERROR and "human attention" in rec.message for rec in caplog.records)
 
 
-async def test_second_process_skips_all_backends_when_guarded(tmp_path: Path) -> None:
+async def test_codex_realm_block_skips_codex_sdk(tmp_path: Path) -> None:
     guard = _make_guard(tmp_path)
-    guard.report_block("anthropic", 300, "rate_limit")  # a peer process already recorded it
-    mock_litellm = AsyncMock(return_value="should-not-run")
-    with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
-        patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
-    ):
-        result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
-
-    assert result is None
-    mock_litellm.assert_not_called()
-    mock_sdk.assert_not_called()
-
-
-async def test_codex_family_block_skips_codex_sdk(tmp_path: Path) -> None:
-    guard = _make_guard(tmp_path)
-    guard.report_block("openai", 300, "rate_limit")  # codex maps to the openai family
-    mock_litellm = AsyncMock(return_value="should-not-run")
+    guard.report_block("openai:codex", 300, "rate_limit")  # codex realm blocked
+    mock_litellm = AsyncMock(side_effect=RuntimeError("weird"))  # unknown → fall through to codex stage
     with (
         patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "codex/gpt-5.4-mini"}),
         patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
@@ -148,8 +191,8 @@ async def test_codex_family_block_skips_codex_sdk(tmp_path: Path) -> None:
         result = await llm_utils.one_shot_completion("hi", model="codex/gpt-5.4-mini")
 
     assert result is None
-    mock_litellm.assert_not_called()
-    mock_codex.assert_not_called()
+    assert mock_litellm.await_count == 1  # openai:api realm free, LiteLLM ran
+    mock_codex.assert_not_called()        # openai:codex realm blocked
 
 
 async def test_disabled_guard_does_not_record_block(tmp_path: Path) -> None:
@@ -164,7 +207,7 @@ async def test_disabled_guard_does_not_record_block(tmp_path: Path) -> None:
 
     assert result == "sdk"
     mock_sdk.assert_called_once()
-    assert guard.blocked_remaining("anthropic") == 0.0
+    assert guard.blocked_remaining("anthropic:api") == 0.0
     assert not (tmp_path / "guard.json").exists()
 
 
@@ -183,4 +226,4 @@ async def test_unknown_error_degrades_to_current_fallback(tmp_path: Path) -> Non
     # No same-backend retry for unknown; single attempt then fallback.
     assert mock_litellm.await_count == 1
     mock_sdk.assert_called_once()
-    assert guard.blocked_remaining("anthropic") == 0.0
+    assert guard.blocked_remaining("anthropic:api") == 0.0

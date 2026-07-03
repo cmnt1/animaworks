@@ -11,6 +11,7 @@ import pytest
 from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error,
+    guard_key,
     provider_family_of,
 )
 
@@ -65,6 +66,17 @@ class TestProviderFamily:
     def test_other_prefix_and_empty(self) -> None:
         assert provider_family_of("ollama/qwen2.5") == "ollama"
         assert provider_family_of("") == "unknown"
+
+
+class TestGuardKey:
+    def test_family_realm_composition(self) -> None:
+        assert guard_key("anthropic", "api") == "anthropic:api"
+        assert guard_key("anthropic", "max") == "anthropic:max"
+        assert guard_key("openai", "codex") == "openai:codex"
+
+    def test_api_and_mode_s_realms_are_distinct(self) -> None:
+        # The whole point of the realm split: same family, different keys.
+        assert guard_key("anthropic", "api") != guard_key("anthropic", "max")
 
 
 # ── classification matrix (12 reasons) ──────────────────────────────────────
