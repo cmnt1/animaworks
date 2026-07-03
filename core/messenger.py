@@ -573,10 +573,13 @@ class Messenger:
                 msg = Message(**data)
                 if known_animas is not None and msg.source == "anima" and msg.from_person not in known_animas:
                     logger.warning(
-                        "Ignoring inbox message with unknown from_person=%r in %s",
+                        "Quarantining inbox message with unknown from_person=%r in %s",
                         msg.from_person,
                         f,
                     )
+                    # Leaving the file in place makes has_unread() report True
+                    # forever, so the inbox watcher re-reads it every poll.
+                    self._quarantine_file(f)
                     continue
                 messages.append(msg)
             except Exception as e:
@@ -608,10 +611,13 @@ class Messenger:
                 msg = Message(**data)
                 if known_animas is not None and msg.source == "anima" and msg.from_person not in known_animas:
                     logger.warning(
-                        "Ignoring inbox message with unknown from_person=%r in %s",
+                        "Quarantining inbox message with unknown from_person=%r in %s",
                         msg.from_person,
                         f,
                     )
+                    # Leaving the file in place makes has_unread() report True
+                    # forever, so the inbox watcher re-reads it every poll.
+                    self._quarantine_file(f)
                     continue
                 items.append(InboxItem(msg=msg, path=f))
             except Exception:
