@@ -155,11 +155,15 @@ class UnifiedMemorySearch:
         )
 
         expanded = expand_query(query, reference_time=coerce_reference_time(reference_time))
+        # Sparse (BM25/keyword) query carries expanded ISO dates and lowercased
+        # tokens; dense (vector/graph) query keeps natural text plus quoted
+        # phrases only. See F19.
         search_query = expanded.search_text or query
+        dense_query = expanded.dense_text or query
         time_hint_start = time_start or expanded.time_hint_start
         time_hint_end = time_end or expanded.time_hint_end
         if entity_boost is None:
-            entity_boost = rag._build_entity_boost_config(search_query, settings)
+            entity_boost = rag._build_entity_boost_config(dense_query, settings)
         access_boost = None
         access_boost_builder = getattr(rag, "_build_access_boost_config", None)
         if callable(access_boost_builder):
@@ -172,7 +176,8 @@ class UnifiedMemorySearch:
 
         ranked_lists = self._collect_ranked_lists(
             rag,
-            search_query,
+            dense_query=dense_query,
+            sparse_query=search_query,
             scopes=scopes,
             pool_k=pool_k,
             entity_boost=entity_boost,
@@ -217,7 +222,7 @@ class UnifiedMemorySearch:
             cross_encoder_model=str(settings.get("cross_encoder_model", "cross-encoder/ms-marco-MiniLM-L-12-v2")),
         )
         result = pipeline.run(
-            search_query,
+            dense_query,
             ranked_lists,
             limit=offset + limit,
             pool_k=pool_k,
@@ -241,9 +246,19 @@ class UnifiedMemorySearch:
         }
 
         items = result.items[offset : offset + limit]
-        if min_score > 0.0:
+        # Only apply min_score to reranked results: after cross-encoder rerank
+        # the score is a CE logit that min_score is calibrated against. In RRF
+        # order the score is a tiny fusion value (~0.03 max) that min_score
+        # (default 0.3) would wipe out entirely; the confidence gate already
+        # guards quality there. See F2.
+        if min_score > 0.0 and self._rerank_was_applied(items):
             items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
         return items
+
+    @staticmethod
+    def _rerank_was_applied(items: list[dict[str, Any]]) -> bool:
+        """Match pipeline.py used_rerank: any cross-encoder row means reranked."""
+        return any(str(item.get("search_method", "")) == "cross_encoder" for item in items)
 
     def search_many(
         self,
@@ -322,21 +337,24 @@ class UnifiedMemorySearch:
     def _collect_ranked_lists(
         self,
         rag: Any,
-        query: str,
         *,
+        dense_query: str,
+        sparse_query: str,
         scopes: tuple[str, ...],
         pool_k: int,
         entity_boost: Any | None,
     ) -> list[list[dict[str, Any]]]:
+        # Vector and graph retrieval use the dense query; BM25-backed
+        # activity_log and keyword fallbacks use the sparse query. See F19.
         ranked_lists: list[list[dict[str, Any]]] = []
         vector_scopes = [scope for scope in scopes if scope != "activity_log"]
         for vector_scope in vector_scopes:
-            hits = self._vector_hits(rag, query, vector_scope, pool_k, entity_boost=entity_boost)
+            hits = self._vector_hits(rag, dense_query, vector_scope, pool_k, entity_boost=entity_boost)
             if hits:
                 ranked_lists.append(hits)
 
         if "episodes" in scopes:
-            graph_hits = self._graph_hits(rag, query, pool_k)
+            graph_hits = self._graph_hits(rag, dense_query, pool_k)
             if graph_hits:
                 ranked_lists.append(graph_hits)
 
@@ -344,7 +362,7 @@ class UnifiedMemorySearch:
             try:
                 activity_hits = search_activity_log(
                     self._anima_dir,
-                    query,
+                    sparse_query,
                     top_k=pool_k,
                     offset=0,
                 )
@@ -353,7 +371,7 @@ class UnifiedMemorySearch:
             except Exception:
                 logger.debug("Unified activity_log search failed", exc_info=True)
 
-        keyword_hits = self._keyword_hits(rag, query, vector_scopes, pool_k, entity_boost=entity_boost)
+        keyword_hits = self._keyword_hits(rag, sparse_query, vector_scopes, pool_k, entity_boost=entity_boost)
         if keyword_hits:
             ranked_lists.append(keyword_hits)
         return ranked_lists

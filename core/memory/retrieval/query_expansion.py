@@ -114,6 +114,7 @@ class ExpandedQuery:
     time_hint_end: str | None
     boost_phrases: tuple[str, ...] = ()
     bm25_extra: tuple[str, ...] = ()
+    dense_text: str = ""
 
 
 DateRangeFactory = Callable[[date, re.Match[str]], tuple[date, date]]
@@ -153,6 +154,11 @@ def expand_query(query: str, *, reference_time: datetime | None = None) -> Expan
     pieces.extend(boost_phrases)
     pieces.extend(bm25_extra)
     search_text = " ".join(part.strip() for part in pieces if part and part.strip())
+    # Dense (vector/graph) query keeps only the original text plus quoted
+    # phrases. Lowercased BM25 tokens and expanded ISO dates are sparse-only
+    # signals and would degrade embedding/cross-encoder relevance if mixed in.
+    dense_pieces = [original, *boost_phrases]
+    dense_text = " ".join(part.strip() for part in dense_pieces if part and part.strip())
     return ExpandedQuery(
         original=original,
         search_text=search_text,
@@ -160,6 +166,7 @@ def expand_query(query: str, *, reference_time: datetime | None = None) -> Expan
         time_hint_end=time_end,
         boost_phrases=boost_phrases,
         bm25_extra=bm25_extra,
+        dense_text=dense_text,
     )
 
 

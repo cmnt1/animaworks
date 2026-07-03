@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -122,6 +123,8 @@ _CJK_RANGES: tuple[tuple[int, int], ...] = (
 _WORD_RE = re.compile(r"[\w]+", re.UNICODE)
 LONGTERM_BM25_INDEX_FILE = "bm25_longterm_index.json"
 LONGTERM_BM25_DIRTY_FILE = "bm25_longterm_index.dirty"
+LONGTERM_BM25_REBUILD_MARKER_FILE = "bm25_longterm_index.rebuild"
+LONGTERM_BM25_REBUILD_COOLDOWN_SECONDS = 600.0
 LONGTERM_BM25_MEMORY_TYPES: tuple[str, ...] = ("knowledge", "episodes", "procedures")
 LONGTERM_BM25_SCHEMA_VERSION = 3
 _LONGTERM_BM25_CACHE: dict[Path, tuple[int, int, dict[str, Any]]] = {}
@@ -275,6 +278,52 @@ def clear_longterm_bm25_dirty(anima_dir: Path) -> None:
 def is_longterm_bm25_dirty(anima_dir: Path) -> bool:
     """Return True when writes have marked the persisted BM25 index stale."""
     return longterm_bm25_dirty_path(anima_dir).is_file()
+
+
+def longterm_bm25_rebuild_marker_path(anima_dir: Path) -> Path:
+    """Return the cooldown marker path recording the last rebuild attempt."""
+    return anima_dir / "state" / LONGTERM_BM25_REBUILD_MARKER_FILE
+
+
+def maybe_rebuild_dirty_longterm_bm25(
+    anima_dir: Path,
+    *,
+    cooldown_seconds: float = LONGTERM_BM25_REBUILD_COOLDOWN_SECONDS,
+) -> bool:
+    """Rebuild the long-term BM25 index on-demand when it is marked dirty.
+
+    Consumes the dirty marker that writes leave behind (F14). A rebuild runs
+    only when the index is dirty and at least ``cooldown_seconds`` have elapsed
+    since the last attempt. The attempt time is persisted as a marker file's
+    mtime so the cooldown survives process restarts and so repeated failures do
+    not trigger a rebuild on every search. On success the dirty marker is
+    cleared by ``rebuild_longterm_bm25_index``; on failure it is left in place
+    for a retry after the next cooldown window.
+
+    Returns True when a rebuild was attempted.
+    """
+    if not is_longterm_bm25_dirty(anima_dir):
+        return False
+    marker = longterm_bm25_rebuild_marker_path(anima_dir)
+    now = time.time()
+    try:
+        last_attempt = marker.stat().st_mtime
+    except OSError:
+        last_attempt = None
+    if last_attempt is not None and (now - last_attempt) < cooldown_seconds:
+        return False
+    # Record the attempt before rebuilding so a failing rebuild still respects
+    # the cooldown instead of retrying on every subsequent search.
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(marker, f"{now}\n")
+    except OSError:
+        logger.debug("Failed to write BM25 rebuild cooldown marker for %s", anima_dir, exc_info=True)
+    try:
+        rebuild_longterm_bm25_index(anima_dir)
+    except Exception:
+        logger.warning("On-demand long-term BM25 rebuild failed for %s", anima_dir.name, exc_info=True)
+    return True
 
 
 def rebuild_longterm_bm25_index(

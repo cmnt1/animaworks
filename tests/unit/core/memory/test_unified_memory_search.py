@@ -203,7 +203,12 @@ def test_query_expansion_uses_reference_time_and_filters_event_time(
         reference_time=datetime(2023, 5, 8, 12, 0, tzinfo=UTC),
     )
 
-    assert "2023-05-07" in fake_rag.vector_queries[0]
+    # F19: the expanded ISO date is a sparse-only signal. It reaches the
+    # keyword (BM25) query but must stay out of the dense vector query and the
+    # cross-encoder query the pipeline reranks against.
+    assert "2023-05-07" not in fake_rag.vector_queries[0]
+    assert "2023-05-07" in fake_rag.keyword_queries[0]
+    assert "2023-05-07" not in CapturingPipeline.calls[0]["query"]
     assert [item["doc_id"] for item in results] == ["inside"]
     assert CapturingPipeline.calls[0]["ranked_lists"][0][0]["doc_id"] == "inside"
 
@@ -245,6 +250,48 @@ def test_knowledge_bm25_keyword_list_is_merged_in_pipeline(
     ranked_lists = CapturingPipeline.calls[0]["ranked_lists"]
     assert any(item.get("search_method") == "bm25" for ranked_list in ranked_lists for item in ranked_list)
     assert fake_rag.keyword_scopes == ["knowledge"]
+
+
+def test_min_score_skipped_for_rrf_order_results(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # RRF-order results carry tiny fusion scores (~0.03 max). min_score=0.3 must
+    # not wipe them out when rerank did not run (F2).
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_returns["episodes"] = [{"doc_id": "seed", "content": "seed", "score": 0.1}]
+    CapturingPipeline.return_items = [
+        {"doc_id": "rrf-1", "content": "a", "score": 0.03, "search_method": "rrf"},
+        {"doc_id": "rrf-2", "content": "b", "score": 0.02, "search_method": "rrf"},
+    ]
+
+    results = _searcher(fake_rag).search(
+        "query", scope="episodes", limit=5, trigger="heartbeat", min_score=0.3
+    )
+
+    assert [item["doc_id"] for item in results] == ["rrf-1", "rrf-2"]
+
+
+def test_min_score_applied_to_reranked_results(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # After cross-encoder rerank the score is a CE logit that min_score is
+    # calibrated against, so the filter should still drop low-scoring rows (F2).
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_returns["episodes"] = [{"doc_id": "seed", "content": "seed", "score": 0.1}]
+    CapturingPipeline.return_items = [
+        {"doc_id": "ce-high", "content": "a", "score": 4.5, "search_method": "cross_encoder"},
+        {"doc_id": "ce-low", "content": "b", "score": 0.1, "search_method": "cross_encoder"},
+    ]
+
+    results = _searcher(fake_rag).search(
+        "query", scope="episodes", limit=5, trigger="chat", min_score=0.3
+    )
+
+    assert [item["doc_id"] for item in results] == ["ce-high"]
 
 
 def test_tool_and_priming_overlap_share_top_doc_ids(
