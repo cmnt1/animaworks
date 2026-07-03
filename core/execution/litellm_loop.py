@@ -58,6 +58,8 @@ from core.execution.base import (
     ToolCallRecord,
     strip_thinking_tags,
 )
+from core.execution.error_classifier import FailoverReason, classify_llm_error, provider_family_of
+from core.execution.rate_guard import get_rate_guard
 from core.execution.reminder import (
     SystemReminderQueue,
     msg_context_threshold,
@@ -151,6 +153,21 @@ class LiteLLMExecutor(
         all_tool_records: list[ToolCallRecord] = []
         llm_kwargs = self._build_llm_kwargs()
         max_iterations = max_turns_override or self._model_config.max_turns
+
+        # Pre-flight rate-guard query.  This is observability-only: the session
+        # continues even when the family is guarded and relies on LiteLLM's own
+        # retries — the guard's job is fleet-wide suppression at the one-shot
+        # layer, not deferring Mode A cycles.
+        _guard_family = provider_family_of(self._model_config.model)
+        _guard = get_rate_guard()
+        _guard_blocked = _guard.blocked_remaining(_guard_family)
+        if _guard_blocked > 0:
+            logger.info(
+                "A session start: %s rate-guarded for %.0fs (continuing; retries apply)",
+                _guard_family,
+                _guard_blocked,
+            )
+
         chain_count = 0
         usage_acc = TokenUsage()
         cleanup_gate_marker(self._anima_dir)
@@ -218,6 +235,13 @@ class LiteLLMExecutor(
             except LLMAPIError:
                 raise
             except Exception as e:
+                reason, hint = classify_llm_error(e, provider_family=_guard_family)
+                if reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
+                    _guard.report_block(
+                        _guard_family,
+                        hint.backoff_s or _guard.config.default_block_seconds,
+                        reason.value,
+                    )
                 logger.exception("LiteLLM API error")
                 raise LLMAPIError(f"LiteLLM API error: {e}") from e
 

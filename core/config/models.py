@@ -83,6 +83,7 @@ from core.config.schemas import (
     HumanNotificationConfig,
     ImageGenConfig,
     InboxConfig,
+    LlmRateGuardConfig,
     LocalLLMConfig,
     MachineConfig,
     MediaProxyConfig,

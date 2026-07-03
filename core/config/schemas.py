@@ -582,6 +582,14 @@ class ServerConfig(BaseModel):
         return self
 
 
+class LlmRateGuardConfig(BaseModel):
+    """Cross-process LLM rate guard settings (fleet-wide circuit breaker)."""
+
+    enabled: bool = True
+    default_block_seconds: int = Field(default=60, ge=0)
+    max_block_seconds: int = Field(default=600, ge=0)
+
+
 class BackgroundToolConfig(BaseModel):
     """Per-tool background execution threshold."""
 
@@ -999,6 +1007,7 @@ class AnimaWorksConfig(BaseModel):
     human_notification: HumanNotificationConfig = HumanNotificationConfig()
     interaction: InteractionConfig = InteractionConfig()
     server: ServerConfig = ServerConfig()
+    llm_rate_guard: LlmRateGuardConfig = LlmRateGuardConfig()
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
     background_task: BackgroundTaskConfig = BackgroundTaskConfig()
     activity_log: ActivityLogConfig = ActivityLogConfig()
@@ -1050,6 +1059,7 @@ __all__ = [
     "ImageGenConfig",
     "InboxConfig",
     "InteractionConfig",
+    "LlmRateGuardConfig",
     "LocalLLMConfig",
     "MachineConfig",
     "MediaProxyConfig",

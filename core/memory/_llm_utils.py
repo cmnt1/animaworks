@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -490,6 +491,93 @@ async def _try_codex_sdk(
                 logger.debug("Failed to close Codex one-shot client", exc_info=True)
 
 
+async def _litellm_stage_with_guard(
+    prompt: str,
+    *,
+    system_prompt: str,
+    resolved_model: str,
+    max_tokens: int,
+    llm_kwargs: dict[str, Any],
+    log_prefix: str,
+) -> tuple[str, str | None]:
+    """Run the LiteLLM one-shot stage under the fleet rate guard.
+
+    Returns ``(outcome, text)`` where ``outcome`` is:
+      - ``"success"`` — ``text`` is the completion.
+      - ``"terminal"`` — caller must return ``None`` (content-policy block; no
+        fallback, see Key Decision 7).
+      - ``"fallback"`` — caller proceeds to the next backend (current
+        blind-fallback behavior; used for skipped/blocked/rate/unknown paths).
+    """
+    from core.execution.backoff import decorrelated_jitter
+    from core.execution.error_classifier import (
+        FailoverReason,
+        classify_llm_error,
+        provider_family_of,
+    )
+    from core.execution.rate_guard import get_rate_guard
+
+    guard = get_rate_guard()
+    family = provider_family_of(resolved_model)
+
+    blocked = guard.blocked_remaining(family)
+    if blocked > 0:
+        logger.info("%s LiteLLM skipped: %s rate-guarded for %.0fs", log_prefix, family, blocked)
+        return "fallback", None
+
+    try:
+        result = await _try_litellm(
+            prompt,
+            system_prompt=system_prompt,
+            model=resolved_model,
+            max_tokens=max_tokens,
+            llm_kwargs=llm_kwargs,
+        )
+        if result:
+            return "success", result
+        return "fallback", None
+    except Exception as exc:
+        error = exc
+        reason, hint = classify_llm_error(exc, provider_family=family)
+
+    if reason is FailoverReason.CONTENT_POLICY:
+        logger.warning("%s LiteLLM one-shot content-policy block, not falling back: %s", log_prefix, error)
+        return "terminal", None
+
+    if reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
+        cfg = guard.config
+        guard.report_block(family, hint.backoff_s or cfg.default_block_seconds, reason.value)
+        if hint.retryable:
+            await asyncio.sleep(min(hint.backoff_s or decorrelated_jitter(0.0), 120.0))
+            try:
+                result = await _try_litellm(
+                    prompt,
+                    system_prompt=system_prompt,
+                    model=resolved_model,
+                    max_tokens=max_tokens,
+                    llm_kwargs=llm_kwargs,
+                )
+                if result:
+                    return "success", result
+            except Exception as retry_exc:
+                retry_reason, retry_hint = classify_llm_error(retry_exc, provider_family=family)
+                if retry_reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
+                    guard.report_block(
+                        family,
+                        retry_hint.backoff_s or cfg.default_block_seconds,
+                        retry_reason.value,
+                    )
+                logger.warning(
+                    "%s LiteLLM one-shot rate-limited on retry (%s), trying fallback",
+                    log_prefix,
+                    retry_reason.value,
+                )
+        return "fallback", None
+
+    logger.warning("%s LiteLLM one-shot failed (%s: %s), trying fallback", log_prefix, reason.value, error)
+    return "fallback", None
+
+
 async def one_shot_completion(
     prompt: str,
     *,
@@ -518,19 +606,19 @@ async def one_shot_completion(
     llm_kwargs = get_llm_kwargs_for_model(model, credential=credential)
     resolved_model = llm_kwargs["model"]
 
-    # 1. Try LiteLLM
-    try:
-        result = await _try_litellm(
-            prompt,
-            system_prompt=system_prompt,
-            model=resolved_model,
-            max_tokens=max_tokens,
-            llm_kwargs=llm_kwargs,
-        )
-        if result:
-            return result
-    except Exception as e:
-        logger.warning("LiteLLM one-shot failed (%s), trying Agent SDK fallback", e)
+    # 1. Try LiteLLM (under the fleet rate guard)
+    outcome, text = await _litellm_stage_with_guard(
+        prompt,
+        system_prompt=system_prompt,
+        resolved_model=resolved_model,
+        max_tokens=max_tokens,
+        llm_kwargs=llm_kwargs,
+        log_prefix="one-shot",
+    )
+    if outcome == "success":
+        return text
+    if outcome == "terminal":
+        return None
 
     # 2. Try Agent SDK (Anthropic models only)
     if _is_anthropic_model(resolved_model):
@@ -570,18 +658,18 @@ async def one_shot_completion_with_model_config(
     llm_kwargs = get_llm_kwargs_for_model_config(model_config)
     resolved_model = llm_kwargs["model"]
 
-    try:
-        result = await _try_litellm(
-            prompt,
-            system_prompt=system_prompt,
-            model=resolved_model,
-            max_tokens=max_tokens,
-            llm_kwargs=llm_kwargs,
-        )
-        if result:
-            return result
-    except Exception as e:
-        logger.warning("LiteLLM active-model one-shot failed (%s), trying SDK fallback", e)
+    outcome, text = await _litellm_stage_with_guard(
+        prompt,
+        system_prompt=system_prompt,
+        resolved_model=resolved_model,
+        max_tokens=max_tokens,
+        llm_kwargs=llm_kwargs,
+        log_prefix="active-model one-shot",
+    )
+    if outcome == "success":
+        return text
+    if outcome == "terminal":
+        return None
 
     if _is_anthropic_model(resolved_model):
         try:
