@@ -17,7 +17,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from core.memory.priming.utils import build_queries
+from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
 from core.time_utils import now_local
 
@@ -86,6 +86,7 @@ async def channel_f_episodes(
     message: str = "",
     recent_human_messages: list[str] | None = None,
     get_memory_backend: Callable[[], Any] | None = None,
+    trigger: str = "chat",
 ) -> str:
     """Channel F: Episode memory search (vector search).
 
@@ -93,6 +94,9 @@ async def channel_f_episodes(
     semantically relevant past experiences.  Complements Channel B
     (recent activity timeline) by looking further back in time and
     ranking by semantic similarity rather than recency alone.
+
+    ``trigger`` selects the retrieval policy (rerank/pool/scopes); it is
+    normalized to a ``TRIGGER_POLICIES`` key before use.
 
     When the active memory backend is Neo4j, uses ``retrieve()`` with a
     7-day ``time_start`` window so recent episodes are preferred.
@@ -168,13 +172,13 @@ async def channel_f_episodes(
         if not episodes_dir.is_dir():
             return ""
 
-        searcher = UnifiedMemorySearch(anima_dir)
+        searcher = await asyncio.to_thread(build_unified_searcher, anima_dir, get_retriever, UnifiedMemorySearch)
         results = await asyncio.to_thread(
             searcher.search_many,
             queries,
             scope="episodes",
             limit=5,
-            trigger="chat",
+            trigger=normalize_trigger(trigger),
             min_score=float(_min_score) if _min_score is not None else 0.0,
         )
         if bool(searcher.last_search_meta.get("abstain", False)):

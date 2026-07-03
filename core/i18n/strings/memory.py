@@ -161,6 +161,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "### 関連する知識",
         "en": "### Related Knowledge",
     },
+    "priming.search_before_action": {
+        "ja": "外部アクションを行う前に、search_memory で根拠を確認してください。",
+        "en": "Before taking any external action, verify the basis with search_memory.",
+    },
     "priming.section_intro": {
         "ja": "以下は、この会話に関連してあなたが自然に想起した記憶です。",
         "en": "Below are memories you naturally recalled relevant to this conversation.",

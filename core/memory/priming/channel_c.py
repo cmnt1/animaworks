@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE, _CHARS_PER_TOKEN
-from core.memory.priming.utils import build_queries
+from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
 from core.memory.search_metadata import format_result_metadata_line
 
@@ -126,25 +126,12 @@ def _build_unified_searcher(
     anima_dir: Path,
     get_retriever: Callable[[], MemoryRetriever | None],
 ) -> UnifiedMemorySearch:
-    """Build UnifiedMemorySearch, preserving injected retriever state for tests/runtime caches."""
-    try:
-        retriever = get_retriever()
-        indexer = getattr(retriever, "indexer", None) if retriever is not None else None
-        if indexer is not None:
-            from core.memory.rag_search import RAGMemorySearch
-            from core.paths import get_common_knowledge_dir, get_common_skills_dir
+    """Build UnifiedMemorySearch, preserving injected retriever state for tests/runtime caches.
 
-            rag_search = RAGMemorySearch(
-                anima_dir,
-                get_common_knowledge_dir(),
-                get_common_skills_dir(),
-            )
-            rag_search._indexer = indexer
-            rag_search._indexer_initialized = True
-            return UnifiedMemorySearch(anima_dir, rag_search=rag_search)
-    except Exception:
-        logger.debug("Channel C: failed to reuse injected retriever", exc_info=True)
-    return UnifiedMemorySearch(anima_dir)
+    Thin wrapper over the shared helper that binds this module's ``UnifiedMemorySearch``
+    reference so test-time patches on ``channel_c.UnifiedMemorySearch`` keep working.
+    """
+    return build_unified_searcher(anima_dir, get_retriever, UnifiedMemorySearch)
 
 
 async def channel_c0_important_knowledge(
@@ -223,11 +210,15 @@ async def channel_c_related_knowledge(
     keywords: list[str],
     message: str = "",
     recent_human_messages: list[str] | None = None,
+    trigger: str = "chat",
 ) -> tuple[str, str]:
     """Channel C: Related knowledge search through unified Legacy retrieval.
 
     Searches both personal knowledge and shared common_knowledge,
     merging results by score.
+
+    ``trigger`` selects the retrieval policy (rerank/pool/scopes); it is
+    normalized to a ``TRIGGER_POLICIES`` key before use.
 
     Returns a ``(medium_text, untrusted_text)`` tuple where results
     are split by their provenance-derived trust level.
@@ -257,7 +248,7 @@ async def channel_c_related_knowledge(
             queries,
             scope="common_knowledge",
             limit=5,
-            trigger="chat",
+            trigger=normalize_trigger(trigger),
             min_score=float(_min_score) if _min_score is not None else 0.0,
         )
         if bool(searcher.last_search_meta.get("abstain", False)):

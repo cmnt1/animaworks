@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -64,6 +65,10 @@ from core.memory.priming.utils import RetrieverCache, extract_keywords, truncate
 
 logger = logging.getLogger("animaworks.priming")
 
+# TTL (seconds) before a failed MemoryBackend init is retried once.  Prevents a
+# transient failure from permanently disabling graph/episode priming.
+_BACKEND_INIT_RETRY_TTL_SECONDS = 300.0
+
 
 class PrimingEngine:
     """Automatic memory priming engine.
@@ -101,6 +106,9 @@ class PrimingEngine:
         self._get_active_parallel_tasks: Callable[[], dict[str, dict]] | None = None
         self._memory_backend: Any | None = None
         self._memory_backend_init_failed = False
+        # Monotonic timestamp of the last failed backend init; ``None`` when the
+        # latch was set without a timestamp (e.g. tests) → treated as still latched.
+        self._memory_backend_init_failed_at: float | None = None
 
     def _get_or_create_retriever(self):
         """Get or create a retriever instance from the RetrieverCache."""
@@ -120,16 +128,26 @@ class PrimingEngine:
         if self._memory_backend is not None:
             return self._memory_backend
         if self._memory_backend_init_failed:
-            return None
+            failed_at = self._memory_backend_init_failed_at
+            if failed_at is None or (time.monotonic() - failed_at) < _BACKEND_INIT_RETRY_TTL_SECONDS:
+                return None
+            # TTL elapsed: fall through to attempt one re-initialization.
+        first_failure = not self._memory_backend_init_failed
         try:
             from core.memory.backend.registry import get_backend, resolve_backend_type
 
             backend_type = resolve_backend_type(self.anima_dir)
             self._memory_backend = get_backend(backend_type, self.anima_dir)
+            self._memory_backend_init_failed = False
+            self._memory_backend_init_failed_at = None
             return self._memory_backend
         except Exception:
-            logger.debug("Failed to init MemoryBackend for priming", exc_info=True)
+            if first_failure:
+                logger.warning("Failed to init MemoryBackend for priming", exc_info=True)
+            else:
+                logger.debug("Failed to init MemoryBackend for priming (retry)", exc_info=True)
             self._memory_backend_init_failed = True
+            self._memory_backend_init_failed_at = time.monotonic()
             return None
 
     def _load_config_budgets(self) -> None:
@@ -244,6 +262,7 @@ class PrimingEngine:
             keywords,
             message=effective_message,
             recent_human_messages=recent_human_messages,
+            trigger=channel,
         )
 
         results = await asyncio.gather(
@@ -262,6 +281,7 @@ class PrimingEngine:
                     keywords,
                     message=message,
                     recent_human_messages=recent_human_messages,
+                    trigger=channel,
                 ),
             ),
             self._run_priming_channel(
@@ -393,6 +413,7 @@ class PrimingEngine:
         keywords: list[str],
         message: str = "",
         recent_human_messages: list[str] | None = None,
+        trigger: str = "chat",
     ) -> tuple[str, str]:
         return await _channel_c.channel_c_related_knowledge(
             self.anima_dir,
@@ -401,6 +422,7 @@ class PrimingEngine:
             keywords,
             message=message,
             recent_human_messages=recent_human_messages,
+            trigger=trigger,
         )
 
     async def _channel_e_pending_tasks(self) -> str:
@@ -418,6 +440,7 @@ class PrimingEngine:
         *,
         message: str = "",
         recent_human_messages: list[str] | None = None,
+        trigger: str = "chat",
     ) -> str:
         return await _channel_f.channel_f_episodes(
             self.anima_dir,
@@ -427,6 +450,7 @@ class PrimingEngine:
             message=message,
             recent_human_messages=recent_human_messages,
             get_memory_backend=self._get_memory_backend,
+            trigger=trigger,
         )
 
     async def _collect_pending_human_notifications(self, *, channel: str = "") -> str:
