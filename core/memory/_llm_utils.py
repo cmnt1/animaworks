@@ -769,9 +769,7 @@ async def one_shot_completion_with_model_config(
 
     # codex/* models are Codex-CLI-only; skip the guaranteed-failure LiteLLM stage.
     if _is_codex_model(resolved_model):
-        if not _sdk_stage_guarded(
-            guard, guard_key(family, "codex"), "active-model one-shot", "Codex SDK"
-        ):
+        if not _sdk_stage_guarded(guard, guard_key(family, "codex"), "active-model one-shot", "Codex SDK"):
             try:
                 return await _try_codex_sdk(
                     prompt,

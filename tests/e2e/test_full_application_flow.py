@@ -669,7 +669,8 @@ async def test_conversation_finalization_creates_episode(full_anima_environment,
 
     # Verify conversation content was encoded
     # Note: [AUTO-ENCODED] tag may be added in future; test accepts with or without
-    assert "task X" in content.lower() or "help" in content.lower() or "サポート" in content
+    content_lower = content.lower()
+    assert "task x" in content_lower or "help" in content_lower or "サポート" in content
 
 
 @pytest.mark.asyncio

@@ -4,12 +4,11 @@ Verifies that broad `except Exception` catches have been replaced with
 specific custom exceptions from core.exceptions, preserving the correct
 behavior for both normal and error paths.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-
-from core.time_utils import today_local
 
 import pytest
 
@@ -20,7 +19,7 @@ from core.exceptions import (
     MemoryWriteError,
     ToolExecutionError,
 )
-
+from core.time_utils import today_local
 
 # ── Layer 1: Execution ──────────────────────────────────────────────
 
@@ -31,15 +30,20 @@ class TestAssistedExecutorErrorHandling:
     @pytest.fixture
     def assisted_executor(self, data_dir: Path, make_anima):
         anima_dir = make_anima(
-            "test-b", model="ollama/gemma3:27b",
-            execution_mode="assisted", max_turns=5,
+            "test-b",
+            model="ollama/gemma3:27b",
+            execution_mode="assisted",
+            max_turns=5,
         )
         from core.memory import MemoryManager
+
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()
         from core.tooling.handler import ToolHandler
+
         tool_handler = ToolHandler(anima_dir=anima_dir, memory=memory)
         from core.execution.assisted import AssistedExecutor
+
         return AssistedExecutor(
             model_config=model_config,
             anima_dir=anima_dir,
@@ -50,20 +54,28 @@ class TestAssistedExecutorErrorHandling:
     @pytest.mark.asyncio
     async def test_llm_error_raises_execution_error(self, assisted_executor):
         """Generic Exception from LLM should be wrapped in ExecutionError."""
-        with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API timeout")):
-            with pytest.raises(ExecutionError, match="API timeout"):
-                await assisted_executor.execute(
-                    prompt="test", system_prompt="test",
-                )
+        with (
+            patch("core.execution.assisted.decorrelated_jitter", return_value=0.0),
+            patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API exploded")),
+            pytest.raises(ExecutionError, match="API exploded"),
+        ):
+            await assisted_executor.execute(
+                prompt="test",
+                system_prompt="test",
+            )
 
     @pytest.mark.asyncio
     async def test_llm_api_error_propagates(self, assisted_executor):
         """LLMAPIError should propagate unchanged."""
-        with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=LLMAPIError("rate limited")):
-            with pytest.raises(LLMAPIError, match="rate limited"):
-                await assisted_executor.execute(
-                    prompt="test", system_prompt="test",
-                )
+        with (
+            patch("core.execution.assisted.decorrelated_jitter", return_value=0.0),
+            patch("litellm.acompletion", new_callable=AsyncMock, side_effect=LLMAPIError("provider failed")),
+            pytest.raises(LLMAPIError, match="provider failed"),
+        ):
+            await assisted_executor.execute(
+                prompt="test",
+                system_prompt="test",
+            )
 
     @pytest.mark.asyncio
     async def test_tool_execution_error_returns_result_string(self, assisted_executor):
@@ -91,7 +103,8 @@ class TestAssistedExecutorErrorHandling:
 
         with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[resp1, resp2]):
             result = await assisted_executor.execute(
-                prompt="use tool", system_prompt="test",
+                prompt="use tool",
+                system_prompt="test",
             )
         assert result.text is not None
 
@@ -129,8 +142,10 @@ class TestToolHandlerErrorHandling:
     def handler(self, data_dir: Path, make_anima):
         anima_dir = make_anima("tool-test")
         from core.memory import MemoryManager
+
         memory = MemoryManager(anima_dir)
         from core.tooling.handler import ToolHandler
+
         return ToolHandler(anima_dir=anima_dir, memory=memory)
 
     def test_persist_replied_to_handles_os_error(self, handler, tmp_path):
@@ -157,6 +172,7 @@ class TestMessengerErrorHandling:
     def messenger(self, data_dir: Path, make_anima):
         make_anima("msg-test")
         from core.messenger import Messenger
+
         return Messenger(
             shared_dir=data_dir / "shared",
             anima_name="msg-test",
@@ -177,7 +193,8 @@ class TestMessengerErrorHandling:
         activity_dir.mkdir(parents=True, exist_ok=True)
         today = today_local().isoformat()
         (activity_dir / f"{today}.jsonl").write_text(
-            "{bad json\n", encoding="utf-8",
+            "{bad json\n",
+            encoding="utf-8",
         )
         result = messenger.read_dm_history("other-anima", limit=5)
         assert isinstance(result, list)
@@ -223,6 +240,7 @@ class TestActivityLoggerErrorHandling:
     @pytest.fixture
     def activity_logger(self, tmp_path: Path):
         from core.memory.activity import ActivityLogger
+
         al = ActivityLogger(anima_dir=tmp_path)
         (tmp_path / "activity_log").mkdir(parents=True, exist_ok=True)
         return al
@@ -230,10 +248,18 @@ class TestActivityLoggerErrorHandling:
     def test_append_raises_memory_write_error_on_os_error(self, activity_logger, tmp_path):
         """OSError during append should raise MemoryWriteError."""
         from core.memory.activity import ActivityEntry
+
         entry = ActivityEntry(
-            ts="2026-01-01T00:00:00+09:00", type="test_event",
-            content="test", summary="", from_person="", to_person="",
-            channel="", tool="", via="", meta={},
+            ts="2026-01-01T00:00:00+09:00",
+            type="test_event",
+            content="test",
+            summary="",
+            from_person="",
+            to_person="",
+            channel="",
+            tool="",
+            via="",
+            meta={},
         )
         log_dir = tmp_path / "activity_log"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -251,7 +277,8 @@ class TestActivityLoggerErrorHandling:
         log_dir = tmp_path / "activity_log"
         log_dir.mkdir(parents=True, exist_ok=True)
         (log_dir / "2026-01-01.jsonl").write_text(
-            "{bad json\n", encoding="utf-8",
+            "{bad json\n",
+            encoding="utf-8",
         )
         entries = activity_logger._load_entries(days=365)
         assert isinstance(entries, list)
@@ -264,6 +291,7 @@ class TestConversationMemoryErrorHandling:
         """ConfigError in _load_context_window_overrides should return None."""
         from core.config import invalidate_cache
         from core.memory.conversation import ConversationMemory
+
         invalidate_cache()
         cm = ConversationMemory.__new__(ConversationMemory)
         with patch("core.config.models.load_config", side_effect=ConfigError("bad")):
@@ -275,6 +303,7 @@ class TestConversationMemoryErrorHandling:
         """OSError in _load_context_window_overrides should return None."""
         from core.config import invalidate_cache
         from core.memory.conversation import ConversationMemory
+
         invalidate_cache()
         cm = ConversationMemory.__new__(ConversationMemory)
         with patch("core.config.models.load_config", side_effect=OSError("perm denied")):
@@ -286,6 +315,7 @@ class TestConversationMemoryErrorHandling:
         """All exceptions are caught (safe fallback to None)."""
         from core.config import invalidate_cache
         from core.memory.conversation import ConversationMemory
+
         invalidate_cache()
         cm = ConversationMemory.__new__(ConversationMemory)
         with patch("core.config.models.load_config", side_effect=RuntimeError("unexpected")):

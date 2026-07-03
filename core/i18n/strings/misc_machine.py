@@ -34,6 +34,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "工作機械 '{engine}' がエラーコード {code} で終了しました。",
         "en": "Machine engine '{engine}' exited with code {code}.",
     },
+    "machine.engine_disabled": {
+        "ja": "エンジン '{engine}' は現在の運用方針で無効です。使用可能: {available}",
+        "en": "Engine '{engine}' is disabled by the current policy. Available: {available}",
+    },
     "machine.engine_not_found": {
         "ja": "工作機械 '{engine}' が見つかりません。インストールされているか確認してください。",
         "en": "Machine engine '{engine}' not found. Please verify it is installed.",
@@ -41,6 +45,19 @@ STRINGS: dict[str, dict[str, str]] = {
     "machine.forbidden_directory": {
         "ja": "作業ディレクトリ '{path}' はAnima記憶領域と重複するため使用できません。",
         "en": ("Working directory '{path}' overlaps with Anima memory directories and cannot be used."),
+    },
+    "machine.fs_sandboxed": {
+        "ja": (
+            "machine: サンドボックス化されたシェル内から呼ばれています"
+            "（~/.config への書き込み不可）。エンジンはEROFSで失敗します。"
+            "シェルコマンド `animaworks-tool machine` ではなく、"
+            "ネイティブの machine ツール（ツール呼び出し）を使ってください。"
+        ),
+        "en": (
+            "machine: called from a sandboxed shell (~/.config is not writable). "
+            "Engines will fail with EROFS. Use the native machine tool call instead of "
+            "the shell command `animaworks-tool machine`."
+        ),
     },
     "machine.invalid_engine": {
         "ja": "無効なエンジン '{engine}' です。有効なエンジン: {valid}",

@@ -78,8 +78,7 @@ class AutonomousSkillLearner:
             policy = PromotionPolicy.from_config(load_config().skills.promotion)
         except Exception:
             logger.warning(
-                "Failed to load promotion config for autonomous skill learner; "
-                "falling back to default PromotionPolicy",
+                "Failed to load promotion config for autonomous skill learner; falling back to default PromotionPolicy",
                 exc_info=True,
             )
         return ProcedureToSkillConverter(anima_dir, policy=policy)

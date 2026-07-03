@@ -304,7 +304,10 @@ class TestModeBStreamingErrorRaisesStreamDisconnected:
         # _call_llm raises an exception
         assisted_executor._call_llm = AsyncMock(side_effect=RuntimeError("API connection refused"))
 
-        with pytest.raises(StreamDisconnectedError) as exc_info:
+        with (
+            patch("core.execution.assisted.decorrelated_jitter", return_value=0.0),
+            pytest.raises(StreamDisconnectedError) as exc_info,
+        ):
             await _collect_events(
                 assisted_executor.execute_streaming(
                     system_prompt="sys",
@@ -813,6 +816,7 @@ class TestA2TokenLevelErrorRaisesStreamDisconnected:
         with (
             pytest.raises(StreamDisconnectedError) as exc_info,
             patch("litellm.acompletion", mock_acompletion),
+            patch("core.execution._litellm_streaming.decorrelated_jitter", return_value=0.0),
             patch.object(litellm_executor, "_preflight_clamp", return_value={}),
         ):
             await _collect_events(

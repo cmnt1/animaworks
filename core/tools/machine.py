@@ -557,12 +557,7 @@ def _execute(
     if _is_fs_sandboxed():
         return ToolResult(
             success=False,
-            error=(
-                "machine: サンドボックス化されたシェル内から呼ばれています"
-                "（~/.config への書き込み不可）。エンジンはEROFSで失敗します。"
-                "シェルコマンド `animaworks-tool machine` ではなく、"
-                "ネイティブの machine ツール（ツール呼び出し）を使ってください。"
-            ),
+            error=t("machine.fs_sandboxed"),
         )
     exe = shutil.which(_ENGINE_COMMANDS[engine][0], path=_expanded_path())
     if exe is None:
@@ -816,7 +811,9 @@ def dispatch(name: str, args: dict[str, Any]) -> str:
     model = args.get("model")
     timeout = args.get("timeout")
     anima_dir = args.get("anima_dir", "")
-    trigger = args.get("trigger", "chat")
+    # ToolHandler injects the session trigger as "_trigger"; direct callers
+    # may pass "trigger".
+    trigger = args.get("trigger") or args.get("_trigger") or "chat"
 
     if engine not in _VALID_ENGINES:
         return json.dumps(
@@ -827,7 +824,7 @@ def dispatch(name: str, args: dict[str, Any]) -> str:
     allowed = _get_available_engines()
     if engine not in allowed:
         return json.dumps(
-            {"error": f"エンジン '{engine}' は現在の運用方針で無効です。使用可能: {', '.join(allowed)}"},
+            {"error": t("machine.engine_disabled", engine=engine, available=", ".join(allowed))},
             ensure_ascii=False,
         )
 

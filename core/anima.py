@@ -271,7 +271,7 @@ class DigitalAnima(
                 if self._inbox_lock.locked():
                     lanes.append("inbox")
             except Exception:
-                pass
+                logger.debug("[%s] Failed to collect busy status lanes", self.name, exc_info=True)
             payload = {
                 "anima": self.name,
                 "pid": os.getpid(),

@@ -93,7 +93,11 @@ async def test_rate_error_records_block_in_shared_file(shared_data_dir: Path) ->
     executor = _make_executor(shared_data_dir / "animas" / "aoi")
     mock = AsyncMock(side_effect=_RateLimit429())
 
-    with patch("litellm.acompletion", mock), pytest.raises(LLMAPIError):
+    with (
+        patch("core.execution.litellm_loop.decorrelated_jitter", return_value=0.0),
+        patch("litellm.acompletion", mock),
+        pytest.raises(LLMAPIError),
+    ):
         await executor.execute("hello", system_prompt="sys")
 
     # Mode A authenticates with the API key, so the block is keyed on the

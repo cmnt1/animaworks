@@ -102,7 +102,11 @@ def test_unified_legacy_retrieval_expands_temporal_query_filters_and_access_boos
         reference_time=datetime(2023, 5, 8, 12, 0, tzinfo=UTC),
     )
 
-    assert "2023-05-07" in rag.queries[0]
+    query_expansion = searcher.last_search_meta["query_expansion"]
+    assert rag.queries[0] == "What did Caroline do yesterday?"
+    assert "2023-05-07" in query_expansion["search_text"]
+    assert query_expansion["time_hint_start"] == "2023-05-07"
+    assert query_expansion["time_hint_end"] == "2023-05-07"
     assert [item["doc_id"] for item in results] == ["inside-high", "inside-low"]
     assert all(item["doc_id"] != "outside" for item in results)
     assert results[0]["access_boost"] > 0.0

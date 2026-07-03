@@ -120,10 +120,7 @@ _REDACTION_PLACEHOLDER = "***REDACTED***"
 
 def _redact_secrets(text: str) -> str:
     """Mask known credential shapes in ``text`` behind a fast pre-check gate."""
-    if not (
-        any(trigger in text for trigger in _REDACTION_PREFIX_TRIGGERS)
-        or _REDACTION_KEYWORD_PRECHECK.search(text)
-    ):
+    if not (any(trigger in text for trigger in _REDACTION_PREFIX_TRIGGERS) or _REDACTION_KEYWORD_PRECHECK.search(text)):
         return text
     return _REDACTION_PATTERN.sub(_REDACTION_PLACEHOLDER, text)
 
@@ -179,23 +176,17 @@ class SecretRedactionFilter(logging.Filter):
             if record.exc_text:
                 record.exc_text = _redact_secrets(record.exc_text)
             elif record.exc_info:
-                record.exc_text = _redact_secrets(
-                    _EXC_FORMATTER.formatException(record.exc_info)
-                )
+                record.exc_text = _redact_secrets(_EXC_FORMATTER.formatException(record.exc_info))
             # stack_info (stack_info=True) is emitted verbatim by plain
             # Formatters; mask it in place.
             if record.stack_info:
                 record.stack_info = _redact_secrets(record.stack_info)
         except Exception:
-            logging.getLogger(__name__).debug(
-                "SecretRedactionFilter failed; passing record through", exc_info=True
-            )
+            logging.getLogger(__name__).debug("SecretRedactionFilter failed; passing record through", exc_info=True)
         return True
 
 
-def attach_standard_log_filters(
-    handler: logging.Handler, *, redaction_enabled: bool = True
-) -> None:
+def attach_standard_log_filters(handler: logging.Handler, *, redaction_enabled: bool = True) -> None:
     """Attach the standard cross-cutting log filters to *handler*.
 
     - ``CycleContextFilter`` exposes ``cycle_id`` for ``%(cycle_id)s`` formats.
@@ -359,12 +350,8 @@ def setup_logging(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "animaworks.log"
 
-        renderer = (
-            _build_json_renderer() if json_file else structlog.dev.ConsoleRenderer(colors=False)
-        )
-        file_formatter = _build_processor_formatter(
-            renderer, foreign_pre_chain, redaction_enabled=redaction_enabled
-        )
+        renderer = _build_json_renderer() if json_file else structlog.dev.ConsoleRenderer(colors=False)
+        file_formatter = _build_processor_formatter(renderer, foreign_pre_chain, redaction_enabled=redaction_enabled)
 
         file_handler = RotatingFileHandler(
             log_path,
@@ -386,9 +373,7 @@ def setup_logging(
         )
         errors_handler.setLevel(logging.WARNING)
         errors_handler.setFormatter(
-            _build_processor_formatter(
-                _build_json_renderer(), foreign_pre_chain, redaction_enabled=redaction_enabled
-            )
+            _build_processor_formatter(_build_json_renderer(), foreign_pre_chain, redaction_enabled=redaction_enabled)
         )
         attach_standard_log_filters(errors_handler, redaction_enabled=redaction_enabled)
         root.addHandler(errors_handler)

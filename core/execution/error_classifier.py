@@ -36,18 +36,18 @@ logger = logging.getLogger("animaworks.execution.error_classifier")
 class FailoverReason(enum.Enum):
     """Why an LLM call failed — determines the recovery strategy."""
 
-    AUTH = "auth"                        # 401/403 — credential problem, human action
-    BILLING = "billing"                  # 402 / credit exhaustion — human action
-    RATE_LIMIT = "rate_limit"            # 429 per-credential throttle — backoff
-    OVERLOADED = "overloaded"            # 503/529 / server-busy 429 — backoff
+    AUTH = "auth"  # 401/403 — credential problem, human action
+    BILLING = "billing"  # 402 / credit exhaustion — human action
+    RATE_LIMIT = "rate_limit"  # 429 per-credential throttle — backoff
+    OVERLOADED = "overloaded"  # 503/529 / server-busy 429 — backoff
     CONTEXT_OVERFLOW = "context_overflow"  # prompt too large — compress (future)
     PAYLOAD_TOO_LARGE = "payload_too_large"  # 413 — shrink payload
-    CONTENT_POLICY = "content_policy"    # safety filter — deterministic, terminal
-    TIMEOUT = "timeout"                  # connection/read timeout — retry
-    NETWORK = "network"                  # transport failure — retry
-    SERVER_ERROR = "server_error"        # 500/502 — retry
+    CONTENT_POLICY = "content_policy"  # safety filter — deterministic, terminal
+    TIMEOUT = "timeout"  # connection/read timeout — retry
+    NETWORK = "network"  # transport failure — retry
+    SERVER_ERROR = "server_error"  # 500/502 — retry
     INVALID_REQUEST = "invalid_request"  # malformed request — deterministic, terminal
-    UNKNOWN = "unknown"                  # unclassifiable — degrade to current behavior
+    UNKNOWN = "unknown"  # unclassifiable — degrade to current behavior
 
 
 # ── Recovery hint ───────────────────────────────────────────────────────────
@@ -80,7 +80,9 @@ _HINTS: dict[FailoverReason, RecoveryHint] = {
     FailoverReason.RATE_LIMIT: RecoveryHint(retryable=True, fallback_ok=True, backoff_s=None, is_terminal=False),
     FailoverReason.OVERLOADED: RecoveryHint(retryable=True, fallback_ok=True, backoff_s=None, is_terminal=False),
     FailoverReason.CONTEXT_OVERFLOW: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=None, is_terminal=False),
-    FailoverReason.PAYLOAD_TOO_LARGE: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=None, is_terminal=False),
+    FailoverReason.PAYLOAD_TOO_LARGE: RecoveryHint(
+        retryable=False, fallback_ok=True, backoff_s=None, is_terminal=False
+    ),
     FailoverReason.CONTENT_POLICY: RecoveryHint(retryable=False, fallback_ok=False, backoff_s=None, is_terminal=True),
     FailoverReason.TIMEOUT: RecoveryHint(retryable=True, fallback_ok=True, backoff_s=None, is_terminal=False),
     FailoverReason.NETWORK: RecoveryHint(retryable=True, fallback_ok=True, backoff_s=None, is_terminal=False),
@@ -154,8 +156,10 @@ def provider_family_of(model: str) -> str:
     prefix = m.split("/", 1)[0] if "/" in m else ""
     if prefix in {"gemini", "google", "vertex_ai"} or "gemini" in m:
         return "google"
-    if prefix == "openai" or "claude" not in m and (
-        m.startswith(("gpt", "o1-", "o3-", "o4-", "codex")) or prefix in {"codex", "openai-codex", "azure"}
+    if (
+        prefix == "openai"
+        or "claude" not in m
+        and (m.startswith(("gpt", "o1-", "o3-", "o4-", "codex")) or prefix in {"codex", "openai-codex", "azure"})
     ):
         return "openai"
     if "claude" in m:
@@ -283,13 +287,24 @@ _NETWORK_PATTERNS = (
     "temporary failure in name resolution",
 )
 
-_TRANSPORT_ERROR_TYPES = frozenset({
-    "ReadTimeout", "ConnectTimeout", "PoolTimeout", "WriteTimeout",
-    "APITimeoutError", "Timeout",
-    "ConnectError", "ConnectionError", "RemoteProtocolError", "ReadError",
-    "ConnectionResetError", "ConnectionAbortedError", "BrokenPipeError",
-    "APIConnectionError",
-})
+_TRANSPORT_ERROR_TYPES = frozenset(
+    {
+        "ReadTimeout",
+        "ConnectTimeout",
+        "PoolTimeout",
+        "WriteTimeout",
+        "APITimeoutError",
+        "Timeout",
+        "ConnectError",
+        "ConnectionError",
+        "RemoteProtocolError",
+        "ReadError",
+        "ConnectionResetError",
+        "ConnectionAbortedError",
+        "BrokenPipeError",
+        "APIConnectionError",
+    }
+)
 
 
 # ── Classification pipeline ─────────────────────────────────────────────────
@@ -488,7 +503,9 @@ def _build_message(error: Exception) -> str:
     return " ".join(p for p in parts if p).lower()
 
 
-_RETRY_AFTER_TEXT_RE = re.compile(r"(?:try again in|retry after|please retry after)\s+([0-9]+(?:\.[0-9]+)?)\s*(m?s(?:ec)?|s|seconds?|minutes?|m)?")
+_RETRY_AFTER_TEXT_RE = re.compile(
+    r"(?:try again in|retry after|please retry after)\s+([0-9]+(?:\.[0-9]+)?)\s*(m?s(?:ec)?|s|seconds?|minutes?|m)?"
+)
 
 
 def _extract_retry_after(error: Exception, msg: str) -> float | None:

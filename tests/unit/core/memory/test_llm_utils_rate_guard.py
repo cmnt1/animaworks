@@ -56,7 +56,9 @@ async def test_content_policy_returns_none_without_fallback(tmp_path: Path) -> N
     guard = _make_guard(tmp_path)
     with (
         patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", side_effect=_ApiError("violates our usage policies", status_code=400)),
+        patch(
+            "core.memory._llm_utils._try_litellm", side_effect=_ApiError("violates our usage policies", status_code=400)
+        ),
         patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
     ):
@@ -118,7 +120,7 @@ async def test_mode_s_realm_block_skips_agent_sdk(tmp_path: Path) -> None:
 
     assert result is None
     assert mock_litellm.await_count == 1  # LiteLLM ran (api realm free)
-    mock_sdk.assert_not_called()          # but the max-realm SDK stage was skipped
+    mock_sdk.assert_not_called()  # but the max-realm SDK stage was skipped
 
 
 async def test_all_realms_guarded_returns_none(tmp_path: Path) -> None:
@@ -165,7 +167,9 @@ async def test_auth_error_logs_error_and_falls_back(tmp_path: Path, caplog: pyte
     with (
         caplog.at_level(logging.ERROR, logger="core.memory._llm_utils"),
         patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", new=AsyncMock(side_effect=_ApiError("unauthorized", status_code=401))),
+        patch(
+            "core.memory._llm_utils._try_litellm", new=AsyncMock(side_effect=_ApiError("unauthorized", status_code=401))
+        ),
         patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
     ):
@@ -178,10 +182,10 @@ async def test_auth_error_logs_error_and_falls_back(tmp_path: Path, caplog: pyte
     assert any(rec.levelno == logging.ERROR and "human attention" in rec.message for rec in caplog.records)
 
 
-async def test_codex_realm_block_skips_codex_sdk(tmp_path: Path) -> None:
+async def test_codex_realm_block_skips_codex_sdk_and_litellm(tmp_path: Path) -> None:
     guard = _make_guard(tmp_path)
     guard.report_block("openai:codex", 300, "rate_limit")  # codex realm blocked
-    mock_litellm = AsyncMock(side_effect=RuntimeError("weird"))  # unknown → fall through to codex stage
+    mock_litellm = AsyncMock(return_value="should-not-run")
     with (
         patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "codex/gpt-5.4-mini"}),
         patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
@@ -191,8 +195,8 @@ async def test_codex_realm_block_skips_codex_sdk(tmp_path: Path) -> None:
         result = await llm_utils.one_shot_completion("hi", model="codex/gpt-5.4-mini")
 
     assert result is None
-    assert mock_litellm.await_count == 1  # openai:api realm free, LiteLLM ran
-    mock_codex.assert_not_called()        # openai:codex realm blocked
+    mock_litellm.assert_not_called()  # codex/* models are Codex-SDK-only
+    mock_codex.assert_not_called()  # openai:codex realm blocked
 
 
 @pytest.mark.parametrize(
@@ -223,7 +227,9 @@ async def test_disabled_guard_does_not_record_block(tmp_path: Path) -> None:
     guard = _make_guard(tmp_path, enabled=False)
     with (
         patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", new=AsyncMock(side_effect=_ApiError("rate limit", status_code=429))),
+        patch(
+            "core.memory._llm_utils._try_litellm", new=AsyncMock(side_effect=_ApiError("rate limit", status_code=429))
+        ),
         patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
     ):

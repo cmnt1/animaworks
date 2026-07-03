@@ -199,7 +199,10 @@ class TestModeBTextLoop:
         from core.exceptions import ExecutionError
 
         with pytest.raises(ExecutionError, match="API timeout"):
-            with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API timeout")):
+            with (
+                patch("core.execution.assisted.decorrelated_jitter", return_value=0.0),
+                patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API timeout")),
+            ):
                 await assisted_executor.execute(
                     prompt="テスト",
                     system_prompt="テスト",

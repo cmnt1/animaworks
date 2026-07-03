@@ -367,9 +367,7 @@ class AssistedExecutor(BaseExecutor):
             "messages": messages,
             "max_tokens": _eff_max,
             "timeout": self._resolve_llm_timeout(),
-            "num_retries": (
-                num_retries_override if num_retries_override is not None else self._resolve_num_retries()
-            ),
+            "num_retries": (num_retries_override if num_retries_override is not None else self._resolve_num_retries()),
         }
 
         api_key = self._resolve_api_key()
