@@ -1445,5 +1445,118 @@ class TestRAGFilter:
         assert call_kwargs.kwargs.get("filter_metadata") is None
 
 
+# ── Supersede failure_count penalty (F1) ────────────────────
+
+
+class TestSupersedeFailurePenalty:
+    """F1: the failure_count penalty lands on the archived (older) file.
+
+    Previously the penalty was hard-coded to ``pair.file_b`` (the surviving
+    newer file in the default case), so correct-but-newer knowledge accrued
+    failures. The penalty must go to whichever file is actually superseded.
+    """
+
+    async def _run_supersede(
+        self,
+        detector: ContradictionDetector,
+        file_a: Path,
+        file_b: Path,
+    ) -> None:
+        pair = ContradictionPair(
+            file_a=file_a,
+            file_b=file_b,
+            text_a="A",
+            text_b="B",
+            confidence=0.85,
+            resolution="supersede",
+            reason="test",
+        )
+        results = await detector.resolve_contradictions([pair], "test-model")
+        assert results["superseded"] == 1
+        assert results["errors"] == 0
+
+    @pytest.mark.asyncio
+    async def test_penalty_on_older_when_file_a_is_older(
+        self, detector: ContradictionDetector, anima_dir: Path,
+    ) -> None:
+        """file_a older → file_a archived and penalized, file_b untouched."""
+        knowledge_dir = anima_dir / "knowledge"
+        file_a = _write_knowledge(
+            knowledge_dir, "older.md", "Old content",
+            {"created_at": "2026-01-01T00:00:00", "failure_count": 0, "success_count": 0},
+        )
+        file_b = _write_knowledge(
+            knowledge_dir, "newer.md", "New content",
+            {"created_at": "2026-02-01T00:00:00", "failure_count": 0, "success_count": 0},
+        )
+
+        await self._run_supersede(detector, file_a, file_b)
+
+        mm = detector._memory()
+        archived = anima_dir / "archive" / "superseded" / "older.md"
+        assert archived.exists()
+        assert mm.read_knowledge_metadata(archived).get("failure_count") == 1
+        # Surviving newer file keeps its failure_count untouched
+        assert file_b.exists()
+        assert int(mm.read_knowledge_metadata(file_b).get("failure_count", 0)) == 0
+
+    @pytest.mark.asyncio
+    async def test_penalty_on_older_when_file_b_is_older(
+        self, detector: ContradictionDetector, anima_dir: Path,
+    ) -> None:
+        """file_b older (file_a has newer updated_at) → file_b archived/penalized."""
+        knowledge_dir = anima_dir / "knowledge"
+        file_a = _write_knowledge(
+            knowledge_dir, "current.md", "Updated content",
+            {
+                "created_at": "2026-02-01T00:00:00",
+                "updated_at": "2026-02-10T00:00:00",
+                "failure_count": 0,
+                "success_count": 0,
+            },
+        )
+        file_b = _write_knowledge(
+            knowledge_dir, "stale.md", "Original content",
+            {"created_at": "2026-01-01T00:00:00", "failure_count": 0, "success_count": 0},
+        )
+
+        await self._run_supersede(detector, file_a, file_b)
+
+        mm = detector._memory()
+        archived = anima_dir / "archive" / "superseded" / "stale.md"
+        assert archived.exists()
+        assert mm.read_knowledge_metadata(archived).get("failure_count") == 1
+        # Surviving newer file (file_a) keeps its failure_count untouched
+        assert file_a.exists()
+        assert int(mm.read_knowledge_metadata(file_a).get("failure_count", 0)) == 0
+
+    @pytest.mark.asyncio
+    async def test_log_resolution_labels_reflect_real_order(
+        self, anima_dir: Path,
+    ) -> None:
+        """The activity-log older/newer labels reflect the real determination."""
+        from core.memory.activity import ActivityLogger
+
+        activity_logger = ActivityLogger(anima_dir)
+        detector = ContradictionDetector(anima_dir, "test-anima", activity_logger=activity_logger)
+        knowledge_dir = anima_dir / "knowledge"
+        # file_a is the newer one here
+        file_a = _write_knowledge(
+            knowledge_dir, "brand-new.md", "New",
+            {"created_at": "2026-03-01T00:00:00"},
+        )
+        file_b = _write_knowledge(
+            knowledge_dir, "ancient.md", "Old",
+            {"created_at": "2026-01-01T00:00:00"},
+        )
+
+        await self._run_supersede(detector, file_a, file_b)
+
+        entries = activity_logger.recent(days=1, types=["knowledge_contradiction_resolved"])
+        assert len(entries) == 1
+        assert entries[0].meta.get("older") == "ancient.md"
+        assert entries[0].meta.get("newer") == "brand-new.md"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

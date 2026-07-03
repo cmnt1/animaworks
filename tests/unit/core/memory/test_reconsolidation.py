@@ -845,5 +845,89 @@ class TestCreateProceduresFromResolved:
         assert meta["version"] == 1
 
 
+# ── Recursive scan / archive exclusion (F4) ────────────────
+
+
+def _write_knowledge_target(path: Path, *, failure_count: int = 3, confidence: float = 0.3) -> Path:
+    """Write a knowledge .md that qualifies as a reconsolidation target."""
+    import yaml
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    meta = {
+        "created_at": "2026-01-01T00:00:00",
+        "confidence": confidence,
+        "failure_count": failure_count,
+        "success_count": 0,
+    }
+    fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True).rstrip()
+    path.write_text(f"---\n{fm}\n---\n\n# Knowledge\n\nBody text.\n", encoding="utf-8")
+    return path
+
+
+def _write_procedure_target(path: Path, *, failure_count: int = 3, confidence: float = 0.3) -> Path:
+    """Write a procedure .md that qualifies as a reconsolidation target."""
+    import yaml
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    meta = {
+        "description": "nested procedure",
+        "tags": ["deploy"],
+        "version": 1,
+        "confidence": confidence,
+        "failure_count": failure_count,
+        "success_count": 0,
+        "created_at": "2026-01-01T00:00:00",
+    }
+    fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True).rstrip()
+    path.write_text(f"---\n{fm}\n---\n\n# Proc\n\n1. Step\n", encoding="utf-8")
+    return path
+
+
+class TestRecursiveScanExcludesArchive:
+    """F4: reconsolidation scans subdirectories recursively but skips archive/."""
+
+    @pytest.mark.asyncio
+    async def test_knowledge_subdirectory_is_scanned(
+        self, engine: ReconsolidationEngine, anima_dir: Path,
+    ) -> None:
+        """A qualifying knowledge file in a subdirectory is a reconsolidation target."""
+        _write_knowledge_target(anima_dir / "knowledge" / "topic" / "nested.md")
+        targets = await engine.find_knowledge_reconsolidation_targets()
+        assert {p.name for p in targets} == {"nested.md"}
+
+    @pytest.mark.asyncio
+    async def test_archive_subdirectory_is_excluded(
+        self, engine: ReconsolidationEngine, anima_dir: Path,
+    ) -> None:
+        """Files under knowledge/archive/ are never reconsolidation targets."""
+        _write_knowledge_target(anima_dir / "knowledge" / "live.md")
+        _write_knowledge_target(anima_dir / "knowledge" / "archive" / "archived.md")
+        targets = await engine.find_knowledge_reconsolidation_targets()
+        names = {p.name for p in targets}
+        assert "live.md" in names
+        assert "archived.md" not in names
+
+    @pytest.mark.asyncio
+    async def test_procedure_subdirectory_is_scanned(
+        self, engine: ReconsolidationEngine, anima_dir: Path,
+    ) -> None:
+        """A qualifying procedure in a subdirectory is a reconsolidation target."""
+        _write_procedure_target(anima_dir / "procedures" / "sub" / "nested-proc.md")
+        targets = await engine.find_reconsolidation_targets()
+        assert {p.name for p in targets} == {"nested-proc.md"}
+
+    @pytest.mark.asyncio
+    async def test_procedure_archive_subdirectory_is_excluded(
+        self, engine: ReconsolidationEngine, anima_dir: Path,
+    ) -> None:
+        """Files under procedures/archive/ are never reconsolidation targets."""
+        _write_procedure_target(anima_dir / "procedures" / "live-proc.md")
+        _write_procedure_target(anima_dir / "procedures" / "archive" / "archived-proc.md")
+        targets = await engine.find_reconsolidation_targets()
+        names = {p.name for p in targets}
+        assert "live-proc.md" in names
+        assert "archived-proc.md" not in names
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

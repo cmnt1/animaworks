@@ -160,21 +160,35 @@ class ForgettingEngine:
             return max(0.0, default)
 
     def _used_count(self, metadata: dict) -> float:
-        """Return explicit-use count, migrating legacy access_count as used."""
-        if "used_count" in metadata:
-            return self._number(metadata, "used_count")
-        return self._number(metadata, "access_count")
+        """Return combined usage: explicit uses plus automatic recalls (F11).
+
+        Auto-recall (``access_count``) now counts toward "usage" so memories
+        that keep getting retrieved by search stay protected from forgetting,
+        matching the access-boost philosophy. Legacy chunks predating the
+        used/access split carry only ``access_count`` (``used_count`` absent →
+        0), so the sum equals the legacy value and remains backward compatible.
+        Explicit uses bump both counters, which merely over-protects (never
+        under-protects) already-used memories.
+        """
+        return self._number(metadata, "used_count") + self._number(metadata, "access_count")
 
     @staticmethod
     def _last_used_at(metadata: dict) -> str:
-        """Return explicit-use timestamp, falling back only for legacy metadata."""
-        for key in ("last_used_at", "last_used"):
+        """Return the most recent usage timestamp (F11).
+
+        Combines the explicit-use time (``last_used_at`` / legacy ``last_used``)
+        with the automatic-recall time (``last_accessed_at``) and returns the
+        latest, so a memory that keeps getting retrieved registers as recently
+        used. Returns an empty string when no timestamp is present.
+        """
+        candidates: list[str] = []
+        for key in ("last_used_at", "last_used", "last_accessed_at"):
             value = str(metadata.get(key, "") or "").strip()
             if value:
-                return value
-        if "used_count" not in metadata:
-            return str(metadata.get("last_accessed_at", "") or "")
-        return ""
+                candidates.append(value)
+        if not candidates:
+            return ""
+        return max(candidates)
 
     def _is_protected_knowledge(self, metadata: dict, *, important_expired: bool = False) -> bool:
         """Knowledge-specific protection check.
@@ -444,6 +458,13 @@ class ForgettingEngine:
 
         for memory_type in ("knowledge", "episodes", "procedures"):
             collection_name = f"{self.anima_name}_{memory_type}"
+
+            # F10: purge legacy synthetic "merged" chunks. Merged content now
+            # lives only in the primary source .md (re-indexed by the weekly
+            # rebuild); directly-upserted source_file="merged" chunks left over
+            # from the old flow duplicate that content and must be removed.
+            self._purge_merged_chunks(collection_name, store)
+
             chunks = self._get_all_chunks(collection_name)
             total_scanned += len(chunks)
 
@@ -496,14 +517,12 @@ class ForgettingEngine:
                             collection_name,
                             [chunk_a["id"], chunk_b["id"]],
                         )
-                        # Index merged content
-                        self._index_merged_chunk(
-                            merged_content,
-                            chunk_a,
-                            memory_type,
-                        )
                         # Sync source files on disk so next RAG re-index
                         # reflects the merge instead of restoring originals.
+                        # The merged content is written to the primary .md here
+                        # and re-indexed by the weekly rebuild (F10) — we no
+                        # longer upsert a synthetic "merged" chunk that would
+                        # duplicate that content after rebuild.
                         if not self._apply_source_write_plans(source_plans):
                             logger.warning(
                                 "Merged vectors for %s and %s but failed to sync source files",
@@ -635,52 +654,36 @@ class ForgettingEngine:
             logger.warning("LLM merge failed: %s", e)
             return None
 
-    def _index_merged_chunk(
-        self,
-        content: str,
-        source_chunk: dict,
-        memory_type: str,
-    ) -> None:
-        """Index a merged chunk back into the vector store."""
+    def _purge_merged_chunks(self, collection_name: str, store: Any | None) -> int:
+        """Delete leftover synthetic ``source_file="merged"`` chunks (F10).
+
+        Older neurogenesis merges upserted a synthetic chunk with
+        ``source_file="merged"`` in addition to writing the merged text into
+        the primary source .md. Once the weekly rebuild re-indexes that .md,
+        the synthetic chunk becomes a duplicate. Direct upsert has been removed;
+        this purges any duplicates left by previous runs.
+
+        Args:
+            collection_name: Vector collection to clean.
+            store: Vector store handle (``None`` when RAG is unavailable).
+
+        Returns:
+            Number of merged chunks deleted.
+        """
+        if store is None:
+            return 0
         try:
-            from core.memory.rag.indexer import MemoryIndexer, access_tracking_metadata
-            from core.memory.rag.singleton import get_vector_store
-            from core.memory.rag.store import Document
-
-            store = get_vector_store(self.anima_name)
-            if store is None:
-                logger.debug("RAG vector store unavailable, skipping merged chunk indexing")
-                return
-            indexer = MemoryIndexer(store, self.anima_name, self.anima_dir)
-
-            # Generate new ID
-            merged_id = f"{self.anima_name}/{memory_type}/merged_{now_local().strftime('%Y%m%d_%H%M%S')}#0"
-
-            embedding = indexer._generate_embeddings([content])[0]
-
-            now_iso_str = now_local().isoformat()
-            metadata = {
-                "anima": self.anima_name,
-                "memory_type": memory_type,
-                "source_file": "merged",
-                "chunk_index": 0,
-                "total_chunks": 1,
-                "created_at": now_iso_str,
-                "updated_at": now_iso_str,
-                "importance": "normal",
-                **access_tracking_metadata(),
-                "activation_level": "normal",
-                "low_activation_since": "",
-            }
-
-            doc = Document(id=merged_id, content=content, embedding=embedding, metadata=metadata)
-            collection_name = f"{self.anima_name}_{memory_type}"
-            store.upsert(collection_name, [doc])
-
-            logger.debug("Indexed merged chunk: %s", merged_id)
-
+            results = store.get_by_metadata(collection_name, {"source_file": "merged"}, limit=100_000)
+            ids = [r.document.id for r in results]
+            if not ids:
+                return 0
+            if store.delete_documents(collection_name, ids):
+                logger.info("Purged %d legacy merged chunks from %s", len(ids), collection_name)
+                return len(ids)
+            logger.warning("Failed to purge merged chunks from %s", collection_name)
         except Exception as e:
-            logger.warning("Failed to index merged chunk: %s", e)
+            logger.warning("Failed to purge merged chunks from %s: %s", collection_name, e)
+        return 0
 
     def _sync_merged_source_files(
         self,
