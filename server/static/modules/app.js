@@ -126,6 +126,8 @@ async function startDashboard() {
   connectWebSocket();
   loadSystemStatus();
   showAuthBannerIfNeeded();
+  ensureCiAutofixShortcut();
+  initCiAutofixAlert();
   if (state.demoMode) showDemoSplashIfNeeded();
 }
 
@@ -189,6 +191,104 @@ function showAuthBannerIfNeeded() {
 
   const shell = document.querySelector(".app-shell");
   if (shell) shell.parentElement.insertBefore(banner, shell);
+}
+
+function ensureCiAutofixShortcut() {
+  if (document.getElementById("ciAutofixShortcut")) return;
+  const systemStatus = document.getElementById("systemStatus");
+  if (!systemStatus?.parentElement) return;
+
+  const btn = document.createElement("button");
+  btn.id = "ciAutofixShortcut";
+  btn.type = "button";
+  btn.className = "ci-autofix-shortcut";
+  btn.textContent = "GitHub";
+  btn.title = "Open CI Autofix";
+  btn.addEventListener("click", () => {
+    window.open(`${basePath}/runner/ci-autofix`, "ci-autofix");
+  });
+
+  systemStatus.parentElement.insertBefore(btn, systemStatus);
+}
+
+function initCiAutofixAlert() {
+  refreshCiAutofixAlert();
+  setInterval(refreshCiAutofixAlert, 60000);
+}
+
+async function refreshCiAutofixAlert() {
+  try {
+    const resp = await fetch(`${basePath}/api/ci-autofix/summary`, { cache: "no-store" });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    renderCiAutofixAlert(data);
+  } catch {
+    // CI auto-fix is optional; keep the main dashboard quiet if it is unavailable.
+  }
+}
+
+function renderCiAutofixAlert(data) {
+  const existing = document.getElementById("ciAutofixAlert");
+  const count = Number(data?.active_count || 0);
+  if (!count) {
+    if (existing) existing.remove();
+    return;
+  }
+
+  const latest = data.latest || {};
+  const runId = latest.run_id ? `run ${latest.run_id}` : "GitHub Actions";
+  const subject = latest.subject ? `: ${latest.subject}` : "";
+  const text = `${count} CI issue${count === 1 ? "" : "s"} need attention (${runId})${subject}`;
+
+  const banner = existing || document.createElement("div");
+  banner.id = "ciAutofixAlert";
+  banner.className = "ci-autofix-alert";
+  banner.innerHTML = `
+    <div class="ci-autofix-alert-main">
+      <strong>GitHub Actions alert</strong>
+      <span>${escapeBasicHtml(text)}</span>
+    </div>
+    <div class="ci-autofix-alert-actions">
+      <button type="button" class="ci-autofix-alert-secondary" data-action="poll">Check Gmail</button>
+      <button type="button" class="ci-autofix-alert-primary" data-action="open">Open Autofix</button>
+    </div>
+  `;
+
+  banner.querySelector('[data-action="open"]')?.addEventListener("click", () => {
+    window.open(`${basePath}/runner/ci-autofix`, "ci-autofix");
+  });
+  banner.querySelector('[data-action="poll"]')?.addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Checking...";
+    try {
+      await fetch(`${basePath}/api/ci-autofix/poll-gmail`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      await refreshCiAutofixAlert();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+
+  if (!existing) {
+    const shell = document.querySelector(".app-shell");
+    if (shell) shell.parentElement.insertBefore(banner, shell);
+  }
+}
+
+function escapeBasicHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  })[ch]);
 }
 
 function showDemoSplashIfNeeded() {

@@ -14,6 +14,7 @@ from server.routes.brainstorm import create_brainstorm_router
 from server.routes.channels import create_channels_router
 from server.routes.chat import create_chat_router
 from server.routes.chat_ui_state import create_chat_ui_state_router
+from server.routes.ci_autofix import create_ci_autofix_api_router, create_ci_autofix_page_router
 from server.routes.config_routes import create_config_router
 from server.routes.external_tasks import create_external_tasks_router
 from server.routes.internal import create_internal_router
@@ -63,8 +64,10 @@ def create_router() -> APIRouter:
     api.include_router(create_team_presets_router())
     api.include_router(create_usage_router())
     api.include_router(create_webhooks_router())
+    api.include_router(create_ci_autofix_api_router())
 
     router.include_router(api)
+    router.include_router(create_ci_autofix_page_router())
     router.include_router(create_websocket_router())
     router.include_router(create_voice_router())
 
