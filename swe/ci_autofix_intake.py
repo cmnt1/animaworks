@@ -130,7 +130,55 @@ class IntakeJob:
     updated_at: str
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data.update(self.phase())
+        return data
+
+    def phase(self) -> dict[str, str]:
+        detail = ""
+        commit = self.last_commit[:12] if self.last_commit else ""
+        run = self.last_run_id or self.run_id
+        if self.status == "completed":
+            phase = "resolved"
+            label = "Resolved"
+            detail = self.terminal_reason or "CI passed."
+        elif self.status == "dismissed":
+            phase = "dismissed"
+            label = "Dismissed"
+            detail = self.terminal_reason or "No action required."
+        elif self.status == "exhausted":
+            phase = "exhausted"
+            label = "Attempt limit"
+            detail = self.terminal_reason or f"Reached {self.attempt_count}/{self.max_attempts} attempts."
+        elif self.status == "running":
+            phase = "llm_running"
+            label = "LLM running"
+            detail = f"Attempt {self.attempt_count}/{self.max_attempts} is running for run {run}."
+        elif self.status == "queued":
+            phase = "starting"
+            label = "Starting"
+            detail = "Auto-fix agent is queued to start."
+        elif self.status == "waiting_ci":
+            phase = "ci_waiting"
+            label = "Waiting for CI"
+            parts = []
+            if commit:
+                parts.append(f"commit {commit}")
+            parts.append(f"run {run}")
+            detail = "Watching " + " / ".join(parts) + "."
+        elif self.status == "ci_failed":
+            phase = "needs_start"
+            label = "CI failed"
+            detail = "Ready for the next auto-fix attempt." if self.automation_enabled else "Select Start Auto."
+        elif self.status in {"failed", "needs_attention"}:
+            phase = "needs_attention"
+            label = "Needs attention"
+            detail = self.terminal_reason or self.last_conclusion or "Manual inspection is needed."
+        else:
+            phase = "needs_start"
+            label = "Ready"
+            detail = "Candidate is ready. Select Start Auto."
+        return {"phase": phase, "phase_label": label, "phase_detail": detail}
 
 
 @dataclass(frozen=True)
@@ -390,14 +438,12 @@ class CIAutofixIntakeStore:
                     SET source_message_id = COALESCE(NULLIF(?, ''), source_message_id),
                         source_date = COALESCE(NULLIF(?, ''), source_date),
                         subject = COALESCE(NULLIF(?, ''), subject),
-                        run_url = COALESCE(NULLIF(?, ''), run_url),
                         llm_provider = COALESCE(NULLIF(?, ''), llm_provider),
                         llm_model = COALESCE(NULLIF(?, ''), llm_model),
-                        last_run_id = COALESCE(NULLIF(?, ''), last_run_id),
                         updated_at = ?
                     WHERE id = ?
                     """,
-                    (source_message_id, source_date, subject, run_url, llm_provider, llm_model, run_id, now, row["id"]),
+                    (source_message_id, source_date, subject, llm_provider, llm_model, now, row["id"]),
                 )
                 updated = con.execute("SELECT * FROM ci_autofix_jobs WHERE id = ?", (row["id"],)).fetchone()
                 assert updated is not None
@@ -594,6 +640,10 @@ class CIAutofixIntakeStore:
         dismissed = [job for job in jobs if job.status == "dismissed"]
         exhausted = [job for job in jobs if job.status == "exhausted"]
         latest = active[0] if active else (jobs[0] if jobs else None)
+        phase_counts: dict[str, int] = {}
+        for job in jobs:
+            phase = job.phase()["phase"]
+            phase_counts[phase] = phase_counts.get(phase, 0) + 1
         return {
             "active_count": len(active),
             "total_count": len(jobs),
@@ -601,6 +651,7 @@ class CIAutofixIntakeStore:
             "dismissed_count": len(dismissed),
             "exhausted_count": len(exhausted),
             "terminal_count": len(jobs) - len(active),
+            "phase_counts": phase_counts,
             "latest": latest.to_dict() if latest else None,
             "latest_completed": completed[0].to_dict() if completed else None,
         }

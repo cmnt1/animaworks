@@ -51,6 +51,42 @@ def test_store_upsert_candidate_records_event(tmp_path: Path) -> None:
     assert store.list_events(job.id)[0].message == "candidate created"
 
 
+def test_store_upsert_candidate_preserves_followup_run_state(tmp_path: Path) -> None:
+    store = CIAutofixIntakeStore(tmp_path / "ci.sqlite3")
+    job, _ = store.upsert_candidate(
+        run_id="100",
+        repo="cmnt1/animaworks",
+        branch="main",
+        actor="cmnt1",
+        run_url="https://github.com/cmnt1/animaworks/actions/runs/100",
+    )
+    store.update_job_state(
+        job.id,
+        status="waiting_ci",
+        last_run_id="101",
+        run_url="https://github.com/cmnt1/animaworks/actions/runs/101",
+        last_commit="abcdef1234567890",
+    )
+
+    duplicate, created = store.upsert_candidate(
+        run_id="100",
+        repo="cmnt1/animaworks",
+        branch="main",
+        actor="cmnt1",
+        source_message_id="m1",
+        source_date="2099-07-05T04:17:40Z",
+        subject="Run failed",
+        run_url="https://github.com/cmnt1/animaworks/actions/runs/100",
+    )
+
+    assert created is False
+    assert duplicate.id == job.id
+    assert duplicate.last_run_id == "101"
+    assert duplicate.run_url == "https://github.com/cmnt1/animaworks/actions/runs/101"
+    assert duplicate.to_dict()["phase"] == "ci_waiting"
+    assert "commit abcdef123456" in duplicate.to_dict()["phase_detail"]
+
+
 def test_completed_jobs_are_hidden_from_default_list_but_counted(tmp_path: Path) -> None:
     store = CIAutofixIntakeStore(tmp_path / "ci.sqlite3")
     job, _ = store.upsert_candidate(
