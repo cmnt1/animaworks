@@ -3,6 +3,7 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 """Reciprocal Rank Fusion — unified Legacy + Neo4j result merging."""
 
+import hashlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -26,6 +27,13 @@ def legacy_result_key(item: dict[str, Any]) -> str:
     chunk_index = item.get("chunk_index", 0)
     ts = item.get("ts", "")
     memory_type = item.get("memory_type", "")
+    if not source_file and not ts and not memory_type and not chunk_index:
+        # Identity fields are all empty/0 (e.g. graph or synthetic rows). Fall
+        # back to a content hash so distinct items are not merged into one key.
+        content = str(item.get("content", "") or "")
+        if content:
+            digest = hashlib.sha1(content.encode("utf-8")).hexdigest()[:16]
+            return f"\x00content\x00{digest}"
     return f"{source_file}\x00{chunk_index}\x00{ts}\x00{memory_type}"
 
 

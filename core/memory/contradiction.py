@@ -610,14 +610,20 @@ class ContradictionDetector:
                     results["errors"] += 1
                     continue
 
-                # Auto-increment failure_count on the older file (file_b)
-                # BEFORE applying the resolution, since supersede/merge may
-                # archive file_b making it inaccessible at its original path.
+                # Determine older/newer once, up front, while both files still
+                # exist on disk. supersede/merge archive the older file, so the
+                # determination must happen before the resolution is applied.
+                older, newer = self._older_newer(pair)
+
+                # Auto-increment failure_count on the OLDER file BEFORE applying
+                # the resolution: the older file carries the outdated/incorrect
+                # knowledge, and supersede/merge will archive it (making it
+                # inaccessible at its original path afterwards).
                 if strategy in ("supersede", "merge"):
-                    self._increment_failure_count(pair.file_b)
+                    self._increment_failure_count(older)
 
                 if strategy == "supersede":
-                    self._apply_supersede(pair)
+                    self._apply_supersede(pair, older=older, newer=newer)
                     results["superseded"] += 1
                 elif strategy == "merge":
                     merged = await self._apply_merge(pair, model)
@@ -643,7 +649,7 @@ class ContradictionDetector:
                 self._persist_contradiction_history(pair, strategy)
 
                 # Record activity log event for successful resolutions
-                self._log_resolution(pair, strategy)
+                self._log_resolution(pair, strategy, older=older, newer=newer)
 
             except FileNotFoundError as exc:
                 logger.warning(
@@ -710,6 +716,35 @@ class ContradictionDetector:
                 pair.file_b.name,
             )
 
+    def _older_newer(self, pair: ContradictionPair) -> tuple[Path, Path]:
+        """Determine which file of a pair is older / newer.
+
+        Uses ``updated_at`` (falling back to ``created_at``) from each file's
+        frontmatter. When file_a's timestamp is strictly greater, file_a is the
+        newer one; otherwise (including equal or missing timestamps) file_b is
+        treated as newer. This is the single source of truth shared by
+        ``resolve_contradictions`` (failure_count penalty), ``_apply_supersede``
+        (which file to archive), and ``_log_resolution`` (older/newer labels).
+
+        Args:
+            pair: Contradiction pair whose files should be ordered.
+
+        Returns:
+            ``(older, newer)`` paths.
+        """
+        mm = self._memory()
+        meta_a = mm.read_knowledge_metadata(pair.file_a)
+        meta_b = mm.read_knowledge_metadata(pair.file_b)
+
+        ts_a = meta_a.get("updated_at") or meta_a.get("created_at", "")
+        ts_b = meta_b.get("updated_at") or meta_b.get("created_at", "")
+
+        if ts_a > ts_b:
+            # file_a is newer
+            return pair.file_b, pair.file_a
+        # Default: treat file_b as newer (older == file_a)
+        return pair.file_a, pair.file_b
+
     def _increment_failure_count(self, file_path: Path) -> None:
         """Increment failure_count and recalculate confidence for a knowledge file.
 
@@ -756,15 +791,24 @@ class ContradictionDetector:
         self,
         pair: ContradictionPair,
         strategy: str,
+        *,
+        older: Path | None = None,
+        newer: Path | None = None,
     ) -> None:
         """Record a knowledge_contradiction_resolved event to the activity log.
 
         Args:
             pair: The resolved contradiction pair
             strategy: Resolution strategy applied (supersede/merge/coexist)
+            older: Pre-computed older file (from ``_older_newer``). When omitted
+                the determination is recomputed; callers that already archived a
+                file should pass this so the label reflects the real ordering.
+            newer: Pre-computed newer file.
         """
         if self._activity_logger is None:
             return
+        if older is None or newer is None:
+            older, newer = self._older_newer(pair)
         try:
             self._activity_logger.log(
                 event_type="knowledge_contradiction_resolved",
@@ -775,8 +819,8 @@ class ContradictionDetector:
                 summary=t("contradiction.knowledge_resolution", strategy=strategy),
                 meta={
                     "strategy": strategy,
-                    "newer": pair.file_b.name,
-                    "older": pair.file_a.name,
+                    "newer": newer.name,
+                    "older": older.name,
                 },
             )
         except Exception:
@@ -786,33 +830,31 @@ class ContradictionDetector:
                 pair.file_b.name,
             )
 
-    def _apply_supersede(self, pair: ContradictionPair) -> None:
+    def _apply_supersede(
+        self,
+        pair: ContradictionPair,
+        *,
+        older: Path | None = None,
+        newer: Path | None = None,
+    ) -> None:
         """Resolve by superseding the older file with the newer one.
 
-        Determines which file is older based on ``updated_at`` metadata,
-        then archives the older file and annotates the newer one.
+        Determines which file is older based on ``updated_at`` metadata (via
+        ``_older_newer``), then archives the older file and annotates the newer
+        one.
 
         Args:
             pair: Contradiction pair to resolve
+            older: Pre-computed older file. When omitted it is recomputed via
+                ``_older_newer`` (both files must still exist on disk).
+            newer: Pre-computed newer file.
         """
         mm = self._memory()
 
-        # Determine which file is newer
-        meta_a = mm.read_knowledge_metadata(pair.file_a)
-        meta_b = mm.read_knowledge_metadata(pair.file_b)
+        if older is None or newer is None:
+            older, newer = self._older_newer(pair)
 
-        ts_a = meta_a.get("updated_at") or meta_a.get("created_at", "")
-        ts_b = meta_b.get("updated_at") or meta_b.get("created_at", "")
-
-        # Default: treat file_b as newer (file_a gets superseded)
-        if ts_a > ts_b:
-            newer, older = pair.file_a, pair.file_b
-            newer_meta = meta_a
-            older_meta = meta_b
-        else:
-            newer, older = pair.file_b, pair.file_a
-            newer_meta = meta_b
-            older_meta = meta_a
+        older_meta = mm.read_knowledge_metadata(older)
 
         now = now_iso()
 

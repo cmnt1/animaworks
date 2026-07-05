@@ -302,11 +302,13 @@ async def detect_communities_if_neo4j(anima_dir: Path, anima_name: str) -> None:
 
         from core.memory.graph.community import CommunityDetector
 
+        bg_model, _, bg_credential = backend._resolve_extraction_config()
         detector = CommunityDetector(
             driver,
             backend._group_id,
-            model=backend._resolve_background_model(),
+            model=bg_model,
             locale=backend._resolve_locale(),
+            credential=bg_credential,
         )
         communities = await detector.detect_and_store()
         stats = await detector.get_community_stats()

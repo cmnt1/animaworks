@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from datetime import datetime as _dt
 from pathlib import Path
@@ -97,6 +98,57 @@ class HealthMixin:
             data["last_progress_at"] = last_progress
         return data
 
+    def _log_hang_context(self, anima_name: str, handle: ProcessHandle) -> None:
+        """Emit a one-line JSON context for hang forensics.
+
+        Captures the busy sidecar (lanes, timestamps) and the tail of the
+        anima's activity log so the last tool/type before the hang is known.
+        Best-effort: never raises into the health loop.
+        """
+        try:
+            ctx: dict[str, Any] = {}
+            sidecar = self._read_busy_sidecar(anima_name, handle)
+            if sidecar:
+                ctx.update(
+                    {
+                        k: sidecar.get(k)
+                        for k in ("busy_since", "last_progress_at", "updated_at", "lanes")
+                        if sidecar.get(k) is not None
+                    }
+                )
+            animas_dir = getattr(self, "animas_dir", None)
+            if animas_dir is not None:
+                log_dir = Path(animas_dir) / anima_name / "activity_log"
+                if log_dir.is_dir():
+                    files = sorted(log_dir.glob("*.jsonl"))
+                    if files:
+                        recent: list[dict[str, Any]] = []
+                        with open(files[-1], "rb") as f:
+                            f.seek(0, os.SEEK_END)
+                            f.seek(max(0, f.tell() - 8192))
+                            lines = f.read().decode("utf-8", errors="replace").strip().splitlines()
+                        for line in lines[-3:]:
+                            try:
+                                e = json.loads(line)
+                                recent.append(
+                                    {
+                                        "ts": e.get("ts"),
+                                        "type": e.get("type"),
+                                        "tool": e.get("tool"),
+                                        "summary": str(e.get("summary") or "")[:120],
+                                    }
+                                )
+                            except (ValueError, TypeError):
+                                continue
+                        ctx["recent_activity"] = recent
+            logger.error(
+                "Busy hang context: %s %s",
+                anima_name,
+                json.dumps(ctx, ensure_ascii=False, default=str),
+            )
+        except Exception:
+            logger.debug("Failed to collect hang context for %s", anima_name, exc_info=True)
+
     def _handle_busy_health(
         self,
         anima_name: str,
@@ -140,6 +192,7 @@ class HealthMixin:
                         idle_sec,
                         int(self.health_config.busy_hang_threshold_sec),
                     )
+                    self._log_hang_context(anima_name, handle)
                     asyncio.create_task(self._handle_process_hang(anima_name, handle))
                 return
         if handle.stats.last_busy_since is None:
@@ -152,6 +205,7 @@ class HealthMixin:
                 busy_duration,
                 int(self.health_config.busy_hang_threshold_sec),
             )
+            self._log_hang_context(anima_name, handle)
             asyncio.create_task(self._handle_process_hang(anima_name, handle))
 
     def _health_warmup_reason(self, anima_name: str, handle: ProcessHandle) -> str | None:
@@ -271,6 +325,7 @@ class HealthMixin:
                         streaming_sec,
                         self._max_streaming_duration_sec,
                     )
+                    self._log_hang_context(anima_name, handle)
                     asyncio.create_task(self._handle_process_hang(anima_name, handle))
             return
 

@@ -201,6 +201,7 @@ _EXPECTED_FILES = [
     "prompts/fragments/asset_synthesis_system_realistic.md",
     "prompts/fragments/bg_task_notification.md",
     "prompts/fragments/command_output.md",
+    "prompts/fragments/curator_report_review.md",
     "prompts/fragments/recent_dialogue.md",
     "prompts/fragments/recent_reflections.md",
     "prompts/fragments/recovery_note_header.md",

@@ -18,6 +18,7 @@ import json as _json
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import asdict
+from functools import partial
 from typing import Any, cast
 
 from core.execution._litellm_tools import _convert_litellm_tool_calls
@@ -27,6 +28,7 @@ from core.execution._streaming import (
     stream_error_boundary,
     try_parse_text_tool_call,
 )
+from core.execution.backoff import decorrelated_jitter
 from core.execution.base import (
     RepetitionDetector,
     StreamingThinkFilter,
@@ -36,6 +38,15 @@ from core.execution.base import (
     strip_untagged_thinking,
     supports_streaming_tool_use,
 )
+from core.execution.error_classifier import (
+    FailoverReason,
+    classify_llm_error,
+    guard_key,
+    litellm_realm_of,
+    provider_family_of,
+)
+from core.execution.loop_guards import LlmCallInterrupted, call_llm_with_retry
+from core.execution.rate_guard import get_rate_guard
 from core.execution.reminder import (
     SystemReminderQueue,
     msg_context_threshold,
@@ -46,6 +57,30 @@ from core.prompt.context import ContextTracker
 from core.schemas import ImageData
 
 logger = logging.getLogger("animaworks.execution.litellm_loop")
+
+
+def _make_rate_guard_reporter(guard: Any, key: str, label: str) -> Any:
+    """Build the per-attempt error callback for call_llm_with_retry.
+
+    ``key`` is the realm-qualified guard key (``guard_key(family, realm)``).
+    """
+
+    def _report(reason: Any, hint: Any, exc: Exception, attempt: int) -> None:
+        if reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
+            guard.report_block(
+                key,
+                hint.backoff_s or guard.config.default_block_seconds,
+                reason.value,
+            )
+        elif reason in (FailoverReason.AUTH, FailoverReason.BILLING):
+            logger.error(
+                "%s LiteLLM %s — human attention required: %s",
+                label,
+                reason.value,
+                exc,
+            )
+
+    return _report
 
 
 async def _empty_aiter() -> AsyncGenerator[Any, None]:
@@ -208,7 +243,41 @@ class StreamingMixin:
                 if _has_tools:
                     call_kwargs["tools"] = tools
 
-                response = cast(Any, await litellm.acompletion(**call_kwargs))
+                # In-loop retry only before the first event is yielded
+                # (iteration 0): once partial output has streamed to the
+                # client, a retry would replay content, so later iterations
+                # keep the pre-existing fail-fast behavior.
+                if iteration == 0:
+                    _guard_family_s = provider_family_of(self._model_config.model)
+                    _guard_key_s = guard_key(_guard_family_s, litellm_realm_of(self._model_config.model))
+                    try:
+                        response = cast(
+                            Any,
+                            await call_llm_with_retry(
+                                # num_retries=0: in-loop retry is the single
+                                # retry authority on the wrapped call.
+                                partial(litellm.acompletion, **{**call_kwargs, "num_retries": 0}),
+                                classify=partial(classify_llm_error, provider_family=_guard_family_s),
+                                next_backoff=decorrelated_jitter,
+                                interrupt_check=self._check_interrupted,
+                                on_classified_error=_make_rate_guard_reporter(
+                                    get_rate_guard(),
+                                    _guard_key_s,
+                                    "A stream",
+                                ),
+                            ),
+                        )
+                    except LlmCallInterrupted:
+                        logger.info("A stream interrupted during retry backoff at iteration=0")
+                        yield {"type": "text_delta", "text": "[Session interrupted by user]"}
+                        yield {
+                            "type": "done",
+                            "full_text": "[Session interrupted by user]",
+                            "result_message": None,
+                        }
+                        return
+                else:
+                    response = cast(Any, await litellm.acompletion(**call_kwargs))
 
                 # Accumulate streamed chunks
                 iter_text_parts: list[str] = []
@@ -843,15 +912,21 @@ class StreamingMixin:
                     _total_timeout_s = float(_lc_ot().server.ollama_total_timeout)
                 except Exception:
                     _total_timeout_s = 0.0
-                if _total_timeout_s > 0:
+
+                def _make_ollama_call(
+                    call_kwargs: dict[str, Any] = call_kwargs,
+                    iteration: int = iteration,
+                    total_timeout_s: float = _total_timeout_s,
+                ) -> Any:
+                    kwargs = {**call_kwargs, "num_retries": 0} if iteration == 0 else call_kwargs
+                    call = litellm.acompletion(**kwargs)
+                    if total_timeout_s > 0:
+                        return asyncio.wait_for(call, timeout=total_timeout_s)
+                    return call
+
+                if _total_timeout_s > 0 and iteration != 0:
                     try:
-                        response = cast(
-                            Any,
-                            await asyncio.wait_for(
-                                litellm.acompletion(**call_kwargs),
-                                timeout=_total_timeout_s,
-                            ),
-                        )
+                        response = cast(Any, await _make_ollama_call())
                     except TimeoutError:
                         logger.warning(
                             "Ollama LLM call hard-timeout after %.0fs (trigger=%s model=%s)",
@@ -864,8 +939,40 @@ class StreamingMixin:
                         raise LLMAPIError(
                             f"Ollama request timed out after {_total_timeout_s:.0f}s (model={self._model_config.model})"
                         ) from None
+                elif iteration == 0:
+                    # In-loop retry only before the first event is yielded
+                    # (iteration 0) — same rule as token-level streaming.
+                    # num_retries=0: in-loop retry is the single retry
+                    # authority on the wrapped call.
+                    _guard_family_ol = provider_family_of(self._model_config.model)
+                    _guard_key_ol = guard_key(_guard_family_ol, litellm_realm_of(self._model_config.model))
+                    try:
+                        response = cast(
+                            Any,
+                            await call_llm_with_retry(
+                                lambda: _make_ollama_call(),
+                                classify=partial(classify_llm_error, provider_family=_guard_family_ol),
+                                next_backoff=decorrelated_jitter,
+                                interrupt_check=self._check_interrupted,
+                                on_classified_error=_make_rate_guard_reporter(
+                                    get_rate_guard(),
+                                    _guard_key_ol,
+                                    "A ollama stream",
+                                ),
+                            ),
+                        )
+                    except LlmCallInterrupted:
+                        logger.info("A ollama stream interrupted during retry backoff at iteration=0")
+                        yield {"type": "text_delta", "text": "[Session interrupted by user]"}
+                        yield {
+                            "type": "done",
+                            "full_text": "[Session interrupted by user]",
+                            "result_message": None,
+                            "usage": _usage_acc_ol.to_dict(),
+                        }
+                        return
                 else:
-                    response = cast(Any, await litellm.acompletion(**call_kwargs))
+                    response = cast(Any, await _make_ollama_call())
 
                 choice = response.choices[0]
                 message = choice.message

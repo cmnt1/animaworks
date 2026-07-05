@@ -237,6 +237,7 @@ class TestDetectCommunitiesIfNeo4j:
         mock_backend = MagicMock()
         mock_backend._group_id = "test"
         mock_backend._resolve_background_model.return_value = "test-model"
+        mock_backend._resolve_extraction_config.return_value = ("test-model", {}, "")
         mock_backend._resolve_locale.return_value = "ja"
         mock_backend._ensure_driver = AsyncMock()
         mock_backend.close = AsyncMock()
@@ -281,6 +282,7 @@ class TestDetectCommunitiesIfNeo4j:
         mock_backend = MagicMock()
         mock_backend._group_id = "test"
         mock_backend._resolve_background_model.return_value = "test-model"
+        mock_backend._resolve_extraction_config.return_value = ("test-model", {}, "")
         mock_backend._resolve_locale.return_value = "ja"
         mock_backend._ensure_driver = AsyncMock()
         mock_backend.close = AsyncMock()
@@ -378,6 +380,7 @@ class TestCliDetectCommunities:
         mock_backend = MagicMock()
         mock_backend._group_id = "sakura"
         mock_backend._resolve_background_model.return_value = "test-model"
+        mock_backend._resolve_extraction_config.return_value = ("test-model", {}, "")
         mock_backend._resolve_locale.return_value = "ja"
         mock_backend._ensure_driver = AsyncMock()
         mock_backend.close = AsyncMock()

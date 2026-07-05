@@ -51,6 +51,7 @@ from core.execution._litellm_tools import (  # noqa: F401
 )
 from core.execution._session import build_continuation_prompt, handle_session_chaining
 from core.execution._streaming import try_parse_text_tool_call
+from core.execution.backoff import decorrelated_jitter
 from core.execution.base import (
     BaseExecutor,
     ExecutionResult,
@@ -58,11 +59,29 @@ from core.execution.base import (
     ToolCallRecord,
     strip_thinking_tags,
 )
+from core.execution.error_classifier import (
+    FailoverReason,
+    classify_llm_error,
+    guard_key,
+    litellm_realm_of,
+    provider_family_of,
+)
+from core.execution.loop_guards import (
+    EmptyResponseTracker,
+    LlmCallInterrupted,
+    RunawayGuard,
+    call_llm_with_retry,
+    tool_call_signature,
+)
+from core.execution.rate_guard import get_rate_guard
 from core.execution.reminder import (
     SystemReminderQueue,
     msg_context_threshold,
+    msg_empty_response,
     msg_final_iteration,
     msg_output_truncated,
+    msg_tool_loop_halt,
+    msg_tool_loop_warning,
 )
 from core.memory import MemoryManager
 from core.memory.shortterm import ShortTermMemory
@@ -196,21 +215,62 @@ class LiteLLMExecutor(
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
         llm_kwargs = self._build_llm_kwargs()
+        # In-loop retry (call_llm_with_retry) is the single retry authority on
+        # this path — LiteLLM's internal retries would multiply the effective
+        # attempt count (worst case ~16) past the specified maximum of 3.
+        llm_kwargs["num_retries"] = 0
         max_iterations = max_turns_override or self._model_config.max_turns
+
+        # Pre-flight rate-guard query.  This is observability-only: the session
+        # continues even when the realm is guarded and relies on LiteLLM's own
+        # retries — the guard's job is fleet-wide suppression at the one-shot
+        # layer, not deferring Mode A cycles.  The realm is derived from the
+        # model prefix (bedrock/vertex authenticate against distinct creds).
+        _guard_family = provider_family_of(self._model_config.model)
+        _guard_key = guard_key(_guard_family, litellm_realm_of(self._model_config.model))
+        _guard = get_rate_guard()
+        _guard_blocked = _guard.blocked_remaining(_guard_key)
+        if _guard_blocked > 0:
+            logger.info(
+                "A session start: %s rate-guarded for %.0fs (continuing; retries apply)",
+                _guard_key,
+                _guard_blocked,
+            )
+
         chain_count = 0
         usage_acc = TokenUsage()
         cleanup_gate_marker(self._anima_dir)
         _gate_attempted = False
+        _empty_tracker = EmptyResponseTracker()
+        _runaway_guard = RunawayGuard()
+        _force_final = False
+        _final_reminder_sent = False
+        _classify = partial(classify_llm_error, provider_family=_guard_family)
+
+        def _on_llm_error(reason: Any, hint: Any, exc: Exception, attempt: int) -> None:
+            if reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
+                _guard.report_block(
+                    _guard_key,
+                    hint.backoff_s or _guard.config.default_block_seconds,
+                    reason.value,
+                )
+            elif reason in (FailoverReason.AUTH, FailoverReason.BILLING):
+                logger.error(
+                    "A LiteLLM %s — human attention required: %s",
+                    reason.value,
+                    exc,
+                )
 
         for iteration in range(max_iterations):
             if self._check_interrupted():
                 logger.info("LiteLLM execute interrupted at iteration=%d", iteration)
                 return ExecutionResult(text="[Session interrupted by user]")
 
-            is_final_iteration = max_iterations > 1 and iteration == max_iterations - 1
+            is_final_iteration = _force_final or (max_iterations > 1 and iteration == max_iterations - 1)
             iter_tools = [] if is_final_iteration else tools
 
-            if is_final_iteration:
+            if is_final_iteration and not _final_reminder_sent:
+                _final_reminder_sent = True
                 messages.append(
                     {
                         "role": "user",
@@ -259,12 +319,33 @@ class LiteLLMExecutor(
             if not is_final_iteration or _bedrock_needs_tools:
                 call_kwargs["tools"] = tools
 
-            response = await _litellm_acompletion_with_empty_response_retry(
-                litellm,
-                call_kwargs,
-                model=self._model_config.model,
-                iteration=iteration,
-            )
+            try:
+                response = await call_llm_with_retry(
+                    partial(
+                        _litellm_acompletion_with_empty_response_retry,
+                        litellm,
+                        call_kwargs,
+                        model=self._model_config.model,
+                        iteration=iteration,
+                    ),
+                    classify=_classify,
+                    next_backoff=decorrelated_jitter,
+                    interrupt_check=self._check_interrupted,
+                    on_classified_error=_on_llm_error,
+                )
+            except LlmCallInterrupted:
+                logger.info(
+                    "LiteLLM execute interrupted during retry backoff at iteration=%d",
+                    iteration,
+                )
+                return ExecutionResult(text="[Session interrupted by user]")
+            except LLMAPIError:
+                raise
+            except Exception as e:
+                # Classification + guard reporting happen per-attempt inside
+                # call_llm_with_retry via _on_llm_error.
+                logger.exception("LiteLLM API error")
+                raise LLMAPIError(f"LiteLLM API error: {e}") from e
 
             choice = response.choices[0]
             message = choice.message
@@ -371,10 +452,41 @@ class LiteLLMExecutor(
                     )
                     logger.info("A completion_gate not called; injecting retry at iteration=%d", iteration)
                     continue
-                cleanup_gate_marker(self._anima_dir)
 
                 final_text = message.content or ""
                 _, final_text = strip_thinking_tags(final_text)
+
+                # ── Empty-response recovery ──
+                if EmptyResponseTracker.is_empty(final_text, has_tool_calls=False):
+                    if _empty_tracker.should_reprompt():
+                        messages.append({"role": "assistant", "content": message.content or ""})
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": SystemReminderQueue.format_reminder(
+                                    msg_empty_response(),
+                                ),
+                            }
+                        )
+                        logger.info(
+                            "A empty response at iteration=%d; reprompting (%d used)",
+                            iteration,
+                            _empty_tracker.reprompts_used,
+                        )
+                        continue
+                    logger.warning(
+                        "A empty response persisted after reprompts at iteration=%d",
+                        iteration,
+                    )
+                    cleanup_gate_marker(self._anima_dir)
+                    return ExecutionResult(
+                        text="\n".join(all_response_text) or "(empty response)",
+                        tool_call_records=all_tool_records,
+                        usage=usage_acc,
+                        truncated=True,
+                    )
+
+                cleanup_gate_marker(self._anima_dir)
                 all_response_text.append(final_text)
                 logger.debug("A final response at iteration=%d", iteration)
                 final_reminder = self.reminder_queue.drain_formatted()
@@ -416,6 +528,61 @@ class LiteLLMExecutor(
                     _, _content = strip_thinking_tags(_content)
                     all_response_text.append(_content)
                 continue
+
+            # ── Runaway halt follow-up: the model kept calling tools even
+            # after finalization was forced (Bedrock keeps toolConfig for API
+            # compliance) — finalize with what has been gathered instead of
+            # burning the remaining iterations.
+            if _force_final:
+                logger.warning(
+                    "A tool call after forced finalization at iteration=%d — finalizing",
+                    iteration,
+                )
+                if _content:
+                    _, _content = strip_thinking_tags(_content)
+                    if _content:
+                        all_response_text.append(_content)
+                cleanup_gate_marker(self._anima_dir)
+                return ExecutionResult(
+                    text="\n".join(all_response_text) or "(tool loop halted)",
+                    tool_call_records=all_tool_records,
+                    usage=usage_acc,
+                    truncated=True,
+                )
+
+            # ── Runaway guard: consecutive identical tool-call turns ──
+            _turn_sig = tuple(tool_call_signature(tc["name"], tc["arguments"]) for tc in parsed_calls)
+            _guard_decision = _runaway_guard.observe(_turn_sig)
+            if _guard_decision == RunawayGuard.HALT:
+                logger.warning(
+                    "A runaway tool loop halted at iteration=%d (streak=%d): %s",
+                    iteration,
+                    _runaway_guard.streak,
+                    ", ".join(tc["name"] for tc in parsed_calls),
+                )
+                _force_final = True
+                _final_reminder_sent = True
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": SystemReminderQueue.format_reminder(
+                            msg_tool_loop_halt(count=_runaway_guard.streak),
+                        ),
+                    }
+                )
+                continue
+            if _guard_decision == RunawayGuard.WARN:
+                self.reminder_queue.push_sync(
+                    msg_tool_loop_warning(
+                        tool_names=", ".join(sorted({tc["name"] for tc in parsed_calls})),
+                        count=_runaway_guard.streak,
+                    )
+                )
+                logger.warning(
+                    "A runaway tool loop warning at iteration=%d (streak=%d)",
+                    iteration,
+                    _runaway_guard.streak,
+                )
 
             # Reconstruct assistant message with repaired arguments.
             # model_dump() would preserve malformed JSON that some models

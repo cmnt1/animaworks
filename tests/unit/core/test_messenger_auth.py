@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -57,7 +58,10 @@ class TestReceiveFromPersonValidation:
 
     @patch("core.config.models.load_config")
     def test_unknown_sender_warning_logged(
-        self, mock_load: MagicMock, shared_dir: Path, caplog: pytest.LogCaptureFixture,
+        self,
+        mock_load: MagicMock,
+        shared_dir: Path,
+        caplog: pytest.LogCaptureFixture,
     ):
         import logging
 
@@ -74,7 +78,7 @@ class TestReceiveFromPersonValidation:
         assert any("impostor" in r.message for r in caplog.records)
 
     @patch("core.config.models.load_config")
-    def test_unknown_sender_file_not_deleted(self, mock_load: MagicMock, shared_dir: Path):
+    def test_unknown_sender_file_quarantined_not_deleted(self, mock_load: MagicMock, shared_dir: Path):
         mock_load.return_value = _mock_config_with_animas("alice")
         alice = Messenger(shared_dir, "alice")
         inbox = shared_dir / "inbox" / "alice"
@@ -83,7 +87,9 @@ class TestReceiveFromPersonValidation:
         msg_path.write_text(msg.model_dump_json(), encoding="utf-8")
 
         alice.receive()
-        assert msg_path.exists(), "Unknown sender message file must not be deleted"
+        assert not msg_path.exists(), "Unknown sender message must leave the inbox (watcher spin)"
+        quarantined = inbox / "quarantine" / "msg.json"
+        assert quarantined.exists(), "Unknown sender message file must be preserved in quarantine"
 
     @patch("core.config.models.load_config")
     def test_mixed_known_and_unknown_senders(self, mock_load: MagicMock, shared_dir: Path):
@@ -131,7 +137,10 @@ class TestReceiveWithPathsFromPersonValidation:
 
     @patch("core.config.models.load_config")
     def test_unknown_sender_warning_logged(
-        self, mock_load: MagicMock, shared_dir: Path, caplog: pytest.LogCaptureFixture,
+        self,
+        mock_load: MagicMock,
+        shared_dir: Path,
+        caplog: pytest.LogCaptureFixture,
     ):
         import logging
 
@@ -147,7 +156,7 @@ class TestReceiveWithPathsFromPersonValidation:
         assert any("unknown from_person" in r.message for r in caplog.records)
 
     @patch("core.config.models.load_config")
-    def test_unknown_sender_file_not_deleted(self, mock_load: MagicMock, shared_dir: Path):
+    def test_unknown_sender_file_quarantined_not_deleted(self, mock_load: MagicMock, shared_dir: Path):
         mock_load.return_value = _mock_config_with_animas("alice")
         alice = Messenger(shared_dir, "alice")
         inbox = shared_dir / "inbox" / "alice"
@@ -156,7 +165,9 @@ class TestReceiveWithPathsFromPersonValidation:
         msg_path.write_text(msg.model_dump_json(), encoding="utf-8")
 
         alice.receive_with_paths()
-        assert msg_path.exists(), "Unknown sender message file must not be deleted"
+        assert not msg_path.exists(), "Unknown sender message must leave the inbox (watcher spin)"
+        quarantined = inbox / "quarantine" / "msg.json"
+        assert quarantined.exists(), "Unknown sender message file must be preserved in quarantine"
 
 
 # ── Inbox directory permissions ──────────────────────────
@@ -166,6 +177,9 @@ class TestInboxPermissions:
     def test_messenger_init_sets_inbox_chmod_700(self, shared_dir: Path):
         Messenger(shared_dir, "bob")
         inbox = shared_dir / "inbox" / "bob"
+        if os.name == "nt":
+            assert inbox.exists()
+            return
         mode = stat.S_IMODE(inbox.stat().st_mode)
         assert mode == 0o700
 
@@ -177,5 +191,8 @@ class TestInboxPermissions:
         _ensure_runtime_only_dirs(data_dir)
 
         inbox = data_dir / "shared" / "inbox"
+        if os.name == "nt":
+            assert inbox.exists()
+            return
         mode = stat.S_IMODE(inbox.stat().st_mode)
         assert mode == 0o700

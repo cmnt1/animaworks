@@ -210,7 +210,7 @@ def _try_recover_latched_store(anima_name: str | None) -> Any | None:
 
 
 def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> Any | None:
-    from core.memory.rag.singleton import get_vector_store, reset_vector_store
+    from core.memory.rag.singleton import get_vector_store, reset_vector_store_after_error
 
     try:
         store = get_vector_store(anima_name)
@@ -222,7 +222,7 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
     except Exception:
         logger.warning("Vector worker native store action failed for owner=%s", anima_name or "shared", exc_info=True)
         try:
-            reset_vector_store(anima_name)
+            reset_vector_store_after_error(anima_name, source="worker_action_failure")
         except Exception:
             logger.debug(
                 "Vector worker failed to reset native store after action failure for owner=%s",
@@ -352,15 +352,23 @@ def _is_vector_action_error(value: Any) -> bool:
 
 def _write_failure_response(anima_name: str | None, collection: str, operation: str) -> JSONResponse:
     state = _record_vector_write_failure(anima_name, collection, operation)
+    retry_at = float(state.get("next_retry_at") or 0.0)
+    retry_after = max(0, int(retry_at - time.monotonic()))
+    content = {
+        "detail": f"Vector {operation} failed",
+        "collection": collection,
+        "owner": anima_name or "shared",
+        "consecutive_failures": state["consecutive_failures"],
+        "circuit_breaker_threshold": state["threshold"],
+    }
+    headers = None
+    if retry_after > 0:
+        content["retry_after_seconds"] = retry_after
+        headers = {"Retry-After": str(retry_after)}
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": f"Vector {operation} failed",
-            "collection": collection,
-            "owner": anima_name or "shared",
-            "consecutive_failures": state["consecutive_failures"],
-            "circuit_breaker_threshold": state["threshold"],
-        },
+        content=content,
+        headers=headers,
     )
 
 

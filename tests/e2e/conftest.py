@@ -113,6 +113,20 @@ class _DeterministicReranker:
 
 
 @pytest.fixture(autouse=True)
+def _reset_llm_rate_guard_singleton(tmp_path: Path) -> None:
+    """Point the process-wide LLM rate guard at a per-test temp file."""
+    from core.config.schemas import LlmRateGuardConfig
+    from core.execution import rate_guard
+
+    rate_guard._shared_guard = rate_guard.LlmRateGuard(
+        config=LlmRateGuardConfig(),
+        path=tmp_path / "_llm_rate_guard.json",
+    )
+    yield
+    rate_guard._shared_guard = None
+
+
+@pytest.fixture(autouse=True)
 def _bypass_completion_gate():
     """Disable completion_gate enforcement for all e2e tests.
 

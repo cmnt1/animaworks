@@ -86,13 +86,23 @@ class AnimaRunner:
 
     @staticmethod
     def _conversation_contains_recovery(conv_memory: Any, recovered_text: str, saved_text: str) -> bool:
-        """Return True when the recovered assistant text is already stored."""
+        """Return True when the recovered assistant text is already stored.
+
+        Dedup is intentionally marker-independent. If the streaming response
+        completed and was saved cleanly to conversation memory just before the
+        crash — but the journal was not yet deleted — the stored assistant turn
+        carries no interruption marker. Requiring the marker (the legacy
+        behavior) would miss that turn and append a duplicate. We therefore also
+        treat the recovery as already present when the recovered text matches
+        the most recent assistant turn's content with the marker stripped.
+        """
         if not recovered_text:
             return False
         try:
             state = conv_memory.load()
             marker = t("anima.response_interrupted")
-            for turn in getattr(state, "turns", []):
+            turns = list(getattr(state, "turns", []))
+            for turn in turns:
                 if getattr(turn, "role", "") != "assistant":
                     continue
                 content = getattr(turn, "content", "") or ""
@@ -100,6 +110,21 @@ class AnimaRunner:
                     return True
                 if recovered_text in content and marker in content:
                     return True
+            # Marker-independent check against the most recent assistant turn:
+            # a clean save that completed before the journal was deleted stores
+            # the full response without the interruption marker. Restrict this to
+            # the tail turn to avoid falsely matching unrelated earlier turns.
+            recovered_stripped = recovered_text.strip()
+            for turn in reversed(turns):
+                if getattr(turn, "role", "") != "assistant":
+                    continue
+                content = getattr(turn, "content", "") or ""
+                content_wo_marker = content.replace(marker, "").strip()
+                if recovered_stripped and (
+                    content_wo_marker == recovered_stripped or recovered_stripped in content_wo_marker
+                ):
+                    return True
+                break
         except Exception:
             logger.debug("Failed to inspect conversation recovery state", exc_info=True)
         return False
@@ -1056,7 +1081,7 @@ class AnimaRunner:
 # ── CLI Entry Point ────────────────────────────────────────────────
 
 
-def setup_logging(anima_name: str, log_dir: Path) -> None:
+def setup_logging(anima_name: str, log_dir: Path, redaction_enabled: bool = True) -> None:
     """Setup logging for child process with anima-specific log files."""
     from core.logging_config import setup_anima_logging
 
@@ -1065,6 +1090,7 @@ def setup_logging(anima_name: str, log_dir: Path) -> None:
         log_dir=log_dir,
         level="INFO",
         also_to_console=False,  # Child processes log to file only
+        redaction_enabled=redaction_enabled,
     )
 
 
@@ -1109,9 +1135,17 @@ async def main() -> None:
     """Main entry point."""
     args = parse_args()
 
-    setup_logging(args.anima_name, args.log_dir)
-
     from core.config import load_config
+
+    # Best-effort read of the redaction switch before logging is configured.
+    # Falls back to the secure default (on) if config can't be loaded yet.
+    try:
+        _redaction_enabled = load_config().logging.redaction_enabled
+    except Exception:
+        _redaction_enabled = True
+
+    setup_logging(args.anima_name, args.log_dir, redaction_enabled=_redaction_enabled)
+
     from core.platform.fd_limits import raise_fd_soft_limit
     from core.time_utils import configure_timezone
 

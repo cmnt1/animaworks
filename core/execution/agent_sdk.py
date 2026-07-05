@@ -121,6 +121,8 @@ from core.execution._sdk_stream import (  # noqa: F401
     synthesize_no_text_fallback,
 )
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord
+from core.execution.error_classifier import guard_key, provider_family_of
+from core.execution.rate_guard import get_rate_guard
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import CHARS_PER_TOKEN, ContextTracker
 from core.schemas import ImageData, ModelConfig
@@ -306,6 +308,26 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         """Return True when auth failures should trigger a fresh-session retry."""
         return (self._model_config.mode_s_auth or "max") == "max"
 
+    def _rate_guard_preflight(self) -> None:
+        """Log when this model's realm is rate-guarded (start-time suppression only).
+
+        The SDK owns its internal retries, so a guarded realm does not defer the
+        session — this is observability so a fleet-wide throttle is visible at
+        session start.  Keyed on the Mode-S auth realm the SDK authenticates
+        against (``max``/``api``/``bedrock``/``vertex``), which is independent of
+        the API-key ``api`` realm used by LiteLLM.
+        """
+        family = provider_family_of(self._model_config.model)
+        realm = self._model_config.mode_s_auth or "max"
+        key = guard_key(family, realm)
+        blocked = get_rate_guard().blocked_remaining(key)
+        if blocked > 0:
+            logger.info(
+                "S session start: %s rate-guarded for %.0fs (continuing; SDK retries apply)",
+                key,
+                blocked,
+            )
+
     # ── Blocking execution ───────────────────────────────────
 
     async def _process_blocking_messages(
@@ -411,6 +433,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         """Run a session via Claude Agent SDK with context monitoring hook."""
         from claude_agent_sdk import ClaudeSDKClient, ClaudeSDKError, ProcessError
 
+        self._rate_guard_preflight()
         _cw = self._resolve_cw()
         _max_turns = max_turns_override or self._model_config.max_turns
         session_stats = self._init_session_stats(system_prompt, prompt, trigger)
@@ -571,6 +594,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         """Stream events from Claude Agent SDK."""
         from claude_agent_sdk import ClaudeSDKClient, ClaudeSDKError, ProcessError
 
+        self._rate_guard_preflight()
         _cw = self._resolve_cw()
         _max_turns = max_turns_override or self._model_config.max_turns
         session_stats = self._init_session_stats(system_prompt, prompt, trigger)

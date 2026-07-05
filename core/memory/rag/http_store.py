@@ -112,8 +112,9 @@ class HttpVectorStore(VectorStore):
             return None
         try:
             resp = self._get_client().post(path, json=payload)
-            if resp.status_code in {429, 503} and write_collection:
-                self._record_write_circuit(write_collection, resp.headers.get("Retry-After"))
+            retry_after = resp.headers.get("Retry-After")
+            if write_collection and (resp.status_code in {429, 503} or (resp.status_code == 500 and retry_after)):
+                self._record_write_circuit(write_collection, retry_after)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:

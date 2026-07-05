@@ -28,6 +28,7 @@ logger = logging.getLogger("animaworks.config")
 _config: AnimaWorksConfig | None = None
 _config_path: Path | None = None
 _config_mtime: float = 0.0
+_promotion_flag_warned: bool = False
 
 # Guard so stale-activity-level repair runs at most once per process.
 _stale_activity_level_checked: bool = False
@@ -42,10 +43,11 @@ _STALE_ACTIVITY_REPLACEMENT: int = 100
 
 def invalidate_cache() -> None:
     """Reset the module-level singleton cache."""
-    global _config, _config_path, _config_mtime, _stale_activity_level_checked
+    global _config, _config_path, _config_mtime, _promotion_flag_warned, _stale_activity_level_checked
     _config = None
     _config_path = None
     _config_mtime = 0.0
+    _promotion_flag_warned = False
     _stale_activity_level_checked = False
 
 
@@ -129,6 +131,26 @@ def _maybe_repair_stale_activity_level(
     return config
 
 
+def _warn_deprecated_promotion_flags(config: AnimaWorksConfig) -> None:
+    """Warn once when deprecated no-op promotion flags are set to non-defaults.
+
+    ``auto_activate`` / ``require_approval_on_warn`` are ignored: skill
+    promotion always writes to quarantine and requires human approval. The
+    fields are kept in the schema only so existing config.json files validate.
+    """
+    global _promotion_flag_warned
+    if _promotion_flag_warned:
+        return
+    pcfg = config.skills.promotion
+    if pcfg.auto_activate or not pcfg.require_approval_on_warn:
+        logger.warning(
+            "config skills.promotion.auto_activate / require_approval_on_warn are "
+            "deprecated no-ops and are ignored; skill promotion always requires "
+            "human approval (quarantine default). Remove them from config.json.",
+        )
+        _promotion_flag_warned = True
+
+
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
@@ -202,6 +224,7 @@ def load_config(path: Path | None = None) -> AnimaWorksConfig:
         _config_mtime = path.stat().st_mtime
     except OSError:
         _config_mtime = 0.0
+    _warn_deprecated_promotion_flags(config)
     return config
 
 

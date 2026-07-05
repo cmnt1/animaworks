@@ -30,6 +30,7 @@ import logging
 import re
 from collections.abc import AsyncGenerator
 from dataclasses import asdict
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -42,6 +43,7 @@ from core.exceptions import (
 from core.execution._sanitize import wrap_tool_result
 from core.execution._streaming import stream_error_boundary
 from core.execution._tool_summary import make_tool_detail_chunk
+from core.execution.backoff import decorrelated_jitter
 from core.execution.base import (
     BaseExecutor,
     ExecutionResult,
@@ -53,7 +55,27 @@ from core.execution.base import (
     tool_input_save_budget,
     tool_result_save_budget,
 )
-from core.execution.reminder import SystemReminderQueue, msg_output_truncated
+from core.execution.error_classifier import (
+    FailoverReason,
+    classify_llm_error,
+    guard_key,
+    litellm_realm_of,
+    provider_family_of,
+)
+from core.execution.loop_guards import (
+    LlmCallInterrupted,
+    RunawayGuard,
+    call_llm_with_retry,
+    tool_call_signature,
+)
+from core.execution.rate_guard import get_rate_guard
+from core.execution.reminder import (
+    SystemReminderQueue,
+    msg_empty_response,
+    msg_output_truncated,
+    msg_tool_loop_halt,
+    msg_tool_loop_warning,
+)
 from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.shortterm import ShortTermMemory
@@ -311,6 +333,7 @@ class AssistedExecutor(BaseExecutor):
         self,
         messages: list[dict[str, Any]],
         max_tokens_override: int | None = None,
+        num_retries_override: int | None = None,
     ) -> Any:
         """Call LiteLLM ``acompletion`` without tools parameter."""
         import litellm
@@ -344,7 +367,7 @@ class AssistedExecutor(BaseExecutor):
             "messages": messages,
             "max_tokens": _eff_max,
             "timeout": self._resolve_llm_timeout(),
-            "num_retries": self._resolve_num_retries(),
+            "num_retries": (num_retries_override if num_retries_override is not None else self._resolve_num_retries()),
         }
 
         api_key = self._resolve_api_key()
@@ -402,6 +425,54 @@ class AssistedExecutor(BaseExecutor):
 
         return await litellm.acompletion(**kwargs)
 
+    def _make_llm_error_reporter(self, key: str) -> Any:
+        """Build the per-attempt error callback for call_llm_with_retry.
+
+        ``key`` is the realm-qualified guard key (``guard_key(family, realm)``).
+        """
+        guard = get_rate_guard()
+
+        def _report(reason: Any, hint: Any, exc: Exception, attempt: int) -> None:
+            if reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
+                guard.report_block(
+                    key,
+                    hint.backoff_s or guard.config.default_block_seconds,
+                    reason.value,
+                )
+            elif reason in (FailoverReason.AUTH, FailoverReason.BILLING):
+                logger.error(
+                    "Mode B LiteLLM %s — human attention required: %s",
+                    reason.value,
+                    exc,
+                )
+
+        return _report
+
+    async def _call_llm_guarded(
+        self,
+        messages: list[dict[str, Any]],
+        max_tokens_override: int | None = None,
+    ) -> Any:
+        """``_call_llm`` wrapped with in-loop transient-error retry.
+
+        LiteLLM's internal retries are disabled on this path — the in-loop
+        retry is the single retry authority for the wrapped call.
+        """
+        family = provider_family_of(self._model_config.model)
+        key = guard_key(family, litellm_realm_of(self._model_config.model))
+        return await call_llm_with_retry(
+            partial(
+                self._call_llm,
+                messages,
+                max_tokens_override=max_tokens_override,
+                num_retries_override=0,
+            ),
+            classify=partial(classify_llm_error, provider_family=family),
+            next_backoff=decorrelated_jitter,
+            interrupt_check=self._check_interrupted,
+            on_classified_error=self._make_llm_error_reporter(key),
+        )
+
     async def execute(
         self,
         prompt: str,
@@ -444,6 +515,10 @@ class AssistedExecutor(BaseExecutor):
         intent_reprompt_count = 0
         usage_acc = TokenUsage()
         max_iterations_reached = False
+        _runaway_guard = RunawayGuard()
+        _tools_halted = False
+        _halted_final = False
+        _empty_exhausted = False
 
         # ── 2. Tool-call loop ────────────────────────────────
         for iteration in range(max_iterations):
@@ -460,10 +535,13 @@ class AssistedExecutor(BaseExecutor):
                 break
 
             try:
-                response = await self._call_llm(
+                response = await self._call_llm_guarded(
                     messages,
                     max_tokens_override=preflight.get("max_tokens"),
                 )
+            except LlmCallInterrupted:
+                logger.info("Mode B interrupted during retry backoff at iteration=%d", iteration)
+                return ExecutionResult(text="[Session interrupted by user]")
             except LLMAPIError:
                 raise
             except AnimaWorksError:
@@ -493,23 +571,39 @@ class AssistedExecutor(BaseExecutor):
             # ── 3. Extract tool call ─────────────────────────
             tool_call = extract_tool_call(content)
             if tool_call is None:
+                # Empty responses share the intent-reprompt budget: both are
+                # "the model produced nothing actionable" failures.
+                _, _visible = strip_thinking_tags(content)
+                _is_empty = not _visible.strip()
                 # Check for intent-without-action: model says "I'll check"
                 # but doesn't actually call a tool.  Re-prompt up to
                 # _MAX_INTENT_REPROMPTS times to coax out the JSON block.
-                if intent_reprompt_count < _MAX_INTENT_REPROMPTS and _looks_like_tool_intent(content):
+                if intent_reprompt_count < _MAX_INTENT_REPROMPTS and (_is_empty or _looks_like_tool_intent(content)):
                     intent_reprompt_count += 1
                     logger.info(
-                        "Mode B intent detected without tool call (reprompt %d/%d): %.80s",
+                        "Mode B %s without tool call (reprompt %d/%d): %.80s",
+                        "empty response" if _is_empty else "intent detected",
                         intent_reprompt_count,
                         _MAX_INTENT_REPROMPTS,
                         content,
                     )
                     from core.tooling.prompt_db import _get_locale
 
-                    reprompt = _INTENT_REPROMPT_JA if _get_locale() == "ja" else _INTENT_REPROMPT_EN
+                    if _is_empty:
+                        reprompt = msg_empty_response()
+                    else:
+                        reprompt = _INTENT_REPROMPT_JA if _get_locale() == "ja" else _INTENT_REPROMPT_EN
                     messages.append({"role": "assistant", "content": content})
                     messages.append({"role": "user", "content": reprompt})
                     continue
+
+                if _is_empty:
+                    _empty_exhausted = True
+                    logger.warning(
+                        "Mode B empty response persisted after reprompts at iteration=%d",
+                        iteration,
+                    )
+                    break
 
                 # No tool call → final response
                 all_response_text.append(content)
@@ -517,6 +611,19 @@ class AssistedExecutor(BaseExecutor):
                     "Mode B final response at iteration=%d len=%d",
                     iteration,
                     len(content),
+                )
+                break
+
+            # ── Runaway halt: model kept calling tools after the halt
+            # notice — finalize with what has been gathered so far.
+            if _tools_halted:
+                narrative = _strip_tool_call_block(content)
+                if narrative:
+                    all_response_text.append(narrative)
+                _halted_final = True
+                logger.warning(
+                    "Mode B tool call after runaway halt at iteration=%d — finalizing",
+                    iteration,
                 )
                 break
 
@@ -544,6 +651,37 @@ class AssistedExecutor(BaseExecutor):
                     }
                 )
                 continue
+
+            # ── Runaway guard: consecutive identical tool calls ──
+            _guard_decision = _runaway_guard.observe((tool_call_signature(tool_name, tool_args),))
+            if _guard_decision == RunawayGuard.HALT:
+                logger.warning(
+                    "Mode B runaway tool loop halted at iteration=%d (streak=%d): %s",
+                    iteration,
+                    _runaway_guard.streak,
+                    tool_name,
+                )
+                _tools_halted = True
+                messages.append({"role": "assistant", "content": content})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": SystemReminderQueue.format_reminder(
+                            msg_tool_loop_halt(count=_runaway_guard.streak),
+                        ),
+                    }
+                )
+                continue
+            if _guard_decision == RunawayGuard.WARN:
+                self.reminder_queue.push_sync(
+                    msg_tool_loop_warning(tool_names=tool_name, count=_runaway_guard.streak),
+                )
+                logger.warning(
+                    "Mode B runaway tool loop warning at iteration=%d (streak=%d): %s",
+                    iteration,
+                    _runaway_guard.streak,
+                    tool_name,
+                )
 
             # ── 5. Execute tool ───────────────────────────────
             logger.info(
@@ -614,10 +752,10 @@ class AssistedExecutor(BaseExecutor):
         _, final_text = strip_thinking_tags(final_text)
         logger.info("Mode B text-loop END total_len=%d", len(final_text))
         return ExecutionResult(
-            text=final_text or "(max iterations reached)",
+            text=final_text or ("(empty response)" if _empty_exhausted else "(max iterations reached)"),
             tool_call_records=all_tool_records,
             usage=usage_acc,
-            truncated=max_iterations_reached,
+            truncated=max_iterations_reached or _halted_final or _empty_exhausted,
         )
 
     async def execute_streaming(
@@ -669,6 +807,10 @@ class AssistedExecutor(BaseExecutor):
         intent_reprompt_count = 0
         _usage_acc_bs = TokenUsage()
         max_iterations_reached = False
+        _runaway_guard = RunawayGuard()
+        _tools_halted = False
+        _halted_final = False
+        _empty_exhausted = False
 
         # ── 2. Tool-call loop ────────────────────────────────
         async with stream_error_boundary(
@@ -689,10 +831,25 @@ class AssistedExecutor(BaseExecutor):
                     yield {"type": "text_delta", "text": error_msg}
                     break
 
-                response = await self._call_llm(
-                    messages,
-                    max_tokens_override=preflight.get("max_tokens"),
-                )
+                if iteration == 0:
+                    # In-loop retry only before the first event is yielded
+                    # (iteration 0): later iterations have already streamed
+                    # output, so they keep the pre-existing fail-fast path.
+                    try:
+                        response = await self._call_llm_guarded(
+                            messages,
+                            max_tokens_override=preflight.get("max_tokens"),
+                        )
+                    except LlmCallInterrupted:
+                        logger.info("Mode B streaming interrupted during retry backoff at iteration=0")
+                        all_response_text.append("[Session interrupted by user]")
+                        yield {"type": "text_delta", "text": "[Session interrupted by user]"}
+                        break
+                else:
+                    response = await self._call_llm(
+                        messages,
+                        max_tokens_override=preflight.get("max_tokens"),
+                    )
                 choice = response.choices[0]
                 content = choice.message.content or ""
                 _rc = (
@@ -735,21 +892,38 @@ class AssistedExecutor(BaseExecutor):
                 tool_call = extract_tool_call(content)
 
                 if tool_call is None:
+                    # Empty responses share the intent-reprompt budget
+                    # (content is already thinking-stripped on this path).
+                    _is_empty = not content.strip()
                     # Check for intent-without-action (same as non-streaming)
-                    if intent_reprompt_count < _MAX_INTENT_REPROMPTS and _looks_like_tool_intent(content):
+                    if intent_reprompt_count < _MAX_INTENT_REPROMPTS and (
+                        _is_empty or _looks_like_tool_intent(content)
+                    ):
                         intent_reprompt_count += 1
                         logger.info(
-                            "Mode B streaming intent detected without tool call (reprompt %d/%d): %.80s",
+                            "Mode B streaming %s without tool call (reprompt %d/%d): %.80s",
+                            "empty response" if _is_empty else "intent detected",
                             intent_reprompt_count,
                             _MAX_INTENT_REPROMPTS,
                             content,
                         )
                         from core.tooling.prompt_db import _get_locale
 
-                        reprompt = _INTENT_REPROMPT_JA if _get_locale() == "ja" else _INTENT_REPROMPT_EN
+                        if _is_empty:
+                            reprompt = msg_empty_response()
+                        else:
+                            reprompt = _INTENT_REPROMPT_JA if _get_locale() == "ja" else _INTENT_REPROMPT_EN
                         messages.append({"role": "assistant", "content": content})
                         messages.append({"role": "user", "content": reprompt})
                         continue
+
+                    if _is_empty:
+                        _empty_exhausted = True
+                        logger.warning(
+                            "Mode B streaming empty response persisted after reprompts at iteration=%d",
+                            iteration,
+                        )
+                        break
 
                     # No tool call → final response
                     all_response_text.append(content)
@@ -759,6 +933,20 @@ class AssistedExecutor(BaseExecutor):
                         "Mode B streaming final response at iteration=%d len=%d",
                         iteration,
                         len(content),
+                    )
+                    break
+
+                # ── Runaway halt: model kept calling tools after the halt
+                # notice — finalize with what has been gathered so far.
+                if _tools_halted:
+                    narrative = _strip_tool_call_block(content)
+                    if narrative:
+                        all_response_text.append(narrative)
+                        yield {"type": "text_delta", "text": narrative}
+                    _halted_final = True
+                    logger.warning(
+                        "Mode B streaming tool call after runaway halt at iteration=%d — finalizing",
+                        iteration,
                     )
                     break
 
@@ -786,6 +974,37 @@ class AssistedExecutor(BaseExecutor):
                         }
                     )
                     continue
+
+                # ── Runaway guard: consecutive identical tool calls ──
+                _guard_decision = _runaway_guard.observe((tool_call_signature(tool_name, tool_args),))
+                if _guard_decision == RunawayGuard.HALT:
+                    logger.warning(
+                        "Mode B streaming runaway tool loop halted at iteration=%d (streak=%d): %s",
+                        iteration,
+                        _runaway_guard.streak,
+                        tool_name,
+                    )
+                    _tools_halted = True
+                    messages.append({"role": "assistant", "content": content})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": SystemReminderQueue.format_reminder(
+                                msg_tool_loop_halt(count=_runaway_guard.streak),
+                            ),
+                        }
+                    )
+                    continue
+                if _guard_decision == RunawayGuard.WARN:
+                    self.reminder_queue.push_sync(
+                        msg_tool_loop_warning(tool_names=tool_name, count=_runaway_guard.streak),
+                    )
+                    logger.warning(
+                        "Mode B streaming runaway tool loop warning at iteration=%d (streak=%d): %s",
+                        iteration,
+                        _runaway_guard.streak,
+                        tool_name,
+                    )
 
                 # ── 5. Yield narrative text (tool JSON stripped) ──
                 narrative = _strip_tool_call_block(content)
@@ -878,9 +1097,9 @@ class AssistedExecutor(BaseExecutor):
         logger.info("Mode B streaming END total_len=%d", len(final_text))
         yield {
             "type": "done",
-            "full_text": final_text or "(max iterations reached)",
+            "full_text": final_text or ("(empty response)" if _empty_exhausted else "(max iterations reached)"),
             "result_message": None,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "usage": _usage_acc_bs.to_dict(),
-            "truncated": max_iterations_reached,
+            "truncated": max_iterations_reached or _halted_final or _empty_exhausted,
         }

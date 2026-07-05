@@ -72,7 +72,8 @@ class TestNLIContradictionCheck:
 
     @pytest.mark.asyncio
     async def test_nli_unavailable_returns_no_contradiction(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """When NLI is unavailable, return no contradiction."""
         detector._nli_model = None
@@ -85,9 +86,7 @@ class TestNLIContradictionCheck:
             "core.memory.nli.SharedNLIModel",
             return_value=mock_nli,
         ):
-            is_contradiction, score, is_entailment = (
-                await detector._check_contradiction_nli("text A", "text B")
-            )
+            is_contradiction, score, is_entailment = await detector._check_contradiction_nli("text A", "text B")
 
         assert is_contradiction is False
         assert score == 0.0
@@ -95,21 +94,20 @@ class TestNLIContradictionCheck:
 
     @pytest.mark.asyncio
     async def test_nli_detects_contradiction(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """NLI detecting contradiction in either direction triggers flag."""
         mock_nli = MagicMock()
         mock_nli.check.side_effect = [
             ("contradiction", 0.85),  # A as premise, B as hypothesis
-            ("neutral", 0.30),        # B as premise, A as hypothesis
+            ("neutral", 0.30),  # B as premise, A as hypothesis
         ]
         detector._nli_model = mock_nli
 
-        is_contradiction, score, is_entailment = (
-            await detector._check_contradiction_nli(
-                "The server uses port 8080",
-                "The server uses port 3000",
-            )
+        is_contradiction, score, is_entailment = await detector._check_contradiction_nli(
+            "The server uses port 8080",
+            "The server uses port 3000",
         )
 
         assert is_contradiction is True
@@ -118,7 +116,8 @@ class TestNLIContradictionCheck:
 
     @pytest.mark.asyncio
     async def test_nli_no_contradiction_when_below_threshold(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """Contradiction score below threshold is not flagged."""
         mock_nli = MagicMock()
@@ -128,27 +127,24 @@ class TestNLIContradictionCheck:
         ]
         detector._nli_model = mock_nli
 
-        is_contradiction, score, is_entailment = (
-            await detector._check_contradiction_nli("text A", "text B")
-        )
+        is_contradiction, score, is_entailment = await detector._check_contradiction_nli("text A", "text B")
 
         assert is_contradiction is False
 
     @pytest.mark.asyncio
     async def test_nli_bidirectional_detection(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """Contradiction detected in reverse direction is also caught."""
         mock_nli = MagicMock()
         mock_nli.check.side_effect = [
-            ("neutral", 0.30),        # A->B: no contradiction
+            ("neutral", 0.30),  # A->B: no contradiction
             ("contradiction", 0.78),  # B->A: contradiction
         ]
         detector._nli_model = mock_nli
 
-        is_contradiction, score, is_entailment = (
-            await detector._check_contradiction_nli("text A", "text B")
-        )
+        is_contradiction, score, is_entailment = await detector._check_contradiction_nli("text A", "text B")
 
         assert is_contradiction is True
         assert score == 0.78
@@ -156,26 +152,26 @@ class TestNLIContradictionCheck:
 
     @pytest.mark.asyncio
     async def test_nli_entailment_detected(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """NLI entailment above threshold is flagged as is_entailment."""
         mock_nli = MagicMock()
         mock_nli.check.side_effect = [
             ("entailment", 0.85),  # A->B: entailment
-            ("neutral", 0.30),     # B->A: neutral
+            ("neutral", 0.30),  # B->A: neutral
         ]
         detector._nli_model = mock_nli
 
-        is_contradiction, score, is_entailment = (
-            await detector._check_contradiction_nli("text A", "text B")
-        )
+        is_contradiction, score, is_entailment = await detector._check_contradiction_nli("text A", "text B")
 
         assert is_contradiction is False
         assert is_entailment is True
 
     @pytest.mark.asyncio
     async def test_nli_entailment_below_threshold_not_flagged(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """Entailment below threshold does not set is_entailment."""
         mock_nli = MagicMock()
@@ -185,9 +181,7 @@ class TestNLIContradictionCheck:
         ]
         detector._nli_model = mock_nli
 
-        is_contradiction, score, is_entailment = (
-            await detector._check_contradiction_nli("text A", "text B")
-        )
+        is_contradiction, score, is_entailment = await detector._check_contradiction_nli("text A", "text B")
 
         assert is_contradiction is False
         assert is_entailment is False
@@ -201,7 +195,8 @@ class TestLLMContradictionCheck:
 
     @pytest.mark.asyncio
     async def test_llm_detects_contradiction_supersede(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """LLM correctly identifies contradiction with supersede resolution."""
         mock_response = MagicMock()
@@ -214,8 +209,11 @@ class TestLLMContradictionCheck:
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_response
             result = await detector._check_contradiction_llm(
-                "The API uses REST", "The API was migrated to GraphQL",
-                "api-design.md", "api-migration.md", "test-model",
+                "The API uses REST",
+                "The API was migrated to GraphQL",
+                "api-design.md",
+                "api-migration.md",
+                "test-model",
             )
 
         assert result.is_contradiction is True
@@ -224,7 +222,8 @@ class TestLLMContradictionCheck:
 
     @pytest.mark.asyncio
     async def test_llm_detects_contradiction_merge(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """LLM correctly identifies contradiction with merge resolution."""
         mock_response = MagicMock()
@@ -238,7 +237,11 @@ class TestLLMContradictionCheck:
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_response
             result = await detector._check_contradiction_llm(
-                "Text A", "Text B", "file-a.md", "file-b.md", "test-model",
+                "Text A",
+                "Text B",
+                "file-a.md",
+                "file-b.md",
+                "test-model",
             )
 
         assert result.is_contradiction is True
@@ -247,33 +250,42 @@ class TestLLMContradictionCheck:
 
     @pytest.mark.asyncio
     async def test_llm_no_contradiction(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """LLM correctly identifies no contradiction."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = (
-            '{"is_contradiction": false, "resolution": "coexist", '
-            '"reason": "No contradiction", "merged_content": null}'
+            '{"is_contradiction": false, "resolution": "coexist", "reason": "No contradiction", "merged_content": null}'
         )
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_response
             result = await detector._check_contradiction_llm(
-                "Text A", "Text B", "file-a.md", "file-b.md", "test-model",
+                "Text A",
+                "Text B",
+                "file-a.md",
+                "file-b.md",
+                "test-model",
             )
 
         assert result.is_contradiction is False
 
     @pytest.mark.asyncio
     async def test_llm_failure_returns_no_contradiction(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """LLM failure conservatively assumes no contradiction."""
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.side_effect = RuntimeError("API error")
             result = await detector._check_contradiction_llm(
-                "Text A", "Text B", "file-a.md", "file-b.md", "test-model",
+                "Text A",
+                "Text B",
+                "file-a.md",
+                "file-b.md",
+                "test-model",
             )
 
         assert result.is_contradiction is False
@@ -281,13 +293,14 @@ class TestLLMContradictionCheck:
 
     @pytest.mark.asyncio
     async def test_llm_json_embedded_in_text(
-        self, detector: ContradictionDetector,
+        self,
+        detector: ContradictionDetector,
     ) -> None:
         """JSON embedded in natural language is extracted correctly."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = (
-            'Analysis complete. Here is the result: '
+            "Analysis complete. Here is the result: "
             '{"is_contradiction": true, "resolution": "coexist", '
             '"reason": "Context-dependent", "merged_content": null}'
         )
@@ -295,7 +308,11 @@ class TestLLMContradictionCheck:
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_response
             result = await detector._check_contradiction_llm(
-                "Text A", "Text B", "file-a.md", "file-b.md", "test-model",
+                "Text A",
+                "Text B",
+                "file-a.md",
+                "file-b.md",
+                "test-model",
             )
 
         assert result.is_contradiction is True
@@ -309,17 +326,23 @@ class TestSupersedeResolution:
     """Test the supersede resolution strategy."""
 
     def test_supersede_archives_older_file(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Older file is moved to archive/superseded/."""
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "old-info.md", "Old content",
+            knowledge_dir,
+            "old-info.md",
+            "Old content",
             {"created_at": "2026-01-01T10:00:00", "confidence": 0.7},
         )
         file_b = _write_knowledge(
-            knowledge_dir, "new-info.md", "New content",
+            knowledge_dir,
+            "new-info.md",
+            "New content",
             {"created_at": "2026-02-18T10:00:00", "confidence": 0.8},
         )
 
@@ -350,17 +373,23 @@ class TestSupersedeResolution:
         assert "valid_until" in text
 
     def test_supersede_adds_supersedes_metadata_to_newer_file(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Newer file gets `supersedes` metadata referencing the old filename."""
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "old-info.md", "Old content",
+            knowledge_dir,
+            "old-info.md",
+            "Old content",
             {"created_at": "2026-01-01T10:00:00", "confidence": 0.7},
         )
         file_b = _write_knowledge(
-            knowledge_dir, "new-info.md", "New content",
+            knowledge_dir,
+            "new-info.md",
+            "New content",
             {"created_at": "2026-02-18T10:00:00", "confidence": 0.8},
         )
 
@@ -384,17 +413,23 @@ class TestSupersedeResolution:
         assert "old-info.md" in meta["supersedes"]
 
     def test_supersede_correct_direction_when_a_is_newer(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """When file_a is newer, file_b gets archived instead."""
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "new-version.md", "Updated content",
+            knowledge_dir,
+            "new-version.md",
+            "Updated content",
             {"created_at": "2026-02-18T10:00:00", "updated_at": "2026-02-18T15:00:00"},
         )
         file_b = _write_knowledge(
-            knowledge_dir, "old-version.md", "Original content",
+            knowledge_dir,
+            "old-version.md",
+            "Original content",
             {"created_at": "2026-01-15T10:00:00"},
         )
 
@@ -423,16 +458,22 @@ class TestMergeResolution:
 
     @pytest.mark.asyncio
     async def test_merge_with_pre_generated_content(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Merge uses pre-generated content when available."""
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "topic-a.md", "Content from file A",
+            knowledge_dir,
+            "topic-a.md",
+            "Content from file A",
         )
         file_b = _write_knowledge(
-            knowledge_dir, "topic-b.md", "Content from file B",
+            knowledge_dir,
+            "topic-b.md",
+            "Content from file B",
         )
 
         pair = ContradictionPair(
@@ -468,16 +509,22 @@ class TestMergeResolution:
 
     @pytest.mark.asyncio
     async def test_merge_generates_content_via_llm(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """When no pre-generated content, LLM generates merged text."""
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "api-rest.md", "REST API design",
+            knowledge_dir,
+            "api-rest.md",
+            "REST API design",
         )
         file_b = _write_knowledge(
-            knowledge_dir, "api-graphql.md", "GraphQL API design",
+            knowledge_dir,
+            "api-graphql.md",
+            "GraphQL API design",
         )
 
         pair = ContradictionPair(
@@ -493,9 +540,7 @@ class TestMergeResolution:
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = (
-            "# API Design\nBoth REST and GraphQL are used."
-        )
+        mock_response.choices[0].message.content = "# API Design\nBoth REST and GraphQL are used."
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_response
@@ -507,16 +552,22 @@ class TestMergeResolution:
 
     @pytest.mark.asyncio
     async def test_merge_fails_on_empty_content(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Merge returns False when LLM returns empty content."""
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "file-a.md", "Content A",
+            knowledge_dir,
+            "file-a.md",
+            "Content A",
         )
         file_b = _write_knowledge(
-            knowledge_dir, "file-b.md", "Content B",
+            knowledge_dir,
+            "file-b.md",
+            "Content B",
         )
 
         pair = ContradictionPair(
@@ -551,16 +602,22 @@ class TestCoexistResolution:
     """Test the coexist resolution strategy."""
 
     def test_coexist_annotates_both_files(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Both files get coexists_with metadata annotation."""
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "approach-a.md", "Approach A details",
+            knowledge_dir,
+            "approach-a.md",
+            "Approach A details",
         )
         file_b = _write_knowledge(
-            knowledge_dir, "approach-b.md", "Approach B details",
+            knowledge_dir,
+            "approach-b.md",
+            "Approach B details",
         )
 
         pair = ContradictionPair(
@@ -589,16 +646,22 @@ class TestCoexistResolution:
         assert "approach-a.md" in text_b
 
     def test_coexist_idempotent(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Calling coexist twice does not duplicate the annotation."""
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "fact-a.md", "Fact A",
+            knowledge_dir,
+            "fact-a.md",
+            "Fact A",
         )
         file_b = _write_knowledge(
-            knowledge_dir, "fact-b.md", "Fact B",
+            knowledge_dir,
+            "fact-b.md",
+            "Fact B",
         )
 
         pair = ContradictionPair(
@@ -630,31 +693,45 @@ class TestResolveContradictions:
 
     @pytest.mark.asyncio
     async def test_resolve_mixed_strategies(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Resolve a batch of contradictions with different strategies."""
         knowledge_dir = anima_dir / "knowledge"
 
         # Create knowledge files for each strategy
         file_supersede_old = _write_knowledge(
-            knowledge_dir, "old-deploy.md", "Deploy to Heroku",
+            knowledge_dir,
+            "old-deploy.md",
+            "Deploy to Heroku",
             {"created_at": "2026-01-01T10:00:00"},
         )
         file_supersede_new = _write_knowledge(
-            knowledge_dir, "new-deploy.md", "Deploy to AWS",
+            knowledge_dir,
+            "new-deploy.md",
+            "Deploy to AWS",
             {"created_at": "2026-02-18T10:00:00"},
         )
         file_merge_a = _write_knowledge(
-            knowledge_dir, "merge-a.md", "Content A for merge",
+            knowledge_dir,
+            "merge-a.md",
+            "Content A for merge",
         )
         file_merge_b = _write_knowledge(
-            knowledge_dir, "merge-b.md", "Content B for merge",
+            knowledge_dir,
+            "merge-b.md",
+            "Content B for merge",
         )
         file_coexist_a = _write_knowledge(
-            knowledge_dir, "coexist-a.md", "Approach A",
+            knowledge_dir,
+            "coexist-a.md",
+            "Approach A",
         )
         file_coexist_b = _write_knowledge(
-            knowledge_dir, "coexist-b.md", "Approach B",
+            knowledge_dir,
+            "coexist-b.md",
+            "Approach B",
         )
 
         pairs = [
@@ -697,14 +774,18 @@ class TestResolveContradictions:
 
     @pytest.mark.asyncio
     async def test_resolve_handles_errors_gracefully(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Resolution errors are counted but don't crash the pipeline."""
         knowledge_dir = anima_dir / "knowledge"
 
         # Create a file that will cause an error (non-existent partner)
         file_a = _write_knowledge(
-            knowledge_dir, "existing.md", "Some content",
+            knowledge_dir,
+            "existing.md",
+            "Some content",
         )
         file_b = knowledge_dir / "nonexistent.md"  # Does not exist
 
@@ -810,10 +891,7 @@ class TestScanContradictions:
         self,
         detector: ContradictionDetector,
     ) -> None:
-        candidates = [
-            (Path(f"a-{idx}.md"), f"text A {idx}", Path(f"b-{idx}.md"), f"text B {idx}")
-            for idx in range(5)
-        ]
+        candidates = [(Path(f"a-{idx}.md"), f"text A {idx}", Path(f"b-{idx}.md"), f"text B {idx}") for idx in range(5)]
 
         with (
             patch.object(detector, "_find_candidate_pairs", return_value=candidates),
@@ -843,23 +921,29 @@ class TestScanContradictions:
 
     @pytest.mark.asyncio
     async def test_scan_detects_contradiction(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Full scan pipeline detects and classifies a contradiction."""
         knowledge_dir = anima_dir / "knowledge"
 
         _write_knowledge(
-            knowledge_dir, "db-mysql.md", "We use MySQL for the database.",
+            knowledge_dir,
+            "db-mysql.md",
+            "We use MySQL for the database.",
         )
         _write_knowledge(
-            knowledge_dir, "db-postgres.md", "We use PostgreSQL for the database.",
+            knowledge_dir,
+            "db-postgres.md",
+            "We use PostgreSQL for the database.",
         )
 
         # Mock NLI to detect contradiction
         mock_nli = MagicMock()
         mock_nli.check.side_effect = [
             ("contradiction", 0.85),  # A->B
-            ("neutral", 0.30),        # B->A
+            ("neutral", 0.30),  # B->A
         ]
         detector._nli_model = mock_nli
 
@@ -876,7 +960,9 @@ class TestScanContradictions:
 
             # Mock RAG to return None (use exhaustive fallback)
             with patch.object(
-                detector, "_find_candidates_via_rag", return_value=None,
+                detector,
+                "_find_candidates_via_rag",
+                return_value=None,
             ):
                 results = await detector.scan_contradictions(model="test-model")
 
@@ -886,19 +972,27 @@ class TestScanContradictions:
 
     @pytest.mark.asyncio
     async def test_scan_target_file_only(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Targeted scan only checks pairs involving the specified file."""
         knowledge_dir = anima_dir / "knowledge"
 
         target = _write_knowledge(
-            knowledge_dir, "target.md", "Target file content",
+            knowledge_dir,
+            "target.md",
+            "Target file content",
         )
         _write_knowledge(
-            knowledge_dir, "other-a.md", "Other file A",
+            knowledge_dir,
+            "other-a.md",
+            "Other file A",
         )
         _write_knowledge(
-            knowledge_dir, "other-b.md", "Other file B",
+            knowledge_dir,
+            "other-b.md",
+            "Other file B",
         )
 
         # Mock NLI: no contradiction
@@ -910,18 +1004,20 @@ class TestScanContradictions:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = (
-            '{"is_contradiction": false, "resolution": "coexist", '
-            '"reason": "No issue", "merged_content": null}'
+            '{"is_contradiction": false, "resolution": "coexist", "reason": "No issue", "merged_content": null}'
         )
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_response
 
             with patch.object(
-                detector, "_find_candidates_via_rag", return_value=None,
+                detector,
+                "_find_candidates_via_rag",
+                return_value=None,
             ):
                 results = await detector.scan_contradictions(
-                    target_file=target, model="test-model",
+                    target_file=target,
+                    model="test-model",
                 )
 
         # No contradictions found, but verify LLM was called for each candidate pair
@@ -931,16 +1027,22 @@ class TestScanContradictions:
 
     @pytest.mark.asyncio
     async def test_scan_entailment_skips_llm(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """When NLI returns entailment, LLM is not called."""
         knowledge_dir = anima_dir / "knowledge"
 
         _write_knowledge(
-            knowledge_dir, "fact-a.md", "Python is a programming language.",
+            knowledge_dir,
+            "fact-a.md",
+            "Python is a programming language.",
         )
         _write_knowledge(
-            knowledge_dir, "fact-b.md", "Python is a widely-used programming language.",
+            knowledge_dir,
+            "fact-b.md",
+            "Python is a widely-used programming language.",
         )
 
         # Mock NLI to return entailment (consistent texts)
@@ -954,15 +1056,16 @@ class TestScanContradictions:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = (
-            '{"is_contradiction": false, "resolution": "coexist", '
-            '"reason": "No contradiction", "merged_content": null}'
+            '{"is_contradiction": false, "resolution": "coexist", "reason": "No contradiction", "merged_content": null}'
         )
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_response
 
             with patch.object(
-                detector, "_find_candidates_via_rag", return_value=None,
+                detector,
+                "_find_candidates_via_rag",
+                return_value=None,
             ):
                 results = await detector.scan_contradictions(model="test-model")
 
@@ -973,16 +1076,22 @@ class TestScanContradictions:
 
     @pytest.mark.asyncio
     async def test_scan_neutral_nli_still_calls_llm(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """When NLI returns neutral (uncertain), LLM is still called as fallback."""
         knowledge_dir = anima_dir / "knowledge"
 
         _write_knowledge(
-            knowledge_dir, "topic-x.md", "Topic X content.",
+            knowledge_dir,
+            "topic-x.md",
+            "Topic X content.",
         )
         _write_knowledge(
-            knowledge_dir, "topic-y.md", "Topic Y content.",
+            knowledge_dir,
+            "topic-y.md",
+            "Topic Y content.",
         )
 
         # Mock NLI to return neutral (uncertain)
@@ -996,15 +1105,16 @@ class TestScanContradictions:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = (
-            '{"is_contradiction": false, "resolution": "coexist", '
-            '"reason": "No contradiction", "merged_content": null}'
+            '{"is_contradiction": false, "resolution": "coexist", "reason": "No contradiction", "merged_content": null}'
         )
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_response
 
             with patch.object(
-                detector, "_find_candidates_via_rag", return_value=None,
+                detector,
+                "_find_candidates_via_rag",
+                return_value=None,
             ):
                 results = await detector.scan_contradictions(model="test-model")
 
@@ -1015,7 +1125,9 @@ class TestScanContradictions:
 
     @pytest.mark.asyncio
     async def test_scan_empty_knowledge_dir(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Scan returns empty list when no knowledge files exist."""
         results = await detector.scan_contradictions(model="test-model")
@@ -1023,14 +1135,18 @@ class TestScanContradictions:
 
     @pytest.mark.asyncio
     async def test_scan_single_file(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Scan returns empty when only one knowledge file exists."""
         knowledge_dir = anima_dir / "knowledge"
         _write_knowledge(knowledge_dir, "only-one.md", "Single file")
 
         with patch.object(
-            detector, "_find_candidates_via_rag", return_value=None,
+            detector,
+            "_find_candidates_via_rag",
+            return_value=None,
         ):
             results = await detector.scan_contradictions(model="test-model")
 
@@ -1044,7 +1160,9 @@ class TestCandidatePairGeneration:
     """Test the candidate pair generation logic."""
 
     def test_exhaustive_generates_all_pairs(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Exhaustive fallback generates all pairwise combinations."""
         knowledge_dir = anima_dir / "knowledge"
@@ -1065,7 +1183,9 @@ class TestCandidatePairGeneration:
         assert len(pairs) == 3
 
     def test_exhaustive_filters_by_target(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """Exhaustive with target file only returns pairs involving target."""
         knowledge_dir = anima_dir / "knowledge"
@@ -1097,7 +1217,8 @@ class TestMergeTopicDerivation:
     def test_common_words_extracted(self) -> None:
         """Common words between stems are extracted."""
         topic = ContradictionDetector._derive_merge_topic(
-            "api-rest-design", "api-graphql-design",
+            "api-rest-design",
+            "api-graphql-design",
         )
         assert "api" in topic
         assert "design" in topic
@@ -1105,14 +1226,16 @@ class TestMergeTopicDerivation:
     def test_fallback_to_shorter_stem(self) -> None:
         """When no common words, use the shorter stem."""
         topic = ContradictionDetector._derive_merge_topic(
-            "database", "networking-guide",
+            "database",
+            "networking-guide",
         )
         assert topic == "database"
 
     def test_single_char_words_excluded(self) -> None:
         """Single-character words are excluded from merge topic."""
         topic = ContradictionDetector._derive_merge_topic(
-            "a-b-config", "c-d-config",
+            "a-b-config",
+            "c-d-config",
         )
         assert "config" in topic
         assert "a" not in topic.split("-")
@@ -1127,23 +1250,30 @@ class TestActivityLogEvent:
 
     @pytest.mark.asyncio
     async def test_resolution_logs_activity_event(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ) -> None:
         """Each successful resolution records a knowledge_contradiction_resolved event."""
         from core.memory.activity import ActivityLogger
 
         activity_logger = ActivityLogger(anima_dir)
         detector = ContradictionDetector(
-            anima_dir, "test-anima", activity_logger=activity_logger,
+            anima_dir,
+            "test-anima",
+            activity_logger=activity_logger,
         )
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "old-fact.md", "Old fact",
+            knowledge_dir,
+            "old-fact.md",
+            "Old fact",
             {"created_at": "2026-01-01T10:00:00"},
         )
         file_b = _write_knowledge(
-            knowledge_dir, "new-fact.md", "New fact",
+            knowledge_dir,
+            "new-fact.md",
+            "New fact",
             {"created_at": "2026-02-18T10:00:00"},
         )
 
@@ -1173,16 +1303,22 @@ class TestActivityLogEvent:
 
     @pytest.mark.asyncio
     async def test_no_activity_log_when_logger_absent(
-        self, detector: ContradictionDetector, anima_dir: Path,
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
     ) -> None:
         """When no activity_logger is provided, resolution still succeeds."""
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "coexist-a.md", "Approach A",
+            knowledge_dir,
+            "coexist-a.md",
+            "Approach A",
         )
         file_b = _write_knowledge(
-            knowledge_dir, "coexist-b.md", "Approach B",
+            knowledge_dir,
+            "coexist-b.md",
+            "Approach B",
         )
 
         pairs = [
@@ -1204,22 +1340,29 @@ class TestActivityLogEvent:
 
     @pytest.mark.asyncio
     async def test_merge_resolution_logs_activity_event(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ) -> None:
         """Merge resolution also records activity log event."""
         from core.memory.activity import ActivityLogger
 
         activity_logger = ActivityLogger(anima_dir)
         detector = ContradictionDetector(
-            anima_dir, "test-anima", activity_logger=activity_logger,
+            anima_dir,
+            "test-anima",
+            activity_logger=activity_logger,
         )
         knowledge_dir = anima_dir / "knowledge"
 
         file_a = _write_knowledge(
-            knowledge_dir, "merge-x.md", "Content X",
+            knowledge_dir,
+            "merge-x.md",
+            "Content X",
         )
         file_b = _write_knowledge(
-            knowledge_dir, "merge-y.md", "Content Y",
+            knowledge_dir,
+            "merge-y.md",
+            "Content Y",
         )
 
         pairs = [
@@ -1252,7 +1395,8 @@ class TestLegacyMigration:
     """Test superseded_at → valid_until migration."""
 
     def test_read_knowledge_metadata_migrates_superseded_at(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ) -> None:
         """read_knowledge_metadata renames superseded_at to valid_until."""
         from core.memory.manager import MemoryManager
@@ -1262,7 +1406,9 @@ class TestLegacyMigration:
 
         # Write a file with legacy superseded_at field
         path = _write_knowledge(
-            knowledge_dir, "legacy.md", "Legacy content",
+            knowledge_dir,
+            "legacy.md",
+            "Legacy content",
             {
                 "created_at": "2026-01-01T10:00:00",
                 "superseded_at": "2026-02-01T12:00:00",
@@ -1281,7 +1427,8 @@ class TestLegacyMigration:
         assert meta["superseded_by"] == "new-file.md"
 
     def test_read_knowledge_metadata_preserves_valid_until(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ) -> None:
         """Files already using valid_until are returned as-is."""
         from core.memory.manager import MemoryManager
@@ -1290,7 +1437,9 @@ class TestLegacyMigration:
         knowledge_dir = anima_dir / "knowledge"
 
         path = _write_knowledge(
-            knowledge_dir, "modern.md", "Modern content",
+            knowledge_dir,
+            "modern.md",
+            "Modern content",
             {
                 "created_at": "2026-01-01T10:00:00",
                 "valid_until": "2026-02-15T10:00:00",
@@ -1301,7 +1450,8 @@ class TestLegacyMigration:
         assert meta["valid_until"] == "2026-02-15T10:00:00"
 
     def test_indexer_migrates_superseded_at_in_frontmatter(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ) -> None:
         """Indexer's _extract_metadata migrates superseded_at in frontmatter."""
         from unittest.mock import MagicMock
@@ -1313,7 +1463,9 @@ class TestLegacyMigration:
         mock_model.encode.return_value = [[0.1] * 384]
 
         indexer = MemoryIndexer(
-            mock_store, "test-anima", anima_dir,
+            mock_store,
+            "test-anima",
+            anima_dir,
             embedding_model=mock_model,
         )
 
@@ -1327,14 +1479,19 @@ class TestLegacyMigration:
             "superseded_by": "newer.md",
         }
         metadata = indexer._extract_metadata(
-            test_file, "test content", "knowledge", 0, 1,
+            test_file,
+            "test content",
+            "knowledge",
+            0,
+            1,
             frontmatter=legacy_fm,
         )
 
         assert metadata["valid_until"] == "2026-02-01T12:00:00"
 
     def test_indexer_default_valid_until_empty(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ) -> None:
         """Chunks without valid_until in frontmatter get empty string default."""
         from unittest.mock import MagicMock
@@ -1346,7 +1503,9 @@ class TestLegacyMigration:
         mock_model.encode.return_value = [[0.1] * 384]
 
         indexer = MemoryIndexer(
-            mock_store, "test-anima", anima_dir,
+            mock_store,
+            "test-anima",
+            anima_dir,
             embedding_model=mock_model,
         )
 
@@ -1355,7 +1514,11 @@ class TestLegacyMigration:
         test_file.write_text("active content", encoding="utf-8")
 
         metadata = indexer._extract_metadata(
-            test_file, "active content", "knowledge", 0, 1,
+            test_file,
+            "active content",
+            "knowledge",
+            0,
+            1,
             frontmatter={},
         )
 
@@ -1443,6 +1606,136 @@ class TestRAGFilter:
 
         call_kwargs = mock_store.query.call_args
         assert call_kwargs.kwargs.get("filter_metadata") is None
+
+
+# ── Supersede failure_count penalty (F1) ────────────────────
+
+
+class TestSupersedeFailurePenalty:
+    """F1: the failure_count penalty lands on the archived (older) file.
+
+    Previously the penalty was hard-coded to ``pair.file_b`` (the surviving
+    newer file in the default case), so correct-but-newer knowledge accrued
+    failures. The penalty must go to whichever file is actually superseded.
+    """
+
+    async def _run_supersede(
+        self,
+        detector: ContradictionDetector,
+        file_a: Path,
+        file_b: Path,
+    ) -> None:
+        pair = ContradictionPair(
+            file_a=file_a,
+            file_b=file_b,
+            text_a="A",
+            text_b="B",
+            confidence=0.85,
+            resolution="supersede",
+            reason="test",
+        )
+        results = await detector.resolve_contradictions([pair], "test-model")
+        assert results["superseded"] == 1
+        assert results["errors"] == 0
+
+    @pytest.mark.asyncio
+    async def test_penalty_on_older_when_file_a_is_older(
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
+    ) -> None:
+        """file_a older → file_a archived and penalized, file_b untouched."""
+        knowledge_dir = anima_dir / "knowledge"
+        file_a = _write_knowledge(
+            knowledge_dir,
+            "older.md",
+            "Old content",
+            {"created_at": "2026-01-01T00:00:00", "failure_count": 0, "success_count": 0},
+        )
+        file_b = _write_knowledge(
+            knowledge_dir,
+            "newer.md",
+            "New content",
+            {"created_at": "2026-02-01T00:00:00", "failure_count": 0, "success_count": 0},
+        )
+
+        await self._run_supersede(detector, file_a, file_b)
+
+        mm = detector._memory()
+        archived = anima_dir / "archive" / "superseded" / "older.md"
+        assert archived.exists()
+        assert mm.read_knowledge_metadata(archived).get("failure_count") == 1
+        # Surviving newer file keeps its failure_count untouched
+        assert file_b.exists()
+        assert int(mm.read_knowledge_metadata(file_b).get("failure_count", 0)) == 0
+
+    @pytest.mark.asyncio
+    async def test_penalty_on_older_when_file_b_is_older(
+        self,
+        detector: ContradictionDetector,
+        anima_dir: Path,
+    ) -> None:
+        """file_b older (file_a has newer updated_at) → file_b archived/penalized."""
+        knowledge_dir = anima_dir / "knowledge"
+        file_a = _write_knowledge(
+            knowledge_dir,
+            "current.md",
+            "Updated content",
+            {
+                "created_at": "2026-02-01T00:00:00",
+                "updated_at": "2026-02-10T00:00:00",
+                "failure_count": 0,
+                "success_count": 0,
+            },
+        )
+        file_b = _write_knowledge(
+            knowledge_dir,
+            "stale.md",
+            "Original content",
+            {"created_at": "2026-01-01T00:00:00", "failure_count": 0, "success_count": 0},
+        )
+
+        await self._run_supersede(detector, file_a, file_b)
+
+        mm = detector._memory()
+        archived = anima_dir / "archive" / "superseded" / "stale.md"
+        assert archived.exists()
+        assert mm.read_knowledge_metadata(archived).get("failure_count") == 1
+        # Surviving newer file (file_a) keeps its failure_count untouched
+        assert file_a.exists()
+        assert int(mm.read_knowledge_metadata(file_a).get("failure_count", 0)) == 0
+
+    @pytest.mark.asyncio
+    async def test_log_resolution_labels_reflect_real_order(
+        self,
+        anima_dir: Path,
+    ) -> None:
+        """The activity-log older/newer labels reflect the real determination."""
+        from core.memory.activity import ActivityLogger
+
+        activity_logger = ActivityLogger(anima_dir)
+        detector = ContradictionDetector(anima_dir, "test-anima", activity_logger=activity_logger)
+        knowledge_dir = anima_dir / "knowledge"
+        # file_a is the newer one here
+        file_a = _write_knowledge(
+            knowledge_dir,
+            "brand-new.md",
+            "New",
+            {"created_at": "2026-03-01T00:00:00"},
+        )
+        file_b = _write_knowledge(
+            knowledge_dir,
+            "ancient.md",
+            "Old",
+            {"created_at": "2026-01-01T00:00:00"},
+        )
+
+        await self._run_supersede(detector, file_a, file_b)
+
+        entries = activity_logger.recent(days=1, types=["knowledge_contradiction_resolved"])
+        assert len(entries) == 1
+        assert entries[0].meta.get("older") == "ancient.md"
+        assert entries[0].meta.get("newer") == "brand-new.md"
 
 
 if __name__ == "__main__":

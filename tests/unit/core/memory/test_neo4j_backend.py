@@ -350,3 +350,114 @@ class TestNeo4jConfig:
         assert cfg.user == "neo4j"
         assert cfg.password == "animaworks"
         assert cfg.database == "neo4j"
+
+
+class TestResolveExtractionConfigHardening:
+    """status.json endpoint fields must never reach LLM kwargs (#239, #240).
+
+    Since #240 the neo4j backend delegates to the hardened legacy resolver
+    (``fact_config._resolve_extraction_config``) and returns a 3-tuple with a
+    named credential reference resolved only from the trusted global config.
+    """
+
+    def test_ignores_status_endpoint_fields(self, tmp_path):
+        import json
+
+        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+
+        (tmp_path / "status.json").write_text(
+            json.dumps(
+                {
+                    "extraction_model": "local-safe-model",
+                    "extraction_timeout": 7,
+                    "extraction_api_base": "https://attacker.example",
+                    "extraction_api_key": "secret",
+                    "extraction_extra_body": {"stream": True},
+                }
+            ),
+            encoding="utf-8",
+        )
+        backend = Neo4jGraphBackend(tmp_path)
+
+        model, llm_extra, credential = backend._resolve_extraction_config()
+
+        assert model == "local-safe-model"
+        assert llm_extra == {"timeout": 7}
+        assert "api_base" not in llm_extra
+        assert "api_key" not in llm_extra
+        assert "extra_body" not in llm_extra
+        assert credential == ""  # no extraction_credential set
+
+    def test_resolves_extraction_credential_reference(self, tmp_path):
+        import json
+
+        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+
+        (tmp_path / "status.json").write_text(
+            json.dumps(
+                {
+                    "extraction_model": "openai/qwen3.5-122b-a10b-chat",
+                    "extraction_credential": "vllm-lb",
+                    "extraction_timeout": 120,
+                }
+            ),
+            encoding="utf-8",
+        )
+        backend = Neo4jGraphBackend(tmp_path)
+
+        model, llm_extra, credential = backend._resolve_extraction_config()
+
+        assert model == "openai/qwen3.5-122b-a10b-chat"
+        assert credential == "vllm-lb"
+        assert llm_extra == {"timeout": 120}
+
+    def test_invalid_timeout_falls_back_without_endpoint_leak(self, tmp_path):
+        import json
+
+        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+
+        (tmp_path / "status.json").write_text(
+            json.dumps(
+                {
+                    "extraction_model": "m",
+                    "extraction_timeout": "not-a-number",
+                    "extraction_api_base": "https://attacker.example",
+                }
+            ),
+            encoding="utf-8",
+        )
+        backend = Neo4jGraphBackend(tmp_path)
+
+        model, llm_extra, credential = backend._resolve_extraction_config()
+
+        assert model == "m"
+        # Invalid timeout falls back to the config/default value (legacy
+        # semantics); endpoint fields never leak into llm_extra.
+        assert set(llm_extra) <= {"timeout"}
+        if "timeout" in llm_extra:
+            assert isinstance(llm_extra["timeout"], int) and llm_extra["timeout"] > 0
+        assert credential == ""
+
+    def test_background_model_adopted_with_explicit_credential(self, tmp_path):
+        # Legacy semantics (#240): background_model is adopted when its
+        # credential resolves (explicit background_credential here).
+        import json
+
+        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+
+        (tmp_path / "status.json").write_text(
+            json.dumps(
+                {
+                    "background_model": "openai/qwen3.5-122b-a10b-chat",
+                    "background_credential": "vllm-lb",
+                }
+            ),
+            encoding="utf-8",
+        )
+        backend = Neo4jGraphBackend(tmp_path)
+
+        model, llm_extra, credential = backend._resolve_extraction_config()
+
+        assert model == "openai/qwen3.5-122b-a10b-chat"
+        assert credential == "vllm-lb"
+        assert set(llm_extra) <= {"timeout"}

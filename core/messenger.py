@@ -203,11 +203,14 @@ class Messenger:
         intent: str = "",
         origin_chain: list[str] | None = None,
         meta: dict[str, Any] | None = None,
+        source: str = "anima",
     ) -> Message:
         # ── Conversation depth check (internal Anima only) ──
         is_internal = False
         animas_dir: Path | None = None
-        if msg_type not in ("ack", "error", "system_alert"):
+        # Human-sourced messages bypass the cascade limiter: they originate
+        # outside the anima conversation graph, like the chat API path.
+        if source == "anima" and msg_type not in ("ack", "error", "system_alert"):
             animas_dir = self.shared_dir.parent / "animas"
             is_internal = (animas_dir / to).is_dir() if animas_dir.exists() else False
             if is_internal:
@@ -250,6 +253,7 @@ class Messenger:
             intent=intent,
             origin_chain=origin_chain or [],
             meta=meta or {},
+            source=source,
         )
         # New thread: use message id as thread_id
         new_thread = not msg.thread_id
@@ -638,10 +642,13 @@ class Messenger:
                 msg = Message(**data)
                 if known_animas is not None and msg.source == "anima" and msg.from_person not in known_animas:
                     logger.warning(
-                        "Ignoring inbox message with unknown from_person=%r in %s",
+                        "Quarantining inbox message with unknown from_person=%r in %s",
                         msg.from_person,
                         f,
                     )
+                    # Leaving the file in place makes has_unread() report True
+                    # forever, so the inbox watcher re-reads it every poll.
+                    self._quarantine_file(f)
                     continue
                 messages.append(msg)
             except Exception as e:
@@ -673,10 +680,13 @@ class Messenger:
                 msg = Message(**data)
                 if known_animas is not None and msg.source == "anima" and msg.from_person not in known_animas:
                     logger.warning(
-                        "Ignoring inbox message with unknown from_person=%r in %s",
+                        "Quarantining inbox message with unknown from_person=%r in %s",
                         msg.from_person,
                         f,
                     )
+                    # Leaving the file in place makes has_unread() report True
+                    # forever, so the inbox watcher re-reads it every poll.
+                    self._quarantine_file(f)
                     continue
                 items.append(InboxItem(msg=msg, path=f))
             except Exception:

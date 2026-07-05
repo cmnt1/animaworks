@@ -297,3 +297,66 @@ class TestAnimaRunnerPingReadiness:
                 await client.close()
                 runner.shutdown_event.set()
                 await asyncio.wait_for(task, timeout=5.0)
+
+
+# ── _conversation_contains_recovery (F9) ─────────────────────
+
+
+class TestConversationContainsRecovery:
+    """Crash-recovery dedup must be marker-independent (F9).
+
+    A response that streamed to completion and was saved cleanly (no
+    interruption marker) just before the journal was deleted must be detected
+    as already-present so recovery does not append a duplicate turn.
+    """
+
+    @staticmethod
+    def _conv(turns):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        conv = MagicMock()
+        conv.load.return_value = SimpleNamespace(turns=[SimpleNamespace(role=r, content=c) for r, c in turns])
+        return conv
+
+    def test_clean_saved_turn_without_marker_is_deduped(self):
+        from core.i18n import t
+        from core.supervisor.runner import AnimaRunner
+
+        recovered = "完全に生成された応答"
+        saved_text = recovered + "\n" + t("anima.response_interrupted")
+        # Clean save: the assistant turn holds the full text, no marker.
+        conv = self._conv([("human", "質問"), ("assistant", recovered)])
+
+        assert AnimaRunner._conversation_contains_recovery(conv, recovered, saved_text) is True
+
+    def test_clean_saved_longer_final_is_deduped(self):
+        from core.i18n import t
+        from core.supervisor.runner import AnimaRunner
+
+        recovered = "部分的な応答"
+        final = recovered + "、そして続きの完了テキスト"
+        saved_text = recovered + "\n" + t("anima.response_interrupted")
+        conv = self._conv([("assistant", final)])
+
+        assert AnimaRunner._conversation_contains_recovery(conv, recovered, saved_text) is True
+
+    def test_marked_turn_is_deduped(self):
+        from core.i18n import t
+        from core.supervisor.runner import AnimaRunner
+
+        recovered = "中断された応答"
+        saved_text = recovered + "\n" + t("anima.response_interrupted")
+        conv = self._conv([("assistant", saved_text)])
+
+        assert AnimaRunner._conversation_contains_recovery(conv, recovered, saved_text) is True
+
+    def test_unrelated_turns_not_deduped(self):
+        from core.i18n import t
+        from core.supervisor.runner import AnimaRunner
+
+        recovered = "回復すべき固有の応答テキスト"
+        saved_text = recovered + "\n" + t("anima.response_interrupted")
+        conv = self._conv([("human", "別の話題"), ("assistant", "無関係な過去の応答")])
+
+        assert AnimaRunner._conversation_contains_recovery(conv, recovered, saved_text) is False

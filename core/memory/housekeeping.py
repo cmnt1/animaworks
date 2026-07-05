@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.i18n import t
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.housekeeping")
@@ -44,6 +45,7 @@ async def run_housekeeping(
     dm_log_archive_retention_days: int = 30,
     cron_log_retention_days: int = 30,
     shortterm_retention_days: int = 7,
+    curator_report_retention_days: int = 30,
     task_results_retention_days: int = 7,
     pending_failed_retention_days: int = 14,
     corrupt_vectordb_keep_generations: int = 2,
@@ -176,6 +178,19 @@ async def run_housekeeping(
     except Exception:
         logger.exception("Housekeeping: shortterm cleanup failed")
         results["shortterm"] = {"error": True}
+
+    # 5b. Skill Curator reports
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _cleanup_curator_reports,
+            animas_dir,
+            curator_report_retention_days,
+        )
+        results["curator_reports"] = r
+    except Exception:
+        logger.exception("Housekeeping: curator report cleanup failed")
+        results["curator_reports"] = {"error": True}
 
     # 6. Task results
     try:
@@ -770,11 +785,77 @@ def _cleanup_cron_logs(
     return {"deleted_files": total_deleted}
 
 
+def _episodeify_abandoned_session(anima_dir: Path, json_path: Path) -> bool:
+    """Persist an abandoned short-term session as an episode before deletion.
+
+    An expired ``session_state.json`` represents a chat session that crossed
+    the context-window threshold, externalized its state, but was never
+    finalized into long-term memory. Rather than losing it at retention expiry,
+    fold its accumulated content into ``episodes/`` so it stays searchable.
+
+    Returns True when the state file may be deleted (episode saved, or the file
+    holds no recoverable content), and False when the episode write failed and
+    deletion should be retried on the next housekeeping run.
+    """
+    import json
+
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        # Truly corrupt state carries no recoverable memory.
+        return True
+    except OSError:
+        # Transient I/O failure (e.g. FD exhaustion): the content may still be
+        # recoverable, so keep the file and retry on the next run.
+        logger.warning(
+            "Failed to read abandoned shortterm session %s; deferring deletion",
+            json_path,
+            exc_info=True,
+        )
+        return False
+    if not isinstance(data, dict):
+        return True
+
+    prompt = (data.get("original_prompt") or "").strip()
+    response = (data.get("accumulated_response") or "").strip()
+    notes = (data.get("notes") or "").strip()
+    if not prompt and not response and not notes:
+        return True
+
+    body_parts: list[str] = []
+    if prompt:
+        body_parts.append(f"{t('shortterm.original_request')}\n{prompt}")
+    if response:
+        body_parts.append(f"{t('shortterm.work_so_far')}\n{response}")
+    if notes:
+        body_parts.append(f"{t('shortterm.notes_header')}\n{notes}")
+    entry = f"## {t('shortterm.title')}\n\n" + "\n\n".join(body_parts) + "\n"
+
+    try:
+        from core.memory.manager import MemoryManager
+
+        MemoryManager(anima_dir).append_episode(entry, origin="shortterm_recovery")
+        return True
+    except Exception:
+        logger.warning(
+            "Failed to episode-ify abandoned shortterm session %s; deferring deletion",
+            json_path,
+            exc_info=True,
+        )
+        return False
+
+
 def _cleanup_shortterm(
     animas_dir: Path,
     retention_days: int,
 ) -> dict[str, Any]:
     """Delete old session files from shortterm/ directories.
+
+    Recurses into per-thread subdirectories (``shortterm/chat/{thread_id}/``)
+    as well as the top-level ``chat``/``heartbeat`` folders, but leaves the
+    ``archive/`` sweep to ``ShortTermMemory``'s own pruning. Before removing an
+    expired ``session_state.json`` from a chat tree, its unfinalized content is
+    saved as an episode; if that save fails, the file is kept for retry.
 
     Skips ``current_session_*.json`` and ``streaming_journal_*.jsonl``
     which are managed by the session lifecycle.
@@ -785,6 +866,7 @@ def _cleanup_shortterm(
     cutoff = now_local() - timedelta(days=retention_days)
     cutoff_ts = cutoff.timestamp()
     total_deleted = 0
+    total_episodified = 0
 
     _PROTECTED_PREFIXES = ("current_session_", "streaming_journal_")
 
@@ -794,25 +876,102 @@ def _cleanup_shortterm(
         shortterm_dir = anima_dir / "shortterm"
         if not shortterm_dir.is_dir():
             continue
-        # Walk chat/ and heartbeat/ subdirs
+        # Walk chat/ and heartbeat/ subdirs, including per-thread subdirectories.
         for sub in ("chat", "heartbeat"):
             sub_dir = shortterm_dir / sub
             if not sub_dir.is_dir():
                 continue
-            for f in sub_dir.iterdir():
+            for f in sub_dir.rglob("*"):
                 if not f.is_file():
+                    continue
+                # archive/ is capped by ShortTermMemory._prune_archive; leave it.
+                if "archive" in f.relative_to(sub_dir).parts:
                     continue
                 if any(f.name.startswith(p) for p in _PROTECTED_PREFIXES):
                     continue
                 try:
-                    if f.stat().st_mtime < cutoff_ts:
-                        f.unlink()
-                        total_deleted += 1
+                    if f.stat().st_mtime >= cutoff_ts:
+                        continue
                 except OSError:
-                    logger.warning("Failed to delete shortterm file: %s", f)
+                    logger.warning("Failed to stat shortterm file: %s", f)
+                    continue
+                # Preserve abandoned chat sessions as episodes before deletion.
+                episodified = False
+                if sub == "chat" and f.name == "session_state.json":
+                    if not _episodeify_abandoned_session(anima_dir, f):
+                        continue  # keep the file; retry next run
+                    episodified = True
+                try:
+                    f.unlink()
+                    total_deleted += 1
+                    if episodified:
+                        total_episodified += 1
+                except OSError:
+                    if episodified:
+                        # Already saved as an episode: rename so the next run
+                        # does not episodify it again (duplicate episode). The
+                        # renamed file keeps its expired mtime and is swept by
+                        # the generic deletion above on a later run.
+                        try:
+                            f.rename(f.with_name(f.name + ".episodified.bak"))
+                            total_episodified += 1
+                            logger.warning(
+                                "Failed to delete episodified shortterm state; renamed for later sweep: %s",
+                                f,
+                            )
+                        except OSError:
+                            logger.error(
+                                "Failed to delete or rename episodified shortterm state %s; "
+                                "a duplicate episode may result on the next run",
+                                f,
+                            )
+                    else:
+                        logger.warning("Failed to delete shortterm file: %s", f)
+
+    if total_deleted or total_episodified:
+        logger.info(
+            "Shortterm cleanup: deleted %d files, episodified %d abandoned sessions",
+            total_deleted,
+            total_episodified,
+        )
+    return {"deleted_files": total_deleted, "episodified_sessions": total_episodified}
+
+
+def _cleanup_curator_reports(
+    animas_dir: Path,
+    retention_days: int,
+) -> dict[str, Any]:
+    """Delete Skill Curator report files older than *retention_days*.
+
+    Reports are generated daily into ``state/skill_curator/report-*.json`` but
+    only the newest is ever consumed, so older ones accumulate unbounded. The
+    filename carries the ISO date (``report-YYYY-MM-DD.json``); anything past
+    the cutoff is removed.
+    """
+    if not animas_dir.exists():
+        return {"skipped": True}
+
+    cutoff = (today_local() - timedelta(days=retention_days)).isoformat()
+    total_deleted = 0
+
+    for anima_dir in sorted(animas_dir.iterdir()):
+        if not anima_dir.is_dir():
+            continue
+        report_dir = anima_dir / "state" / "skill_curator"
+        if not report_dir.is_dir():
+            continue
+        for f in report_dir.glob("report-*.json"):
+            # Filename format: report-YYYY-MM-DD.json
+            date_part = f.stem[len("report-") :]
+            if date_part < cutoff:
+                try:
+                    f.unlink()
+                    total_deleted += 1
+                except OSError:
+                    logger.warning("Failed to delete curator report: %s", f)
 
     if total_deleted:
-        logger.info("Shortterm cleanup: deleted %d files", total_deleted)
+        logger.info("Curator report cleanup: deleted %d files", total_deleted)
     return {"deleted_files": total_deleted}
 
 

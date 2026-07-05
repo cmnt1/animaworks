@@ -296,8 +296,14 @@ class TestSynapticDownscaling:
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
 
-    def test_synaptic_downscaling_marks_retrieved_only_chunks(self, forgetting_engine):
-        """Retrieved-only access does not count as explicit use for downscaling."""
+    def test_synaptic_downscaling_protects_retrieved_only_chunks(self, forgetting_engine):
+        """F11: automatic recall (access_count) protects a chunk from downscaling.
+
+        A chunk that is retrieved frequently but never explicitly "used" still
+        counts as recently used (``used_count + access_count`` and
+        ``max(last_used_at, last_accessed_at)``), so it must NOT be marked
+        low-activation.
+        """
         old_date = (now_jst() - timedelta(days=120)).isoformat()
         recent_retrieval = (now_jst() - timedelta(days=1)).isoformat()
         chunks = [
@@ -327,8 +333,8 @@ class TestSynapticDownscaling:
         ):
             result = forgetting_engine.synaptic_downscaling()
 
-        assert result["marked_low"] == 3
-        assert mock_store.update_metadata.call_count == 3
+        assert result["marked_low"] == 0
+        mock_store.update_metadata.assert_not_called()
 
     def test_synaptic_downscaling_skips_recent(self, forgetting_engine):
         """Test that recently accessed chunks are NOT marked.
@@ -709,8 +715,13 @@ class TestCompleteForgetting:
         assert len(result["archived_files"]) == 0
         mock_store.delete_documents.assert_not_called()
 
-    def test_complete_forgetting_deletes_retrieved_only_chunks(self, forgetting_engine, anima_dir):
-        """Retrieved-only access does not prevent complete forgetting."""
+    def test_complete_forgetting_protects_retrieved_only_chunks(self, forgetting_engine, anima_dir):
+        """F11: frequently retrieved chunks are protected from complete forgetting.
+
+        ``access_count`` above ``FORGETTING_MAX_ACCESS_COUNT`` now counts as
+        usage, so a low-activation chunk that keeps getting retrieved must NOT
+        be deleted even though it was never explicitly "used".
+        """
         old_low_since = (now_jst() - timedelta(days=120)).isoformat()
         recent_retrieval = (now_jst() - timedelta(days=1)).isoformat()
         chunks = [
@@ -741,8 +752,8 @@ class TestCompleteForgetting:
         ):
             result = forgetting_engine.complete_forgetting()
 
-        assert result["forgotten_chunks"] == 3
-        assert mock_store.delete_documents.call_count == 3
+        assert result["forgotten_chunks"] == 0
+        mock_store.delete_documents.assert_not_called()
 
     def test_complete_forgetting_skips_protected(self, forgetting_engine, anima_dir):
         """Test that protected chunks are not forgotten even if low-activation."""
@@ -1083,6 +1094,123 @@ class TestMonthlyForgettingHook:
         assert result["forgotten_chunks"] == 5
         assert len(result["archived_files"]) == 3
         assert result["episode_retention"] == retention_result
+
+
+# ── F10: no direct upsert of synthetic "merged" chunks ─────────────
+
+
+class TestMergedChunkNoDirectUpsert:
+    """F10: neurogenesis no longer upserts a synthetic 'merged' chunk.
+
+    Merged content lives only in the primary source .md (re-indexed by the
+    weekly rebuild). Legacy source_file='merged' chunks are purged.
+    """
+
+    def test_index_merged_chunk_removed(self, forgetting_engine: ForgettingEngine) -> None:
+        """The direct-upsert helper (_index_merged_chunk) has been removed."""
+        assert not hasattr(forgetting_engine, "_index_merged_chunk")
+
+    def test_purge_merged_chunks_deletes_merged_source(self, forgetting_engine: ForgettingEngine) -> None:
+        """_purge_merged_chunks deletes chunks whose source_file == 'merged'."""
+        mock_store = MagicMock()
+        merged_result = MagicMock()
+        merged_result.document.id = "merged-1"
+        mock_store.get_by_metadata.return_value = [merged_result]
+        mock_store.delete_documents.return_value = True
+
+        deleted = forgetting_engine._purge_merged_chunks("test_anima_knowledge", mock_store)
+
+        assert deleted == 1
+        mock_store.get_by_metadata.assert_called_once_with(
+            "test_anima_knowledge", {"source_file": "merged"}, limit=100_000
+        )
+        mock_store.delete_documents.assert_called_once_with("test_anima_knowledge", ["merged-1"])
+
+    def test_purge_merged_chunks_noop_when_none(self, forgetting_engine: ForgettingEngine) -> None:
+        """No merged chunks → nothing deleted."""
+        mock_store = MagicMock()
+        mock_store.get_by_metadata.return_value = []
+
+        deleted = forgetting_engine._purge_merged_chunks("test_anima_knowledge", mock_store)
+
+        assert deleted == 0
+        mock_store.delete_documents.assert_not_called()
+
+    def test_purge_merged_chunks_handles_no_store(self, forgetting_engine: ForgettingEngine) -> None:
+        """A missing vector store is a safe no-op."""
+        assert forgetting_engine._purge_merged_chunks("test_anima_knowledge", None) == 0
+
+    @pytest.mark.asyncio
+    async def test_neurogenesis_purges_and_never_upserts(self, forgetting_engine: ForgettingEngine) -> None:
+        """neurogenesis_reorganize purges merged chunks per collection, no upsert."""
+        mock_store = MagicMock()
+        mock_store.get_by_metadata.return_value = []  # no legacy merged chunks
+
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=[]),
+        ):
+            result = await forgetting_engine.neurogenesis_reorganize(model="test-model")
+
+        # Purge is attempted for each of knowledge/episodes/procedures
+        assert mock_store.get_by_metadata.call_count == 3
+        for call in mock_store.get_by_metadata.call_args_list:
+            assert call.args[1] == {"source_file": "merged"}
+        # No synthetic merged chunk is upserted anymore
+        mock_store.upsert.assert_not_called()
+        assert result["merged_count"] == 0
+
+
+# ── F11: usage metrics combine explicit use and automatic recall ───
+
+
+class TestUsageMetricsCombineAccess:
+    """F11: automatic recall (access_count/last_accessed_at) counts as usage."""
+
+    def test_used_count_sums_used_and_access(self, forgetting_engine: ForgettingEngine) -> None:
+        assert forgetting_engine._used_count({"used_count": 2, "access_count": 5}) == 7
+
+    def test_used_count_access_only(self, forgetting_engine: ForgettingEngine) -> None:
+        """A chunk explicitly used zero times but retrieved often still counts."""
+        assert forgetting_engine._used_count({"used_count": 0, "access_count": 4}) == 4
+
+    def test_used_count_legacy_access_only(self, forgetting_engine: ForgettingEngine) -> None:
+        """Legacy chunk without used_count → access_count is the usage count."""
+        assert forgetting_engine._used_count({"access_count": 3}) == 3
+
+    def test_last_used_at_prefers_latest(self, forgetting_engine: ForgettingEngine) -> None:
+        meta = {"last_used_at": "2026-01-01T00:00:00", "last_accessed_at": "2026-06-01T00:00:00"}
+        assert forgetting_engine._last_used_at(meta) == "2026-06-01T00:00:00"
+
+    def test_last_used_at_access_only(self, forgetting_engine: ForgettingEngine) -> None:
+        assert forgetting_engine._last_used_at({"last_accessed_at": "2026-06-01T00:00:00"}) == "2026-06-01T00:00:00"
+
+    def test_last_used_at_empty_when_missing(self, forgetting_engine: ForgettingEngine) -> None:
+        assert forgetting_engine._last_used_at({}) == ""
+
+    def test_downscaling_protects_access_only_chunk(self, forgetting_engine: ForgettingEngine) -> None:
+        """An old chunk kept alive purely by recent retrievals is not downscaled."""
+        old_date = (now_jst() - timedelta(days=120)).isoformat()
+        recent = (now_jst() - timedelta(days=2)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="access_only",
+                access_count=5,  # above DOWNSCALING_ACCESS_THRESHOLD
+                last_accessed_at=recent,
+                updated_at=old_date,
+                activation_level="normal",
+            ),
+        ]
+
+        mock_store = MagicMock()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling()
+
+        assert result["marked_low"] == 0
+        mock_store.update_metadata.assert_not_called()
 
 
 if __name__ == "__main__":

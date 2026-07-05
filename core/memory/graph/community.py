@@ -48,12 +48,14 @@ class CommunityDetector:
         model: str = "claude-sonnet-4-6",
         locale: str = "ja",
         min_members: int = 3,
+        credential: str = "",
     ) -> None:
         self._driver = driver
         self._group_id = group_id
         self._model = model
         self._locale = locale
         self._min_members = min_members
+        self._credential = credential
 
     # ── Public API ──────────
 
@@ -245,15 +247,21 @@ class CommunityDetector:
         members_text = "\n".join(f"- {n}: {s}" for n, s in zip(names[:20], summaries[:20], strict=False))
         user_prompt = prompts.COMMUNITY_USER.format(members=members_text)
 
+        from core.memory._llm_utils import get_memory_llm_kwargs_for_model
+
+        llm_kwargs = get_memory_llm_kwargs_for_model(self._model, credential=self._credential)
+        resolved_model = llm_kwargs.pop("model", self._model)
+        effective_timeout = llm_kwargs.pop("timeout", 30)
         response = await litellm.acompletion(
-            model=self._model,
+            model=resolved_model,
             messages=[
                 {"role": "system", "content": prompts.COMMUNITY_SYSTEM},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.0,
             max_tokens=256,
-            timeout=30,
+            timeout=effective_timeout,
+            **llm_kwargs,
         )
 
         text = response.choices[0].message.content or ""

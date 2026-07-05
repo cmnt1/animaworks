@@ -259,3 +259,36 @@ def test_http_vector_store_suspends_writes_after_worker_unavailable_503() -> Non
     assert store.upsert("sora_knowledge", [doc]) is False
     assert store.upsert("sora_knowledge", [doc]) is False
     assert client.calls == 1
+
+
+def test_http_vector_store_suspends_writes_after_worker_500_with_retry_after() -> None:
+    class FakeResponse:
+        status_code = 500
+        text = "write failed"
+        headers = {"Retry-After": "30"}
+
+        def raise_for_status(self) -> None:
+            import httpx
+
+            raise httpx.HTTPStatusError("500", request=MagicMock(), response=MagicMock(status_code=500))
+
+        def json(self) -> dict[str, str]:
+            return {"detail": "Vector upsert failed", "retry_after_seconds": "30"}
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def post(self, path, json):
+            self.calls += 1
+            return FakeResponse()
+
+    client = FakeClient()
+    store = HttpVectorStore("http://vector", anima_name="sora")
+    store._client = client  # noqa: SLF001
+
+    doc = Document(id="d1", content="c", embedding=[0.1])
+
+    assert store.upsert("sora_knowledge", [doc]) is False
+    assert store.upsert("sora_knowledge", [doc]) is False
+    assert client.calls == 1

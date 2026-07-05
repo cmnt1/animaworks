@@ -854,6 +854,32 @@ class SchedulerMixin:
                     bm25_result.documents,
                 )
 
+                # Refresh the spreading-activation graph cache so newly
+                # indexed memories become reachable via graph search.
+                # In-process graphs already loaded by a running retriever
+                # pick this up on restart/re-initialization.
+                try:
+                    from core.memory.rag.graph import rebuild_graph_cache
+
+                    rebuilt = await loop.run_in_executor(
+                        None,
+                        functools.partial(
+                            rebuild_graph_cache,
+                            anima_name,
+                            anima_dir,
+                            vector_store,
+                            indexer,
+                        ),
+                    )
+                    if rebuilt:
+                        logger.info("Knowledge graph cache rebuilt for %s", anima_name)
+                except Exception:
+                    logger.warning(
+                        "Knowledge graph cache rebuild failed for %s",
+                        anima_name,
+                        exc_info=True,
+                    )
+
                 meta_path = anima_dir / "index_meta.json"
                 for label, src_dir, glob, meta_key in shared_sources:
                     if not src_dir.is_dir():
@@ -971,7 +997,34 @@ class SchedulerMixin:
         except Exception:
             logger.exception("Activity log rotation failed")
 
+    def _get_housekeeping_lock(self) -> asyncio.Lock:
+        """Return the lazily-created lock guarding housekeeping runs.
+
+        Created on first use so the mixin needs no ``__init__``. Safe under
+        asyncio's single-threaded model — there is no await between the
+        ``getattr`` check and the assignment.
+        """
+        lock = getattr(self, "_housekeeping_lock_obj", None)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._housekeeping_lock_obj = lock
+        return lock
+
     async def _run_housekeeping(self) -> None:
+        """Run unified housekeeping, guarded against concurrent invocation.
+
+        Both the cron schedule (:222) and the startup catch-up (:1000)
+        invoke this; the lock makes the second caller skip rather than run
+        cleanup a second time in parallel.
+        """
+        lock = self._get_housekeeping_lock()
+        if lock.locked():
+            logger.info("Housekeeping already running; skipping duplicate invocation")
+            return
+        async with lock:
+            await self._run_housekeeping_impl()
+
+    async def _run_housekeeping_impl(self) -> None:
         """Run unified housekeeping for all data types."""
         logger.info("Starting system-wide housekeeping")
 
@@ -1021,6 +1074,9 @@ class SchedulerMixin:
                 cron_queue_stale_minutes=hk_cfg.cron_queue_stale_minutes,
                 current_state_stale_hours=hk_cfg.current_state_stale_hours,
                 taskboard_suppressed_retention_days=hk_cfg.taskboard_suppressed_retention_days,
+                suppressed_messages_max_size_mb=hk_cfg.suppressed_messages_max_size_mb,
+                suppressed_messages_keep_generations=hk_cfg.suppressed_messages_keep_generations,
+                archive_superseded_retention_days=hk_cfg.archive_superseded_retention_days,
                 inbox_ttl_hours=inbox_cfg.ttl_hours,
                 inbox_expired_retention_days=inbox_cfg.expired_retention_days,
                 inbox_processed_retention_days=inbox_cfg.processed_retention_days,

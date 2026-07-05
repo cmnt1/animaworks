@@ -10,7 +10,10 @@ from unittest.mock import patch
 
 import pytest
 
-from core.config.models import ExternalMessagingConfig, UserAliasConfig
+from core.config.models import (
+    ExternalMessagingConfig,
+    UserAliasConfig,
+)
 from core.exceptions import RecipientNotFoundError
 from core.outbound import (
     ResolvedRecipient,
@@ -19,7 +22,6 @@ from core.outbound import (
     resolve_recipient,
     send_external,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────
 
@@ -204,21 +206,29 @@ class TestBuildChannelOrder:
 
     def test_fallback_added(self):
         r = ResolvedRecipient(
-            is_internal=False, name="x", channel="slack",
-            slack_user_id="U1", chatwork_room_id="R1",
+            is_internal=False,
+            name="x",
+            channel="slack",
+            slack_user_id="U1",
+            chatwork_room_id="R1",
         )
         assert _build_channel_order(r) == ["slack", "chatwork"]
 
     def test_chatwork_primary_with_slack_fallback(self):
         r = ResolvedRecipient(
-            is_internal=False, name="x", channel="chatwork",
-            slack_user_id="U1", chatwork_room_id="R1",
+            is_internal=False,
+            name="x",
+            channel="chatwork",
+            slack_user_id="U1",
+            chatwork_room_id="R1",
         )
         assert _build_channel_order(r) == ["chatwork", "slack"]
 
     def test_no_duplicate(self):
         r = ResolvedRecipient(
-            is_internal=False, name="x", channel="slack",
+            is_internal=False,
+            name="x",
+            channel="slack",
             slack_user_id="U1",
         )
         order = _build_channel_order(r)
@@ -228,15 +238,22 @@ class TestBuildChannelOrder:
     def test_discord_fallback_order(self):
         """Discord appears after Slack and Chatwork in fallback."""
         r = ResolvedRecipient(
-            is_internal=False, name="x", channel="discord",
-            slack_user_id="U1", chatwork_room_id="R1", discord_user_id="D1",
+            is_internal=False,
+            name="x",
+            channel="discord",
+            slack_user_id="U1",
+            chatwork_room_id="R1",
+            discord_user_id="D1",
         )
         assert _build_channel_order(r) == ["discord", "slack", "chatwork"]
 
     def test_slack_primary_discord_fallback(self):
         r = ResolvedRecipient(
-            is_internal=False, name="x", channel="slack",
-            slack_user_id="U1", discord_user_id="D1",
+            is_internal=False,
+            name="x",
+            channel="slack",
+            slack_user_id="U1",
+            discord_user_id="D1",
         )
         assert _build_channel_order(r) == ["slack", "discord"]
 
@@ -250,7 +267,10 @@ class TestSendExternal:
         # Slack is disabled (Discord migration); Discord is the primary channel.
         mock_discord.return_value = json.dumps({"status": "sent", "channel": "discord"})
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="discord", discord_user_id="D1",
+            is_internal=False,
+            name="user",
+            channel="discord",
+            discord_user_id="D1",
         )
         result = send_external(r, "hello", sender_name="sakura")
         data = json.loads(result)
@@ -261,7 +281,10 @@ class TestSendExternal:
     def test_chatwork_success(self, mock_cw):
         mock_cw.return_value = json.dumps({"status": "sent", "channel": "chatwork"})
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="chatwork", chatwork_room_id="R1",
+            is_internal=False,
+            name="user",
+            channel="chatwork",
+            chatwork_room_id="R1",
         )
         result = send_external(r, "hello")
         data = json.loads(result)
@@ -273,8 +296,11 @@ class TestSendExternal:
         mock_slack.side_effect = RuntimeError("API error")
         mock_cw.return_value = json.dumps({"status": "sent", "channel": "chatwork"})
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="slack",
-            slack_user_id="U1", chatwork_room_id="R1",
+            is_internal=False,
+            name="user",
+            channel="slack",
+            slack_user_id="U1",
+            chatwork_room_id="R1",
         )
         result = send_external(r, "hello")
         data = json.loads(result)
@@ -285,7 +311,10 @@ class TestSendExternal:
     def test_all_channels_fail(self, mock_slack):
         mock_slack.side_effect = RuntimeError("fail")
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="slack", slack_user_id="U1",
+            is_internal=False,
+            name="user",
+            channel="slack",
+            slack_user_id="U1",
         )
         result = send_external(r, "hello")
         data = json.loads(result)
@@ -296,7 +325,10 @@ class TestSendExternal:
     def test_sender_name_prefix(self, mock_discord):
         mock_discord.return_value = json.dumps({"status": "sent"})
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="discord", discord_user_id="D1",
+            is_internal=False,
+            name="user",
+            channel="discord",
+            discord_user_id="D1",
         )
         send_external(r, "hello", sender_name="sakura")
         mock_discord.assert_called_once_with("D1", "hello", "sakura", "")
@@ -305,7 +337,10 @@ class TestSendExternal:
     def test_sender_name_empty_no_prefix(self, mock_discord):
         mock_discord.return_value = json.dumps({"status": "sent"})
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="discord", discord_user_id="D1",
+            is_internal=False,
+            name="user",
+            channel="discord",
+            discord_user_id="D1",
         )
         send_external(r, "hello", sender_name="")
         mock_discord.assert_called_once_with("D1", "hello", "", "")
@@ -361,6 +396,7 @@ class TestExternalMessagingConfig:
         assert cfg.preferred_channel == "discord"
         assert cfg.user_aliases == {}
         assert cfg.slack.enabled is True
+        assert cfg.slack.board_outbound_sync_all is False
 
     def test_full_round_trip(self):
         cfg = ExternalMessagingConfig(

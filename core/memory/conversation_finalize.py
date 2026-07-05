@@ -296,7 +296,7 @@ async def finalize_session(
     Returns:
         True if session was finalized and written to episodes/, False if skipped.
     """
-    del injected_procedures, session_id
+    del injected_procedures
     new_turns = state.turns[state.last_finalized_turn_index :]
     if len(new_turns) < min_turns:
         logger.debug(
@@ -323,7 +323,28 @@ async def finalize_session(
     time_str = timestamp.strftime("%H:%M")
     episode_entry = f"## {time_str} — {parsed.title}\n\n{parsed.episode_body}\n"
     memory_mgr.append_episode(episode_entry)
-    fact_extraction_status = _schedule_session_fact_extraction(anima_dir, new_turns, session_id="")
+
+    # F8: The episode above is now durably written. Advance and persist the
+    # finalization cursor *before* the LLM compression await below. A crash
+    # during compression would otherwise leave the episode on disk but the
+    # cursor un-advanced, causing the same turns to be re-summarized into a
+    # duplicate episode on the next run. Duplicate episodes propagate into
+    # contradiction detection and forgetting, so we deliberately tolerate a
+    # missing compression summary (recovered on the next run) over a duplicate.
+    #
+    # If a previous finalization wrote an episode but compression failed, the
+    # already-finalized raw turns remain before last_finalized_turn_index.
+    # Include them in the next successful compression before clearing turns.
+    turns_to_compress = state.turns if state.last_finalized_turn_index > 0 else new_turns
+    state.last_finalized_turn_index = len(state.turns)
+    try:
+        save_fn()
+    except Exception:
+        # Edge case F8: cursor persistence itself failed. The duplicate window
+        # is unchanged from the legacy behavior, but this is worth surfacing.
+        logger.exception("Failed to persist finalization cursor after episode append")
+
+    fact_extraction_status = _schedule_session_fact_extraction(anima_dir, new_turns, session_id=session_id)
 
     from core.memory.conversation_state_update import (
         _record_resolutions,
@@ -336,10 +357,6 @@ async def finalize_session(
     if parsed.resolved_items:
         _record_resolutions(anima_dir, memory_mgr, parsed.resolved_items)
 
-    # If a previous finalization wrote an episode but compression failed, the
-    # already-finalized raw turns remain before last_finalized_turn_index.
-    # Include them in the next successful compression before clearing turns.
-    turns_to_compress = state.turns if state.last_finalized_turn_index > 0 else new_turns
     turn_text = _format_turns_for_compression(turns_to_compress)
     old_summary = state.compressed_summary
     try:
@@ -365,15 +382,23 @@ async def finalize_session(
         )
         if error:
             logger.warning("Finalization compression fallback details: %s", error)
+        compression_succeeded = True
     except Exception:
+        # The finalization cursor was already advanced and persisted above, so
+        # no duplicate episode can result. The raw turns remain and will be
+        # folded into compressed_summary on the next successful run. Do not
+        # increment compressed_turn_count while the raw turns are still present.
+        compression_succeeded = False
         logger.warning("Compression failed during finalization; keeping raw turns")
-        # The episode/state update has been written for these turns, so advance
-        # the finalization cursor to avoid duplicate episode entries. Do not
-        # increment compressed_turn_count: the raw turns are still present and
-        # will be folded into compressed_summary on the next successful run.
-        state.last_finalized_turn_index = len(state.turns)
 
-    save_fn()
+    if compression_succeeded:
+        try:
+            save_fn()
+        except Exception:
+            # Persistence failure is distinct from compression failure: the
+            # in-memory state was compressed but never written, so the raw
+            # turns remain on disk and are retried on the next run.
+            logger.exception("Failed to persist compressed conversation state after finalization")
 
     # Only update current_state.md when the session explicitly emitted a status.
     # _maybe_update_idle_current_state preserves any non-idle handoff state

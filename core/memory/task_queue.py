@@ -603,19 +603,6 @@ class TaskQueueManager:
         logger.info("Task metadata updated: id=%s keys=%s", task_id, sorted(meta_patch))
         return task
 
-    def find_by_summary(self, summary: str) -> TaskEntry | None:
-        """Find an active task whose summary contains the given text.
-
-        Searches only non-terminal tasks (pending, in_progress, blocked, delegated).
-        Returns the first match or None.
-        """
-        if not summary:
-            return None
-        for task in self.load_active_tasks().values():
-            if summary in task.summary:
-                return task
-        return None
-
     def load_active_tasks(self) -> dict[str, TaskEntry]:
         """Load all non-terminal tasks (single JSONL replay).
 

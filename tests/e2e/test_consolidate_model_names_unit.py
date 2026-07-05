@@ -33,6 +33,7 @@ _cfg = _load_config()
 EXPECTED_CONSOLIDATION_MODEL = _cfg.consolidation.llm_model
 EXPECTED_ANIMA_DEFAULT_MODEL = "claude-sonnet-4-6"
 _CODE_DEFAULT_CONSOLIDATION_MODEL = DEFAULT_CONSOLIDATION_MODEL
+_LITELLM_TEST_CONSOLIDATION_MODEL = "google/gemini-2.5-pro"
 
 
 # ── Fixtures ─────────────────────────────────────────────────────
@@ -111,10 +112,16 @@ class TestProceduralDistillerModelDefault:
     async def test_classify_and_distill_default_model(self, distiller):
         """classify_and_distill(model='') resolves to get_consolidation_llm_kwargs()['model']."""
         mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+        with (
+            patch(
+                "core.memory._llm_utils.get_consolidation_llm_kwargs",
+                return_value={"model": _LITELLM_TEST_CONSOLIDATION_MODEL},
+            ),
+            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+        ):
             mock_llm.return_value = mock_resp
             await distiller.classify_and_distill("some episodes")
-            _assert_model_in_acompletion(mock_llm, _current_consolidation_helper_model())
+            _assert_model_in_acompletion(mock_llm, _LITELLM_TEST_CONSOLIDATION_MODEL)
 
     @pytest.mark.asyncio
     async def test_classify_and_distill_explicit_model(self, distiller):

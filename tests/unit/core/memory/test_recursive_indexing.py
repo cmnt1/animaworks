@@ -44,18 +44,12 @@ def temp_anima_dir():
 
         org_dir = ckdir / "organization"
         org_dir.mkdir()
-        (org_dir / "structure.md").write_text(
-            "# Organization Structure\n\n## Hierarchy\nFlat org.\n"
-        )
-        (org_dir / "roles.md").write_text(
-            "# Roles\n\n## Engineer\nWrites code.\n"
-        )
+        (org_dir / "structure.md").write_text("# Organization Structure\n\n## Hierarchy\nFlat org.\n")
+        (org_dir / "roles.md").write_text("# Roles\n\n## Engineer\nWrites code.\n")
 
         comm_dir = ckdir / "communication"
         comm_dir.mkdir()
-        (comm_dir / "messaging-guide.md").write_text(
-            "# Messaging Guide\n\n## DM Rules\nMax 2 per run.\n"
-        )
+        (comm_dir / "messaging-guide.md").write_text("# Messaging Guide\n\n## DM Rules\nMax 2 per run.\n")
 
         # skills — nested SKILL.md + extra files that should NOT be indexed
         sdir = anima_dir / "skills"
@@ -121,9 +115,7 @@ def test_index_directory_finds_subdirectory_files(temp_anima_dir):
             temp_anima_dir["base"],
         )
         indexer.embedding_model = MagicMock()
-        indexer.embedding_model.encode = MagicMock(
-            side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
-        )
+        indexer.embedding_model.encode = MagicMock(side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts)))
 
         chunks = indexer.index_directory(ckdir, "common_knowledge")
 
@@ -159,9 +151,7 @@ def test_index_directory_skills_only_skill_md(temp_anima_dir):
             temp_anima_dir["anima_dir"],
         )
         indexer.embedding_model = MagicMock()
-        indexer.embedding_model.encode = MagicMock(
-            side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
-        )
+        indexer.embedding_model.encode = MagicMock(side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts)))
 
         chunks = indexer.index_directory(sdir, "skills")
 
@@ -195,9 +185,7 @@ def test_index_directory_common_skills_excludes_templates(temp_anima_dir):
             temp_anima_dir["base"],
         )
         indexer.embedding_model = MagicMock()
-        indexer.embedding_model.encode = MagicMock(
-            side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
-        )
+        indexer.embedding_model.encode = MagicMock(side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts)))
 
         chunks = indexer.index_directory(csdir, "common_skills")
 
@@ -210,9 +198,7 @@ def test_index_directory_common_skills_excludes_templates(temp_anima_dir):
 
     for doc in all_docs:
         sf = doc.metadata.get("source_file", "")
-        assert "template" not in sf.lower(), (
-            f"Template files should not be indexed, got: {sf}"
-        )
+        assert "template" not in sf.lower(), f"Template files should not be indexed, got: {sf}"
 
 
 # ── Test: shared_users indexing ─────────────────────────────────
@@ -236,9 +222,7 @@ def test_index_directory_shared_users_finds_nested(temp_anima_dir):
             shared_base,
         )
         indexer.embedding_model = MagicMock()
-        indexer.embedding_model.encode = MagicMock(
-            side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
-        )
+        indexer.embedding_model.encode = MagicMock(side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts)))
 
         chunks = indexer.index_directory(users_dir, "shared_users")
 
@@ -266,13 +250,13 @@ def test_graph_build_with_subdirectories():
 
         mock_indexer = MagicMock()
         mock_indexer.anima_name = "test"
-        mock_indexer._generate_embeddings = MagicMock(
-            return_value=[[0.1] * 384]
-        )
+        mock_indexer._generate_embeddings = MagicMock(return_value=[[0.1] * 384])
 
         graph_builder = KnowledgeGraph(mock_store, mock_indexer)
         graph = graph_builder.build_graph(
-            "test", kdir, implicit_link_threshold=999.0,
+            "test",
+            kdir,
+            implicit_link_threshold=999.0,
         )
 
         # Both files should be nodes with distinct IDs
@@ -360,56 +344,4 @@ def test_make_node_id_with_subdirectory():
     assert KnowledgeGraph._make_node_id("topic", "knowledge") == "topic"
     assert KnowledgeGraph._make_node_id("org/topic", "knowledge") == "org/topic"
     assert KnowledgeGraph._make_node_id("2026-03-01", "episodes") == "episodes:2026-03-01"
-    assert (
-        KnowledgeGraph._make_node_id("sub/item", "common_knowledge")
-        == "common_knowledge:sub/item"
-    )
-
-
-# ── Test: watcher recursive ─────────────────────────────────────
-
-
-def test_watcher_uses_recursive_for_all_dirs():
-    """FileWatcher registers all directories with recursive=True."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        anima_dir = Path(tmpdir)
-        for sub in ("knowledge", "episodes", "procedures", "skills"):
-            (anima_dir / sub).mkdir()
-
-        extra_ck = Path(tmpdir) / "common_knowledge"
-        extra_ck.mkdir()
-
-        mock_indexer = MagicMock()
-
-        from core.memory.rag.watcher import FileWatcher
-
-        watcher = FileWatcher(
-            anima_dir,
-            mock_indexer,
-            extra_watch_dirs=[(extra_ck, "common_knowledge")],
-        )
-
-        mock_observer = MagicMock()
-        watcher.observer = mock_observer
-
-        # Manually call the schedule part
-        from core.memory.rag.watcher import MemoryFileHandler
-
-        handler = MemoryFileHandler(watcher)
-
-        watch_dirs = [
-            anima_dir / "knowledge",
-            anima_dir / "episodes",
-            anima_dir / "procedures",
-            anima_dir / "skills",
-            extra_ck,
-        ]
-
-        for watch_dir in watch_dirs:
-            if watch_dir.is_dir():
-                mock_observer.schedule(handler, str(watch_dir), recursive=True)
-
-        for call in mock_observer.schedule.call_args_list:
-            assert call[1].get("recursive") is True or call[0][2] is True, (
-                f"All watch dirs must be recursive=True, got: {call}"
-            )
+    assert KnowledgeGraph._make_node_id("sub/item", "common_knowledge") == "common_knowledge:sub/item"

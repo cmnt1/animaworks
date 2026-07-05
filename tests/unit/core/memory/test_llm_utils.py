@@ -416,13 +416,13 @@ class TestOneShotCompletion:
         mock_try_codex_sdk: MagicMock,
         mock_get_kwargs: MagicMock,
     ) -> None:
-        """Codex models route straight to the Codex SDK, bypassing LiteLLM."""
+        """codex/* models skip the LiteLLM stage entirely (no provider exists)."""
         mock_get_kwargs.return_value = {"model": "codex/gpt-5.4-mini"}
-        mock_try_codex_sdk.return_value = "Codex fallback text"
+        mock_try_codex_sdk.return_value = "Codex direct text"
 
         result = await llm_utils.one_shot_completion("Hi", model="codex/gpt-5.4-mini")
 
-        assert result == "Codex fallback text"
+        assert result == "Codex direct text"
         mock_try_litellm.assert_not_called()
         mock_try_codex_sdk.assert_called_once()
 

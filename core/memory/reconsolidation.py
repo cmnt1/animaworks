@@ -34,6 +34,24 @@ from core.paths import load_prompt
 logger = logging.getLogger("animaworks.reconsolidation")
 
 
+def _iter_reconsolidation_files(root: Path) -> list[Path]:
+    """Recursively collect ``*.md`` files under ``root``, excluding archives.
+
+    Uses ``rglob`` so knowledge/procedure files kept in subdirectories are
+    scanned for reconsolidation (F4). Any path with an ``archive`` directory
+    component is skipped so superseded/merged/versioned copies (which live
+    under ``archive/``) are never treated as live reconsolidation targets —
+    matching the archive-free traversal used by the contradiction scanner.
+
+    Args:
+        root: Directory to scan (e.g. ``knowledge/`` or ``procedures/``).
+
+    Returns:
+        Sorted list of live ``*.md`` paths.
+    """
+    return sorted(p for p in root.rglob("*.md") if "archive" not in p.relative_to(root).parts)
+
+
 # ── ReconsolidationEngine ──────────────────────────────────────
 
 
@@ -100,7 +118,7 @@ class ReconsolidationEngine:
         procedures_dir = self.anima_dir / "procedures"
         if not procedures_dir.exists():
             return targets
-        for md_file in sorted(procedures_dir.glob("*.md")):
+        for md_file in _iter_reconsolidation_files(procedures_dir):
             meta = self.memory_manager.read_procedure_metadata(md_file)
             failure_count = meta.get("failure_count", 0)
             confidence = meta.get("confidence", 1.0)
@@ -398,7 +416,15 @@ class ReconsolidationEngine:
         archive_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-        dest = archive_dir / f"{file_path.stem}_v{version}_{timestamp}{file_path.suffix}"
+        # Flatten the path relative to the anima dir into the archive name so
+        # same-named files in different subdirectories (procedures/a/deploy.md
+        # vs procedures/b/deploy.md) cannot collide within the same second.
+        try:
+            rel = file_path.relative_to(self.anima_dir)
+            rel_stem = "__".join([*rel.parts[:-1], file_path.stem])
+        except ValueError:
+            rel_stem = file_path.stem
+        dest = archive_dir / f"{rel_stem}_v{version}_{timestamp}{file_path.suffix}"
         shutil.copy2(str(file_path), str(dest))
 
         logger.debug(
@@ -434,7 +460,7 @@ class ReconsolidationEngine:
         knowledge_dir = self.anima_dir / "knowledge"
         if not knowledge_dir.exists():
             return targets
-        for md_file in sorted(knowledge_dir.glob("*.md")):
+        for md_file in _iter_reconsolidation_files(knowledge_dir):
             if md_file.resolve() in excluded:
                 continue
             meta = self.memory_manager.read_knowledge_metadata(md_file)

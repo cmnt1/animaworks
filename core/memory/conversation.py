@@ -325,20 +325,6 @@ class ConversationMemory:
     def _record_resolutions(self, memory_mgr: MemoryManager, resolved_items: list[str]) -> None:
         _record_resolutions_fn(self.anima_dir, memory_mgr, resolved_items)
 
-    def _gather_activity_context(self, turns: list[ConversationTurn]) -> str:
-        from core.memory.conversation_finalize import _gather_activity_context
-
-        return _gather_activity_context(self.anima_dir, turns)
-
-    async def _summarize_session_with_state(
-        self,
-        new_turns: list[ConversationTurn],
-        activity_context: str,
-    ) -> str:
-        from core.memory.conversation_finalize import _summarize_session_with_state
-
-        return await _summarize_session_with_state(new_turns, activity_context)
-
     async def _call_compression_llm(self, old_summary: str, new_turns: str) -> str:
         return await _call_compression_llm_fn(old_summary, new_turns)
 

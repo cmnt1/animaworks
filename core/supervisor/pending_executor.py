@@ -1124,13 +1124,16 @@ class PendingTaskExecutor:
     def _recover_processing(
         processing_dir: Path,
         destination_dir: Path,
+        anima_dir: Path | None = None,
         *,
         conflict_dir: Path | None = None,
+        task_queue_status: str | None = "failed",
     ) -> list[str]:
         """Move orphaned files from processing/ on startup and return task IDs."""
         recovered_task_ids: list[str] = []
         if not processing_dir.exists():
             return recovered_task_ids
+        active_statuses = {"pending", "in_progress", "blocked", "delegated"}
         for orphan in processing_dir.glob("*.json"):
             task_id = orphan.stem
             try:
@@ -1156,6 +1159,24 @@ class PendingTaskExecutor:
                 logger.warning("Recovered orphaned processing task: %s -> %s", orphan.name, target.name)
             except OSError:
                 logger.exception("Failed to recover orphaned task: %s", orphan.name)
+                continue
+            if anima_dir is not None and task_id and task_queue_status is not None:
+                try:
+                    from core.memory.task_queue import TaskQueueManager
+
+                    manager = TaskQueueManager(anima_dir)
+                    entry = manager.get_task_by_id(task_id)
+                    if entry is not None and entry.status in active_statuses:
+                        manager.update_status(
+                            task_id,
+                            task_queue_status,
+                            summary=f"{task_queue_status.upper()}: recovered orphaned processing task on restart",
+                        )
+                except Exception:
+                    logger.exception(
+                        "Failed to sync Layer2 task_queue for recovered task: %s",
+                        task_id,
+                    )
         return recovered_task_ids
 
     async def watcher_loop(self) -> None:
@@ -1186,11 +1207,12 @@ class PendingTaskExecutor:
         llm_suppressed_dir = llm_pending_dir / "suppressed"
         llm_suppressed_dir.mkdir(exist_ok=True)
 
-        self._recover_processing(cmd_processing_dir, cmd_failed_dir)
+        self._recover_processing(cmd_processing_dir, cmd_failed_dir, anima_dir=self._anima_dir)
         recovered_llm_task_ids = self._recover_processing(
             llm_processing_dir,
             llm_pending_dir,
             conflict_dir=llm_failed_dir,
+            task_queue_status=None,
         )
         for task_id in recovered_llm_task_ids:
             self._sync_task_queue(task_id, "pending", note="Recovered orphaned processing task; retry queued.")
@@ -1974,6 +1996,24 @@ class PendingTaskExecutor:
                 task_id,
             )
             reply_to = None
+
+        # Skip notification when the result carries no information: the
+        # completion is already tracked in the task queue / activity log,
+        # and an empty echo only costs the recipient a full LLM cycle.
+        if reply_to:
+            _summary_body = (result_summary or "").strip()
+            if (
+                not _summary_body
+                or _summary_body == t("pending_executor.task_completed")
+                or _summary_body.startswith("[Session interrupted")
+            ):
+                logger.info(
+                    "[%s] Skipping empty task completion notification for %s (task %s)",
+                    self._anima_name,
+                    reply_to,
+                    task_id,
+                )
+                reply_to = None
         if reply_to:
             try:
                 notify_text = load_prompt(

@@ -918,7 +918,7 @@ def inject_shortterm(
     shortterm: ShortTermMemory,
 ) -> str:
     """Append short-term memory content to the system prompt."""
-    md_content = shortterm.load_markdown()
+    md_content = shortterm.render_for_injection()
     if not md_content:
         return base_prompt
     return base_prompt + "\n\n---\n\n" + md_content

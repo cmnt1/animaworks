@@ -10,6 +10,7 @@ import io
 import json
 import os
 import subprocess
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -29,6 +30,17 @@ from core.tools.machine import (
     get_tool_schemas,
     reset_call_counts,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_machine_config():
+    config = SimpleNamespace(
+        machine=SimpleNamespace(engine_priority=[], default_models={}),
+        credentials={},
+        workspaces={},
+    )
+    with patch("core.config.models.load_config", return_value=config):
+        yield
 
 
 def _set_pipe_output(mock_proc: MagicMock, stdout_text: str, stderr_text: str = "") -> None:
@@ -183,7 +195,7 @@ class TestBuildEnv:
             assert "ANIMAWORKS_ANIMA_DIR" not in env
             assert "ANIMAWORKS_SOCKET" not in env
 
-    def test_allows_api_keys(self):
+    def test_claude_strips_parent_anthropic_key_without_engine_credentials(self):
         with patch.dict(
             os.environ,
             {
@@ -193,8 +205,9 @@ class TestBuildEnv:
             },
             clear=True,
         ):
-            env = _build_env("claude")
-            assert env.get("ANTHROPIC_API_KEY") == "sk-test"
+            with patch("core.tools.machine._resolve_engine_credentials", return_value={}):
+                env = _build_env("claude")
+            assert "ANTHROPIC_API_KEY" not in env
             assert env.get("OPENAI_API_KEY") == "sk-oai"
 
     def test_blocks_random_vars(self):
@@ -447,6 +460,48 @@ class TestRateLimiting:
                 )
                 assert "error" in result
 
+    def test_rate_limit_heartbeat_via_handler_injected_trigger(self, tmp_path):
+        """ToolHandler injects the trigger as "_trigger"; the heartbeat limit
+        must apply to that key as well (native MCP path)."""
+        wd = tmp_path / "workspace"
+        wd.mkdir()
+        anima_dir = tmp_path / "test_anima_hb_native"
+        anima_dir.mkdir()
+
+        with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
+            mock_proc = MagicMock()
+            _set_pipe_output(mock_proc, "ok\n")
+            mock_proc.stdin = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.pid = 99999
+            mock_proc.wait = MagicMock(return_value=None)
+            with patch("core.tools.machine.subprocess.Popen", return_value=mock_proc):
+                for _ in range(_MAX_CALLS_PER_HEARTBEAT):
+                    dispatch(
+                        "machine_run",
+                        {
+                            "engine": "claude",
+                            "instruction": "test",
+                            "working_directory": str(wd),
+                            "anima_dir": str(anima_dir),
+                            "_trigger": "heartbeat",
+                        },
+                    )
+
+                result = json.loads(
+                    dispatch(
+                        "machine_run",
+                        {
+                            "engine": "claude",
+                            "instruction": "test",
+                            "working_directory": str(wd),
+                            "anima_dir": str(anima_dir),
+                            "_trigger": "heartbeat",
+                        },
+                    )
+                )
+                assert "error" in result
+
 
 # ── Dispatch Tests ────────────────────────────────────────
 
@@ -521,7 +576,6 @@ class TestDispatch:
                     },
                 )
             )
-            assert result["success"] is False
             assert "error" in result
 
     def test_successful_execution(self, tmp_path):

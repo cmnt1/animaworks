@@ -160,6 +160,8 @@ def test_vector_worker_upsert_failure_opens_backoff(monkeypatch) -> None:
     assert first_failed.json()["consecutive_failures"] == 1
     assert second_failed.status_code == 500
     assert second_failed.json()["consecutive_failures"] == 2
+    assert int(second_failed.headers["Retry-After"]) > 0
+    assert second_failed.json()["retry_after_seconds"] > 0
     assert blocked.status_code == 429
     assert blocked.json()["detail"] == "Vector write circuit breaker open"
     assert blocked.json()["retry_after_seconds"] > 0

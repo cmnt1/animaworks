@@ -56,6 +56,20 @@ def _get_frontend_logger() -> logging.Logger:
     handler.suffix = "%Y%m%d"
     # Raw passthrough: message is already a JSON string
     handler.setFormatter(logging.Formatter("%(message)s"))
+    # This logger has propagate=False, so it bypasses the root pipeline. The
+    # /system/frontend-logs endpoint writes external input verbatim, so attach
+    # the standard redaction (and cycle) filters here explicitly. Honour the
+    # config redaction switch, failing open to on (symmetric with the other
+    # setup paths).
+    from core.logging_config import attach_standard_log_filters
+
+    try:
+        from core.config import load_config
+
+        _redaction_enabled = load_config().logging.redaction_enabled
+    except Exception:
+        _redaction_enabled = True
+    attach_standard_log_filters(handler, redaction_enabled=_redaction_enabled)
     _frontend_logger.addHandler(handler)
 
     return _frontend_logger
@@ -158,6 +172,17 @@ async def _vector_worker_status(request: Request) -> dict:
     return {"enabled": True, "status": "unavailable", "write_circuit_breakers": []}
 
 
+async def _zoom_gateway_status(request: Request) -> dict:
+    manager = getattr(request.app.state, "zoom_gateway_manager", None)
+    if manager is None:
+        return {"status": "missing", "active_meetings": 0}
+    try:
+        return await manager.health_check()
+    except Exception:
+        logger.warning("Failed to fetch Zoom RTMS gateway status", exc_info=True)
+        return {"status": "unavailable", "active_meetings": 0}
+
+
 def _gpu_status() -> dict[str, object]:
     try:
         from core.gpu import get_gpu_status
@@ -258,6 +283,7 @@ def create_system_router() -> APIRouter:
             "processes": process_statuses,
             "scheduler_running": supervisor.is_scheduler_running(),
             "slack_socket_mode": "running" if slack_socket_ok else ("failed" if slack_enabled else "disabled"),
+            "zoom_gateway": await _zoom_gateway_status(request),
             "vector_worker": await _vector_worker_status(request),
             "gpu": _gpu_status(),
         }

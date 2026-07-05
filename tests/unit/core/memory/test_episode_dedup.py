@@ -277,6 +277,51 @@ class TestFinalizeSession:
         assert loaded.compressed_turn_count == 0
 
     @pytest.mark.asyncio
+    async def test_finalize_persists_cursor_before_compression_no_duplicate(self, conv_memory, anima_dir):
+        """F8: the cursor is persisted before the compression await, so a crash
+        during compression cannot cause a duplicate episode on the next run."""
+        state = conv_memory.load()
+        state.turns = [ConversationTurn(role="human", content=f"msg {i}") for i in range(4)]
+        state.last_finalized_turn_index = 0
+        conv_memory.save()
+
+        summary_resp = make_litellm_response(
+            content="## エピソード要約\n重複防止テスト\n\n## ステート変更\n### 解決済み\n- なし\n### 新規タスク\n- なし\n### 現在の状態\nidle"
+        )
+
+        observed: dict[str, int] = {}
+
+        async def crashing_compress(old_summary, turn_text, turns, model_config=None):
+            # By the time compression runs, the cursor must already be on disk.
+            reloaded = ConversationMemory(anima_dir, conv_memory.model_config).load()
+            observed["cursor_at_compress"] = reloaded.last_finalized_turn_index
+            raise RuntimeError("crash during compression")
+
+        with (
+            patch_litellm(summary_resp),
+            patch(
+                "core.memory.conversation_finalize._generate_compression_summary",
+                side_effect=crashing_compress,
+            ),
+        ):
+            result = await conv_memory.finalize_session(min_turns=3)
+
+        assert result is True
+        assert observed["cursor_at_compress"] == 4
+
+        episode_path = anima_dir / "episodes" / f"{today_local().isoformat()}.md"
+        # Count episode headers ("## HH:MM — <title>"), not the phrase, which
+        # appears in both the title line and the body.
+        assert episode_path.read_text(encoding="utf-8").count("— 重複防止テスト") == 1
+
+        # Simulate restart: the persisted cursor (4) equals the turn count, so
+        # re-finalization finds no new turns and writes no duplicate episode.
+        conv_memory._state = None
+        result2 = await conv_memory.finalize_session(min_turns=3)
+        assert result2 is False
+        assert episode_path.read_text(encoding="utf-8").count("— 重複防止テスト") == 1
+
+    @pytest.mark.asyncio
     async def test_finalize_session_compresses_retained_turns_after_previous_failure(self, conv_memory):
         """A later successful finalization includes retained raw turns before clearing them."""
         state = conv_memory.load()

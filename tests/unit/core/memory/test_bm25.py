@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -17,7 +19,9 @@ from core.memory.bm25 import (
     _should_index_entry,
     is_longterm_bm25_dirty,
     longterm_bm25_index_path,
+    longterm_bm25_rebuild_marker_path,
     mark_longterm_bm25_dirty,
+    maybe_rebuild_dirty_longterm_bm25,
     rebuild_longterm_bm25_index,
     reciprocal_rank_fusion,
     search_activity_log,
@@ -358,6 +362,94 @@ def test_rebuild_clears_longterm_bm25_dirty_marker(tmp_path: Path) -> None:
     assert is_longterm_bm25_dirty(anima_dir) is False
 
 
+def test_maybe_rebuild_skips_when_not_dirty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nZephyrNova launchpad audit.")
+
+    calls: list[int] = []
+    monkeypatch.setattr(bm25_module, "rebuild_longterm_bm25_index", lambda *a, **k: calls.append(1))
+
+    assert maybe_rebuild_dirty_longterm_bm25(anima_dir) is False
+    assert calls == []
+
+
+def test_maybe_rebuild_runs_when_dirty(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nZephyrNova launchpad audit.")
+    mark_longterm_bm25_dirty(anima_dir, reason="write")
+
+    assert maybe_rebuild_dirty_longterm_bm25(anima_dir) is True
+    # A successful rebuild clears the dirty marker and writes the index.
+    assert is_longterm_bm25_dirty(anima_dir) is False
+    assert longterm_bm25_index_path(anima_dir).is_file()
+    assert longterm_bm25_rebuild_marker_path(anima_dir).is_file()
+
+
+def test_maybe_rebuild_respects_cooldown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nZephyrNova launchpad audit.")
+    mark_longterm_bm25_dirty(anima_dir, reason="write")
+
+    # First call rebuilds and records the attempt time.
+    assert maybe_rebuild_dirty_longterm_bm25(anima_dir) is True
+
+    # A later write marks the index dirty again inside the cooldown window.
+    mark_longterm_bm25_dirty(anima_dir, reason="write-2")
+    calls: list[int] = []
+    monkeypatch.setattr(bm25_module, "rebuild_longterm_bm25_index", lambda *a, **k: calls.append(1))
+
+    assert maybe_rebuild_dirty_longterm_bm25(anima_dir) is False
+    assert calls == []
+    # Still dirty: staleness is tolerated until the cooldown elapses.
+    assert is_longterm_bm25_dirty(anima_dir) is True
+
+
+def test_maybe_rebuild_runs_after_cooldown_elapses(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nZephyrNova launchpad audit.")
+    mark_longterm_bm25_dirty(anima_dir, reason="write")
+    assert maybe_rebuild_dirty_longterm_bm25(anima_dir) is True
+
+    # Age the cooldown marker beyond the window and re-dirty the index.
+    marker = longterm_bm25_rebuild_marker_path(anima_dir)
+    old = time.time() - 700.0
+    os.utime(marker, (old, old))
+    mark_longterm_bm25_dirty(anima_dir, reason="write-2")
+
+    assert maybe_rebuild_dirty_longterm_bm25(anima_dir) is True
+    assert is_longterm_bm25_dirty(anima_dir) is False
+
+
+def test_maybe_rebuild_failure_keeps_dirty_marker_and_cools_down(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nZephyrNova launchpad audit.")
+    mark_longterm_bm25_dirty(anima_dir, reason="write")
+
+    calls: list[int] = []
+
+    def boom(*_a, **_k):
+        calls.append(1)
+        raise RuntimeError("rebuild failed")
+
+    monkeypatch.setattr(bm25_module, "rebuild_longterm_bm25_index", boom)
+
+    # Attempt runs but fails: dirty marker is retained for a later retry.
+    assert maybe_rebuild_dirty_longterm_bm25(anima_dir) is True
+    assert is_longterm_bm25_dirty(anima_dir) is True
+    # The cooldown marker was written first, so an immediate retry is throttled.
+    assert maybe_rebuild_dirty_longterm_bm25(anima_dir) is False
+    assert calls == [1]
+
+
 def test_longterm_bm25_missing_index_does_not_rebuild_by_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -415,3 +507,57 @@ def test_longterm_bm25_rejects_poisoned_index_content(tmp_path: Path) -> None:
     )
 
     assert hits == []
+
+
+class TestBM25RebuildSingleFlight:
+    """R5: concurrent dirty rebuilds must not stack."""
+
+    def _mark_dirty(self, anima_dir):
+        from core.memory.bm25 import mark_longterm_bm25_dirty
+
+        mark_longterm_bm25_dirty(anima_dir)
+
+    def test_lock_held_skips_rebuild(self, tmp_path, monkeypatch):
+        from core.memory import bm25 as bm25_mod
+        from core.memory.bm25 import (
+            longterm_bm25_rebuild_marker_path,
+            maybe_rebuild_dirty_longterm_bm25,
+        )
+
+        self._mark_dirty(tmp_path)
+        marker = longterm_bm25_rebuild_marker_path(tmp_path)
+        lock = marker.with_name(marker.name + ".lock")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("held", encoding="utf-8")  # fresh lock (mtime now)
+
+        called = []
+        monkeypatch.setattr(bm25_mod, "rebuild_longterm_bm25_index", lambda d: called.append(d))
+
+        assert maybe_rebuild_dirty_longterm_bm25(tmp_path) is False
+        assert called == []
+        assert lock.exists()  # not stolen
+
+    def test_stale_lock_is_stolen(self, tmp_path, monkeypatch):
+        import os as _os
+        import time as _time
+
+        from core.memory import bm25 as bm25_mod
+        from core.memory.bm25 import (
+            longterm_bm25_rebuild_marker_path,
+            maybe_rebuild_dirty_longterm_bm25,
+        )
+
+        self._mark_dirty(tmp_path)
+        marker = longterm_bm25_rebuild_marker_path(tmp_path)
+        lock = marker.with_name(marker.name + ".lock")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("stale", encoding="utf-8")
+        old = _time.time() - 3600
+        _os.utime(lock, (old, old))
+
+        called = []
+        monkeypatch.setattr(bm25_mod, "rebuild_longterm_bm25_index", lambda d: called.append(d))
+
+        assert maybe_rebuild_dirty_longterm_bm25(tmp_path) is True
+        assert called == [tmp_path]
+        assert not lock.exists()  # released after rebuild

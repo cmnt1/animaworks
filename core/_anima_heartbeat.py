@@ -16,6 +16,7 @@ import math
 import re
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from core.i18n import t
@@ -94,6 +95,32 @@ def _extract_reflection(text: str) -> str:
     if m:
         return m.group(1).strip()
     return ""
+
+
+def _build_curator_review_part(anima_dir: Path, name: str) -> str | None:
+    """Build the conditional Curator-proposal review fragment for heartbeat.
+
+    Injected only when an unreviewed report with at least one proposal exists.
+    Any failure is swallowed so heartbeat construction never blocks. Kept as a
+    module-level function (not a mixin method) so it reads real state instead of
+    being intercepted by ``MagicMock(spec=...)`` in heartbeat prompt tests.
+    """
+    try:
+        from core.skills.curator import latest_unreviewed_report, summarize_curator_report
+
+        report = latest_unreviewed_report(anima_dir)
+        if report is None:
+            return None
+        count, breakdown, top_items = summarize_curator_report(report)
+        return load_prompt(
+            "fragments/curator_report_review",
+            count=count,
+            breakdown=breakdown,
+            top_items=top_items,
+        )
+    except Exception:
+        logger.debug("[%s] Failed to build curator review part", name, exc_info=True)
+        return None
 
 
 class HeartbeatMixin:
@@ -478,6 +505,10 @@ class HeartbeatMixin:
         preobserved_snapshot = self._build_preobserved_heartbeat_snapshot_part()
         if preobserved_snapshot:
             parts.append(preobserved_snapshot)
+
+        curator_part = _build_curator_review_part(self.anima_dir, self.name)
+        if curator_part:
+            parts.append(curator_part)
 
         return parts
 

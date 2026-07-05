@@ -44,6 +44,21 @@ def msg_final_iteration() -> str:
     return t("reminder.final_iteration")
 
 
+def msg_empty_response() -> str:
+    """Return localized empty-response reprompt."""
+    return t("reminder.empty_response")
+
+
+def msg_tool_loop_warning(tool_names: str, count: int) -> str:
+    """Return localized identical-tool-call-repetition warning."""
+    return t("reminder.tool_loop_warning", tool_names=tool_names, count=count)
+
+
+def msg_tool_loop_halt(count: int) -> str:
+    """Return localized runaway-halt reminder (tools disabled, finalize)."""
+    return t("reminder.tool_loop_halt", count=count)
+
+
 class SystemReminderQueue:
     """Thread-safe queue for system-reminder injection into execution loops.
 

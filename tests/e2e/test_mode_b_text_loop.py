@@ -7,6 +7,7 @@ Validates the full flow: system prompt construction -> LLM mock ->
 tool call extraction -> tool execution -> result injection -> final response.
 No real API calls are made.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -73,9 +74,7 @@ class TestModeBTextLoop:
         tool_call_response = _make_llm_response(
             '検索してみます。\n\n```json\n{"tool": "search_memory", "arguments": {"query": "テスト"}}\n```'
         )
-        final_response = _make_llm_response(
-            "検索結果によると、テストデータがありませんでした。"
-        )
+        final_response = _make_llm_response("検索結果によると、テストデータがありませんでした。")
 
         call_count = 0
 
@@ -97,12 +96,8 @@ class TestModeBTextLoop:
 
     async def test_unknown_tool_gets_error_message(self, assisted_executor):
         """LLM calls unknown tool -> error injected -> LLM responds."""
-        unknown_tool_response = _make_llm_response(
-            '```json\n{"tool": "nonexistent_tool", "arguments": {}}\n```'
-        )
-        final_response = _make_llm_response(
-            "すみません、そのツールは利用できません。"
-        )
+        unknown_tool_response = _make_llm_response('```json\n{"tool": "nonexistent_tool", "arguments": {}}\n```')
+        final_response = _make_llm_response("すみません、そのツールは利用できません。")
 
         call_count = 0
 
@@ -198,12 +193,15 @@ class TestModeBTextLoop:
         """LiteLLM error -> raises ExecutionError."""
         from core.exceptions import ExecutionError
 
-        with pytest.raises(ExecutionError, match="API timeout"):
-            with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API timeout")):
-                await assisted_executor.execute(
-                    prompt="テスト",
-                    system_prompt="テスト",
-                )
+        with (
+            pytest.raises(ExecutionError, match="API timeout"),
+            patch("core.execution.assisted.decorrelated_jitter", return_value=0.0),
+            patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API timeout")),
+        ):
+            await assisted_executor.execute(
+                prompt="テスト",
+                system_prompt="テスト",
+            )
 
 
 class TestModeBModeRouting:

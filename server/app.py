@@ -590,6 +590,24 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         except Exception:
             logger.debug("Avatar upload to XSERVER failed", exc_info=True)
 
+        # ── Zoom RTMS Gateway ──────────────────────────────────
+        try:
+            from server.zoom_gateway import ZoomRTMSManager
+
+            zoom_manager = ZoomRTMSManager()
+            await asyncio.wait_for(zoom_manager.start(), timeout=35)
+            app.state.zoom_gateway_manager = zoom_manager
+        except TimeoutError:
+            logger.error("Zoom RTMS Gateway startup timed out (35s)")
+            app.state.zoom_gateway_manager = None
+        except Exception as exc:
+            logger.error(
+                "Zoom RTMS Gateway startup failed: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
+            app.state.zoom_gateway_manager = None
+
         # ── Slack channel → board sync (initial) (disabled – Discord migration) ──
         # if app.state.slack_socket_manager is not None:
         #     try:
@@ -874,6 +892,7 @@ async def lifespan(app: FastAPI):
         #     await app.state.slack_socket_manager.stop()
         if getattr(app.state, "discord_gateway_manager", None):
             await app.state.discord_gateway_manager.stop()
+        await _call_optional_async(getattr(app.state, "zoom_gateway_manager", None), "stop")
         governor = getattr(app.state, "usage_governor", None)
         if governor:
             await governor.stop()

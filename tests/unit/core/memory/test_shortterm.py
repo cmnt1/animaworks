@@ -364,3 +364,50 @@ class TestRenderMarkdown:
         state = SessionState(notes="Important info")
         md = stm._render_markdown(state)
         assert "Important info" in md
+
+
+# ── render_for_injection (F13a) ──────────────────────────────
+
+
+class TestRenderForInjection:
+    """JSON-first injection with markdown fallback."""
+
+    def test_prefers_json_over_markdown(self, stm):
+        # Machine-readable JSON is authoritative; a stale/agent-written
+        # markdown dump must not shadow it.
+        stm.save(SessionState(session_id="s1", accumulated_response="JSON_RESPONSE"))
+        (stm.shortterm_dir / "session_state.md").write_text("STALE_MARKDOWN", encoding="utf-8")
+
+        out = stm.render_for_injection()
+        assert "JSON_RESPONSE" in out
+        assert "STALE_MARKDOWN" not in out
+
+    def test_falls_back_to_markdown_when_json_missing(self, stm):
+        (stm.shortterm_dir / "session_state.md").write_text("ONLY_MARKDOWN", encoding="utf-8")
+
+        out = stm.render_for_injection()
+        assert out == "ONLY_MARKDOWN"
+
+    def test_falls_back_to_markdown_when_json_corrupt(self, stm):
+        (stm.shortterm_dir / "session_state.json").write_text("{not valid json", encoding="utf-8")
+        (stm.shortterm_dir / "session_state.md").write_text("FALLBACK_MD", encoding="utf-8")
+
+        out = stm.render_for_injection()
+        assert out == "FALLBACK_MD"
+
+    def test_empty_when_nothing_present(self, stm):
+        assert stm.render_for_injection() == ""
+
+    def test_truncates_json_full_response_tail_priority(self, stm):
+        # The full response lives in JSON; truncation keeps the tail and stays
+        # within the markdown response budget.
+        head = "H" * 100
+        tail = "T" * (_MAX_RESPONSE_CHARS + 500)
+        stm.save(SessionState(session_id="s1", accumulated_response=head + tail))
+
+        out = stm.render_for_injection()
+        # Head is dropped, tail is retained (tail-priority truncation), and the
+        # response body never exceeds the response budget.
+        assert head not in out
+        assert ("T" * 1000) in out
+        assert out.count("T") <= _MAX_RESPONSE_CHARS

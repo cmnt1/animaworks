@@ -214,6 +214,59 @@ class TestRecoverProcessing:
         failed_dir.mkdir()
         PendingTaskExecutor._recover_processing(processing_dir, failed_dir)
 
+    def test_syncs_layer2_task_queue_to_failed(self, tmp_path: Path) -> None:
+        # F7: recovering an orphaned processing file also transitions the
+        # matching Layer2 task_queue entry from in_progress to failed.
+        from core.memory.task_queue import TaskQueueManager
+
+        anima_dir = tmp_path / "anima"
+        (anima_dir / "state").mkdir(parents=True)
+        tqm = TaskQueueManager(anima_dir)
+        entry = tqm.add_task(
+            source="anima",
+            original_instruction="do work",
+            assignee="alice",
+            summary="orphaned work",
+            status="in_progress",
+        )
+
+        processing_dir = tmp_path / "processing"
+        processing_dir.mkdir()
+        failed_dir = tmp_path / "failed"
+        failed_dir.mkdir()
+        (processing_dir / f"{entry.task_id}.json").write_text(f'{{"task_id":"{entry.task_id}"}}')
+
+        PendingTaskExecutor._recover_processing(processing_dir, failed_dir, anima_dir)
+
+        assert (failed_dir / f"{entry.task_id}.json").exists()
+        assert tqm.get_task_by_id(entry.task_id).status == "failed"
+
+    def test_layer2_sync_leaves_terminal_tasks_untouched(self, tmp_path: Path) -> None:
+        # A task that already reached a terminal state must not be flipped.
+        from core.memory.task_queue import TaskQueueManager
+
+        anima_dir = tmp_path / "anima"
+        (anima_dir / "state").mkdir(parents=True)
+        tqm = TaskQueueManager(anima_dir)
+        entry = tqm.add_task(
+            source="anima",
+            original_instruction="do work",
+            assignee="alice",
+            summary="already done",
+            status="in_progress",
+        )
+        tqm.update_status(entry.task_id, "done")
+
+        processing_dir = tmp_path / "processing"
+        processing_dir.mkdir()
+        failed_dir = tmp_path / "failed"
+        failed_dir.mkdir()
+        (processing_dir / f"{entry.task_id}.json").write_text(f'{{"task_id":"{entry.task_id}"}}')
+
+        PendingTaskExecutor._recover_processing(processing_dir, failed_dir, anima_dir)
+
+        assert tqm.get_task_by_id(entry.task_id).status == "done"
+
     @pytest.mark.asyncio
     async def test_watcher_loop_recovers_on_startup(self, tmp_path: Path) -> None:
         """watcher_loop recovers processing/ orphans before entering main loop."""
@@ -363,7 +416,9 @@ class TestExecuteLLMTaskFailureHandling:
         executor = _make_executor(tmp_path)
         executor._anima.agent.model_config = ModelConfig(model="qwen3-coder-30b")
 
-        with patch.object(executor, "_attention_decision_for_task_desc", return_value=AttentionDecision(reason="active")):
+        with patch.object(
+            executor, "_attention_decision_for_task_desc", return_value=AttentionDecision(reason="active")
+        ):
             task_desc = {
                 "task_id": "broad-task",
                 "title": "Image recovery",

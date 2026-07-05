@@ -85,6 +85,27 @@ def test_expand_query_extracts_boost_phrases_and_content_tokens() -> None:
     assert "Becoming Nicole" in expanded.search_text
 
 
+def test_expand_query_dense_text_excludes_bm25_tokens_and_dates() -> None:
+    expanded = expand_query('What did Caroline do "at the park" yesterday?', reference_time=REFERENCE)
+
+    # Sparse search_text carries the expanded date and lowercased BM25 tokens.
+    assert "2023-05-07" in expanded.search_text
+    assert "caroline" in expanded.search_text
+
+    # Dense text keeps only the original query plus quoted phrases (F19): no
+    # expanded ISO date and no separately-appended lowercased BM25 tokens.
+    assert expanded.dense_text == 'What did Caroline do "at the park" yesterday? at the park'
+    assert "2023-05-07" not in expanded.dense_text
+    assert "caroline" not in expanded.dense_text
+
+
+def test_expand_query_dense_text_defaults_to_original_when_no_phrases() -> None:
+    expanded = expand_query("what happened yesterday?", reference_time=REFERENCE)
+
+    assert expanded.dense_text == "what happened yesterday?"
+    assert "2023-05-07" not in expanded.dense_text
+
+
 def test_expand_query_skips_temporal_expansion_when_iso_date_present() -> None:
     expanded = expand_query("What happened on 2023-05-07 yesterday?", reference_time=REFERENCE)
 

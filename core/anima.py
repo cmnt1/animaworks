@@ -261,6 +261,17 @@ class DigitalAnima(
             if path is None:
                 return
             path.parent.mkdir(parents=True, exist_ok=True)
+            lanes: list[str] = []
+            try:
+                for key, lock in self._conversation_locks.items():
+                    if lock.locked():
+                        lanes.append(f"conversation:{key}")
+                if self._background_lock.locked():
+                    lanes.append("background")
+                if self._inbox_lock.locked():
+                    lanes.append("inbox")
+            except Exception:
+                logger.debug("[%s] Failed to collect busy status lanes", self.name, exc_info=True)
             payload = {
                 "anima": self.name,
                 "pid": os.getpid(),
@@ -268,6 +279,7 @@ class DigitalAnima(
                 "busy_since": busy_since.isoformat(),
                 "last_progress_at": last_progress.isoformat(),
                 "updated_at": now.isoformat(),
+                "lanes": lanes,
             }
             tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
             tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

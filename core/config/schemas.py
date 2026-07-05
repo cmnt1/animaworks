@@ -223,7 +223,10 @@ class RAGConfig(BaseModel):
     use_gpu: bool = False
     enable_spreading_activation: bool = True
     max_graph_hops: int = 2
-    enable_file_watcher: bool = True
+    enable_file_watcher: bool = Field(
+        default=True,
+        description="Deprecated: no effect (file watcher removed 2026-07). Kept for config.json compatibility.",
+    )
     graph_cache_enabled: bool = True
     implicit_link_threshold: float = 0.75
     spreading_memory_types: list[str] = ["knowledge", "episodes"]
@@ -517,9 +520,20 @@ class ExternalMessagingChannelConfig(BaseModel):
     auto_response: bool = False  # auto-post LLM responses back to originating platform
     board_mapping: dict[str, str] = {}  # channel_id → animaworks_board_name (auto-populated)
     board_outbound_sync: list[str] = []  # board names to sync outbound to this platform (whitelist)
+    board_outbound_sync_all: bool = False  # when whitelist is empty, opt in to syncing all mapped boards
     guild_id: str = ""  # Discord guild snowflake ID (Discord only)
     channel_members: dict[str, list[str]] = {}  # channel_id → [anima_name, ...] (Discord only)
     system_agents: dict[str, SystemAgentConfig] = {}  # external_user_id -> SystemAgentConfig
+
+
+class ZoomRTMSConfig(BaseModel):
+    """Configuration for Zoom RTMS (Real-Time Media Streams) ingestion."""
+
+    enabled: bool = False
+    default_anima: str = ""  # fallback anima for unmapped meetings
+    meeting_mapping: dict[str, str] = {}  # meeting_id → anima_name
+    chunk_interval_seconds: int = 300  # flush interval for buffered transcript
+    chunk_max_chars: int = 4000  # max chars per chunk (flush on whichever comes first)
 
 
 class ExternalMessagingConfig(BaseModel):
@@ -530,6 +544,7 @@ class ExternalMessagingConfig(BaseModel):
     slack: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
     chatwork: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
     discord: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
+    zoom: ZoomRTMSConfig = ZoomRTMSConfig()
 
 
 class MediaProxyConfig(BaseModel):
@@ -592,6 +607,14 @@ class ServerConfig(BaseModel):
         return self
 
 
+class LlmRateGuardConfig(BaseModel):
+    """Cross-process LLM rate guard settings (fleet-wide circuit breaker)."""
+
+    enabled: bool = True
+    default_block_seconds: int = Field(default=60, ge=0)
+    max_block_seconds: int = Field(default=600, ge=0)
+
+
 class BackgroundToolConfig(BaseModel):
     """Per-tool background execution threshold."""
 
@@ -627,6 +650,12 @@ class ActivityLogConfig(BaseModel):
     max_file_size_mb: int = Field(default=100, ge=0)  # per-file bloat trigger; 0 disables
     max_age_days: int = Field(default=7, ge=0)  # mode="time"|"both" で使用
     rotation_time: str = "05:00"  # 実行時刻 (configured TZ)
+
+
+class LoggingConfig(BaseModel):
+    """Configuration for the logging subsystem."""
+
+    redaction_enabled: bool = True  # Mask secrets in log output; disable for raw-log debugging.
 
 
 class MachineConfig(BaseModel):
@@ -677,6 +706,7 @@ class HousekeepingConfig(BaseModel):
     taskboard_suppressed_retention_days: int = Field(default=30, ge=1)
     suppressed_messages_max_size_mb: int = Field(default=10, ge=1)
     suppressed_messages_keep_generations: int = Field(default=5, ge=1)
+    archive_superseded_retention_days: int = Field(default=7, ge=1)
 
 
 class InboxConfig(BaseModel):
@@ -971,6 +1001,10 @@ class SkillPromotionConfig(BaseModel):
     confidence_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     failure_count_max: int = Field(default=1, ge=0)
     last_used_within_days: int = Field(default=180, ge=1)
+    # DEPRECATED no-op flags. Retained only for config.json backward compat so
+    # existing files validate. They are never read: promotion always writes to
+    # quarantine and requires human approval before activation. A warning is
+    # emitted at load time (see core.config.io) when set to a non-default value.
     auto_activate: bool = False
     require_approval_on_warn: bool = True
 
@@ -1010,9 +1044,11 @@ class AnimaWorksConfig(BaseModel):
     human_notification: HumanNotificationConfig = HumanNotificationConfig()
     interaction: InteractionConfig = InteractionConfig()
     server: ServerConfig = ServerConfig()
+    llm_rate_guard: LlmRateGuardConfig = LlmRateGuardConfig()
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
     background_task: BackgroundTaskConfig = BackgroundTaskConfig()
     activity_log: ActivityLogConfig = ActivityLogConfig()
+    logging: LoggingConfig = LoggingConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     voice: VoiceConfig = VoiceConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
@@ -1070,7 +1106,9 @@ __all__ = [
     "ImageGenConfig",
     "InboxConfig",
     "InteractionConfig",
+    "LlmRateGuardConfig",
     "LocalLLMConfig",
+    "LoggingConfig",
     "MachineConfig",
     "MediaProxyConfig",
     "MemoryConfig",

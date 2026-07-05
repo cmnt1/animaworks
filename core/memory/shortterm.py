@@ -169,6 +169,20 @@ class ShortTermMemory:
                 return ""
         return ""
 
+    def render_for_injection(self) -> str:
+        """Render short-term memory for system-prompt injection.
+
+        Prefers the machine-readable ``session_state.json`` (full fidelity),
+        applying the same tail-priority truncation as the markdown dump, and
+        falls back to the on-disk markdown only when the JSON is missing or
+        corrupt. The markdown dump may be written by the agent itself and can
+        drift from the framework-managed JSON, so the JSON is authoritative.
+        """
+        state = self.load()
+        if state is not None:
+            return self._render_markdown(state)
+        return self.load_markdown()
+
     # ── Clear ───────────────────────────────────────────────
 
     def clear(self) -> None:

@@ -343,10 +343,28 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "コンテキスト使用量: {ratio}。出力を簡潔にし、重要な状態をセッション状態に保存せよ。",
         "en": ("Context usage: {ratio}. Keep output concise and save important state to session state."),
     },
+    "reminder.empty_response": {
+        "ja": "直前の応答が空でした。ツールを呼び出すか、これまでの作業内容を踏まえたテキストの回答を出力してください。",
+        "en": (
+            "The previous response was empty. Either call a tool or produce a text answer based on the work done so far."
+        ),
+    },
     "reminder.final_iteration": {
         "ja": "ツールの使用回数が上限に達しました。これ以上ツールは使用できません。これまでの作業内容と得られた情報を踏まえて、最終回答を作成してください。",
         "en": (
             "Tool usage limit reached. No more tools can be used. Based on the work done and information gathered so far, compose your final answer."
+        ),
+    },
+    "reminder.tool_loop_halt": {
+        "ja": "同一のツール呼び出しの繰り返しが上限（{count}回）に達したため、ツールを無効化しました。これまでに得られた結果を踏まえて最終回答を作成してください。",
+        "en": (
+            "The identical tool call was repeated {count} times, so tools have been disabled. Compose your final answer based on the results gathered so far."
+        ),
+    },
+    "reminder.tool_loop_warning": {
+        "ja": "同一のツール呼び出し（{tool_names}）を{count}回連続で繰り返しています。結果が変わらない場合は方針を変えるか、最終回答をまとめてください。",
+        "en": (
+            "You have repeated the identical tool call ({tool_names}) {count} times in a row. If the result is not changing, change approach or compose your final answer."
         ),
     },
     "reminder.hb_hard_timeout_recovery": {

@@ -684,13 +684,13 @@ class TestBuildOrgContext:
 class TestInjectShortterm:
     def test_no_shortterm(self):
         shortterm = MagicMock()
-        shortterm.load_markdown.return_value = ""
+        shortterm.render_for_injection.return_value = ""
         result = inject_shortterm("base prompt", shortterm)
         assert result == "base prompt"
 
     def test_with_shortterm(self):
         shortterm = MagicMock()
-        shortterm.load_markdown.return_value = "# Short-term memory\nContent"
+        shortterm.render_for_injection.return_value = "# Short-term memory\nContent"
         result = inject_shortterm("base prompt", shortterm)
         assert "base prompt" in result
         assert "Short-term memory" in result

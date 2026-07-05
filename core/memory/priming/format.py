@@ -124,6 +124,11 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
     parts.append(t("priming.section_intro"))
     parts.append("")
 
+    plan = getattr(result, "gate_plan", None)
+    if plan is not None and getattr(plan, "require_search_before_action", False):
+        parts.append(t("priming.search_before_action"))
+        parts.append("")
+
     if result.sender_profile:
         parts.append(t("priming.about_sender", sender_name=sender_name))
         parts.append("")

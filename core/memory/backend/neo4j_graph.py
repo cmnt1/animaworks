@@ -34,7 +34,7 @@ class Neo4jGraphBackend(MemoryBackend):
 
     Supports ingest_text/ingest_file via LLM extraction pipeline
     and hybrid retrieval (BM25 + Vector + BFS + cross-encoder reranking).
-    delete is still a stub (Issue #3).
+    delete() soft-deletes an episode/entity/fact by prefixed ID.
     """
 
     def __init__(
@@ -423,7 +423,7 @@ class Neo4jGraphBackend(MemoryBackend):
         if not hasattr(self, "_resolver") or self._resolver is None:
             from core.memory.extraction.resolver import EntityResolver
 
-            model, llm_extra = self._resolve_extraction_config()
+            model, llm_extra, credential = self._resolve_extraction_config()
             locale = self._resolve_locale()
             self._resolver = EntityResolver(
                 self._driver,
@@ -431,6 +431,7 @@ class Neo4jGraphBackend(MemoryBackend):
                 model=model,
                 locale=locale,
                 llm_extra=llm_extra,
+                credential=credential,
             )
         return self._resolver
 
@@ -444,7 +445,7 @@ class Neo4jGraphBackend(MemoryBackend):
         if not hasattr(self, "_invalidator") or self._invalidator is None:
             from core.memory.extraction.invalidator import EdgeInvalidator
 
-            model, llm_extra = self._resolve_extraction_config()
+            model, llm_extra, credential = self._resolve_extraction_config()
             locale = self._resolve_locale()
             self._invalidator = EdgeInvalidator(
                 self._driver,
@@ -452,13 +453,14 @@ class Neo4jGraphBackend(MemoryBackend):
                 model=model,
                 locale=locale,
                 llm_extra=llm_extra,
+                credential=credential,
             )
         return self._invalidator
 
     def _get_extractor(self):  # noqa: ANN202 – lazy import avoids circular
         """Create or return cached FactExtractor."""
         if self._extractor is None:
-            model, llm_extra = self._resolve_extraction_config()
+            model, llm_extra, credential = self._resolve_extraction_config()
             locale = self._resolve_locale()
             from core.memory.extraction.extractor import FactExtractor
 
@@ -467,55 +469,38 @@ class Neo4jGraphBackend(MemoryBackend):
                 locale=locale,
                 llm_extra=llm_extra,
                 anima_dir=self._anima_dir,
+                credential=credential,
             )
         return self._extractor
 
-    def _resolve_extraction_config(self) -> tuple[str, dict[str, str]]:
-        """Resolve the model and LLM kwargs for extraction.
+    def _resolve_extraction_config(self) -> tuple[str, dict[str, object], str]:
+        """Resolve the model, LLM kwargs, and credential for extraction.
+
+        Delegates to the hardened resolver in ``core.memory.fact_config``
+        so both backends share one policy: endpoint override fields
+        (api base / api key / extra body) in status.json are deliberately
+        NOT trusted — status.json is writable by the anima process itself,
+        so honoring endpoint overrides from it would let a tampered file
+        redirect extraction requests and leak API keys. Custom endpoints
+        are referenced by name via ``extraction_credential``, whose values
+        resolve only from the trusted global credentials map.
 
         Returns:
-            ``(model_name, llm_extra)`` where *llm_extra* may contain
-            ``api_base`` and ``api_key`` for custom endpoints (e.g. vLLM).
-
-        Resolution order for model:
-            1. Per-anima status.json ``extraction_model``
-            2. Per-anima status.json ``background_model``
-            3. Global config ``anima_defaults.background_model``
-            4. Global config ``anima_defaults.model``
-            5. Fallback: ``claude-sonnet-4-6``
+            ``(model_name, llm_extra, credential)`` where *llm_extra* may
+            contain ``timeout`` only and *credential* is a name reference
+            into the global credentials map ("" for provider default).
         """
-        import json
+        from core.memory.fact_config import _resolve_extraction_config
 
-        llm_extra: dict[str, object] = {}
-        try:
-            status_path = self._anima_dir / "status.json"
-            if status_path.is_file():
-                data = json.loads(status_path.read_text(encoding="utf-8"))
-                if data.get("extraction_api_base"):
-                    llm_extra["api_base"] = data["extraction_api_base"]
-                if data.get("extraction_api_key"):
-                    llm_extra["api_key"] = data["extraction_api_key"]
-                if data.get("extraction_extra_body"):
-                    llm_extra["extra_body"] = data["extraction_extra_body"]
-                if data.get("extraction_timeout"):
-                    llm_extra["timeout"] = data["extraction_timeout"]
-                if data.get("extraction_model"):
-                    return data["extraction_model"], llm_extra
-                if data.get("background_model"):
-                    return data["background_model"], llm_extra
-        except Exception as e:
-            logger.debug("neo4j_graph: failed to read status.json for extraction config: %s", e)
-        try:
-            from core.config.models import load_config
-
-            cfg = load_config()
-            return (cfg.anima_defaults.background_model or cfg.anima_defaults.model), llm_extra
-        except Exception:
-            return "claude-sonnet-4-6", llm_extra
+        model, llm_extra, _locale, timeout, credential = _resolve_extraction_config(self._anima_dir)
+        extra: dict[str, object] = dict(llm_extra)
+        if timeout > 0:
+            extra["timeout"] = timeout
+        return model, extra, credential
 
     def _resolve_background_model(self) -> str:
         """Return the model name used for background / community LLM tasks."""
-        model, _ = self._resolve_extraction_config()
+        model, _, _ = self._resolve_extraction_config()
         return model
 
     @staticmethod
@@ -550,11 +535,13 @@ class Neo4jGraphBackend(MemoryBackend):
             from core.memory.graph.community import CommunityDetector
             from core.memory.graph.queries import FIND_ENTITY_NEIGHBORS
 
+            bg_model, _, bg_credential = self._resolve_extraction_config()
             detector = CommunityDetector(
                 driver,
                 self._group_id,
-                model=self._resolve_background_model(),
+                model=bg_model,
                 locale=self._resolve_locale(),
+                credential=bg_credential,
             )
 
             for entity_uuid in new_entity_uuids:

@@ -10,8 +10,10 @@ from __future__ import annotations
 """Priming utilities: retriever cache, dual-query, search, keyword extraction."""
 
 import logging
+import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from core.memory.priming.constants import (
     _CHARS_PER_TOKEN,
@@ -25,6 +27,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("animaworks.priming")
 
+# TTL (seconds) before a failed lazy initialization is retried.  Prevents a
+# transient failure from permanently degrading priming until process restart.
+_INIT_RETRY_TTL_SECONDS = 300.0
+
 
 # ── RetrieverCache ────────────────────────────────────────────────
 
@@ -34,20 +40,28 @@ class RetrieverCache:
 
     def __init__(self) -> None:
         self._retriever: MemoryRetriever | None = None
-        self._initialized: bool = False
+        # Monotonic timestamp of the last failed init; ``None`` means never failed.
+        self._failed_at: float | None = None
 
     def get_or_create(self, anima_dir: Path, knowledge_dir: Path) -> MemoryRetriever | None:
         """Return a MemoryRetriever instance, creating one lazily if needed.
 
         Shared for Channel C (related knowledge).  Returns ``None`` when RAG dependencies are unavailable
         or the knowledge directory does not exist.
+
+        A failed initialization is latched for ``_INIT_RETRY_TTL_SECONDS`` and then
+        retried once, so a transient outage does not silently disable priming forever.
         """
-        if self._initialized or self._retriever is not None:
+        if self._retriever is not None:
             return self._retriever
 
-        self._initialized = True
+        if self._failed_at is not None and (time.monotonic() - self._failed_at) < _INIT_RETRY_TTL_SECONDS:
+            return None
+
+        first_failure = self._failed_at is None
 
         if not knowledge_dir.is_dir():
+            self._failed_at = time.monotonic()
             return None
 
         try:
@@ -59,6 +73,7 @@ class RetrieverCache:
             vector_store = get_vector_store(anima_name)
             if vector_store is None:
                 logger.debug("RAG vector store unavailable, retriever disabled")
+                self._failed_at = time.monotonic()
                 return None
             indexer = MemoryIndexer(vector_store, anima_name, anima_dir)
             self._retriever = MemoryRetriever(
@@ -66,13 +81,70 @@ class RetrieverCache:
                 indexer,
                 knowledge_dir,
             )
+            self._failed_at = None
             logger.debug("Shared MemoryRetriever initialized for %s", anima_name)
         except ImportError:
             logger.debug("RAG dependencies not installed, retriever unavailable")
+            self._failed_at = time.monotonic()
         except Exception as e:
-            logger.warning("Failed to initialize MemoryRetriever: %s", e)
+            if first_failure:
+                logger.warning("Failed to initialize MemoryRetriever: %s", e)
+            else:
+                logger.debug("Failed to initialize MemoryRetriever (retry): %s", e)
+            self._failed_at = time.monotonic()
 
         return self._retriever
+
+
+# ── Trigger normalization ─────────────────────────────────────────
+
+
+def normalize_trigger(trigger: str) -> str:
+    """Normalize a priming trigger/channel to a ``TRIGGER_POLICIES`` key.
+
+    Splits ``"inbox:sender"``-style triggers on ``:`` and lowercases so the
+    downstream policy lookup is deterministic.  Unknown keys fall back to
+    ``"chat"`` (matching ``UnifiedMemorySearch._policy_for``).
+    """
+    from core.memory.retrieval.unified_search import TRIGGER_POLICIES
+
+    key = str(trigger or "chat").split(":", 1)[0].strip().lower()
+    return key if key in TRIGGER_POLICIES else "chat"
+
+
+# ── Unified searcher builder (shared by Channel C and Channel F) ──
+
+
+def build_unified_searcher(
+    anima_dir: Path,
+    get_retriever: Callable[[], MemoryRetriever | None],
+    unified_search_cls: Any,
+) -> Any:
+    """Build a UnifiedMemorySearch, reusing an injected retriever's indexer when available.
+
+    Shared by Channel C and Channel F so both reuse the runtime/test retriever
+    cache instead of constructing a cold searcher on every priming run.  The
+    concrete ``UnifiedMemorySearch`` class is passed in by the caller so module
+    level patches in tests continue to take effect.
+    """
+    try:
+        retriever = get_retriever()
+        indexer = getattr(retriever, "indexer", None) if retriever is not None else None
+        if indexer is not None:
+            from core.memory.rag_search import RAGMemorySearch
+            from core.paths import get_common_knowledge_dir, get_common_skills_dir
+
+            rag_search = RAGMemorySearch(
+                anima_dir,
+                get_common_knowledge_dir(),
+                get_common_skills_dir(),
+            )
+            rag_search._indexer = indexer
+            rag_search._indexer_initialized = True
+            return unified_search_cls(anima_dir, rag_search=rag_search)
+    except Exception:
+        logger.debug("Priming: failed to reuse injected retriever", exc_info=True)
+    return unified_search_cls(anima_dir)
 
 
 # ── Dual-query helpers ──────────────────────────────────────────

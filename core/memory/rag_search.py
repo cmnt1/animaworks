@@ -744,6 +744,7 @@ class RAGMemorySearch:
 
         bm25_hits: list[dict] = []
         if longterm_types and search_longterm_memory_bm25 is not None:
+            self._maybe_rebuild_dirty_longterm_bm25()
             try:
                 bm25_hits = search_longterm_memory_bm25(
                     self._anima_dir,
@@ -1011,3 +1012,18 @@ class RAGMemorySearch:
                 mark_longterm_bm25_dirty(self._anima_dir, reason=f"index_file:{memory_type}")
         except Exception:
             logger.debug("Failed to mark long-term BM25 index dirty for %s", self._anima_dir.name, exc_info=True)
+
+    def _maybe_rebuild_dirty_longterm_bm25(self) -> None:
+        """Rebuild the long-term BM25 index before searching if it is stale (F14).
+
+        The dirty marker is written on every memory save but was otherwise never
+        consumed, leaving the BM25 corpus up to a full day out of date. A
+        cooldown inside ``maybe_rebuild_dirty_longterm_bm25`` keeps this from
+        rebuilding on every query.
+        """
+        try:
+            from core.memory.bm25 import maybe_rebuild_dirty_longterm_bm25
+
+            maybe_rebuild_dirty_longterm_bm25(self._anima_dir)
+        except Exception:
+            logger.debug("On-demand long-term BM25 rebuild check failed for %s", self._anima_dir.name, exc_info=True)

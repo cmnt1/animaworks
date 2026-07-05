@@ -6,6 +6,7 @@ from __future__ import annotations
 
 """Tests for core.memory.housekeeping and related modules."""
 
+import json
 import os
 import time
 from datetime import timedelta
@@ -465,6 +466,102 @@ class TestCleanupShortterm:
 
         result = _cleanup_shortterm(tmp_path, retention_days=7)
         assert result["deleted_files"] == 2
+
+    def test_cleans_thread_subdirectories(self, tmp_path: Path):
+        # F13(c): per-thread subdirectories must be swept too.
+        from core.memory.housekeeping import _cleanup_shortterm
+
+        thread_dir = tmp_path / "alice" / "shortterm" / "chat" / "thread-xyz"
+        thread_dir.mkdir(parents=True)
+        old_file = thread_dir / "old_session.json"
+        old_file.write_text("{}")
+        old_time = time.time() - (14 * 86400)
+        os.utime(old_file, (old_time, old_time))
+
+        result = _cleanup_shortterm(tmp_path, retention_days=7)
+        assert result["deleted_files"] == 1
+        assert not old_file.exists()
+
+    def test_leaves_archive_files_untouched(self, tmp_path: Path):
+        # archive/ is pruned by ShortTermMemory itself, not this sweep.
+        from core.memory.housekeeping import _cleanup_shortterm
+
+        archive_dir = tmp_path / "alice" / "shortterm" / "chat" / "archive"
+        archive_dir.mkdir(parents=True)
+        archived = archive_dir / "20260101_000000.json"
+        archived.write_text("{}")
+        old_time = time.time() - (30 * 86400)
+        os.utime(archived, (old_time, old_time))
+
+        result = _cleanup_shortterm(tmp_path, retention_days=7)
+        assert result["deleted_files"] == 0
+        assert archived.exists()
+
+    def test_episodifies_abandoned_chat_session_before_delete(self, tmp_path: Path, monkeypatch):
+        # F13(b): an expired session_state.json is preserved as an episode
+        # before it is deleted.
+        from core.memory.housekeeping import _cleanup_shortterm
+
+        chat_dir = tmp_path / "alice" / "shortterm" / "chat"
+        chat_dir.mkdir(parents=True)
+        state_file = chat_dir / "session_state.json"
+        state_file.write_text(
+            json.dumps(
+                {
+                    "original_prompt": "調査してほしい",
+                    "accumulated_response": "途中まで進めた作業内容",
+                    "notes": "残タスクあり",
+                }
+            ),
+            encoding="utf-8",
+        )
+        old_time = time.time() - (14 * 86400)
+        os.utime(state_file, (old_time, old_time))
+
+        appended: list[str] = []
+
+        class _FakeMgr:
+            def __init__(self, _anima_dir):
+                pass
+
+            def append_episode(self, entry, *, origin=""):
+                appended.append(entry)
+
+        monkeypatch.setattr("core.memory.manager.MemoryManager", _FakeMgr)
+
+        result = _cleanup_shortterm(tmp_path, retention_days=7)
+        assert result["episodified_sessions"] == 1
+        assert not state_file.exists()
+        assert len(appended) == 1
+        assert "途中まで進めた作業内容" in appended[0]
+
+    def test_skips_delete_when_episode_save_fails(self, tmp_path: Path, monkeypatch):
+        # F13(b): if the episode write fails, the state file is kept for retry.
+        from core.memory.housekeeping import _cleanup_shortterm
+
+        chat_dir = tmp_path / "alice" / "shortterm" / "chat"
+        chat_dir.mkdir(parents=True)
+        state_file = chat_dir / "session_state.json"
+        state_file.write_text(
+            json.dumps({"accumulated_response": "保存すべき内容"}),
+            encoding="utf-8",
+        )
+        old_time = time.time() - (14 * 86400)
+        os.utime(state_file, (old_time, old_time))
+
+        class _FailingMgr:
+            def __init__(self, _anima_dir):
+                pass
+
+            def append_episode(self, entry, *, origin=""):
+                raise RuntimeError("disk full")
+
+        monkeypatch.setattr("core.memory.manager.MemoryManager", _FailingMgr)
+
+        result = _cleanup_shortterm(tmp_path, retention_days=7)
+        assert result["episodified_sessions"] == 0
+        assert result["deleted_files"] == 0
+        assert state_file.exists()  # kept for retry
 
 
 # ── run_housekeeping integration test ──────────────────────────
@@ -965,3 +1062,73 @@ class TestRuntimeBloatRetention:
         assert not old_log.exists()
         assert recent_log.exists()
         assert memory_file.exists()
+
+
+class TestEpisodeifyReadErrors:
+    """R3: transient read errors must not discard recoverable sessions."""
+
+    def test_json_decode_error_is_deletable(self, tmp_path: Path):
+        from core.memory.housekeeping import _episodeify_abandoned_session
+
+        state = tmp_path / "session_state.json"
+        state.write_text("{not json", encoding="utf-8")
+        assert _episodeify_abandoned_session(tmp_path, state) is True
+
+    def test_os_error_defers_deletion(self, tmp_path: Path, monkeypatch):
+        from core.memory.housekeeping import _episodeify_abandoned_session
+
+        state = tmp_path / "session_state.json"
+        state.write_text("{}", encoding="utf-8")
+
+        original_read = Path.read_text
+
+        def flaky_read(self, *args, **kwargs):
+            if self.name == "session_state.json":
+                raise OSError(24, "Too many open files")
+            return original_read(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", flaky_read)
+        assert _episodeify_abandoned_session(tmp_path, state) is False
+        assert state.exists()
+
+
+class TestEpisodifiedUnlinkFailure:
+    """R6: unlink failure after episodify must not re-episodify next run."""
+
+    def test_unlink_failure_renames_state_file(self, tmp_path: Path, monkeypatch):
+        from core.memory.housekeeping import _cleanup_shortterm
+
+        chat_dir = tmp_path / "alice" / "shortterm" / "chat"
+        chat_dir.mkdir(parents=True)
+        state_file = chat_dir / "session_state.json"
+        state_file.write_text(
+            json.dumps({"accumulated_response": "内容"}),
+            encoding="utf-8",
+        )
+        old_time = time.time() - (14 * 86400)
+        os.utime(state_file, (old_time, old_time))
+
+        class _FakeMgr:
+            def __init__(self, _anima_dir):
+                pass
+
+            def append_episode(self, entry, *, origin=""):
+                pass
+
+        monkeypatch.setattr("core.memory.manager.MemoryManager", _FakeMgr)
+
+        original_unlink = Path.unlink
+
+        def failing_unlink(self, *args, **kwargs):
+            if self.name == "session_state.json":
+                raise OSError(13, "Permission denied")
+            return original_unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", failing_unlink)
+
+        result = _cleanup_shortterm(tmp_path, retention_days=7)
+        assert result["episodified_sessions"] == 1
+        assert result["deleted_files"] == 0
+        renamed = chat_dir / "session_state.json.episodified.bak"
+        assert renamed.exists()
+        assert not state_file.exists()
