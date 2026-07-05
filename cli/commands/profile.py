@@ -45,7 +45,7 @@ def _save_profiles(profiles: dict[str, dict]) -> None:
     data = {"version": 1, "profiles": profiles}
     tmp = _PROFILES_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.rename(_PROFILES_FILE)
+    tmp.replace(_PROFILES_FILE)
 
 
 def _next_available_port(profiles: dict[str, dict]) -> int:
@@ -81,6 +81,10 @@ def _is_process_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    except OSError:
+        # Windows raises OSError (WinError 87 / invalid parameter) for
+        # non-existent or out-of-range PIDs instead of ProcessLookupError.
+        return False
 
 
 def _profile_status(profile: dict) -> str:

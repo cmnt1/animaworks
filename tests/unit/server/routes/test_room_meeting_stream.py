@@ -174,8 +174,8 @@ async def test_meeting_stream_surfaces_ipc_error_and_falls_back_to_participants(
 
     events = [_event_payload(frame) for frame in frames]
 
-    assert events[0] == ("speaker_queue", {"speakers": ["rin", "sakura"]})
-    assert events[1] == ("speaker_start", {"speaker": "rin", "role": "participant"})
+    assert events[0] == ("speaker_queue", {"speakers": ["sakura", "rin"]})
+    assert events[1] == ("speaker_start", {"speaker": "sakura", "role": "chair"})
     assert any(
         event == "error" and payload["code"] == "IPC_TIMEOUT" and payload["speaker"] == "sakura"
         for event, payload in events
@@ -183,7 +183,7 @@ async def test_meeting_stream_surfaces_ipc_error_and_falls_back_to_participants(
     assert ("speaker_start", {"speaker": "sakura", "role": "chair"}) in events
     assert ("speaker_end", {"speaker": "sakura"}) in events
     assert ("speaker_start", {"speaker": "rin", "role": "participant"}) in events
-    assert supervisor.calls == ["rin", "sakura"]
+    assert supervisor.calls == ["sakura", "rin"]
 
     stored_room = manager.get_room(room.room_id)
     assert stored_room is not None
@@ -264,7 +264,7 @@ async def test_meeting_stream_does_not_store_duplicated_done_response_after_delt
 
 
 @pytest.mark.asyncio
-async def test_meeting_stream_routes_everyone_request_to_participants_before_chair(tmp_path: Path):
+async def test_meeting_stream_routes_everyone_request_chair_first_then_participants(tmp_path: Path):
     manager = RoomManager(tmp_path / "meetings")
     room = manager.create_room(
         participants=["sakura", "rin", "yui"],
@@ -287,10 +287,10 @@ async def test_meeting_stream_routes_everyone_request_to_participants_before_cha
 
     events = [_event_payload(frame) for frame in frames]
 
-    assert supervisor.calls == ["rin", "yui", "sakura"]
+    assert supervisor.calls == ["sakura", "rin", "yui"]
     assert all(timeout >= room_routes.MEETING_MIN_STREAM_TIMEOUT for timeout in supervisor.timeouts)
-    assert events[0] == ("speaker_queue", {"speakers": ["rin", "yui", "sakura"]})
-    assert events[1] == ("speaker_start", {"speaker": "rin", "role": "participant"})
+    assert events[0] == ("speaker_queue", {"speakers": ["sakura", "rin", "yui"]})
+    assert events[1] == ("speaker_start", {"speaker": "sakura", "role": "chair"})
 
 
 @pytest.mark.asyncio
