@@ -180,7 +180,10 @@ def create_ci_autofix_api_router(
     @router.get("/jobs")
     async def list_jobs(limit: int = 50, include_terminal: bool = False):
         store = get_store()
-        return {"ok": True, "jobs": [job.to_dict() for job in store.list_jobs(limit=limit, include_terminal=include_terminal)]}
+        return {
+            "ok": True,
+            "jobs": [job.to_dict() for job in store.list_jobs(limit=limit, include_terminal=include_terminal)],
+        }
 
     @router.get("/summary")
     async def summary():
