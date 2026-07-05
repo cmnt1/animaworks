@@ -206,6 +206,8 @@ class MessagingMixin:
         """Resolve a human chat recipient to an external DM target when configured."""
         if not from_person or from_person in {"human", "user", "system", self.name}:
             return None
+        if source == "meeting":
+            return None
         if source and source in EXTERNAL_PLATFORM_SOURCES:
             return None
         try:
@@ -486,6 +488,7 @@ class MessagingMixin:
 
                 try:
                     external_chat_recipient = self._resolve_chat_external_recipient(from_person, source)
+                    is_meeting_source = source == "meeting"
                     async with _agent_session_context(self):
                         self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
                         self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
@@ -544,12 +547,14 @@ class MessagingMixin:
                         if _value:
                             resp_meta[_field] = _value
                     if external_chat_recipient is not None:
-                        display_summary, delivery_meta = self._send_chat_reply_via_resolved(
+                        delivered_summary, delivery_meta = self._send_chat_reply_via_resolved(
                             external_chat_recipient,
                             to_person=from_person,
                             content=result.summary,
                         )
                         resp_meta.update(delivery_meta)
+                        if not is_meeting_source:
+                            display_summary = delivered_summary
                     if result.thinking_text:
                         resp_meta["thinking_text"] = result.thinking_text
                     if response_artifacts:
@@ -797,6 +802,7 @@ class MessagingMixin:
                     _ctx = t("anima.platform_context", source=source)
                     prompt = f"{_ctx}\n\n{prompt}"
                 external_chat_recipient = self._resolve_chat_external_recipient(from_person, source)
+                is_meeting_source = source == "meeting"
 
                 # Streaming journal: write-ahead log for crash recovery
                 journal = StreamingJournal(self.anima_dir, thread_id=thread_id)
@@ -825,6 +831,7 @@ class MessagingMixin:
                         max_turns_override=self._front_max_turns_override(),
                         thread_id=thread_id,
                         model_config_override=base_model_config,
+                        prompt_tier_override="meeting" if source == "meeting" else None,
                     ):
                         if chunk.get("type") == "text_delta":
                             delta_text = chunk.get("text", "")
@@ -899,12 +906,14 @@ class MessagingMixin:
                                 if _value:
                                     resp_meta[_field] = _value
                             if external_chat_recipient is not None:
-                                display_summary, delivery_meta = self._send_chat_reply_via_resolved(
+                                delivered_summary, delivery_meta = self._send_chat_reply_via_resolved(
                                     external_chat_recipient,
                                     to_person=from_person,
                                     content=summary,
                                 )
                                 resp_meta.update(delivery_meta)
+                                if not is_meeting_source:
+                                    display_summary = delivered_summary
                             cycle_result["summary"] = display_summary
                             tool_records = [ToolRecord.from_dict(r) for r in cycle_result.get("tool_call_records", [])]
                             conv_memory.append_turn(
@@ -976,7 +985,11 @@ class MessagingMixin:
                                 _sched_thread,
                                 _fire_compaction,
                             )
-                        if external_chat_recipient is not None and chunk.get("type") == "text_delta":
+                        if (
+                            external_chat_recipient is not None
+                            and not is_meeting_source
+                            and chunk.get("type") == "text_delta"
+                        ):
                             continue
                         yield chunk
                 except Exception as exc:
@@ -1016,7 +1029,7 @@ class MessagingMixin:
                         )
                     # Save partial response if cycle_done was never received
                     if not cycle_done:
-                        if external_chat_recipient is not None:
+                        if external_chat_recipient is not None and not is_meeting_source:
                             saved_text = t("anima.response_interrupted")
                         elif partial_response:
                             saved_text = partial_response + t("anima.response_interrupted_prefix")

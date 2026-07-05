@@ -249,10 +249,11 @@ export class ChatSessionManager extends EventTarget {
    * @param {Array}  [options.displayImages] - Display images for chat bubble
    * @param {object} [options.callbacks] - SSE event callbacks (onTextDelta, onDone, etc.)
    * @param {function} [options.onFinally]
+   * @param {boolean}  [options.skipUserEcho] - User message is already visible in the local transcript.
    * @returns {Promise<{ streamingMsg, success, queued, error }>}
    */
   async sendChat(anima, thread, text, options = {}) {
-    const { images = [], displayImages = [], callbacks = {}, onFinally } = options;
+    const { images = [], displayImages = [], callbacks = {}, onFinally, skipUserEcho = false } = options;
 
     const session = this.getSession(anima, thread);
     if (session.isStreaming) {
@@ -263,7 +264,9 @@ export class ChatSessionManager extends EventTarget {
     const sendTs = new Date().toISOString();
     const user = this.#config.getUser();
 
-    session.messages.push({ role: "user", text, images: displayImages, timestamp: sendTs });
+    if (!skipUserEcho) {
+      session.messages.push({ role: "user", text, images: displayImages, timestamp: sendTs });
+    }
 
     const streamingMsg = {
       role: "assistant", text: "", streaming: true, activeTool: null,

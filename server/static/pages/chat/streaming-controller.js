@@ -84,6 +84,8 @@ export function createStreamingController(ctx) {
     const inputVal = $("chatPageInput")?.value?.trim() || "";
     const hasInput = inputVal.length > 0;
     const meetingActive = ctx.controllers.meeting?.isActive?.();
+    const meetingMode = state.meetingMode === true;
+    const meetingClosed = meetingMode && state.meetingRoom?.closed === true;
     const name = state.selectedAnima;
     const tid = state.selectedThreadId;
     const streamCtx = name ? mgr.getStreamingContext(name) : null;
@@ -94,9 +96,9 @@ export function createStreamingController(ctx) {
     if (!sendBtn) return;
 
     sendBtn.classList.remove("stop", "interrupt");
-    if (meetingActive) {
+    if (meetingMode) {
       setSendButtonIcon(sendBtn, "send");
-      sendBtn.disabled = !hasInput || isMeetingStreaming;
+      sendBtn.disabled = meetingClosed || !meetingActive || !hasInput || isMeetingStreaming;
     } else if (!isChatStreaming) {
       setSendButtonIcon(sendBtn, "send");
       sendBtn.disabled = !name || (!hasInput && pendingQueue.length === 0);
@@ -193,6 +195,26 @@ export function createStreamingController(ctx) {
     stopStreaming();
   }
 
+  function addVisibleQueuedUserMessage(anima, thread, text, displayImages = [], extra = {}) {
+    mgr.addMessage(anima, thread, {
+      role: "user",
+      text: text || "",
+      images: displayImages,
+      timestamp: new Date().toISOString(),
+      queued: true,
+      ...extra,
+    });
+    ctx.controllers.renderer?.renderChat?.(!ctx.controllers.renderer?.isUserDetached?.());
+  }
+
+  function markQueuedUserMessageSent(anima, thread, text) {
+    const messages = mgr.getMessages(anima, thread) || [];
+    const queued = messages.find((msg) => msg?.role === "user" && msg?.queued && (msg.text || "") === (text || ""));
+    if (!queued) return;
+    delete queued.queued;
+    ctx.controllers.renderer?.renderChat?.(!ctx.controllers.renderer?.isUserDetached?.());
+  }
+
   function submitChat() {
     const input = $("chatPageInput");
     if (!input) return;
@@ -206,9 +228,28 @@ export function createStreamingController(ctx) {
     const pendingQueue = name ? mgr.getPendingQueue(name, tid) : [];
 
     if (meetingActive && (msg || hasImages)) {
+      const room = ctx.controllers.meeting?.getRoom?.();
+      const roomId = room?.room_id;
+      const images = state.imageInputManager?.getPendingImages() || [];
+      const displayImages = state.imageInputManager?.getDisplayImages() || [];
+      if (state.meetingStreaming && roomId) {
+        mgr.enqueue("meeting", roomId, {
+          text: msg,
+          images,
+          displayImages,
+          skipLocalEcho: true,
+        });
+        addVisibleQueuedUserMessage("meeting", roomId, msg, displayImages, { _meetingLocal: true });
+        input.value = "";
+        input.style.height = "auto";
+        state.imageInputManager?.clearImages();
+        showPendingIndicator();
+        updateSendButton();
+        return;
+      }
       sendMeetingChat(msg, {
-        images: state.imageInputManager?.getPendingImages() || [],
-        displayImages: state.imageInputManager?.getDisplayImages() || [],
+        images,
+        displayImages,
       });
       input.value = "";
       input.style.height = "auto";
@@ -237,11 +278,15 @@ export function createStreamingController(ctx) {
     }
 
     if (msg || hasImages) {
+      const images = state.imageInputManager?.getPendingImages() || [];
+      const displayImages = state.imageInputManager?.getDisplayImages() || [];
       mgr.enqueue(name, tid, {
         text: msg,
-        images: state.imageInputManager?.getPendingImages() || [],
-        displayImages: state.imageInputManager?.getDisplayImages() || [],
+        images,
+        displayImages,
+        skipLocalEcho: true,
       });
+      addVisibleQueuedUserMessage(name, tid, msg, displayImages);
       input.value = "";
       input.style.height = "auto";
       saveDraft(name, "", tid);
@@ -266,6 +311,9 @@ export function createStreamingController(ctx) {
     const displayImages = overrideImages?.displayImages || state.imageInputManager?.getDisplayImages() || [];
     const tid = overrideImages?.targetThread || state.selectedThreadId;
     if (!name || (!message.trim() && images.length === 0)) return;
+    if (overrideImages?.skipLocalEcho) {
+      markQueuedUserMessageSent(name, tid, message);
+    }
     if (mgr.isStreamingFor(name, tid)) {
       logger.warn("Blocked: this thread is already streaming", { anima: name, thread: tid });
       return;
@@ -410,6 +458,7 @@ export function createStreamingController(ctx) {
     const { success, error } = await mgr.sendChat(name, tid, message, {
       images,
       displayImages,
+      skipUserEcho: !!overrideImages?.skipLocalEcho,
       callbacks: {
         onStreamCreated: msg => {
           streamingMsg = msg;
@@ -617,7 +666,13 @@ export function createStreamingController(ctx) {
             const next = mgr.dequeue(name, tid);
             showPendingIndicator();
             if (mgr.getPendingQueue(name, tid).length === 0) hidePendingIndicator();
-            setTimeout(() => sendChat(next.text, { images: next.images, displayImages: next.displayImages, targetAnima: name, targetThread: tid }), 150);
+            setTimeout(() => sendChat(next.text, {
+              images: next.images,
+              displayImages: next.displayImages,
+              targetAnima: name,
+              targetThread: tid,
+              skipLocalEcho: !!next.skipLocalEcho,
+            }), 150);
           }
         }
       },
@@ -642,15 +697,25 @@ export function createStreamingController(ctx) {
     const displayImages = overrideImages?.displayImages || state.imageInputManager?.getDisplayImages() || [];
     const roomId = room.room_id;
     const user = localStorage.getItem("animaworks_user") || "human";
+    if (overrideImages?.skipLocalEcho) {
+      markQueuedUserMessageSent("meeting", roomId, message);
+    }
 
-    mgr.addMessage("meeting", roomId, {
-      role: "user",
-      text: message || "",
-      images: displayImages,
-      timestamp: new Date().toISOString(),
-    });
+    if (!overrideImages?.skipLocalEcho) {
+      mgr.addMessage("meeting", roomId, {
+        role: "user",
+        text: message || "",
+        images: displayImages,
+        timestamp: new Date().toISOString(),
+        _meetingLocal: true,
+      });
+    }
 
     state.meetingStreaming = true;
+    state.meetingSpeakerQueue = [];
+    state.meetingCompletedSpeakers = [];
+    state.meetingCurrentSpeaker = "";
+    state.meetingRoundStatus = "waiting";
     const abortController = new AbortController();
 
     const input = $("chatPageInput");
@@ -686,7 +751,17 @@ export function createStreamingController(ctx) {
       });
 
       await streamMeetingChat(roomId, body, abortController.signal, {
+        onSpeakerQueue: ({ speakers }) => {
+          state.meetingSpeakerQueue = speakers || [];
+          state.meetingCompletedSpeakers = [];
+          state.meetingCurrentSpeaker = "";
+          state.meetingRoundStatus = "waiting";
+          ctx.controllers.meeting?.updatePanel?.();
+        },
         onSpeakerStart: ({ speaker, role: speakerRole }) => {
+          state.meetingCurrentSpeaker = speaker || "";
+          state.meetingRoundStatus = "speaking";
+          ctx.controllers.meeting?.updatePanel?.();
           currentStreamingMsg = {
             role: "assistant",
             speaker,
@@ -715,7 +790,7 @@ export function createStreamingController(ctx) {
           }
           _meetingTextAnimator.push(text);
         },
-        onSpeakerEnd: () => {
+        onSpeakerEnd: ({ speaker }) => {
           if (_meetingTextAnimator) {
             _meetingTextAnimator.flush();
             _meetingTextAnimator.stop();
@@ -726,6 +801,14 @@ export function createStreamingController(ctx) {
             currentStreamingMsg.streaming = false;
             renderFull();
           }
+          if (speaker) {
+            const done = new Set(state.meetingCompletedSpeakers || []);
+            done.add(speaker);
+            state.meetingCompletedSpeakers = [...done];
+          }
+          state.meetingCurrentSpeaker = "";
+          state.meetingRoundStatus = "waiting";
+          ctx.controllers.meeting?.updatePanel?.();
           currentStreamingMsg = null;
         },
         onMeetingRedirect: ({ from, to, content }) => {
@@ -758,6 +841,9 @@ export function createStreamingController(ctx) {
             delete currentStreamingMsg._displayText;
             currentStreamingMsg.streaming = false;
           }
+          state.meetingCurrentSpeaker = "";
+          state.meetingRoundStatus = "done";
+          ctx.controllers.meeting?.updatePanel?.();
           renderFull();
         },
         onError: ({ message: errorMsg }) => {
@@ -781,12 +867,26 @@ export function createStreamingController(ctx) {
       }
     } finally {
       state.meetingStreaming = false;
+      if (state.meetingRoundStatus !== "done") {
+        state.meetingCurrentSpeaker = "";
+        state.meetingRoundStatus = "";
+      }
       if (input && state.meetingMode) {
         input.placeholder = t("meeting.placeholder");
         input.focus();
       }
       updateSendButton();
       ctx.controllers.meeting?.updatePanel?.();
+      const pending = mgr.getPendingQueue("meeting", roomId);
+      if (pending.length > 0) {
+        const next = mgr.dequeue("meeting", roomId);
+        if (mgr.getPendingQueue("meeting", roomId).length === 0) hidePendingIndicator();
+        setTimeout(() => sendMeetingChat(next.text, {
+          images: next.images,
+          displayImages: next.displayImages,
+          skipLocalEcho: !!next.skipLocalEcho,
+        }), 150);
+      }
     }
   }
 

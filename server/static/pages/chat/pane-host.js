@@ -18,9 +18,10 @@ import { onEvent } from "../../modules/websocket.js";
 
 const LAYOUT_KEY = "aw-chat-pane-layout";
 
-function paneHtml() {
+function paneHtml(options = {}) {
+  const standaloneClass = options.meetingStandalone ? " meeting-standalone-main" : "";
   return `
-    <div class="chat-page-main">
+    <div class="chat-page-main${standaloneClass}">
       <div class="chat-anima-tabs-header" data-chat-id="chatAnimaTabsHeader">
         <button class="chat-unified-hamburger" data-chat-id="chatUnifiedHamburger" aria-label="${t("pane.menu")}">&#x2630;</button>
         <div class="anima-tabs" data-chat-id="chatAnimaTabs"></div>
@@ -122,7 +123,7 @@ function paneHtml() {
 
 const MAX_PANES = 4;
 
-export function createPaneHost(rootContainer) {
+export function createPaneHost(rootContainer, options = {}) {
   const panes = [];
   let focusedIdx = 0;
   let nextId = 0;
@@ -137,14 +138,15 @@ export function createPaneHost(rootContainer) {
   }
 
   function addPane() {
+    if (options.singlePane && panes.length >= 1) return null;
     if (panes.length >= MAX_PANES) return null;
     if (_isMobile() && panes.length >= 1) return null;
 
     const id = nextId++;
     const paneEl = document.createElement("div");
-    paneEl.className = "chat-pane" + (panes.length === 0 ? " focused" : "");
+    paneEl.className = "chat-pane" + (options.meetingStandalone ? " meeting-standalone-pane" : "") + (panes.length === 0 ? " focused" : "");
     paneEl.dataset.paneId = String(id);
-    paneEl.innerHTML = paneHtml();
+    paneEl.innerHTML = paneHtml(options);
 
     if (panes.length > 0) {
       const splitterEl = document.createElement("div");
@@ -182,7 +184,7 @@ export function createPaneHost(rootContainer) {
 
     ctx.controllers.sidebar.initRightPaneVisibility();
     ctx.controllers.events.bindPaneEvents();
-    ctx.controllers.meeting.init();
+    ctx.controllers.meeting.init({ standalone: Boolean(options.meetingStandalone) });
     ctx.controllers.anima.loadAnimas();
 
     const chatInterval = setInterval(
@@ -475,6 +477,7 @@ export function createPaneHost(rootContainer) {
   }
 
   function restoreLayout() {
+    if (options.disableLayoutRestore) return;
     try {
       const raw = localStorage.getItem(LAYOUT_KEY);
       if (!raw) return;
@@ -506,12 +509,13 @@ export function createPaneHost(rootContainer) {
     for (const p of panes) {
       const closeBtn = p.el.querySelector('[data-chat-id="chatClosePaneBtn"]');
       const splitBtn = p.el.querySelector('[data-chat-id="chatSplitPaneBtn"]');
-      if (closeBtn) closeBtn.style.display = multi ? "" : "none";
-      if (splitBtn) splitBtn.style.display = full ? "none" : "";
+      if (closeBtn) closeBtn.style.display = !options.singlePane && multi ? "" : "none";
+      if (splitBtn) splitBtn.style.display = options.singlePane || full ? "none" : "";
     }
   }
 
   function splitPane() {
+    if (options.singlePane) return null;
     if (_isMobile()) return null;
     return addPane();
   }

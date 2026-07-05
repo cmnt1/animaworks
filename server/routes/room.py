@@ -326,11 +326,10 @@ async def _meeting_stream(
     if mentions:
         targets = [t for t in mentions if t in room.participants]
     elif len(room.participants) > 1:
-        # Chair speaks first to coordinate the round; remaining participants
-        # follow. Chair-first keeps the redirect/@mention flow coherent
-        # (the chair can pull a specific participant in via redirect).
-        targets = [room.chair] if room.chair in room.participants else []
-        targets += [t for t in room.participants if t != room.chair]
+        # Participants respond first; chair summarises/coordinates last.
+        targets = [t for t in room.participants if t != room.chair]
+        if room.chair in room.participants:
+            targets.append(room.chair)
     else:
         targets = [room.chair] if room.chair in room.participants else []
 

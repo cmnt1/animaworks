@@ -913,7 +913,9 @@ export function renderLiveBubble(msg, opts) {
     const imagesHtml = renderImages(msg.images, { animaName: opts.animaName });
     const userText = _stripVoiceSuffix(msg.text || "");
     const textHtml = userText ? `<div class="chat-text">${escapeHtml(userText)}</div>` : "";
-    const bubble = `<div class="chat-bubble user">${imagesHtml}${textHtml}${tsHtml}</div>`;
+    const queuedHtml = msg.queued ? `<div class="chat-queued-label">送信待ち</div>` : "";
+    const queuedClass = msg.queued ? " queued" : "";
+    const bubble = `<div class="chat-bubble user${queuedClass}">${imagesHtml}${textHtml}${queuedHtml}${tsHtml}</div>`;
     return _wrapRow("user", bubble, _renderAvatar(null, avatarMap));
   }
 

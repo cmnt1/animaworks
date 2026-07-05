@@ -367,14 +367,18 @@ class SchedulerManager:
             activity_source = "config"
 
         # Urgent-mode override: if this Anima has active urgent tasks, pin
-        # activity to 100% regardless of governor/config so heartbeat /
-        # scheduler cadence is not throttled.
+        # activity to 100% only when no Usage Governor level is present.
+        # Governor is authoritative for provider budget pressure, even for
+        # urgent work.
         try:
             from core.urgent import is_urgent_active
 
             if is_urgent_active(self._anima_dir):
-                activity_pct = max(activity_pct, 100)
-                activity_source = f"{activity_source}+urgent"
+                if governor_level is None:
+                    activity_pct = max(activity_pct, 100)
+                    activity_source = f"{activity_source}+urgent"
+                else:
+                    activity_source = f"{activity_source}+urgent-governed"
         except Exception:  # noqa: BLE001
             logger.debug("urgent check failed during scheduler setup", exc_info=True)
 
@@ -385,6 +389,10 @@ class SchedulerManager:
         if max_interval is not None and interval > max_interval:
             interval = max_interval
             activity_source = f"{activity_source}+cap"
+
+        # Always record the resolved interval for diagnostics/tests regardless
+        # of whether CronTrigger or polling is selected below.
+        self._hb_effective_interval = interval
 
         # Deterministic per-anima phase offset to de-synchronize heartbeats
         # across the fleet.  Spread across the full interval (capped at 30 min

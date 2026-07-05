@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.prompt.builder import (
+    PROMPT_PROFILE_MEETING,
     TIER_FULL,
     TIER_LIGHT,
     TIER_MICRO,
@@ -231,7 +232,7 @@ class TestMicroTierSectionExclusion:
         def _load_prompt_section(name: str, *args: object, **kwargs: object) -> str:
             _call_count["n"] += 1
             if name == "environment":
-                return f"[env-full] data_dir={kwargs.get('data_dir','?')}"
+                return f"[env-full] data_dir={kwargs.get('data_dir', '?')}"
             if name == "behavior_rules":
                 return "[behavior_rules content]"
             if name == "tool_data_interpretation":
@@ -240,7 +241,9 @@ class TestMicroTierSectionExclusion:
 
         with patch("core.prompt.builder.load_prompt", side_effect=_load_prompt_section):
             return build_system_prompt(
-                memory, execution_mode="a", context_window=context_window,
+                memory,
+                execution_mode="a",
+                context_window=context_window,
             )
 
     def test_micro_excludes_behavior_rules(self, tmp_path, data_dir):
@@ -269,6 +272,25 @@ class TestMicroTierSectionExclusion:
         """MICRO should include Group 5 header but skip org_context and messaging."""
         result = self._build(tmp_path, data_dir, 4_000)
         assert "Organization" in result or "5." in result
+
+
+class TestMeetingPromptProfile:
+    def test_meeting_profile_keeps_identity_but_excludes_workflow_and_tools(self, tmp_path, data_dir):
+        memory = _make_mock_memory(tmp_path, data_dir)
+        with patch("core.prompt.builder.load_prompt", return_value="[behavior_rules content]"):
+            result = build_system_prompt(
+                memory,
+                execution_mode="s",
+                context_window=200_000,
+                prompt_tier=TIER_MICRO,
+                prompt_profile=PROMPT_PROFILE_MEETING,
+            )
+
+        assert "I am TestAnima" in result
+        assert "Meeting Response Profile" in result
+        assert "行動指針テスト" not in result
+        assert "[behavior_rules content]" not in result
+        assert "External Tools" not in result
 
 
 class TestDefaultContextWindowBackwardCompat:

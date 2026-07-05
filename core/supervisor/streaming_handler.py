@@ -104,6 +104,7 @@ class StreamingIPCHandler:
         meeting_room_id = request.params.get("meeting_room_id", "")
         meeting_participants = request.params.get("meeting_participants") or None
         full_response = ""
+        text_delta_seen = False
 
         # Track bootstrap state to detect completion
         was_bootstrapping = self._anima.needs_bootstrap
@@ -121,7 +122,7 @@ class StreamingIPCHandler:
 
         async def _stream_producer() -> None:
             """Read Agent SDK stream and enqueue IPCResponse chunks."""
-            nonlocal full_response
+            nonlocal full_response, text_delta_seen
             try:
                 # Emit bootstrap_start if anima needs bootstrap
                 if was_bootstrapping:
@@ -151,6 +152,7 @@ class StreamingIPCHandler:
 
                     if event_type == "text_delta":
                         text = chunk.get("text", "")
+                        text_delta_seen = True
                         full_response += text
                         await _enqueue(
                             IPCResponse(
@@ -162,10 +164,11 @@ class StreamingIPCHandler:
 
                     elif event_type == "cycle_done":
                         cycle_result = chunk.get("cycle_result", {})
-                        full_response = cycle_result.get(
-                            "summary",
-                            full_response,
-                        )
+                        if not text_delta_seen:
+                            full_response = cycle_result.get(
+                                "summary",
+                                full_response,
+                            )
 
                         # Emit bootstrap_complete if bootstrap just finished
                         if was_bootstrapping and not self._anima.needs_bootstrap:

@@ -444,17 +444,24 @@ async def _try_codex_sdk(
     max_tokens: int,
     llm_kwargs: dict[str, Any],
 ) -> str | None:
-    """Attempt one-shot completion via Codex SDK."""
-    del max_tokens
+    """Attempt a one-shot completion via the ``codex exec --json`` CLI.
 
-    try:
-        from openai_codex import ApprovalMode, AsyncCodex, CodexConfig, Sandbox
-    except ImportError:
-        logger.debug("Codex SDK not available for one-shot fallback")
-        return None
+    The Codex SDK's blocking ``thread.run()`` does not populate
+    ``final_response``/``items`` in the bundled openai_codex build (it returns a
+    completed turn with empty content), so one-shot calls go through the same
+    ``codex exec --json`` transport that the main executor uses as its reliable
+    fallback. Assistant text is read from ``agent_message`` items.
+    """
+    import asyncio
+    import json
 
     from core.execution.codex_sdk import _default_path_env, _resolve_codex_model
     from core.platform.codex import default_home_dir, get_codex_executable
+
+    executable = get_codex_executable()
+    if not executable:
+        logger.debug("Codex CLI not available for one-shot fallback")
+        return None
 
     env: dict[str, str] = dict(os.environ)
     env.update(
@@ -468,41 +475,78 @@ async def _try_codex_sdk(
     if llm_kwargs.get("api_base"):
         env["OPENAI_BASE_URL"] = str(llm_kwargs["api_base"])
 
-    executable = get_codex_executable()
-    config = CodexConfig(
-        codex_bin=executable,
-        cwd=os.getcwd(),
-        env=env,
-        client_name="animaworks",
-        client_title="AnimaWorks",
-    )
+    codex_model = _resolve_codex_model(model)
+    cmd = [
+        executable,
+        "exec",
+        "-C",
+        os.getcwd(),
+        "--skip-git-repo-check",
+        "--json",
+        "-c",
+        f'model="{codex_model}"',
+        "-c",
+        'sandbox_mode="read-only"',
+        "-c",
+        'approval_policy="never"',
+        "-",
+    ]
 
+    # The CLI has no separate system-prompt channel here, so prepend it.
+    full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+
+    proc = None
     try:
-        client = AsyncCodex(config)
-        thread = await client.thread_start(
-            approval_mode=ApprovalMode.deny_all,
-            base_instructions=system_prompt or None,
-            cwd=os.getcwd(),
-            model=_resolve_codex_model(model),
-            sandbox=Sandbox.read_only,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
-        turn = await thread.run(
-            prompt,
-            approval_mode=ApprovalMode.deny_all,
-            cwd=os.getcwd(),
-            model=_resolve_codex_model(model),
-            sandbox=Sandbox.read_only,
-        )
-        return getattr(turn, "final_response", None) or None
+        if proc.stdin is None or proc.stdout is None:
+            return None
+
+        proc.stdin.write(full_prompt.encode("utf-8"))
+        await proc.stdin.drain()
+        proc.stdin.close()
+
+        parts: list[str] = []
+        while True:
+            try:
+                line = await asyncio.wait_for(proc.stdout.readline(), timeout=120.0)
+            except TimeoutError:
+                logger.warning("Codex one-shot timed out waiting for output")
+                return None
+            if not line:
+                break
+            raw = line.decode("utf-8", errors="replace").rstrip("\n")
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if payload.get("type") == "item.completed":
+                item = payload.get("item") or {}
+                if item.get("type") == "agent_message":
+                    text = str(item.get("text", ""))
+                    if text:
+                        parts.append(text)
+
+        await proc.wait()
+        return "".join(parts) or None
     except Exception as e:
-        logger.warning("Codex SDK one-shot failed: %s", e)
+        logger.warning("Codex one-shot failed: %s", e)
         return None
     finally:
-        if "client" in locals():
+        if proc is not None and proc.returncode is None:
             try:
-                await client.close()
-            except Exception:
-                logger.debug("Failed to close Codex one-shot client", exc_info=True)
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5.0)
+            except (TimeoutError, Exception):
+                logger.debug("Codex one-shot subprocess cleanup issue", exc_info=True)
 
 
 async def one_shot_completion(

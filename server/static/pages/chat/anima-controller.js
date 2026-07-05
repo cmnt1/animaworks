@@ -383,6 +383,7 @@ export function createAnimaController(ctx) {
       } else if (state.selectedAnima) {
         selectAnima(state.selectedAnima);
       }
+      ctx.controllers.meeting?.updatePanel?.();
     } catch (err) {
       logger.error("Failed to load animas", err);
     }

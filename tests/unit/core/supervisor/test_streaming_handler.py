@@ -97,6 +97,36 @@ class TestStreamHandleBasicFlow:
         assert responses[-1].result["response"] == "Hello World"
 
     @pytest.mark.asyncio
+    async def test_done_summary_does_not_replace_streamed_delta(self):
+        """A duplicated done summary must not duplicate already streamed text."""
+        handler = _make_handler()
+
+        async def mock_stream(*args, **kwargs):
+            yield {"type": "text_delta", "text": "Karen says ok."}
+            yield {
+                "type": "cycle_done",
+                "cycle_result": {"summary": "Karen says ok.Karen says ok."},
+            }
+
+        handler._anima.process_message_stream = mock_stream
+        handler._anima.needs_bootstrap = False
+
+        request = IPCRequest(
+            id="req-1",
+            method="process_message",
+            params={"message": "test", "stream": True},
+        )
+
+        responses = []
+        with patch("core.config.load_config") as mock_config:
+            mock_config.return_value.server.keepalive_interval = 30
+            async for resp in handler.handle_stream(request):
+                responses.append(resp)
+
+        assert responses[-1].done is True
+        assert responses[-1].result["response"] == "Karen says ok."
+
+    @pytest.mark.asyncio
     async def test_error_in_stream(self):
         """Should handle errors in stream producer."""
         handler = _make_handler()
@@ -195,10 +225,7 @@ class TestStreamHandleToolEndSerialization:
                 responses.append(resp)
 
         # Verify tool_end chunk was serialized successfully
-        tool_end_chunks = [
-            r for r in responses
-            if r.chunk and '"tool_end"' in r.chunk
-        ]
+        tool_end_chunks = [r for r in responses if r.chunk and '"tool_end"' in r.chunk]
         assert len(tool_end_chunks) == 1
 
         parsed = json.loads(tool_end_chunks[0].chunk)

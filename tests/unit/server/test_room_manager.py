@@ -54,6 +54,22 @@ class TestCreateRoom:
         assert room.closed is False
         assert room.conversation == []
 
+    def test_create_room_with_project_metadata(self, room_manager: RoomManager):
+        room = room_manager.create_room(
+            participants=["sakura", "kanna"],
+            chair="sakura",
+            created_by="taka",
+            title="AFF-012 ブログ立ち上げ機械",
+            project_department="アフィリエイト",
+            project_task_code="AFF-012",
+            project_note_path=r"E:\OneDriveBiz\Obsidian\_notes\Projects\ブログ立ち上げ機械.md",
+            project_task_title="ブログ立ち上げ機械",
+        )
+
+        assert room.project_department == "アフィリエイト"
+        assert room.project_task_code == "AFF-012"
+        assert room.project_task_title == "ブログ立ち上げ機械"
+
     def test_create_room_max_participants(self, room_manager: RoomManager):
         participants = ["a", "b", "c", "d", "e"]
         room = room_manager.create_room(
@@ -120,6 +136,72 @@ class TestListRooms:
         assert len(rooms) == 1
         assert rooms[0].room_id == room_id
         assert rooms[0].closed is True
+
+
+class TestArchiveRoom:
+    """Tests for RoomManager.set_room_archived and archive filtering."""
+
+    def test_archive_excludes_from_default_list(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        room_manager.set_room_archived(sample_room.room_id, True)
+        assert len(room_manager.list_rooms(include_closed=True)) == 0
+
+    def test_archive_included_when_requested(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        room_manager.set_room_archived(sample_room.room_id, True)
+        rooms = room_manager.list_rooms(include_closed=True, include_archived=True)
+        assert len(rooms) == 1
+        assert rooms[0].archived is True
+
+    def test_archive_persists(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        room_manager.set_room_archived(sample_room.room_id, True)
+        manager2 = RoomManager(room_manager._data_dir)
+        loaded = manager2.load_room(sample_room.room_id)
+        assert loaded is not None
+        assert loaded.archived is True
+
+    def test_unarchive(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        room_manager.set_room_archived(sample_room.room_id, True)
+        room_manager.set_room_archived(sample_room.room_id, False)
+        assert len(room_manager.list_rooms(include_closed=True)) == 1
+
+    def test_archive_room_not_found(self, room_manager: RoomManager):
+        with pytest.raises(ValueError):
+            room_manager.set_room_archived("ffffffffffff", True)
+
+
+class TestDeleteRoom:
+    """Tests for RoomManager.delete_room."""
+
+    def test_delete_removes_from_memory_and_disk(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        room_id = sample_room.room_id
+        room_manager.delete_room(room_id)
+        assert room_manager.get_room(room_id) is None
+        assert not (room_manager._data_dir / f"{room_id}.json").exists()
+
+    def test_delete_missing_room_is_noop(self, room_manager: RoomManager):
+        room_manager.delete_room("ffffffffffff")
+
+    def test_delete_invalid_room_id_raises(self, room_manager: RoomManager):
+        with pytest.raises(ValueError):
+            room_manager.delete_room("../etc/passwd")
+
+
+class TestUpdateRoomTitle:
+    """Tests for RoomManager.update_room_title."""
+
+    def test_update_room_title_persists(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        updated = room_manager.update_room_title(sample_room.room_id, "AFF-012 review")
+
+        assert updated.title == "AFF-012 review"
+
+        manager2 = RoomManager(room_manager._data_dir)
+        loaded = manager2.load_room(sample_room.room_id)
+        assert loaded is not None
+        assert loaded.title == "AFF-012 review"
+
+    def test_update_room_title_trims(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        updated = room_manager.update_room_title(sample_room.room_id, "  renamed  ")
+
+        assert updated.title == "renamed"
 
 
 class TestAddParticipant:
@@ -325,6 +407,26 @@ class TestPersistence:
         assert len(loaded.conversation) == 1
         assert loaded.conversation[0]["text"] == "テスト発言"
 
+    def test_save_and_load_room_preserves_project_metadata(self, room_manager: RoomManager, tmp_path: Path):
+        room = room_manager.create_room(
+            participants=["sakura", "kanna"],
+            chair="sakura",
+            created_by="taka",
+            title="AFF-012 ブログ立ち上げ機械",
+            project_department="アフィリエイト",
+            project_task_code="AFF-012",
+            project_note_path=r"E:\OneDriveBiz\Obsidian\_notes\Projects\ブログ立ち上げ機械.md",
+            project_task_title="ブログ立ち上げ機械",
+        )
+
+        manager2 = RoomManager(tmp_path / "meetings")
+        loaded = manager2.load_room(room.room_id)
+
+        assert loaded is not None
+        assert loaded.project_department == "アフィリエイト"
+        assert loaded.project_task_code == "AFF-012"
+        assert loaded.project_task_title == "ブログ立ち上げ機械"
+
     def test_load_all_rooms(self, room_manager: RoomManager, tmp_path: Path):
         room1 = room_manager.create_room(
             participants=["a", "b", "c"],
@@ -394,3 +496,176 @@ class TestGenerateMinutes:
         common_knowledge_dir = tmp_path / "common_knowledge"
         path = await room_manager.generate_minutes("aabbccddeeff", common_knowledge_dir)
         assert path is None
+
+
+# ── Action items ──────────────────────────────────────────
+
+
+class TestSetActionItems:
+    """Tests for RoomManager.set_action_items."""
+
+    def test_set_assigns_ids_and_default_status(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        room = room_manager.set_action_items(
+            sample_room.room_id,
+            [{"assignee": "rin", "text": "資料を作る"}],
+        )
+        assert len(room.action_items) == 1
+        item = room.action_items[0]
+        assert item["assignee"] == "rin"
+        assert item["text"] == "資料を作る"
+        assert item["status"] == "draft"
+        assert item["id"]
+
+    def test_set_rejects_non_participant(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        with pytest.raises(ValueError):
+            room_manager.set_action_items(
+                sample_room.room_id,
+                [{"assignee": "stranger", "text": "やること"}],
+            )
+
+    def test_set_filters_empty_text(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        room = room_manager.set_action_items(
+            sample_room.room_id,
+            [{"assignee": "rin", "text": "  "}, {"assignee": "ritsu", "text": "実装"}],
+        )
+        assert len(room.action_items) == 1
+        assert room.action_items[0]["assignee"] == "ritsu"
+
+    def test_set_persists(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        room_manager.set_action_items(sample_room.room_id, [{"assignee": "rin", "text": "T1"}])
+        manager2 = RoomManager(room_manager._data_dir)
+        loaded = manager2.load_room(sample_room.room_id)
+        assert loaded is not None
+        assert loaded.action_items[0]["text"] == "T1"
+
+    def test_set_preserves_sent_status(self, room_manager: RoomManager, sample_room: MeetingRoom):
+        room_manager.set_action_items(sample_room.room_id, [{"assignee": "rin", "text": "T1"}])
+        room = room_manager.get_room(sample_room.room_id)
+        room.action_items[0]["status"] = "sent"
+        room_manager.save_room(sample_room.room_id)
+        # Re-save same item plus a new one
+        room = room_manager.set_action_items(
+            sample_room.room_id,
+            [{"assignee": "rin", "text": "T1"}, {"assignee": "ritsu", "text": "T2"}],
+        )
+        statuses = {(i["assignee"], i["text"]): i["status"] for i in room.action_items}
+        assert statuses[("rin", "T1")] == "sent"
+        assert statuses[("ritsu", "T2")] == "draft"
+
+    def test_set_room_not_found(self, room_manager: RoomManager):
+        with pytest.raises(ValueError):
+            room_manager.set_action_items("ffffffffffff", [])
+
+
+class TestDispatchActionItems:
+    """Tests for RoomManager.dispatch_action_items."""
+
+    def test_dispatch_writes_inbox_and_marks_sent(
+        self, room_manager: RoomManager, sample_room: MeetingRoom, tmp_path: Path
+    ):
+        shared_dir = tmp_path / "shared"
+        room_manager.set_action_items(
+            sample_room.room_id,
+            [{"assignee": "rin", "text": "資料作成"}, {"assignee": "ritsu", "text": "実装"}],
+        )
+        delivered = room_manager.dispatch_action_items(sample_room.room_id, shared_dir)
+        assert delivered == 2
+        assert list((shared_dir / "inbox" / "rin").glob("*.json"))
+        assert list((shared_dir / "inbox" / "ritsu").glob("*.json"))
+        # Wake files are required for the supervisor to trigger process_inbox.
+        wake_dir = shared_dir.parent / "run" / "inbox_wake"
+        assert (wake_dir / "rin").is_file()
+        assert (wake_dir / "ritsu").is_file()
+        room = room_manager.get_room(sample_room.room_id)
+        assert all(i["status"] == "sent" for i in room.action_items)
+
+    def test_dispatch_skips_already_sent(self, room_manager: RoomManager, sample_room: MeetingRoom, tmp_path: Path):
+        shared_dir = tmp_path / "shared"
+        room_manager.set_action_items(sample_room.room_id, [{"assignee": "rin", "text": "T1"}])
+        assert room_manager.dispatch_action_items(sample_room.room_id, shared_dir) == 1
+        # Second dispatch delivers nothing new
+        assert room_manager.dispatch_action_items(sample_room.room_id, shared_dir) == 0
+
+    def test_dispatch_content_includes_task(self, room_manager: RoomManager, sample_room: MeetingRoom, tmp_path: Path):
+        import json
+
+        shared_dir = tmp_path / "shared"
+        room_manager.set_action_items(sample_room.room_id, [{"assignee": "rin", "text": "ユニーク作業XYZ"}])
+        room_manager.dispatch_action_items(sample_room.room_id, shared_dir)
+        files = list((shared_dir / "inbox" / "rin").glob("*.json"))
+        data = json.loads(files[0].read_text(encoding="utf-8"))
+        assert "ユニーク作業XYZ" in data["content"]
+        assert data["from_person"] == "sakura"
+
+    def test_dispatch_room_not_found(self, room_manager: RoomManager, tmp_path: Path):
+        with pytest.raises(ValueError):
+            room_manager.dispatch_action_items("ffffffffffff", tmp_path / "shared")
+
+
+class TestExtractActionItems:
+    """Tests for RoomManager.extract_action_items (LLM mocked)."""
+
+    @pytest.mark.asyncio
+    async def test_extract_returns_empty_without_conversation(
+        self, room_manager: RoomManager, sample_room: MeetingRoom
+    ):
+        assert await room_manager.extract_action_items(sample_room.room_id) == []
+
+    @pytest.mark.asyncio
+    async def test_extract_parses_and_filters(self, room_manager: RoomManager, sample_room: MeetingRoom, monkeypatch):
+        room_manager.append_message(sample_room.room_id, speaker="sakura", role="chair", text="決めよう")
+
+        async def fake_llm(*args, **kwargs):
+            return (
+                '[{"assignee": "rin", "task": "資料作成"}, '
+                '{"assignee": "stranger", "task": "無効"}, '
+                '{"assignee": "ritsu", "task": ""}]'
+            )
+
+        monkeypatch.setattr("core.memory._llm_utils.one_shot_completion", fake_llm)
+        items = await room_manager.extract_action_items(sample_room.room_id)
+        assert items == [{"assignee": "rin", "text": "資料作成"}]
+
+    @pytest.mark.asyncio
+    async def test_extract_handles_code_fence(self, room_manager: RoomManager, sample_room: MeetingRoom, monkeypatch):
+        room_manager.append_message(sample_room.room_id, speaker="sakura", role="chair", text="決めよう")
+
+        async def fake_llm(*args, **kwargs):
+            return '```json\n[{"assignee": "ritsu", "task": "実装する"}]\n```'
+
+        monkeypatch.setattr("core.memory._llm_utils.one_shot_completion", fake_llm)
+        items = await room_manager.extract_action_items(sample_room.room_id)
+        assert items == [{"assignee": "ritsu", "text": "実装する"}]
+
+    @pytest.mark.asyncio
+    async def test_extract_returns_empty_on_llm_failure(
+        self, room_manager: RoomManager, sample_room: MeetingRoom, monkeypatch
+    ):
+        room_manager.append_message(sample_room.room_id, speaker="sakura", role="chair", text="決めよう")
+
+        async def fake_llm(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr("core.memory._llm_utils.one_shot_completion", fake_llm)
+        assert await room_manager.extract_action_items(sample_room.room_id) == []
+
+
+class TestActionItemsSerialization:
+    """Round-trip of action_items through to_dict/from_dict."""
+
+    def test_round_trip(self, sample_room: MeetingRoom):
+        sample_room.action_items = [{"id": "abc", "assignee": "rin", "text": "T", "status": "sent"}]
+        restored = MeetingRoom.from_dict(sample_room.to_dict())
+        assert restored.action_items == sample_room.action_items
+
+    def test_legacy_room_defaults_to_empty(self):
+        legacy = {
+            "room_id": "aabbccddeeff",
+            "participants": ["sakura"],
+            "chair": "sakura",
+            "created_by": "taka",
+            "created_at": "2026-06-28T10:00:00",
+            "conversation": [],
+        }
+        room = MeetingRoom.from_dict(legacy)
+        assert room.action_items == []

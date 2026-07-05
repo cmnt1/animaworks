@@ -74,6 +74,7 @@ export async function fetchStreamProgress(animaName, responseId) {
  * @param {function(): void} [callbacks.onReconnected] - Reconnection successful
  * @param {function({speaker: string, role: string}): void} [callbacks.onSpeakerStart] - Meeting speaker started
  * @param {function({speaker: string}): void} [callbacks.onSpeakerEnd] - Meeting speaker ended
+ * @param {function({speakers: Array<string>}): void} [callbacks.onSpeakerQueue] - Meeting speaker queue resolved
  * @returns {Promise<void>}
  * @throws {Error} On HTTP error (non-ok response) or network failure
  */
@@ -323,6 +324,10 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
 
           case "speaker_end":
             callbacks.onSpeakerEnd?.({ speaker: data.speaker || "" });
+            break;
+
+          case "speaker_queue":
+            callbacks.onSpeakerQueue?.({ speakers: Array.isArray(data.speakers) ? data.speakers : [] });
             break;
 
           case "meeting_redirect":

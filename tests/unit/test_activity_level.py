@@ -387,6 +387,50 @@ class TestGovernorAuthoritative:
         mgr.shutdown()
 
     @pytest.mark.asyncio
+    @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=5)
+    @patch("core.supervisor.scheduler_manager.load_config")
+    async def test_urgent_does_not_override_governor_activity(
+        self,
+        mock_load_config,
+        _mock_gov,
+        tmp_path,
+    ):
+        """Urgent state must not raise activity above the Usage Governor level."""
+        config = AnimaWorksConfig(activity_level=100)
+        mock_load_config.return_value = config
+
+        mgr = self._make_mgr(tmp_path)
+        urgent_path = mgr._anima_dir / "state" / "urgent_active.json"
+        urgent_path.parent.mkdir(parents=True, exist_ok=True)
+        urgent_path.write_text(json.dumps({"task-1": {"note": "urgent"}}), encoding="utf-8")
+        mgr.setup()
+
+        assert mgr._hb_effective_interval == 600
+        mgr.shutdown()
+
+    @pytest.mark.asyncio
+    @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=None)
+    @patch("core.supervisor.scheduler_manager.load_config")
+    async def test_urgent_can_raise_config_activity_when_governor_absent(
+        self,
+        mock_load_config,
+        _mock_gov,
+        tmp_path,
+    ):
+        """Without governor state, urgent still restores normal heartbeat cadence."""
+        config = AnimaWorksConfig(activity_level=20)
+        mock_load_config.return_value = config
+
+        mgr = self._make_mgr(tmp_path)
+        urgent_path = mgr._anima_dir / "state" / "urgent_active.json"
+        urgent_path.parent.mkdir(parents=True, exist_ok=True)
+        urgent_path.write_text(json.dumps({"task-1": {"note": "urgent"}}), encoding="utf-8")
+        mgr.setup()
+
+        assert mgr._hb_effective_interval == 30
+        mgr.shutdown()
+
+    @pytest.mark.asyncio
     @patch("core.supervisor.scheduler_manager._read_governor_background_activity_level", return_value=1)
     @patch("core.supervisor.scheduler_manager.load_config")
     async def test_status_can_cap_governor_throttled_heartbeat_interval(
