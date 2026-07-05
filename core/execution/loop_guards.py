@@ -56,7 +56,7 @@ async def call_llm_with_retry(
     interrupt_check: Callable[[], bool] | None = None,
     on_classified_error: Callable[[Any, Any, Exception, int], None] | None = None,
     max_retries: int = MAX_LLM_RETRIES,
-    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> Any:
     """Call an LLM with in-loop retry on transient failures.
 
@@ -92,6 +92,7 @@ async def call_llm_with_retry(
         Exception: The original provider exception when the error is not
             retryable or the retry budget is exhausted.
     """
+    _sleep = sleep if sleep is not None else asyncio.sleep
     prev_delay = 0.0
     for attempt in range(max_retries + 1):
         try:
@@ -122,7 +123,7 @@ async def call_llm_with_retry(
             # (up to 120s / Retry-After).
             remaining = delay
             while remaining > 0:
-                await sleep(min(1.0, remaining))
+                await _sleep(min(1.0, remaining))
                 remaining -= 1.0
                 if interrupt_check is not None and interrupt_check():
                     raise LlmCallInterrupted() from exc

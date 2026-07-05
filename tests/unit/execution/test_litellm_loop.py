@@ -272,17 +272,20 @@ class TestExecuteSimple:
         assert mock.await_count == 2
         sleep_mock.assert_awaited_once()
 
-    async def test_non_empty_litellm_error_not_retried(self, executor):
+    async def test_non_empty_litellm_error_retried_by_outer_loop(self, executor):
+        from core.execution.loop_guards import MAX_LLM_RETRIES
+
         mock = AsyncMock(side_effect=RuntimeError("API timeout"))
         _install_litellm_mock(mock)
 
         with (
             patch("litellm.acompletion", mock),
+            patch("core.execution.loop_guards.asyncio.sleep", new_callable=AsyncMock),
             pytest.raises(LLMAPIError, match="API timeout"),
         ):
             await executor.execute("test prompt", system_prompt="sys")
 
-        assert mock.await_count == 1
+        assert mock.await_count == MAX_LLM_RETRIES + 1
 
     async def test_no_result_message(self, executor):
         resp = make_litellm_response(content="text")
