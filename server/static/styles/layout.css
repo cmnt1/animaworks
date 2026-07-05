@@ -98,3 +98,7 @@
 .ci-autofix-shortcut:hover {
   background: #1f2937;
 }
+
+.ci-autofix-shortcut:active {
+  background: #374151;
+}
