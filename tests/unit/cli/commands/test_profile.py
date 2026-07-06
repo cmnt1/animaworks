@@ -192,10 +192,13 @@ class TestCmdProfileAdd:
         with pytest.raises(SystemExit, match="1"):
             cmd_profile_add(args)
 
-    def test_add_shows_init_hint_when_dir_missing(self, profiles_file: Path, capsys: pytest.CaptureFixture) -> None:
+    def test_add_shows_init_hint_when_dir_missing(
+        self, profiles_file: Path, capsys: pytest.CaptureFixture, tmp_path: Path
+    ) -> None:
         from cli.commands.profile import cmd_profile_add
 
-        args = argparse.Namespace(name="new", data_dir="/nonexistent/path", port=None)
+        nonexistent = tmp_path / "not_initialized_subdir"
+        args = argparse.Namespace(name="new", data_dir=str(nonexistent), port=None)
         cmd_profile_add(args)
         out = capsys.readouterr().out
         assert "init" in out.lower() or "初期化" in out
