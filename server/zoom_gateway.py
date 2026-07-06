@@ -150,8 +150,7 @@ class ZoomRTMSManager:
 
         if not self._client_id or not self._client_secret:
             logger.error(
-                "ZOOM_CLIENT_ID / ZOOM_CLIENT_SECRET not configured — "
-                "Zoom RTMS handshake will fail until they are set"
+                "ZOOM_CLIENT_ID / ZOOM_CLIENT_SECRET not configured — Zoom RTMS handshake will fail until they are set"
             )
 
         self._started = True
@@ -334,8 +333,7 @@ class ZoomRTMSManager:
         # task before it gets here, so this branch never races those paths.
         if self._sessions.get(session.meeting_uuid) is session:
             logger.warning(
-                "Zoom RTMS session %s terminated without rtms_stopped — "
-                "flushing tail and removing from active set",
+                "Zoom RTMS session %s terminated without rtms_stopped — flushing tail and removing from active set",
                 session.meeting_uuid,
             )
             with contextlib.suppress(Exception):
@@ -545,8 +543,7 @@ class ZoomRTMSManager:
             session.gap_pending = False
 
         header = (
-            f"[Zoom会議実況 チャンク#{seq} | 会議: {session.topic} ({session.meeting_id}) | "
-            f"{session.start_hhmm}〜]"
+            f"[Zoom会議実況 チャンク#{seq} | 会議: {session.topic} ({session.meeting_id}) | {session.start_hhmm}〜]"
         )
         body_lines = ([_GAP_NOTICE] + lines) if gap else lines
         content = header + "\n" + "\n".join(body_lines)

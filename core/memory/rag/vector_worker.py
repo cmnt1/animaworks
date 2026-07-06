@@ -34,6 +34,7 @@ _VECTOR_ACTION_ERROR = object()
 _LATCH_RECOVERY_BACKOFF_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_LATCH_RECOVERY_BACKOFF_SECONDS", "5"))
 _LATCH_RECOVERY_RETRY_STATUSES = {"ok", "missing"}
 _ACTIVE_REPAIR_STATUSES = {"requested", "stopping", "repairing"}
+_ACTIVE_REPAIR_WRITE_RETRY_AFTER_SECONDS = int(os.environ.get("ANIMAWORKS_VECTOR_REPAIR_RETRY_AFTER_SECONDS", "30"))
 _latched_store_recovery_lock = threading.Lock()
 _latched_store_recovery_backoff_until: dict[str, float] = {}
 _latched_store_recovery_in_progress: set[str] = set()
@@ -256,6 +257,23 @@ def _clear_owner_write_circuit_breakers(anima_name: str | None) -> None:
 
 
 def _before_vector_write(anima_name: str | None, collection: str) -> JSONResponse | None:
+    if anima_name and _has_active_repair_state(anima_name):
+        logger.warning(
+            "Vector write deferred during active RAG repair: owner=%s collection=%s",
+            anima_name,
+            collection,
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "RAG repair in progress",
+                "collection": collection,
+                "owner": anima_name,
+                "retry_after_seconds": _ACTIVE_REPAIR_WRITE_RETRY_AFTER_SECONDS,
+            },
+            headers={"Retry-After": str(_ACTIVE_REPAIR_WRITE_RETRY_AFTER_SECONDS)},
+        )
+
     key = _breaker_key(anima_name, collection)
     state = _write_circuit_breakers.get(key)
     if not state:
