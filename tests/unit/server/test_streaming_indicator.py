@@ -31,12 +31,12 @@ class TestStreamingIndicatorCSS:
 
     @pytest.mark.parametrize("css_path", [_DASHBOARD_CSS, _WORKSPACE_CSS])
     def test_streaming_cursor_class_defined(self, css_path: Path):
-        content = css_path.read_text()
+        content = css_path.read_text(encoding="utf-8")
         assert ".streaming-cursor" in content, f".streaming-cursor class not found in {css_path.name}"
 
     @pytest.mark.parametrize("css_path", [_DASHBOARD_CSS, _WORKSPACE_CSS])
     def test_streaming_cursor_has_animation(self, css_path: Path):
-        content = css_path.read_text()
+        content = css_path.read_text(encoding="utf-8")
         cursor_start = content.index(".streaming-cursor")
         assert "animation" in content[cursor_start:], f".streaming-cursor missing animation in {css_path.name}"
 
@@ -50,7 +50,7 @@ class TestToolEndBehaviorJS:
     @pytest.mark.parametrize("js_path", [_DASHBOARD_JS])
     def test_tool_end_clears_active_tool(self, js_path: Path):
         """After onToolEnd, activeTool should be reset to null."""
-        content = js_path.read_text()
+        content = js_path.read_text(encoding="utf-8")
 
         tool_end_idx = content.find("onToolEnd")
         assert tool_end_idx != -1, f"onToolEnd handler not found in {js_path.name}"
@@ -65,7 +65,7 @@ class TestDoneHandlerClearsActiveTool:
     @pytest.mark.parametrize("js_path", [_DASHBOARD_JS])
     def test_done_clears_active_tool(self, js_path: Path):
         """The onDone event handler should reset activeTool to null."""
-        content = js_path.read_text()
+        content = js_path.read_text(encoding="utf-8")
 
         done_idx = content.find("onDone")
         assert done_idx != -1, f"onDone handler not found in {js_path.name}"

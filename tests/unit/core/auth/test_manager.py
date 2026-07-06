@@ -7,15 +7,16 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from pathlib import Path
 
 import pytest
 
 from core.auth.manager import (
     create_session,
-    get_auth_path,
     find_user,
     get_all_users,
+    get_auth_path,
     hash_password,
     load_auth,
     revoke_all_sessions,
@@ -25,7 +26,6 @@ from core.auth.manager import (
     verify_password,
 )
 from core.auth.models import AuthConfig, AuthUser
-
 
 # ── get_auth_path ────────────────────────────────────────
 
@@ -91,6 +91,7 @@ class TestSaveAuth:
         assert loaded["auth_mode"] == "password"
         assert loaded["owner"]["username"] == "alice"
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod is a no-op on Windows")
     def test_sets_restrictive_permissions(self, data_dir: Path):
         config = AuthConfig()
         save_auth(config)

@@ -29,17 +29,17 @@ _CHAT_STREAMING = _PROJECT_ROOT / "server" / "static" / "pages" / "chat" / "stre
 
 @pytest.fixture()
 def render_utils_src() -> str:
-    return _RENDER_UTILS.read_text()
+    return _RENDER_UTILS.read_text(encoding="utf-8")
 
 
 @pytest.fixture()
 def ws_streaming_src() -> str:
-    return _WS_STREAMING.read_text()
+    return _WS_STREAMING.read_text(encoding="utf-8")
 
 
 @pytest.fixture()
 def chat_streaming_src() -> str:
-    return _CHAT_STREAMING.read_text()
+    return _CHAT_STREAMING.read_text(encoding="utf-8")
 
 
 # ── TextAnimator Class Definition ──────────────────────────

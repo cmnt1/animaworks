@@ -571,7 +571,7 @@ def _bm25_docs_for_file(anima_dir: Path, path: Path, memory_type: str) -> list[d
         if not tokens:
             continue
         token_counts = Counter(tokens)
-        source_file = str(path.relative_to(anima_dir))
+        source_file = path.relative_to(anima_dir).as_posix()
         metadata = _file_metadata(path, memory_type, source_file, idx, total, content, frontmatter)
         docs.append(
             {

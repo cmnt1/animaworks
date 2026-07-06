@@ -26,11 +26,11 @@ class TestAppJsScrollFix:
 
     @pytest.fixture()
     def streaming_source(self) -> str:
-        return (PROJECT_ROOT / "server/static/workspace/modules/chat-streaming.js").read_text()
+        return (PROJECT_ROOT / "server/static/workspace/modules/chat-streaming.js").read_text(encoding="utf-8")
 
     @pytest.fixture()
     def history_source(self) -> str:
-        return (PROJECT_ROOT / "server/static/workspace/modules/chat-history.js").read_text()
+        return (PROJECT_ROOT / "server/static/workspace/modules/chat-history.js").read_text(encoding="utf-8")
 
     def test_update_streaming_bubble_exists(self, streaming_source: str):
         """updateStreamingBubble function should exist in chat-streaming.js."""
@@ -39,7 +39,7 @@ class TestAppJsScrollFix:
     def test_update_streaming_bubble_updates_inner_html(self, streaming_source: str):
         """updateStreamingBubble delegates to updateStreamingZone which updates bubble.innerHTML."""
         # bubble.innerHTML is in render-utils.js updateStreamingZone (imported by chat-streaming)
-        render_utils = (PROJECT_ROOT / "server/static/shared/chat/render-utils.js").read_text()
+        render_utils = (PROJECT_ROOT / "server/static/shared/chat/render-utils.js").read_text(encoding="utf-8")
         assert "bubble.innerHTML" in render_utils
 
     def test_schedule_streaming_update_exists(self, streaming_source: str):
@@ -75,11 +75,11 @@ class TestWorkspaceAppJsScrollFix:
 
     @pytest.fixture()
     def streaming_source(self) -> str:
-        return (PROJECT_ROOT / "server/static/workspace/modules/chat-streaming.js").read_text()
+        return (PROJECT_ROOT / "server/static/workspace/modules/chat-streaming.js").read_text(encoding="utf-8")
 
     @pytest.fixture()
     def history_source(self) -> str:
-        return (PROJECT_ROOT / "server/static/workspace/modules/chat-history.js").read_text()
+        return (PROJECT_ROOT / "server/static/workspace/modules/chat-history.js").read_text(encoding="utf-8")
 
     def test_update_streaming_bubble_scrolls(self, streaming_source: str):
         """updateStreamingBubble should scroll the messages container."""
