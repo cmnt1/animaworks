@@ -219,13 +219,13 @@ def _record_cron_usage(anima_dir: Path, meta: SkillMetadata) -> None:
 
 def _pointer_for_path(anima_dir: Path, common_skills_dir: Path, path: Path) -> str:
     try:
-        return str(path.relative_to(anima_dir))
+        return path.relative_to(anima_dir).as_posix()
     except ValueError:
         pass
     try:
-        return str(path.relative_to(common_skills_dir.parent))
+        return path.relative_to(common_skills_dir.parent).as_posix()
     except ValueError:
-        return str(path)
+        return path.as_posix()
 
 
 def _dedupe_refs(skill_refs: list[str]) -> list[str]:

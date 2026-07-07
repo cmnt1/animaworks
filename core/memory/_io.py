@@ -36,7 +36,12 @@ def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None
         prefix=f".{path.name}.",
     )
     try:
-        with os.fdopen(fd, "w", encoding=encoding) as f:
+        try:
+            fobj = os.fdopen(fd, "w", encoding=encoding)
+        except OSError:
+            os.close(fd)
+            raise
+        with fobj as f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())

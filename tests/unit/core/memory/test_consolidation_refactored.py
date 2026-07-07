@@ -31,7 +31,7 @@ class TestCollectRecentEpisodes:
         """Collect episodes from today's file."""
         today = now_jst().strftime("%Y-%m-%d")
         ep_file = anima_dir / "episodes" / f"{today}.md"
-        ep_file.write_text("## 10:00 \u2014 Did some work\n\nDetails here\n\n## 14:00 \u2014 Meeting notes\n\nMore details\n")
+        ep_file.write_text("## 10:00 \u2014 Did some work\n\nDetails here\n\n## 14:00 \u2014 Meeting notes\n\nMore details\n", encoding="utf-8")
 
         episodes = engine._collect_recent_episodes(hours=24)
         assert len(episodes) > 0

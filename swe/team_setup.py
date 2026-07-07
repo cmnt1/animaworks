@@ -46,15 +46,15 @@ def _copy_credentials(runtime_dir: Path) -> None:
     prod_config = Path.home() / ".animaworks" / "config.json"
     if not prod_config.exists():
         return
-    prod = json.loads(prod_config.read_text())
+    prod = json.loads(prod_config.read_text(encoding="utf-8"))
     prod_creds = prod.get("credentials", {})
     if not prod_creds:
         return
 
     rt_config_path = runtime_dir / "config.json"
-    rt_config = json.loads(rt_config_path.read_text())
+    rt_config = json.loads(rt_config_path.read_text(encoding="utf-8"))
     rt_config.setdefault("credentials", {}).update(prod_creds)
-    rt_config_path.write_text(json.dumps(rt_config, indent=2, ensure_ascii=False))
+    rt_config_path.write_text(json.dumps(rt_config, indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info("Copied %d credentials to isolated runtime", len(prod_creds))
 
 
@@ -81,7 +81,7 @@ def setup_team(
     _copy_credentials(runtime_dir)
     _copy_models_json(runtime_dir)
 
-    team_cfg = json.loads(config_path.read_text())
+    team_cfg = json.loads(config_path.read_text(encoding="utf-8"))
     agents = team_cfg["agents"]
     animas_dir = runtime_dir / "animas"
     animas_dir.mkdir(exist_ok=True)
@@ -107,25 +107,27 @@ def setup_team(
         if agent_cfg.get("credential"):
             status["credential"] = agent_cfg["credential"]
         (agent_dir / "status.json").write_text(
-            json.dumps(status, indent=2, ensure_ascii=False)
+            json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
         # identity.md
         (agent_dir / "identity.md").write_text(
-            f"# {name}\n\n{agent_cfg['identity']}\n"
+            f"# {name}\n\n{agent_cfg['identity']}\n", encoding="utf-8"
         )
 
         # injection.md
-        (agent_dir / "injection.md").write_text(agent_cfg["injection"] + "\n")
+        (agent_dir / "injection.md").write_text(agent_cfg["injection"] + "\n", encoding="utf-8")
 
         # permissions.md
         (agent_dir / "permissions.md").write_text(
-            "## Allowed Commands\n- All commands allowed for SWE-bench evaluation\n"
+            "## Allowed Commands\n- All commands allowed for SWE-bench evaluation\n",
+            encoding="utf-8",
         )
 
         # heartbeat.md — disable heartbeat for SWE agents
         (agent_dir / "heartbeat.md").write_text(
-            "# Heartbeat\n\nHeartbeat disabled for SWE-bench evaluation.\n"
+            "# Heartbeat\n\nHeartbeat disabled for SWE-bench evaluation.\n",
+            encoding="utf-8",
         )
 
         # Required subdirectories
@@ -138,7 +140,7 @@ def setup_team(
 
         # Register in isolated config.json
         rt_config_path = runtime_dir / "config.json"
-        config = json.loads(rt_config_path.read_text())
+        config = json.loads(rt_config_path.read_text(encoding="utf-8"))
         animas_cfg = config.setdefault("animas", {})
         if name not in animas_cfg:
             animas_cfg[name] = {
@@ -146,7 +148,7 @@ def setup_team(
                 "speciality": agent_cfg.get("role", "administration"),
             }
             rt_config_path.write_text(
-                json.dumps(config, indent=2, ensure_ascii=False)
+                json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8"
             )
 
         created.append(name)

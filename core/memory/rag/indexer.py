@@ -250,7 +250,7 @@ class MemoryIndexer:
 
         collection_name = f"{self.collection_prefix}_{memory_type}"
         try:
-            file_key = str(file_path.relative_to(self.anima_dir))
+            file_key = file_path.relative_to(self.anima_dir).as_posix()
         except ValueError:
             file_key = str(file_path)
 
@@ -854,7 +854,7 @@ class MemoryIndexer:
         **not** embedded in the ID to avoid path duplication.
         """
         rel_path = file_path.relative_to(self.anima_dir)
-        return f"{self.collection_prefix}/{rel_path}#{index}"
+        return f"{self.collection_prefix}/{rel_path.as_posix()}#{index}"
 
     @staticmethod
     def _parse_frontmatter(raw_content: str) -> dict:

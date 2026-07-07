@@ -124,14 +124,16 @@ class TestPerAnimaHandlerThreadInjection:
 
         captured: dict[str, list] = {}
         mock_app = MagicMock()
+        mock_app.client.auth_test = AsyncMock()
         mock_app.event = lambda t: lambda f: captured.setdefault(t, []).append(f) or f
         mock_app_cls.return_value = mock_app
         mock_handler_cls.return_value = AsyncMock()
         mock_messenger = MagicMock()
         mock_messenger_cls.return_value = mock_messenger
 
-        mgr = SlackSocketModeManager()
-        await mgr.start()
+        with patch("server.slack_socket.SlackSocketModeManager._discover_per_anima_bots", return_value=[]):
+            mgr = SlackSocketModeManager()
+            await mgr.start()
 
         handler = captured["message"][0]
         event = {"channel": "C1", "user": "U1", "text": "hello", "ts": "1.0"}
@@ -179,14 +181,16 @@ class TestPerAnimaHandlerThreadInjection:
 
         captured: dict[str, list] = {}
         mock_app = MagicMock()
+        mock_app.client.auth_test = AsyncMock()
         mock_app.event = lambda t: lambda f: captured.setdefault(t, []).append(f) or f
         mock_app_cls.return_value = mock_app
         mock_handler_cls.return_value = AsyncMock()
         mock_messenger = MagicMock()
         mock_messenger_cls.return_value = mock_messenger
 
-        mgr = SlackSocketModeManager()
-        await mgr.start()
+        with patch("server.slack_socket.SlackSocketModeManager._discover_per_anima_bots", return_value=[]):
+            mgr = SlackSocketModeManager()
+            await mgr.start()
 
         handler = captured["message"][0]
         event = {
@@ -250,14 +254,16 @@ class TestSharedHandlerThreadInjection:
 
         captured: dict[str, list] = {}
         mock_app = MagicMock()
+        mock_app.client.auth_test = AsyncMock()
         mock_app.event = lambda t: lambda f: captured.setdefault(t, []).append(f) or f
         mock_app_cls.return_value = mock_app
         mock_handler_cls.return_value = AsyncMock()
         mock_messenger = MagicMock()
         mock_messenger_cls.return_value = mock_messenger
 
-        mgr = SlackSocketModeManager()
-        await mgr.start()
+        with patch("server.slack_socket.SlackSocketModeManager._discover_per_anima_bots", return_value=[]):
+            mgr = SlackSocketModeManager()
+            await mgr.start()
 
         handler = captured["message"][0]
         event = {

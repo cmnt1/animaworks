@@ -70,7 +70,7 @@ def collect_reference_rewrite_changes(
         if after != before:
             changes.append(
                 ReferenceRewriteChange(
-                    path=str(path.relative_to(anima_dir)),
+                    path=path.relative_to(anima_dir).as_posix(),
                     before=before,
                     after=after,
                 )
@@ -95,7 +95,7 @@ def apply_skill_pointer_rewrites(anima_dir: Path, pointer_map: dict[str, str]) -
         path.write_text(after, encoding="utf-8")
         changes.append(
             ReferenceRewriteChange(
-                path=str(path.relative_to(anima_dir)),
+                path=path.relative_to(anima_dir).as_posix(),
                 before=before,
                 after=after,
             )

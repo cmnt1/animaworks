@@ -6,6 +6,7 @@ from __future__ import annotations
 
 """Unit tests for core.memory.task_queue — TaskQueueManager and task lifecycle."""
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ from core.memory.task_queue import (
 # ── Test 1: _append raises TaskPersistenceError on OSError ─────────────
 
 
+@pytest.mark.skipif(os.name == "nt", reason="chmod is a no-op on Windows")
 def test_append_raises_task_persistence_error_on_oserror(tmp_path: Path) -> None:
     """Test that _append raises TaskPersistenceError when file write fails.
 

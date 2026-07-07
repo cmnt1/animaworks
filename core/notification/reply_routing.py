@@ -70,7 +70,7 @@ def save_notification_mapping(
     path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        with path.open("a+") as fd, file_lock(fd, exclusive=True):
+        with path.open("a+", encoding="utf-8") as fd, file_lock(fd, exclusive=True):
             fd.seek(0)
             raw = fd.read()
             data: dict[str, Any] = json.loads(raw) if raw.strip() else {}
@@ -126,7 +126,7 @@ def prune_old_entries(max_age_days: int = _MAX_AGE_DAYS) -> None:
     if not path.exists():
         return
     try:
-        with path.open("a+") as fd, file_lock(fd, exclusive=True):
+        with path.open("a+", encoding="utf-8") as fd, file_lock(fd, exclusive=True):
             fd.seek(0)
             raw = fd.read()
             data: dict[str, Any] = json.loads(raw) if raw.strip() else {}

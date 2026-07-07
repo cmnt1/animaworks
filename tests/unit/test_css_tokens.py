@@ -26,15 +26,15 @@ class TestTokensCSS:
         assert TOKENS_CSS.exists(), f"tokens.css not found at {TOKENS_CSS}"
 
     def test_has_root_variables(self):
-        content = TOKENS_CSS.read_text()
+        content = TOKENS_CSS.read_text(encoding="utf-8")
         assert ":root {" in content or ":root{" in content
 
     def test_has_business_theme(self):
-        content = TOKENS_CSS.read_text()
+        content = TOKENS_CSS.read_text(encoding="utf-8")
         assert ".theme-business" in content
 
     def test_required_color_variables(self):
-        content = TOKENS_CSS.read_text()
+        content = TOKENS_CSS.read_text(encoding="utf-8")
         required_vars = [
             "--aw-color-accent",
             "--aw-color-bg-primary",
@@ -50,7 +50,7 @@ class TestTokensCSS:
             assert var in content, f"Missing CSS variable: {var}"
 
     def test_animation_control_variables(self):
-        content = TOKENS_CSS.read_text()
+        content = TOKENS_CSS.read_text(encoding="utf-8")
         assert "--aw-animation-play-state" in content
         assert "--aw-avatar-display" in content
         assert "--aw-avatar-initial-display" in content
@@ -58,7 +58,7 @@ class TestTokensCSS:
         assert "--aw-icon-display" in content
 
     def test_realistic_mode_hides_emoji_and_shows_icons(self):
-        content = TOKENS_CSS.read_text()
+        content = TOKENS_CSS.read_text(encoding="utf-8")
         mode_start = content.index(".mode-realistic {")
         mode_block = content[
             mode_start : content.index("}", mode_start) + 1
@@ -67,7 +67,7 @@ class TestTokensCSS:
         assert "--aw-icon-display: inline-flex" in mode_block
 
     def test_realistic_mode_hides_emoji(self):
-        content = TOKENS_CSS.read_text()
+        content = TOKENS_CSS.read_text(encoding="utf-8")
         mode_start = content.index(".mode-realistic {")
         depth = 0
         end = mode_start
@@ -114,7 +114,7 @@ class TestCSSFilesUseTokens:
         """Each CSS file should reference --aw-color-* variables."""
         path = self.STYLES_DIR / css_file
         assert path.exists(), f"{css_file} not found"
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
         assert (
             "var(--aw-color-" in content
         ), f"{css_file} does not use --aw-color-* CSS variables"

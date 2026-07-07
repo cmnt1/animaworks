@@ -134,7 +134,7 @@ class KnowledgeGraph:
         for memory_type, src_dir in sources.items():
             md_files = sorted(src_dir.rglob("*.md"))
             for md_file in md_files:
-                rel_key = str(md_file.relative_to(src_dir).with_suffix(""))
+                rel_key = md_file.relative_to(src_dir).with_suffix("").as_posix()
                 node_id = self._make_node_id(rel_key, memory_type)
                 graph.add_node(
                     node_id,

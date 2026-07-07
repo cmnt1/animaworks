@@ -3,6 +3,7 @@ from __future__ import annotations
 """Tests for CommandRunner and Bash background execution."""
 
 import json
+import os
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -89,6 +90,7 @@ class TestCommandRunnerStart:
         content = (output_dir / f"{cmd_id}.txt").read_text()
         assert "[stderr] errormsg" in content
 
+    @pytest.mark.skipif(os.name == "nt", reason="bash not available on Windows")
     def test_background_nonzero_exit_code(self, tmp_path: Path):
         runner = CommandRunner("bash -c 'exit 42'", tmp_path, timeout=10)
         output_dir = tmp_path / "state" / "cmd_output"
@@ -119,6 +121,7 @@ class TestCommandRunnerStart:
 
 
 class TestCommandRunnerTimeout:
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX sleep not available on Windows")
     def test_timeout_kills_process_and_records(self, tmp_path: Path):
         runner = CommandRunner("sleep 60", tmp_path, timeout=2)
         output_dir = tmp_path / "state" / "cmd_output"

@@ -94,7 +94,7 @@ class TestChunkByMarkdownHeadingsMemoryType:
         f = anima_dir / "common_knowledge" / "guide.md"
         f.write_text("preamble\n\n## Section A\n\nBody A", encoding="utf-8")
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "common_knowledge")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "common_knowledge")
         assert len(chunks) >= 1
         for chunk in chunks:
             assert "common_knowledge" in chunk.id
@@ -108,7 +108,7 @@ class TestChunkByMarkdownHeadingsMemoryType:
         f = anima_dir / "knowledge" / "topic.md"
         f.write_text("intro\n\n## Heading\n\nContent here", encoding="utf-8")
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "knowledge")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "knowledge")
         assert len(chunks) >= 1
         for chunk in chunks:
             assert chunk.metadata["memory_type"] == "knowledge"
@@ -145,7 +145,7 @@ class TestChunkByMarkdownHeadingsPreambleCollision:
             encoding="utf-8",
         )
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "knowledge")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "knowledge")
 
         assert len(chunks) == 3  # preamble + 2 heading sections
         ids = [c.id for c in chunks]
@@ -165,7 +165,7 @@ class TestChunkByMarkdownHeadingsPreambleCollision:
             encoding="utf-8",
         )
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "knowledge")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "knowledge")
 
         assert len(chunks) == 2  # no preamble (too short), 2 headings
         assert chunks[0].id.endswith("#0")
@@ -187,7 +187,7 @@ class TestChunkByMarkdownHeadingsPreambleCollision:
         )
         f.write_text(content, encoding="utf-8")
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "knowledge")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "knowledge")
 
         ids = [c.id for c in chunks]
         assert len(ids) == len(set(ids)), f"Duplicate IDs: {ids}"
@@ -206,7 +206,7 @@ class TestChunkByMarkdownHeadingsPreambleCollision:
             encoding="utf-8",
         )
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "knowledge")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "knowledge")
 
         assert len(chunks) == 2
         assert chunks[0].id.endswith("#0")  # preamble
@@ -223,7 +223,7 @@ class TestChunkByMarkdownHeadingsPreambleCollision:
             encoding="utf-8",
         )
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "knowledge")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "knowledge")
 
         for i, chunk in enumerate(chunks):
             assert chunk.metadata["chunk_index"] == i
@@ -257,7 +257,7 @@ class TestChunkByTimeHeadingsMemoryType:
             encoding="utf-8",
         )
 
-        chunks = indexer._chunk_by_time_headings(f, f.read_text(), "episodes")
+        chunks = indexer._chunk_by_time_headings(f, f.read_text(encoding="utf-8"), "episodes")
         assert len(chunks) == 2
         for chunk in chunks:
             assert chunk.metadata["memory_type"] == "episodes"
@@ -295,7 +295,7 @@ class TestLoCoMoSessionHeadingEventTime:
             encoding="utf-8",
         )
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "episodes")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "episodes")
 
         assert len(chunks) == 1
         metadata = chunks[0].metadata
@@ -315,7 +315,7 @@ class TestLoCoMoSessionHeadingEventTime:
             encoding="utf-8",
         )
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "episodes")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "episodes")
 
         assert chunks[0].metadata["session_index"] == 2
         assert chunks[0].metadata["event_time_iso"] == "2023-08-17T13:50:00+09:00"
@@ -325,7 +325,7 @@ class TestLoCoMoSessionHeadingEventTime:
         f = anima_dir / "episodes" / "conv-26.md"
         f.write_text("## Session 3 — unknown date\n\nBody", encoding="utf-8")
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "episodes")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "episodes")
 
         metadata = chunks[0].metadata
         assert metadata["session_index"] == 3
@@ -342,7 +342,7 @@ class TestLoCoMoSessionHeadingEventTime:
         f = anima_dir / "episodes" / "conv-26.md"
         f.write_text("## Session 4 — 8:56 pm on 20 July, 2023\n\nBody", encoding="utf-8")
 
-        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(), "episodes")
+        chunks = indexer._chunk_by_markdown_headings(f, f.read_text(encoding="utf-8"), "episodes")
 
         metadata = chunks[0].metadata
         assert metadata["session_index"] == 4

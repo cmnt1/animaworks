@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import stat
 from pathlib import Path
 from unittest.mock import patch
@@ -66,6 +67,7 @@ class TestKeyGeneration:
         assert vm.has_key
         assert vm.key_path.is_file()
 
+    @pytest.mark.skipif(os.name == "nt", reason="Unix file permissions not enforced on Windows")
     def test_key_file_permissions(self, vault):
         mode = stat.S_IMODE(vault.key_path.stat().st_mode)
         assert mode == 0o600
@@ -238,6 +240,7 @@ class TestVaultCRUD:
         loaded = vault.load_vault()
         assert loaded == test_data
 
+    @pytest.mark.skipif(os.name == "nt", reason="Unix file permissions not enforced on Windows")
     def test_vault_file_permissions(self, vault):
         vault.save_vault({"test": "data"})
         mode = stat.S_IMODE(vault.vault_path.stat().st_mode)

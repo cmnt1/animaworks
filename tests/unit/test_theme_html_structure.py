@@ -28,32 +28,32 @@ class TestMainIndexHTML:
     """Tests for main index.html theme support."""
 
     def test_loads_tokens_css(self):
-        content = INDEX_HTML.read_text()
+        content = INDEX_HTML.read_text(encoding="utf-8")
         assert "tokens.css" in content
 
     def test_tokens_css_before_base_css(self):
-        content = INDEX_HTML.read_text()
+        content = INDEX_HTML.read_text(encoding="utf-8")
         tokens_pos = content.index("tokens.css")
         base_pos = content.index("base.css")
         assert tokens_pos < base_pos, "tokens.css must load before base.css"
 
     def test_has_theme_support(self):
         """Verify theme infrastructure exists (app.js handles theme programmatically)."""
-        content = INDEX_HTML.read_text()
+        content = INDEX_HTML.read_text(encoding="utf-8")
         assert "tokens.css" in content
 
     def test_has_lucide_script(self):
-        content = INDEX_HTML.read_text()
+        content = INDEX_HTML.read_text(encoding="utf-8")
         assert "lucide" in content.lower()
 
     def test_nav_has_dual_icons(self):
-        content = INDEX_HTML.read_text()
+        content = INDEX_HTML.read_text(encoding="utf-8")
         assert "nav-emoji" in content
         assert "nav-lucide" in content
         assert "data-lucide" in content
 
     def test_nav_lucide_mappings(self):
-        content = INDEX_HTML.read_text()
+        content = INDEX_HTML.read_text(encoding="utf-8")
         expected_icons = [
             "message-circle",
             "clipboard-list",
@@ -76,17 +76,17 @@ class TestWorkspaceIndexHTML:
     """Tests for workspace index.html theme support."""
 
     def test_loads_tokens_css(self):
-        content = WS_INDEX_HTML.read_text()
+        content = WS_INDEX_HTML.read_text(encoding="utf-8")
         assert "tokens.css" in content
 
     def test_has_lucide_script(self):
-        content = WS_INDEX_HTML.read_text()
+        content = WS_INDEX_HTML.read_text(encoding="utf-8")
         assert "lucide" in content.lower()
 
     def test_has_view_toggle(self):
-        content = WS_INDEX_HTML.read_text()
+        content = WS_INDEX_HTML.read_text(encoding="utf-8")
         assert "wsViewToggle" in content
 
     def test_has_org_panel(self):
-        content = WS_INDEX_HTML.read_text()
+        content = WS_INDEX_HTML.read_text(encoding="utf-8")
         assert "wsOrgPanel" in content

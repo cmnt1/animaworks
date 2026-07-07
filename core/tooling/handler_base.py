@@ -354,7 +354,7 @@ def _is_protected_write(anima_dir: Path, target: Path) -> str | None:
             "Path resolves outside anima directory",
         )
 
-    rel = str(resolved.relative_to(anima_resolved))
+    rel = resolved.relative_to(anima_resolved).as_posix()
     if rel in _PROTECTED_FILES:
         return _error_result(
             "PermissionDenied",

@@ -996,7 +996,7 @@ def _log_compaction_event(anima_dir: Path, trigger: str, *, blocked: bool) -> No
 def _build_post_tool_hook(anima_dir: Path) -> Callable:
     """Build a PostToolUse hook that updates knowledge frontmatter after Write/Edit."""
 
-    knowledge_dir_str = str(anima_dir / "knowledge")
+    knowledge_dir = anima_dir / "knowledge"
 
     async def _post_tool_hook(
         input_data: dict,
@@ -1008,7 +1008,8 @@ def _build_post_tool_hook(anima_dir: Path) -> Callable:
             return {}
 
         file_path = input_data.get("tool_input", {}).get("file_path", "")
-        if not file_path.startswith(knowledge_dir_str + "/") or not file_path.endswith(".md"):
+        file_path_obj = Path(file_path)
+        if not file_path_obj.is_relative_to(knowledge_dir) or not file_path.endswith(".md"):
             return {}
 
         import asyncio

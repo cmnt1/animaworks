@@ -886,6 +886,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 await asyncio.sleep(60)
                 reaped = 0
                 while True:
+                    if os.name == "nt":
+                        break
                     try:
                         pid, _ = os.waitpid(-1, os.WNOHANG)
                         if pid == 0:

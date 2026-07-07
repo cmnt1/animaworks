@@ -17,7 +17,7 @@ def delete_indexed_file(indexer: Any, file_path: Path, memory_type: str) -> int:
     """Delete indexed chunks for a source file and clear index metadata."""
     collection_name = f"{indexer.collection_prefix}_{memory_type}"
     try:
-        file_key = str(file_path.relative_to(indexer.anima_dir))
+        file_key = file_path.relative_to(indexer.anima_dir).as_posix()
     except ValueError:
         file_key = str(file_path)
 

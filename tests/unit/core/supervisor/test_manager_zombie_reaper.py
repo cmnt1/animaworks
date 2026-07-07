@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -30,6 +31,7 @@ class TestZombieReaperLoop:
     """Tests for _zombie_reaper_loop() in ProcessSupervisor."""
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(os.name == "nt", reason="os.WNOHANG not available on Windows")
     async def test_reaper_reaps_zombies(self, supervisor: ProcessSupervisor):
         """Zombie reaper should call os.waitpid and log reaped count."""
         call_count = 0

@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from core.execution.agent_sdk import AgentSDKExecutor
 from core.schemas import ModelConfig
 
@@ -22,6 +24,7 @@ class TestBuildEnvPathAndProjectDir:
         mc = ModelConfig(model="claude-sonnet-4-6")
         return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir)
 
+    @pytest.mark.skipif(os.name == "nt", reason="PATH separator is ';' on Windows; test assumes POSIX ':' separator")
     def test_anima_dir_in_path(self, tmp_path: Path) -> None:
         """PATH should start with anima_dir so tools are discoverable."""
         anima_dir = tmp_path / "animas" / "alice"
@@ -36,6 +39,7 @@ class TestBuildEnvPathAndProjectDir:
             "anima_dir must be the first entry in PATH"
         )
 
+    @pytest.mark.skipif(os.name == "nt", reason="PATH separator is ';' on Windows; test uses POSIX paths")
     def test_system_path_preserved(self, tmp_path: Path) -> None:
         """System PATH entries should be preserved after anima_dir."""
         anima_dir = tmp_path / "animas" / "bob"
@@ -77,6 +81,7 @@ class TestBuildEnvPathAndProjectDir:
 
         assert env["ANIMAWORKS_ANIMA_DIR"] == str(anima_dir)
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX fallback paths /usr/bin:/bin not applicable on Windows")
     def test_fallback_path_when_no_env(self, tmp_path: Path) -> None:
         """When PATH is not in os.environ, fall back to /usr/bin:/bin."""
         anima_dir = tmp_path / "animas" / "eve"

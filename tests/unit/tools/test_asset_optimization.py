@@ -6,9 +6,12 @@
 from __future__ import annotations
 
 import argparse
+import os
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 
@@ -109,6 +112,7 @@ class TestConvertFbxToGlb:
             result = _convert_fbx_to_glb(Path("/tmp/test.fbx"), Path("/tmp/test.glb"))
             assert result is False
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX path /usr/bin/fbx2gltf not valid on Windows")
     def test_calls_fbx2gltf_binary(self, tmp_path):
         """Should call fbx2gltf binary with correct arguments."""
         from core.tools.image_gen import _convert_fbx_to_glb

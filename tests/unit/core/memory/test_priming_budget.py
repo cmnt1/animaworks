@@ -118,31 +118,28 @@ async def test_dynamic_budget_in_priming(temp_anima_dir):
     episodes_dir = temp_anima_dir / "episodes"
     today = today_local()
     episode_file = episodes_dir / f"{today.isoformat()}.md"
-    episode_file.write_text("## 10:00 — テスト\n\nテストエピソード内容" * 100)
+    episode_file.write_text("## 10:00 — テスト\n\nテストエピソード内容" * 100, encoding="utf-8")
 
-    # Prime with greeting (low budget)
-    greeting_result = await engine.prime_memories(
-        "こんにちは",
-        sender_name="test_user",
-        channel="chat",
-        enable_dynamic_budget=True,
-    )
-
-    # Prime with request (high budget)
     long_message = "これは非常に長いメッセージで、複雑な業務依頼を含んでいます。" * 10
-    request_result = await engine.prime_memories(
-        long_message,
-        sender_name="test_user",
-        channel="chat",
-        enable_dynamic_budget=True,
-    )
 
-    # Request should have more content than greeting
-    # Due to truncation, this may not always hold, so check budgets were different
-    # and that at least one has content
+    # Patch vector store to None so no real RAG/embedding calls are made in unit tests
+    # get_vector_store is a local import inside RetrieverCache.get_or_create(); patch at source
+    with patch("core.memory.rag.singleton.get_vector_store", return_value=None):
+        greeting_result = await engine.prime_memories(
+            "こんにちは",
+            sender_name="test_user",
+            channel="chat",
+            enable_dynamic_budget=True,
+        )
+        request_result = await engine.prime_memories(
+            long_message,
+            sender_name="test_user",
+            channel="chat",
+            enable_dynamic_budget=True,
+        )
+
     assert greeting_result.total_chars() >= 0
     assert request_result.total_chars() >= 0
-    # The budgets themselves should differ (even if final sizes are similar after truncation)
     greeting_budget = engine._adjust_token_budget("こんにちは", "chat")
     request_budget = engine._adjust_token_budget(long_message, "chat")
     assert greeting_budget < request_budget

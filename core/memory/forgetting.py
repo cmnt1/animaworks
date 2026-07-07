@@ -1261,7 +1261,7 @@ class ForgettingEngine:
             if (today - episode_date).days <= retention_days:
                 continue
 
-            relative_path = str(episode_file.relative_to(self.anima_dir))
+            relative_path = episode_file.relative_to(self.anima_dir).as_posix()
             if store is None:
                 deleted = 0
             else:
@@ -1279,7 +1279,7 @@ class ForgettingEngine:
             if destination is None:
                 continue
             archived_files.append(relative_path)
-            archive_destinations.append(str(destination.relative_to(self.anima_dir)))
+            archive_destinations.append(destination.relative_to(self.anima_dir).as_posix())
 
         result = {
             "retention_days": retention_days,

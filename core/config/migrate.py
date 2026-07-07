@@ -832,8 +832,15 @@ def _extract_file_roots(text: str) -> list[str]:
         if in_section and stripped.startswith("#"):
             break
         if in_section and stripped.startswith("-"):
-            item = stripped.lstrip("- ").split(":")[0].strip()
-            if item.startswith("/"):
+            item = stripped.lstrip("- ")
+            # Split on ": " (colon-space) to avoid breaking Windows drive letters (C:\)
+            if ": " in item:
+                item = item.split(": ")[0].strip()
+            else:
+                item = item.split(":")[0].strip()
+            is_posix_abs = item.startswith("/")
+            is_windows_abs = len(item) >= 3 and item[1] == ":" and item[2] in ("/", "\\")
+            if is_posix_abs or is_windows_abs:
                 roots.append(item)
     if roots:
         return roots

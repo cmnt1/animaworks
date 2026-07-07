@@ -110,7 +110,7 @@ def _read_default_workspace(anima_dir: Path) -> str:
     if not alias:
         return ""
     if resolved:
-        return t("builder.default_workspace", path=str(resolved), alias=alias)
+        return t("builder.default_workspace", path=resolved.as_posix(), alias=alias)
     return t("builder.default_workspace_unresolved", alias=alias)
 
 

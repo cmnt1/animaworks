@@ -9,6 +9,7 @@ Covers:
 - Gap 2: usage_count policy (view_count + use_count)
 """
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -119,6 +120,7 @@ class TestCatalogUsesSkillIndex:
         assert "coding" in names
         assert "search" in names
 
+    @pytest.mark.skipif(os.name == "nt", reason="symlinks require admin privileges on Windows")
     def test_catalog_contains_trust_tags(self, skill_dirs, tmp_path):
         """Full builder integration: catalog shows [builtin] tag."""
         skills_dir, common_skills_dir, procedures_dir = skill_dirs

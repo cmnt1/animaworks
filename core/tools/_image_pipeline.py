@@ -64,14 +64,14 @@ class PipelineResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "fullbody": str(self.fullbody_path) if self.fullbody_path else None,
-            "bustup": str(self.bustup_path) if self.bustup_path else None,
-            "bustup_expressions": {k: str(v) for k, v in self.bustup_paths.items()},
-            "icon": str(self.icon_path) if self.icon_path else None,
-            "chibi": str(self.chibi_path) if self.chibi_path else None,
-            "model": str(self.model_path) if self.model_path else None,
-            "rigged_model": str(self.rigged_model_path) if self.rigged_model_path else None,
-            "animations": {k: str(v) for k, v in self.animation_paths.items()},
+            "fullbody": self.fullbody_path.as_posix() if self.fullbody_path else None,
+            "bustup": self.bustup_path.as_posix() if self.bustup_path else None,
+            "bustup_expressions": {k: v.as_posix() for k, v in self.bustup_paths.items()},
+            "icon": self.icon_path.as_posix() if self.icon_path else None,
+            "chibi": self.chibi_path.as_posix() if self.chibi_path else None,
+            "model": self.model_path.as_posix() if self.model_path else None,
+            "rigged_model": self.rigged_model_path.as_posix() if self.rigged_model_path else None,
+            "animations": {k: v.as_posix() for k, v in self.animation_paths.items()},
             "errors": self.errors,
             "skipped": self.skipped,
         }

@@ -553,7 +553,7 @@ def _resolve_default_workspace(anima_dir: Path) -> str:
     from core.workspace import resolve_default_workspace
 
     resolved, _alias = resolve_default_workspace(anima_dir)
-    return str(resolved) if resolved else ""
+    return resolved.as_posix() if resolved else ""
 
 
 # ── DAG helpers ──────────────────────────────────────────────

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from unittest import mock
 
+import pytest
 
 from core import fd_limits
 
@@ -223,6 +224,7 @@ class TestCountOpenFds:
 
             assert result == 4  # Only numeric entries
 
+    @pytest.mark.skipif(os.name == "nt", reason="/dev/fd and /proc/self/fd not available on Windows")
     def test_counts_fds_from_dev_fd_when_proc_unavailable(self):
         with mock.patch("os.listdir") as mock_listdir:
             # Mock Path.exists to return False for /proc/self/fd, True for /dev/fd

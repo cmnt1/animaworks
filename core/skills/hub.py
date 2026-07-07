@@ -60,9 +60,9 @@ class _TargetPaths:
 
     def rel(self, path: Path) -> str:
         try:
-            return str(path.relative_to(self.rel_base))
+            return path.relative_to(self.rel_base).as_posix()
         except ValueError:
-            return str(path)
+            return path.as_posix()
 
 
 class SkillHub:

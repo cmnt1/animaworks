@@ -24,7 +24,7 @@ def _prepare_windows_lock(file_obj: IO[str]) -> None:
     current = file_obj.tell()
     file_obj.seek(0, os.SEEK_END)
     if file_obj.tell() == 0:
-        file_obj.write("\0")
+        file_obj.write(" ")
         file_obj.flush()
     file_obj.seek(current)
 
