@@ -62,6 +62,8 @@ reviewer: sakura
     assert evidence["script_sha256"] == provenance["script_sha256"]
     assert evidence["script_py_compile_ok"] is True
     assert evidence["read_after_write_checks"]["script_preflight_ok"] is True
+    assert evidence["task_closure"]["can_submit"] is True
+    assert evidence["task_closure"]["acceptance_checks"]
 
 
 def test_get_prev_minimini_count_ignores_untrusted_patterns(tmp_path: Path, monkeypatch) -> None:
@@ -98,6 +100,71 @@ def test_get_prev_minimini_count_accepts_strict_kensu_pattern(tmp_path: Path, mo
     )
 
     assert report.get_prev_minimini_count("2026-06-16") == 19
+
+
+def test_build_minimini_listing_section_includes_single_built_column() -> None:
+    section = report.build_minimini_listing_section(
+        {
+            "listings": {
+                "sort": "新着順",
+                "building_count": 2,
+                "room_count": 2,
+                "own_room_count": 1,
+                "own_term": "太陽",
+                "buildings": [
+                    {"building_order": 1, "built": "築7年 /"},
+                    {"order": 2, "built": "築12年"},
+                ],
+                "rooms": [
+                    {
+                        "building_order": 1,
+                        "is_own": True,
+                        "bname": "太陽ハイツ",
+                        "address": "愛知県安城市",
+                        "station": "安城駅 徒歩7分",
+                        "floor": "2階",
+                        "rent": "55,000円",
+                        "mgmt_fee": "3,000円",
+                        "deposit": "なし",
+                        "key_money": "なし",
+                        "layout": "1K",
+                        "area": "25.0㎡",
+                        "parking": "5,000円",
+                        "move_in": "即入居可",
+                        "detail_url": "https://example.com/1",
+                    },
+                    {
+                        "building_order": 2,
+                        "bname": "サンプルコート",
+                        "address": "愛知県安城市",
+                        "station": "南安城駅 徒歩5分",
+                        "floor": "1階",
+                        "rent": "50,000円",
+                        "mgmt_fee": "2,000円",
+                        "deposit": "1ヶ月",
+                        "key_money": "なし",
+                        "layout": "1K",
+                        "area": "23.0㎡",
+                        "parking": "近隣",
+                        "move_in": "相談",
+                    },
+                ],
+            }
+        }
+    )
+
+    header = next(line for line in section.splitlines() if line.startswith("| 新着順 "))
+    separator = next(line for line in section.splitlines() if line.startswith("|---:"))
+    rows = [line for line in section.splitlines() if line.startswith("| 1 |") or line.startswith("| 2 |")]
+
+    assert header.count("築年") == 1
+    assert "築7年 /" not in section
+    assert "築7年" in rows[0]
+    assert "築12年" in rows[1]
+    assert "**【自社】太陽ハイツ**" in rows[0]
+    assert header.count("|") == 16
+    assert separator.count("|") == 16
+    assert all(row.count("|") == 16 for row in rows)
 
 
 def test_render_markdown_switches_to_sqm_from_20260626() -> None:

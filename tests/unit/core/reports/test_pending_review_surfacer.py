@@ -116,7 +116,10 @@ def test_surface_pending_reviews_enqueues_once(tmp_path: Path) -> None:
     ]
     assert len(review_tasks) == 1
     assert review_tasks[0].meta["product_code"] == "P-00148"
-    assert review_tasks[0].meta["task_desc"]["priority"] == "urgent"
+    task_desc = review_tasks[0].meta["task_desc"]
+    assert task_desc["priority"] == "urgent"
+    assert task_desc["closure_required"] is True
+    assert any("task_closure" in criterion for criterion in task_desc["acceptance_criteria"])
 
     # Idempotent: running again does not create a duplicate.
     again = surface_pending_reviews(

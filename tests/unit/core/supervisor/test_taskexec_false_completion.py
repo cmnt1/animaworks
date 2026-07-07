@@ -298,6 +298,49 @@ def test_placeholder_completion_without_evidence_requirement_stays_done():
     assert summary == "(タスク完了)"
 
 
+def test_acceptance_criteria_task_requires_closure_contract():
+    status, summary = _classify_task_result_for_desc(
+        "実装と検証を完了しました。",
+        {"acceptance_criteria": ["pytestを通す"], "allow_multistage": False},
+    )
+
+    assert status == "blocked"
+    assert summary == "BLOCKED: Task did not provide a task_closure contract"
+
+
+def test_acceptance_criteria_task_accepts_passing_closure_contract():
+    result = (
+        "実装と検証を完了しました。\n"
+        'TASK_CLOSURE: {"latest_user_request":"修正する","changed_files":["a.py"],'
+        '"acceptance_checks":[{"name":"pytest","status":"passed","evidence":"6 passed"}],'
+        '"remaining_blockers":[],"can_submit":true}'
+    )
+
+    status, summary = _classify_task_result_for_desc(
+        result,
+        {"acceptance_criteria": ["pytestを通す"], "allow_multistage": False},
+    )
+
+    assert status == "done"
+    assert summary.startswith("実装と検証を完了しました。")
+
+
+def test_acceptance_criteria_task_blocks_failing_closure_contract():
+    result = (
+        "途中まで確認しました。\n"
+        'TASK_CLOSURE: {"acceptance_checks":[{"name":"pytest","status":"failed","evidence":"1 failed"}],'
+        '"remaining_blockers":["pytest failure"],"can_submit":false}'
+    )
+
+    status, summary = _classify_task_result_for_desc(
+        result,
+        {"acceptance_criteria": ["pytestを通す"], "allow_multistage": False},
+    )
+
+    assert status == "blocked"
+    assert summary == "BLOCKED: Task closure reports remaining blockers: pytest failure"
+
+
 def test_max_iterations_result_maps_to_blocked_for_retry():
     status, summary = _classify_task_result_for_desc(
         "(max iterations reached)",

@@ -323,6 +323,7 @@ def build_roof_tree_section(data: dict) -> tuple[str, str]:
 def build_minimini_listing_section(minimini: dict) -> str:
     """Return a newest-first MINIMINI room listing table (own properties highlighted)."""
     listings = (minimini or {}).get("listings") or {}
+    buildings = listings.get("buildings") or []
     rooms = listings.get("rooms") or []
     if not rooms:
         return ""
@@ -332,18 +333,26 @@ def build_minimini_listing_section(minimini: dict) -> str:
             return "-"
         return str(value).replace("|", "\\|")
 
+    built_by_order = {}
+    for building in buildings:
+        order = building.get("building_order") if building.get("building_order") is not None else building.get("order")
+        if order is None:
+            continue
+        built_by_order[order] = re.sub(r"\s*/\s*$", "", cell(building.get("built")))
+
     rows = []
-    for i, r in enumerate(rooms, 1):
-        own = r.get("is_own")
-        name = cell(r.get("bname"))
+    for i, room in enumerate(rooms, 1):
+        own = room.get("is_own")
+        name = cell(room.get("bname"))
         name = f"**【自社】{name}**" if own else name
-        detail = r.get("detail_url")
+        built = built_by_order.get(room.get("building_order"), "-")
+        detail = room.get("detail_url")
         detail_cell = f"[詳細]({detail})" if detail else "-"
         rows.append(
-            f"| {i} | {name} | {cell(r.get('address'))} | {cell(r.get('station'))} "
-            f"| {cell(r.get('floor'))} | {cell(r.get('rent'))} | {cell(r.get('mgmt_fee'))} "
-            f"| {cell(r.get('deposit'))} | {cell(r.get('key_money'))} | {cell(r.get('layout'))} "
-            f"| {cell(r.get('area'))} | {cell(r.get('parking'))} | {cell(r.get('move_in'))} | {detail_cell} |"
+            f"| {i} | {name} | {cell(room.get('address'))} | {built} | {cell(room.get('station'))} "
+            f"| {cell(room.get('floor'))} | {cell(room.get('rent'))} | {cell(room.get('mgmt_fee'))} "
+            f"| {cell(room.get('deposit'))} | {cell(room.get('key_money'))} | {cell(room.get('layout'))} "
+            f"| {cell(room.get('area'))} | {cell(room.get('parking'))} | {cell(room.get('move_in'))} | {detail_cell} |"
         )
     body = "\n".join(rows)
     enriched = listings.get("parking_enriched") or {}
@@ -360,8 +369,8 @@ def build_minimini_listing_section(minimini: dict) -> str:
 - 建物数: **{listings.get("building_count")}棟** ／ 部屋数: **{listings.get("room_count")}件**（うち自社 {listings.get("own_room_count", 0)}件）
 - 並び順はページ既定の新着順（掲載順）。自社物件（{listings.get("own_term")}）は **【自社】** で強調。{park_note}
 
-| 新着順 | 建物名 | 所在地 | 最寄駅 | 階数 | 賃料 | 管理費 | 敷金 | 礼金 | 間取り | 専有面積 | 駐車場 | 入居可能時期 | 詳細 |
-|---:|---|---|---|---|---:|---:|---|---|---|---:|---|---|---|
+| 新着順 | 建物名 | 所在地 | 築年 | 最寄駅 | 階数 | 賃料 | 管理費 | 敷金 | 礼金 | 間取り | 専有面積 | 駐車場 | 入居可能時期 | 詳細 |
+|---:|---|---|---|---|---|---:|---:|---|---|---|---:|---|---|---|
 {body}
 """
 
@@ -535,10 +544,29 @@ def write_evidence(
         "reviewer_sakura": fm.get("reviewer") == "sakura",
         "script_preflight_ok": bool(script_provenance.get("ok")),
     }
+    from core.task_closure import build_task_closure
+
+    closure = build_task_closure(
+        latest_user_request=f"Generate and verify reproducible Products daily report for {TASK_NAME} {report_date}",
+        changed_files=[str(out_md), str(copy_json), str(source_json), str(script_provenance.get("script_path") or "")],
+        acceptance_checks=[
+            {
+                "name": name,
+                "status": "passed" if ok else "failed",
+                "evidence": "read_after_write_checks",
+            }
+            for name, ok in checks.items()
+        ],
+        remaining_blockers=[
+            name
+            for name, ok in checks.items()
+            if not ok
+        ],
+    )
     task_results_dir.mkdir(parents=True, exist_ok=True)
     evidence_path = task_results_dir / f"anjo-1k-daily-products-draft-{report_date.replace('-', '')}.json"
     evidence = {
-        "status": "done" if all(checks.values()) else "blocked",
+        "status": "done" if closure["can_submit"] else "blocked",
         "generated_at": datetime.now(JST).replace(microsecond=0).isoformat(),
         "task_code": TASK_CODE,
         "task_name": TASK_NAME,
@@ -570,6 +598,7 @@ def write_evidence(
         "script_size_bytes": script_provenance.get("script_size_bytes"),
         "script_py_compile_ok": script_provenance.get("checks", {}).get("py_compile_ok"),
         "script_provenance": script_provenance,
+        "task_closure": closure,
     }
     evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     evidence["evidence_path"] = str(evidence_path)

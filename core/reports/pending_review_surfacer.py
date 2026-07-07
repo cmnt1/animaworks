@@ -280,7 +280,12 @@ def surface_pending_reviews(
             "title": entry.summary,
             "description": instruction,
             "context": "",
-            "acceptance_criteria": [],
+            "acceptance_criteria": [
+                "Read the Products body and frontmatter; verify there is no mojibake or duplicate key",
+                "If acceptable, update status/submitted/confirmed in place without corrupting UTF-8",
+                "Post the completion report to Discord or the configured destination, or send back a concrete rejection reason",
+                "Include task_closure JSON in the final answer with performed checks and remaining blockers",
+            ],
             "constraints": [],
             "file_paths": [item["path"]],
             "submitted_by": "review_surfacer",
@@ -289,6 +294,7 @@ def surface_pending_reviews(
             "source": "review_surfacer",
             "working_directory": "",
             "priority": "urgent",
+            "closure_required": True,
         }
         try:
             tqm.update_meta(entry.task_id, {"task_desc": task_desc})

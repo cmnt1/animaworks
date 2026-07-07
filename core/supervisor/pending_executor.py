@@ -514,6 +514,15 @@ def _classify_task_result_for_desc(result: str, task_desc: dict[str, Any]) -> tu
     placeholder = _detect_placeholder_completion_result(result)
     if placeholder and _task_desc_requires_final_evidence(task_desc):
         return "blocked", f"BLOCKED: {placeholder}"
+    try:
+        from core.task_closure import classify_closure_result
+
+        closure_result = classify_closure_result(result, task_desc)
+    except Exception:
+        logger.debug("pending_executor: task closure classification skipped", exc_info=True)
+        closure_result = None
+    if closure_result is not None:
+        return closure_result
     return status, summary
 
 
