@@ -9,6 +9,7 @@ to a temp file and passed via --system-prompt-file instead of --system-prompt.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,7 @@ def _make_executor(model_config: ModelConfig, anima_dir: Path):
 class TestPromptFileFallback:
     """Verify --system-prompt-file is used when prompt exceeds threshold."""
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="threshold=0 on Windows, all prompts use temp file")
     def test_small_prompt_no_file(self, model_config, anima_dir):
         """Prompts under threshold pass directly as system_prompt."""
         executor = _make_executor(model_config, anima_dir)

@@ -83,7 +83,7 @@ def _resolve_skill_ref(anima_dir: Path, ref: str) -> tuple[str, bool, str] | str
 
     if not skill_md.exists():
         return "skill file not found"
-    return name, is_common, str(Path(*rel_parts))
+    return name, is_common, "/".join(rel_parts)
 
 
 def _resolve_procedure_ref(anima_dir: Path, ref: str) -> tuple[str, Path] | str:

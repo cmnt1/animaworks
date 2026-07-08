@@ -666,7 +666,7 @@ def merge_templates(data_dir: Path) -> list[str]:
         if is_prompt or not dest.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
-            added.append(str(rel))
+            added.append(rel.as_posix())
             logger.info("Merged template file: %s", rel)
 
     # Copy models.json from _shared/config_defaults/ if missing

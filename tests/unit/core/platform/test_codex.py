@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -87,7 +88,8 @@ class TestCodexLoginAvailability:
         codex.get_codex_executable.cache_clear()
         local_bin = tmp_path / ".local" / "bin"
         local_bin.mkdir(parents=True)
-        exe = local_bin / "codex"
+        exe_name = "codex.exe" if os.name == "nt" else "codex"
+        exe = local_bin / exe_name
         exe.write_text("", encoding="utf-8")
 
         with (

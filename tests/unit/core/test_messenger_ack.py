@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -40,6 +41,7 @@ def _place_message(
         content=content,
         type=msg_type,
     )
+    msg.id = str(uuid.uuid4())
     if not msg.thread_id:
         msg.thread_id = msg.id
     (inbox_dir / f"{msg.id}.json").write_text(

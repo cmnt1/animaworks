@@ -130,7 +130,7 @@ class TestDoubleCountPrevention:
     def test_handler_writes_session_id(self) -> None:
         """report_procedure_outcome should write _reported_session_id to metadata."""
         import tempfile
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             anima_dir = Path(tmpdir) / "animas" / "test-anima"
             for sub in ("episodes", "knowledge", "procedures", "skills", "state"):
                 (anima_dir / sub).mkdir(parents=True)
@@ -169,7 +169,7 @@ class TestDoubleCountPrevention:
     def test_session_id_is_unique_per_handler(self) -> None:
         """Each ToolHandler instance should get a unique session_id."""
         import tempfile
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             anima_dir = Path(tmpdir) / "animas" / "test-anima"
             for sub in ("episodes", "knowledge", "procedures", "skills", "state"):
                 (anima_dir / sub).mkdir(parents=True)
@@ -193,7 +193,7 @@ class TestDoubleCountPrevention:
     def test_reset_session_id_generates_new(self) -> None:
         """reset_session_id should produce a new value."""
         import tempfile
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             anima_dir = Path(tmpdir) / "animas" / "test-anima"
             for sub in ("episodes", "knowledge", "procedures", "skills", "state"):
                 (anima_dir / sub).mkdir(parents=True)

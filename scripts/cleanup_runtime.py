@@ -166,7 +166,7 @@ def execute_cleanup(
     archive_path = archive_dir / f"runtime-cleanup-{now_local().strftime('%Y%m%d%H%M%S')}.tar.zst"
     try:
         archiver = _archive_targets(root, archive_path, eligible)
-    except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
         return CleanupResult(
             dry_run=False,
             target_count=len(targets),

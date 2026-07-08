@@ -315,7 +315,7 @@ class TestCheckA1BashCommand:
     def test_rsync_to_other_anima_blocked(
         self, anima_dir: Path, other_anima_dir: Path,
     ):
-        cmd = f"rsync -a ./data/ {other_anima_dir}/data/"
+        cmd = f"rsync -a ./data/ {other_anima_dir.as_posix()}/data/"
         result = _check_a1_bash_command(cmd, anima_dir)
         assert result is not None
 

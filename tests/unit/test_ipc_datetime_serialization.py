@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from core.time_utils import now_jst
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 from core.schemas import CycleResult
@@ -132,7 +132,7 @@ class TestIPCResponseDatetimeSerialization:
         """to_json() should handle Path objects via default=str."""
         response = IPCResponse(
             id="test_002",
-            result={"path": Path("/tmp/test"), "status": "ok"},
+            result={"path": PurePosixPath("/tmp/test"), "status": "ok"},
         )
 
         json_str = response.to_json()

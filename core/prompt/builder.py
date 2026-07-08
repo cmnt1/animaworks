@@ -397,7 +397,7 @@ def _skill_catalog_pointer(meta: Any) -> str:
         for marker in ("common_skills", "skills", "procedures"):
             if marker in parts:
                 idx = parts.index(marker)
-                return str(Path(*parts[idx:]))
+                return Path(*parts[idx:]).as_posix()
         if is_procedure:
             return f"procedures/{Path(path).name}"
         if is_common:

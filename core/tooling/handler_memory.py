@@ -68,6 +68,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
     """
     original = raw
     raw = raw.strip()
+    raw = raw.replace("\\", "/")  # normalise Windows backslashes before any checks
     raw = re.sub(r"/+", "/", raw)
     if raw.endswith("/") and raw != "/":
         raw = raw[:-1]
@@ -98,7 +99,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
 
     # a. Under anima_dir
     try:
-        rel = str(resolved.relative_to(anima_resolved))
+        rel = resolved.relative_to(anima_resolved).as_posix()
         result = _PathNormResult(rel=rel)
         if result.rel != original:
             logger.info("memory path normalized: %r → %r", original, result.rel)
@@ -109,7 +110,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
     # b. Under animas dir (sibling anima)
     if resolved.is_relative_to(animas_dir):
         try:
-            rel = str(resolved.relative_to(animas_dir))
+            rel = resolved.relative_to(animas_dir).as_posix()
             result = _PathNormResult(rel=f"../{rel}")
             if result.rel != original:
                 logger.info("memory path normalized: %r → %r", original, result.rel)
@@ -123,7 +124,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
     ck_dir = get_common_knowledge_dir().resolve()
     if resolved.is_relative_to(ck_dir):
         try:
-            rel = str(resolved.relative_to(ck_dir))
+            rel = resolved.relative_to(ck_dir).as_posix()
             result = _PathNormResult(rel=f"common_knowledge/{rel}")
             if result.rel != original:
                 logger.info("memory path normalized: %r → %r", original, result.rel)
@@ -134,7 +135,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
     ref_dir = get_reference_dir().resolve()
     if resolved.is_relative_to(ref_dir):
         try:
-            rel = str(resolved.relative_to(ref_dir))
+            rel = resolved.relative_to(ref_dir).as_posix()
             result = _PathNormResult(rel=f"reference/{rel}")
             if result.rel != original:
                 logger.info("memory path normalized: %r → %r", original, result.rel)
@@ -145,7 +146,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
     cs_dir = get_common_skills_dir().resolve()
     if resolved.is_relative_to(cs_dir):
         try:
-            rel = str(resolved.relative_to(cs_dir))
+            rel = resolved.relative_to(cs_dir).as_posix()
             result = _PathNormResult(rel=f"common_skills/{rel}")
             if result.rel != original:
                 logger.info("memory path normalized: %r → %r", original, result.rel)

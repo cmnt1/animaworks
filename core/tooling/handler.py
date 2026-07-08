@@ -517,8 +517,7 @@ class ToolHandler(
             anima_resolved = self._anima_dir.resolve()
             if not resolved.is_relative_to(anima_resolved):
                 return False
-            rel = str(resolved.relative_to(anima_resolved))
-            return rel == "state/current_state.md"
+            return resolved.relative_to(anima_resolved).as_posix() == "state/current_state.md"
         except (OSError, ValueError):
             return False
 

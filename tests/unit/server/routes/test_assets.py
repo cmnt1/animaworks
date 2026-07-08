@@ -541,7 +541,7 @@ class TestRegenerateAssetStep:
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is True
-        assert body["icon"] == str(icon_path)
+        assert body["icon"] == icon_path.as_posix()
         mock_emit.assert_awaited()
         call_kw = mock_emit.call_args[0]
         assert call_kw[1] == "anima.assets_updated"

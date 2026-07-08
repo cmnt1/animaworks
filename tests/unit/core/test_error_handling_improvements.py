@@ -7,6 +7,7 @@ behavior for both normal and error paths.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -330,6 +331,7 @@ class TestConversationMemoryErrorHandling:
 class TestAnimaErrorHandling:
     """Verify anima.py uses specific exceptions for notification reading."""
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod has no effect on Windows")
     def test_read_notifications_handles_os_error(self, tmp_path):
         """OSError in notification read should be handled gracefully."""
         from core.anima import DigitalAnima

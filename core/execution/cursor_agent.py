@@ -297,6 +297,10 @@ class CursorAgentExecutor(BaseExecutor):
                 val = os.environ.get(key)
                 if val:
                     env[key] = val
+        if "HOME" not in env:
+            userprofile = os.environ.get("USERPROFILE")
+            if userprofile:
+                env["HOME"] = userprofile
         return env
 
     def _parse_ndjson_event(self, stdout_line: str) -> dict[str, Any] | None:

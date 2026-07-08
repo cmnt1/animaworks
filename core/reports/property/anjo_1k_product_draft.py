@@ -557,11 +557,7 @@ def write_evidence(
             }
             for name, ok in checks.items()
         ],
-        remaining_blockers=[
-            name
-            for name, ok in checks.items()
-            if not ok
-        ],
+        remaining_blockers=[name for name, ok in checks.items() if not ok],
     )
     task_results_dir.mkdir(parents=True, exist_ok=True)
     evidence_path = task_results_dir / f"anjo-1k-daily-products-draft-{report_date.replace('-', '')}.json"
