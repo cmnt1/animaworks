@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from core.supervisor._mgr_scheduler import _marker_dir, _read_marker
 from core.supervisor.ipc import IPCResponse
 from core.supervisor.manager import ProcessSupervisor
 from core.supervisor.process_handle import ProcessState
@@ -264,6 +265,23 @@ async def test_daily_consolidation_timeout_logs_once_and_continues(
     mock_forgetter.synaptic_downscaling.assert_called_once()
     assert _RecentEpisodesEngine.rebuild_calls == [("mio", str(sup.animas_dir / "mio"))]
     assert _RecentEpisodesEngine.ingest_calls == [("mio", 48)]
+
+
+@pytest.mark.asyncio
+async def test_daily_consolidation_without_running_processes_does_not_write_success_marker(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An all-skipped daily run must not suppress the next real run."""
+    sup = _make_supervisor(tmp_path)
+    _create_anima_dir(sup.animas_dir, "mio")
+    marker = _marker_dir(sup._get_data_dir()) / "last_daily_consolidation"
+
+    with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
+        await sup._run_daily_consolidation()
+
+    assert _read_marker(marker) is None
+    assert "Daily consolidation did not run: no running Anima processes" in caplog.text
 
 
 @pytest.mark.asyncio

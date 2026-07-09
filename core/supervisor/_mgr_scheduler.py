@@ -351,8 +351,15 @@ class SchedulerMixin:
             except Exception:
                 logger.debug("Failed to broadcast consolidation_status", exc_info=True)
             try:
-                await self._run_daily_consolidation_inner()
-                mark_succeeded("daily")
+                summary = await self._run_daily_consolidation_inner()
+                if summary.get("marker_written"):
+                    mark_succeeded("daily")
+                else:
+                    reason = str(
+                        summary.get("failure_reason")
+                        or "daily consolidation did not process any running Anima"
+                    )
+                    mark_failed("daily", reason)
             except Exception as exc:
                 mark_failed("daily", str(exc))
                 raise
@@ -362,9 +369,17 @@ class SchedulerMixin:
                 except Exception:
                     logger.debug("Failed to broadcast consolidation_status", exc_info=True)
 
-    async def _run_daily_consolidation_inner(self) -> None:
+    async def _run_daily_consolidation_inner(self) -> dict[str, int | bool | str]:
         """Inner implementation of daily consolidation."""
         logger.info("Starting system-wide daily consolidation")
+        summary: dict[str, int | bool | str] = {
+            "targets": 0,
+            "running": 0,
+            "attempted": 0,
+            "skipped_not_running": 0,
+            "skipped_gate": 0,
+            "marker_written": False,
+        }
 
         try:
             from core.config import load_config
@@ -391,13 +406,16 @@ class SchedulerMixin:
             model = getattr(consolidation_cfg, "llm_model", model)
 
         for anima_name, anima_dir in self._iter_consolidation_targets():
+            summary["targets"] = int(summary["targets"]) + 1
             handle = self.processes.get(anima_name)
             if not handle or handle.state != ProcessState.RUNNING:
+                summary["skipped_not_running"] = int(summary["skipped_not_running"]) + 1
                 logger.info(
                     "Daily consolidation skipped for %s: process not running",
                     anima_name,
                 )
                 continue
+            summary["running"] = int(summary["running"]) + 1
 
             gate = evaluate_daily_consolidation_gate(
                 anima_dir,
@@ -406,6 +424,7 @@ class SchedulerMixin:
                 hours=24,
             )
             if not gate.should_run:
+                summary["skipped_gate"] = int(summary["skipped_gate"]) + 1
                 logger.info(
                     "Daily consolidation skipped for %s: activity=%d episodes=%d carryover=%d threshold=%d",
                     anima_name,
@@ -415,6 +434,7 @@ class SchedulerMixin:
                     gate.threshold,
                 )
                 continue
+            summary["attempted"] = int(summary["attempted"]) + 1
             timeout_s = self._resolve_consolidation_ipc_timeout(
                 consolidation_cfg,
                 consolidation_type="daily",
@@ -484,7 +504,17 @@ class SchedulerMixin:
                     },
                 )
 
+        if int(summary["targets"]) > 0 and int(summary["running"]) == 0:
+            summary["failure_reason"] = (
+                f"no running Anima processes for daily consolidation "
+                f"(targets={summary['targets']}, skipped_not_running={summary['skipped_not_running']})"
+            )
+            logger.warning("Daily consolidation did not run: %s", summary["failure_reason"])
+            return summary
+
         _write_marker(_marker_dir(self._get_data_dir()) / "last_daily_consolidation")
+        summary["marker_written"] = True
+        return summary
 
     async def _run_weekly_integration(self, scheduled: bool = False) -> None:
         """Run weekly integration for all animas via IPC.
