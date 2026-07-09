@@ -19,7 +19,7 @@ _IMAGE_EXT_RE = re.compile(r"\.(?:png|jpe?g|gif|webp)(?:$|\?)", re.IGNORECASE)
 _LOCAL_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 _MD_IMAGE_RE = re.compile(
-    r"!\[([^\]]*)\]\((file://[^)\s]+|/[^)\s]+)\)",
+    r"!\[([^\]]*)\]\((file://[^)\s]+|[A-Za-z]:[/\\][^)\s]*|/[^)\s]+)\)",
 )
 
 _MAX_LOCAL_IMAGE_SIZE = 50 * 1024 * 1024  # 50 MB

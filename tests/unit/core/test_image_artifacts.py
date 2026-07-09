@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
 
 from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 
@@ -174,6 +177,7 @@ def test_resolve_local_image_paths_mixed(tmp_path: Path):
     assert len(artifacts) == 1
 
 
+@pytest.mark.skipif(os.name == "nt", reason="symlink creation requires elevated privilege on Windows")
 def test_resolve_local_image_paths_symlink_rejected(tmp_path: Path):
     """Symlinks are rejected to prevent unintended file reads."""
     real_img = tmp_path / "secret.png"
