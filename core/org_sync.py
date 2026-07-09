@@ -488,12 +488,13 @@ def detect_orphan_animas(
             continue
 
         # Skip directories younger than age_threshold_s (possibly still being created)
-        try:
-            dir_mtime = entry.stat().st_mtime
-            if (now - dir_mtime) < age_threshold_s:
+        if age_threshold_s > 0:
+            try:
+                dir_mtime = entry.stat().st_mtime
+                if (now - dir_mtime) < age_threshold_s:
+                    continue
+            except OSError:
                 continue
-        except OSError:
-            continue
 
         # Trivial orphans → auto-remove
         if _is_trivial_orphan(entry):
