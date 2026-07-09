@@ -1,0 +1,18 @@
+# Enforce LF line endings for all text files so ruff/CI on Linux stays consistent
+* text=auto eol=lf
+
+# Explicit overrides for common source types
+*.py eol=lf
+*.yml eol=lf
+*.yaml eol=lf
+*.toml eol=lf
+*.md eol=lf
+*.txt eol=lf
+*.sh eol=lf
+*.json eol=lf
+*.rst eol=lf
+
+# Windows-specific scripts keep CRLF
+*.bat eol=crlf
+*.cmd eol=crlf
+*.ps1 eol=crlf
