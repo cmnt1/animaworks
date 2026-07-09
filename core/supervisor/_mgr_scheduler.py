@@ -356,8 +356,7 @@ class SchedulerMixin:
                     mark_succeeded("daily")
                 else:
                     reason = str(
-                        summary.get("failure_reason")
-                        or "daily consolidation did not process any running Anima"
+                        summary.get("failure_reason") or "daily consolidation did not process any running Anima"
                     )
                     mark_failed("daily", reason)
             except Exception as exc:
