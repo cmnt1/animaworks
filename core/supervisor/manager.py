@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.base import SchedulerNotRunningError
 
 from core.exceptions import (  # noqa: F401
     AnimaNotFoundError,
@@ -779,7 +780,10 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
 
         # Stop system scheduler
         if self.scheduler:
-            self.scheduler.shutdown(wait=False)
+            try:
+                self.scheduler.shutdown(wait=False)
+            except SchedulerNotRunningError:
+                logger.info("System scheduler already stopped")
             self._scheduler_running = False
             logger.info("System scheduler stopped")
 

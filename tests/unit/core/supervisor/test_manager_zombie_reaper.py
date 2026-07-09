@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+from apscheduler.schedulers.base import SchedulerNotRunningError
 import pytest
 
 from core.supervisor.manager import ProcessSupervisor
@@ -121,3 +122,18 @@ class TestZombieReaperLoop:
         await supervisor.shutdown_all()
 
         assert supervisor._zombie_reaper_task.done()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_all_ignores_already_stopped_scheduler(self, supervisor: ProcessSupervisor):
+        """shutdown_all() should be idempotent when the scheduler is already stopped."""
+
+        class StoppedScheduler:
+            def shutdown(self, *, wait: bool = False) -> None:
+                raise SchedulerNotRunningError
+
+        supervisor.scheduler = StoppedScheduler()
+        supervisor._scheduler_running = True
+
+        await supervisor.shutdown_all()
+
+        assert supervisor._scheduler_running is False
