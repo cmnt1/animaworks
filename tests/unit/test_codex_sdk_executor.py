@@ -589,6 +589,52 @@ class TestConfigWriting:
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         assert 'model = "gpt-4.1"' in config_toml
 
+    def test_patch_reasoning_effort_enum_accepts_ultra(self):
+        """SDK enum未定義のultraを_missing_パッチで受理できる（構築済みスキーマ含む）。"""
+        from pydantic import BaseModel
+
+        from core.execution.codex_sdk import _patch_reasoning_effort_enum
+        from openai_codex.generated.v2_all import ReasoningEffort
+
+        class PreBuilt(BaseModel):
+            effort: ReasoningEffort
+
+        _patch_reasoning_effort_enum()
+        assert ReasoningEffort("ultra").value == "ultra"
+        assert PreBuilt.model_validate({"effort": "ultra"}).effort.value == "ultra"
+        # 既存メンバーは従来どおり
+        assert ReasoningEffort("high") is ReasoningEffort.high
+        # 冪等
+        _patch_reasoning_effort_enum()
+        assert ReasoningEffort("ultra").value == "ultra"
+
+    def test_write_codex_config_no_reasoning_effort_by_default(self, executor, anima_dir):
+        """thinking_effort未設定ならmodel_reasoning_effort行を出力しない。"""
+        executor._write_codex_config("prompt")
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        assert "model_reasoning_effort" not in config_toml
+
+    def test_write_codex_config_thinking_effort_passthrough(self, model_config, anima_dir):
+        """thinking_effort（例: ultra）をmodel_reasoning_effortとして素通しする。"""
+        model_config.model = "codex/gpt-5.6-sol"
+        model_config.thinking_effort = "ultra"
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        exc._write_codex_config("prompt")
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(config_toml)
+        assert parsed["model_reasoning_effort"] == "ultra"
+        assert parsed["model"] == "gpt-5.6-sol"
+
+    def test_write_codex_config_extra_keys_effort_overrides_thinking_effort(self, model_config, anima_dir):
+        """extra_keys.codex_reasoning_effortはthinking_effortより優先。"""
+        model_config.thinking_effort = "high"
+        model_config.extra_keys = {"codex_reasoning_effort": "ultra"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        exc._write_codex_config("prompt")
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(config_toml)
+        assert parsed["model_reasoning_effort"] == "ultra"
+
     def test_write_codex_config_openai_provider_by_default(self, executor, anima_dir):
         executor._write_codex_config("prompt")
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")

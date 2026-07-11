@@ -65,11 +65,12 @@ def _idle_timeout_from_env(env_name: str, default: float) -> float:
     return default
 
 
-# GPT-5.5 (reasoning high) は長考や長時間ツール実行中に120s超イベント無しが
-# 正常動作として起こる。真のハングは supervisor の max_streaming_duration
-# (default 1800s) が別途検知するため、ここは緩めでよい。
-_BACKGROUND_EVENT_IDLE_TIMEOUT_SEC = _idle_timeout_from_env("ANIMAWORKS_CODEX_BG_IDLE_TIMEOUT_SEC", 300.0)
-_FOREGROUND_EVENT_IDLE_TIMEOUT_SEC = _idle_timeout_from_env("ANIMAWORKS_CODEX_FG_IDLE_TIMEOUT_SEC", 600.0)
+# GPT-5.5/5.6 (reasoning high〜ultra) は長考や長時間ツール実行中に数分単位で
+# イベント無しが正常動作として起こる（特にgpt-5.6-sol ultraは長考が長い）。
+# 真のハングは supervisor の max_streaming_duration (default 1800s) が別途
+# 検知するため、ここは緩めでよい。時間より正確性優先の運用方針 (2026-07-10)。
+_BACKGROUND_EVENT_IDLE_TIMEOUT_SEC = _idle_timeout_from_env("ANIMAWORKS_CODEX_BG_IDLE_TIMEOUT_SEC", 600.0)
+_FOREGROUND_EVENT_IDLE_TIMEOUT_SEC = _idle_timeout_from_env("ANIMAWORKS_CODEX_FG_IDLE_TIMEOUT_SEC", 1200.0)
 
 # asyncio.StreamReader default limit is 64 KB.  Codex CLI may echo the full
 # context (including system prompt) in a single JSONL line during thread
@@ -107,6 +108,35 @@ def is_codex_sdk_available() -> bool:
         return True
     except Exception:
         return False
+
+
+def _patch_reasoning_effort_enum() -> None:
+    """openai_codex SDKのReasoningEffort enumに未知値を動的追加する。
+
+    Codex CLI (0.144.x+) はgpt-5.6系の新effort値 ``ultra`` をレスポンスに
+    エコーするが、SDK 0.1.0b3のenumは ``xhigh`` までしか定義しておらず
+    pydantic検証（ThreadStartResponse等）で落ちる。``_missing_`` フックで
+    未知の文字列値をメンバーとして遅延生成し、後方互換を保つ。
+    SDK側がenumを更新したら不要になる。
+    """
+    try:
+        from openai_codex.generated.v2_all import ReasoningEffort
+    except Exception:
+        return
+    if getattr(ReasoningEffort, "_animaworks_dynamic_members", False):
+        return
+
+    def _missing_(cls: type, value: object) -> object | None:
+        if not isinstance(value, str):
+            return None
+        member = object.__new__(cls)
+        member._name_ = value
+        member._value_ = value
+        cls._value2member_map_[value] = member
+        return member
+
+    ReasoningEffort._missing_ = classmethod(_missing_)  # type: ignore[method-assign]
+    ReasoningEffort._animaworks_dynamic_members = True  # type: ignore[attr-defined]
 
 
 def _is_openai_api_key(key: str) -> bool:
@@ -969,8 +999,18 @@ class CodexSDKExecutor(BaseExecutor):
                 f'wire_api = "{esc(provider_config.wire_api)}"\n'
             )
 
+        # Codex CLI側のeffort語彙（gpt-5.6系: low〜ultra）をそのまま渡す。
+        # Claude系のresolve_thinking_effort（maxクランプ）は適用しない。
+        reasoning_effort = (self._model_config.extra_keys or {}).get(
+            "codex_reasoning_effort"
+        ) or self._model_config.thinking_effort
+        effort_line = (
+            f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
+        )
+
         config_toml = (
             f'model = "{esc(provider_config.model)}"\n'
+            f"{effort_line}"
             f'model_provider = "{esc(provider_config.provider)}"\n'
             f'model_instructions_file = "{esc(str(instructions_file))}"\n'
             f'developer_instructions = "{esc(self._CODEX_DEVELOPER_INSTRUCTIONS)}"\n'
@@ -997,6 +1037,8 @@ class CodexSDKExecutor(BaseExecutor):
             from openai_codex import AsyncCodex, CodexConfig
         except ModuleNotFoundError as e:
             raise ImportError("openai_codex is required for Mode C (install openai-codex).") from e
+
+        _patch_reasoning_effort_enum()
 
         executable = get_codex_executable()
         config = CodexConfig(

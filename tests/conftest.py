@@ -71,8 +71,19 @@ def fake_openai_codex_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     openai_codex.ApprovalMode = SimpleNamespace(deny_all=SimpleNamespace(value="deny_all"))
     openai_codex.Sandbox = SimpleNamespace(full_access="full_access", workspace_write="workspace_write")
 
+    import enum
+
+    class _ReasoningEffort(enum.Enum):
+        none = "none"
+        minimal = "minimal"
+        low = "low"
+        medium = "medium"
+        high = "high"
+        xhigh = "xhigh"
+
     generated = types.ModuleType("openai_codex.generated")
     v2_all = types.ModuleType("openai_codex.generated.v2_all")
+    v2_all.ReasoningEffort = _ReasoningEffort
     v2_all.ReasoningSummary = _ReasoningSummary
     v2_all.ReasoningSummaryValue = SimpleNamespace(
         auto=reasoning_value("auto"),
