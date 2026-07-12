@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import threading
 from pathlib import Path
@@ -172,6 +173,39 @@ def test_vector_worker_upsert_failure_opens_backoff(monkeypatch) -> None:
     assert breakers[0]["consecutive_failures"] == 2
     assert breakers[0]["threshold"] == 2
     assert store.upsert.call_count == 2
+
+
+def test_vector_worker_write_defers_during_active_repair(monkeypatch, data_dir) -> None:
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    state_dir = data_dir / "animas" / "sora" / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "rag_repair.json").write_text(json.dumps({"status": "repairing"}), encoding="utf-8")
+
+    from core.memory.rag.vector_worker import create_app
+
+    get_store = MagicMock()
+    with (
+        patch("core.memory.rag.singleton.get_vector_store", get_store),
+        TestClient(create_app()) as client,
+    ):
+        resp = client.post(
+            "/upsert",
+            json={
+                "anima_name": "sora",
+                "collection": "knowledge",
+                "documents": [{"id": "doc1", "content": "hello", "embedding": [0.1], "metadata": {}}],
+            },
+        )
+
+    assert resp.status_code == 503
+    assert resp.headers["Retry-After"] == "30"
+    assert resp.json() == {
+        "detail": "RAG repair in progress",
+        "collection": "knowledge",
+        "owner": "sora",
+        "retry_after_seconds": 30,
+    }
+    get_store.assert_not_called()
 
 
 def test_vector_worker_status_includes_gpu_section(monkeypatch) -> None:

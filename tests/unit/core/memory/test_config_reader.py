@@ -1,4 +1,5 @@
 """Unit tests for core/memory/config_reader.py — ConfigReader."""
+
 from __future__ import annotations
 
 # AnimaWorks - Digital Anima Framework
@@ -43,7 +44,9 @@ class TestReadModelConfigFromMd:
         assert mc.max_turns == 10000
 
     def test_returns_defaults_on_empty_file(
-        self, reader: ConfigReader, anima_dir: Path,
+        self,
+        reader: ConfigReader,
+        anima_dir: Path,
     ) -> None:
         """When config.md is empty, returns default ModelConfig."""
         (anima_dir / "config.md").write_text("", encoding="utf-8")
@@ -54,7 +57,9 @@ class TestReadModelConfigFromMd:
         assert mc.model == "claude-sonnet-4-6"
 
     def test_parses_all_fields(
-        self, reader: ConfigReader, anima_dir: Path,
+        self,
+        reader: ConfigReader,
+        anima_dir: Path,
     ) -> None:
         """Parses model, max_tokens, max_turns, api_key_env, api_base_url."""
         (anima_dir / "config.md").write_text(
@@ -76,7 +81,9 @@ class TestReadModelConfigFromMd:
         assert mc.api_base_url == "http://localhost:8000"
 
     def test_parses_partial_fields(
-        self, reader: ConfigReader, anima_dir: Path,
+        self,
+        reader: ConfigReader,
+        anima_dir: Path,
     ) -> None:
         """Missing fields fall back to defaults."""
         (anima_dir / "config.md").write_text(
@@ -91,14 +98,13 @@ class TestReadModelConfigFromMd:
         assert mc.max_turns == 10000  # default
 
     def test_ignores_biko_section(
-        self, reader: ConfigReader, anima_dir: Path,
+        self,
+        reader: ConfigReader,
+        anima_dir: Path,
     ) -> None:
         """Lines after '## 備考' are excluded to avoid matching example values."""
         (anima_dir / "config.md").write_text(
-            "- model: real\n"
-            "\n"
-            "## 備考\n"
-            "- model: fake-example\n",
+            "- model: real\n\n## 備考\n- model: fake-example\n",
             encoding="utf-8",
         )
 
@@ -107,16 +113,13 @@ class TestReadModelConfigFromMd:
         assert mc.model == "real"
 
     def test_ignores_settings_example_section(
-        self, reader: ConfigReader, anima_dir: Path,
+        self,
+        reader: ConfigReader,
+        anima_dir: Path,
     ) -> None:
         """Lines after '### 設定例' are excluded."""
         (anima_dir / "config.md").write_text(
-            "- model: actual-model\n"
-            "- max_tokens: 2048\n"
-            "\n"
-            "### 設定例\n"
-            "- model: example-model\n"
-            "- max_tokens: 9999\n",
+            "- model: actual-model\n- max_tokens: 2048\n\n### 設定例\n- model: example-model\n- max_tokens: 9999\n",
             encoding="utf-8",
         )
 
@@ -126,7 +129,9 @@ class TestReadModelConfigFromMd:
         assert mc.max_tokens == 2048
 
     def test_fallback_model_defaults_to_none(
-        self, reader: ConfigReader, anima_dir: Path,
+        self,
+        reader: ConfigReader,
+        anima_dir: Path,
     ) -> None:
         """When fallback_model is not specified, it remains None."""
         (anima_dir / "config.md").write_text(
@@ -139,12 +144,13 @@ class TestReadModelConfigFromMd:
         assert mc.fallback_model is None
 
     def test_fallback_model_parsed(
-        self, reader: ConfigReader, anima_dir: Path,
+        self,
+        reader: ConfigReader,
+        anima_dir: Path,
     ) -> None:
         """Explicit fallback_model is parsed correctly."""
         (anima_dir / "config.md").write_text(
-            "- model: primary\n"
-            "- fallback_model: secondary\n",
+            "- model: primary\n- fallback_model: secondary\n",
             encoding="utf-8",
         )
 
@@ -160,7 +166,8 @@ class TestResolveApiKey:
     """Tests for API key resolution (direct value vs env var fallback)."""
 
     def test_uses_config_api_key_when_available(
-        self, reader: ConfigReader,
+        self,
+        reader: ConfigReader,
     ) -> None:
         """When config.api_key is set, it is returned directly."""
         config = ModelConfig(api_key="sk-direct-key", api_key_env="SHOULD_NOT_USE")
@@ -170,7 +177,9 @@ class TestResolveApiKey:
         assert result == "sk-direct-key"
 
     def test_falls_back_to_env_var(
-        self, reader: ConfigReader, monkeypatch: pytest.MonkeyPatch,
+        self,
+        reader: ConfigReader,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When config.api_key is None, falls back to env var."""
         config = ModelConfig(api_key=None, api_key_env="TEST_RESOLVE_KEY")
@@ -181,7 +190,9 @@ class TestResolveApiKey:
         assert result == "sk-from-env"
 
     def test_returns_none_when_no_key(
-        self, reader: ConfigReader, monkeypatch: pytest.MonkeyPatch,
+        self,
+        reader: ConfigReader,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When neither config.api_key nor env var is set, returns None."""
         config = ModelConfig(api_key=None, api_key_env="NONEXISTENT_KEY_XYZ_123")
@@ -192,7 +203,9 @@ class TestResolveApiKey:
         assert result is None
 
     def test_empty_string_api_key_is_falsy(
-        self, reader: ConfigReader, monkeypatch: pytest.MonkeyPatch,
+        self,
+        reader: ConfigReader,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """An empty string api_key is falsy, so env var fallback is used."""
         config = ModelConfig(api_key="", api_key_env="TEST_FALLBACK_KEY")
@@ -238,6 +251,7 @@ class TestReadModelConfig:
         mock_resolved.llm_timeout = None
         mock_resolved.background_model = None
         mock_resolved.background_credential = None
+        mock_resolved.background_thinking_effort = None
         mock_resolved.mode_s_auth = None
         mock_resolved.extra_mcp_servers = {}
 
@@ -250,10 +264,12 @@ class TestReadModelConfig:
         config_path = MagicMock()
         config_path.exists.return_value = True
 
-        with patch("core.config.get_config_path", return_value=config_path), \
-             patch("core.config.load_config", return_value=mock_config), \
-             patch("core.config.resolve_anima_config", return_value=(mock_resolved, mock_credential)), \
-             patch("core.config.resolve_execution_mode", return_value="A2"):
+        with (
+            patch("core.config.get_config_path", return_value=config_path),
+            patch("core.config.load_config", return_value=mock_config),
+            patch("core.config.resolve_anima_config", return_value=(mock_resolved, mock_credential)),
+            patch("core.config.resolve_execution_mode", return_value="A2"),
+        ):
             mc = reader.read_model_config()
 
         assert isinstance(mc, ModelConfig)
@@ -265,12 +281,13 @@ class TestReadModelConfig:
         assert mc.resolved_mode == "A2"
 
     def test_falls_back_to_config_md(
-        self, reader: ConfigReader, anima_dir: Path,
+        self,
+        reader: ConfigReader,
+        anima_dir: Path,
     ) -> None:
         """When config.json does not exist, falls back to config.md parser."""
         (anima_dir / "config.md").write_text(
-            "- model: legacy-model\n"
-            "- max_tokens: 2048\n",
+            "- model: legacy-model\n- max_tokens: 2048\n",
             encoding="utf-8",
         )
 
@@ -307,6 +324,7 @@ class TestReadModelConfig:
         mock_resolved.llm_timeout = None
         mock_resolved.background_model = None
         mock_resolved.background_credential = None
+        mock_resolved.background_thinking_effort = None
         mock_resolved.mode_s_auth = None
         mock_resolved.extra_mcp_servers = {}
 
@@ -318,10 +336,12 @@ class TestReadModelConfig:
         config_path = MagicMock()
         config_path.exists.return_value = True
 
-        with patch("core.config.get_config_path", return_value=config_path), \
-             patch("core.config.load_config", return_value=mock_config), \
-             patch("core.config.resolve_anima_config", return_value=(mock_resolved, mock_credential)) as mock_resolve, \
-             patch("core.config.resolve_execution_mode", return_value="A1"):
+        with (
+            patch("core.config.get_config_path", return_value=config_path),
+            patch("core.config.load_config", return_value=mock_config),
+            patch("core.config.resolve_anima_config", return_value=(mock_resolved, mock_credential)) as mock_resolve,
+            patch("core.config.resolve_execution_mode", return_value="A1"),
+        ):
             reader.read_model_config()
 
         # Verify anima_name was passed correctly

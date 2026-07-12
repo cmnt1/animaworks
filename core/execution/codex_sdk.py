@@ -52,8 +52,24 @@ logger = logging.getLogger("animaworks.execution.codex_sdk")
 __all__ = ["CodexSDKExecutor", "clear_codex_thread_id", "clear_codex_thread_ids", "is_codex_sdk_available"]
 
 RESUME_TIMEOUT_SEC = 15.0
-_BACKGROUND_EVENT_IDLE_TIMEOUT_SEC = 45.0
-_FOREGROUND_EVENT_IDLE_TIMEOUT_SEC = 120.0
+
+
+def _idle_timeout_from_env(env_name: str, default: float) -> float:
+    raw = os.environ.get(env_name, "").strip()
+    if raw:
+        try:
+            value = float(raw)
+            if value > 0:
+                return value
+        except ValueError:
+            logger.warning("Invalid %s=%r; using default %.0fs", env_name, raw, default)
+    return default
+
+
+# GPT-5.5/5.6 can legitimately pause for minutes during reasoning/tool work.
+# Supervisor max_streaming_duration still catches true hangs, so keep this idle timeout generous.
+_BACKGROUND_EVENT_IDLE_TIMEOUT_SEC = _idle_timeout_from_env("ANIMAWORKS_CODEX_BG_IDLE_TIMEOUT_SEC", 600.0)
+_FOREGROUND_EVENT_IDLE_TIMEOUT_SEC = _idle_timeout_from_env("ANIMAWORKS_CODEX_FG_IDLE_TIMEOUT_SEC", 1200.0)
 
 # asyncio.StreamReader default limit is 64 KB.  Codex CLI may echo the full
 # context (including system prompt) in a single JSONL line during thread
@@ -84,7 +100,7 @@ _CODEX_REASONING_SUMMARY_VALUES = {"auto", "concise", "detailed", "none"}
 _CODEX_THREAD_SESSION_ID_PATCHED = False
 
 
-# ── Model name helpers ───────────────────────────────────────
+# 笏笏 Model name helpers 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 
 def _resolve_codex_model(model: str) -> str:
@@ -148,6 +164,28 @@ def _patch_codex_thread_session_id_compat() -> None:
     _request_raw_with_thread_session_id._animaworks_session_id_patch = True  # type: ignore[attr-defined]
     CodexClient._request_raw = _request_raw_with_thread_session_id
     _CODEX_THREAD_SESSION_ID_PATCHED = True
+
+
+def _patch_reasoning_effort_enum() -> None:
+    """Allow newer Codex reasoning_effort values before the SDK enum catches up."""
+    try:
+        from openai_codex.generated.v2_all import ReasoningEffort
+    except Exception:
+        return
+    if getattr(ReasoningEffort, "_animaworks_dynamic_members", False):
+        return
+
+    def _missing_(cls: type, value: object) -> object | None:
+        if not isinstance(value, str):
+            return None
+        member = object.__new__(cls)
+        member._name_ = value
+        member._value_ = value
+        cls._value2member_map_[value] = member
+        return member
+
+    ReasoningEffort._missing_ = classmethod(_missing_)  # type: ignore[method-assign]
+    ReasoningEffort._animaworks_dynamic_members = True  # type: ignore[attr-defined]
 
 
 def _is_openai_api_key(key: str) -> bool:
@@ -271,7 +309,7 @@ def _set_process_path_env(env: dict[str, str], value: str) -> None:
     env["PATH"] = value
 
 
-# ── Session (thread) ID persistence ──────────────────────────
+# 笏笏 Session (thread) ID persistence 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 
 def _thread_id_path(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> Path:
@@ -311,7 +349,7 @@ def clear_codex_thread_ids(anima_dir: Path, chat_thread_id: str = "default") -> 
         _clear_thread_id(anima_dir, st, chat_thread_id)
 
 
-# ── Helpers ──────────────────────────────────────────────────
+# 笏笏 Helpers 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 
 def _get_thread_id(thread: Any) -> str | None:
@@ -610,7 +648,7 @@ def _extract_tool_records(items: list[Any]) -> list[ToolCallRecord]:
 def _synthesise_fallback(tool_records: list[ToolCallRecord]) -> str:
     """Build a short fallback text when the model produced no text output."""
     names = [r.tool_name for r in tool_records[:5]]
-    suffix = ", …" if len(tool_records) > 5 else ""
+    suffix = ", 窶ｦ" if len(tool_records) > 5 else ""
     fallback = f"(completed {len(tool_records)} tool call(s): {', '.join(names)}{suffix})"
     logger.warning(
         "Codex SDK produced no text output; synthesised fallback (tools=%d)",
@@ -766,7 +804,7 @@ def _notify_auth_expired(anima_name: str) -> None:
 
         raise_alert(
             "openai",
-            "Codex (OpenAI) の認証トークンが期限切れです。ダッシュボードから再ログインしてください。",
+            "Codex (OpenAI) auth token has expired. Please sign in again from the dashboard.",
             anima_name=anima_name,
         )
     except Exception:
@@ -782,9 +820,9 @@ def _notify_auth_expired(anima_name: str) -> None:
             await notifier.notify(
                 subject=f"Codex auth expired ({anima_name})",
                 body=(
-                    f"Codex (OpenAI) の認証トークンが期限切れです。\n"
-                    f"ダッシュボードから再ログインするか、ターミナルで `codex auth login` を実行してください。\n"
-                    f"対象Anima: {anima_name}"
+                    "Codex (OpenAI) auth token has expired.\n"
+                    "Please sign in again from the dashboard or run `codex auth login` in a terminal.\n"
+                    f"Target Anima: {anima_name}"
                 ),
                 priority="high",
                 anima_name=anima_name,
@@ -887,7 +925,7 @@ async def _close_codex_client(client: Any) -> None:
             logger.debug("Failed to close Codex SDK client", exc_info=True)
 
 
-# ── Executor ─────────────────────────────────────────────────
+# 笏笏 Executor 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 
 class CodexSDKExecutor(BaseExecutor):
@@ -915,7 +953,7 @@ class CodexSDKExecutor(BaseExecutor):
     def supports_streaming(self) -> bool:  # noqa: D102
         return True
 
-    # ── Environment / config helpers ─────────────────────────
+    # 笏笏 Environment / config helpers 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
     def _build_env(self) -> dict[str, str]:
         """Build env dict for the Codex CLI child process."""
@@ -971,13 +1009,13 @@ class CodexSDKExecutor(BaseExecutor):
             env["OPENAI_API_KEY"] = api_key
         elif api_key:
             logger.debug(
-                "Skipping non-OpenAI API key for Codex env (prefix=%s…); relying on cached ChatGPT auth",
+                "Skipping non-OpenAI API key for Codex env (prefix=%s窶ｦ); relying on cached ChatGPT auth",
                 api_key[:8],
             )
         # Only forward api_base_url when it is a genuine OpenAI-compatible
         # endpoint.  The default credential may point to Ollama
         # (127.0.0.1:11434) which must NOT be injected as OPENAI_BASE_URL
-        # — the Codex CLI uses model_provider in config.toml for routing.
+        # 窶・the Codex CLI uses model_provider in config.toml for routing.
         base = self._model_config.api_base_url
         if base and ":11434" not in base:
             env["OPENAI_BASE_URL"] = base
@@ -1013,9 +1051,9 @@ class CodexSDKExecutor(BaseExecutor):
         """Ensure per-anima CODEX_HOME has valid auth.
 
         Strategy:
-        1. If per-anima ``auth.json`` exists and is real → keep it.
-        2. If ``~/.codex/auth.json`` exists → symlink/hardlink/copy.
-        3. Otherwise (Codex ≥0.115 keychain auth) → set
+        1. If per-anima ``auth.json`` exists and is real 竊・keep it.
+        2. If ``~/.codex/auth.json`` exists 竊・symlink/hardlink/copy.
+        3. Otherwise (Codex 竕･0.115 keychain auth) 竊・set
            ``self._use_default_codex_home = True`` so ``_build_env()``
            omits CODEX_HOME entirely (letting Codex use OS keychain).
            Per-anima config is then passed via ``-c`` flags instead.
@@ -1059,7 +1097,7 @@ class CodexSDKExecutor(BaseExecutor):
             )
             return
 
-        # No auth.json anywhere — Codex ≥0.115 uses OS keychain.
+        # No auth.json anywhere 窶・Codex 竕･0.115 uses OS keychain.
         # Tell _build_env() to omit CODEX_HOME so keychain auth works.
         # Per-anima config will be passed via -c flags in the CLI command.
         if not self._uses_codex_login_auth():
@@ -1217,9 +1255,15 @@ class CodexSDKExecutor(BaseExecutor):
             auth_method_line = 'preferred_auth_method = "apikey"\n'
         else:
             auth_method_line = ""
+        # Pass Codex-specific reasoning effort values through unchanged.
+        reasoning_effort = (self._model_config.extra_keys or {}).get(
+            "codex_reasoning_effort"
+        ) or self._model_config.thinking_effort
+        effort_line = f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
 
         config_toml = (
             f'model = "{esc(provider_config.model)}"\n'
+            f"{effort_line}"
             f'model_provider = "{esc(provider_config.provider)}"\n'
             f"{auth_method_line}"
             f'model_instructions_file = "{esc(str(instructions_file))}"\n'
@@ -1250,6 +1294,7 @@ class CodexSDKExecutor(BaseExecutor):
             raise ImportError("openai_codex is required for Mode C (install openai-codex).") from e
 
         _patch_codex_thread_session_id_compat()
+        _patch_reasoning_effort_enum()
         executable = get_codex_executable()
         config = CodexConfig(
             codex_bin=executable,
@@ -1495,7 +1540,7 @@ class CodexSDKExecutor(BaseExecutor):
                         timeout=idle_timeout,
                     )
                 except TimeoutError as e:
-                    # No output for `idle_timeout` seconds — assume the
+                    # No output for `idle_timeout` seconds 窶・assume the
                     # subprocess is hung.  Without this the inbox/heartbeat
                     # cycle waits forever and `_heartbeat_running` leaks.
                     if proc.returncode is None:
@@ -1598,12 +1643,12 @@ class CodexSDKExecutor(BaseExecutor):
             stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
             if stderr_text and _stderr_contains_auth_expired(stderr_text):
                 logger.error(
-                    "Codex auth expired for %s — run `codex auth login` to re-authenticate",
+                    "Codex auth expired for %s 窶・run `codex auth login` to re-authenticate",
                     self._anima_dir.name,
                 )
                 _notify_auth_expired(self._anima_dir.name)
                 raise RuntimeError(
-                    f"Codex auth expired — run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
+                    f"Codex auth expired 窶・run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
                 )
             if returncode != 0:
                 detail = turn_failed_message or stderr_text
@@ -1612,12 +1657,12 @@ class CodexSDKExecutor(BaseExecutor):
             # exits cleanly despite auth errors in stderr).
             if not response_parts and stderr_text and _stderr_contains_auth_expired(stderr_text):
                 logger.error(
-                    "Codex auth expired for %s (exit 0 but no output) — run `codex auth login`",
+                    "Codex auth expired for %s (exit 0 but no output) 窶・run `codex auth login`",
                     self._anima_dir.name,
                 )
                 _notify_auth_expired(self._anima_dir.name)
                 raise RuntimeError(
-                    f"Codex auth expired — run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
+                    f"Codex auth expired 窶・run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
                 )
             if stderr_text:
                 logger.debug("Codex CLI exec stderr: %s", stderr_text[:500])
@@ -1726,7 +1771,7 @@ class CodexSDKExecutor(BaseExecutor):
             chat_thread_id,
         )
 
-    # ── Blocking execution ───────────────────────────────────
+    # 笏笏 Blocking execution 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
     async def execute(
         self,
@@ -1848,7 +1893,7 @@ class CodexSDKExecutor(BaseExecutor):
         finally:
             await _close_codex_client(codex)
 
-    # ── Streaming execution ──────────────────────────────────
+    # 笏笏 Streaming execution 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
     async def execute_streaming(
         self,
