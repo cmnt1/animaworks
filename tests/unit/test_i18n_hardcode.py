@@ -141,6 +141,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "server/routes/taskboard.py": 21,
     # usage route OAuth / API-disabled messages
     "server/routes/usage_routes.py": 3,
+    # Zoom OAuth redirect completion page — user-facing Japanese HTML
+    "server/routes/webhooks.py": 1,
 }
 
 
