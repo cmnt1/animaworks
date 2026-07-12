@@ -18,6 +18,7 @@ import logging
 import time
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse
 
 from core.config.models import load_config
 from core.messenger import Messenger
@@ -367,6 +368,23 @@ def create_webhooks_router() -> APIRouter:
             ).hexdigest()
         )
         return hmac.compare_digest(expected, signature)
+
+    @router.get("/zoom/oauth-callback")
+    async def zoom_oauth_callback() -> HTMLResponse:
+        """Landing page for the Zoom OAuth redirect.
+
+        Zoom requires a reachable HTTPS redirect URL to activate a
+        Marketplace app.  RTMS itself never uses OAuth tokens (webhook +
+        HMAC handshake only), so this endpoint just confirms completion
+        to the user; the ``code`` query parameter is intentionally unused.
+        """
+        return HTMLResponse(
+            "<!doctype html><html lang='ja'><meta charset='utf-8'>"
+            "<title>AnimaWorks</title>"
+            "<body style='font-family:sans-serif;text-align:center;margin-top:20vh'>"
+            "<h2>Zoom 連携の認可が完了しました</h2>"
+            "<p>このタブは閉じてかまいません。</p></body></html>"
+        )
 
     @router.post("/zoom")
     async def zoom_webhook(request: Request) -> dict:
