@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class HealthMixin:
     """Health-check loop, failure handling, and hang detection."""
 
-    def _sample_child_memory(
+    async def _sample_child_memory(
         self,
         anima_name: str,
         handle: ProcessHandle,
@@ -40,7 +40,8 @@ class HealthMixin:
         if run_dir is None or pid is None:
             return
         try:
-            sample_process_memory(
+            await asyncio.to_thread(
+                sample_process_memory,
                 anima_name=anima_name,
                 stage=stage,
                 run_dir=Path(run_dir),
@@ -360,7 +361,7 @@ class HealthMixin:
             asyncio.create_task(self._handle_process_failure(anima_name, handle))
             return
 
-        self._sample_child_memory(
+        await self._sample_child_memory(
             anima_name,
             handle,
             stage="supervisor_health",

@@ -20,6 +20,7 @@ Resolution strategies:
 - coexist: Mark as context-dependent coexisting truths
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -324,12 +325,14 @@ class ContradictionDetector:
             return (False, 0.0, False)
 
         # NLI check: text_a as premise, text_b as hypothesis
-        label_ab, score_ab = nli_model.check(
+        label_ab, score_ab = await asyncio.to_thread(
+            nli_model.check,
             text_b[:2000],
             text_a[:2000],
         )
         # Also check the reverse direction
-        label_ba, score_ba = nli_model.check(
+        label_ba, score_ba = await asyncio.to_thread(
+            nli_model.check,
             text_a[:2000],
             text_b[:2000],
         )

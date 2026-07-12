@@ -10,6 +10,7 @@ from __future__ import annotations
 
 """Tests for knowledge contradiction detection and resolution."""
 
+import threading
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -91,6 +92,27 @@ class TestNLIContradictionCheck:
         assert is_contradiction is False
         assert score == 0.0
         assert is_entailment is False
+
+    @pytest.mark.asyncio
+    async def test_nli_inference_runs_off_event_loop(
+        self,
+        detector: ContradictionDetector,
+    ) -> None:
+        caller_thread = threading.get_ident()
+        inference_threads: list[int] = []
+        mock_nli = MagicMock()
+
+        def check(_hypothesis: str, _premise: str) -> tuple[str, float]:
+            inference_threads.append(threading.get_ident())
+            return ("neutral", 0.0)
+
+        mock_nli.check.side_effect = check
+        detector._nli_model = mock_nli
+
+        await detector._check_contradiction_nli("text A", "text B")
+
+        assert len(inference_threads) == 2
+        assert all(thread_id != caller_thread for thread_id in inference_threads)
 
     @pytest.mark.asyncio
     async def test_nli_detects_contradiction(

@@ -19,6 +19,42 @@ from core.platform.locks import file_lock
 from core.time_utils import now_iso
 
 _write_lock = threading.Lock()
+_DEFAULT_MAX_BYTES = 32 * 1024 * 1024
+_DEFAULT_KEEP_GENERATIONS = 4
+
+
+def _positive_env_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _rotate_samples_if_needed(path: Path) -> None:
+    """Bound the probe file before appending another sample.
+
+    This runs while the cross-process lock is held.  Keeping the active file
+    small matters on Windows, where opening a very large, frequently appended
+    file can stall the event-loop thread long enough to make the HTTP server
+    appear offline.
+    """
+
+    max_bytes = _positive_env_int("ANIMAWORKS_MEMORY_PROBE_MAX_BYTES", _DEFAULT_MAX_BYTES)
+    keep = _positive_env_int("ANIMAWORKS_MEMORY_PROBE_KEEP", _DEFAULT_KEEP_GENERATIONS)
+    try:
+        if path.stat().st_size < max_bytes:
+            return
+    except FileNotFoundError:
+        return
+
+    oldest = path.with_name(f"{path.name}.{keep}")
+    oldest.unlink(missing_ok=True)
+    for generation in range(keep - 1, 0, -1):
+        source = path.with_name(f"{path.name}.{generation}")
+        if source.exists():
+            os.replace(source, path.with_name(f"{path.name}.{generation + 1}"))
+    os.replace(path, path.with_name(f"{path.name}.1"))
 
 
 def _to_int(value: Any) -> int | None:
@@ -94,7 +130,8 @@ def sample_process_memory(
         _write_lock,
         lock_path.open("a+", encoding="utf-8") as lock_fh,
         file_lock(lock_fh, exclusive=True),
-        path.open("a", encoding="utf-8") as fh,
     ):
-        fh.write(line)
+        _rotate_samples_if_needed(path)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
     return sample
