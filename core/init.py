@@ -481,6 +481,10 @@ def ensure_runtime_dir(*, skip_animas: bool = False) -> Path:
             _run_auto_migrations(data_dir)
         except Exception:
             logger.exception("Auto-migration failed — partial state may exist; run 'animaworks migrate' manually")
+        # Incremental sync must run on every startup (not as a one-shot
+        # migration step) so new common_skills/common_knowledge templates
+        # reach existing installations after upgrades.
+        _sync_shared_templates(data_dir)
         _ensure_runtime_only_dirs(data_dir)
         logger.debug("Runtime directory already initialized: %s", data_dir)
         return data_dir
