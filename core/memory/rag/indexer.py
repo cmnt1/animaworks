@@ -265,15 +265,61 @@ class MemoryIndexer:
         except OSError:
             logger.warning("Failed to save RAG upsert failure state", exc_info=True)
 
-    def _clear_upsert_failure(self, source_file: str) -> None:
+    def _clear_upsert_failure(self, source_file: str, collection_name: str | None = None) -> None:
         """Reset the consecutive counter after a successful upsert."""
         state = self._load_upsert_failure_state()
         if state["failures"].pop(source_file, None) is not None:
             self._save_upsert_failure_state(state)
+        if collection_name is not None:
+            failures_by_collection = getattr(self, "_run_upsert_failures", None)
+            if failures_by_collection is not None:
+                failures_by_collection.pop(collection_name, None)
 
-    def _record_upsert_failure(self, source_file: str, file_path: Path) -> None:
-        """Increment a persistent counter and quarantine at the configured limit."""
+    def _is_upsert_quarantined(self, source_file: str) -> bool:
+        """Return whether a source is on the persistent non-destructive skip list."""
         state = self._load_upsert_failure_state()
+        return any(item.get("source_file") == source_file for item in state["quarantined"])
+
+    def _record_upsert_failure(self, collection_name: str, source_file: str, file_path: Path) -> None:
+        """Increment a persistent counter and add repeat offenders to the skip list.
+
+        An open HTTP write circuit is a service-wide/transient signal and is
+        never attributed to an individual file. Two distinct failures in the
+        same collection during one indexing run are also treated as a global
+        outage; counters recorded by that run are rolled back conservatively.
+        """
+        transient_probe = getattr(self.vector_store, "is_transient_write_failure", None)
+        if callable(transient_probe) and transient_probe(collection_name):
+            logger.info("Not counting transient vector service failure for %s", file_path)
+            return
+
+        failures_by_collection = getattr(self, "_run_upsert_failures", None)
+        if failures_by_collection is None:
+            failures_by_collection = {}
+            self._run_upsert_failures = failures_by_collection
+        failed_sources = failures_by_collection.setdefault(collection_name, set())
+        failed_sources.add(source_file)
+
+        state = self._load_upsert_failure_state()
+        if len(failed_sources) > 1:
+            for failed_source in failed_sources:
+                state["failures"].pop(failed_source, None)
+            # The first failure in this run may have reached the threshold
+            # before a second source proved the outage was collection-wide.
+            # Roll back only entries for sources observed in this run;
+            # previously quarantined sources are skipped before indexing and
+            # therefore cannot appear in ``failed_sources``.
+            state["quarantined"] = [
+                item for item in state["quarantined"] if item.get("source_file") not in failed_sources
+            ]
+            self._save_upsert_failure_state(state)
+            logger.info(
+                "Not counting likely service-wide upsert outage: collection=%s failed_sources=%d",
+                collection_name,
+                len(failed_sources),
+            )
+            return
+
         previous = state["failures"].get(source_file, {})
         count = int(previous.get("consecutive_failures", 0)) + 1
         state["failures"][source_file] = {
@@ -286,42 +332,20 @@ class MemoryIndexer:
             self._save_upsert_failure_state(state)
             return
 
-        try:
-            relative = file_path.relative_to(self.anima_dir)
-        except ValueError:
-            # Shared/outside sources are not owned by this Anima and must not
-            # be moved. Keep the counter inspectable for operator diagnosis.
-            self._save_upsert_failure_state(state)
-            return
-
-        quarantine_path = self.anima_dir / "quarantine" / "rag_upsert" / relative
-        try:
-            quarantine_path.parent.mkdir(parents=True, exist_ok=True)
-            if quarantine_path.exists():
-                quarantine_path = quarantine_path.with_name(
-                    f"{quarantine_path.stem}_{datetime.now().strftime('%Y%m%d%H%M%S')}{quarantine_path.suffix}"
-                )
-            file_path.replace(quarantine_path)
-        except OSError:
-            logger.warning("Failed to quarantine RAG source after repeated upsert failures: %s", file_path)
-            self._save_upsert_failure_state(state)
-            return
-
         state["failures"].pop(source_file, None)
         state["quarantined"].append(
             {
                 "source_file": source_file,
-                "quarantine_path": str(quarantine_path.relative_to(self.anima_dir)),
                 "failure_count": count,
                 "quarantined_at": now_iso(),
+                "reason": "consecutive_upsert_failures",
             }
         )
         self._save_upsert_failure_state(state)
         logger.warning(
-            "Quarantined RAG source after %d consecutive upsert failures: %s -> %s",
+            "Quarantined RAG source from indexing after %d consecutive upsert failures (source retained): %s",
             count,
             file_path,
-            quarantine_path,
         )
 
     # ── Main indexing API ───────────────────────────────────────────
@@ -357,6 +381,10 @@ class MemoryIndexer:
             file_key = str(file_path.relative_to(self.anima_dir))
         except ValueError:
             file_key = str(file_path)
+
+        if self._is_upsert_quarantined(file_key):
+            logger.debug("Skipping quarantined RAG source: %s", file_path)
+            return 0
 
         # Check .ragignore exclusion. Remove any previously-indexed chunks so
         # a file that matches .ragignore only after indexing does not linger

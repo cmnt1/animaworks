@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.config.schemas import AnimaDefaults, ConsolidationConfig
+from core.config.schemas import AnimaDefaults, AnimaWorksConfig, ConsolidationConfig
 from core.lifecycle.system_consolidation import (
     SystemConsolidationMixin,
     has_recent_activity,
@@ -24,14 +24,16 @@ def test_consolidation_config_defaults() -> None:
     assert config.inactivity_days == 7
 
 
-def test_per_anima_consolidation_disabled(tmp_path) -> None:
+def test_per_anima_consolidation_disabled(tmp_path, monkeypatch) -> None:
     (tmp_path / "status.json").write_text('{"consolidation_enabled": false}', encoding="utf-8")
+    monkeypatch.setattr("core.lifecycle.system_consolidation.load_config", lambda: AnimaWorksConfig())
 
     assert is_consolidation_enabled(tmp_path) is False
 
 
-def test_per_anima_disable_takes_priority_over_inactivity_toggle(tmp_path, caplog) -> None:
+def test_per_anima_disable_takes_priority_over_inactivity_toggle(tmp_path, monkeypatch, caplog) -> None:
     (tmp_path / "status.json").write_text('{"consolidation_enabled": false}', encoding="utf-8")
+    monkeypatch.setattr("core.lifecycle.system_consolidation.load_config", lambda: AnimaWorksConfig())
     config = SimpleNamespace(inactivity_skip_enabled=False, inactivity_days=7)
 
     with caplog.at_level(logging.INFO, logger="animaworks.lifecycle"):
@@ -79,6 +81,22 @@ def test_inactivity_guard_can_be_disabled(tmp_path) -> None:
     config = SimpleNamespace(inactivity_skip_enabled=False, inactivity_days=7)
 
     assert should_skip_inactive_consolidation(tmp_path, "sleepy", config) is False
+
+
+def test_anima_default_consolidation_disable_is_resolved(tmp_path, monkeypatch) -> None:
+    (tmp_path / "status.json").write_text("{}", encoding="utf-8")
+    config = AnimaWorksConfig(anima_defaults=AnimaDefaults(consolidation_enabled=False))
+    monkeypatch.setattr("core.lifecycle.system_consolidation.load_config", lambda: config)
+
+    assert is_consolidation_enabled(tmp_path) is False
+
+
+def test_status_override_wins_over_disabled_anima_default(tmp_path, monkeypatch) -> None:
+    (tmp_path / "status.json").write_text('{"consolidation_enabled": true}', encoding="utf-8")
+    config = AnimaWorksConfig(anima_defaults=AnimaDefaults(consolidation_enabled=False))
+    monkeypatch.setattr("core.lifecycle.system_consolidation.load_config", lambda: config)
+
+    assert is_consolidation_enabled(tmp_path) is True
 
 
 @pytest.mark.asyncio

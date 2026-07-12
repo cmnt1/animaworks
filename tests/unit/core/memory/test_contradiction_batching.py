@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -49,6 +50,86 @@ async def test_batch_prompt_and_json_array_parse(detector: ContradictionDetector
     prompt = completion.await_args.args[0]
     assert '"pair_id": 0' in prompt
     assert '"pair_id": 1' in prompt
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_result",
+    [
+        {
+            "pair_id": 0,
+            "is_contradiction": "false",
+            "resolution": "coexist",
+            "reason": "consistent",
+            "merged_content": None,
+        },
+        {
+            "pair_id": 0,
+            "is_contradiction": False,
+            "resolution": "coexist",
+            "merged_content": None,
+        },
+        {
+            "pair_id": 0,
+            "is_contradiction": False,
+            "resolution": "ignore",
+            "reason": "consistent",
+            "merged_content": None,
+        },
+        {
+            "pair_id": True,
+            "is_contradiction": False,
+            "resolution": "coexist",
+            "reason": "consistent",
+            "merged_content": None,
+        },
+        {
+            "pair_id": 0,
+            "is_contradiction": 0,
+            "resolution": "coexist",
+            "reason": "consistent",
+            "merged_content": None,
+        },
+        {
+            "pair_id": 0,
+            "is_contradiction": False,
+            "resolution": "coexist",
+            "reason": None,
+            "merged_content": None,
+        },
+        {
+            "pair_id": 0,
+            "is_contradiction": False,
+            "resolution": "coexist",
+            "reason": "consistent",
+            "merged_content": 123,
+        },
+    ],
+    ids=[
+        "string-false",
+        "missing-reason",
+        "invalid-resolution",
+        "bool-pair-id",
+        "integer-boolean",
+        "invalid-reason",
+        "invalid-merged-content",
+    ],
+)
+async def test_batch_response_rejects_missing_or_invalid_fields(
+    detector: ContradictionDetector,
+    invalid_result: dict[str, object],
+) -> None:
+    with patch(
+        "core.memory._llm_utils.one_shot_completion",
+        new_callable=AsyncMock,
+        return_value=json.dumps([invalid_result]),
+    ):
+        results = await detector._check_contradiction_llm_batch(
+            [("a", "b", "a.md", "b.md")],
+            "test-model",
+        )
+
+    assert results is None
 
 
 @pytest.mark.asyncio

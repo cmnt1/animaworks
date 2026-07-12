@@ -457,15 +457,38 @@ class ContradictionDetector:
             if not isinstance(payload, list) or len(payload) != len(pairs):
                 raise ValueError("result count does not match input pair count")
             results: list[ContradictionResult] = []
+            required_keys = {
+                "pair_id",
+                "is_contradiction",
+                "resolution",
+                "reason",
+                "merged_content",
+            }
+            valid_resolutions = {"supersede", "merge", "coexist"}
             for index, item in enumerate(payload):
-                if not isinstance(item, dict) or item.get("pair_id") != index:
+                if not isinstance(item, dict) or not required_keys.issubset(item):
+                    raise ValueError("result object is missing required fields")
+                pair_id = item["pair_id"]
+                if type(pair_id) is not int or pair_id != index:
                     raise ValueError("result pair_id/order mismatch")
+                is_contradiction = item["is_contradiction"]
+                if type(is_contradiction) is not bool:
+                    raise ValueError("result is_contradiction must be a boolean")
+                resolution = item["resolution"]
+                if not isinstance(resolution, str) or resolution not in valid_resolutions:
+                    raise ValueError("result resolution is invalid")
+                reason = item["reason"]
+                if not isinstance(reason, str):
+                    raise ValueError("result reason must be a string")
+                merged_content = item["merged_content"]
+                if merged_content is not None and not isinstance(merged_content, str):
+                    raise ValueError("result merged_content must be a string or null")
                 results.append(
                     ContradictionResult(
-                        is_contradiction=bool(item.get("is_contradiction", False)),
-                        resolution=item.get("resolution", "coexist"),
-                        reason=item.get("reason", ""),
-                        merged_content=item.get("merged_content"),
+                        is_contradiction=is_contradiction,
+                        resolution=resolution,
+                        reason=reason,
+                        merged_content=merged_content,
                     )
                 )
             return results

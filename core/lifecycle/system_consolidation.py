@@ -21,17 +21,20 @@ logger = logging.getLogger("animaworks.lifecycle")
 
 
 def is_consolidation_enabled(anima_dir: Path) -> bool:
-    """Return the per-Anima consolidation switch from status.json.
+    """Resolve the per-Anima consolidation switch using normal config layers.
 
-    Missing, invalid, and non-boolean values retain the backward-compatible
-    default of enabled.
+    ``status.json`` remains the strongest override, followed by
+    ``anima_defaults.consolidation_enabled``. Errors retain the
+    backward-compatible default of enabled.
     """
     try:
-        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        from core.config import resolve_anima_config
+
+        resolved, _credential = resolve_anima_config(load_config(), anima_dir.name, anima_dir=anima_dir)
+        return resolved.consolidation_enabled
+    except Exception:
+        logger.debug("Failed to resolve consolidation_enabled for %s", anima_dir.name, exc_info=True)
         return True
-    value = status.get("consolidation_enabled", True)
-    return value if isinstance(value, bool) else True
 
 
 def has_recent_activity(anima_dir: Path, *, days: int = 7, now: datetime | None = None) -> bool:

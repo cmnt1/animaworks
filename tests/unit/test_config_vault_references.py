@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import stat
 from pathlib import Path
@@ -72,6 +73,64 @@ def test_save_config_preserves_reference_on_disk(tmp_path: Path) -> None:
     save_config(config, config_path)
     raw = json.loads(config_path.read_text(encoding="utf-8"))
     assert raw["credentials"]["azure"]["api_key"] == {"$vault": "AZURE_API_KEY"}
+    assert VaultManager(tmp_path).get("shared", "AZURE_API_KEY") == "dummy-azure-value"
+
+
+def test_save_config_updates_referenced_vault_key(tmp_path: Path) -> None:
+    VaultManager(tmp_path).save_vault({"shared": {"AZURE_API_KEY": "initial-placeholder"}})
+    config_path = _write_config(tmp_path, {"azure": {"api_key": {"$vault": "AZURE_API_KEY"}}})
+    invalidate_cache()
+    config = load_config(config_path)
+
+    config.credentials["azure"].api_key = "replacement-placeholder"
+    save_config(config, config_path)
+
+    raw = json.loads(config_path.read_text(encoding="utf-8"))
+    assert raw["credentials"]["azure"]["api_key"] == {"$vault": "AZURE_API_KEY"}
+    assert VaultManager(tmp_path).get("shared", "AZURE_API_KEY") == "replacement-placeholder"
+    invalidate_cache()
+    assert load_config(config_path).credentials["azure"].api_key == "replacement-placeholder"
+
+
+def test_save_config_clears_referenced_vault_key(tmp_path: Path) -> None:
+    VaultManager(tmp_path).save_vault({"shared": {"AZURE_API_KEY": "initial-placeholder"}})
+    config_path = _write_config(tmp_path, {"azure": {"api_key": {"$vault": "AZURE_API_KEY"}}})
+    invalidate_cache()
+    config = load_config(config_path)
+
+    config.credentials["azure"].api_key = ""
+    save_config(config, config_path)
+
+    raw = json.loads(config_path.read_text(encoding="utf-8"))
+    assert raw["credentials"]["azure"]["api_key"] == {"$vault": "AZURE_API_KEY"}
+    assert VaultManager(tmp_path).get("shared", "AZURE_API_KEY") == ""
+    invalidate_cache()
+    assert load_config(config_path).credentials["azure"].api_key == ""
+
+
+def test_config_cli_updates_referenced_vault_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from core.config.cli import cmd_config_set
+
+    VaultManager(tmp_path).save_vault({"shared": {"AZURE_API_KEY": "initial-placeholder"}})
+    config_path = _write_config(tmp_path, {"azure": {"api_key": {"$vault": "AZURE_API_KEY"}}})
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+    invalidate_cache()
+
+    cmd_config_set(
+        argparse.Namespace(
+            key="credentials.azure.api_key",
+            value="cli-replacement-placeholder",
+        )
+    )
+
+    assert "cli-replacement-placeholder" not in capsys.readouterr().out
+    raw = json.loads(config_path.read_text(encoding="utf-8"))
+    assert raw["credentials"]["azure"]["api_key"] == {"$vault": "AZURE_API_KEY"}
+    assert VaultManager(tmp_path).get("shared", "AZURE_API_KEY") == "cli-replacement-placeholder"
 
 
 def test_migration_dry_run_never_changes_files_or_prints_values(

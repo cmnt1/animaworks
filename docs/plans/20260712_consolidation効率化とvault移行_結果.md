@@ -19,17 +19,17 @@
 
 ### 3. 休眠animaのconsolidationスキップ
 
-- animaの `status.json` にある `consolidation_enabled` を解決し、`false` のanimaをスキップする。
+- 通常の設定解決層で `anima_defaults.consolidation_enabled` を読み、animaの `status.json` に値があれば優先して、`false` のanimaをスキップする。
 - `activity_log/*.jsonl` のエントリ時刻を確認し、デフォルトでは直近7日間に活動がないanimaの日次・週次consolidationをスキップする。
 - legacy mixin経路とsupervisor scheduler経路の両方に同じ判定を適用し、スキップ理由をINFOログへ出力する。
 
 ### 4. Upsert失敗ループの停止
 
 - ファイル単位の連続Upsert失敗回数を `state/rag_upsert_failures.json` に永続化する。
-- デフォルト3回の連続失敗で、対象を `quarantine/rag_upsert/<元相対パス>` へ移動する。
-- 成功時は失敗カウンターをリセットし、隔離履歴は同JSONで確認できる。隔離時のWARNは移動時の1回だけ出力する。
-- anima管理外のsharedファイルは移動せず、失敗状態のみ記録する。
-- 実ランタイムログと対象ファイルを読み取り調査した結果、`recovered_*.md` 固有の内容・chunk ID異常は確認できず、vector serviceのHTTP 500/503後に通常episodeも失敗していた。安全に限定できる小規模な根本修正は行わず、永続カウンターと隔離で再試行ループを停止する方針とした。
+- デフォルト3回の連続失敗で、原本は移動・削除せず、永続スキップリストへ登録して以後のindex対象から外す。
+- Upsert成功直後に失敗カウンターをリセットし、スキップ履歴は同JSONで確認できる。登録時のWARNは1回だけ出力する。
+- HTTP write circuitが開いた失敗や、同一実行中に同じcollectionの複数ファイルが失敗した場合はサービス全体の一時障害とみなし、ファイル別カウンターへ加算しない。
+- 実ランタイムログと対象ファイルを読み取り調査した結果、`recovered_*.md` 固有の内容・chunk ID異常は確認できず、vector serviceのHTTP 500/503後に通常episodeも失敗していた。永続カウンター、非破壊スキップリスト、一時障害の除外で再試行ループと一括誤隔離を防ぐ方針とした。
 
 ### 5. credentials vault移行
 
@@ -89,4 +89,3 @@
 - 変更PythonファイルのRuff lint
 - `system_consolidation`、`knowledge_correction`、`indexer` のimport smoke test
 - migrationのdry-run非変更、表示差分、apply時のバックアップ・vault参照・暗号化・mode 600を一時ディレクトリで検証
-
