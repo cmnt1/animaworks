@@ -164,6 +164,8 @@ async def test_three_single_pending_llm_tasks_overlap_across_worker_slots(
         processing_dir = pending_dir / "processing"
         assert not list(pending_dir.glob("*.json"))
         assert not list(processing_dir.glob("*.json"))
+        assert not list(processing_dir.glob("*.lease"))
+        assert not executor._active_task_ids
         assert not anima._active_background_workers
         assert anima._background_worker_queue.qsize() == 3
         for slot in anima._background_worker_slots:
