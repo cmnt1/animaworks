@@ -33,7 +33,11 @@ def _codex_supports_permission_profiles(codex: str) -> bool:
 
 
 @pytest.mark.e2e
-def test_generated_profile_denies_direct_and_symlink_reads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generated_profile_denies_direct_and_symlink_reads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+) -> None:
     """A generated Mode C profile is enforced by the real Codex Linux sandbox."""
     if sys.platform != "linux":
         pytest.skip("Codex permission-profile smoke test currently targets the Linux deployment")
@@ -41,10 +45,13 @@ def test_generated_profile_denies_direct_and_symlink_reads(tmp_path: Path, monke
     if codex is None or not _codex_supports_permission_profiles(codex):
         pytest.skip("Codex 0.138.0 or newer is required for permission profiles")
 
-    anima_dir = tmp_path / "animas" / "kotoha"
+    runtime_root = Path.cwd() / f".e2e-read-deny-{tmp_path.name}"
+    request.addfinalizer(lambda: shutil.rmtree(runtime_root, ignore_errors=True))
+    anima_dir = runtime_root / "animas" / "kotoha"
     allowed_dir = tmp_path / "allowed"
     denied_dir = tmp_path / "denied"
     anima_dir.mkdir(parents=True)
+    (anima_dir / "state").mkdir()
     allowed_dir.mkdir()
     denied_dir.mkdir()
     (allowed_dir / "visible.txt").write_text("ALLOWED_DATA\n", encoding="utf-8")
@@ -60,6 +67,8 @@ def test_generated_profile_denies_direct_and_symlink_reads(tmp_path: Path, monke
         ),
         encoding="utf-8",
     )
+    current_state = anima_dir / "state" / "current_state.md"
+    current_state.write_text("status: idle\n", encoding="utf-8")
 
     model_config = ModelConfig(
         model="codex/o4-mini",
@@ -89,6 +98,7 @@ test ! -s "$1/symlink-leak.txt"
 ! rm "$4" 2>/dev/null
 ! cat "$5" > "$1/codex-home-leak.txt" 2>/dev/null
 test ! -s "$1/codex-home-leak.txt"
+! ln -sfn "$2/secret.txt" "$6" 2>/dev/null
 """
     env = os.environ.copy()
     env["CODEX_HOME"] = str(anima_dir / ".codex_home")
@@ -108,6 +118,7 @@ test ! -s "$1/codex-home-leak.txt"
             sys.executable,
             str(anima_dir / "permissions.json"),
             str(codex_secret),
+            str(current_state),
         ],
         cwd=anima_dir,
         env=env,
@@ -121,6 +132,8 @@ test ! -s "$1/codex-home-leak.txt"
     assert (allowed_dir / "writable.txt").read_text(encoding="utf-8") == "WRITE_OK\n"
     persisted_permissions = json.loads((anima_dir / "permissions.json").read_text(encoding="utf-8"))
     assert persisted_permissions["file_roots_denied"] == [str(denied_dir), str(anima_dir / ".codex_home")]
+    assert not current_state.is_symlink()
+    assert current_state.read_text(encoding="utf-8") == "status: idle\n"
 
     # The exact generated MCP command must itself be runnable under the same
     # profile.  stdio EOF makes the server exit after startup, without an API

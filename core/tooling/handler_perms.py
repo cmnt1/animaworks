@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.config.models import PermissionsConfig, load_permissions
+from core.file_access_policy import find_denied_root, resolve_denied_roots
 from core.i18n import t
 from core.tooling.handler_base import (
     _error_result,
@@ -149,7 +150,7 @@ class PermissionsMixin:
         if self._superuser:
             return ()
         effective_config = config or self._load_permissions_config()
-        return tuple(Path(root).resolve() for root in effective_config.file_roots_denied)
+        return resolve_denied_roots(effective_config.file_roots_denied)
 
     def _find_denied_file_root(
         self,
@@ -160,8 +161,7 @@ class PermissionsMixin:
         if self._superuser:
             return None
         roots = denied_roots if denied_roots is not None else self._resolved_file_deny_roots()
-        resolved = Path(path).resolve()
-        return next((root for root in roots if resolved.is_relative_to(root)), None)
+        return find_denied_root(path, roots)
 
     def _check_file_permission(
         self,

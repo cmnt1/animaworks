@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from core.file_access_policy import load_denied_roots, memory_source_is_allowed, resolve_memory_source_path
 from core.i18n import t
 from core.memory.scope_policy import (
     LEGACY_ONLY_SCOPES,
@@ -264,32 +265,11 @@ class MemoryToolsMixin:
 
     def _memory_source_path(self, source: str) -> Path | None:
         """Resolve a RAG ``source_file`` value to the file it represents."""
-        source = source.strip()
-        if not source or source == "unknown":
-            return None
-        path = Path(source)
-        if path.is_absolute():
-            return path.resolve()
-
-        from core.paths import get_common_knowledge_dir, get_common_skills_dir, get_data_dir, get_reference_dir
-
-        shared_prefixes = {
-            "common_knowledge": get_common_knowledge_dir(),
-            "common_skills": get_common_skills_dir(),
-            "reference": get_reference_dir(),
-        }
-        if path.parts:
-            shared_root = shared_prefixes.get(path.parts[0])
-            if shared_root is not None:
-                return shared_root.joinpath(*path.parts[1:]).resolve()
-            if path.parts[0] == "shared":
-                return (get_data_dir() / path).resolve()
-        return (self._anima_dir / path).resolve()
+        return resolve_memory_source_path(self._anima_dir, source)
 
     def _memory_source_is_denied(self, source: str, denied_roots: tuple[Path, ...]) -> bool:
         """Return whether a persisted search hit originated below an explicit deny root."""
-        source_path = self._memory_source_path(source)
-        return source_path is not None and self._find_denied_file_root(source_path, denied_roots) is not None
+        return not memory_source_is_allowed(self._anima_dir, source, denied_roots)
 
     @staticmethod
     def _graph_memory_source(memory: Any) -> str:
@@ -532,8 +512,14 @@ class MemoryToolsMixin:
             time_range = {}
         time_start = time_range.get("after") if time_range else None
         time_end = time_range.get("before") if time_range else None
-        config = self._load_permissions_config()
-        denied_roots = self._resolved_file_deny_roots(config)
+        if getattr(self, "_superuser", False):
+            denied_roots = ()
+        elif hasattr(self, "_load_permissions_config") and hasattr(self, "_resolved_file_deny_roots"):
+            config = self._load_permissions_config()
+            denied_roots = self._resolved_file_deny_roots(config)
+        else:
+            # Keep MemoryToolsMixin usable in isolation for compatibility.
+            denied_roots = load_denied_roots(Path(self._anima_dir))
         if time_start is not None and not isinstance(time_start, str):
             time_start = str(time_start)
         if time_end is not None and not isinstance(time_end, str):

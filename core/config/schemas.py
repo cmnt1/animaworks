@@ -935,16 +935,27 @@ def load_permissions(anima_dir: Path) -> PermissionsConfig:
       1. permissions.json exists -> load and validate
       2. permissions.md only -> auto-migrate, return config
       3. Neither exists -> return default (open)
-      4. Invalid JSON -> warning + return default (open)
+      4. Existing but unreadable/invalid permissions.json -> raise (fail closed)
 
-    A non-empty ``file_roots_denied`` is a security boundary.  Validation
-    errors for a config that attempts to set it are therefore propagated
-    instead of falling back to open defaults.
+    Once ``permissions.json`` exists, the whole document is a security
+    boundary.  Read, JSON parsing, and schema validation failures therefore
+    propagate instead of silently replacing the configured policy with open
+    defaults.  Only a genuinely absent file retains the legacy open default.
     """
     json_path = anima_dir / "permissions.json"
     md_path = anima_dir / "permissions.md"
 
-    if json_path.is_file():
+    try:
+        json_path.lstat()
+    except FileNotFoundError:
+        json_exists = False
+    except OSError:
+        logger.error("Failed to stat permissions.json at %s — refusing fail-open fallback", json_path, exc_info=True)
+        raise
+    else:
+        json_exists = True
+
+    if json_exists:
         try:
             data = json.loads(json_path.read_text(encoding="utf-8"))
             config = PermissionsConfig.model_validate(data)
@@ -952,19 +963,13 @@ def load_permissions(anima_dir: Path) -> PermissionsConfig:
             if version is not None and version != 1:
                 logger.warning("permissions.json version %s is unknown; using known fields only", version)
             return config
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("Failed to parse permissions.json at %s: %s — using open defaults", json_path, exc)
-            return PermissionsConfig()
         except Exception as exc:
-            if isinstance(data, dict) and data.get("file_roots_denied"):
-                logger.error(
-                    "Invalid file_roots_denied at %s — refusing fail-open fallback: %s",
-                    json_path,
-                    exc,
-                )
-                raise
-            logger.warning("Invalid permissions.json at %s: %s — using open defaults", json_path, exc)
-            return PermissionsConfig()
+            logger.error(
+                "Failed to load permissions.json at %s — refusing fail-open fallback: %s",
+                json_path,
+                exc,
+            )
+            raise
 
     if md_path.is_file():
         from core.config.migrate import migrate_permissions_md_to_json

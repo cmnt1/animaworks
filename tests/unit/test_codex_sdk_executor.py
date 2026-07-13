@@ -600,8 +600,9 @@ class TestConfigWriting:
         assert parsed["sandbox_workspace_write"]["network_access"] is True
 
     def test_write_codex_config_permission_profile_for_denied_roots(self, model_config, anima_dir, tmp_path):
-        writable_root = tmp_path / "shared"
-        task_cwd = tmp_path / "tasks" / "current"
+        external_root = tmp_path.parent / f"{tmp_path.name}-external"
+        writable_root = external_root / "shared"
+        task_cwd = external_root / "tasks" / "current"
         denied_root = writable_root / 'private"with\\slash\nand-control\x01'
         permissions = SimpleNamespace(
             file_roots=[str(writable_root)],
@@ -628,23 +629,34 @@ class TestConfigWriting:
         assert filesystem[":root"] == "read"
         assert filesystem[":tmpdir"] == "write"
         assert filesystem[":slash_tmp"] == "write"
-        assert filesystem[str(anima_dir.resolve())] == "write"
+        assert str(anima_dir.resolve()) not in filesystem
         assert filesystem[str(writable_root.resolve())] == "write"
         assert filesystem[str(task_cwd.resolve())] == "write"
         assert filesystem[str(denied_root.resolve())] == "deny"
-        assert filesystem[str((anima_dir / "permissions.json").resolve())] == "read"
+        assert filesystem[str((anima_dir / ".codex_home").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "vectordb").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "state" / "bm25_longterm_index.json").resolve())] == "deny"
         assert profile["network"]["enabled"] is True
+        mcp_profile = parsed["permissions"]["animaworks_mcp"]
+        mcp_filesystem = mcp_profile["filesystem"]
+        assert mcp_filesystem[str(anima_dir.resolve())] == "write"
+        assert mcp_filesystem[str(writable_root.resolve())] == "write"
+        assert mcp_filesystem[str(task_cwd.resolve())] == "write"
+        assert mcp_filesystem[str(denied_root.resolve())] == "deny"
+        assert mcp_filesystem[str((anima_dir / "permissions.json").resolve())] == "read"
+        assert mcp_profile["network"]["enabled"] is True
         assert parsed["mcp_servers"]["aw"]["command"] == "/opt/codex/bin/codex"
         assert parsed["mcp_servers"]["aw"]["args"] == [
             "sandbox",
             "-P",
-            "animaworks",
+            "animaworks_mcp",
             "--",
             sys.executable,
             "-m",
             "core.mcp.server",
         ]
         assert parsed["mcp_servers"]["aw"]["env"]["CODEX_HOME"] == str(anima_dir / ".codex_home")
+        assert parsed["mcp_servers"]["aw"]["env"]["ANIMAWORKS_FILE_DENY_ACTIVE"] == "1"
 
     def test_write_codex_config_root_write_profile_keeps_specific_deny(self, model_config, anima_dir, tmp_path):
         denied_root = tmp_path / "private"
@@ -661,12 +673,17 @@ class TestConfigWriting:
             exc._write_codex_config("prompt")
 
         parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
-        filesystem = parsed["permissions"]["animaworks"]["filesystem"]
-        assert filesystem[":root"] == "write"
-        assert filesystem[str(denied_root.resolve())] == "deny"
-        assert filesystem[str((anima_dir / "permissions.json").resolve())] == "read"
-        assert ":tmpdir" not in filesystem
-        assert ":slash_tmp" not in filesystem
+        shell_filesystem = parsed["permissions"]["animaworks"]["filesystem"]
+        assert shell_filesystem[":root"] == "read"
+        assert shell_filesystem[str(denied_root.resolve())] == "deny"
+        assert shell_filesystem[":tmpdir"] == "write"
+        assert shell_filesystem[":slash_tmp"] == "write"
+        mcp_filesystem = parsed["permissions"]["animaworks_mcp"]["filesystem"]
+        assert mcp_filesystem[":root"] == "write"
+        assert mcp_filesystem[str(denied_root.resolve())] == "deny"
+        assert mcp_filesystem[str((anima_dir / "permissions.json").resolve())] == "read"
+        assert ":tmpdir" not in mcp_filesystem
+        assert ":slash_tmp" not in mcp_filesystem
 
     def test_write_codex_config_deny_overrides_same_writable_root(self, model_config, anima_dir, tmp_path):
         denied_root = tmp_path / "shared-private"

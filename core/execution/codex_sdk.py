@@ -993,39 +993,80 @@ class CodexSDKExecutor(BaseExecutor):
             # writable roots (including temp for workspace-write parity), and
             # carve denied subtrees out with more-specific ``deny`` rules.
             root_is_writable = "/" in permissions_config.file_roots
-            filesystem_rules: dict[str, str] = {
+            data_dir = self._anima_dir.resolve().parent.parent
+            explicit_write_roots = [Path(root).resolve() for root in permissions_config.file_roots]
+            if self._task_cwd:
+                explicit_write_roots.append(self._task_cwd.resolve())
+
+            # The model-facing shell must not be able to replace trusted
+            # runtime inputs with symlinks that a later host-side prompt
+            # assembly would follow.  Runtime-data writes go through the
+            # constrained MCP APIs instead.
+            shell_filesystem_rules: dict[str, str] = {
+                ":root": "read",
+                ":tmpdir": "write",
+                ":slash_tmp": "write",
+            }
+            for root in explicit_write_roots:
+                if root == Path("/") or root.is_relative_to(data_dir) or data_dir.is_relative_to(root):
+                    continue
+                shell_filesystem_rules[str(root)] = "write"
+
+            # The MCP server needs the legacy writable roots for constrained
+            # memory and messaging tools.  It uses a separate profile and
+            # does not expose arbitrary machine execution while deny is on.
+            mcp_filesystem_rules: dict[str, str] = {
                 ":root": "write" if root_is_writable else "read",
             }
             if not root_is_writable:
-                filesystem_rules[":tmpdir"] = "write"
-                filesystem_rules[":slash_tmp"] = "write"
-
-                writable_roots = [str(self._anima_dir.resolve())]
-                writable_roots.extend(str(Path(root).resolve()) for root in permissions_config.file_roots)
-                if self._task_cwd:
-                    writable_roots.append(str(self._task_cwd.resolve()))
-                for root in writable_roots:
-                    filesystem_rules[root] = "write"
+                mcp_filesystem_rules[":tmpdir"] = "write"
+                mcp_filesystem_rules[":slash_tmp"] = "write"
+                mcp_filesystem_rules[str(self._anima_dir.resolve())] = "write"
+                for root in explicit_write_roots:
+                    mcp_filesystem_rules[str(root)] = "write"
 
             for root in denied_roots:
-                filesystem_rules[str(Path(root).resolve())] = "deny"
+                resolved_root = str(Path(root).resolve())
+                shell_filesystem_rules[resolved_root] = "deny"
+                mcp_filesystem_rules[resolved_root] = "deny"
+
+            # Authentication and memory-index copies must never be directly
+            # readable from the model shell.  Trusted MCP search consumers
+            # filter cached hits by source path before returning them.
+            for internal_path in (
+                self._codex_home.resolve(),
+                (self._anima_dir / "vectordb").resolve(),
+                (self._anima_dir / "state" / "bm25_longterm_index.json").resolve(),
+            ):
+                shell_filesystem_rules[str(internal_path)] = "deny"
 
             # The sandboxed Anima must not be able to remove or weaken the
             # policy that will be used to build its next session's profile.
             # A file-specific read rule is more specific than the writable
             # Anima root (and remains read-only even when ``:root`` is write).
             permissions_path = str((self._anima_dir / "permissions.json").resolve())
-            filesystem_rules[permissions_path] = "read"
+            mcp_filesystem_rules[permissions_path] = "read"
 
-            filesystem_lines = "\n".join(f'"{esc(path)}" = "{access}"' for path, access in filesystem_rules.items())
+            shell_filesystem_lines = "\n".join(
+                f'"{esc(path)}" = "{access}"' for path, access in shell_filesystem_rules.items()
+            )
+            mcp_filesystem_lines = "\n".join(
+                f'"{esc(path)}" = "{access}"' for path, access in mcp_filesystem_rules.items()
+            )
             sandbox_lines = (
                 'default_permissions = "animaworks"\n'
                 'approval_policy = "never"\n'
                 "\n"
                 "[permissions.animaworks.filesystem]\n"
-                f"{filesystem_lines}\n"
+                f"{shell_filesystem_lines}\n"
                 "\n"
                 "[permissions.animaworks.network]\n"
+                "enabled = true\n"
+                "\n"
+                "[permissions.animaworks_mcp.filesystem]\n"
+                f"{mcp_filesystem_lines}\n"
+                "\n"
+                "[permissions.animaworks_mcp.network]\n"
                 "enabled = true\n"
             )
         elif "/" in permissions_config.file_roots:
@@ -1056,6 +1097,7 @@ class CodexSDKExecutor(BaseExecutor):
             # this per-Anima CODEX_HOME.  Set it explicitly rather than
             # relying on the MCP launcher inheriting the parent environment.
             mcp_env["CODEX_HOME"] = str(self._codex_home)
+            mcp_env["ANIMAWORKS_FILE_DENY_ACTIVE"] = "1"
         mcp_env_lines = "\n".join(f'{k} = "{esc(v)}"' for k, v in mcp_env.items())
         if denied_roots:
             mcp_command = get_codex_executable()
@@ -1066,7 +1108,7 @@ class CodexSDKExecutor(BaseExecutor):
             mcp_args = [
                 "sandbox",
                 "-P",
-                "animaworks",
+                "animaworks_mcp",
                 "--",
                 sys.executable,
                 "-m",

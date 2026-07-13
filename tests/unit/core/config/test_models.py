@@ -211,6 +211,45 @@ class TestFormatPermissionsForPrompt:
         with pytest.raises(ValueError, match="absolute paths"):
             load_permissions(anima_dir)
 
+    def test_invalid_json_permissions_fails_closed(self, tmp_path: Path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        (anima_dir / "permissions.json").write_text('{"file_roots": [', encoding="utf-8")
+
+        with pytest.raises(json.JSONDecodeError):
+            load_permissions(anima_dir)
+
+    def test_invalid_schema_without_explicit_deny_fails_closed(self, tmp_path: Path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        (anima_dir / "permissions.json").write_text(
+            json.dumps({"commands": "not-an-object"}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError):
+            load_permissions(anima_dir)
+
+    def test_unreadable_existing_permissions_fails_closed(self, tmp_path: Path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        permissions_path = anima_dir / "permissions.json"
+        permissions_path.write_text("{}", encoding="utf-8")
+
+        with (
+            patch.object(Path, "read_text", side_effect=OSError("permission denied")),
+            pytest.raises(OSError, match="permission denied"),
+        ):
+            load_permissions(anima_dir)
+
+    def test_missing_permissions_keeps_open_default(self, tmp_path: Path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+
+        config = load_permissions(anima_dir)
+
+        assert config == PermissionsConfig()
+
     def test_prompt_displays_denied_roots(self, tmp_path: Path):
         denied = tmp_path / "private"
         prompt = _format_permissions_for_prompt(
