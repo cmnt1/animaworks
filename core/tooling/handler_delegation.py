@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.i18n import t
+from core.memory._io import atomic_write_text
 from core.tooling.handler_base import _error_result, build_outgoing_origin_chain
 from core.tooling.org_helpers import OrgHelpersMixin
 
@@ -161,9 +162,9 @@ class DelegationMixin(OrgHelpersMixin):
         }
         pending_dir = target_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
-        (pending_dir / f"{sub_entry.task_id}.json").write_text(
+        atomic_write_text(
+            pending_dir / f"{sub_entry.task_id}.json",
             _json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
 
         try:

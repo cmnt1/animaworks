@@ -920,10 +920,16 @@ class AnimaRunner:
         is_busy = False
         if self.anima is not None:
             try:
-                any_conversation_locked = any(lock.locked() for lock in self.anima._conversation_locks.values())
-                is_busy = (
-                    any_conversation_locked or self.anima._background_lock.locked() or self.anima._inbox_lock.locked()
-                )
+                busy_getter = getattr(self.anima, "_has_active_busy_lock", None)
+                if callable(busy_getter):
+                    is_busy = bool(busy_getter())
+                else:
+                    any_conversation_locked = any(lock.locked() for lock in self.anima._conversation_locks.values())
+                    is_busy = (
+                        any_conversation_locked
+                        or self.anima._background_lock.locked()
+                        or self.anima._inbox_lock.locked()
+                    )
             except Exception:
                 logger.debug("Failed to compute ping busy status", exc_info=True)
         last_progress_at = None

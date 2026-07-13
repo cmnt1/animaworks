@@ -131,6 +131,7 @@ class ExecutorFactoryMixin:
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
                     interrupt_event=self._interrupt_event,
+                    codex_home=self._codex_home,
                 )
             except ImportError:
                 logger.warning(

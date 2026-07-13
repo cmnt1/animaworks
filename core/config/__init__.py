@@ -27,6 +27,7 @@ from core.config.models import (
     read_anima_supervisor,
     register_anima_in_config,
     resolve_anima_config,
+    resolve_background_worker_pool_size,
     resolve_context_window,
     resolve_execution_mode,
     save_config,

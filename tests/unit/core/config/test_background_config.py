@@ -14,6 +14,7 @@ from core.config.models import (
     GPUConfig,
     PrimingConfig,
     ServerConfig,
+    resolve_background_worker_pool_size,
 )
 
 # ── ServerConfig ─────────────────────────────────────────────
@@ -88,7 +89,40 @@ class TestBackgroundTaskConfig:
         btc = BackgroundTaskConfig()
         assert btc.enabled is True
         assert btc.result_retention_hours == 24
+        assert btc.worker_pool_size == 1
         assert isinstance(btc.eligible_tools, dict)
+
+    @pytest.mark.parametrize("value", [0, 11, -1])
+    def test_background_task_config_rejects_invalid_worker_pool_size(self, value):
+        with pytest.raises(ValueError):
+            BackgroundTaskConfig(worker_pool_size=value)
+
+    def test_background_task_config_accepts_worker_pool_size_bounds(self):
+        assert BackgroundTaskConfig(worker_pool_size=1).worker_pool_size == 1
+        assert BackgroundTaskConfig(worker_pool_size=10).worker_pool_size == 10
+
+    def test_background_worker_pool_status_override(self, tmp_path):
+        (tmp_path / "status.json").write_text(
+            '{"background_worker_pool_size": 4}',
+            encoding="utf-8",
+        )
+
+        assert resolve_background_worker_pool_size(tmp_path, default=2) == 4
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            '{"background_worker_pool_size": 0}',
+            '{"background_worker_pool_size": 11}',
+            '{"background_worker_pool_size": true}',
+            '{"background_worker_pool_size": "3"}',
+            "not-json",
+        ],
+    )
+    def test_invalid_background_worker_pool_override_uses_default(self, tmp_path, status):
+        (tmp_path / "status.json").write_text(status, encoding="utf-8")
+
+        assert resolve_background_worker_pool_size(tmp_path, default=2) == 2
 
     def test_background_task_config_eligible_tools(self):
         """Eligible tools include image_gen schema names, local_llm, run_command."""
@@ -96,8 +130,13 @@ class TestBackgroundTaskConfig:
 
         # Image gen schema names (all threshold 30)
         for name in (
-            "generate_character_assets", "generate_fullbody", "generate_bustup",
-            "generate_icon", "generate_chibi", "generate_3d_model", "generate_rigged_model",
+            "generate_character_assets",
+            "generate_fullbody",
+            "generate_bustup",
+            "generate_icon",
+            "generate_chibi",
+            "generate_3d_model",
+            "generate_rigged_model",
             "generate_animations",
         ):
             assert name in btc.eligible_tools, f"{name} missing"

@@ -12,6 +12,7 @@ for batched tasks submitted via ``submit_tasks`` tool.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import json
 import logging
@@ -25,7 +26,7 @@ from core.taskboard.attention_resolver import resolver_for_anima_dir
 from core.taskboard.models import AttentionDecision
 
 if TYPE_CHECKING:
-    from core.anima import DigitalAnima
+    from core.anima import BackgroundWorkerSlot, DigitalAnima
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,57 @@ class PendingTaskExecutor:
         self._shutdown_event = shutdown_event
         self._wake_event = asyncio.Event()
         self._batch_tasks: dict[str, list[dict[str, Any]]] = {}
+        self._active_dispatch_tasks: set[asyncio.Task[None]] = set()
+        self._workspace_locks: dict[Path, asyncio.Lock] = {}
+
+    def _worker_pool_size(self) -> int:
+        """Return a validated pool size while tolerating legacy test doubles."""
+        value = getattr(self._anima, "_background_worker_pool_size", 1)
+        return value if isinstance(value, int) and 1 <= value <= 10 else 1
+
+    def _workspace_key(self, task_desc: dict[str, Any]) -> Path:
+        """Resolve the workspace used for write-task mutual exclusion."""
+        workspace = task_desc.get("working_directory", "") or _resolve_default_workspace(self._anima_dir)
+        return Path(workspace or self._anima_dir).expanduser().resolve()
+
+    def _workspace_lock(self, task_desc: dict[str, Any]) -> asyncio.Lock | None:
+        """Return the exclusion lock for the task's explicit workspace.
+
+        Tasks without an explicit ``working_directory`` pick their own working
+        area at runtime (e.g. per-task worktrees), so they are not serialized
+        against each other.
+        """
+        if not task_desc.get("working_directory"):
+            return None
+        key = self._workspace_key(task_desc)
+        lock = self._workspace_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._workspace_locks[key] = lock
+        return lock
+
+    async def _acquire_worker(self, task_id: str) -> BackgroundWorkerSlot | None:
+        acquire = getattr(type(self._anima), "_acquire_background_worker", None)
+        if callable(acquire):
+            return await self._anima._acquire_background_worker(task_id)
+        return None
+
+    async def _release_worker(self, slot: BackgroundWorkerSlot | None) -> None:
+        if slot is None:
+            return
+        release = getattr(type(self._anima), "_release_background_worker", None)
+        if callable(release):
+            await self._anima._release_background_worker(slot)
+
+    def _track_dispatch_task(self, task: asyncio.Task[None]) -> None:
+        """Keep a strong reference to a detached single-task dispatch."""
+        self._active_dispatch_tasks.add(task)
+
+        def _done(done: asyncio.Task[None]) -> None:
+            self._active_dispatch_tasks.discard(done)
+            self.wake()
+
+        task.add_done_callback(_done)
 
     # ── Semaphore lazy init ──────────────────────────────────
 
@@ -564,6 +616,32 @@ class PendingTaskExecutor:
                         task_id,
                     )
 
+    async def _execute_claimed_llm_task(
+        self,
+        task_desc: dict[str, Any],
+        processing_path: Path,
+        failed_dir: Path,
+        worker_slot: BackgroundWorkerSlot,
+    ) -> None:
+        """Run a claimed single LLM task without blocking the coordinator."""
+        try:
+            await self.execute_pending_task(task_desc, worker_slot=worker_slot)
+            processing_path.unlink(missing_ok=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Error processing LLM pending task file: %s", processing_path.name)
+            try:
+                processing_path.rename(failed_dir / processing_path.name)
+            except OSError:
+                logger.exception("Failed to move task to failed: %s", processing_path.name)
+        finally:
+            # A pre-leased slot is normally released by _execute_llm_task.  If
+            # dispatch was cancelled before it entered that method, release it here.
+            active = getattr(self._anima, "_active_background_workers", {})
+            if isinstance(active, dict) and active.get(worker_slot.slot_id) == task_desc.get("task_id"):
+                await self._release_worker(worker_slot)
+
     async def watcher_loop(self) -> None:
         """Watch state/background_tasks/pending/ for submitted tasks.
 
@@ -699,8 +777,27 @@ class PendingTaskExecutor:
                                 task_id,
                                 self._anima_name,
                             )
-                            await self.execute_pending_task(task_desc)
-                        processing_path.unlink(missing_ok=True)
+                            if self._worker_pool_size() > 1:
+                                worker_slot = await self._acquire_worker(task_id)
+                                if worker_slot is None:
+                                    await self.execute_pending_task(task_desc)
+                                    processing_path.unlink(missing_ok=True)
+                                else:
+                                    dispatch = asyncio.create_task(
+                                        self._execute_claimed_llm_task(
+                                            task_desc,
+                                            processing_path,
+                                            llm_failed_dir,
+                                            worker_slot,
+                                        ),
+                                        name=f"taskexec-{self._anima_name}-{task_id}",
+                                    )
+                                    self._track_dispatch_task(dispatch)
+                            else:
+                                await self.execute_pending_task(task_desc)
+                                processing_path.unlink(missing_ok=True)
+                        if batch_id:
+                            processing_path.unlink(missing_ok=True)
                     except Exception:
                         logger.exception(
                             "Error processing LLM pending task file: %s",
@@ -736,6 +833,11 @@ class PendingTaskExecutor:
                 )
                 await asyncio.sleep(_PENDING_WATCHER_POLL_INTERVAL)
 
+        if self._active_dispatch_tasks:
+            for task in self._active_dispatch_tasks:
+                task.cancel()
+            await asyncio.gather(*self._active_dispatch_tasks, return_exceptions=True)
+            self._active_dispatch_tasks.clear()
         logger.info("Pending task watcher stopped for %s", self._anima_name)
 
     # ── DAG batch dispatch ──────────────────────────────────────
@@ -999,7 +1101,7 @@ class PendingTaskExecutor:
                 "depends_on": task_desc.get("depends_on", []),
             }
             try:
-                result = await self._run_llm_task(task_desc, completed_results)
+                result = await self._run_task_in_worker(task_desc, completed_results)
                 self._save_task_result(task_id, result)
                 status, summary = _classify_task_result(result)
                 self._sync_task_queue(task_id, status, summary=summary)
@@ -1017,7 +1119,7 @@ class PendingTaskExecutor:
     ) -> str:
         """Execute a serial batch task under _background_lock."""
         task_id = task_desc.get("task_id", "unknown")
-        result = await self._run_llm_task(task_desc, completed_results)
+        result = await self._run_task_in_worker(task_desc, completed_results)
         self._save_task_result(task_id, result)
         status, summary = _classify_task_result(result)
         self._sync_task_queue(task_id, status, summary=summary)
@@ -1025,10 +1127,35 @@ class PendingTaskExecutor:
             await self._handle_goal_completion(task_desc, result)
         return result
 
+    async def _run_task_in_worker(
+        self,
+        task_desc: dict[str, Any],
+        completed_results: dict[str, str] | None = None,
+        *,
+        worker_slot: BackgroundWorkerSlot | None = None,
+    ) -> str:
+        """Run one LLM task with workspace exclusion and a worker lease."""
+        task_id = task_desc.get("task_id", "unknown")
+        workspace_lock = self._workspace_lock(task_desc)
+        async with workspace_lock if workspace_lock is not None else contextlib.nullcontext():
+            leased_here = worker_slot is None
+            slot = worker_slot or await self._acquire_worker(task_id)
+            try:
+                return await self._run_llm_task(
+                    task_desc,
+                    completed_results,
+                    worker_slot=slot,
+                )
+            finally:
+                if leased_here:
+                    await self._release_worker(slot)
+
     async def _run_llm_task(
         self,
         task_desc: dict[str, Any],
         completed_results: dict[str, str] | None = None,
+        *,
+        worker_slot: BackgroundWorkerSlot | None = None,
     ) -> str:
         """Core LLM task execution logic shared by parallel and serial paths.
 
@@ -1146,15 +1273,16 @@ class PendingTaskExecutor:
         )
 
         lane_getter = getattr(type(self._anima), "_agent_for_lane", None)
-        agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
-        if working_directory:
-            agent.set_task_cwd(Path(working_directory))
+        if worker_slot is not None:
+            agent = worker_slot.agent
+        else:
+            agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
 
         if "machine" in description.lower():
             prompt += "\n\n" + t("pending_executor.machine_directive")
 
         trigger = f"task:{task_id}"
-        journal = StreamingJournal(self._anima_dir, session_type="task")
+        journal = StreamingJournal(self._anima_dir, session_type="task", thread_id=task_id)
         journal.open(trigger=trigger)
 
         accumulated_text = ""
@@ -1163,7 +1291,9 @@ class PendingTaskExecutor:
         had_error = False
         error_message = ""
         try:
-            if callable(getattr(type(self._anima), "_agent_session_context", None)):
+            if worker_slot is not None:
+                session_context = worker_slot.session_lock
+            elif callable(getattr(type(self._anima), "_agent_session_context", None)):
                 session_context = self._anima._agent_session_context("background")
             else:
                 session_context = getattr(self._anima, "_agent_session_lock", None)
@@ -1174,45 +1304,57 @@ class PendingTaskExecutor:
 
                 session_context = nullcontext()
             async with session_context:
-                if self._anima and hasattr(self._anima, "_get_interrupt_event"):
-                    self._anima._get_interrupt_event("_background").clear()
-                    agent.set_interrupt_event(
-                        self._anima._get_interrupt_event("_background"),
-                    )
-                agent.reset_reply_tracking(session_type="task")
-                agent.reset_read_paths()
-                async for chunk in agent.run_cycle_streaming(
-                    prompt,
-                    trigger=trigger,
-                ):
-                    chunk_type = chunk.get("type")
-                    if chunk_type == "text_delta":
-                        accumulated_text += chunk.get("text", "")
-                        journal.write_text(chunk.get("text", ""))
-                    elif chunk_type == "error":
-                        had_error = True
-                        error_message = chunk.get("message", "unknown error")
-                        logger.warning(
-                            "[%s] Streaming error during task %s: %s",
-                            self._anima_name,
-                            task_id,
-                            error_message,
-                        )
-                    elif chunk_type == "retry_start":
-                        had_error = False
-                        error_message = ""
-                    elif chunk_type == "cycle_done":
-                        cycle_result = chunk.get("cycle_result", {})
-                        result_summary = cycle_result.get(
-                            "summary",
-                            accumulated_text[:500],
-                        )
-                        if cycle_result.get("action") == "error":
-                            task_failed_reason = result_summary or "task execution failed"
-                        journal.finalize(summary=result_summary[:500])
+                if worker_slot is not None:
+                    interrupt_event = worker_slot.interrupt_event
+                    self._anima._interrupt_events[task_id] = interrupt_event
+                elif self._anima and hasattr(self._anima, "_get_interrupt_event"):
+                    interrupt_event = self._anima._get_interrupt_event("_background")
+                else:
+                    interrupt_event = None
+                if interrupt_event is not None:
+                    interrupt_event.clear()
+                    agent.set_interrupt_event(interrupt_event)
+                if working_directory:
+                    agent.set_task_cwd(Path(working_directory))
+                try:
+                    agent.reset_reply_tracking(session_type="task")
+                    agent.reset_read_paths()
+                    async for chunk in agent.run_cycle_streaming(
+                        prompt,
+                        trigger=trigger,
+                        thread_id=task_id,
+                    ):
+                        chunk_type = chunk.get("type")
+                        if chunk_type == "text_delta":
+                            accumulated_text += chunk.get("text", "")
+                            journal.write_text(chunk.get("text", ""))
+                        elif chunk_type == "error":
+                            had_error = True
+                            error_message = chunk.get("message", "unknown error")
+                            logger.warning(
+                                "[%s] Streaming error during task %s: %s",
+                                self._anima_name,
+                                task_id,
+                                error_message,
+                            )
+                        elif chunk_type == "retry_start":
+                            had_error = False
+                            error_message = ""
+                        elif chunk_type == "cycle_done":
+                            cycle_result = chunk.get("cycle_result", {})
+                            result_summary = cycle_result.get(
+                                "summary",
+                                accumulated_text[:500],
+                            )
+                            if cycle_result.get("action") == "error":
+                                task_failed_reason = result_summary or "task execution failed"
+                            journal.finalize(summary=result_summary[:500])
+                finally:
+                    agent.set_task_cwd(None)
+                    if worker_slot is not None and self._anima._interrupt_events.get(task_id) is interrupt_event:
+                        self._anima._interrupt_events.pop(task_id, None)
         finally:
             journal.close()
-            agent.set_task_cwd(None)
 
         if had_error:
             _queue_done = False
@@ -1325,7 +1467,12 @@ class PendingTaskExecutor:
         """Signal the watcher to check for new tasks immediately."""
         self._wake_event.set()
 
-    async def execute_pending_task(self, task_desc: dict[str, Any]) -> None:
+    async def execute_pending_task(
+        self,
+        task_desc: dict[str, Any],
+        *,
+        worker_slot: BackgroundWorkerSlot | None = None,
+    ) -> None:
         """Execute a pending task via BackgroundTaskManager or LLM.
 
         Routes by task_type: 'llm' → _execute_llm_task, else command subprocess.
@@ -1333,7 +1480,7 @@ class PendingTaskExecutor:
         task_type = task_desc.get("task_type", "command")
 
         if task_type == "llm":
-            await self._execute_llm_task(task_desc)
+            await self._execute_llm_task(task_desc, worker_slot=worker_slot)
             return
 
         if not self._anima:
@@ -1410,8 +1557,13 @@ class PendingTaskExecutor:
         composite_name = f"{tool_name}:{subcommand}" if subcommand else tool_name
         bg_mgr.submit(composite_name, tool_args, _dispatch_fn)
 
-    async def _execute_llm_task(self, task_desc: dict[str, Any]) -> None:
-        """Execute an LLM task under _background_lock.
+    async def _execute_llm_task(
+        self,
+        task_desc: dict[str, Any],
+        *,
+        worker_slot: BackgroundWorkerSlot | None = None,
+    ) -> None:
+        """Execute an LLM task in an isolated background worker.
 
         The task is executed as a minimal-context LLM session using
         the task_exec.md template.  Delegates to ``_run_llm_task``
@@ -1426,37 +1578,36 @@ class PendingTaskExecutor:
             task_desc.get("title", ""),
         )
 
+        preleased = worker_slot is not None
+        keepalive_task: asyncio.Future[Any] | None = None
         try:
-            keepalive_task: asyncio.Future[Any] | None = None
-            async with self._anima._background_lock:
+            pool_capable = callable(getattr(type(self._anima), "_acquire_background_worker", None))
+            if not pool_capable:
+                # Compatibility for older DigitalAnima-like integrations and
+                # focused test doubles that do not expose the worker pool.
+                await self._anima._background_lock.acquire()
                 self._anima._mark_busy_start()
-                keepalive = getattr(self._anima, "_keepalive_while_busy", None)
-                if callable(keepalive):
-                    keepalive_result = keepalive()
-                    if inspect.isawaitable(keepalive_result):
-                        keepalive_task = asyncio.ensure_future(keepalive_result)
-                self._anima._status_slots["background"] = "task_exec"
-                self._anima._task_slots["background"] = task_id
-                try:
-                    result = await self._run_llm_task(task_desc)
-                    status, summary = _classify_task_result(result)
-                    self._sync_task_queue(task_id, status, summary=summary)
-                    if status == "done":
-                        await self._handle_goal_completion(task_desc, result)
-                finally:
-                    if keepalive_task is not None:
-                        keepalive_task.cancel()
-                        await asyncio.gather(keepalive_task, return_exceptions=True)
-                    self._anima._status_slots["background"] = "idle"
-                    self._anima._task_slots["background"] = ""
+            keepalive = getattr(self._anima, "_keepalive_while_busy", None)
+            if callable(keepalive):
+                keepalive_result = keepalive()
+                if inspect.isawaitable(keepalive_result):
+                    keepalive_task = asyncio.ensure_future(keepalive_result)
+            self._anima._status_slots["background"] = "task_exec"
+            self._anima._task_slots["background"] = task_id
+            if pool_capable:
+                result = await self._run_task_in_worker(task_desc, worker_slot=worker_slot)
+            else:
+                result = await self._run_llm_task(task_desc)
+            status, summary = _classify_task_result(result)
+            self._sync_task_queue(task_id, status, summary=summary)
+            if status == "done":
+                await self._handle_goal_completion(task_desc, result)
         except Exception as exc:
             logger.exception(
                 "[%s] LLM task failed: id=%s",
                 self._anima_name,
                 task_id,
             )
-            self._anima._status_slots["background"] = "idle"
-            self._anima._task_slots["background"] = ""
             self._write_failed_result(
                 task_id,
                 f"{type(exc).__name__}: {str(exc)[:200]}",
@@ -1517,4 +1668,19 @@ class PendingTaskExecutor:
                         exc_info=True,
                     )
         finally:
+            if keepalive_task is not None:
+                keepalive_task.cancel()
+                await asyncio.gather(keepalive_task, return_exceptions=True)
+            if preleased:
+                await self._release_worker(worker_slot)
+            if not callable(getattr(type(self._anima), "_acquire_background_worker", None)):
+                if self._anima._background_lock.locked():
+                    self._anima._background_lock.release()
+            active_workers = getattr(self._anima, "_active_background_workers", {})
+            if isinstance(active_workers, dict) and active_workers:
+                self._anima._status_slots["background"] = "task_exec"
+                self._anima._task_slots["background"] = next(iter(active_workers.values()))
+            else:
+                self._anima._status_slots["background"] = "idle"
+                self._anima._task_slots["background"] = ""
             self._anima._clear_busy_status_sidecar_if_idle()

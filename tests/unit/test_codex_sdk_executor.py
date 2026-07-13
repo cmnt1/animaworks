@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core._agent_executor import ExecutorFactoryMixin
 from core.execution.base import ExecutionResult
 from core.execution.codex_sdk import (
     CodexSDKExecutor,
@@ -591,10 +592,10 @@ class TestConfigWriting:
 
     def test_patch_reasoning_effort_enum_accepts_ultra(self):
         """SDK enum未定義のultraを_missing_パッチで受理できる（構築済みスキーマ含む）。"""
+        from openai_codex.generated.v2_all import ReasoningEffort
         from pydantic import BaseModel
 
         from core.execution.codex_sdk import _patch_reasoning_effort_enum
-        from openai_codex.generated.v2_all import ReasoningEffort
 
         class PreBuilt(BaseModel):
             effort: ReasoningEffort
@@ -722,6 +723,69 @@ class TestConfigWriting:
         assert target_auth.exists()
         assert not target_auth.is_symlink()
         assert target_auth.read_text(encoding="utf-8") == '{"token":"abc"}'
+
+    def test_worker_codex_home_isolated_and_shares_auth(self, model_config, anima_dir):
+        """Worker slots write config/instructions only inside their own homes."""
+        default_codex = anima_dir.parent / "user-home" / ".codex"
+        default_codex.mkdir(parents=True)
+        source_auth = default_codex / "auth.json"
+        source_auth.write_text('{"token":"shared"}', encoding="utf-8")
+        worker_zero_home = anima_dir / ".codex_home" / "workers" / "0"
+        worker_one_home = anima_dir / ".codex_home" / "workers" / "1"
+
+        zero = CodexSDKExecutor(
+            model_config=model_config,
+            anima_dir=anima_dir,
+            codex_home=worker_zero_home,
+        )
+        one = CodexSDKExecutor(
+            model_config=model_config,
+            anima_dir=anima_dir,
+            codex_home=worker_one_home,
+        )
+
+        with patch("core.execution.codex_sdk.Path.home", return_value=default_codex.parent):
+            zero._write_codex_config("slot zero prompt")
+            one._write_codex_config("slot one prompt")
+
+        assert zero._build_env()["CODEX_HOME"] == str(worker_zero_home)
+        assert one._build_env()["CODEX_HOME"] == str(worker_one_home)
+        assert (worker_zero_home / "instructions.md").read_text(encoding="utf-8") == "slot zero prompt"
+        assert (worker_one_home / "instructions.md").read_text(encoding="utf-8") == "slot one prompt"
+        assert str(worker_zero_home / "instructions.md") in (worker_zero_home / "config.toml").read_text(
+            encoding="utf-8"
+        )
+        assert str(worker_one_home / "instructions.md") in (worker_one_home / "config.toml").read_text(encoding="utf-8")
+        assert (worker_zero_home / "auth.json").resolve() == source_auth.resolve()
+        assert (worker_one_home / "auth.json").resolve() == source_auth.resolve()
+        assert not (anima_dir / ".codex_home" / "config.toml").exists()
+
+    def test_default_codex_home_remains_backward_compatible(self, model_config, anima_dir):
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        assert exc._codex_home == anima_dir / ".codex_home"
+
+
+def test_agent_executor_factory_forwards_worker_codex_home(model_config, anima_dir):
+    worker_home = anima_dir / ".codex_home" / "workers" / "0"
+    factory = ExecutorFactoryMixin()
+    factory.model_config = model_config
+    factory.anima_dir = anima_dir
+    factory._tool_registry = []
+    factory._personal_tools = {}
+    factory._interrupt_event = None
+    factory._codex_home = worker_home
+    factory._resolve_execution_mode = lambda _config=None: "c"
+
+    sentinel = SimpleNamespace()
+    with (
+        patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=True),
+        patch("core.execution.codex_sdk.CodexSDKExecutor", return_value=sentinel) as constructor,
+    ):
+        result = factory._create_executor()
+
+    assert result is sentinel
+    assert constructor.call_args.kwargs["codex_home"] == worker_home
 
 
 # ── Blocking execution tests ─────────────────────────────────
