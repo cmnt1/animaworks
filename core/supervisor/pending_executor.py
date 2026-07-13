@@ -12,6 +12,7 @@ for batched tasks submitted via ``submit_tasks`` tool.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import json
 import logging
@@ -172,7 +173,15 @@ class PendingTaskExecutor:
         workspace = task_desc.get("working_directory", "") or _resolve_default_workspace(self._anima_dir)
         return Path(workspace or self._anima_dir).expanduser().resolve()
 
-    def _workspace_lock(self, task_desc: dict[str, Any]) -> asyncio.Lock:
+    def _workspace_lock(self, task_desc: dict[str, Any]) -> asyncio.Lock | None:
+        """Return the exclusion lock for the task's explicit workspace.
+
+        Tasks without an explicit ``working_directory`` pick their own working
+        area at runtime (e.g. per-task worktrees), so they are not serialized
+        against each other.
+        """
+        if not task_desc.get("working_directory"):
+            return None
         key = self._workspace_key(task_desc)
         lock = self._workspace_locks.get(key)
         if lock is None:
@@ -1127,7 +1136,8 @@ class PendingTaskExecutor:
     ) -> str:
         """Run one LLM task with workspace exclusion and a worker lease."""
         task_id = task_desc.get("task_id", "unknown")
-        async with self._workspace_lock(task_desc):
+        workspace_lock = self._workspace_lock(task_desc)
+        async with workspace_lock if workspace_lock is not None else contextlib.nullcontext():
             leased_here = worker_slot is None
             slot = worker_slot or await self._acquire_worker(task_id)
             try:

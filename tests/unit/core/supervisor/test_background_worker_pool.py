@@ -148,6 +148,21 @@ async def test_same_resolved_workspace_is_exclusive(tmp_path: Path) -> None:
     assert len(executor._workspace_locks) == 1
 
 
+async def test_tasks_without_working_directory_are_not_serialized(tmp_path: Path) -> None:
+    executor = _executor(tmp_path)
+
+    maximum_active = await _measure_workspace_concurrency(
+        executor,
+        [
+            {"task_id": "free-one"},
+            {"task_id": "free-two", "working_directory": ""},
+        ],
+    )
+
+    assert maximum_active == 2
+    assert len(executor._workspace_locks) == 0
+
+
 async def test_distinct_workspaces_can_overlap(tmp_path: Path) -> None:
     executor = _executor(tmp_path)
     first_workspace = tmp_path / "workspace-one"
