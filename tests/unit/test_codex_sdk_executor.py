@@ -610,6 +610,8 @@ class TestConfigWriting:
         )
         exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
         exc.set_task_cwd(task_cwd)
+        (anima_dir / "vectordb.staging-123").mkdir()
+        (anima_dir / "vectordb-corrupt-old").mkdir()
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
@@ -634,8 +636,14 @@ class TestConfigWriting:
         assert filesystem[str(task_cwd.resolve())] == "write"
         assert filesystem[str(denied_root.resolve())] == "deny"
         assert filesystem[str((anima_dir / ".codex_home").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "state").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "archive").resolve())] == "deny"
         assert filesystem[str((anima_dir / "vectordb").resolve())] == "deny"
-        assert filesystem[str((anima_dir / "state" / "bm25_longterm_index.json").resolve())] == "deny"
+        assert filesystem[str(anima_dir.resolve() / "vectordb-*")] == "deny"
+        assert filesystem[str(anima_dir.resolve() / "vectordb.*")] == "deny"
+        assert filesystem[str(anima_dir.resolve() / "vectordb_*")] == "deny"
+        assert filesystem[str((anima_dir / "vectordb.staging-123").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "vectordb-corrupt-old").resolve())] == "deny"
         assert profile["network"]["enabled"] is True
         mcp_profile = parsed["permissions"]["animaworks_mcp"]
         mcp_filesystem = mcp_profile["filesystem"]
@@ -644,6 +652,9 @@ class TestConfigWriting:
         assert mcp_filesystem[str(task_cwd.resolve())] == "write"
         assert mcp_filesystem[str(denied_root.resolve())] == "deny"
         assert mcp_filesystem[str((anima_dir / "permissions.json").resolve())] == "read"
+        assert str((anima_dir / "state").resolve()) not in mcp_filesystem
+        assert str((anima_dir / "archive").resolve()) not in mcp_filesystem
+        assert str((anima_dir / "vectordb").resolve()) not in mcp_filesystem
         assert mcp_profile["network"]["enabled"] is True
         assert parsed["mcp_servers"]["aw"]["command"] == "/opt/codex/bin/codex"
         assert parsed["mcp_servers"]["aw"]["args"] == [

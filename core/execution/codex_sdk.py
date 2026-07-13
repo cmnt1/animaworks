@@ -988,6 +988,8 @@ class CodexSDKExecutor(BaseExecutor):
 
         denied_roots = list(getattr(permissions_config, "file_roots_denied", []))
         if denied_roots:
+            from core.file_access_policy import shell_internal_deny_paths
+
             # Permission profiles and the legacy sandbox settings are mutually
             # exclusive.  Start with broad read access, retain the legacy
             # writable roots (including temp for workspace-write parity), and
@@ -1030,14 +1032,10 @@ class CodexSDKExecutor(BaseExecutor):
                 shell_filesystem_rules[resolved_root] = "deny"
                 mcp_filesystem_rules[resolved_root] = "deny"
 
-            # Authentication and memory-index copies must never be directly
-            # readable from the model shell.  Trusted MCP search consumers
-            # filter cached hits by source path before returning them.
-            for internal_path in (
-                self._codex_home.resolve(),
-                (self._anima_dir / "vectordb").resolve(),
-                (self._anima_dir / "state" / "bm25_longterm_index.json").resolve(),
-            ):
+            # Authentication and all runtime state/cache copies must never be
+            # directly readable from the model shell.  The MCP profile keeps
+            # cache access for trusted, source-filtered search services.
+            for internal_path in shell_internal_deny_paths(self._anima_dir):
                 shell_filesystem_rules[str(internal_path)] = "deny"
 
             # The sandboxed Anima must not be able to remove or weaken the

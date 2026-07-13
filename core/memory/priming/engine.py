@@ -468,6 +468,7 @@ class PrimingEngine:
             backend,
             query,
             budget_tokens=_BUDGET_GRAPH_CONTEXT,
+            anima_dir=self.anima_dir,
         )
 
     def _extract_keywords(self, message: str) -> list[str]:

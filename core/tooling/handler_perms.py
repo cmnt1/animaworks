@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.config.models import PermissionsConfig, load_permissions
-from core.file_access_policy import find_denied_root, resolve_denied_roots
+from core.file_access_policy import find_denied_root, find_internal_cache_root, resolve_denied_roots
 from core.i18n import t
 from core.tooling.handler_base import (
     _error_result,
@@ -182,6 +182,25 @@ class PermissionsMixin:
         effective_denied_roots = (
             denied_roots if denied_roots is not None else self._resolved_file_deny_roots(effective_config)
         )
+
+        # When explicit file deny is enabled, model-facing tools must not
+        # expose internal copies/caches that can retain content from a denied
+        # source.  Trusted search services may consume these caches, but their
+        # filtered results are returned through separate handlers.
+        if effective_config.file_roots_denied:
+            internal_cache = find_internal_cache_root(path, self._anima_dir)
+            if internal_cache is not None:
+                logger.warning(
+                    "permission_denied anima=%s path=%s reason=internal_cache root=%s",
+                    self._anima_name,
+                    path,
+                    internal_cache,
+                )
+                return _error_result(
+                    "PermissionDenied",
+                    f"Direct access to internal runtime cache is not allowed: '{path}'",
+                    context={"system_denied_root": str(internal_cache)},
+                )
 
         # Explicit denies are the primary boundary and override every normal
         # grant below, including own/shared/supervisor paths and file_roots=["/"].

@@ -205,7 +205,7 @@ class TestHandleRouting:
         ]
         config = PermissionsConfig(file_roots=["/"], file_roots_denied=[str(denied)])
 
-        with patch("core.tooling.handler_perms.load_permissions", return_value=config):
+        with patch.object(handler, "_load_permissions_config", return_value=config):
             result = handler.handle("search_memory", {"query": "result", "scope": "all"})
 
         assert "public result" in result
@@ -238,7 +238,7 @@ class TestHandleRouting:
         config = PermissionsConfig(file_roots=["/"], file_roots_denied=[str(denied)])
 
         with (
-            patch("core.tooling.handler_perms.load_permissions", return_value=config),
+            patch.object(handler, "_load_permissions_config", return_value=config),
             patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
         ):
             result = handler.handle("search_memory", {"query": "shared", "scope": "all"})
@@ -939,6 +939,65 @@ class TestFilePermissions:
         with patch("core.tooling.handler_perms.load_permissions", return_value=config):
             parsed = json.loads(handler.handle("check_permissions", {}))
         assert parsed["file_access"]["denied"] == [str(denied.resolve())]
+
+    def test_deny_enabled_hides_internal_cache_canary(
+        self,
+        handler: ToolHandler,
+        anima_dir: Path,
+        tmp_path: Path,
+    ):
+        from core.config.models import PermissionsConfig
+
+        canary = "DENIED_CACHE_CANARY"
+        state = anima_dir / "state"
+        archive = anima_dir / "archive" / "vectordb-corrupt-20260713"
+        vectordb = anima_dir / "vectordb"
+        codex_home = anima_dir / ".codex_home"
+        for directory in (state, archive, vectordb, codex_home):
+            directory.mkdir(parents=True, exist_ok=True)
+        bm25 = state / "bm25_longterm_index.json"
+        bm25_tmp = state / ".bm25_longterm_index.json.random.tmp"
+        protected_files = [
+            bm25,
+            bm25_tmp,
+            archive / "chroma.sqlite3",
+            vectordb / "chroma.sqlite3",
+            codex_home / "auth.json",
+        ]
+        for path in protected_files:
+            path.write_text(canary, encoding="utf-8")
+
+        config = PermissionsConfig(
+            file_roots=["/"],
+            file_roots_denied=[str(tmp_path / "unrelated-explicit-deny")],
+        )
+        with patch("core.tooling.handler_perms.load_permissions", return_value=config):
+            for path in protected_files:
+                read_result = json.loads(handler.handle("read_file", {"path": str(path)}))
+                assert read_result["error_type"] == "PermissionDenied"
+                assert canary not in json.dumps(read_result)
+                write_result = handler._check_file_permission(str(path), write=True)
+                assert json.loads(write_result)["error_type"] == "PermissionDenied"
+
+            search_result = handler.handle("search_code", {"pattern": "CACHE_CANARY", "path": str(anima_dir)})
+            list_result = handler.handle("list_directory", {"path": str(state)})
+
+        assert canary not in search_result
+        assert "bm25_longterm_index" not in list_result
+        assert "vectordb" not in search_result
+
+    def test_internal_cache_remains_readable_without_explicit_deny(
+        self,
+        handler: ToolHandler,
+        anima_dir: Path,
+    ):
+        cache = anima_dir / "state" / "bm25_longterm_index.json"
+        cache.parent.mkdir(parents=True)
+        cache.write_text("LEGACY_CACHE_CANARY", encoding="utf-8")
+
+        result = handler.handle("read_file", {"path": str(cache)})
+
+        assert "LEGACY_CACHE_CANARY" in result
 
 
 # ── Command permission checks ─────────────────────────────────
