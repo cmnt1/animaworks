@@ -1004,9 +1004,7 @@ class CodexSDKExecutor(BaseExecutor):
         reasoning_effort = (self._model_config.extra_keys or {}).get(
             "codex_reasoning_effort"
         ) or self._model_config.thinking_effort
-        effort_line = (
-            f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
-        )
+        effort_line = f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
 
         config_toml = (
             f'model = "{esc(provider_config.model)}"\n'
