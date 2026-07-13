@@ -635,6 +635,55 @@ class BackgroundTaskConfig(BaseModel):
     }
     result_retention_hours: int = 24
     max_parallel_llm_tasks: int = Field(default=3, ge=1, le=10)
+    worker_pool_size: int = Field(default=1, ge=1, le=10)
+
+
+def resolve_background_worker_pool_size(
+    anima_dir: Path,
+    default: int | None = None,
+) -> int:
+    """Resolve the TaskExec worker count, including a per-Anima override.
+
+    ``status.json`` may set ``background_worker_pool_size`` to opt one Anima
+    into a different pool size. Invalid or unreadable overrides are ignored so
+    a damaged status file cannot prevent the Anima from starting.
+    """
+    if default is None:
+        try:
+            from core.config.io import load_config
+
+            default = load_config().background_task.worker_pool_size
+        except Exception:
+            logger.debug(
+                "Failed to load background worker pool default for %s",
+                anima_dir.name,
+                exc_info=True,
+            )
+            default = 1
+
+    if isinstance(default, bool) or not isinstance(default, int) or not 1 <= default <= 10:
+        default = 1
+
+    status_path = anima_dir / "status.json"
+    try:
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+    if not isinstance(status, dict) or "background_worker_pool_size" not in status:
+        return default
+
+    override = status["background_worker_pool_size"]
+    if isinstance(override, int) and not isinstance(override, bool) and 1 <= override <= 10:
+        return override
+
+    logger.warning(
+        "Ignoring invalid background_worker_pool_size=%r for anima %s; using %d",
+        override,
+        anima_dir.name,
+        default,
+    )
+    return default
 
 
 class ActivityLogConfig(BaseModel):

@@ -125,9 +125,12 @@ class TestTaskExecLaneIsolation:
 
         assert result == "background result"
         background_agent.run_cycle_streaming.assert_called_once()
+        assert background_agent.run_cycle_streaming.call_args.kwargs["thread_id"] == "lane-task-1"
         background_agent.reset_reply_tracking.assert_called_once_with(session_type="task")
         background_agent.reset_read_paths.assert_called_once()
-        background_agent.set_interrupt_event.assert_called_once_with(executor._anima._get_interrupt_event("_background"))
+        background_agent.set_interrupt_event.assert_called_once_with(
+            executor._anima._get_interrupt_event("_background")
+        )
         background_agent.set_task_cwd.assert_any_call(workdir)
         background_agent.set_task_cwd.assert_any_call(None)
         chat_agent.set_task_cwd.assert_not_called()

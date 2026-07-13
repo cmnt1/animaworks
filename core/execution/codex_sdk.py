@@ -815,11 +815,12 @@ class CodexSDKExecutor(BaseExecutor):
         tool_registry: list[str] | None = None,
         personal_tools: dict[str, str] | None = None,
         interrupt_event: asyncio.Event | None = None,
+        codex_home: Path | None = None,
     ) -> None:
         super().__init__(model_config, anima_dir, interrupt_event=interrupt_event)
         self._tool_registry = tool_registry or []
         self._personal_tools = personal_tools or {}
-        self._codex_home = anima_dir / ".codex_home"
+        self._codex_home = codex_home or anima_dir / ".codex_home"
 
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
@@ -1004,9 +1005,7 @@ class CodexSDKExecutor(BaseExecutor):
         reasoning_effort = (self._model_config.extra_keys or {}).get(
             "codex_reasoning_effort"
         ) or self._model_config.thinking_effort
-        effort_line = (
-            f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
-        )
+        effort_line = f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
 
         config_toml = (
             f'model = "{esc(provider_config.model)}"\n'

@@ -22,6 +22,7 @@ import re
 import threading
 from collections.abc import Callable
 from contextlib import nullcontext
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,17 @@ from core.session_compactor import SessionCompactor
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.anima")
+
+
+@dataclass(slots=True)
+class BackgroundWorkerSlot:
+    """One isolated TaskExec worker and its mutable execution state."""
+
+    slot_id: int
+    agent: AgentCore
+    session_lock: asyncio.Lock
+    interrupt_event: asyncio.Event
+
 
 # ── Mixin imports ───────────────────────────────────────────────
 from core._anima_heartbeat import (  # noqa: F401
@@ -135,6 +147,15 @@ class DigitalAnima(
             "background": self._create_lane_agent("background"),
             "inbox": self._create_lane_agent("inbox"),
         }
+        from core.config.models import resolve_background_worker_pool_size
+
+        self._background_worker_pool_size = resolve_background_worker_pool_size(self.anima_dir)
+        self._background_worker_slots: list[BackgroundWorkerSlot] = []
+        self._background_worker_queue: asyncio.Queue[BackgroundWorkerSlot] = asyncio.Queue()
+        self._active_background_workers: dict[int, str] = {}
+        self._background_worker_gate_lock = asyncio.Lock()
+        self._background_worker_gate_count = 0
+        self._initialize_background_worker_pool()
         self._status_slots: dict[str, str] = {"inbox": "idle", "background": "idle"}
         self._task_slots: dict[str, str] = {"inbox": "", "background": ""}
         self._last_heartbeat: datetime | None = None
@@ -164,15 +185,85 @@ class DigitalAnima(
 
     # ── Agent lane management ──────────────────────────────────────
 
-    def _create_lane_agent(self, lane: str) -> AgentCore:
+    def _create_lane_agent(self, lane: str, *, codex_home: Path | None = None) -> AgentCore:
         """Create an AgentCore for one isolated execution lane."""
-        agent = AgentCore(self.anima_dir, self.memory, self.model_config, self.messenger)
+        agent = AgentCore(
+            self.anima_dir,
+            self.memory,
+            self.model_config,
+            self.messenger,
+            codex_home=codex_home,
+        )
         agent._progress_callback = self._agent_progress_callback
         agent._tool_handler.set_state_file_lock(self._state_file_lock)
         if agent.background_manager:
             agent.background_manager.on_complete = self._on_background_task_complete
         logger.debug("[%s] Agent lane initialized: %s", self.name, lane)
         return agent
+
+    def _initialize_background_worker_pool(self) -> None:
+        """Create TaskExec workers while preserving the legacy single-worker lane."""
+        pool_size = self._background_worker_pool_size
+        if pool_size == 1:
+            slots = [
+                BackgroundWorkerSlot(
+                    slot_id=0,
+                    agent=self._lane_agents["background"],
+                    session_lock=self._agent_session_locks["background"],
+                    interrupt_event=self._get_interrupt_event("_background"),
+                )
+            ]
+        else:
+            slots = []
+            for slot_id in range(pool_size):
+                codex_home = self.anima_dir / ".codex_home" / "workers" / str(slot_id)
+                slots.append(
+                    BackgroundWorkerSlot(
+                        slot_id=slot_id,
+                        agent=self._create_lane_agent(
+                            f"background-worker-{slot_id}",
+                            codex_home=codex_home,
+                        ),
+                        session_lock=asyncio.Lock(),
+                        interrupt_event=asyncio.Event(),
+                    )
+                )
+        self._background_worker_slots = slots
+        for slot in slots:
+            self._background_worker_queue.put_nowait(slot)
+
+    async def _acquire_background_worker(self, task_id: str) -> BackgroundWorkerSlot:
+        """Lease an isolated TaskExec worker and mark the background lane busy."""
+        slot = await self._background_worker_queue.get()
+        try:
+            first_worker = False
+            async with self._background_worker_gate_lock:
+                if self._background_worker_gate_count == 0:
+                    await self._background_lock.acquire()
+                    first_worker = True
+                self._background_worker_gate_count += 1
+            self._active_background_workers[slot.slot_id] = task_id
+            if first_worker:
+                self._mark_busy_start()
+            else:
+                self._mark_busy_progress()
+            return slot
+        except BaseException:
+            self._background_worker_queue.put_nowait(slot)
+            raise
+
+    async def _release_background_worker(self, slot: BackgroundWorkerSlot) -> None:
+        """Return a TaskExec worker and release the shared background gate if idle."""
+        self._active_background_workers.pop(slot.slot_id, None)
+        became_idle = False
+        async with self._background_worker_gate_lock:
+            self._background_worker_gate_count = max(0, self._background_worker_gate_count - 1)
+            if self._background_worker_gate_count == 0 and self._background_lock.locked():
+                self._background_lock.release()
+                became_idle = True
+        self._background_worker_queue.put_nowait(slot)
+        if became_idle:
+            self._notify_lock_released()
 
     def _iter_lane_agents(self) -> list[AgentCore]:
         """Return unique AgentCore instances for all lanes."""
@@ -186,6 +277,11 @@ class DigitalAnima(
             if ident not in seen:
                 seen.add(ident)
                 unique.append(agent)
+        for slot in getattr(self, "_background_worker_slots", []):
+            ident = id(slot.agent)
+            if ident not in seen:
+                seen.add(ident)
+                unique.append(slot.agent)
         return unique
 
     def _agent_for_lane(self, lane: str) -> AgentCore:
@@ -222,7 +318,8 @@ class DigitalAnima(
     def _has_active_busy_lock(self) -> bool:
         """Return True while any local execution lane is actively holding work."""
         any_conversation_locked = any(lock.locked() for lock in self._conversation_locks.values())
-        return any_conversation_locked or self._background_lock.locked() or self._inbox_lock.locked()
+        active_workers = bool(getattr(self, "_active_background_workers", {}))
+        return any_conversation_locked or self._background_lock.locked() or self._inbox_lock.locked() or active_workers
 
     def _mark_busy_start(self) -> None:
         """Reset progress timestamp at the start of a new busy period.
@@ -270,6 +367,8 @@ class DigitalAnima(
                     lanes.append("background")
                 if self._inbox_lock.locked():
                     lanes.append("inbox")
+                for slot_id, task_id in getattr(self, "_active_background_workers", {}).items():
+                    lanes.append(f"background-worker:{slot_id}:{task_id}")
             except Exception:
                 logger.debug("[%s] Failed to collect busy status lanes", self.name, exc_info=True)
             payload = {
@@ -553,6 +652,8 @@ class DigitalAnima(
         inbox = self._status_slots.get("inbox", "idle")
         if inbox != "idle":
             return inbox
+        if self._active_background_workers:
+            return "task_exec"
         return self._status_slots.get("background", "idle")
 
     @property
@@ -564,6 +665,8 @@ class DigitalAnima(
         inbox = self._task_slots.get("inbox", "")
         if inbox:
             return inbox
+        if self._active_background_workers:
+            return next(iter(self._active_background_workers.values()))
         return self._task_slots.get("background", "")
 
     @property
