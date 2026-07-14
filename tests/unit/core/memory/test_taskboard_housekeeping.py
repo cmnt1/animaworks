@@ -5,6 +5,7 @@ import os
 import time
 from datetime import timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from core.memory.task_queue import TaskQueueManager
 from core.memory.taskboard_housekeeping import (
@@ -12,6 +13,7 @@ from core.memory.taskboard_housekeeping import (
     _cleanup_current_state,
     cleanup_taskboard_stale_artifacts,
 )
+from core.platform.processing_lease import processing_lease_path, write_processing_lease
 from core.taskboard.store import TaskBoardStore
 from core.time_utils import now_local
 
@@ -68,6 +70,66 @@ def test_stale_processing_moves_to_failed_syncs_queue_and_appends_event(tmp_path
     )
     assert events[-1]["event_type"] == "stale_processing_recovered"
     assert events[-1]["payload"]["queue_synced"] is True
+
+
+def test_stale_processing_with_live_lease_is_skipped(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = _anima_dir(data_dir)
+    queue = TaskQueueManager(anima_dir)
+    queue.add_task(
+        source="human",
+        original_instruction="keep running",
+        assignee="sakura",
+        summary="live task",
+        status="in_progress",
+        task_id="live-processing",
+    )
+    processing = _write_json(
+        anima_dir / "state" / "pending" / "processing" / "live-processing.json",
+        {"task_id": "live-processing"},
+        age_hours=25,
+    )
+    lease = write_processing_lease(processing, anima="sakura", task_id="live-processing")
+
+    with patch("core.memory.taskboard_housekeeping.is_processing_lease_live", return_value=True):
+        result = cleanup_taskboard_stale_artifacts(data_dir, 24, 48, 24, 30)
+
+    assert result["processing_recovered"] == 0
+    assert result["processing_live_leases_skipped"] == 1
+    assert processing.exists()
+    assert lease.exists()
+    assert queue.get_task_by_id("live-processing").status == "in_progress"
+
+
+def test_stale_processing_with_dead_lease_is_recovered(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = _anima_dir(data_dir)
+    queue = TaskQueueManager(anima_dir)
+    queue.add_task(
+        source="human",
+        original_instruction="recover dead lease",
+        assignee="sakura",
+        summary="dead task",
+        status="in_progress",
+        task_id="dead-processing",
+    )
+    processing = _write_json(
+        anima_dir / "state" / "pending" / "processing" / "dead-processing.json",
+        {"task_id": "dead-processing"},
+        age_hours=25,
+    )
+    write_processing_lease(processing, anima="sakura", task_id="dead-processing", pid=999_999_999)
+
+    with patch("core.memory.taskboard_housekeeping.is_processing_lease_live", return_value=False):
+        result = cleanup_taskboard_stale_artifacts(data_dir, 24, 48, 24, 30)
+
+    failed = anima_dir / "state" / "pending" / "failed" / "dead-processing.json"
+    assert result["processing_recovered"] == 1
+    assert not processing.exists()
+    assert failed.exists()
+    assert not processing_lease_path(processing).exists()
+    assert processing_lease_path(failed).exists()
+    assert queue.get_task_by_id("dead-processing").status == "failed"
 
 
 def test_unreadable_processing_file_is_moved_without_queue_sync(tmp_path: Path) -> None:

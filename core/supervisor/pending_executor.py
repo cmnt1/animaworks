@@ -16,12 +16,19 @@ import contextlib
 import inspect
 import json
 import logging
+import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.exceptions import ToolExecutionError
 from core.i18n import t
+from core.platform.processing_lease import (
+    is_processing_lease_live,
+    processing_lease_path,
+    write_processing_lease,
+)
 from core.taskboard.attention_resolver import resolver_for_anima_dir
 from core.taskboard.models import AttentionDecision
 
@@ -40,6 +47,7 @@ _LLM_TASK_TTL_HOURS = 24
 _PENDING_TASK_SUBPROCESS_TIMEOUT = 1800
 _TASK_RESULT_MAX_CHARS = 2000
 _TASK_COMPLETE_NOTIFY_MAX_CHARS = 10_000
+_PROCESSING_TOUCH_INTERVAL_SECONDS = 600
 
 _SENTINEL_CANCELLED = "(cancelled)"
 _SENTINEL_EXPIRED = "(expired)"
@@ -48,6 +56,77 @@ _SENTINEL_DEFERRED = "(deferred)"
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
 _QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
 _TASKBOARD_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
+
+
+def _remove_processing_lease(descriptor_path: Path) -> None:
+    lease_path = processing_lease_path(descriptor_path)
+    try:
+        lease_path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Failed to remove processing lease: %s", lease_path, exc_info=True)
+
+
+def _unlink_processing_descriptor(descriptor_path: Path) -> None:
+    descriptor_path.unlink(missing_ok=True)
+    _remove_processing_lease(descriptor_path)
+
+
+def _move_processing_with_lease(
+    descriptor_path: Path,
+    failed_dir: Path,
+    *,
+    collision_label: str,
+) -> Path:
+    """Move a processing descriptor and its sidecar without overwriting."""
+    target = _processing_failed_target(
+        descriptor_path,
+        failed_dir,
+        collision_label=collision_label,
+    )
+    descriptor_path.rename(target)
+
+    lease_path = processing_lease_path(descriptor_path)
+    if lease_path.exists():
+        try:
+            lease_path.rename(processing_lease_path(target))
+        except OSError:
+            logger.warning("Failed to move processing lease: %s", lease_path, exc_info=True)
+    return target
+
+
+def _processing_failed_target(
+    descriptor_path: Path,
+    failed_dir: Path,
+    *,
+    collision_label: str,
+) -> Path:
+    """Return a collision-safe failed path for a processing descriptor."""
+    failed_dir.mkdir(parents=True, exist_ok=True)
+    target = failed_dir / descriptor_path.name
+    if target.exists():
+        timestamp = int(time.time())
+        target = failed_dir / f"{descriptor_path.name}.{collision_label}-{timestamp}"
+        counter = 1
+        while target.exists():
+            target = failed_dir / f"{descriptor_path.name}.{collision_label}-{timestamp}-{counter}"
+            counter += 1
+    return target
+
+
+def _move_processing_without_lease(
+    descriptor_path: Path,
+    failed_dir: Path,
+    *,
+    collision_label: str,
+) -> Path:
+    """Move a descriptor to failed while leaving its lease for deletion."""
+    target = _processing_failed_target(
+        descriptor_path,
+        failed_dir,
+        collision_label=collision_label,
+    )
+    descriptor_path.rename(target)
+    return target
 
 
 def _task_activity_identity(task_desc: dict[str, Any]) -> tuple[str, str, str]:
@@ -171,6 +250,8 @@ class PendingTaskExecutor:
         self._wake_event = asyncio.Event()
         self._batch_tasks: dict[str, list[dict[str, Any]]] = {}
         self._active_dispatch_tasks: set[asyncio.Task[None]] = set()
+        self._active_task_ids: set[str] = set()
+        self._batch_dispatch_lock = asyncio.Lock()
         self._workspace_locks: dict[Path, asyncio.Lock] = {}
 
     def _worker_pool_size(self) -> int:
@@ -221,6 +302,92 @@ class PendingTaskExecutor:
             self.wake()
 
         task.add_done_callback(_done)
+
+    def _claim_processing_task(
+        self,
+        processing_path: Path,
+        failed_dir: Path,
+        task_desc: dict[str, Any],
+    ) -> str | None:
+        """Create a lease and register a task id, quarantining duplicates."""
+        task_id = str(task_desc.get("task_id") or processing_path.stem).strip()
+        try:
+            write_processing_lease(
+                processing_path,
+                anima=self._anima_name,
+                task_id=task_id,
+            )
+        except OSError:
+            logger.exception("Failed to create processing lease: %s", processing_path.name)
+            try:
+                _move_processing_with_lease(
+                    processing_path,
+                    failed_dir,
+                    collision_label="lease-error",
+                )
+            except OSError:
+                logger.exception("Failed to quarantine unleased task: %s", processing_path.name)
+            return None
+
+        if task_id in self._active_task_ids:
+            logger.warning("Duplicate task_id claim rejected: %s", task_id)
+            try:
+                _move_processing_with_lease(
+                    processing_path,
+                    failed_dir,
+                    collision_label="dup",
+                )
+            except OSError:
+                logger.exception("Failed to quarantine duplicate task: %s", processing_path.name)
+            return None
+
+        self._active_task_ids.add(task_id)
+        return task_id
+
+    async def _touch_processing_descriptor(self, processing_path: Path) -> None:
+        """Keep a long-running processing descriptor younger than housekeeping."""
+        while True:
+            await asyncio.sleep(_PROCESSING_TOUCH_INTERVAL_SECONDS)
+            try:
+                os.utime(processing_path, None)
+            except FileNotFoundError:
+                return
+            except OSError:
+                logger.warning("Failed to touch processing task: %s", processing_path, exc_info=True)
+
+    def _track_command_claim(
+        self,
+        background_task: asyncio.Task[None],
+        *,
+        task_id: str,
+        processing_path: Path,
+        failed_dir: Path,
+    ) -> None:
+        """Keep a command claim active until BackgroundTaskManager finishes it."""
+        touch_task = asyncio.create_task(
+            self._touch_processing_descriptor(processing_path),
+            name=f"task-touch-{self._anima_name}-{task_id}",
+        )
+
+        def _done(done: asyncio.Task[None]) -> None:
+            touch_task.cancel()
+            try:
+                if done.cancelled():
+                    _move_processing_without_lease(
+                        processing_path,
+                        failed_dir,
+                        collision_label="cancelled",
+                    )
+                else:
+                    _unlink_processing_descriptor(processing_path)
+            except OSError:
+                logger.warning("Failed to finalize command task file: %s", processing_path, exc_info=True)
+            finally:
+                _remove_processing_lease(processing_path)
+                self._active_task_ids.discard(task_id)
+                self.wake()
+
+        background_task.add_done_callback(_done)
 
     # ── Semaphore lazy init ──────────────────────────────────
 
@@ -630,6 +797,13 @@ class PendingTaskExecutor:
             return
         _ACTIVE = {"pending", "in_progress", "blocked", "delegated"}
         for orphan in processing_dir.glob("*.json"):
+            expected_anima = anima_dir.name if anima_dir is not None else None
+            if is_processing_lease_live(orphan, expected_anima=expected_anima):
+                logger.warning(
+                    "live lease detected, skipping recovery: %s",
+                    orphan.name,
+                )
+                continue
             task_id = ""
             if anima_dir is not None:
                 try:
@@ -640,7 +814,11 @@ class PendingTaskExecutor:
                 if not task_id:
                     task_id = orphan.stem
             try:
-                orphan.rename(failed_dir / orphan.name)
+                _move_processing_with_lease(
+                    orphan,
+                    failed_dir,
+                    collision_label="recovered",
+                )
                 logger.warning("Recovered orphaned processing task: %s", orphan.name)
             except OSError:
                 logger.exception("Failed to recover orphaned task: %s", orphan.name)
@@ -655,7 +833,11 @@ class PendingTaskExecutor:
                         manager.update_status(
                             task_id,
                             "failed",
-                            summary="FAILED: recovered orphaned processing task on restart",
+                            summary=(
+                                "INTERRUPTED: task was interrupted by a restart and may have "
+                                "PARTIALLY EXECUTED (commits/messages may already exist). Verify "
+                                "actual completion state before re-delegating."
+                            ),
                         )
                 except Exception:
                     logger.exception(
@@ -668,26 +850,67 @@ class PendingTaskExecutor:
         task_desc: dict[str, Any],
         processing_path: Path,
         failed_dir: Path,
-        worker_slot: BackgroundWorkerSlot,
+        worker_slot: BackgroundWorkerSlot | None,
     ) -> None:
         """Run a claimed single LLM task without blocking the coordinator."""
+        task_id = str(task_desc.get("task_id") or processing_path.stem).strip()
+        touch_task = asyncio.create_task(
+            self._touch_processing_descriptor(processing_path),
+            name=f"task-touch-{self._anima_name}-{task_id}",
+        )
         try:
             await self.execute_pending_task(task_desc, worker_slot=worker_slot)
-            processing_path.unlink(missing_ok=True)
+            _unlink_processing_descriptor(processing_path)
         except asyncio.CancelledError:
+            try:
+                _move_processing_without_lease(
+                    processing_path,
+                    failed_dir,
+                    collision_label="cancelled",
+                )
+            except OSError:
+                logger.exception("Failed to move cancelled task to failed: %s", processing_path.name)
             raise
         except Exception:
             logger.exception("Error processing LLM pending task file: %s", processing_path.name)
             try:
-                processing_path.rename(failed_dir / processing_path.name)
+                _move_processing_without_lease(
+                    processing_path,
+                    failed_dir,
+                    collision_label="failed",
+                )
             except OSError:
                 logger.exception("Failed to move task to failed: %s", processing_path.name)
         finally:
+            touch_task.cancel()
+            await asyncio.gather(touch_task, return_exceptions=True)
+            _remove_processing_lease(processing_path)
+            self._active_task_ids.discard(task_id)
             # A pre-leased slot is normally released by _execute_llm_task.  If
             # dispatch was cancelled before it entered that method, release it here.
             active = getattr(self._anima, "_active_background_workers", {})
-            if isinstance(active, dict) and active.get(worker_slot.slot_id) == task_desc.get("task_id"):
+            if (
+                worker_slot is not None
+                and isinstance(active, dict)
+                and active.get(worker_slot.slot_id) == task_desc.get("task_id")
+            ):
                 await self._release_worker(worker_slot)
+
+    async def _execute_claimed_batch(
+        self,
+        batch_id: str,
+        tasks: list[dict[str, Any]],
+    ) -> None:
+        """Dispatch one accepted batch while retaining its active task ids."""
+        try:
+            # Preserve the historical one-batch-at-a-time behavior while the
+            # watcher remains free to reject duplicate descriptors.
+            async with self._batch_dispatch_lock:
+                await self._dispatch_batch(batch_id, tasks)
+        finally:
+            self._active_task_ids.difference_update(
+                str(task.get("task_id") or "").strip() for task in tasks
+            )
 
     async def watcher_loop(self) -> None:
         """Watch state/background_tasks/pending/ for submitted tasks.
@@ -746,6 +969,14 @@ class PendingTaskExecutor:
                         )
                         continue
 
+                    claimed_task_id = self._claim_processing_task(
+                        processing_path,
+                        cmd_failed_dir,
+                        task_desc,
+                    )
+                    if claimed_task_id is None:
+                        continue
+                    claim_transferred = False
                     try:
                         logger.info(
                             "Picked up pending task: id=%s tool=%s subcmd=%s anima=%s",
@@ -754,8 +985,17 @@ class PendingTaskExecutor:
                             task_desc.get("subcommand", ""),
                             self._anima_name,
                         )
-                        await self.execute_pending_task(task_desc)
-                        processing_path.unlink(missing_ok=True)
+                        background_task = await self.execute_pending_task(task_desc)
+                        if isinstance(background_task, asyncio.Task):
+                            self._track_command_claim(
+                                background_task,
+                                task_id=claimed_task_id,
+                                processing_path=processing_path,
+                                failed_dir=cmd_failed_dir,
+                            )
+                            claim_transferred = True
+                        else:
+                            _unlink_processing_descriptor(processing_path)
                     except Exception:
                         logger.exception(
                             "Error processing pending task file: %s",
@@ -768,6 +1008,10 @@ class PendingTaskExecutor:
                                 "Failed to move task to failed: %s",
                                 path.name,
                             )
+                    finally:
+                        if not claim_transferred:
+                            self._active_task_ids.discard(claimed_task_id)
+                            _remove_processing_lease(processing_path)
 
                 # Scan LLM pending tasks — group batch tasks, execute serial ones
                 self._restore_deferred_tasks(
@@ -807,10 +1051,19 @@ class PendingTaskExecutor:
                         )
                         continue
 
+                    claimed_task_id = self._claim_processing_task(
+                        processing_path,
+                        llm_failed_dir,
+                        task_desc,
+                    )
+                    if claimed_task_id is None:
+                        continue
+                    claim_transferred = False
                     try:
                         batch_id = task_desc.get("batch_id")
                         if batch_id:
                             self._batch_tasks.setdefault(batch_id, []).append(task_desc)
+                            claim_transferred = True
                             logger.info(
                                 "Queued batch task: id=%s batch=%s anima=%s",
                                 task_desc.get("task_id", "?"),
@@ -826,10 +1079,7 @@ class PendingTaskExecutor:
                             )
                             if self._worker_pool_size() > 1:
                                 worker_slot = await self._acquire_worker(task_id)
-                                if worker_slot is None:
-                                    await self.execute_pending_task(task_desc)
-                                    processing_path.unlink(missing_ok=True)
-                                else:
+                                if worker_slot is not None:
                                     dispatch = asyncio.create_task(
                                         self._execute_claimed_llm_task(
                                             task_desc,
@@ -840,11 +1090,25 @@ class PendingTaskExecutor:
                                         name=f"taskexec-{self._anima_name}-{task_id}",
                                     )
                                     self._track_dispatch_task(dispatch)
+                                    claim_transferred = True
+                                else:
+                                    await self._execute_claimed_llm_task(
+                                        task_desc,
+                                        processing_path,
+                                        llm_failed_dir,
+                                        None,
+                                    )
+                                    claim_transferred = True
                             else:
-                                await self.execute_pending_task(task_desc)
-                                processing_path.unlink(missing_ok=True)
+                                await self._execute_claimed_llm_task(
+                                    task_desc,
+                                    processing_path,
+                                    llm_failed_dir,
+                                    None,
+                                )
+                                claim_transferred = True
                         if batch_id:
-                            processing_path.unlink(missing_ok=True)
+                            _unlink_processing_descriptor(processing_path)
                     except Exception:
                         logger.exception(
                             "Error processing LLM pending task file: %s",
@@ -857,11 +1121,19 @@ class PendingTaskExecutor:
                                 "Failed to move LLM task to failed: %s",
                                 path.name,
                             )
+                    finally:
+                        if not claim_transferred:
+                            self._active_task_ids.discard(claimed_task_id)
+                            _remove_processing_lease(processing_path)
 
                 # Dispatch accumulated batch tasks
                 for batch_id, tasks in list(self._batch_tasks.items()):
                     del self._batch_tasks[batch_id]
-                    await self._dispatch_batch(batch_id, tasks)
+                    dispatch = asyncio.create_task(
+                        self._execute_claimed_batch(batch_id, tasks),
+                        name=f"taskexec-batch-{self._anima_name}-{batch_id}",
+                    )
+                    self._track_dispatch_task(dispatch)
 
                 try:
                     await asyncio.wait_for(
@@ -885,6 +1157,11 @@ class PendingTaskExecutor:
                 task.cancel()
             await asyncio.gather(*self._active_dispatch_tasks, return_exceptions=True)
             self._active_dispatch_tasks.clear()
+        for tasks in self._batch_tasks.values():
+            self._active_task_ids.difference_update(
+                str(task.get("task_id") or "").strip() for task in tasks
+            )
+        self._batch_tasks.clear()
         logger.info("Pending task watcher stopped for %s", self._anima_name)
 
     # ── DAG batch dispatch ──────────────────────────────────────
@@ -1575,7 +1852,7 @@ class PendingTaskExecutor:
         task_desc: dict[str, Any],
         *,
         worker_slot: BackgroundWorkerSlot | None = None,
-    ) -> None:
+    ) -> asyncio.Task[None] | None:
         """Execute a pending task via BackgroundTaskManager or LLM.
 
         Routes by task_type: 'llm' → _execute_llm_task, else command subprocess.
@@ -1584,7 +1861,7 @@ class PendingTaskExecutor:
 
         if task_type == "llm":
             await self._execute_llm_task(task_desc, worker_slot=worker_slot)
-            return
+            return None
 
         if not self._anima:
             logger.warning("Cannot execute pending task: anima not initialized")
@@ -1658,7 +1935,13 @@ class PendingTaskExecutor:
 
         # Submit to BackgroundTaskManager
         composite_name = f"{tool_name}:{subcommand}" if subcommand else tool_name
-        bg_mgr.submit(composite_name, tool_args, _dispatch_fn)
+        background_task_id = bg_mgr.submit(composite_name, tool_args, _dispatch_fn)
+        active_tasks = getattr(bg_mgr, "_async_tasks", None)
+        if isinstance(active_tasks, dict):
+            background_task = active_tasks.get(background_task_id)
+            if isinstance(background_task, asyncio.Task):
+                return background_task
+        return None
 
     async def _execute_llm_task(
         self,

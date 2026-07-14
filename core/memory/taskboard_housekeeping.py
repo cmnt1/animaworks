@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from core.platform.processing_lease import is_processing_lease_live, processing_lease_path
 from core.time_utils import ensure_aware, now_local, today_local
 
 logger = logging.getLogger("animaworks.housekeeping.taskboard")
@@ -62,6 +63,7 @@ def _cleanup_pending_processing(
     queue_missing = 0
     unreadable = 0
     errors = 0
+    live_leases_skipped = 0
 
     for anima_dir in _iter_anima_dirs(animas_dir):
         processing_dir = anima_dir / "state" / "pending" / "processing"
@@ -72,11 +74,21 @@ def _cleanup_pending_processing(
             try:
                 if path.stat().st_mtime >= cutoff_ts:
                     continue
+                if is_processing_lease_live(path, expected_anima=anima_dir.name):
+                    live_leases_skipped += 1
+                    logger.info("Skipping stale processing task with live lease: %s", path)
+                    continue
                 payload, valid_json = _read_json_object(path)
                 if not valid_json:
                     unreadable += 1
                 task_id = _task_id_from_payload(payload, path) if valid_json else ""
                 target = _move_with_collision(path, failed_dir, collision_label="recovered")
+                lease_path = processing_lease_path(path)
+                if lease_path.exists():
+                    try:
+                        lease_path.rename(processing_lease_path(target))
+                    except OSError:
+                        logger.warning("Failed to move stale processing lease: %s", lease_path, exc_info=True)
                 recovered += 1
                 synced = False
                 missing = False
@@ -111,6 +123,7 @@ def _cleanup_pending_processing(
         "queue_missing": queue_missing,
         "unreadable": unreadable,
         "errors": errors,
+        "live_leases_skipped": live_leases_skipped,
     }
 
 
