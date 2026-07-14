@@ -120,6 +120,18 @@ def test_signed_pr_webhook_dispatches_to_real_inbox(data_dir, monkeypatch):
 
         _wait_until(lambda: len(list(inbox_dir.glob("*.json"))) == 1)
 
+        def _state_notified() -> bool:
+            # The inbox file is written inside the flock *before* the state
+            # JSON is atomically replaced, so wait for the state flush too.
+            try:
+                state = json.loads(state_file.read_text(encoding="utf-8"))
+            except (FileNotFoundError, json.JSONDecodeError):
+                return False
+            entry = state.get("prs", {}).get("FutureSync/AI-Schreiber#42", {})
+            return entry.get("notified_sha") == sha
+
+        _wait_until(_state_notified)
+
         files = list(inbox_dir.glob("*.json"))
         message = Message.model_validate_json(files[0].read_text(encoding="utf-8"))
         assert message.to_person == "sumire"
