@@ -137,6 +137,8 @@ def test_chroma_store_transient_reset_suppressed_by_cooldown(tmp_path: Path) -> 
     reset_after_error.assert_called_once()
     assert bad_client.get_or_create_collection.call_count == 2
     bad_client.close.assert_not_called()
+    assert store.consume_lightweight_self_heal_failure() is True
+    assert store.consume_lightweight_self_heal_failure() is False
 
 
 def test_chroma_store_reports_recreate_failure_as_repair_signal(tmp_path: Path) -> None:
