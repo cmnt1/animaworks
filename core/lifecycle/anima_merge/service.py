@@ -378,11 +378,12 @@ class AnimaMergeService:
         for name in sorted(source_skills.keys() & target_skills.keys()):
             result["skills"].append({"source": source_skills[name], "target": target_skills[name]})
 
-        target_attachments: dict[str, list[str]] = {}
+        target_attachments: set[str] = set()
         for path in _files(self.target_dir / "attachments"):
-            target_attachments.setdefault(path.name, []).append(_safe_relative(path, self.target_dir))
+            target_attachments.add(_safe_relative(path, self.target_dir / "attachments"))
         for path in _files(self.source_dir / "attachments"):
-            if path.name in target_attachments:
+            relative = _safe_relative(path, self.source_dir / "attachments")
+            if relative in target_attachments:
                 result["attachments"].append(
                     {"source": _safe_relative(path, self.source_dir), "basename": path.name}
                 )
@@ -727,20 +728,14 @@ class AnimaMergeService:
         source_root = self.source_dir / "attachments"
         target_root = self.target_dir / "attachments"
         mapping: dict[str, str] = {}
-        target_basenames = {path.name for path in _files(target_root)}
         namespace = f"__from_{self.source}"
         for source_path in _files(source_root):
             relative = source_path.relative_to(source_root)
             desired = target_root / relative
-            if source_path.name in target_basenames and not (
-                desired.is_file() and _sha256(desired) == _sha256(source_path)
-            ):
-                desired = desired.with_name(f"{desired.stem}{namespace}{desired.suffix}")
             destination, _is_duplicate = self._copy_collision_safe(source_path, desired, namespace)
             source_key = f"attachments/{relative.as_posix()}"
             target_key = f"attachments/{destination.relative_to(target_root).as_posix()}"
             mapping[source_key] = target_key
-            target_basenames.add(destination.name)
         return mapping
 
     def rebuild_indexes(self, journal: MergeJournal) -> dict[str, Any]:

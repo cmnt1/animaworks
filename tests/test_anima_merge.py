@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from cli.commands.anima_merge import cmd_anima_merge
 from core.lifecycle.anima_merge import AnimaMergeError, AnimaMergeService, MergePhase
 from core.memory.facts import FactRecord, append_fact_records, iter_fact_records
 
@@ -315,6 +317,92 @@ def test_anima_merge_attachment_copy_is_idempotent_after_later_failure(
     journal = json.loads(service.journal_path.read_text(encoding="utf-8"))
     mapping = journal["phases"][MergePhase.MERGE_MEMORY.value]["artifacts"]["attachment_mapping"]
     assert mapping == {"attachments/photo.png": "attachments/photo__from_source.png"}
+
+
+def test_anima_merge_attachments_in_different_subdirectories_do_not_collide(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir, source, target = _setup_data_dir(tmp_path)
+    _write(source / "attachments" / "source-dir" / "photo.png", "source image")
+    _write(target / "attachments" / "target-dir" / "photo.png", "target image")
+    _stub_rebuild_substeps(monkeypatch)
+
+    result = AnimaMergeService(data_dir, "source", "target").run(execute=True)
+
+    copied = target / "attachments" / "source-dir" / "photo.png"
+    assert copied.read_text(encoding="utf-8") == "source image"
+    assert not (copied.parent / "photo__from_source.png").exists()
+    manifest = json.loads(result.manifest_json.read_text(encoding="utf-8"))
+    assert manifest["collisions"]["attachments"] == []
+    journal = json.loads(result.journal_path.read_text(encoding="utf-8"))
+    mapping = journal["phases"][MergePhase.MERGE_MEMORY.value]["artifacts"]["attachment_mapping"]
+    assert mapping == {
+        "attachments/source-dir/photo.png": "attachments/source-dir/photo.png",
+    }
+
+
+def test_anima_merge_cli_offline_worker_enables_real_get_vector_store_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir, _source, _target = _setup_data_dir(tmp_path)
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
+    monkeypatch.setattr("cli.commands.index_cmd._setup_server_delegation", lambda: False)
+
+    class FakeWorker:
+        stopped = False
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    worker = FakeWorker()
+
+    def start_worker():
+        monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://worker.test")
+        monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://worker.test/embed")
+        return worker
+
+    monkeypatch.setattr(
+        "core.memory.rag.vector_worker_client.start_temporary_vector_worker",
+        start_worker,
+    )
+    monkeypatch.setattr(
+        AnimaMergeService,
+        "_rebuild_vectordb",
+        lambda self: {"chunks_indexed": 0, "archived_vectordb": None},
+    )
+
+    from core.memory.rag import singleton
+
+    real_get_vector_store = singleton.get_vector_store
+    stores: list[object] = []
+
+    def tracked_get_vector_store(anima_name=None):
+        store = real_get_vector_store(anima_name)
+        stores.append(store)
+        return store
+
+    monkeypatch.setattr(singleton, "get_vector_store", tracked_get_vector_store)
+    args = argparse.Namespace(
+        source="source",
+        target="target",
+        execute=True,
+        resume=False,
+        gateway_url=None,
+        force=False,
+    )
+
+    cmd_anima_merge(args)
+
+    assert worker.stopped is True
+    assert stores and all(store is not None for store in stores)
+    journal = json.loads((data_dir / "state" / "merge_journal_source_target.json").read_text(encoding="utf-8"))
+    substeps = journal["phases"][MergePhase.REBUILD_INDEXES.value]["substeps"]
+    assert substeps["entities"]["status"] == "completed"
+    assert substeps["graph_cache"]["status"] == "completed"
 
 
 def test_anima_merge_dry_run_only_writes_manifest_and_estimates_rebuild(tmp_path: Path) -> None:
