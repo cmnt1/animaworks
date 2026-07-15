@@ -110,16 +110,22 @@ def verify_rebuilt_vectordb(anima_name: str, *, expected_chunks: int) -> None:
         )
 
 
-def _reindex_into_store(vector_store, anima_name: str, *, include_shared: bool) -> int:
+def _reindex_into_store(
+    vector_store,
+    anima_name: str,
+    *,
+    include_shared: bool,
+    anima_dir: Path | None = None,
+) -> int:
     """Index an anima's memory (and optionally shared collections) into a store."""
     from core.memory.bm25 import rebuild_longterm_bm25_index
     from core.memory.rag import MemoryIndexer
     from core.paths import get_animas_dir, get_common_knowledge_dir, get_common_skills_dir, get_data_dir
 
-    anima_dir = get_animas_dir() / anima_name
+    anima_dir = Path(anima_dir) if anima_dir is not None else get_animas_dir() / anima_name
     total_chunks = 0
     indexer = MemoryIndexer(vector_store, anima_name, anima_dir)
-    for memory_type in ("knowledge", "episodes", "procedures", "skills"):
+    for memory_type in ("knowledge", "episodes", "procedures", "skills", "facts"):
         memory_dir = anima_dir / memory_type
         if memory_dir.is_dir():
             total_chunks += indexer.index_directory(memory_dir, memory_type, force=True).chunks_indexed
@@ -162,7 +168,12 @@ def full_reindex(anima_name: str, *, include_shared: bool) -> int:
     return _reindex_into_store(vector_store, anima_name, include_shared=include_shared)
 
 
-def atomic_rebuild_vectordb(anima_name: str, *, include_shared: bool) -> tuple[int, Path | None]:
+def atomic_rebuild_vectordb(
+    anima_name: str,
+    *,
+    include_shared: bool,
+    anima_dir: Path | None = None,
+) -> tuple[int, Path | None]:
     """Build a fresh vector DB in a staging dir and atomically swap it in.
 
     Unlike the in-place rebuild (quarantine the live DB, then reindex into the
@@ -186,7 +197,8 @@ def atomic_rebuild_vectordb(anima_name: str, *, include_shared: bool) -> tuple[i
     from core.memory.rag.store import create_chroma_vector_store
     from core.paths import get_anima_vectordb_dir
 
-    live = get_anima_vectordb_dir(anima_name)
+    resolved_anima_dir = Path(anima_dir) if anima_dir is not None else None
+    live = resolved_anima_dir / "vectordb" if resolved_anima_dir is not None else get_anima_vectordb_dir(anima_name)
     staging = live.parent / f"vectordb.staging-{os.getpid()}"
     if staging.exists():
         shutil.rmtree(staging, ignore_errors=True)
@@ -197,7 +209,12 @@ def atomic_rebuild_vectordb(anima_name: str, *, include_shared: bool) -> tuple[i
     try:
         store = create_chroma_vector_store(persist_dir=staging, anima_name=anima_name)
         try:
-            chunks = _reindex_into_store(store, anima_name, include_shared=include_shared)
+            chunks = _reindex_into_store(
+                store,
+                anima_name,
+                include_shared=include_shared,
+                anima_dir=resolved_anima_dir,
+            )
             if chunks > 0 and not store.list_collections():
                 raise RebuildVerificationError(
                     f"staged vector DB for {anima_name} has no collections despite indexing {chunks} chunks"

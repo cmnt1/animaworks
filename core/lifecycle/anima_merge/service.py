@@ -4,8 +4,9 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Phase 1 service for collision-safe, resumable Anima memory merges."""
+"""Collision-safe, resumable Anima memory merge through index rebuilding."""
 
+import asyncio
 import hashlib
 import json
 import os
@@ -29,7 +30,6 @@ from .journal import MergeJournal, MergePhase
 _DATE_PREFIX = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 _ARCHIVE_ONLY = ("activity_log", "token_usage", "prompt_logs")
 _PLACEHOLDER_PHASES = (
-    MergePhase.REBUILD_INDEXES,
     MergePhase.REWRITE_REFS,
     MergePhase.VERIFY,
     MergePhase.TOMBSTONE,
@@ -79,7 +79,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 class AnimaMergeService:
-    """Run Phase 1 of an Anima merge against one runtime data directory."""
+    """Merge canonical memory and rebuild target indexes in one runtime data directory."""
 
     def __init__(
         self,
@@ -103,7 +103,7 @@ class AnimaMergeService:
         self.lock_path = self.state_dir / "anima_merge.lock"
 
     def run(self, *, execute: bool = False, resume: bool = False) -> MergeResult:
-        """Generate a manifest, or execute the Phase 1 state machine."""
+        """Generate a manifest, or execute the implemented merge phases."""
         if resume and not execute:
             raise AnimaMergeError("--resume requires --execute")
         self._validate_names()
@@ -135,12 +135,17 @@ class AnimaMergeService:
             self._run_phase(journal, MergePhase.QUIESCE, self.quiesce)
             self._run_phase(journal, MergePhase.SNAPSHOT, lambda: self.snapshot(journal))
             self._run_phase(journal, MergePhase.MERGE_MEMORY, self.merge_memory)
+            self._run_phase(
+                journal,
+                MergePhase.REBUILD_INDEXES,
+                lambda: self.rebuild_indexes(journal),
+            )
             for phase in _PLACEHOLDER_PHASES:
                 if not journal.is_completed(phase):
                     journal.skip(phase, "Not implemented in Phase 1")
             if not journal.is_completed(MergePhase.DONE):
                 journal.start(MergePhase.DONE)
-                journal.complete(MergePhase.DONE, {"phase_1_complete": True})
+                journal.complete(MergePhase.DONE, {"phase_2_complete": True})
             journal.finish()
             snapshot_raw = journal.data.get("artifacts", {}).get("snapshot_path")
             return MergeResult(
@@ -275,8 +280,50 @@ class AnimaMergeService:
             "task_id_collisions": self._task_id_collisions(),
             "thread_id_collisions": self._thread_id_collisions(),
             "external_references": self._external_references(),
+            "rebuild_indexes": self._rebuild_estimate(target_backend),
             "preflight_warnings": list(warnings or []),
         }
+
+    def _rebuild_estimate(self, backend: str) -> dict[str, Any]:
+        """Estimate target rebuild inputs without mutating either Anima."""
+        categories: dict[str, int] = {}
+        for memory_type, pattern in (
+            ("knowledge", "*.md"),
+            ("episodes", "*.md"),
+            ("procedures", "*.md"),
+            ("skills", "SKILL.md"),
+        ):
+            categories[memory_type] = sum(
+                1
+                for root in (self.source_dir / memory_type, self.target_dir / memory_type)
+                for path in root.rglob(pattern)
+                if path.is_file()
+            )
+
+        fact_ids = {
+            record.fact_id
+            for anima_dir in (self.source_dir, self.target_dir)
+            for record in iter_fact_records(anima_dir, include_expired=True)
+        }
+        categories["facts"] = len(fact_ids)
+        conversation = self.target_dir / "state" / "conversation.json"
+        categories["conversation_summary"] = int(self._has_conversation_summary(conversation))
+        return {
+            "target": self.target,
+            "estimated_inputs": categories,
+            "substeps": ["vectordb", "entities", "bm25", "graph_cache", "neo4j"],
+            "neo4j_action": "reingest_target_group" if backend == "neo4j" else "skip_not_configured",
+        }
+
+    @staticmethod
+    def _has_conversation_summary(path: Path) -> bool:
+        if not path.is_file():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return isinstance(data, dict) and bool(str(data.get("compressed_summary", "")).strip())
 
     @staticmethod
     def _tree_summary(anima_dir: Path) -> dict[str, dict[str, int]]:
@@ -331,11 +378,12 @@ class AnimaMergeService:
         for name in sorted(source_skills.keys() & target_skills.keys()):
             result["skills"].append({"source": source_skills[name], "target": target_skills[name]})
 
-        target_attachments: dict[str, list[str]] = {}
+        target_attachments: set[str] = set()
         for path in _files(self.target_dir / "attachments"):
-            target_attachments.setdefault(path.name, []).append(_safe_relative(path, self.target_dir))
+            target_attachments.add(_safe_relative(path, self.target_dir / "attachments"))
         for path in _files(self.source_dir / "attachments"):
-            if path.name in target_attachments:
+            relative = _safe_relative(path, self.source_dir / "attachments")
+            if relative in target_attachments:
                 result["attachments"].append(
                     {"source": _safe_relative(path, self.source_dir), "basename": path.name}
                 )
@@ -476,6 +524,17 @@ class AnimaMergeService:
                 f"- supervisor references: {len(manifest['external_references']['supervisors'])}",
                 f"- external messaging references: {len(manifest['external_references']['external_messaging'])}",
                 "",
+                "## REBUILD_INDEXES estimate",
+                "",
+            ]
+        )
+        estimate = manifest["rebuild_indexes"]
+        for category, count in estimate["estimated_inputs"].items():
+            lines.append(f"- {category}: {count}")
+        lines.extend(
+            [
+                f"- Neo4j: {estimate['neo4j_action']}",
+                "",
                 "## Preflight warnings",
                 "",
             ]
@@ -489,6 +548,12 @@ class AnimaMergeService:
     # ── Execute phases ────────────────────────────────────────
 
     def quiesce(self) -> dict[str, Any]:
+        """Stop both Animas before mutation.
+
+        Disabling through the runtime API may update the source ``status.json``.
+        That quiesce side effect is the sole permitted exception to the merge's
+        otherwise strict source-directory immutability rule.
+        """
         server_running = self._server_running()
         disabled: list[str] = []
         if server_running:
@@ -575,6 +640,7 @@ class AnimaMergeService:
             deduplicated.extend(deduped)
         fact_result = self._merge_facts(episode_mapping)
         skill_mapping = self._merge_skills()
+        attachment_mapping = self._merge_attachments()
         conversation_files = self._merge_conversation_history()
         archive_plan = self._archive_plan()
         skill_state = self._skill_state_provenance(skill_mapping)
@@ -586,6 +652,7 @@ class AnimaMergeService:
             "facts_read": fact_result["read"],
             "facts_appended": fact_result["appended"],
             "skill_mapping": skill_mapping,
+            "attachment_mapping": attachment_mapping,
             "skill_state_provenance": skill_state,
             "recovered_memory": recovered,
             "conversation_episodes": conversation_files,
@@ -655,6 +722,169 @@ class AnimaMergeService:
             if is_duplicate:
                 deduplicated.append(source_key)
         return mapping, deduplicated
+
+    def _merge_attachments(self) -> dict[str, str]:
+        """Copy source attachments with basename-safe, resumable renames."""
+        source_root = self.source_dir / "attachments"
+        target_root = self.target_dir / "attachments"
+        mapping: dict[str, str] = {}
+        namespace = f"__from_{self.source}"
+        for source_path in _files(source_root):
+            relative = source_path.relative_to(source_root)
+            desired = target_root / relative
+            destination, _is_duplicate = self._copy_collision_safe(source_path, desired, namespace)
+            source_key = f"attachments/{relative.as_posix()}"
+            target_key = f"attachments/{destination.relative_to(target_root).as_posix()}"
+            mapping[source_key] = target_key
+        return mapping
+
+    def rebuild_indexes(self, journal: MergeJournal) -> dict[str, Any]:
+        """Rebuild target-derived indexes with resumable journal substeps."""
+        self._run_rebuild_substep(journal, "vectordb", self._rebuild_vectordb)
+        self._run_rebuild_substep(journal, "entities", self._rebuild_entities)
+        self._run_rebuild_substep(journal, "bm25", self._rebuild_bm25)
+        self._run_rebuild_substep(journal, "graph_cache", self._rebuild_graph_cache)
+
+        if resolve_backend_type(self.target_dir) == "neo4j":
+            self._run_rebuild_substep(journal, "neo4j", self._rebuild_neo4j)
+        elif not journal.is_substep_completed(MergePhase.REBUILD_INDEXES, "neo4j"):
+            journal.skip_substep(
+                MergePhase.REBUILD_INDEXES,
+                "neo4j",
+                "Target memory backend is not Neo4j",
+            )
+
+        substeps = journal.data.get("phases", {}).get(MergePhase.REBUILD_INDEXES.value, {}).get("substeps", {})
+        return {
+            "rebuild_target": self.target,
+            "rebuild_substeps": {
+                name: {
+                    "status": record.get("status"),
+                    "artifacts": record.get("artifacts", {}),
+                    **({"reason": record["reason"]} if "reason" in record else {}),
+                }
+                for name, record in substeps.items()
+                if isinstance(record, dict)
+            },
+        }
+
+    @staticmethod
+    def _run_rebuild_substep(journal: MergeJournal, name: str, action: Any) -> dict[str, Any]:
+        phase = MergePhase.REBUILD_INDEXES
+        if journal.is_substep_completed(phase, name):
+            return journal.substep_artifacts(phase, name)
+        journal.start_substep(phase, name)
+        try:
+            artifacts = action() or {}
+        except Exception as exc:
+            journal.fail_substep(phase, name, f"{type(exc).__name__}: {exc}")
+            raise
+        journal.complete_substep(phase, name, artifacts)
+        return artifacts
+
+    def _rebuild_vectordb(self) -> dict[str, Any]:
+        from core.memory.rag.repair_rebuild import atomic_rebuild_vectordb
+
+        chunks, archive = atomic_rebuild_vectordb(
+            self.target,
+            include_shared=False,
+            anima_dir=self.target_dir,
+        )
+        return {
+            "chunks_indexed": chunks,
+            "archived_vectordb": str(archive) if archive is not None else None,
+        }
+
+    def _target_vector_components(self) -> tuple[Any, Any]:
+        from core.memory.rag import MemoryIndexer
+        from core.memory.rag.singleton import get_vector_store
+
+        vector_store = get_vector_store(self.target)
+        if vector_store is None:
+            raise AnimaMergeError(f"Vector store unavailable for target '{self.target}'")
+        return vector_store, MemoryIndexer(vector_store, self.target, self.target_dir)
+
+    def _rebuild_entities(self) -> dict[str, Any]:
+        from core.memory.entity_index import rebuild_entity_registry, sync_entity_collection
+
+        registry = rebuild_entity_registry(self.target_dir)
+        vector_store, _indexer = self._target_vector_components()
+        if not sync_entity_collection(self.target_dir, registry=registry, vector_store=vector_store):
+            raise AnimaMergeError(f"Failed to rebuild entity collection for target '{self.target}'")
+        entities = registry.get("entities", {})
+        return {"entities": len(entities) if isinstance(entities, dict) else 0}
+
+    def _rebuild_bm25(self) -> dict[str, Any]:
+        from core.memory.bm25 import rebuild_longterm_bm25_index
+
+        result = rebuild_longterm_bm25_index(self.target_dir)
+        return {"documents": result.documents, "path": str(result.path)}
+
+    def _rebuild_graph_cache(self) -> dict[str, Any]:
+        from core.memory.rag.graph import rebuild_graph_cache
+
+        vector_store, indexer = self._target_vector_components()
+        rebuilt = rebuild_graph_cache(
+            self.target,
+            self.target_dir,
+            vector_store,
+            indexer,
+        )
+        return {"rebuilt": rebuilt}
+
+    def _rebuild_neo4j(self) -> dict[str, Any]:
+        return asyncio.run(self._rebuild_neo4j_async())
+
+    async def _rebuild_neo4j_async(self) -> dict[str, Any]:
+        """Reset only the target group and ingest all merged canonical inputs."""
+        from core.memory.backend.registry import get_backend
+
+        backend = get_backend("neo4j", self.target_dir)
+        files = 0
+        facts = 0
+        chunks = 0
+        try:
+            await backend.reset()
+            for memory_type, pattern in (
+                ("knowledge", "*.md"),
+                ("episodes", "*.md"),
+                ("procedures", "*.md"),
+                ("skills", "SKILL.md"),
+            ):
+                root = self.target_dir / memory_type
+                if not root.is_dir():
+                    continue
+                for path in sorted(root.rglob(pattern)):
+                    if path.is_file():
+                        chunks += await backend.ingest_file(path)
+                        files += 1
+
+            for record in iter_fact_records(self.target_dir, include_expired=True):
+                chunks += await backend.ingest_text(
+                    record.text,
+                    source=f"fact:{record.fact_id}",
+                    metadata={
+                        "stable_key": f"fact:{record.fact_id}",
+                        "fact_id": record.fact_id,
+                        "valid_at": record.valid_at,
+                        "source_episode": record.source_episode,
+                    },
+                )
+                facts += 1
+
+            conversation_path = self.target_dir / "state" / "conversation.json"
+            if self._has_conversation_summary(conversation_path):
+                conversation = _read_json(conversation_path)
+                summary = str(conversation.get("compressed_summary", "")).strip()
+                chunks += await backend.ingest_text(
+                    summary,
+                    source="conversation_summary",
+                    metadata={"stable_key": f"conversation_summary:{self.target}"},
+                )
+                files += 1
+        finally:
+            await backend.close()
+        return {"files_ingested": files, "facts_ingested": facts, "chunks_created": chunks}
 
     def _map_source_episode(self, value: str, mapping: dict[str, str]) -> str:
         if value in mapping:
