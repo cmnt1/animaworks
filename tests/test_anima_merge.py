@@ -12,6 +12,7 @@ import pytest
 from cli.commands.anima_merge import cmd_anima_merge
 from core.lifecycle.anima_merge import AnimaMergeError, AnimaMergeService, MergePhase
 from core.memory.facts import FactRecord, append_fact_records, iter_fact_records
+from core.taskboard.store import TaskBoardStore
 
 
 def _write(path: Path, content: str) -> Path:
@@ -142,6 +143,220 @@ def _add_memory_fixture(source: Path, target: Path) -> None:
     )
 
 
+def _task_entry(
+    task_id: str,
+    assignee: str,
+    *,
+    meta: dict[str, object] | None = None,
+    relay_chain: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "task_id": task_id,
+        "ts": "2026-07-15T00:00:00+00:00",
+        "source": "anima",
+        "original_instruction": f"Execute {task_id}",
+        "assignee": assignee,
+        "status": "pending",
+        "summary": task_id,
+        "deadline": None,
+        "relay_chain": relay_chain or [assignee],
+        "updated_at": "2026-07-15T00:00:00+00:00",
+        "meta": meta or {},
+    }
+
+
+def _add_rewrite_refs_fixture(data_dir: Path, source: Path, target: Path) -> None:
+    _write(
+        source / "episodes" / "2026-07-15.md",
+        "[source attachment](attachments/photo.png)\n",
+    )
+    _write(target / "episodes" / "2026-07-15.md", "target episode\n")
+    _write(
+        source / "knowledge" / "linked.md",
+        "[source episode](episodes/2026-07-15.md)\n",
+    )
+    _write(
+        target / "knowledge" / "qualified.md",
+        "[qualified](/api/animas/source/attachments/photo.png)\n"
+        "[unique](/api/animas/source/attachments/unique.png)\n",
+    )
+    _write(source / "attachments" / "photo.png", "source-photo")
+    _write(source / "attachments" / "unique.png", "source-unique")
+    _write(target / "attachments" / "photo.png", "target-photo")
+
+    worker = data_dir / "animas" / "worker"
+    worker.mkdir(parents=True)
+    _write(worker / "identity.md", "# worker\n")
+    _write(worker / "status.json", '{"enabled":true,"supervisor":"source"}\n')
+    tracking = _task_entry(
+        "tracking-task",
+        "source",
+        meta={
+            "delegated_to": "source",
+            "delegated_task_id": "collision-task",
+            "child_ref": {"anima_name": "source", "task_id": "collision-task"},
+        },
+        relay_chain=["worker", "source"],
+    )
+    _write(worker / "state" / "task_queue.jsonl", json.dumps(tracking) + "\n")
+
+    config = {
+        "animas": {
+            "source": {"supervisor": None},
+            "target": {"supervisor": None},
+            "worker": {"supervisor": "source"},
+        },
+        "external_messaging": {
+            "slack": {
+                "anima_mapping": {"C1": "source"},
+                "app_id_mapping": {"A1": "source"},
+                "default_anima": "source",
+                "bot_token": "config-secret-must-not-be-journaled",
+            },
+            "chatwork": {"anima_mapping": {"R1": "source"}},
+            "discord": {
+                "anima_mapping": {"D1": "source"},
+                "channel_members": {"D1": ["source", "target"]},
+            },
+            "zoom": {"default_anima": "source", "meeting_mapping": {"M1": "source"}},
+        },
+        "github_webhook": {"reviewer_anima": "source", "dispatcher_anima": "source"},
+    }
+    _write(data_dir / "config.json", json.dumps(config) + "\n")
+    _write(
+        data_dir / "shared" / "channels" / "team.meta.json",
+        json.dumps({"members": ["source", "target"], "created_by": "source"}) + "\n",
+    )
+    _write(
+        data_dir / "shared" / "meetings" / "open.json",
+        json.dumps(
+            {
+                "closed": False,
+                "participants": ["source", "target"],
+                "chair": "source",
+                "conversation": [{"speaker": "source", "content": "history"}],
+            }
+        )
+        + "\n",
+    )
+    _write(
+        data_dir / "shared" / "credentials.json",
+        json.dumps(
+            {
+                "SLACK_BOT_TOKEN__source": "credential-secret-must-not-be-journaled",
+                "SLACK_BOT_TOKEN__target": "target-secret-must-not-be-journaled",
+            }
+        )
+        + "\n",
+    )
+
+    source_message = {
+        "id": "message",
+        "thread_id": "message",
+        "from_person": "source",
+        "to_person": "source",
+        "content": "undelivered",
+        "intent": "delegation",
+        "meta": {"task_id": "collision-task"},
+    }
+    target_message = {
+        "id": "message",
+        "from_person": "worker",
+        "to_person": "target",
+        "content": "existing",
+    }
+    _write(data_dir / "shared" / "inbox" / "source" / "message.json", json.dumps(source_message) + "\n")
+    _write(data_dir / "shared" / "inbox" / "target" / "message.json", json.dumps(target_message) + "\n")
+    _write(
+        data_dir / "shared" / "inbox" / "source" / "report.json",
+        json.dumps(
+            {
+                "id": "report",
+                "from_person": "worker",
+                "to_person": "source",
+                "content": "completed",
+                "intent": "report",
+                "meta": {"task_id": "collision-task"},
+            }
+        )
+        + "\n",
+    )
+    historical = {
+        "id": "historical",
+        "from_person": "source",
+        "to_person": "worker",
+        "content": "preserve sender attribution",
+    }
+    _write(data_dir / "shared" / "inbox" / "worker" / "historical.json", json.dumps(historical) + "\n")
+
+    source_collision = _task_entry("collision-task", "source")
+    source_unique = _task_entry("unique-task", "source")
+    target_collision = _task_entry("collision-task", "target")
+    _write(
+        source / "state" / "task_queue.jsonl",
+        json.dumps(source_collision) + "\n" + json.dumps(source_unique) + "\n",
+    )
+    _write(target / "state" / "task_queue.jsonl", json.dumps(target_collision) + "\n")
+    _write(
+        source / "state" / "pending" / "collision-task.json",
+        json.dumps(
+            {
+                "task_id": "collision-task",
+                "submitted_by": "source",
+                "reply_to": "source",
+                "depends_on": ["unique-task"],
+            }
+        )
+        + "\n",
+    )
+    _write(source / "state" / "task_results" / "unique-task.md", "unique result\n")
+    _write(source / "state" / "task_results" / "terminal-result.md", "terminal result\n")
+
+    board = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    board.upsert_metadata(
+        anima_name="target",
+        task_id="collision-task",
+        actor="target",
+        source_ref="task_queue:target:collision-task",
+    )
+    board.upsert_metadata(
+        anima_name="source",
+        task_id="collision-task",
+        actor="source",
+        source_ref="task_queue:source:collision-task",
+    )
+    board.upsert_metadata(
+        anima_name="source",
+        task_id="unique-task",
+        actor="source",
+        source_ref="task_queue:source:unique-task",
+    )
+    board.append_event(
+        event_type="metadata_upserted",
+        anima_name="worker",
+        task_id="tracking-task",
+        actor="worker",
+        payload={"ref": {"anima_name": "source", "task_id": "collision-task"}},
+    )
+
+    _write(
+        data_dir / "run" / "notification_map.json",
+        json.dumps({"thread": {"anima": "source", "channel": "C1"}}) + "\n",
+    )
+    _write(
+        data_dir / "run" / "discord_thread_map.json",
+        json.dumps({"message": {"anima": "source", "ts": 1784100000}}) + "\n",
+    )
+    _write(
+        data_dir / "usage_governor_state.json",
+        json.dumps({"suspended_animas": ["source", "target"], "reason": "budget"}) + "\n",
+    )
+    _write(data_dir / "animas" / ".bootstrap_retries.json", '{"source":3,"target":1}\n')
+    _write(data_dir / "run" / "inbox_wake" / "source", "")
+    _write(data_dir / "run" / "events" / "source" / "event.json", "{}\n")
+    _write(data_dir / "run" / "animas" / "source.lock", "stale\n")
+
+
 def test_anima_merge_dry_run_manifest_reports_collisions_and_references(tmp_path: Path) -> None:
     data_dir, source, target = _setup_data_dir(tmp_path)
     _add_collision_fixture(data_dir, source, target)
@@ -211,6 +426,8 @@ def test_anima_merge_execute_merges_canonical_memory_and_journals_mappings(
 
     facts = list(iter_fact_records(target, include_expired=True))
     assert {fact.text for fact in facts} == {"Shared fact", "Source-only fact"}
+    shared = next(fact for fact in facts if fact.text == "Shared fact")
+    assert shared.source_episode == "episodes/2026-07-01.md"
     source_only = next(fact for fact in facts if fact.text == "Source-only fact")
     assert source_only.source_episode == "episodes/2026-07-01_source.md"
     generated = list((target / "episodes").glob("merged_*_from_source_*.md"))
@@ -624,3 +841,40 @@ def test_anima_merge_quiesce_disables_both_animas_via_api(
         "http://gateway.test/api/animas/target/disable",
     ]
     assert all(call.kwargs["timeout"] == 10 for call in post.call_args_list)
+
+
+def test_anima_merge_syncs_live_reference_state_via_gateway(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir, _source, _target = _setup_data_dir(tmp_path)
+    service = AnimaMergeService(data_dir, "source", "target", gateway_url="http://gateway.test")
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {"discord_mappings_updated": 1, "config_reloaded": True}
+    post = Mock(return_value=response)
+    monkeypatch.setattr("requests.post", post)
+
+    result = service._sync_live_reference_state()
+
+    assert result == {"discord_mappings_updated": 1, "config_reloaded": True}
+    post.assert_called_once_with(
+        "http://gateway.test/api/system/anima-merge/rewrite-runtime-refs",
+        json={"source": "source", "target": "target"},
+        timeout=10,
+    )
+
+
+def test_anima_merge_rejects_incomplete_live_reference_reload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir, _source, _target = _setup_data_dir(tmp_path)
+    service = AnimaMergeService(data_dir, "source", "target")
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {"config_reloaded": False}
+    monkeypatch.setattr("requests.post", Mock(return_value=response))
+
+    with pytest.raises(AnimaMergeError, match="did not reload configuration"):
+        service._sync_live_reference_state()
