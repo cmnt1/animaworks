@@ -329,6 +329,7 @@ def index_command(args: argparse.Namespace) -> None:
             ("episodes", anima_dir / "episodes"),
             ("procedures", anima_dir / "procedures"),
             ("skills", anima_dir / "skills"),
+            ("facts", anima_dir / "facts"),
         ]
 
         for memory_type, memory_dir in memory_types:
@@ -341,6 +342,8 @@ def index_command(args: argparse.Namespace) -> None:
             if args.dry_run:
                 if memory_type in ("skills", "common_skills"):
                     md_files = list(memory_dir.rglob("SKILL.md"))
+                elif memory_type == "facts":
+                    md_files = list(memory_dir.rglob("*.jsonl"))
                 else:
                     md_files = list(memory_dir.rglob("*.md"))
                 logger.info("  Would index %d files in %s/", len(md_files), memory_type)
