@@ -233,6 +233,20 @@ class VaultManager:
             logger.debug("Decryption failed; returning value as-is (likely plaintext)")
             return ciphertext
 
+    def is_encrypted_value(self, value: str) -> bool:
+        """Return whether *value* is a SealedBox ciphertext decryptable by the current key."""
+        if not value or not _HAS_NACL:
+            return False
+        sk = self._load_key()
+        if sk is None:
+            return False
+        try:
+            raw = base64.b64decode(value, validate=True)
+            box_decrypt(sk, raw)
+            return True
+        except Exception:
+            return False
+
     # ── Config credentials encrypt / decrypt ─────────────────────
 
     def encrypt_config_credentials(
