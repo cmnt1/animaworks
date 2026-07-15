@@ -1,0 +1,900 @@
+from __future__ import annotations
+
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Phase 1 service for collision-safe, resumable Anima memory merges."""
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from core.anima_factory import validate_anima_name
+from core.memory.backend.registry import resolve_backend_type
+from core.memory.facts import FactRecord, append_fact_records, iter_fact_records
+from core.platform.locks import acquire_file_lock, release_file_lock
+from core.time_utils import now_iso, now_local
+
+from .journal import MergeJournal, MergePhase
+
+_DATE_PREFIX = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+_ARCHIVE_ONLY = ("activity_log", "token_usage", "prompt_logs")
+_PLACEHOLDER_PHASES = (
+    MergePhase.REBUILD_INDEXES,
+    MergePhase.REWRITE_REFS,
+    MergePhase.VERIFY,
+    MergePhase.TOMBSTONE,
+)
+
+
+class AnimaMergeError(RuntimeError):
+    """Raised when a merge cannot safely continue."""
+
+
+@dataclass(frozen=True)
+class MergeResult:
+    source: str
+    target: str
+    dry_run: bool
+    manifest_json: Path
+    manifest_markdown: Path
+    journal_path: Path | None = None
+    snapshot_path: Path | None = None
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _safe_relative(path: Path, root: Path) -> str:
+    return path.relative_to(root).as_posix()
+
+
+def _files(root: Path) -> Iterator[Path]:
+    if root.is_dir():
+        yield from (path for path in sorted(root.rglob("*")) if path.is_file())
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AnimaMergeError(f"Invalid JSON file {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise AnimaMergeError(f"Expected a JSON object in {path}")
+    return value
+
+
+class AnimaMergeService:
+    """Run Phase 1 of an Anima merge against one runtime data directory."""
+
+    def __init__(
+        self,
+        data_dir: Path,
+        source: str,
+        target: str,
+        *,
+        gateway_url: str = "http://localhost:18500",
+        force: bool = False,
+    ) -> None:
+        self.data_dir = Path(data_dir).expanduser().resolve()
+        self.source = source
+        self.target = target
+        self.gateway_url = gateway_url.rstrip("/")
+        self.force = force
+        self.animas_dir = self.data_dir / "animas"
+        self.source_dir = self.animas_dir / source
+        self.target_dir = self.animas_dir / target
+        self.state_dir = self.data_dir / "state"
+        self.journal_path = self.state_dir / f"merge_journal_{source}_{target}.json"
+        self.lock_path = self.state_dir / "anima_merge.lock"
+
+    def run(self, *, execute: bool = False, resume: bool = False) -> MergeResult:
+        """Generate a manifest, or execute the Phase 1 state machine."""
+        if resume and not execute:
+            raise AnimaMergeError("--resume requires --execute")
+        self._validate_names()
+
+        with self._global_lock():
+            issues = self.preflight()
+            manifest = self.build_manifest(issues)
+            manifest_json, manifest_markdown = self.write_manifest(manifest)
+            if not execute:
+                return MergeResult(
+                    source=self.source,
+                    target=self.target,
+                    dry_run=True,
+                    manifest_json=manifest_json,
+                    manifest_markdown=manifest_markdown,
+                )
+
+            journal = self._open_journal(resume=resume)
+            self._run_phase(
+                journal,
+                MergePhase.PREFLIGHT,
+                lambda: {
+                    "manifest_json": str(manifest_json),
+                    "manifest_markdown": str(manifest_markdown),
+                    "warnings": issues,
+                    "memory_backend": manifest["memory_backend"],
+                },
+            )
+            self._run_phase(journal, MergePhase.QUIESCE, self.quiesce)
+            self._run_phase(journal, MergePhase.SNAPSHOT, lambda: self.snapshot(journal))
+            self._run_phase(journal, MergePhase.MERGE_MEMORY, self.merge_memory)
+            for phase in _PLACEHOLDER_PHASES:
+                if not journal.is_completed(phase):
+                    journal.skip(phase, "Not implemented in Phase 1")
+            if not journal.is_completed(MergePhase.DONE):
+                journal.start(MergePhase.DONE)
+                journal.complete(MergePhase.DONE, {"phase_1_complete": True})
+            journal.finish()
+            snapshot_raw = journal.data.get("artifacts", {}).get("snapshot_path")
+            return MergeResult(
+                source=self.source,
+                target=self.target,
+                dry_run=False,
+                manifest_json=manifest_json,
+                manifest_markdown=manifest_markdown,
+                journal_path=self.journal_path,
+                snapshot_path=Path(snapshot_raw) if isinstance(snapshot_raw, str) else None,
+            )
+
+    def _validate_names(self) -> None:
+        for label, name in (("SOURCE", self.source), ("TARGET", self.target)):
+            error = validate_anima_name(name)
+            if error:
+                raise AnimaMergeError(f"Invalid {label} name '{name}': {error}")
+
+    @contextmanager
+    def _global_lock(self) -> Iterator[None]:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        with self.lock_path.open("a+", encoding="utf-8") as lock_file:
+            try:
+                acquire_file_lock(lock_file, exclusive=True, blocking=False)
+            except OSError as exc:
+                raise AnimaMergeError(f"Another Anima merge is in progress ({self.lock_path})") from exc
+            try:
+                yield
+            finally:
+                release_file_lock(lock_file)
+
+    def _open_journal(self, *, resume: bool) -> MergeJournal:
+        try:
+            return MergeJournal(self.journal_path, self.source, self.target, resume=resume)
+        except ValueError as exc:
+            raise AnimaMergeError(str(exc)) from exc
+
+    @staticmethod
+    def _run_phase(journal: MergeJournal, phase: MergePhase, action: Any) -> None:
+        if journal.is_completed(phase):
+            return
+        journal.start(phase)
+        try:
+            artifacts = action() or {}
+        except Exception as exc:
+            journal.fail(phase, f"{type(exc).__name__}: {exc}")
+            raise
+        journal.complete(phase, artifacts)
+
+    # ── Preflight and manifest ────────────────────────────────
+
+    def preflight(self) -> list[str]:
+        errors: list[str] = []
+        if self.source == self.target:
+            errors.append("SOURCE and TARGET must be different")
+        for name, anima_dir in ((self.source, self.source_dir), (self.target, self.target_dir)):
+            if not anima_dir.is_dir():
+                errors.append(f"Anima directory does not exist: animas/{name}")
+                continue
+            for required in ("identity.md", "status.json"):
+                if not (anima_dir / required).is_file():
+                    errors.append(f"Missing required file: animas/{name}/{required}")
+        if errors:
+            raise AnimaMergeError("Preflight failed:\n- " + "\n- ".join(errors))
+
+        source_backend = resolve_backend_type(self.source_dir)
+        target_backend = resolve_backend_type(self.target_dir)
+        if source_backend != target_backend:
+            raise AnimaMergeError(
+                f"Preflight failed: memory backend mismatch ({self.source}={source_backend}, "
+                f"{self.target}={target_backend})"
+            )
+
+        dangerous: list[str] = []
+        for anima_dir in (self.source_dir, self.target_dir):
+            prefix = f"animas/{anima_dir.name}"
+            consolidation = anima_dir / "state" / ".consolidation_mode"
+            if consolidation.exists():
+                dangerous.append(f"{prefix}/state/.consolidation_mode")
+            repair_state = anima_dir / "state" / "rag_repair.json"
+            if repair_state.is_file() and self._repair_in_progress(repair_state):
+                dangerous.append(f"{prefix}/state/rag_repair.json (in progress)")
+            processing = anima_dir / "state" / "pending" / "processing"
+            if processing.is_dir():
+                for path in _files(processing):
+                    dangerous.append(f"{prefix}/{_safe_relative(path, anima_dir)}")
+            for path in self._streaming_journals(anima_dir):
+                dangerous.append(f"{prefix}/{_safe_relative(path, anima_dir)} (unrecovered streaming journal)")
+        if dangerous and not self.force:
+            raise AnimaMergeError(
+                "Preflight found in-progress state; resolve it or rerun with --force:\n- " + "\n- ".join(dangerous)
+            )
+        return dangerous
+
+    @staticmethod
+    def _repair_in_progress(path: Path) -> bool:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return True
+        if not isinstance(data, dict):
+            return True
+        status = str(data.get("status", data.get("phase", ""))).strip().lower()
+        if not status:
+            return True
+        return status not in {"idle", "done", "completed", "failed", "cancelled", "canceled"}
+
+    @staticmethod
+    def _streaming_journals(anima_dir: Path) -> list[Path]:
+        shortterm = anima_dir / "shortterm"
+        if not shortterm.is_dir():
+            return []
+        matches = list(shortterm.glob("streaming_journal*.jsonl"))
+        matches.extend(shortterm.rglob("streaming_journal.jsonl"))
+        return sorted(set(path for path in matches if path.is_file()))
+
+    def build_manifest(self, warnings: list[str] | None = None) -> dict[str, Any]:
+        source_backend = resolve_backend_type(self.source_dir)
+        target_backend = resolve_backend_type(self.target_dir)
+        return {
+            "version": 1,
+            "generated_at": now_iso(),
+            "source": self.source,
+            "target": self.target,
+            "mode": "dry-run",
+            "memory_backend": {"source": source_backend, "target": target_backend},
+            "tree_summary": {
+                "source": self._tree_summary(self.source_dir),
+                "target": self._tree_summary(self.target_dir),
+            },
+            "collisions": self._collisions(),
+            "task_id_collisions": self._task_id_collisions(),
+            "thread_id_collisions": self._thread_id_collisions(),
+            "external_references": self._external_references(),
+            "preflight_warnings": list(warnings or []),
+        }
+
+    @staticmethod
+    def _tree_summary(anima_dir: Path) -> dict[str, dict[str, int]]:
+        summary: dict[str, dict[str, int]] = {}
+        for path in _files(anima_dir):
+            relative = path.relative_to(anima_dir)
+            category = relative.parts[0] if len(relative.parts) > 1 else "root"
+            entry = summary.setdefault(category, {"files": 0, "bytes": 0})
+            entry["files"] += 1
+            try:
+                entry["bytes"] += path.stat().st_size
+            except OSError:
+                pass
+        return dict(sorted(summary.items()))
+
+    def _collisions(self) -> dict[str, list[dict[str, str]]]:
+        result: dict[str, list[dict[str, str]]] = {
+            "episodes": [],
+            "knowledge": [],
+            "procedures": [],
+            "skills": [],
+            "attachments": [],
+        }
+        target_dates: dict[str, list[str]] = {}
+        for path in _files(self.target_dir / "episodes"):
+            match = _DATE_PREFIX.match(path.name)
+            if match:
+                target_dates.setdefault(match.group(1), []).append(_safe_relative(path, self.target_dir))
+        for path in _files(self.source_dir / "episodes"):
+            match = _DATE_PREFIX.match(path.name)
+            if match and match.group(1) in target_dates:
+                result["episodes"].append(
+                    {"source": _safe_relative(path, self.source_dir), "target_date": match.group(1)}
+                )
+
+        for category in ("knowledge", "procedures"):
+            source_root = self.source_dir / category
+            target_root = self.target_dir / category
+            for path in _files(source_root):
+                relative = path.relative_to(source_root)
+                target_path = target_root / relative
+                if target_path.is_file():
+                    result[category].append(
+                        {
+                            "path": f"{category}/{relative.as_posix()}",
+                            "same_content": str(_sha256(path) == _sha256(target_path)).lower(),
+                        }
+                    )
+
+        source_skills = self._skill_directories(self.source_dir)
+        target_skills = self._skill_directories(self.target_dir)
+        for name in sorted(source_skills.keys() & target_skills.keys()):
+            result["skills"].append({"source": source_skills[name], "target": target_skills[name]})
+
+        target_attachments: dict[str, list[str]] = {}
+        for path in _files(self.target_dir / "attachments"):
+            target_attachments.setdefault(path.name, []).append(_safe_relative(path, self.target_dir))
+        for path in _files(self.source_dir / "attachments"):
+            if path.name in target_attachments:
+                result["attachments"].append(
+                    {"source": _safe_relative(path, self.source_dir), "basename": path.name}
+                )
+        return result
+
+    @staticmethod
+    def _skill_directories(anima_dir: Path) -> dict[str, str]:
+        root = anima_dir / "skills"
+        result: dict[str, str] = {}
+        if not root.is_dir():
+            return result
+        for path in sorted(root.iterdir()):
+            if not path.is_dir():
+                continue
+            if path.name == "quarantine":
+                for child in sorted(path.iterdir()):
+                    if child.is_dir():
+                        result[f"quarantine/{child.name}"] = f"skills/quarantine/{child.name}"
+            else:
+                result[path.name] = f"skills/{path.name}"
+        return result
+
+    @staticmethod
+    def _task_ids(anima_dir: Path) -> set[str]:
+        path = anima_dir / "state" / "task_queue.jsonl"
+        result: set[str] = set()
+        if not path.is_file():
+            return result
+        try:
+            with path.open("r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(item, dict):
+                        task_id = item.get("task_id", item.get("id"))
+                        if isinstance(task_id, str) and task_id:
+                            result.add(task_id)
+        except OSError:
+            pass
+        return result
+
+    def _task_id_collisions(self) -> list[str]:
+        return sorted(self._task_ids(self.source_dir) & self._task_ids(self.target_dir))
+
+    def _thread_id_collisions(self) -> list[str]:
+        def ids(anima_dir: Path) -> set[str]:
+            root = anima_dir / "state" / "conversations"
+            return {path.stem for path in root.glob("*.json")} if root.is_dir() else set()
+
+        return sorted(ids(self.source_dir) & ids(self.target_dir))
+
+    def _external_references(self) -> dict[str, list[dict[str, str]]]:
+        supervisors: list[dict[str, str]] = []
+        if self.animas_dir.is_dir():
+            for anima_dir in sorted(self.animas_dir.iterdir()):
+                status_path = anima_dir / "status.json"
+                if not status_path.is_file():
+                    continue
+                try:
+                    status = json.loads(status_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if isinstance(status, dict) and status.get("supervisor") == self.source:
+                    supervisors.append({"anima": anima_dir.name, "path": f"animas/{anima_dir.name}/status.json"})
+
+        mappings: list[dict[str, str]] = []
+        config_path = self.data_dir / "config.json"
+        if config_path.is_file():
+            try:
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                config = {}
+            external = config.get("external_messaging", {}) if isinstance(config, dict) else {}
+            self._find_value_paths(external, self.source, "external_messaging", mappings)
+        return {"supervisors": supervisors, "external_messaging": mappings}
+
+    @classmethod
+    def _find_value_paths(
+        cls,
+        value: Any,
+        wanted: str,
+        prefix: str,
+        result: list[dict[str, str]],
+    ) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                cls._find_value_paths(child, wanted, f"{prefix}.{key}", result)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                cls._find_value_paths(child, wanted, f"{prefix}[{index}]", result)
+        elif value == wanted:
+            result.append({"path": prefix})
+
+    def write_manifest(self, manifest: dict[str, Any]) -> tuple[Path, Path]:
+        output_dir = self.state_dir / "merge_manifests"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        stamp = now_local().strftime("%Y%m%d_%H%M%S_%f")
+        base = output_dir / f"merge_{self.source}_{self.target}_{stamp}"
+        json_path = base.with_suffix(".json")
+        markdown_path = base.with_suffix(".md")
+        json_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        markdown_path.write_text(self._manifest_markdown(manifest), encoding="utf-8")
+        return json_path, markdown_path
+
+    @staticmethod
+    def _manifest_markdown(manifest: dict[str, Any]) -> str:
+        lines = [
+            f"# Anima merge dry-run: {manifest['source']} → {manifest['target']}",
+            "",
+            f"Generated: {manifest['generated_at']}",
+            f"Memory backend: {manifest['memory_backend']['source']}",
+            "",
+            "## Tree summary",
+            "",
+            "| Anima | Category | Files | Bytes |",
+            "|---|---|---:|---:|",
+        ]
+        for side in ("source", "target"):
+            for category, values in manifest["tree_summary"][side].items():
+                lines.append(f"| {side} | {category} | {values['files']} | {values['bytes']} |")
+        lines.extend(["", "## Collisions", ""])
+        for category, collisions in manifest["collisions"].items():
+            lines.append(f"- {category}: {len(collisions)}")
+            for collision in collisions:
+                lines.append(f"  - `{json.dumps(collision, ensure_ascii=False, sort_keys=True)}`")
+        lines.extend(
+            [
+                "",
+                "## ID collisions",
+                "",
+                f"- task IDs: {', '.join(manifest['task_id_collisions']) or '(none)'}",
+                f"- thread IDs: {', '.join(manifest['thread_id_collisions']) or '(none)'}",
+                "",
+                "## External references",
+                "",
+                f"- supervisor references: {len(manifest['external_references']['supervisors'])}",
+                f"- external messaging references: {len(manifest['external_references']['external_messaging'])}",
+                "",
+                "## Preflight warnings",
+                "",
+            ]
+        )
+        warnings = manifest.get("preflight_warnings", [])
+        lines.extend(f"- {warning}" for warning in warnings)
+        if not warnings:
+            lines.append("- (none)")
+        return "\n".join(lines) + "\n"
+
+    # ── Execute phases ────────────────────────────────────────
+
+    def quiesce(self) -> dict[str, Any]:
+        server_running = self._server_running()
+        disabled: list[str] = []
+        if server_running:
+            import requests
+
+            for name in (self.source, self.target):
+                try:
+                    response = requests.post(f"{self.gateway_url}/api/animas/{name}/disable", timeout=10)
+                    response.raise_for_status()
+                except Exception as exc:
+                    raise AnimaMergeError(f"Server is running, but anima '{name}' could not be disabled: {exc}") from exc
+                disabled.append(name)
+
+        for name in (self.source, self.target):
+            self._wait_for_process_release(name, timeout=30.0 if server_running else 0.0)
+        return {"server_running": server_running, "disabled_via_api": disabled}
+
+    def _server_running(self) -> bool:
+        return self._pid_path_alive(self.data_dir / "server.pid")
+
+    @staticmethod
+    def _pid_path_alive(path: Path) -> bool:
+        if not path.is_file():
+            return False
+        try:
+            pid = int(path.read_text(encoding="utf-8").strip())
+            if pid <= 0:
+                return False
+            os.kill(pid, 0)
+        except (OSError, ValueError):
+            return False
+        return True
+
+    def _wait_for_process_release(self, name: str, *, timeout: float) -> None:
+        pid_path = self.data_dir / "run" / "animas" / f"{name}.pid"
+        socket_path = self.data_dir / "run" / "sockets" / f"{name}.sock"
+        deadline = time.monotonic() + timeout
+        while self._pid_path_alive(pid_path):
+            if time.monotonic() >= deadline:
+                raise AnimaMergeError(f"Anima process '{name}' is still running ({pid_path})")
+            time.sleep(0.1)
+        pid_path.unlink(missing_ok=True)
+        socket_path.unlink(missing_ok=True)
+        if socket_path.exists():
+            raise AnimaMergeError(f"Anima socket was not released: {socket_path}")
+
+    def snapshot(self, journal: MergeJournal) -> dict[str, Any]:
+        created = str(journal.data.get("created_at", now_iso()))
+        timestamp = re.sub(r"[^0-9]", "", created)[:20]
+        snapshot_dir = self.data_dir / "backup" / f"merge_{self.source}_{self.target}_{timestamp}"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        copied: list[str] = []
+
+        for name, source_path, destination in (
+            (self.source, self.source_dir, snapshot_dir / "animas" / self.source),
+            (self.target, self.target_dir, snapshot_dir / "animas" / self.target),
+        ):
+            del name
+            shutil.copytree(source_path, destination, dirs_exist_ok=True, copy_function=shutil.copy2)
+            copied.append(str(destination))
+
+        config_path = self.data_dir / "config.json"
+        if config_path.is_file():
+            destination = snapshot_dir / "config.json"
+            shutil.copy2(config_path, destination)
+            copied.append(str(destination))
+
+        for name in (self.source, self.target):
+            inbox = self.data_dir / "shared" / "inbox" / name
+            if inbox.is_dir():
+                destination = snapshot_dir / "shared" / "inbox" / name
+                shutil.copytree(inbox, destination, dirs_exist_ok=True, copy_function=shutil.copy2)
+                copied.append(str(destination))
+        return {"snapshot_path": str(snapshot_dir), "snapshot_files": copied}
+
+    def merge_memory(self) -> dict[str, Any]:
+        recovered = self._recover_abandoned_memory()
+        episode_mapping = self._merge_episodes()
+        file_mapping: dict[str, str] = dict(episode_mapping)
+        deduplicated: list[str] = []
+        for category in ("knowledge", "procedures"):
+            mapping, deduped = self._merge_markdown_tree(category)
+            file_mapping.update(mapping)
+            deduplicated.extend(deduped)
+        fact_result = self._merge_facts(episode_mapping)
+        skill_mapping = self._merge_skills()
+        conversation_files = self._merge_conversation_history()
+        archive_plan = self._archive_plan()
+        skill_state = self._skill_state_provenance(skill_mapping)
+        return {
+            "file_mapping": file_mapping,
+            "episode_mapping": episode_mapping,
+            "deduplicated_files": deduplicated,
+            "fact_id_mapping": fact_result["id_mapping"],
+            "facts_read": fact_result["read"],
+            "facts_appended": fact_result["appended"],
+            "skill_mapping": skill_mapping,
+            "skill_state_provenance": skill_state,
+            "recovered_memory": recovered,
+            "conversation_episodes": conversation_files,
+            "archive_plan": archive_plan,
+        }
+
+    def _copy_collision_safe(self, source_path: Path, desired: Path, namespace: str) -> tuple[Path, bool]:
+        source_hash = _sha256(source_path)
+        if not desired.exists():
+            desired.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, desired)
+            return desired, False
+        if desired.is_file() and _sha256(desired) == source_hash:
+            return desired, True
+        candidate = desired.with_name(f"{desired.stem}{namespace}{desired.suffix}")
+        if candidate.exists() and candidate.is_file() and _sha256(candidate) == source_hash:
+            return candidate, False
+        index = 2
+        while candidate.exists():
+            candidate = desired.with_name(f"{desired.stem}{namespace}_{index}{desired.suffix}")
+            if candidate.is_file() and _sha256(candidate) == source_hash:
+                return candidate, False
+            index += 1
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, candidate)
+        return candidate, False
+
+    def _merge_episodes(self) -> dict[str, str]:
+        source_root = self.source_dir / "episodes"
+        target_root = self.target_dir / "episodes"
+        mapping: dict[str, str] = {}
+        target_dates = {
+            match.group(1)
+            for path in _files(target_root)
+            if (match := _DATE_PREFIX.match(path.name)) is not None
+        }
+        for source_path in _files(source_root):
+            relative = source_path.relative_to(source_root)
+            desired = target_root / relative
+            match = _DATE_PREFIX.match(source_path.name)
+            namespace = f"_{self.source}"
+            if match and match.group(1) in target_dates and not desired.exists():
+                desired = desired.with_name(f"{desired.stem}{namespace}{desired.suffix}")
+                destination, _ = self._copy_collision_safe(source_path, desired, namespace)
+            else:
+                destination, _ = self._copy_collision_safe(source_path, desired, namespace)
+            source_key = f"episodes/{relative.as_posix()}"
+            target_key = f"episodes/{destination.relative_to(target_root).as_posix()}"
+            mapping[source_key] = target_key
+            date_match = _DATE_PREFIX.match(destination.name)
+            if date_match:
+                target_dates.add(date_match.group(1))
+        return mapping
+
+    def _merge_markdown_tree(self, category: str) -> tuple[dict[str, str], list[str]]:
+        source_root = self.source_dir / category
+        target_root = self.target_dir / category
+        mapping: dict[str, str] = {}
+        deduplicated: list[str] = []
+        namespace = f"__from_{self.source}"
+        for source_path in _files(source_root):
+            relative = source_path.relative_to(source_root)
+            destination, is_duplicate = self._copy_collision_safe(source_path, target_root / relative, namespace)
+            source_key = f"{category}/{relative.as_posix()}"
+            target_key = f"{category}/{destination.relative_to(target_root).as_posix()}"
+            mapping[source_key] = target_key
+            if is_duplicate:
+                deduplicated.append(source_key)
+        return mapping, deduplicated
+
+    def _map_source_episode(self, value: str, mapping: dict[str, str]) -> str:
+        if value in mapping:
+            return mapping[value]
+        prefixed = f"episodes/{value}"
+        if prefixed in mapping:
+            mapped = mapping[prefixed]
+            return mapped.removeprefix("episodes/")
+        return value
+
+    def _merge_facts(self, episode_mapping: dict[str, str]) -> dict[str, Any]:
+        records: list[FactRecord] = []
+        id_mapping: dict[str, str] = {}
+        for record in iter_fact_records(self.source_dir, include_expired=True):
+            mapped_episode = self._map_source_episode(record.source_episode, episode_mapping)
+            data = record.to_dict()
+            data["source_episode"] = mapped_episode
+            mapped = FactRecord.from_dict(data)
+            records.append(mapped)
+            id_mapping[record.fact_id] = mapped.fact_id
+        appended = append_fact_records(self.target_dir, records)
+        return {"read": len(records), "appended": len(appended), "id_mapping": id_mapping}
+
+    def _merge_skills(self) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        source_skills = self.source_dir / "skills"
+        target_skills = self.target_dir / "skills"
+        if not source_skills.is_dir():
+            return mapping
+        for source_path in sorted(source_skills.iterdir()):
+            if not source_path.is_dir():
+                continue
+            if source_path.name == "quarantine":
+                for child in sorted(source_path.iterdir()):
+                    if child.is_dir():
+                        destination = self._copy_skill_directory(
+                            child,
+                            target_skills / "quarantine" / child.name,
+                        )
+                        mapping[f"skills/quarantine/{child.name}"] = (
+                            f"skills/quarantine/{destination.name}"
+                        )
+                continue
+            destination = self._copy_skill_directory(source_path, target_skills / source_path.name)
+            mapping[f"skills/{source_path.name}"] = f"skills/{destination.name}"
+        return mapping
+
+    def _copy_skill_directory(self, source_path: Path, desired: Path) -> Path:
+        if not desired.exists():
+            shutil.copytree(source_path, desired, copy_function=shutil.copy2)
+            return desired
+        if self._directory_fingerprint(source_path) == self._directory_fingerprint(desired):
+            return desired
+        candidate = desired.with_name(f"{desired.name}__from_{self.source}")
+        if candidate.exists() and self._directory_fingerprint(source_path) == self._directory_fingerprint(candidate):
+            return candidate
+        index = 2
+        while candidate.exists():
+            candidate = desired.with_name(f"{desired.name}__from_{self.source}_{index}")
+            if self._directory_fingerprint(source_path) == self._directory_fingerprint(candidate):
+                return candidate
+            index += 1
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_path, candidate, copy_function=shutil.copy2)
+        return candidate
+
+    @staticmethod
+    def _directory_fingerprint(root: Path) -> list[tuple[str, str]]:
+        if not root.is_dir():
+            return []
+        return [(_safe_relative(path, root), _sha256(path)) for path in _files(root)]
+
+    def _recover_abandoned_memory(self) -> list[str]:
+        recovered: list[str] = []
+        for journal_path in self._streaming_journals(self.source_dir):
+            body = self._streaming_journal_markdown(journal_path)
+            if body:
+                recovered.append(self._write_generated_episode("streaming", journal_path, body))
+        shortterm = self.source_dir / "shortterm"
+        if shortterm.is_dir():
+            for state_path in sorted(shortterm.rglob("session_state.json")):
+                body = self._shortterm_markdown(state_path)
+                if body:
+                    recovered.append(self._write_generated_episode("shortterm", state_path, body))
+        current_state = self.source_dir / "state" / "current_state.md"
+        if current_state.is_file():
+            try:
+                content = current_state.read_text(encoding="utf-8")
+            except OSError:
+                content = ""
+            if content.strip():
+                body = f"# Abandoned current state from {self.source}\n\n{content.strip()}\n"
+                recovered.append(self._write_generated_episode("current_state", current_state, body))
+        return recovered
+
+    def _streaming_journal_markdown(self, path: Path) -> str:
+        metadata = {"trigger": "", "from": "", "session_id": "", "started_at": "", "last_event_at": ""}
+        text_parts: list[str] = []
+        tools: list[str] = []
+        try:
+            with path.open("r", encoding="utf-8", errors="replace") as handle:
+                for raw in handle:
+                    try:
+                        entry = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(entry, dict):
+                        continue
+                    timestamp = str(entry.get("ts", ""))
+                    if timestamp:
+                        metadata["last_event_at"] = timestamp
+                    event = entry.get("ev")
+                    if event == "start":
+                        metadata.update(
+                            {
+                                "trigger": str(entry.get("trigger", "")),
+                                "from": str(entry.get("from", "")),
+                                "session_id": str(entry.get("session_id", "")),
+                                "started_at": timestamp,
+                            }
+                        )
+                    elif event == "text":
+                        text_parts.append(str(entry.get("t", "")))
+                    elif event in {"tool_start", "tool_end"}:
+                        tools.append(f"- {event}: {entry.get('tool', '')}")
+        except OSError:
+            return ""
+        text = "".join(text_parts).strip()
+        if not text and not tools:
+            return ""
+        lines = [f"# Recovered streaming journal from {self.source}"]
+        lines.extend(f"- {key}: {value}" for key, value in metadata.items())
+        if tools:
+            lines.extend(["", "## Tool events", *tools])
+        if text:
+            lines.extend(["", "## Recovered text", "", text])
+        return "\n".join(lines) + "\n"
+
+    def _shortterm_markdown(self, path: Path) -> str:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return ""
+        if not isinstance(data, dict):
+            return ""
+        parts: list[str] = []
+        for label, key in (
+            ("Original request", "original_prompt"),
+            ("Work so far", "accumulated_response"),
+            ("Notes", "notes"),
+        ):
+            value = str(data.get(key, "") or "").strip()
+            if value:
+                parts.extend([f"## {label}", "", value, ""])
+        if not parts:
+            return ""
+        return f"# Recovered short-term session from {self.source}\n\n" + "\n".join(parts).rstrip() + "\n"
+
+    def _write_generated_episode(self, kind: str, source_path: Path, content: str) -> str:
+        identity = f"{_safe_relative(source_path, self.source_dir)}\0{content}".encode()
+        digest = hashlib.sha256(identity).hexdigest()[:12]
+        destination = self.target_dir / "episodes" / f"merged_{kind}_from_{self.source}_{digest}.md"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists():
+            destination.write_text(content, encoding="utf-8")
+        elif destination.read_text(encoding="utf-8") != content:
+            raise AnimaMergeError(f"Generated episode collision: {destination}")
+        return _safe_relative(destination, self.target_dir)
+
+    def _merge_conversation_history(self) -> list[str]:
+        created: list[str] = []
+        conversation = self.source_dir / "state" / "conversation.json"
+        if conversation.is_file():
+            try:
+                data = json.loads(conversation.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                data = {}
+            summary = data.get("compressed_summary", "") if isinstance(data, dict) else ""
+            if isinstance(summary, str) and summary.strip():
+                content = f"# Compressed conversation summary from {self.source}\n\n{summary.strip()}\n"
+                created.append(self._write_generated_episode("conversation", conversation, content))
+
+        transcripts = self.source_dir / "transcripts"
+        for transcript in _files(transcripts):
+            entries: list[str] = []
+            try:
+                with transcript.open("r", encoding="utf-8", errors="replace") as handle:
+                    for line in handle:
+                        try:
+                            item = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(item, dict):
+                            continue
+                        role = str(item.get("role", "unknown"))
+                        timestamp = str(item.get("ts", ""))
+                        content = str(item.get("content", "")).strip()
+                        if content:
+                            entries.extend([f"## {timestamp} {role}".strip(), "", content, ""])
+            except OSError:
+                continue
+            if entries:
+                body = f"# Transcript from {self.source}: {transcript.name}\n\n" + "\n".join(entries).rstrip() + "\n"
+                created.append(self._write_generated_episode("transcript", transcript, body))
+        return created
+
+    def _archive_plan(self) -> list[dict[str, Any]]:
+        plan: list[dict[str, Any]] = []
+        destination_root = self.target_dir / "archive" / f"merged_from_{self.source}"
+        for category in _ARCHIVE_ONLY:
+            source_root = self.source_dir / category
+            if not source_root.exists():
+                continue
+            files = list(_files(source_root))
+            plan.append(
+                {
+                    "source": f"animas/{self.source}/{category}",
+                    "planned_destination": str(destination_root / category),
+                    "files": len(files),
+                    "bytes": sum(path.stat().st_size for path in files),
+                    "action": "deferred_to_TOMBSTONE",
+                }
+            )
+        return plan
+
+    def _skill_state_provenance(self, mapping: dict[str, str]) -> dict[str, Any]:
+        state = self.source_dir / "state"
+        candidates = (
+            state / "skill_usage.jsonl",
+            state / "skill_promotion.jsonl",
+            state / "skill_curator.jsonl",
+            state / "skill_hub_lock.jsonl",
+        )
+        files = [
+            {"path": _safe_relative(path, self.source_dir), "sha256": _sha256(path)}
+            for path in candidates
+            if path.is_file()
+        ]
+        curator = state / "skill_curator"
+        files.extend(
+            {"path": _safe_relative(path, self.source_dir), "sha256": _sha256(path)} for path in _files(curator)
+        )
+        return {"source_anima": self.source, "rename_mapping": mapping, "state_files": files, "activated": False}
