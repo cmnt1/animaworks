@@ -14,7 +14,7 @@ from core.paths import get_data_dir
 
 
 def cmd_anima_merge(args: argparse.Namespace) -> None:
-    """Dry-run or execute Phase 1 of an Anima merge."""
+    """Dry-run or execute implemented phases of an Anima merge."""
     execute = bool(getattr(args, "execute", False))
     service = AnimaMergeService(
         get_data_dir(),
@@ -38,4 +38,4 @@ def cmd_anima_merge(args: argparse.Namespace) -> None:
     if result.journal_path is not None:
         print(f"Journal: {result.journal_path}")
     if execute:
-        print("Phase 1 merge completed. Later phases remain intentionally deferred.")
+        print("Memory merge and target index rebuild completed. Later phases remain intentionally deferred.")

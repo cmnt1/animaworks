@@ -116,3 +116,62 @@ class MergeJournal:
     def phase_artifacts(self, phase: MergePhase) -> dict[str, Any]:
         value = self.data.get("phases", {}).get(phase.value, {}).get("artifacts", {})
         return value if isinstance(value, dict) else {}
+
+    def is_substep_completed(self, phase: MergePhase, substep: str) -> bool:
+        """Return whether a resumable phase substep is complete or skipped."""
+        status = self.data.get("phases", {}).get(phase.value, {}).get("substeps", {}).get(substep, {}).get("status")
+        return status in {"completed", "skipped"}
+
+    def start_substep(self, phase: MergePhase, substep: str) -> None:
+        record = (
+            self.data.setdefault("phases", {})
+            .setdefault(phase.value, {})
+            .setdefault("substeps", {})
+            .setdefault(substep, {})
+        )
+        record.update({"status": "started", "started_at": now_iso()})
+        record.pop("completed_at", None)
+        record.pop("failed_at", None)
+        record.pop("error", None)
+        self._save()
+
+    def complete_substep(
+        self,
+        phase: MergePhase,
+        substep: str,
+        artifacts: dict[str, Any] | None = None,
+    ) -> None:
+        record = (
+            self.data.setdefault("phases", {})
+            .setdefault(phase.value, {})
+            .setdefault("substeps", {})
+            .setdefault(substep, {})
+        )
+        record.update({"status": "completed", "completed_at": now_iso()})
+        if artifacts is not None:
+            record["artifacts"] = artifacts
+        self._save()
+
+    def skip_substep(self, phase: MergePhase, substep: str, reason: str) -> None:
+        self.data.setdefault("phases", {}).setdefault(phase.value, {}).setdefault("substeps", {})[substep] = {
+            "status": "skipped",
+            "completed_at": now_iso(),
+            "reason": reason,
+        }
+        self._save()
+
+    def fail_substep(self, phase: MergePhase, substep: str, error: str) -> None:
+        record = (
+            self.data.setdefault("phases", {})
+            .setdefault(phase.value, {})
+            .setdefault("substeps", {})
+            .setdefault(substep, {})
+        )
+        record.update({"status": "failed", "failed_at": now_iso(), "error": error})
+        self._save()
+
+    def substep_artifacts(self, phase: MergePhase, substep: str) -> dict[str, Any]:
+        value = (
+            self.data.get("phases", {}).get(phase.value, {}).get("substeps", {}).get(substep, {}).get("artifacts", {})
+        )
+        return value if isinstance(value, dict) else {}
