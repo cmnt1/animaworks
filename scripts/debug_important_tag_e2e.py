@@ -43,7 +43,7 @@ def main() -> None:
         worker.stop()
         return
     indexer = MemoryIndexer(store, ANIMA_NAME, anima_dir)
-    total = indexer.index_directory(knowledge_dir, "knowledge", force=True)
+    total = indexer.index_directory(knowledge_dir, "knowledge", force=True).chunks_indexed
     print(f"  Indexed {total} chunks from knowledge/")
 
     # ── Step 2: Verify metadata ──

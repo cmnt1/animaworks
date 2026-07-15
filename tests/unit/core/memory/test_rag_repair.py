@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from core.memory.rag.indexer import IndexDirectoryResult
 from core.memory.rag.repair import (
     RAGRepairService,
     RepairResult,
@@ -777,7 +778,7 @@ def _patch_atomic_build(monkeypatch, *, chunks_per_dir=2, collections=None, inde
         def index_directory(self, *args, **kwargs):
             if indexer_calls is not None:
                 indexer_calls.append((self.anima_name, str(args[1])))
-            return chunks_per_dir
+            return IndexDirectoryResult(chunks_indexed=chunks_per_dir, files_indexed=1)
 
         def index_conversation_summary(self, *args, **kwargs):
             return chunks_per_dir

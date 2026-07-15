@@ -125,7 +125,7 @@ def test_index_directory_finds_subdirectory_files(temp_anima_dir):
             side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
         )
 
-        chunks = indexer.index_directory(ckdir, "common_knowledge")
+        chunks = indexer.index_directory(ckdir, "common_knowledge").chunks_indexed
 
     assert chunks > 0, "Should index files from subdirectories"
     upsert_calls = mock_store.upsert.call_args_list
@@ -163,7 +163,7 @@ def test_index_directory_skills_only_skill_md(temp_anima_dir):
             side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
         )
 
-        chunks = indexer.index_directory(sdir, "skills")
+        chunks = indexer.index_directory(sdir, "skills").chunks_indexed
 
     assert chunks > 0, "Should index SKILL.md files"
 
@@ -199,7 +199,7 @@ def test_index_directory_common_skills_excludes_templates(temp_anima_dir):
             side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
         )
 
-        chunks = indexer.index_directory(csdir, "common_skills")
+        chunks = indexer.index_directory(csdir, "common_skills").chunks_indexed
 
     assert chunks > 0, "Should index SKILL.md in common_skills"
 
@@ -240,7 +240,7 @@ def test_index_directory_shared_users_finds_nested(temp_anima_dir):
             side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
         )
 
-        chunks = indexer.index_directory(users_dir, "shared_users")
+        chunks = indexer.index_directory(users_dir, "shared_users").chunks_indexed
 
     assert chunks > 0, "Should index nested user profile files"
 
@@ -364,4 +364,3 @@ def test_make_node_id_with_subdirectory():
         KnowledgeGraph._make_node_id("sub/item", "common_knowledge")
         == "common_knowledge:sub/item"
     )
-

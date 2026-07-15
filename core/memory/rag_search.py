@@ -148,10 +148,10 @@ class RAGMemorySearch:
                         procedures_dir,
                         "procedures",
                     )
-                    if indexed > 0:
+                    if indexed.chunks_indexed > 0:
                         logger.debug(
                             "Indexed %d chunks from procedures/",
-                            indexed,
+                            indexed.chunks_indexed,
                         )
                 except Exception as e:
                     logger.warning("Failed to index procedures: %s", e)
@@ -163,10 +163,10 @@ class RAGMemorySearch:
                         facts_dir,
                         "facts",
                     )
-                    if indexed > 0:
+                    if indexed.chunks_indexed > 0:
                         logger.debug(
                             "Indexed %d chunks from facts/",
-                            indexed,
+                            indexed.chunks_indexed,
                         )
                 except Exception as e:
                     warn_rate_limited(
@@ -266,11 +266,12 @@ class RAGMemorySearch:
                 embedding_model=self._indexer.embedding_model if self._indexer else None,
             )
             indexed = shared_indexer.index_directory(ck_dir, "common_knowledge", force=force)
-            _write_shared_hash(meta_path, "shared_common_knowledge_hash", current_hash)
-            if indexed > 0:
+            if indexed.files_failed == 0:
+                _write_shared_hash(meta_path, "shared_common_knowledge_hash", current_hash)
+            if indexed.chunks_indexed > 0:
                 logger.info(
                     "Indexed %d chunks into shared_common_knowledge",
-                    indexed,
+                    indexed.chunks_indexed,
                 )
         except Exception as e:
             logger.warning("Failed to index shared common_knowledge: %s", e)
@@ -317,11 +318,12 @@ class RAGMemorySearch:
             # enforcement happens at retrieval time in MemoryRetriever.
             # Trust/security metadata remains enforced by MemoryIndexer.
             indexed = shared_indexer.index_directory(cs_dir, "common_skills", force=force)
-            _write_shared_hash(meta_path, "shared_common_skills_hash", current_hash)
-            if indexed > 0:
+            if indexed.files_failed == 0:
+                _write_shared_hash(meta_path, "shared_common_skills_hash", current_hash)
+            if indexed.chunks_indexed > 0:
                 logger.info(
                     "Indexed %d chunks into shared_common_skills",
-                    indexed,
+                    indexed.chunks_indexed,
                 )
         except Exception as e:
             logger.warning("Failed to index shared common_skills: %s", e)

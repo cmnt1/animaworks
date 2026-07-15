@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.memory.rag.indexer import IndexDirectoryResult
 from core.supervisor._mgr_scheduler import _marker_dir
 
 
@@ -60,7 +61,7 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
     ):
         mock_indexer = MagicMock()
-        mock_indexer.index_directory = MagicMock(return_value=0)
+        mock_indexer.index_directory = MagicMock(return_value=IndexDirectoryResult())
         mock_indexer.index_conversation_summary = MagicMock(return_value=0)
         mock_indexer_cls.return_value = mock_indexer
 
@@ -79,7 +80,7 @@ async def test_daily_indexing_incremental(tmp_path: Path) -> None:
 
     def capture_index_dir(directory, memory_type, force=False):
         index_dir_calls.append((directory, memory_type, force))
-        return 0
+        return IndexDirectoryResult()
 
     mock_store = MagicMock()
     with (
@@ -115,7 +116,7 @@ async def test_daily_indexing_rebuilds_longterm_bm25(tmp_path: Path) -> None:
         patch("core.memory.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
     ):
         mock_indexer = MagicMock()
-        mock_indexer.index_directory = MagicMock(return_value=0)
+        mock_indexer.index_directory = MagicMock(return_value=IndexDirectoryResult())
         mock_indexer.index_conversation_summary = MagicMock(return_value=0)
         mock_indexer_cls.return_value = mock_indexer
         mock_rebuild.return_value = MagicMock(documents=1)
@@ -158,7 +159,7 @@ async def test_daily_indexing_writes_marker(tmp_path: Path) -> None:
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
     ):
         mock_indexer = MagicMock()
-        mock_indexer.index_directory = MagicMock(return_value=0)
+        mock_indexer.index_directory = MagicMock(return_value=IndexDirectoryResult())
         mock_indexer.index_conversation_summary = MagicMock(return_value=0)
         mock_indexer_cls.return_value = mock_indexer
 
@@ -167,6 +168,33 @@ async def test_daily_indexing_writes_marker(tmp_path: Path) -> None:
     marker_path = _marker_dir(sup._get_data_dir()) / "last_daily_indexing"
     assert marker_path.exists()
     assert marker_path.read_text().strip()
+
+
+@pytest.mark.asyncio
+async def test_daily_indexing_does_not_write_shared_hash_after_failure(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    _create_anima_dir(sup.animas_dir, "sakura")
+    common_knowledge = tmp_path / "common_knowledge"
+    common_knowledge.mkdir()
+    (common_knowledge / "guide.md").write_text("# Guide", encoding="utf-8")
+
+    mock_store = MagicMock()
+    with (
+        patch("core.paths.get_data_dir", return_value=tmp_path),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
+        patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
+        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "common_skills"),
+    ):
+        mock_indexer_cls.return_value.index_directory.return_value = IndexDirectoryResult(
+            files_failed=1,
+            failed_sources=("guide.md",),
+        )
+        await sup._run_daily_indexing()
+
+    meta_path = sup.animas_dir / "sakura" / "index_meta.json"
+    if meta_path.exists():
+        assert "shared_common_knowledge_hash" not in json.loads(meta_path.read_text(encoding="utf-8"))
 
 
 @pytest.mark.asyncio

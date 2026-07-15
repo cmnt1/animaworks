@@ -59,6 +59,30 @@ class MemoryChunk:
     metadata: dict[str, str | int | float | bool | list[str]]
 
 
+@dataclass(frozen=True)
+class IndexDirectoryResult:
+    """Structured outcome for one directory indexing run."""
+
+    chunks_indexed: int = 0
+    files_indexed: int = 0
+    files_failed: int = 0
+    files_unchanged: int = 0
+    files_skipped: int = 0
+    transient_failures: int = 0
+    failed_sources: tuple[str, ...] = ()
+
+    @property
+    def transient(self) -> bool:
+        """Return True when every failed file was caused by a transient circuit."""
+        return self.files_failed > 0 and self.transient_failures == self.files_failed
+
+
+@dataclass(frozen=True)
+class _IndexFileOutcome:
+    status: Literal["indexed", "failed", "unchanged", "skipped"]
+    transient: bool = False
+
+
 # ── MemoryIndexer ───────────────────────────────────────────────────
 
 
@@ -347,6 +371,16 @@ class MemoryIndexer:
 
     # ── Main indexing API ───────────────────────────────────────────
 
+    def _finish_index_file(
+        self,
+        chunks: int,
+        status: Literal["indexed", "failed", "unchanged", "skipped"],
+        *,
+        transient: bool = False,
+    ) -> int:
+        self._last_index_file_outcome = _IndexFileOutcome(status=status, transient=transient)
+        return chunks
+
     def index_file(
         self,
         file_path: Path,
@@ -368,10 +402,11 @@ class MemoryIndexer:
         """
         from core import startup_progress
 
+        self._last_index_file_outcome = _IndexFileOutcome(status="failed")
         startup_progress.raise_if_cancelled()
         if not file_path.exists():
             logger.warning("File not found: %s", file_path)
-            return 0
+            return self._finish_index_file(0, "failed")
 
         collection_name = f"{self.collection_prefix}_{memory_type}"
         try:
@@ -381,7 +416,7 @@ class MemoryIndexer:
 
         if self._is_upsert_quarantined(file_key):
             logger.debug("Skipping quarantined RAG source: %s", file_path)
-            return 0
+            return self._finish_index_file(0, "skipped")
 
         # Check .ragignore exclusion. Remove any previously-indexed chunks so
         # a file that matches .ragignore only after indexing does not linger
@@ -389,7 +424,7 @@ class MemoryIndexer:
         if self.is_ragignored(file_path):
             logger.debug("Skipping ragignored file: %s", file_path)
             self.delete_indexed_file(file_path, memory_type)
-            return 0
+            return self._finish_index_file(0, "skipped")
 
         if memory_type in ("skills", "common_skills") and file_path.name == "SKILL.md":
             try:
@@ -409,7 +444,7 @@ class MemoryIndexer:
                 if not allowed:
                     logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
                     self.delete_indexed_file(file_path, memory_type)
-                    return 0
+                    return self._finish_index_file(0, "skipped")
             except Exception:
                 logger.debug("Failed to evaluate skill curator access for %s", file_path, exc_info=True)
 
@@ -425,7 +460,7 @@ class MemoryIndexer:
                 # would never be re-created.
                 if self._collection_exists(collection_name):
                     logger.debug("File unchanged, skipping: %s", file_path)
-                    return 0
+                    return self._finish_index_file(0, "unchanged")
                 logger.info(
                     "Collection '%s' missing despite tracked hash, forcing re-index of %s",
                     collection_name,
@@ -439,7 +474,7 @@ class MemoryIndexer:
             content = file_path.read_text(encoding="utf-8")
         except Exception as e:
             logger.error("Failed to read file %s: %s", file_path, e)
-            return 0
+            return self._finish_index_file(0, "failed")
 
         # Chunk the content
         chunks = self._chunk_file(file_path, content, memory_type, origin=origin)
@@ -447,7 +482,7 @@ class MemoryIndexer:
         if not chunks:
             logger.debug("No chunks extracted from %s", file_path)
             self.delete_indexed_file(file_path, memory_type)
-            return 0
+            return self._finish_index_file(0, "indexed")
 
         source_mtime_ns = file_path.stat().st_mtime_ns
         for chunk in chunks:
@@ -471,7 +506,9 @@ class MemoryIndexer:
         ]
 
         if not indexer_delete.upsert_file_documents(self, collection_name, file_key, file_path, documents):
-            return 0
+            transient_probe = getattr(self.vector_store, "is_transient_write_failure", None)
+            transient = bool(callable(transient_probe) and transient_probe(collection_name))
+            return self._finish_index_file(0, "failed", transient=transient)
 
         self.index_meta[file_key] = {
             "hash": file_hash,
@@ -481,7 +518,7 @@ class MemoryIndexer:
         self._save_index_meta()
 
         logger.info("Indexed %d chunks from %s", len(chunks), file_path)
-        return len(chunks)
+        return self._finish_index_file(len(chunks), "indexed")
 
     def delete_indexed_file(self, file_path: Path, memory_type: str) -> int:
         return indexer_delete.delete_indexed_file(self, file_path, memory_type)
@@ -494,7 +531,7 @@ class MemoryIndexer:
         directory: Path,
         memory_type: str,
         force: bool = False,
-    ) -> int:
+    ) -> IndexDirectoryResult:
         """Index all .md files in a directory.
 
         Args:
@@ -503,15 +540,24 @@ class MemoryIndexer:
             force: Force re-indexing
 
         Returns:
-            Total number of chunks indexed
+            Structured counts that distinguish unchanged files from failures.
         """
+        collection_name = f"{self.collection_prefix}_{memory_type}"
         if not directory.is_dir():
             logger.warning("Directory not found: %s", directory)
-            return 0
+            result = IndexDirectoryResult()
+            self._log_index_directory_summary(collection_name, result)
+            return result
 
         patterns = {"facts": "*.jsonl", "skills": "SKILL.md", "common_skills": "SKILL.md"}
         md_files = sorted(directory.rglob(patterns.get(memory_type, "*.md")))
         total_chunks = 0
+        files_indexed = 0
+        files_failed = 0
+        files_unchanged = 0
+        files_skipped = 0
+        transient_failures = 0
+        failed_sources: list[str] = []
         try:
             from core import startup_progress
 
@@ -542,7 +588,23 @@ class MemoryIndexer:
                             done_count=index,
                             total_count=len(md_files),
                         )
-                total_chunks += self.index_file(md_file, memory_type, force=force)
+                try:
+                    total_chunks += self.index_file(md_file, memory_type, force=force)
+                except Exception:
+                    files_failed += 1
+                    failed_sources.append(self._directory_source(md_file, directory))
+                    raise
+                outcome = getattr(self, "_last_index_file_outcome", _IndexFileOutcome(status="failed"))
+                if outcome.status == "indexed":
+                    files_indexed += 1
+                elif outcome.status == "failed":
+                    files_failed += 1
+                    transient_failures += int(outcome.transient)
+                    failed_sources.append(self._directory_source(md_file, directory))
+                elif outcome.status == "unchanged":
+                    files_unchanged += 1
+                else:
+                    files_skipped += 1
                 if track_startup and startup_progress is not None:
                     startup_progress.update_progress(
                         detail=str(md_file),
@@ -552,14 +614,40 @@ class MemoryIndexer:
         finally:
             self._index_directory_active = previous_active
             self._run_upsert_failures = previous_failures
+            result = IndexDirectoryResult(
+                chunks_indexed=total_chunks,
+                files_indexed=files_indexed,
+                files_failed=files_failed,
+                files_unchanged=files_unchanged,
+                files_skipped=files_skipped,
+                transient_failures=transient_failures,
+                failed_sources=tuple(failed_sources),
+            )
+            self._log_index_directory_summary(collection_name, result)
+        return result
 
+    @staticmethod
+    def _directory_source(file_path: Path, directory: Path) -> str:
+        try:
+            return str(file_path.relative_to(directory))
+        except ValueError:
+            return str(file_path)
+
+    @staticmethod
+    def _log_index_directory_summary(collection_name: str, result: IndexDirectoryResult) -> None:
+        examples = list(result.failed_sources[:3])
         logger.info(
-            "Indexed directory %s: %d total chunks (type=%s)",
-            directory,
-            total_chunks,
-            memory_type,
+            "Index directory summary: collection=%s successful=%d failed=%d "
+            "failed_sources=%s transient=%s unchanged=%d skipped=%d chunks=%d",
+            collection_name,
+            result.files_indexed,
+            result.files_failed,
+            examples,
+            result.transient,
+            result.files_unchanged,
+            result.files_skipped,
+            result.chunks_indexed,
         )
-        return total_chunks
 
     def index_conversation_summary(
         self,

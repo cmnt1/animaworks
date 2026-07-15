@@ -121,7 +121,7 @@ def test_e2e_index_and_search(anima_dir, indexer, retriever):
     )
 
     # Index all knowledge files
-    total = indexer.index_directory(knowledge_dir, "knowledge")
+    total = indexer.index_directory(knowledge_dir, "knowledge").chunks_indexed
     assert total > 0, "Indexing should produce at least one chunk"
 
     # Search for Python-related content
@@ -565,8 +565,8 @@ def test_e2e_multi_memory_type(anima_dir, vector_store, indexer):
     )
 
     # Index knowledge and episodes separately
-    knowledge_chunks = indexer.index_directory(knowledge_dir, "knowledge")
-    episodes_chunks = indexer.index_directory(episodes_dir, "episodes")
+    knowledge_chunks = indexer.index_directory(knowledge_dir, "knowledge").chunks_indexed
+    episodes_chunks = indexer.index_directory(episodes_dir, "episodes").chunks_indexed
 
     assert knowledge_chunks > 0, "Knowledge indexing should produce chunks"
     assert episodes_chunks > 0, "Episodes indexing should produce chunks"

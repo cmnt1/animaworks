@@ -126,7 +126,7 @@ def test_knowledge_lifecycle_report_and_protection(anima_dir):
     # Step 4: Index and verify ChromaDB metadata
     store = ChromaVectorStore(persist_dir=anima_dir / "vectordb")
     indexer = MemoryIndexer(store, "test_anima", anima_dir)
-    total = indexer.index_directory(anima_dir / "knowledge", "knowledge")
+    total = indexer.index_directory(anima_dir / "knowledge", "knowledge").chunks_indexed
     assert total > 0
 
     coll = store.client.get_collection(name="test_anima_knowledge")

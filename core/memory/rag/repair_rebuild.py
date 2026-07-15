@@ -122,7 +122,7 @@ def _reindex_into_store(vector_store, anima_name: str, *, include_shared: bool) 
     for memory_type in ("knowledge", "episodes", "procedures", "skills"):
         memory_dir = anima_dir / memory_type
         if memory_dir.is_dir():
-            total_chunks += indexer.index_directory(memory_dir, memory_type, force=True)
+            total_chunks += indexer.index_directory(memory_dir, memory_type, force=True).chunks_indexed
 
     state_dir = anima_dir / "state"
     if (state_dir / "conversation.json").is_file():
@@ -145,7 +145,7 @@ def _reindex_into_store(vector_store, anima_name: str, *, include_shared: bool) 
         ):
             if not src_dir.is_dir():
                 continue
-            total_chunks += shared_indexer.index_directory(src_dir, label, force=True)
+            total_chunks += shared_indexer.index_directory(src_dir, label, force=True).chunks_indexed
             write_shared_hash(anima_dir / "index_meta.json", src_dir, glob, meta_key)
     return total_chunks
 

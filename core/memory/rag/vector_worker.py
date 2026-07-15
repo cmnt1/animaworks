@@ -14,6 +14,7 @@ import logging
 import os
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -29,6 +30,9 @@ logger = logging.getLogger("animaworks.rag.vector_worker")
 _CIRCUIT_FAILURE_THRESHOLD = int(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_FAILURE_THRESHOLD", "3"))
 _CIRCUIT_BACKOFF_BASE_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_BACKOFF_BASE_SECONDS", "1"))
 _CIRCUIT_BACKOFF_MAX_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_BACKOFF_MAX_SECONDS", "300"))
+_CIRCUIT_REJECTION_LOG_INTERVAL_SECONDS = float(
+    os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_REJECTION_LOG_INTERVAL_SECONDS", "60")
+)
 _write_circuit_breakers: dict[str, dict[str, Any]] = {}
 _VECTOR_ACTION_ERROR = object()
 _LATCH_RECOVERY_BACKOFF_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_LATCH_RECOVERY_BACKOFF_SECONDS", "5"))
@@ -38,6 +42,12 @@ _ACTIVE_REPAIR_WRITE_RETRY_AFTER_SECONDS = int(os.environ.get("ANIMAWORKS_VECTOR
 _latched_store_recovery_lock = threading.Lock()
 _latched_store_recovery_backoff_until: dict[str, float] = {}
 _latched_store_recovery_in_progress: set[str] = set()
+_SELF_HEAL_ESCALATION_THRESHOLD = 3
+_SELF_HEAL_ESCALATION_WINDOW_SECONDS = 600.0
+_SELF_HEAL_ESCALATION_COOLDOWN_SECONDS = 600.0
+_self_heal_escalation_lock = threading.Lock()
+_self_heal_failures: dict[str, deque[float]] = {}
+_self_heal_last_escalated_at: dict[str, float] = {}
 
 _native_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=1,
@@ -211,7 +221,7 @@ def _try_recover_latched_store(anima_name: str | None) -> Any | None:
 
 
 def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> Any | None:
-    from core.memory.rag.singleton import get_vector_store, reset_vector_store_after_error
+    from core.memory.rag.singleton import get_vector_store, reset_vector_store, reset_vector_store_after_error
 
     try:
         store = get_vector_store(anima_name)
@@ -219,7 +229,30 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
             store = _try_recover_latched_store(anima_name)
             if store is None:
                 return None
-        return action(store)
+        result = action(store)
+        consume_failure = getattr(type(store), "consume_lightweight_self_heal_failure", None)
+        if (
+            not callable(consume_failure)
+            or not consume_failure(store)
+            or not _record_self_heal_failure(anima_name)
+        ):
+            return result
+
+        owner = anima_name or "shared"
+        logger.warning(
+            "Escalating repeated lightweight ChromaDB self-heal failures to full vector-store reset: "
+            "owner=%s failures=%d window=%ss cooldown=%ss",
+            owner,
+            _SELF_HEAL_ESCALATION_THRESHOLD,
+            int(_SELF_HEAL_ESCALATION_WINDOW_SECONDS),
+            int(_SELF_HEAL_ESCALATION_COOLDOWN_SECONDS),
+        )
+        reset_vector_store(anima_name)
+        _clear_owner_write_circuit_breakers(anima_name)
+        fresh_store = get_vector_store(anima_name)
+        if fresh_store is None:
+            return result
+        return action(fresh_store)
     except Exception:
         logger.warning("Vector worker native store action failed for owner=%s", anima_name or "shared", exc_info=True)
         try:
@@ -231,6 +264,33 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
                 exc_info=True,
             )
         return _VECTOR_ACTION_ERROR
+
+
+def _record_self_heal_failure(anima_name: str | None) -> bool:
+    """Return True once three lightweight retry failures require escalation."""
+    owner = anima_name or "shared"
+    now = time.monotonic()
+    with _self_heal_escalation_lock:
+        failures = _self_heal_failures.setdefault(owner, deque())
+        cutoff = now - _SELF_HEAL_ESCALATION_WINDOW_SECONDS
+        while failures and failures[0] < cutoff:
+            failures.popleft()
+        failures.append(now)
+        last_escalated = _self_heal_last_escalated_at.get(owner)
+        if len(failures) < _SELF_HEAL_ESCALATION_THRESHOLD:
+            return False
+        if last_escalated is not None and now - last_escalated < _SELF_HEAL_ESCALATION_COOLDOWN_SECONDS:
+            return False
+        failures.clear()
+        _self_heal_last_escalated_at[owner] = now
+        return True
+
+
+def _clear_owner_self_heal_escalation(anima_name: str | None) -> None:
+    owner = anima_name or "shared"
+    with _self_heal_escalation_lock:
+        _self_heal_failures.pop(owner, None)
+        _self_heal_last_escalated_at.pop(owner, None)
 
 
 def _vector_write_failed(operation: str, collection: str) -> JSONResponse:
@@ -283,13 +343,22 @@ def _before_vector_write(anima_name: str | None, collection: str) -> JSONRespons
     if retry_at <= now:
         return None
     retry_after = max(1, int(retry_at - now))
-    logger.error(
-        "Vector write circuit breaker open: owner=%s collection=%s failures=%s retry_after=%ss",
-        anima_name or "shared",
-        collection,
-        state.get("consecutive_failures", 0),
-        retry_after,
-    )
+    last_logged_at = float(state.get("last_logged_at") or 0.0)
+    suppressed_count = int(state.get("suppressed_count") or 0)
+    if not last_logged_at or now - last_logged_at >= _CIRCUIT_REJECTION_LOG_INTERVAL_SECONDS:
+        logger.error(
+            "Vector write circuit breaker open: owner=%s collection=%s failures=%s "
+            "retry_after=%ss suppressed=%d",
+            anima_name or "shared",
+            collection,
+            state.get("consecutive_failures", 0),
+            retry_after,
+            suppressed_count,
+        )
+        state["last_logged_at"] = now
+        state["suppressed_count"] = 0
+    else:
+        state["suppressed_count"] = suppressed_count + 1
     return JSONResponse(
         status_code=429,
         content={
@@ -328,6 +397,8 @@ def _record_vector_write_failure(anima_name: str | None, collection: str, operat
             "threshold": _CIRCUIT_FAILURE_THRESHOLD,
         }
     )
+    state.setdefault("last_logged_at", 0.0)
+    state.setdefault("suppressed_count", 0)
     _write_circuit_breakers[key] = state
     log = logger.error if failures >= _CIRCUIT_FAILURE_THRESHOLD else logger.warning
     log(
@@ -416,6 +487,8 @@ def create_app() -> FastAPI:
     _write_circuit_breakers.clear()
     _latched_store_recovery_backoff_until.clear()
     _latched_store_recovery_in_progress.clear()
+    _self_heal_failures.clear()
+    _self_heal_last_escalated_at.clear()
     from core.memory.rag.direct_access import enable_direct_chroma_for_process
 
     enable_direct_chroma_for_process()
@@ -445,6 +518,7 @@ def create_app() -> FastAPI:
 
         await _run_native(reset_vector_store, body.anima_name)
         _clear_owner_write_circuit_breakers(body.anima_name)
+        _clear_owner_self_heal_escalation(body.anima_name)
         return {"status": "ok"}
 
     @app.post("/query")

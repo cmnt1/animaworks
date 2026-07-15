@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 import types
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -89,3 +90,68 @@ def test_reset_vector_store_closes_cached_chroma_store() -> None:
 
     store.close.assert_called_once()
     assert "sora" not in singleton._vector_stores
+
+
+def test_persistent_client_initialization_is_serialized_process_wide(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.memory.rag.sqlite_health import SQLiteHealthResult
+    from core.memory.rag.store import ChromaVectorStore
+
+    fake_chromadb = types.ModuleType("chromadb")
+    first_entered = threading.Event()
+    second_entered = threading.Event()
+    release_first = threading.Event()
+    state_lock = threading.Lock()
+    active = 0
+    maximum_active = 0
+    calls = 0
+
+    def persistent_client(*, path: str):
+        del path
+        nonlocal active, maximum_active, calls
+        with state_lock:
+            calls += 1
+            call_number = calls
+            active += 1
+            maximum_active = max(maximum_active, active)
+        if call_number == 1:
+            first_entered.set()
+            assert release_first.wait(timeout=2)
+        else:
+            second_entered.set()
+        with state_lock:
+            active -= 1
+        return MagicMock()
+
+    fake_chromadb.PersistentClient = persistent_client  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+    monkeypatch.setattr("core.memory.rag.sqlite_health.prepare_chroma_sqlite_for_startup", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "core.memory.rag.sqlite_health.configure_chroma_sqlite_pragmas",
+        lambda persist_dir: SQLiteHealthResult(db_path=persist_dir / "chroma.sqlite3", ok=True, status="ok"),
+    )
+
+    errors: list[BaseException] = []
+
+    def initialize(path: Path) -> None:
+        try:
+            ChromaVectorStore(persist_dir=path, anima_name=path.name)
+        except BaseException as error:  # pragma: no cover - asserted below
+            errors.append(error)
+
+    first = threading.Thread(target=initialize, args=(tmp_path / "one",))
+    second = threading.Thread(target=initialize, args=(tmp_path / "two",))
+    first.start()
+    assert first_entered.wait(timeout=2)
+    second.start()
+    assert not second_entered.wait(timeout=0.05)
+    release_first.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert errors == []
+    assert calls == 2
+    assert maximum_active == 1
