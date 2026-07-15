@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from core.config.models import load_config
+from core.i18n import t
 from core.messenger import Messenger
 from core.paths import get_data_dir
 from core.tools._base import ToolConfigError, get_credential
@@ -440,8 +441,8 @@ def create_webhooks_router() -> APIRouter:
             "<!doctype html><html lang='ja'><meta charset='utf-8'>"
             "<title>AnimaWorks</title>"
             "<body style='font-family:sans-serif;text-align:center;margin-top:20vh'>"
-            "<h2>Zoom 連携の認可が完了しました</h2>"
-            "<p>このタブは閉じてかまいません。</p></body></html>"
+            f"<h2>{t('zoom.oauth_complete_title')}</h2>"
+            f"<p>{t('zoom.oauth_complete_body')}</p></body></html>"
         )
 
     @router.post("/zoom")

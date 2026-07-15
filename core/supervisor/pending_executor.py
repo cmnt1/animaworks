@@ -908,9 +908,7 @@ class PendingTaskExecutor:
             async with self._batch_dispatch_lock:
                 await self._dispatch_batch(batch_id, tasks)
         finally:
-            self._active_task_ids.difference_update(
-                str(task.get("task_id") or "").strip() for task in tasks
-            )
+            self._active_task_ids.difference_update(str(task.get("task_id") or "").strip() for task in tasks)
 
     async def watcher_loop(self) -> None:
         """Watch state/background_tasks/pending/ for submitted tasks.
@@ -1158,9 +1156,7 @@ class PendingTaskExecutor:
             await asyncio.gather(*self._active_dispatch_tasks, return_exceptions=True)
             self._active_dispatch_tasks.clear()
         for tasks in self._batch_tasks.values():
-            self._active_task_ids.difference_update(
-                str(task.get("task_id") or "").strip() for task in tasks
-            )
+            self._active_task_ids.difference_update(str(task.get("task_id") or "").strip() for task in tasks)
         self._batch_tasks.clear()
         logger.info("Pending task watcher stopped for %s", self._anima_name)
 

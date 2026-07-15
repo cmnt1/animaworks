@@ -519,7 +519,8 @@ class MemoryToolsMixin:
             denied_roots = self._resolved_file_deny_roots(config)
         else:
             # Keep MemoryToolsMixin usable in isolation for compatibility.
-            denied_roots = load_denied_roots(Path(self._anima_dir))
+            anima_dir = getattr(self, "_anima_dir", None)
+            denied_roots = load_denied_roots(Path(anima_dir)) if anima_dir is not None else ()
         if time_start is not None and not isinstance(time_start, str):
             time_start = str(time_start)
         if time_end is not None and not isinstance(time_end, str):

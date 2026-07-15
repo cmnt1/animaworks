@@ -236,4 +236,43 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "Gemini CLI 認証",
         "en": "Gemini CLI Auth",
     },
+    "github_gateway.review_dispatch": {
+        "ja": (
+            "【PR新規コミット検出（push静穏確認済み）】\n\n"
+            "- {pr_key} {sha}: {title}\n\n"
+            "最終pushから{quiet}以上静穏を確認済みです。"
+            "上記PRの current HEAD に対する差分レビュー/FRCを直ちに実施してください。"
+            "過去HEADへのレビューは新push時点で無効です。"
+            "複数件ある場合はbackgroundタスクとして並列に処理して構いません。"
+        ),
+        "en": (
+            "[New PR commit detected (push quiet period confirmed)]\n\n"
+            "- {pr_key} {sha}: {title}\n\n"
+            "No pushes have occurred for at least {quiet}. Review/FRC the current HEAD immediately. "
+            "Reviews of previous HEADs became invalid when the new push arrived. "
+            "Multiple PRs may be processed in parallel as background tasks."
+        ),
+    },
+    "github_gateway.minutes": {"ja": "{value}分", "en": "{value} minutes"},
+    "github_gateway.seconds": {"ja": "{value}秒", "en": "{value} seconds"},
+    "github_gateway.unknown_verdict": {"ja": "判定不明", "en": "Unknown verdict"},
+    "github_gateway.frc_result": {
+        "ja": (
+            "【FRC結果検知】\n\n"
+            "- 判定: {verdict}\n- PR: {repo}#{number}\n- HEAD: {head_sha}\n"
+            "- URL: {url}\n- 本文冒頭: {summary}\n\n"
+            "HOLDの場合は procedures/pr-event-detection-patrol.md に従って"
+            "natsumeへの修正ディスパッチを実施してください。"
+        ),
+        "en": (
+            "[FRC result detected]\n\n"
+            "- Verdict: {verdict}\n- PR: {repo}#{number}\n- HEAD: {head_sha}\n"
+            "- URL: {url}\n- Body excerpt: {summary}\n\n"
+            "For HOLD, follow procedures/pr-event-detection-patrol.md and dispatch the fix to natsume."
+        ),
+    },
+    "github_gateway.ci_failure": {
+        "ja": "【CI FAILURE検知】\n\n{lines}\n  {url}\n\n修正担当（natsume）へのディスパッチをお願いします。",
+        "en": "[CI FAILURE detected]\n\n{lines}\n  {url}\n\nPlease dispatch this to the fix owner (natsume).",
+    },
 }

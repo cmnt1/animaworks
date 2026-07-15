@@ -20,6 +20,7 @@ from typing import Any
 
 from core.config.models import load_config
 from core.config.schemas import GitHubWebhookConfig
+from core.i18n import t
 from core.messenger import Messenger
 from core.paths import get_shared_dir
 
@@ -245,13 +246,12 @@ class GitHubWebhookManager:
             if not entry or entry.get("sha") != sha or entry.get("notified_sha") == sha:
                 return
             quiet = self._format_quiet_period()
-            content = (
-                "【PR新規コミット検出（push静穏確認済み）】\n\n"
-                f"- {key} {sha[:8]}: {title}\n\n"
-                f"最終pushから{quiet}以上静穏を確認済みです。"
-                "上記PRの current HEAD に対する差分レビュー/FRCを直ちに実施してください。"
-                "過去HEADへのレビューは新push時点で無効です。"
-                "複数件ある場合はbackgroundタスクとして並列に処理して構いません。"
+            content = t(
+                "github_gateway.review_dispatch",
+                pr_key=key,
+                sha=sha[:8],
+                title=title,
+                quiet=quiet,
             )
             self._send(self._config.reviewer_anima, content, "review", key)
             entry["notified_sha"] = sha
@@ -259,8 +259,8 @@ class GitHubWebhookManager:
     def _format_quiet_period(self) -> str:
         seconds = self._config.quiet_seconds
         if seconds >= 60 and seconds % 60 == 0:
-            return f"{int(seconds // 60)}分"
-        return f"{seconds:g}秒"
+            return t("github_gateway.minutes", value=int(seconds // 60))
+        return t("github_gateway.seconds", value=f"{seconds:g}")
 
     async def _handle_review(self, repo: str, payload: dict[str, Any]) -> None:
         if payload.get("action") != "submitted":
@@ -368,17 +368,16 @@ class GitHubWebhookManager:
             elif head.startswith("PASS"):
                 verdict = "PASS"
             else:
-                verdict = "判定不明"
+                verdict = t("github_gateway.unknown_verdict")
             summary = body.replace("\n", " ")[:200]
-            content = (
-                "【FRC結果検知】\n\n"
-                f"- 判定: {verdict}\n"
-                f"- PR: {repo}#{number}\n"
-                f"- HEAD: {head_sha}\n"
-                f"- URL: {url}\n"
-                f"- 本文冒頭: {summary}\n\n"
-                "HOLDの場合は procedures/pr-event-detection-patrol.md に従って"
-                "natsumeへの修正ディスパッチを実施してください。"
+            content = t(
+                "github_gateway.frc_result",
+                verdict=verdict,
+                repo=repo,
+                number=number,
+                head_sha=head_sha,
+                url=url,
+                summary=summary,
             )
             self._send(self._config.dispatcher_anima, content, "frc-result", dedupe_key)
             seen[dedupe_key] = _now_iso()
@@ -424,7 +423,7 @@ class GitHubWebhookManager:
             if not fresh:
                 return
             lines = "\n".join(f"- {repo}#{number} {sha[:8]}: {workflow_name}" for number, sha, _ in fresh)
-            content = f"【CI FAILURE検知】\n\n{lines}\n  {url}\n\n修正担当（natsume）へのディスパッチをお願いします。"
+            content = t("github_gateway.ci_failure", lines=lines, url=url)
             self._send(self._config.dispatcher_anima, content, "ci", fresh[0][2])
             now = _now_iso()
             for _, _, key in fresh:

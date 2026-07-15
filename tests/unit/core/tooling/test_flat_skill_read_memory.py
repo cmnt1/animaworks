@@ -23,6 +23,9 @@ def _memory_mixin(anima_dir: Path) -> MagicMock:
     mixin._descendant_state_files = []
     mixin._descendant_state_dirs = []
     mixin._read_paths = set()
+    # MemoryToolsMixin is hosted by ToolHandler in production, where this
+    # permission hook is supplied by PermissionsMixin.
+    mixin._check_file_permission = lambda _path: None
     mixin._is_skill_path = MemoryToolsMixin._is_skill_path
     mixin._is_flat_personal_skill_path = MemoryToolsMixin._is_flat_personal_skill_path
     mixin._record_skill_view_if_applicable = lambda rel: MemoryToolsMixin._record_skill_view_if_applicable(mixin, rel)

@@ -187,6 +187,7 @@ class TestMeetingModeToolBlocking:
                 "kai": SimpleNamespace(supervisor=None, aliases=[]),
             },
             external_messaging=SimpleNamespace(user_aliases={}, preferred_channel="slack"),
+            heartbeat=SimpleNamespace(depth_window_s=1800, max_depth=5),
         )
 
         with (

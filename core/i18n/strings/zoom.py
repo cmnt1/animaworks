@@ -15,4 +15,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "不明",
         "en": "Unknown",
     },
+    "zoom.oauth_complete_title": {
+        "ja": "Zoom 連携の認可が完了しました",
+        "en": "Zoom authorization is complete",
+    },
+    "zoom.oauth_complete_body": {
+        "ja": "このタブは閉じてかまいません。",
+        "en": "You may close this tab.",
+    },
 }
