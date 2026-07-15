@@ -129,7 +129,7 @@ def test_common_knowledge_subdirectory_indexing_and_search(temp_dirs, vector_sto
     shared_indexer = MemoryIndexer(
         vector_store, "shared", data_dir, collection_prefix="shared",
     )
-    ck_chunks = shared_indexer.index_directory(ckdir, "common_knowledge")
+    ck_chunks = shared_indexer.index_directory(ckdir, "common_knowledge").chunks_indexed
 
     # All 4 files should be indexed: top-level-guide + organization/structure +
     # organization/roles + communication/messaging-guide
@@ -221,7 +221,7 @@ def test_common_skills_only_indexes_skill_md(temp_dirs, vector_store):
     shared_indexer = MemoryIndexer(
         vector_store, "shared", data_dir, collection_prefix="shared",
     )
-    cs_chunks = shared_indexer.index_directory(csdir, "common_skills")
+    cs_chunks = shared_indexer.index_directory(csdir, "common_skills").chunks_indexed
 
     assert cs_chunks > 0, "Should index at least one SKILL.md"
 

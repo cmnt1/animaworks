@@ -199,8 +199,10 @@ async def test_record_access_accepts_empty_list(
 async def test_legacy_rebuild_index_rebuilds_longterm_bm25(
     legacy_backend: LegacyRAGBackend,
 ) -> None:
+    from core.memory.rag.indexer import IndexDirectoryResult
+
     (legacy_backend._anima_dir / "knowledge").mkdir(parents=True)
-    legacy_backend._indexer.index_directory.return_value = 3
+    legacy_backend._indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=3, files_indexed=1)
 
     with patch("core.memory.bm25.rebuild_longterm_bm25_index") as mock_rebuild:
         mock_rebuild.return_value = MagicMock(documents=1)

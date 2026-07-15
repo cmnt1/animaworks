@@ -344,8 +344,8 @@ class LegacyRAGBackend(MemoryBackend):
             if not target_dir.is_dir():
                 continue
             try:
-                count = await asyncio.to_thread(indexer.index_directory, target_dir, s, True)
-                total += count
+                result = await asyncio.to_thread(indexer.index_directory, target_dir, s, True)
+                total += result.chunks_indexed
             except Exception:
                 logger.warning("rebuild_index failed for scope=%s", s, exc_info=True)
 

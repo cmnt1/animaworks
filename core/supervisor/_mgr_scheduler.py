@@ -712,13 +712,13 @@ class SchedulerMixin:
                 for memory_type, memory_dir in memory_types:
                     if not memory_dir.is_dir():
                         continue
-                    chunks = await loop.run_in_executor(
+                    result = await loop.run_in_executor(
                         None,
                         indexer.index_directory,
                         memory_dir,
                         memory_type,
                     )
-                    total_chunks += chunks
+                    total_chunks += result.chunks_indexed
 
                 conv_file = anima_dir / "state" / "conversation.json"
                 if conv_file.is_file():
@@ -794,15 +794,16 @@ class SchedulerMixin:
                         anima_dir=base_dir,
                         collection_prefix="shared",
                     )
-                    chunks = await loop.run_in_executor(
+                    result = await loop.run_in_executor(
                         None,
                         shared_indexer.index_directory,
                         src_dir,
                         label,
                         force,
                     )
-                    total_chunks += chunks
-                    _write_shared_hash(meta_path, meta_key, current_hash)
+                    total_chunks += result.chunks_indexed
+                    if result.files_failed == 0:
+                        _write_shared_hash(meta_path, meta_key, current_hash)
 
                 logger.info("Daily indexing for %s complete", anima_name)
 

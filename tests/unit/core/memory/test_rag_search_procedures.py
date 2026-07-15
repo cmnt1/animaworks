@@ -195,7 +195,9 @@ class TestInitIndexerIndexesProcedures:
         )
 
         mock_indexer = MagicMock()
-        mock_indexer.index_directory.return_value = 1
+        from core.memory.rag.indexer import IndexDirectoryResult
+
+        mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=1, files_indexed=1)
 
         mock_vector_store = MagicMock()
 

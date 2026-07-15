@@ -107,7 +107,7 @@ def test_ragignore_excludes_files_from_index(
     MemoryIndexer._ragignore_cache = None
 
     # Index directory
-    total = indexer.index_directory(knowledge_dir, "knowledge")
+    total = indexer.index_directory(knowledge_dir, "knowledge").chunks_indexed
 
     # Should have indexed only included.md (at least 1 chunk)
     assert total > 0

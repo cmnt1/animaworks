@@ -546,7 +546,7 @@ class TestIndexerMetadataExtraction:
 
             store = ChromaVectorStore(persist_dir=a_dir / "vectordb")
             indexer = MemoryIndexer(store, "idx_test", a_dir)
-            total = indexer.index_directory(a_dir / "knowledge", "knowledge")
+            total = indexer.index_directory(a_dir / "knowledge", "knowledge").chunks_indexed
             assert total > 0
 
             coll = store.client.get_collection(name="idx_test_knowledge")
