@@ -198,6 +198,10 @@ def check_commits(state: dict) -> None:
             + f"最終pushから{QUIET_SECONDS // 60}分以上静穏を確認済みです。"
             "上記PRの current HEAD に対する差分レビュー/FRCを直ちに実施してください。"
             "過去HEADへのレビューは新push時点で無効です。"
+            "2回目以降のレビューは収束ルール（heartbeat.md記載・2026-07-15 taka指示）に従い、"
+            "前回blocking findingsの解消確認と新push差分に限定してください。"
+            "full PRの再レビューをやり直さないこと。"
+            "同一PRのHOLDが通算3回に達している場合は自動レビューを停止し、rinへエスカレーションしてください。"
             "複数件ある場合はbackgroundタスクとして並列に処理して構いません。",
         )
         log(f"review dispatch -> {REVIEWER}: {len(ready)} PR(s)")
