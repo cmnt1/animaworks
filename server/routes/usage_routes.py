@@ -422,6 +422,25 @@ def _relogin_openai() -> tuple[dict[str, Any], int]:
     )
 
 
+def _claude_window(window: Any, window_seconds: int) -> dict[str, Any] | None:
+    """Normalize one Claude usage window, or None when it carries no reading.
+
+    A missing ``utilization`` must not be read as 0 — that renders as "100%
+    remaining" and disguises upstream schema drift as a healthy, empty quota.
+    """
+    if not isinstance(window, dict):
+        return None
+    utilization = window.get("utilization")
+    if utilization is None:
+        return None
+    return {
+        "utilization": utilization,
+        "remaining": 100 - utilization,
+        "resets_at": window.get("resets_at"),
+        "window_seconds": window_seconds,
+    }
+
+
 def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
     if not skip_cache:
         cached = _cached("claude")
@@ -448,32 +467,23 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
 
         result = {"provider": "claude"}
 
-        if "five_hour" in raw:
-            fh = raw["five_hour"]
-            result["five_hour"] = {
-                "utilization": fh.get("utilization", 0),
-                "remaining": 100 - fh.get("utilization", 0),
-                "resets_at": fh.get("resets_at"),
-                "window_seconds": 18000,  # 5 hours
-            }
+        for key, window_seconds in (("five_hour", 18000), ("seven_day", 604800)):
+            window = _claude_window(raw.get(key), window_seconds)
+            if window:
+                result[key] = window
 
-        if "seven_day" in raw:
-            sd = raw["seven_day"]
-            result["seven_day"] = {
-                "utilization": sd.get("utilization", 0),
-                "remaining": 100 - sd.get("utilization", 0),
-                "resets_at": sd.get("resets_at"),
-                "window_seconds": 604800,  # 7 days
-            }
-
-        if "additional_capacity" in raw:
-            ac = raw["additional_capacity"]
-            if ac.get("limit", 0) > 0:
-                result["additional_capacity"] = {
-                    "utilization": ac.get("utilization", 0),
-                    "remaining": 100 - ac.get("utilization", 0),
-                    "used_tokens": ac.get("used", 0),
-                    "limit_tokens": ac.get("limit", 0),
+        extra = raw.get("extra_usage")
+        if isinstance(extra, dict) and extra.get("is_enabled"):
+            extra_util = extra.get("utilization")
+            if extra_util is not None:
+                result["extra_usage"] = {
+                    "utilization": extra_util,
+                    "remaining": 100 - extra_util,
+                    "used_credits": extra.get("used_credits"),
+                    "monthly_limit": extra.get("monthly_limit"),
+                    "currency": extra.get("currency"),
+                    # Credit amounts are minor units; shift by this to display.
+                    "decimal_places": extra.get("decimal_places"),
                 }
 
         # Successful fetch proves auth is working — clear any stale alert

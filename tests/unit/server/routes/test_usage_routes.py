@@ -238,3 +238,78 @@ def test_relogin_claude_launches_terminal_when_interactive_and_refresh_fails(mon
 
     assert payload["terminal_launched"] is True
     assert launched == ["C:\\Tools\\claude.exe"]
+
+
+def _stub_claude_usage(monkeypatch, raw: dict[str, object]) -> None:
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", lambda req, timeout=0: _FakeResponse(raw))
+
+
+def test_fetch_claude_usage_omits_window_missing_utilization(monkeypatch):
+    # A window with no utilization must be dropped, not reported as 0% used —
+    # "100% remaining" would disguise schema drift as an untouched quota.
+    _stub_claude_usage(
+        monkeypatch,
+        {
+            "five_hour": {"resets_at": "2026-07-16T10:09:59+00:00"},
+            "seven_day": {"utilization": 0.0, "resets_at": "2026-07-18T09:59:59+00:00"},
+        },
+    )
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert "five_hour" not in result
+    # A genuine 0.0 still reports 100% remaining — absence and zero stay distinct.
+    assert result["seven_day"]["remaining"] == 100.0
+
+
+def test_fetch_claude_usage_parses_extra_usage_when_enabled(monkeypatch):
+    _stub_claude_usage(
+        monkeypatch,
+        {
+            "five_hour": {"utilization": 1.0, "resets_at": "2026-07-16T10:09:59+00:00"},
+            "extra_usage": {
+                "is_enabled": True,
+                "monthly_limit": 5000,
+                "used_credits": 1250,
+                "utilization": 25.0,
+                "currency": "USD",
+                "decimal_places": 2,
+            },
+        },
+    )
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert result["extra_usage"] == {
+        "utilization": 25.0,
+        "remaining": 75.0,
+        "used_credits": 1250,
+        "monthly_limit": 5000,
+        "currency": "USD",
+        "decimal_places": 2,
+    }
+
+
+def test_fetch_claude_usage_omits_extra_usage_when_disabled(monkeypatch):
+    # Shape observed live while extra usage is turned off: every field is null.
+    _stub_claude_usage(
+        monkeypatch,
+        {
+            "five_hour": {"utilization": 1.0, "resets_at": "2026-07-16T10:09:59+00:00"},
+            "extra_usage": {
+                "is_enabled": False,
+                "monthly_limit": None,
+                "used_credits": None,
+                "utilization": None,
+                "currency": None,
+                "decimal_places": None,
+            },
+        },
+    )
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert "extra_usage" not in result
+    assert result["five_hour"]["utilization"] == 1.0

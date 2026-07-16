@@ -208,6 +208,14 @@ function _resetToJst(value) {
   } catch { return String(value); }
 }
 
+function _formatCredits(amountMinor, currency, decimalPlaces) {
+  // Without decimalPlaces the minor-unit scale is unknown — decline rather
+  // than guess, and the caller drops the amount from the label.
+  if (typeof amountMinor !== "number" || typeof decimalPlaces !== "number") return null;
+  const symbol = currency === "USD" ? "$" : currency ? `${currency} ` : "";
+  return `${symbol}${(amountMinor / 10 ** decimalPlaces).toFixed(decimalPlaces)}`;
+}
+
 function _remainingColor(remaining, timePct) {
   if (timePct !== null && timePct !== undefined) {
     const room = timePct <= 0 ? Infinity : remaining / timePct;
@@ -534,11 +542,12 @@ function _renderClaudeUsage(data) {
   if (data.seven_day) {
     html += _renderUsageBar("7d", data.seven_day.utilization, data.seven_day.resets_at, data.seven_day.window_seconds);
   }
-  if (data.additional_capacity) {
-    const ac = data.additional_capacity;
-    const usedM = (ac.used_tokens / 1_000_000).toFixed(2);
-    const limitM = (ac.limit_tokens / 1_000_000).toFixed(2);
-    html += _renderUsageBar(`Add (${usedM}M/${limitM}M)`, ac.utilization, null, null);
+  if (data.extra_usage) {
+    const ex = data.extra_usage;
+    const used = _formatCredits(ex.used_credits, ex.currency, ex.decimal_places);
+    const limit = _formatCredits(ex.monthly_limit, ex.currency, ex.decimal_places);
+    const label = used && limit ? `Extra (${used}/${limit})` : "Extra";
+    html += _renderUsageBar(label, ex.utilization, null, null);
   }
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
