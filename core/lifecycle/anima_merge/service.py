@@ -1192,7 +1192,8 @@ class AnimaMergeService:
         for probe in probes:
             query = str(probe.pop("query"))
             if not query:
-                results.append({**probe, "status": "skipped_empty_content", "hits": 0})
+                results.append({**probe, "status": "failed", "hits": 0})
+                failures.append(f"{probe['category']}:{probe['source']} (empty probe content)")
                 continue
             if probe["category"] == "entities":
                 expected_entity = str(probe.pop("expected_entity"))

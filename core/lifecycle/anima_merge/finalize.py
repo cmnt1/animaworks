@@ -14,12 +14,14 @@ import shutil
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from core.anima_factory import validate_anima_name
 from core.memory._io import atomic_write_text
 from core.platform.locks import acquire_file_lock, release_file_lock
+from core.time_utils import ensure_aware, now_local
 
 from .journal import FinalizePhase, MergeJournal, MergePhase
 from .service import AnimaMergeError, _read_json
@@ -56,7 +58,7 @@ class AnimaMergeFinalizeService:
         self._validate_names()
         with self._runtime_data_dir(), self._global_lock():
             if not execute:
-                merge = self._preflight(None, resume=False)
+                merge = self._preflight(None, resume=False, enforce_rollback_window=False)
                 archive = self.data_dir / "archive" / "merged" / f"{self.source}_<timestamp>"
                 return FinalizeResult(
                     source=self.source,
@@ -67,13 +69,23 @@ class AnimaMergeFinalizeService:
                     plan={
                         "merge_status": merge["merge_status"],
                         "source_tombstoned": True,
+                        "rollback_deadline": merge["rollback_deadline"],
+                        "rollback_ready": merge["rollback_ready"],
                         "archive_path": str(archive),
                         "steps": [phase.value for phase in FinalizePhase if phase is not FinalizePhase.DONE],
                     },
                 )
 
             journal = self._open_journal(resume=resume)
-            self._run_phase(journal, FinalizePhase.PREFLIGHT, lambda: self._preflight(journal, resume=resume))
+            self._run_phase(
+                journal,
+                FinalizePhase.PREFLIGHT,
+                lambda: self._preflight(
+                    journal,
+                    resume=resume,
+                    enforce_rollback_window=True,
+                ),
+            )
             archive_path = self._archive_path(journal)
             self._run_phase(
                 journal,
@@ -185,8 +197,35 @@ class AnimaMergeFinalizeService:
             raise AnimaMergeError("merge-finalize requires a DONE merge journal with a completed TOMBSTONE")
         return value
 
-    def _preflight(self, journal: MergeJournal | None, *, resume: bool) -> dict[str, Any]:
+    def _preflight(
+        self,
+        journal: MergeJournal | None,
+        *,
+        resume: bool,
+        enforce_rollback_window: bool,
+    ) -> dict[str, Any]:
         merge = self._load_merge_journal()
+        tombstone_artifacts = (
+            merge.get("phases", {})
+            .get(MergePhase.TOMBSTONE.value, {})
+            .get("artifacts", {})
+        )
+        deadline_text = (
+            tombstone_artifacts.get("rollback_deadline")
+            if isinstance(tombstone_artifacts, dict)
+            else None
+        )
+        if not isinstance(deadline_text, str) or not deadline_text:
+            raise AnimaMergeError("Merge TOMBSTONE is missing rollback_deadline")
+        try:
+            rollback_deadline = ensure_aware(datetime.fromisoformat(deadline_text))
+        except ValueError as exc:
+            raise AnimaMergeError(f"Invalid TOMBSTONE rollback_deadline: {deadline_text}") from exc
+        rollback_ready = now_local() >= rollback_deadline
+        if enforce_rollback_window and not rollback_ready:
+            raise AnimaMergeError(
+                f"Rollback window is still active until {rollback_deadline.isoformat()}"
+            )
         source_exists = self.source_dir.is_dir()
         if source_exists:
             status = _read_json(self.source_dir / "status.json")
@@ -201,6 +240,8 @@ class AnimaMergeFinalizeService:
             "merge_status": str(merge["status"]),
             "source_tombstoned": True,
             "source_directory_present": source_exists,
+            "rollback_deadline": rollback_deadline.isoformat(),
+            "rollback_ready": rollback_ready,
         }
 
     def _archive_path(self, journal: MergeJournal) -> Path:

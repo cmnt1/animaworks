@@ -129,7 +129,10 @@ def source_reference_report(data_dir: Path, source: str) -> dict[str, Any]:
 
     inbox_dir = data_dir / "shared" / "inbox"
     if inbox_dir.is_dir():
-        for path in sorted(inbox_dir.rglob("*.json")):
+        # Only direct per-Anima inbox entries are active routing surfaces.
+        # processed/expired/quarantine descendants are immutable history and
+        # intentionally remain source-attributed after REWRITE_REFS.
+        for path in sorted(inbox_dir.glob("*/*.json")):
             relative = path.relative_to(data_dir).as_posix()
             checked.append(relative)
             _scan_json(
@@ -213,7 +216,6 @@ def _references_source(value: str, source: str) -> bool:
 
 
 def _scan_taskboard(path: Path, source: str, residual: list[str], allowed: list[str]) -> None:
-    del allowed
     uri = f"file:{path.resolve().as_posix()}?mode=ro"
     try:
         with sqlite3.connect(uri, uri=True) as conn:
@@ -226,11 +228,12 @@ def _scan_taskboard(path: Path, source: str, residual: list[str], allowed: list[
                 )
             }
             for table in sorted(tables):
-                rows = conn.execute(f"SELECT rowid, * FROM {table}").fetchall()
+                rows = conn.execute(f"SELECT rowid AS _scan_rowid, * FROM {table}")
                 for row in rows:
-                    row_id = row["rowid"]
-                    for column in row:
-                        if column == "rowid":
+                    row_id = row["_scan_rowid"]
+                    columns = row.keys()
+                    for column in columns:
+                        if column == "_scan_rowid":
                             continue
                         value = row[column]
                         location = f"shared/taskboard.sqlite3:{table}[{row_id}].{column}"
@@ -239,7 +242,15 @@ def _scan_taskboard(path: Path, source: str, residual: list[str], allowed: list[
                                 parsed = json.loads(value)
                             except json.JSONDecodeError:
                                 parsed = value
-                            _scan_json(parsed, source, location, residual, [], key=column)
+                            _scan_json(
+                                parsed,
+                                source,
+                                location,
+                                residual,
+                                allowed,
+                                key=column,
+                                allow=lambda _location, key: key in _ATTRIBUTION_FIELDS,
+                            )
                         elif isinstance(value, str) and _references_source(value, source):
                             residual.append(location)
     except sqlite3.Error as exc:

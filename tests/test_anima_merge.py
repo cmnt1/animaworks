@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+import cli.parser as cli_parser
 from cli.commands.anima_merge import cmd_anima_merge
 from core.lifecycle.anima_merge import (
     AnimaMergeError,
@@ -17,8 +20,10 @@ from core.lifecycle.anima_merge import (
     FinalizePhase,
     MergePhase,
 )
+from core.lifecycle.anima_merge.verification import source_reference_report
 from core.memory.facts import FactRecord, append_fact_records, iter_fact_records
 from core.taskboard.store import TaskBoardStore
+from core.time_utils import now_local
 
 
 def _write(path: Path, content: str) -> Path:
@@ -1010,6 +1015,10 @@ def test_anima_merge_verify_residual_reference_then_resume_and_tombstone(
         data_dir / "shared" / "inbox" / "worker" / "historical.json",
         json.dumps({"from_person": "source", "to_person": "worker", "content": "history"}) + "\n",
     )
+    archived_inbox = _write(
+        data_dir / "shared" / "inbox" / "worker" / "processed" / "historical.json",
+        json.dumps({"from_person": "worker", "to_person": "source", "content": "history"}) + "\n",
+    )
     _stub_rebuild_substeps(monkeypatch)
     service = AnimaMergeService(data_dir, "source", "target")
 
@@ -1030,6 +1039,7 @@ def test_anima_merge_verify_residual_reference_then_resume_and_tombstone(
     assert references["residual_references"] == []
     assert "config.json.animas.source" in references["references_allowed"]
     assert any(path.endswith("historical.json.from_person") for path in references["references_allowed"])
+    assert archived_inbox.relative_to(data_dir).as_posix() not in references["surfaces_checked"]
     tombstone = journal["phases"][MergePhase.TOMBSTONE.value]["artifacts"]
     assert tombstone["source_enabled"] is False
     assert tombstone["source_directory_retained"] is True
@@ -1045,6 +1055,53 @@ def test_anima_merge_verify_residual_reference_then_resume_and_tombstone(
     assert source.is_dir()
     assert "source" in synced["animas"]
     assert target.is_dir()
+
+
+def test_anima_merge_verify_scans_nonempty_taskboard_rows(tmp_path: Path) -> None:
+    data_dir, _source, _target = _setup_data_dir(tmp_path)
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="target",
+        task_id="task-1",
+        actor="target",
+        source_ref="animas/source/task-1",
+    )
+    store.append_event(
+        event_type="surface_recorded",
+        anima_name="target",
+        task_id="task-1",
+        actor="target",
+        payload={"created_by": "source"},
+    )
+
+    report = source_reference_report(data_dir, "source")
+
+    assert "shared/taskboard.sqlite3" in report["surfaces_checked"]
+    assert any(
+        location.endswith("taskboard_metadata[1].source_ref")
+        for location in report["residual_references"]
+    )
+    assert any(
+        ":taskboard_events[1].payload_json" in location
+        for location in report["residual_references"]
+    )
+    assert any(
+        ":taskboard_events[2].payload_json.created_by" in location
+        for location in report["references_allowed"]
+    )
+
+
+def test_anima_merge_verify_rejects_empty_probe_content(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir, source, _target = _setup_data_dir(tmp_path)
+    _register_source_and_target(data_dir)
+    _write(source / "knowledge" / "empty.md", "")
+    _stub_rebuild_substeps(monkeypatch)
+
+    with pytest.raises(AnimaMergeError, match="empty probe content"):
+        AnimaMergeService(data_dir, "source", "target").run(execute=True)
 
 
 def test_anima_merge_target_smoke_check_enables_and_confirms_process(
@@ -1091,6 +1148,51 @@ def test_anima_merge_finalize_rejects_merge_that_is_not_done(tmp_path: Path) -> 
 
     with pytest.raises(AnimaMergeError, match="DONE merge journal"):
         AnimaMergeFinalizeService(data_dir, "source", "target").run()
+
+
+def test_anima_merge_finalize_cli_defaults_to_dry_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[argparse.Namespace] = []
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(cli_parser, "_lazy_anima_merge_finalize", captured.append)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["animaworks", "anima", "merge-finalize", "source", "target"],
+    )
+
+    cli_parser.cli_main()
+
+    assert len(captured) == 1
+    args = captured[0]
+    assert (args.source, args.target) == ("source", "target")
+    assert args.dry_run is False
+    assert args.execute is False
+    assert args.resume is False
+
+
+def test_anima_merge_finalize_rejects_active_rollback_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir, _source, _target = _setup_data_dir(tmp_path)
+    _register_source_and_target(data_dir)
+    _stub_rebuild_substeps(monkeypatch)
+    AnimaMergeService(data_dir, "source", "target").run(execute=True)
+
+    with pytest.raises(AnimaMergeError, match="Rollback window is still active"):
+        AnimaMergeFinalizeService(data_dir, "source", "target").run(execute=True)
+
+    assert (data_dir / "animas" / "source").is_dir()
+    failed = json.loads(
+        (data_dir / "state" / "merge_finalize_journal_source_target.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert failed["status"] == "failed"
+    assert failed["phases"][FinalizePhase.PREFLIGHT.value]["status"] == "failed"
 
 
 def test_anima_merge_finalize_purges_source_neo4j_group_and_chroma_collections(
@@ -1164,6 +1266,8 @@ def test_anima_merge_to_finalize_e2e_is_dry_run_safe_and_resume_idempotent(
     finalize = AnimaMergeFinalizeService(data_dir, "source", "target")
     dry_run = finalize.run()
     assert dry_run.dry_run is True
+    assert dry_run.plan is not None
+    assert dry_run.plan["rollback_ready"] is False
     assert source_before == {
         path.relative_to(source).as_posix(): path.read_bytes()
         for path in source.rglob("*")
@@ -1177,6 +1281,10 @@ def test_anima_merge_to_finalize_e2e_is_dry_run_safe_and_resume_idempotent(
         data_dir / "run" / "notification_map.json",
         json.dumps({"stale": {"anima": "source"}}) + "\n",
     )
+    merge_journal["phases"][MergePhase.TOMBSTONE.value]["artifacts"]["rollback_deadline"] = (
+        now_local() - timedelta(seconds=1)
+    ).isoformat()
+    merge.journal_path.write_text(json.dumps(merge_journal) + "\n", encoding="utf-8")
 
     original_remove = finalize._remove_source_config
     interrupted = False
