@@ -330,6 +330,11 @@ def create_config_router() -> APIRouter:
                     if m not in seen:
                         models.append({"id": m, "label": m, "credential": "google"})
                         seen.add(m)
+            elif provider == "grok":
+                for m in ("grok/grok-4.5", "grok/grok-composer-2.5-fast"):
+                    if m not in seen:
+                        models.append({"id": m, "label": m, "credential": "grok"})
+                        seen.add(m)
 
         # Codex CLI models (standalone — no openai credential entry needed)
         if is_codex_login_available():
