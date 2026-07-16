@@ -107,6 +107,8 @@ def _build_fuzzy_cjk_latin_pattern(old: str) -> re.Pattern[str] | None:
 
 _BG_CMD_TIMEOUT_DEFAULT = 1800  # 30 minutes
 _BG_CMD_OUTPUT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_PIPE_THREAD_JOIN_TIMEOUT = 5.0
+_PIPE_THREAD_REJOIN_TIMEOUT = 1.0
 
 
 class CommandRunner:
@@ -286,8 +288,37 @@ class CommandRunner:
                 except subprocess.TimeoutExpired:
                     pass
 
-        stdout_thread.join(timeout=5)
-        stderr_thread.join(timeout=5)
+        pipe_readers = (
+            ("stdout", proc.stdout, stdout_thread),
+            ("stderr", proc.stderr, stderr_thread),
+        )
+        for _, _, thread in pipe_readers:
+            thread.join(timeout=_PIPE_THREAD_JOIN_TIMEOUT)
+
+        # Preserve all output available during the normal drain window.  Only
+        # force-close a pipe when its reader did not finish, then give the
+        # reader one final chance to observe EOF before dropping the runner
+        # from the active registry.
+        for pipe_name, pipe, thread in pipe_readers:
+            if not thread.is_alive():
+                continue
+            if pipe is not None:
+                try:
+                    pipe.close()
+                except (OSError, ValueError):
+                    logger.warning(
+                        "background_cmd failed to close %s pipe cmd_id=%s",
+                        pipe_name,
+                        self.cmd_id,
+                        exc_info=True,
+                    )
+            thread.join(timeout=_PIPE_THREAD_REJOIN_TIMEOUT)
+            if thread.is_alive():
+                logger.warning(
+                    "background_cmd %s reader still alive after pipe close cmd_id=%s",
+                    pipe_name,
+                    self.cmd_id,
+                )
 
         elapsed = time.monotonic() - self._start_time
         exit_code = proc.returncode if proc.returncode is not None else -1

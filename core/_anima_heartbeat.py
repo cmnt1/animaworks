@@ -10,6 +10,7 @@ Extracted from ``core.anima.DigitalAnima`` as a Mixin.  All ``self``
 references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
+import asyncio
 import json
 import logging
 import math
@@ -576,51 +577,67 @@ class HeartbeatMixin:
             _soft_warned = False
             _hard_exceeded = False
 
-            async for chunk in agent.run_cycle_streaming(
+            stream = agent.run_cycle_streaming(
                 prompt,
                 trigger="heartbeat",
                 prior_messages=prior_messages,
                 max_turns_override=effective_max_turns,
-            ):
-                # ── Timeout checks (Mode A: reminder_queue injection) ──
-                _elapsed = time.monotonic() - _start
-                if not _soft_warned and _elapsed > _soft_timeout:
-                    _soft_warned = True
-                    agent._executor.reminder_queue.push_sync(t("reminder.hb_time_limit"))
-                    logger.info(
-                        "[%s] Heartbeat soft timeout reached (%.0fs > %ds)",
-                        self.name,
-                        _elapsed,
-                        _soft_timeout,
-                    )
-                if _elapsed > _hard_timeout:
-                    _hard_exceeded = True
+            )
+            try:
+                async for chunk in stream:
+                    # ── Timeout checks (Mode A: reminder_queue injection) ──
+                    _elapsed = time.monotonic() - _start
+                    if not _soft_warned and _elapsed > _soft_timeout:
+                        _soft_warned = True
+                        agent._executor.reminder_queue.push_sync(t("reminder.hb_time_limit"))
+                        logger.info(
+                            "[%s] Heartbeat soft timeout reached (%.0fs > %ds)",
+                            self.name,
+                            _elapsed,
+                            _soft_timeout,
+                        )
+                    if _elapsed > _hard_timeout:
+                        _hard_exceeded = True
+                        logger.warning(
+                            "[%s] Heartbeat hard timeout reached (%.0fs > %ds) — breaking",
+                            self.name,
+                            _elapsed,
+                            _hard_timeout,
+                        )
+                        break
+
+                    # Relay text_delta chunks to waiting user stream
+                    if chunk.get("type") == "text_delta":
+                        accumulated_text += chunk.get("text", "")
+                        journal.write_text(chunk.get("text", ""))
+
+                    if chunk.get("type") == "cycle_done":
+                        cycle_result = chunk.get("cycle_result", {})
+                        result = CycleResult(
+                            trigger=cycle_result.get("trigger", "heartbeat"),
+                            action=cycle_result.get("action", "responded"),
+                            summary=cycle_result.get("summary", ""),
+                            duration_ms=cycle_result.get("duration_ms", 0),
+                            context_usage_ratio=cycle_result.get("context_usage_ratio", 0.0),
+                            session_chained=cycle_result.get("session_chained", False),
+                            total_turns=cycle_result.get("total_turns", 0),
+                        )
+                        journal.finalize(summary=result.summary[:500])
+                        journal_finalized = True
+            finally:
+                try:
+                    await asyncio.wait_for(stream.aclose(), timeout=10)
+                except TimeoutError:
                     logger.warning(
-                        "[%s] Heartbeat hard timeout reached (%.0fs > %ds) — breaking",
+                        "[%s] Timed out closing heartbeat stream after 10 seconds",
                         self.name,
-                        _elapsed,
-                        _hard_timeout,
                     )
-                    break
-
-                # Relay text_delta chunks to waiting user stream
-                if chunk.get("type") == "text_delta":
-                    accumulated_text += chunk.get("text", "")
-                    journal.write_text(chunk.get("text", ""))
-
-                if chunk.get("type") == "cycle_done":
-                    cycle_result = chunk.get("cycle_result", {})
-                    result = CycleResult(
-                        trigger=cycle_result.get("trigger", "heartbeat"),
-                        action=cycle_result.get("action", "responded"),
-                        summary=cycle_result.get("summary", ""),
-                        duration_ms=cycle_result.get("duration_ms", 0),
-                        context_usage_ratio=cycle_result.get("context_usage_ratio", 0.0),
-                        session_chained=cycle_result.get("session_chained", False),
-                        total_turns=cycle_result.get("total_turns", 0),
+                except Exception:
+                    logger.warning(
+                        "[%s] Failed to close heartbeat stream",
+                        self.name,
+                        exc_info=True,
                     )
-                    journal.finalize(summary=result.summary[:500])
-                    journal_finalized = True
 
             # ── Hard timeout: write recovery note ──
             if _hard_exceeded:

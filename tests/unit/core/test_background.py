@@ -335,6 +335,124 @@ class TestCleanup:
         assert (storage_dir / "new_task_001.json").exists()
 
 
+# ── In-memory retention ──────────────────────────────────────
+
+
+class TestMemoryEviction:
+    @staticmethod
+    def _add_task(
+        manager: BackgroundTaskManager,
+        task_id: str,
+        status: TaskStatus,
+        completed_at: float | None,
+    ) -> BackgroundTask:
+        task = BackgroundTask(
+            task_id=task_id,
+            anima_name="test-anima",
+            tool_name="local_llm",
+            tool_args={"payload": task_id},
+            status=status,
+            created_at=(completed_at or time.time()) - 10,
+            completed_at=completed_at,
+            result=f"result-{task_id}" if status == TaskStatus.COMPLETED else None,
+            error=f"error-{task_id}" if status == TaskStatus.FAILED else None,
+        )
+        manager._tasks[task_id] = task
+        manager._save_task(task)
+        return task
+
+    def test_manager_uses_configured_memory_limits(self, anima_dir: Path, monkeypatch):
+        config = MagicMock()
+        config.background_task.result_memory_retention_minutes = 15
+        config.background_task.max_completed_tasks_in_memory = 25
+        monkeypatch.setattr("core.config.load_config", lambda: config)
+
+        manager = BackgroundTaskManager(anima_dir)
+
+        assert manager._result_memory_retention_minutes == 15
+        assert manager._max_completed_tasks_in_memory == 25
+
+    def test_evicts_expired_completed_task_but_preserves_disk_fallback(
+        self,
+        anima_dir: Path,
+    ):
+        now = time.time()
+        manager = BackgroundTaskManager(
+            anima_dir,
+            result_memory_retention_minutes=60,
+            max_completed_tasks_in_memory=200,
+        )
+        self._add_task(manager, "expired", TaskStatus.COMPLETED, now - 3601)
+
+        assert manager.evict_completed_tasks(now=now) == 1
+        assert "expired" not in manager._tasks
+        assert (manager._storage_dir / "expired.json").exists()
+
+        loaded = manager.get_task("expired")
+        assert loaded is not None
+        assert loaded.result == "result-expired"
+
+    def test_running_and_pending_tasks_are_never_evicted(self, anima_dir: Path):
+        now = time.time()
+        manager = BackgroundTaskManager(
+            anima_dir,
+            result_memory_retention_minutes=0,
+            max_completed_tasks_in_memory=0,
+        )
+        self._add_task(manager, "running", TaskStatus.RUNNING, None)
+        self._add_task(manager, "pending", TaskStatus.PENDING, None)
+
+        assert manager.evict_completed_tasks(now=now) == 0
+        assert set(manager._tasks) == {"running", "pending"}
+
+    def test_evicts_oldest_terminal_tasks_over_count_limit(self, anima_dir: Path):
+        now = time.time()
+        manager = BackgroundTaskManager(
+            anima_dir,
+            result_memory_retention_minutes=60,
+            max_completed_tasks_in_memory=2,
+        )
+        self._add_task(manager, "oldest", TaskStatus.COMPLETED, now - 30)
+        self._add_task(manager, "middle", TaskStatus.FAILED, now - 20)
+        self._add_task(manager, "newest", TaskStatus.COMPLETED, now - 10)
+
+        assert manager.evict_completed_tasks(now=now) == 1
+        assert set(manager._tasks) == {"middle", "newest"}
+        assert (manager._storage_dir / "oldest.json").exists()
+
+    async def test_completion_and_submit_opportunistically_evict(self, anima_dir: Path):
+        now = time.time()
+        manager = BackgroundTaskManager(
+            anima_dir,
+            result_memory_retention_minutes=60,
+            max_completed_tasks_in_memory=200,
+        )
+        self._add_task(manager, "expired", TaskStatus.COMPLETED, now - 3601)
+
+        task_id = manager.submit("local_llm", {}, lambda _name, _args: "done")
+        assert "expired" not in manager._tasks
+        async_task = manager._async_tasks[task_id]
+        await async_task
+
+        immediate_manager = BackgroundTaskManager(
+            anima_dir / "immediate",
+            result_memory_retention_minutes=0,
+            max_completed_tasks_in_memory=200,
+        )
+        immediate_id = await immediate_manager.submit_async(
+            "local_llm",
+            {},
+            lambda _name, _args: asyncio.sleep(0, result="async done"),
+        )
+        immediate_task = immediate_manager._async_tasks[immediate_id]
+        await immediate_task
+
+        assert immediate_id not in immediate_manager._tasks
+        loaded = immediate_manager.get_task(immediate_id)
+        assert loaded is not None
+        assert loaded.result == "async done"
+
+
 # ── BackgroundTask data model ────────────────────────────────
 
 

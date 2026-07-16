@@ -644,7 +644,9 @@ class BackgroundTaskConfig(BaseModel):
         "local_llm": BackgroundToolConfig(threshold_s=60),
         "run_command": BackgroundToolConfig(threshold_s=60),
     }
-    result_retention_hours: int = 24
+    result_retention_hours: int = 24  # disk cleanup retention (cleanup is explicitly invoked)
+    result_memory_retention_minutes: int = Field(default=60, ge=0)  # in-process result cache
+    max_completed_tasks_in_memory: int = Field(default=200, ge=0)
     max_parallel_llm_tasks: int = Field(default=3, ge=1, le=10)
     worker_pool_size: int = Field(default=1, ge=1, le=10)
 

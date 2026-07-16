@@ -47,6 +47,15 @@ _tool_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tool-quic
 _bg_tool_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tool-bg")
 
 
+def shutdown_tool_executors() -> None:
+    """Stop the process-global Mode A tool pools during runner shutdown."""
+    for executor in (_tool_executor, _bg_tool_executor):
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            logger.warning("Failed to shut down Mode A tool executor", exc_info=True)
+
+
 # ── Module-level dataclass replacing dynamic _FakeTC ─────
 
 

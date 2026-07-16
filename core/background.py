@@ -98,6 +98,9 @@ _DEFAULT_ELIGIBLE_TOOLS: dict[str, int] = {
     "machine_run": 600,
 }
 
+_DEFAULT_RESULT_MEMORY_RETENTION_MINUTES = 60
+_DEFAULT_MAX_COMPLETED_TASKS_IN_MEMORY = 200
+
 
 # ── BackgroundTaskManager ────────────────────────────────────
 
@@ -120,10 +123,19 @@ class BackgroundTaskManager:
         anima_dir: Path,
         anima_name: str = "",
         eligible_tools: dict[str, int] | None = None,
+        result_memory_retention_minutes: int | None = None,
+        max_completed_tasks_in_memory: int | None = None,
     ) -> None:
         self._anima_dir = anima_dir
         self._anima_name = anima_name or anima_dir.name
         self._eligible_tools = eligible_tools or dict(_DEFAULT_ELIGIBLE_TOOLS)
+        (
+            self._result_memory_retention_minutes,
+            self._max_completed_tasks_in_memory,
+        ) = self._resolve_memory_limits(
+            result_memory_retention_minutes,
+            max_completed_tasks_in_memory,
+        )
         self._tasks: dict[str, BackgroundTask] = {}
         self._async_tasks: dict[str, asyncio.Task[None]] = {}
         self.on_complete: OnTaskCompleteFn | None = None
@@ -188,6 +200,7 @@ class BackgroundTaskManager:
         Returns:
             The generated task_id.
         """
+        self.evict_completed_tasks()
         task_id = uuid.uuid4().hex[:12]
         task = BackgroundTask(
             task_id=task_id,
@@ -224,6 +237,7 @@ class BackgroundTaskManager:
 
         Same as :meth:`submit` but *execute_fn* is an async callable.
         """
+        self.evict_completed_tasks()
         task_id = uuid.uuid4().hex[:12]
         task = BackgroundTask(
             task_id=task_id,
@@ -325,6 +339,7 @@ class BackgroundTaskManager:
                         "on_complete callback failed for task %s",
                         task.task_id,
                     )
+            self.evict_completed_tasks()
 
     async def _run_task_async(
         self,
@@ -362,6 +377,70 @@ class BackgroundTaskManager:
                         "on_complete callback failed for task %s",
                         task.task_id,
                     )
+            self.evict_completed_tasks()
+
+    # ── In-memory retention ─────────────────────────────────
+
+    @staticmethod
+    def _resolve_memory_limits(
+        retention_minutes: int | None,
+        max_completed_tasks: int | None,
+    ) -> tuple[int, int]:
+        """Resolve in-memory result retention without affecting disk retention."""
+        if retention_minutes is None or max_completed_tasks is None:
+            try:
+                from core.config import load_config
+
+                config = load_config().background_task
+                if retention_minutes is None:
+                    retention_minutes = config.result_memory_retention_minutes
+                if max_completed_tasks is None:
+                    max_completed_tasks = config.max_completed_tasks_in_memory
+            except Exception:
+                logger.debug("Failed to load background task memory limits", exc_info=True)
+
+        if retention_minutes is None:
+            retention_minutes = _DEFAULT_RESULT_MEMORY_RETENTION_MINUTES
+        if max_completed_tasks is None:
+            max_completed_tasks = _DEFAULT_MAX_COMPLETED_TASKS_IN_MEMORY
+        return max(0, retention_minutes), max(0, max_completed_tasks)
+
+    def evict_completed_tasks(self, *, now: float | None = None) -> int:
+        """Evict old or excess terminal tasks from memory, preserving disk JSON."""
+        current_time = time.time() if now is None else now
+        cutoff = current_time - (self._result_memory_retention_minutes * 60)
+        terminal_statuses = {TaskStatus.COMPLETED, TaskStatus.FAILED}
+
+        evicted_ids = {
+            task_id
+            for task_id, task in self._tasks.items()
+            if task.status in terminal_statuses
+            and task.completed_at is not None
+            and task.completed_at <= cutoff
+        }
+
+        retained_terminal = [
+            task
+            for task_id, task in self._tasks.items()
+            if task_id not in evicted_ids and task.status in terminal_statuses
+        ]
+        overflow = len(retained_terminal) - self._max_completed_tasks_in_memory
+        if overflow > 0:
+            retained_terminal.sort(
+                key=lambda task: (
+                    task.completed_at if task.completed_at is not None else task.created_at,
+                    task.created_at,
+                    task.task_id,
+                ),
+            )
+            evicted_ids.update(task.task_id for task in retained_terminal[:overflow])
+
+        for task_id in evicted_ids:
+            self._tasks.pop(task_id, None)
+
+        if evicted_ids:
+            logger.debug("Evicted %d completed background tasks from memory", len(evicted_ids))
+        return len(evicted_ids)
 
     # ── Persistence ──────────────────────────────────────────
 

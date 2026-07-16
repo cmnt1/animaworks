@@ -27,6 +27,7 @@ import logging
 import os
 import shutil
 import sys
+import threading
 from collections.abc import AsyncGenerator
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -86,6 +87,8 @@ _SUBPROCESS_STREAM_LIMIT = 16 * 1024 * 1024  # 16 MB
 
 _CODEX_REASONING_SUMMARY_DEFAULT = "concise"
 _CODEX_REASONING_SUMMARY_VALUES = {"auto", "concise", "detailed", "none"}
+_CODEX_CLIENT_PROCESS_WAIT_TIMEOUT_SEC = 2.0
+_CODEX_CLIENT_READER_JOIN_TIMEOUT_SEC = 2.0
 
 
 # ── Model name helpers ───────────────────────────────────────
@@ -807,13 +810,113 @@ async def _maybe_await(value: Any) -> Any:
     return value
 
 
+def _declared_codex_private_attr(owner: Any, attr_name: str) -> Any:
+    """Read a declared SDK private attribute without triggering dynamic mocks."""
+    try:
+        attributes = vars(owner)
+        if attr_name not in attributes:
+            return None
+        return getattr(owner, attr_name, None)
+    except Exception:
+        logger.warning(
+            "Failed to inspect Codex SDK cleanup resource %s",
+            attr_name,
+            exc_info=True,
+        )
+        return None
+
+
+def _codex_client_transport_resources(client: Any) -> tuple[Any, threading.Thread | None, threading.Thread | None]:
+    """Snapshot SDK transport resources before ``close()`` clears them.
+
+    Current ``AsyncCodex`` nests the transport at ``_client._sync``;
+    older/test clients may expose it at ``_sync`` or directly.  These are
+    private SDK details, so every ``getattr`` is deliberately best-effort.
+    """
+    owners = [client]
+    for link_name in ("_client", "_sync"):
+        for owner in tuple(owners):
+            nested = _declared_codex_private_attr(owner, link_name)
+            if nested is not None and all(nested is not existing for existing in owners):
+                owners.append(nested)
+
+    resources: list[Any] = [None, None, None]
+    for attr_name in ("_proc", "_reader_thread", "_stderr_thread"):
+        resource_index = ("_proc", "_reader_thread", "_stderr_thread").index(attr_name)
+        for owner in owners:
+            value = _declared_codex_private_attr(owner, attr_name)
+            if value is not None:
+                resources[resource_index] = value
+                break
+
+    proc, reader_thread, stderr_thread = resources
+    return (
+        proc,
+        reader_thread if isinstance(reader_thread, threading.Thread) else None,
+        stderr_thread if isinstance(stderr_thread, threading.Thread) else None,
+    )
+
+
+def _finish_codex_client_transport(
+    proc: Any,
+    reader_thread: threading.Thread | None,
+    stderr_thread: threading.Thread | None,
+) -> None:
+    """Force-close a Codex SDK transport after the SDK's own cleanup."""
+    if proc is not None:
+        try:
+            poll = getattr(proc, "poll", None)
+            is_running = callable(poll) and poll() is None
+            if is_running:
+                proc.kill()
+                proc.wait(timeout=_CODEX_CLIENT_PROCESS_WAIT_TIMEOUT_SEC)
+        except Exception:
+            logger.warning("Failed to reap Codex SDK subprocess during cleanup", exc_info=True)
+
+        # Close pipes before joining readers so a blocked readline receives EOF.
+        try:
+            _close_subprocess_stdio(proc)
+        except Exception:
+            logger.warning("Failed to close Codex SDK subprocess pipes", exc_info=True)
+
+    for thread_name, thread in (
+        ("reader", reader_thread),
+        ("stderr", stderr_thread),
+    ):
+        if thread is None:
+            continue
+        try:
+            if thread.is_alive():
+                thread.join(timeout=_CODEX_CLIENT_READER_JOIN_TIMEOUT_SEC)
+            if thread.is_alive():
+                logger.warning("Codex SDK %s thread is still alive after cleanup", thread_name)
+        except Exception:
+            logger.warning("Failed to join Codex SDK %s thread", thread_name, exc_info=True)
+
+
 async def _close_codex_client(client: Any) -> None:
-    close = getattr(client, "close", None)
+    proc, reader_thread, stderr_thread = _codex_client_transport_resources(client)
+
+    try:
+        close = getattr(client, "close", None)
+    except Exception:
+        logger.warning("Failed to inspect Codex SDK close method", exc_info=True)
+        close = None
     if callable(close):
         try:
             await _maybe_await(close())
         except Exception:
-            logger.debug("Failed to close Codex SDK client", exc_info=True)
+            logger.warning("Failed to close Codex SDK client", exc_info=True)
+
+    try:
+        await asyncio.to_thread(
+            _finish_codex_client_transport,
+            proc,
+            reader_thread,
+            stderr_thread,
+        )
+    except Exception:
+        logger.warning("Failed to finish Codex SDK transport cleanup", exc_info=True)
 
 
 # ── Executor ─────────────────────────────────────────────────

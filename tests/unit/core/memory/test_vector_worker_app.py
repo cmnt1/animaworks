@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -302,6 +305,132 @@ def test_vector_worker_status_includes_gpu_section(monkeypatch) -> None:
         status = client.get("/status").json()
 
     assert status["gpu"] == gpu
+
+
+def test_vector_worker_native_queue_rejects_at_limit_and_reports_metrics(monkeypatch) -> None:
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_QUEUE_LIMIT", "1")
+
+    from core.memory.rag.vector_worker import create_app
+
+    started = threading.Event()
+    release = threading.Event()
+    store = MagicMock()
+
+    def query(*_args, **_kwargs):
+        started.set()
+        assert release.wait(timeout=5)
+        return []
+
+    store.query.side_effect = query
+    payload = {
+        "anima_name": "sora",
+        "collection": "knowledge",
+        "embedding": [0.1],
+        "top_k": 1,
+    }
+
+    with (
+        patch("core.memory.rag.singleton.get_vector_store", return_value=store),
+        TestClient(create_app()) as client,
+        concurrent.futures.ThreadPoolExecutor(max_workers=2) as requests,
+    ):
+        first = requests.submit(client.post, "/query", json=payload)
+        assert started.wait(timeout=5)
+        second = requests.submit(client.post, "/query", json=payload)
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            queued_status = client.get("/status").json()
+            if queued_status["queue_depth"] == 1:
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("second native request was not queued")
+
+        assert queued_status["in_flight"] == 1
+        assert queued_status["submitted"] == 2
+        assert queued_status["completed"] == 0
+        assert queued_status["rejected"] == 0
+
+        rejected = client.post("/query", json=payload)
+        assert rejected.status_code == 503
+        assert rejected.headers["Retry-After"] == "1"
+        assert rejected.json() == {
+            "detail": "Vector worker queue full",
+            "queue_limit": 1,
+            "retry_after_seconds": 1,
+        }
+
+        release.set()
+        assert first.result(timeout=5).status_code == 200
+        assert second.result(timeout=5).status_code == 200
+        status = client.get("/status").json()
+
+    assert status["queue_limit"] == 1
+    assert status["queue_depth"] == 0
+    assert status["in_flight"] == 0
+    assert status["submitted"] == 2
+    assert status["completed"] == 2
+    assert status["rejected"] == 1
+    assert store.query.call_count == 2
+
+
+def test_vector_worker_cancelled_native_request_is_skipped() -> None:
+    from core.memory.rag.vector_worker import _NativeAdmission, _run_native
+
+    admission = _NativeAdmission(queue_limit=1)
+    started = threading.Event()
+    release = threading.Event()
+    skipped = MagicMock(return_value="unexpected")
+
+    def blocking_call() -> str:
+        started.set()
+        assert release.wait(timeout=5)
+        return "done"
+
+    async def scenario() -> None:
+        running = asyncio.create_task(_run_native(blocking_call, _admission=admission))
+        assert await asyncio.to_thread(started.wait, 5)
+        cancelled = asyncio.create_task(_run_native(skipped, _admission=admission))
+
+        deadline = asyncio.get_running_loop().time() + 5
+        while asyncio.get_running_loop().time() < deadline:
+            if admission.status()["queue_depth"] == 1:
+                break
+            await asyncio.sleep(0.01)
+        else:
+            raise AssertionError("cancellable native request was not queued")
+
+        cancelled.cancel()
+        try:
+            await cancelled
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError("native request cancellation did not propagate")
+
+        release.set()
+        assert await running == "done"
+        deadline = asyncio.get_running_loop().time() + 5
+        while asyncio.get_running_loop().time() < deadline:
+            if admission.status()["completed"] == 2:
+                break
+            await asyncio.sleep(0.01)
+        else:
+            raise AssertionError("cancelled native request was not drained")
+
+    asyncio.run(scenario())
+
+    skipped.assert_not_called()
+    assert admission.status() == {
+        "queue_limit": 1,
+        "queue_depth": 0,
+        "in_flight": 0,
+        "submitted": 2,
+        "completed": 2,
+        "rejected": 0,
+    }
 
 
 def test_vector_worker_reset_store_clears_cache_and_owner_breakers(monkeypatch) -> None:

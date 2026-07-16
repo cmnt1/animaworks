@@ -89,8 +89,21 @@ class TestBackgroundTaskConfig:
         btc = BackgroundTaskConfig()
         assert btc.enabled is True
         assert btc.result_retention_hours == 24
+        assert btc.result_memory_retention_minutes == 60
+        assert btc.max_completed_tasks_in_memory == 200
         assert btc.worker_pool_size == 1
         assert isinstance(btc.eligible_tools, dict)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("result_memory_retention_minutes", -1),
+            ("max_completed_tasks_in_memory", -1),
+        ],
+    )
+    def test_background_task_config_rejects_negative_memory_limits(self, field, value):
+        with pytest.raises(ValueError):
+            BackgroundTaskConfig(**{field: value})
 
     @pytest.mark.parametrize("value", [0, 11, -1])
     def test_background_task_config_rejects_invalid_worker_pool_size(self, value):
@@ -185,6 +198,8 @@ class TestAnimaWorksConfigBackground:
         # Modify background_task settings
         config.background_task.enabled = False
         config.background_task.result_retention_hours = 48
+        config.background_task.result_memory_retention_minutes = 30
+        config.background_task.max_completed_tasks_in_memory = 50
         config.background_task.eligible_tools["custom_tool"] = BackgroundToolConfig(
             threshold_s=90,
         )
@@ -197,6 +212,8 @@ class TestAnimaWorksConfigBackground:
         # Verify background_task round-trip
         assert restored.background_task.enabled is False
         assert restored.background_task.result_retention_hours == 48
+        assert restored.background_task.result_memory_retention_minutes == 30
+        assert restored.background_task.max_completed_tasks_in_memory == 50
         assert "custom_tool" in restored.background_task.eligible_tools
         assert restored.background_task.eligible_tools["custom_tool"].threshold_s == 90
 

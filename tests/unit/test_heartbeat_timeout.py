@@ -10,14 +10,17 @@ Covers:
   - HeartbeatConfig validation (soft < hard, bounds)
 """
 
+import asyncio
 import math
 import time
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 
-from core._anima_heartbeat import _calc_effective_max_turns
+from core._anima_heartbeat import HeartbeatMixin, _calc_effective_max_turns
 from core.config.models import HeartbeatConfig
 
 # ── _calc_effective_max_turns ──────────────────────────────────
@@ -275,6 +278,82 @@ class TestPreToolHookSoftTimeout:
 
 class TestHardTimeoutRecoveryNote:
     """Test that hard timeout writes recovery_note.md."""
+
+    @pytest.mark.asyncio
+    async def test_hard_timeout_closes_stream_generator(self, tmp_path):
+        """Breaking the stream on hard timeout explicitly closes its generator."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        stream_closed = asyncio.Event()
+
+        async def stream(*args, **kwargs):
+            try:
+                yield {"type": "text_delta", "text": "still running"}
+            finally:
+                stream_closed.set()
+
+        model_config = SimpleNamespace(max_turns=20)
+        agent = SimpleNamespace(
+            model_config=model_config,
+            _executor=SimpleNamespace(reminder_queue=MagicMock()),
+            reset_reply_tracking=MagicMock(),
+            reset_posted_channels=MagicMock(),
+            reset_read_paths=MagicMock(),
+            run_cycle_streaming=stream,
+        )
+        anima = HeartbeatMixin()
+        anima.name = "alice"
+        anima.anima_dir = tmp_path
+        anima.model_config = model_config
+        anima.memory = MagicMock()
+        anima._activity = MagicMock()
+        anima._agent_for_lane = MagicMock(return_value=agent)
+        anima._resolve_background_config = MagicMock(return_value=None)
+        anima._enforce_state_size_limit = MagicMock()
+
+        config = SimpleNamespace(
+            activity_level=100,
+            heartbeat=SimpleNamespace(
+                max_turns=None,
+                soft_timeout_seconds=30,
+                hard_timeout_seconds=60,
+            ),
+        )
+        wait_for_timeouts: list[float] = []
+        original_wait_for = asyncio.wait_for
+        monotonic_call_count = 0
+
+        def elapsed_past_hard_timeout():
+            nonlocal monotonic_call_count
+            monotonic_call_count += 1
+            return 100.0 if monotonic_call_count == 1 else 161.0
+
+        async def recording_wait_for(awaitable, *, timeout):
+            wait_for_timeouts.append(timeout)
+            return await original_wait_for(awaitable, timeout=timeout)
+
+        with (
+            patch("core.config.models.load_config", return_value=config),
+            patch("core._anima_heartbeat.StreamingJournal"),
+            patch("core._anima_heartbeat.ConversationMemory") as mock_conversation,
+            patch("core._anima_heartbeat.asyncio.wait_for", new=recording_wait_for),
+            patch("core._anima_heartbeat.time.monotonic", side_effect=elapsed_past_hard_timeout),
+            patch("core.memory.task_queue.TaskQueueManager") as mock_task_queue,
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        ):
+            mock_conversation.return_value.finalize_if_session_ended = AsyncMock()
+            mock_task_queue.return_value.sync_delegated.return_value = 0
+            mock_task_queue.return_value.compact.return_value = 0
+
+            await anima._execute_heartbeat_cycle(
+                "test prompt",
+                inbox_items=[],
+                unread_count=0,
+            )
+
+        assert stream_closed.is_set()
+        assert wait_for_timeouts == [10]
+        assert (state_dir / "recovery_note.md").exists()
 
     def test_recovery_note_written(self, tmp_path):
         from core.i18n import t

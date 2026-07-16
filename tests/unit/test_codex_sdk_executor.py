@@ -11,7 +11,9 @@ All tests use mocks — no Codex CLI binary or API key required.
 import asyncio
 import logging
 import os
+import subprocess
 import sys
+import threading
 import tomllib
 import types
 from pathlib import Path
@@ -25,6 +27,7 @@ from core.execution.base import ExecutionResult
 from core.execution.codex_sdk import (
     CodexSDKExecutor,
     _clear_thread_id,
+    _close_codex_client,
     _close_subprocess_stdio,
     _codex_item_tool_name,
     _default_home_dir,
@@ -351,6 +354,63 @@ class TestHelpers:
         assert stdin.close_calls == 1
         assert stdout._transport.close_calls == 1
         assert stderr._transport.close_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_close_codex_client_reaps_subprocess_and_reader_threads(self):
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert proc.stdout is not None
+        assert proc.stderr is not None
+
+        reader_thread = threading.Thread(target=proc.stdout.readline, daemon=True)
+        stderr_thread = threading.Thread(target=proc.stderr.readline, daemon=True)
+        reader_thread.start()
+        stderr_thread.start()
+
+        sync_client = SimpleNamespace(
+            _proc=proc,
+            _reader_thread=reader_thread,
+            _stderr_thread=stderr_thread,
+        )
+
+        class _FakeAsyncCodex:
+            def __init__(self):
+                self._client = SimpleNamespace(_sync=sync_client)
+                self.close_called = False
+
+            async def close(self):
+                self.close_called = True
+                # Match the SDK behavior that clears its private references
+                # before all resources have necessarily been reclaimed.
+                self._client._sync._proc = None
+                self._client._sync._reader_thread = None
+                self._client._sync._stderr_thread = None
+
+        client = _FakeAsyncCodex()
+        try:
+            await _close_codex_client(client)
+
+            assert client.close_called
+            assert proc.poll() is not None
+            assert not reader_thread.is_alive()
+            assert not stderr_thread.is_alive()
+            assert proc.stdin is not None and proc.stdin.closed
+            assert proc.stdout.closed
+            assert proc.stderr.closed
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=2)
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
+            reader_thread.join(timeout=2)
+            stderr_thread.join(timeout=2)
 
 
 # ── Session persistence tests ────────────────────────────────

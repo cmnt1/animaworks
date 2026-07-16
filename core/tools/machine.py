@@ -77,6 +77,8 @@ _DEFAULT_TIMEOUT_ASYNC = 1800
 _MAX_CALLS_PER_SESSION = 5
 _MAX_CALLS_PER_HEARTBEAT = 2
 _MAX_OUTPUT_CHARS = 50_000
+_PIPE_THREAD_JOIN_TIMEOUT = 5.0
+_PIPE_THREAD_REJOIN_TIMEOUT = 1.0
 
 _ENV_ALLOWLIST: frozenset[str] = frozenset(
     {
@@ -497,8 +499,18 @@ def _stream_to_file(
             except OSError:
                 pass
 
-    stdout_thread = _threading.Thread(target=_drain, args=(proc.stdout,), daemon=True)
-    stderr_thread = _threading.Thread(target=_drain, args=(proc.stderr, "[stderr] "), daemon=True)
+    stdout_thread = _threading.Thread(
+        target=_drain,
+        args=(proc.stdout,),
+        daemon=True,
+        name=f"machine-stdout-{cmd_id}",
+    )
+    stderr_thread = _threading.Thread(
+        target=_drain,
+        args=(proc.stderr, "[stderr] "),
+        daemon=True,
+        name=f"machine-stderr-{cmd_id}",
+    )
     stdout_thread.start()
     stderr_thread.start()
 
@@ -517,8 +529,38 @@ def _stream_to_file(
             except subprocess.TimeoutExpired:
                 pass
 
-    stdout_thread.join(timeout=5)
-    stderr_thread.join(timeout=5)
+    pipe_readers = (
+        ("stdout", proc.stdout, stdout_thread),
+        ("stderr", proc.stderr, stderr_thread),
+    )
+    for _, _, thread in pipe_readers:
+        thread.join(timeout=_PIPE_THREAD_JOIN_TIMEOUT)
+
+    # Do not discard buffered output unless the normal drain timed out.  A
+    # forced pipe close releases a reader blocked on the external CLI, after
+    # which it gets one short rejoin window before we log the leak.
+    for pipe_name, pipe, thread in pipe_readers:
+        if not thread.is_alive():
+            continue
+        if pipe is not None:
+            try:
+                pipe.close()
+            except (OSError, ValueError):
+                logger.warning(
+                    "machine/%s failed to close %s pipe cmd_id=%s",
+                    engine,
+                    pipe_name,
+                    cmd_id,
+                    exc_info=True,
+                )
+        thread.join(timeout=_PIPE_THREAD_REJOIN_TIMEOUT)
+        if thread.is_alive():
+            logger.warning(
+                "machine/%s %s reader still alive after pipe close cmd_id=%s",
+                engine,
+                pipe_name,
+                cmd_id,
+            )
 
     elapsed = time.monotonic() - start
     exit_code = proc.returncode if proc.returncode is not None else -1
