@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -30,7 +31,6 @@ from .journal import MergeJournal, MergePhase
 _DATE_PREFIX = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 _ARCHIVE_ONLY = ("activity_log", "token_usage", "prompt_logs")
 _PLACEHOLDER_PHASES = (
-    MergePhase.REWRITE_REFS,
     MergePhase.VERIFY,
     MergePhase.TOMBSTONE,
 )
@@ -137,6 +137,11 @@ class AnimaMergeService:
             self._run_phase(journal, MergePhase.MERGE_MEMORY, self.merge_memory)
             self._run_phase(
                 journal,
+                MergePhase.REWRITE_REFS,
+                lambda: self.rewrite_refs(journal),
+            )
+            self._run_phase(
+                journal,
                 MergePhase.REBUILD_INDEXES,
                 lambda: self.rebuild_indexes(journal),
             )
@@ -145,7 +150,10 @@ class AnimaMergeService:
                     journal.skip(phase, "Not implemented in Phase 1")
             if not journal.is_completed(MergePhase.DONE):
                 journal.start(MergePhase.DONE)
-                journal.complete(MergePhase.DONE, {"phase_2_complete": True})
+                journal.complete(
+                    MergePhase.DONE,
+                    {"phase_2_complete": True, "phase_3_complete": True},
+                )
             journal.finish()
             snapshot_raw = journal.data.get("artifacts", {}).get("snapshot_path")
             return MergeResult(
@@ -428,7 +436,10 @@ class AnimaMergeService:
         return result
 
     def _task_id_collisions(self) -> list[str]:
-        return sorted(self._task_ids(self.source_dir) & self._task_ids(self.target_dir))
+        from .task_refs import build_task_id_mapping
+
+        mapping = build_task_id_mapping(self.data_dir, self.source, self.target)
+        return sorted(old_id for old_id, new_id in mapping.items() if old_id != new_id)
 
     def _thread_id_collisions(self) -> list[str]:
         def ids(anima_dir: Path) -> set[str]:
@@ -627,7 +638,65 @@ class AnimaMergeService:
                 destination = snapshot_dir / "shared" / "inbox" / name
                 shutil.copytree(inbox, destination, dirs_exist_ok=True, copy_function=shutil.copy2)
                 copied.append(str(destination))
+        copied.extend(self._snapshot_reference_state(snapshot_dir))
         return {"snapshot_path": str(snapshot_dir), "snapshot_files": copied}
+
+    def _snapshot_reference_state(self, snapshot_dir: Path) -> list[str]:
+        """Snapshot mutable Phase-3 references before REWRITE_REFS."""
+        copied: list[str] = []
+
+        def copy_file(path: Path) -> None:
+            if not path.is_file():
+                return
+            destination = snapshot_dir / path.relative_to(self.data_dir)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, destination)
+            copied.append(str(destination))
+
+        for anima_dir in sorted(self.animas_dir.iterdir()) if self.animas_dir.is_dir() else []:
+            if not anima_dir.is_dir() or anima_dir.name in {self.source, self.target}:
+                continue
+            copy_file(anima_dir / "status.json")
+            copy_file(anima_dir / "state" / "task_queue.jsonl")
+
+        shared_dir = self.data_dir / "shared"
+        for pattern in ("channels/*.meta.json", "meetings/*.json"):
+            for path in sorted(shared_dir.glob(pattern)):
+                copy_file(path)
+        for path in (
+            self.data_dir / "usage_governor_state.json",
+            self.animas_dir / ".bootstrap_retries.json",
+            self.data_dir / "run" / "notification_map.json",
+            self.data_dir / "run" / "discord_thread_map.json",
+        ):
+            copy_file(path)
+
+        taskboard = shared_dir / "taskboard.sqlite3"
+        if taskboard.is_file():
+            destination = snapshot_dir / taskboard.relative_to(self.data_dir)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source_conn = sqlite3.connect(taskboard)
+            destination_conn = sqlite3.connect(destination)
+            try:
+                source_conn.backup(destination_conn)
+            finally:
+                destination_conn.close()
+                source_conn.close()
+            copied.append(str(destination))
+
+        for path in (
+            self.data_dir / "run" / "inbox_wake" / self.source,
+            self.data_dir / "run" / "animas" / f"{self.source}.pid",
+            self.data_dir / "run" / "animas" / f"{self.source}.lock",
+            self.data_dir / "run" / "sockets" / f"{self.source}.sock",
+        ):
+            copy_file(path)
+        events = self.data_dir / "run" / "events" / self.source
+        if events.is_dir():
+            destination = snapshot_dir / events.relative_to(self.data_dir)
+            shutil.copytree(events, destination, dirs_exist_ok=True, copy_function=shutil.copy2)
+            copied.append(str(destination))
+        return copied
 
     def merge_memory(self) -> dict[str, Any]:
         recovered = self._recover_abandoned_memory()
@@ -651,6 +720,7 @@ class AnimaMergeService:
             "fact_id_mapping": fact_result["id_mapping"],
             "facts_read": fact_result["read"],
             "facts_appended": fact_result["appended"],
+            "facts_appended_ids": fact_result["appended_ids"],
             "skill_mapping": skill_mapping,
             "attachment_mapping": attachment_mapping,
             "skill_state_provenance": skill_state,
@@ -737,6 +807,176 @@ class AnimaMergeService:
             target_key = f"attachments/{destination.relative_to(target_root).as_posix()}"
             mapping[source_key] = target_key
         return mapping
+
+    def rewrite_refs(self, journal: MergeJournal) -> dict[str, Any]:
+        """Rewrite external references through durable, idempotent substeps."""
+        from .content_refs import (
+            plan_inbox,
+            rewrite_inbox,
+            rewrite_inbox_task_references,
+            rewrite_memory_references,
+        )
+        from .external_refs import ExternalRefsRewriter
+        from .task_refs import build_task_id_mapping, rewrite_task_references
+
+        external = ExternalRefsRewriter(self.data_dir, self.source, self.target)
+        self._run_rewrite_substep(
+            journal,
+            "organization",
+            lambda: external.rewrite_organization(external.plan_organization()),
+        )
+
+        def rewrite_messaging() -> dict[str, Any]:
+            return {
+                **external.rewrite_messaging(),
+                "credential_disable_candidates": external.discover_credential_candidates(),
+            }
+
+        self._run_rewrite_substep(journal, "messaging", rewrite_messaging)
+
+        memory_artifacts = journal.phase_artifacts(MergePhase.MERGE_MEMORY)
+        file_mapping = memory_artifacts.get("file_mapping", {})
+        episode_mapping = memory_artifacts.get("episode_mapping", {})
+        attachment_mapping = memory_artifacts.get("attachment_mapping", {})
+        facts_appended_ids = memory_artifacts.get("facts_appended_ids", [])
+        for label, value in (
+            ("file_mapping", file_mapping),
+            ("episode_mapping", episode_mapping),
+            ("attachment_mapping", attachment_mapping),
+        ):
+            if not isinstance(value, dict):
+                raise AnimaMergeError(f"Invalid {label} in MERGE_MEMORY journal artifacts")
+        if not isinstance(facts_appended_ids, list) or not all(
+            isinstance(value, str) for value in facts_appended_ids
+        ):
+            raise AnimaMergeError("Invalid facts_appended_ids in MERGE_MEMORY journal artifacts")
+
+        self._run_rewrite_substep(
+            journal,
+            "memory_references",
+            lambda: rewrite_memory_references(
+                self.target_dir,
+                source=self.source,
+                target=self.target,
+                file_mapping=file_mapping,
+                episode_mapping=episode_mapping,
+                attachment_mapping=attachment_mapping,
+                fact_ids_to_rewrite=facts_appended_ids,
+            ),
+        )
+        inbox_plan = self._run_rewrite_substep(
+            journal,
+            "inbox_mapping",
+            lambda: plan_inbox(self.data_dir, self.source, self.target),
+        )
+        inbox = self._run_rewrite_substep(
+            journal,
+            "inbox",
+            lambda: rewrite_inbox(
+                self.data_dir,
+                self.source,
+                self.target,
+                inbox_plan,
+            ),
+        )
+        task_plan = self._run_rewrite_substep(
+            journal,
+            "task_id_mapping",
+            lambda: {
+                "task_id_mapping": build_task_id_mapping(
+                    self.data_dir,
+                    self.source,
+                    self.target,
+                )
+            },
+        )
+        task_mapping = task_plan.get("task_id_mapping", {})
+        if not isinstance(task_mapping, dict):
+            raise AnimaMergeError("Invalid task_id_mapping in REWRITE_REFS journal artifacts")
+        message_mapping = inbox.get("message_mapping", [])
+        if not isinstance(message_mapping, list):
+            raise AnimaMergeError("Invalid message_mapping in REWRITE_REFS journal artifacts")
+        self._run_rewrite_substep(
+            journal,
+            "inbox_task_references",
+            lambda: rewrite_inbox_task_references(
+                self.data_dir,
+                self.target,
+                message_mapping,
+                task_mapping,
+            ),
+        )
+        self._run_rewrite_substep(
+            journal,
+            "task_references",
+            lambda: rewrite_task_references(
+                self.data_dir,
+                self.source,
+                self.target,
+                task_mapping,
+            ),
+        )
+        def rewrite_ancillary_state() -> dict[str, Any]:
+            artifacts = external.rewrite_ancillary_state(
+                wake_target=bool(inbox.get("messages_moved", 0)),
+            )
+            if self._server_running():
+                artifacts["live_runtime"] = self._sync_live_reference_state()
+            return artifacts
+
+        self._run_rewrite_substep(journal, "ancillary_state", rewrite_ancillary_state)
+
+        substeps = journal.data.get("phases", {}).get(MergePhase.REWRITE_REFS.value, {}).get("substeps", {})
+        return {
+            "rewrite_substeps": {
+                name: {
+                    "status": record.get("status"),
+                    "artifacts": record.get("artifacts", {}),
+                    **({"reason": record["reason"]} if "reason" in record else {}),
+                }
+                for name, record in substeps.items()
+                if isinstance(record, dict)
+            },
+            "task_id_mapping": dict(sorted(task_mapping.items())),
+            "messages_moved": int(inbox.get("messages_moved", 0)),
+        }
+
+    @staticmethod
+    def _run_rewrite_substep(journal: MergeJournal, name: str, action: Any) -> dict[str, Any]:
+        phase = MergePhase.REWRITE_REFS
+        if journal.is_substep_completed(phase, name):
+            return journal.substep_artifacts(phase, name)
+        journal.start_substep(phase, name)
+        try:
+            artifacts = action() or {}
+        except Exception as exc:
+            journal.fail_substep(phase, name, f"{type(exc).__name__}: {exc}")
+            if isinstance(exc, AnimaMergeError):
+                raise
+            raise AnimaMergeError(f"REWRITE_REFS substep '{name}' failed: {exc}") from exc
+        journal.complete_substep(phase, name, artifacts)
+        return artifacts
+
+    def _sync_live_reference_state(self) -> dict[str, Any]:
+        """Ask a running gateway to update caches that can overwrite disk."""
+        import requests
+
+        url = f"{self.gateway_url}/api/system/anima-merge/rewrite-runtime-refs"
+        try:
+            response = requests.post(
+                url,
+                json={"source": self.source, "target": self.target},
+                timeout=10,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:
+            raise AnimaMergeError(f"Live reference-state synchronization failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise AnimaMergeError("Live reference-state synchronization returned invalid JSON")
+        if payload.get("config_reloaded") is not True:
+            raise AnimaMergeError("Live reference-state synchronization did not reload configuration")
+        return payload
 
     def rebuild_indexes(self, journal: MergeJournal) -> dict[str, Any]:
         """Rebuild target-derived indexes with resumable journal substeps."""
@@ -906,7 +1146,12 @@ class AnimaMergeService:
             records.append(mapped)
             id_mapping[record.fact_id] = mapped.fact_id
         appended = append_fact_records(self.target_dir, records)
-        return {"read": len(records), "appended": len(appended), "id_mapping": id_mapping}
+        return {
+            "read": len(records),
+            "appended": len(appended),
+            "appended_ids": [record.fact_id for record in appended],
+            "id_mapping": id_mapping,
+        }
 
     def _merge_skills(self) -> dict[str, str]:
         mapping: dict[str, str] = {}

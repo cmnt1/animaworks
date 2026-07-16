@@ -51,4 +51,4 @@ def cmd_anima_merge(args: argparse.Namespace) -> None:
     if result.journal_path is not None:
         print(f"Journal: {result.journal_path}")
     if execute:
-        print("Memory merge and target index rebuild completed. Later phases remain intentionally deferred.")
+        print("Memory merge, reference rewrite, and target index rebuild completed. VERIFY/TOMBSTONE remain deferred.")

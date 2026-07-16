@@ -181,6 +181,18 @@ class DiscordWebhookManager:
             }
         self._persist_thread_map()
 
+    def rewrite_anima_reference(self, source: str, target: str) -> int:
+        """Retarget live thread mappings after an Anima merge."""
+        changed = 0
+        with self._lock:
+            for entry in self._thread_map.values():
+                if isinstance(entry, dict) and entry.get("anima") == source:
+                    entry["anima"] = target
+                    changed += 1
+        if changed:
+            self._persist_thread_map()
+        return changed
+
     def lookup_thread_anima(self, message_id: str) -> str | None:
         """Look up which Anima sent a message (for reply routing)."""
         with self._lock:

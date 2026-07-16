@@ -1081,6 +1081,87 @@ def create_system_router() -> APIRouter:
             )
         return await manager.reload_animas()
 
+    @router.post("/system/anima-merge/rewrite-runtime-refs")
+    async def rewrite_anima_merge_runtime_refs(request: Request):
+        """Synchronize live caches after REWRITE_REFS updates disk state."""
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+        source = payload.get("source") if isinstance(payload, dict) else None
+        target = payload.get("target") if isinstance(payload, dict) else None
+        if not isinstance(source, str) or not isinstance(target, str) or source == target:
+            return JSONResponse({"error": "Invalid source/target"}, status_code=400)
+
+        from core.anima_factory import validate_anima_name
+
+        if validate_anima_name(source) or validate_anima_name(target):
+            return JSONResponse({"error": "Invalid source/target"}, status_code=400)
+
+        from core.discord_webhooks import get_webhook_manager
+
+        discord_updated = get_webhook_manager().rewrite_anima_reference(source, target)
+
+        governor_updated = False
+        governor = getattr(request.app.state, "usage_governor", None)
+        if governor is not None:
+            suspended: list[str] = []
+            for name in governor.state.suspended_animas:
+                mapped = target if name == source else name
+                if mapped not in suspended:
+                    suspended.append(mapped)
+            governor_updated = suspended != governor.state.suspended_animas
+            if governor_updated:
+                governor.state.suspended_animas = suspended
+                governor.state.save()
+
+        bootstrap_retry_removed = False
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is not None and source in supervisor._bootstrap_retry_counts:  # noqa: SLF001
+            supervisor._bootstrap_retry_counts.pop(source, None)  # noqa: SLF001
+            supervisor._save_bootstrap_retries()  # noqa: SLF001
+            bootstrap_retry_removed = True
+
+        rooms_reloaded = 0
+        room_manager = getattr(request.app.state, "room_manager", None)
+        if room_manager is not None:
+            room_manager.load_all_rooms()
+            rooms_reloaded = len(room_manager.list_rooms(include_closed=True))
+
+        discord_gateway_reloaded = False
+        discord_gateway = getattr(request.app.state, "discord_gateway_manager", None)
+        if discord_gateway is not None:
+            discord_gateway.reload()
+            discord_gateway_reloaded = True
+
+        github_gateway_reloaded = False
+        github_gateway = getattr(request.app.state, "github_gateway_manager", None)
+        if github_gateway is not None:
+            github_gateway.reload()
+            github_gateway_reloaded = True
+
+        config_reloaded = False
+        reload_manager = getattr(request.app.state, "reload_manager", None)
+        if reload_manager is not None:
+            reload_result = await reload_manager.reload_all()
+            config_reloaded = not any(
+                isinstance(item, dict) and item.get("status") == "error"
+                for item in reload_result.values()
+            )
+
+        result = {
+            "discord_mappings_updated": discord_updated,
+            "usage_state_updated": governor_updated,
+            "bootstrap_retry_removed": bootstrap_retry_removed,
+            "rooms_reloaded": rooms_reloaded,
+            "discord_gateway_reloaded": discord_gateway_reloaded,
+            "github_gateway_reloaded": github_gateway_reloaded,
+            "config_reloaded": config_reloaded,
+        }
+        if not config_reloaded:
+            return JSONResponse(result, status_code=503)
+        return result
+
     # ── Health Check ────────────────────────────────────────
 
     @router.get("/system/health")
