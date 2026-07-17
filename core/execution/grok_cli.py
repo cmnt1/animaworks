@@ -57,6 +57,9 @@ __all__ = [
 
 _GROK_BINARY_NAMES = ("grok",)
 _DEFAULT_TIMEOUT_SECONDS = 600
+# ACP NDJSON lines carry whole tool outputs / context blobs in one line;
+# asyncio's default 64KiB StreamReader limit truncates them (LimitOverrunError).
+_STDOUT_LIMIT_BYTES = 16 * 1024 * 1024
 _GRACEFUL_KILL_WAIT = 3.0
 _MAX_RESUME_TURNS = 10
 _RESUMABLE_TRIGGERS = frozenset({"chat"})
@@ -489,6 +492,7 @@ class GrokCLIExecutor(BaseExecutor):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self._workspace),
+                limit=_STDOUT_LIMIT_BYTES,
             )
             stderr_task = asyncio.create_task(self._drain_stderr(proc))
 
