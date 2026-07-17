@@ -140,18 +140,40 @@ export function createMeetingController(ctx) {
       .join(" · ");
   }
 
+  // タスク部門（Obsidian カテゴリ、日本語）→ アニマ所属部門（英語）の対応表。
+  // 両者は名称体系が異なるため、完全一致に加えてこの表でもマッチさせる。
+  const DEPARTMENT_ALIASES = {
+    "一般": ["Administration", "全社"],
+    "経営": ["全社", "Administration"],
+    "会計": ["Finance"],
+    "投資": ["Finance"],
+    "不動産": ["Property"],
+    "アフィリエイト": ["Affiliate"],
+  };
+
+  function _departmentMatches(animaDepartment, selectedDepartment) {
+    const dept = (animaDepartment || "").trim();
+    if (!dept) return false;
+    if (dept === selectedDepartment) return true;
+    return (DEPARTMENT_ALIASES[selectedDepartment] || []).includes(dept);
+  }
+
   function _selectDepartmentMembers(department) {
     if (!department) return;
     const members = state.animas.filter(
       (a) =>
         (a.status === "running" || a.status === "idle") &&
-        (a.department || "").trim() === department
+        _departmentMatches(a.department, department)
     );
     if (members.length === 0) return;
     const selected = new Set(members.map((a) => a.name));
     state.meetingParticipants = [...selected];
     if (!state.meetingChair || !selected.has(state.meetingChair)) {
-      state.meetingChair = members[0].name;
+      const leader = members.find((a) =>
+        `${a.title || ""} ${a.role || ""}`.toUpperCase().includes("COO") ||
+        `${a.title || ""} ${a.role || ""}`.includes("リーダー")
+      );
+      state.meetingChair = (leader || members[0]).name;
     }
   }
 

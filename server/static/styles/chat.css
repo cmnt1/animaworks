@@ -3815,7 +3815,12 @@
   overflow-y: auto;
   flex: 0 0 auto;
   min-height: 0;
-  max-height: 128px;
+  max-height: 220px;
+}
+
+/* 単独ミーティングページ（#/meeting）のセッションピッカーでは縦に余裕があるため広げる */
+.meeting-standalone-pane .chat-page-main.meeting-session-picker .meeting-setup-anima-list {
+  max-height: 46vh;
 }
 .meeting-setup-anima {
   display: flex;
