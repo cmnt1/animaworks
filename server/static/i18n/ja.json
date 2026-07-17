@@ -943,6 +943,7 @@
   "meeting.no_animas": "利用可能なAnimaがありません",
   "meeting.start": "ミーティング開始",
   "meeting.add": "追加",
+  "meeting.make_chair": "議長にする",
   "meeting.remove": "削除",
   "meeting.end": "終了",
   "meeting.default_title": "ミーティング",

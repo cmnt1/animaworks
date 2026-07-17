@@ -181,6 +181,26 @@ class RoomManager:
         logger.info("Updated meeting room %s title", room_id)
         return room
 
+    def set_chair(self, room_id: str, name: str) -> MeetingRoom:
+        """Reassign the meeting chair and persist it.
+
+        Takes effect from the next round; a round already in flight keeps
+        its original speaker queue.
+        """
+        room = self.get_room(room_id)
+        if room is None:
+            raise ValueError(t("room_manager.room_not_found", room_id=room_id))
+        if room.closed:
+            raise ValueError(t("room_manager.room_closed"))
+        if name not in room.participants:
+            raise ValueError(t("room_manager.chair_not_in_participants"))
+        if room.chair == name:
+            return room
+        room.chair = name
+        self.save_room(room_id)
+        logger.info("Meeting room %s chair changed to %s", room_id, name)
+        return room
+
     def list_rooms(self, include_closed: bool = False, include_archived: bool = False) -> list[MeetingRoom]:
         """List rooms, optionally including closed and/or archived ones."""
         rooms = list(self._rooms.values())

@@ -944,6 +944,7 @@
   "meeting.no_animas": "No Animas available",
   "meeting.start": "Start Meeting",
   "meeting.add": "Add",
+  "meeting.make_chair": "Make chair",
   "meeting.remove": "Remove",
   "meeting.end": "End",
   "meeting.default_title": "Meeting",

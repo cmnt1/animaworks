@@ -3471,6 +3471,27 @@
   opacity: 1;
 }
 
+.meeting-participant-chip .chip-make-chair {
+  cursor: pointer;
+  opacity: 0;
+  margin-left: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: inherit;
+  line-height: 1;
+  filter: grayscale(1);
+  transition: opacity 0.15s ease;
+}
+.meeting-participant-chip:hover .chip-make-chair {
+  opacity: 0.55;
+}
+.meeting-participant-chip .chip-make-chair:hover,
+.meeting-participant-chip .chip-make-chair:active {
+  opacity: 1;
+  filter: none;
+}
+
 .meeting-add-btn {
   padding: 2px 8px;
   border-radius: 12px;

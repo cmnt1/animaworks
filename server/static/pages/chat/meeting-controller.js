@@ -853,11 +853,16 @@ export function createMeetingController(ctx) {
       .map((p) => {
         const name = typeof p === "string" ? p : p.name || p;
         const isChair = name === chair;
+        const makeChairBtn =
+          !isChair && !room.closed
+            ? `<button type="button" class="chip-make-chair" data-name="${escapeHtml(name)}" title="${_label("meeting.make_chair", "議長にする")}">👑</button>`
+            : "";
         return `
           <span class="meeting-participant-chip ${isChair ? "is-chair" : ""}" data-name="${escapeHtml(name)}">
             ${_avatarHtml(name)}
             <span>${escapeHtml(name)}</span>
             ${isChair ? " 👑" : ""}
+            ${makeChairBtn}
             ${!isChair ? `<button type="button" class="chip-remove" data-name="${escapeHtml(name)}" title="${t("meeting.remove")}">✕</button>` : ""}
           </span>`;
       })
@@ -901,6 +906,14 @@ export function createMeetingController(ctx) {
         e.stopPropagation();
         const name = btn.dataset.name;
         if (name) removeParticipant(name);
+      });
+    });
+
+    panel.querySelectorAll(".chip-make-chair").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const name = btn.dataset.name;
+        if (name) setChair(name);
       });
     });
 
@@ -1126,6 +1139,24 @@ export function createMeetingController(ctx) {
     }
   }
 
+  async function setChair(name) {
+    const room = state.meetingRoom;
+    if (!room?.room_id || !name) return;
+
+    try {
+      const updated = await api(`/api/rooms/${encodeURIComponent(room.room_id)}/chair`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      state.meetingRoom = updated;
+      state.meetingChair = updated.chair || name;
+      _updateMeetingPanel();
+    } catch (err) {
+      deps.logger?.error?.("Failed to set meeting chair", err);
+    }
+  }
+
   async function endMeeting() {
     const room = state.meetingRoom;
     if (!room?.room_id) return;
@@ -1160,6 +1191,7 @@ export function createMeetingController(ctx) {
     deleteRoom,
     addParticipant,
     removeParticipant,
+    setChair,
     endMeeting,
     isActive: () => Boolean(state.meetingMode && state.meetingRoom != null && !state.meetingRoom.closed),
     getRoom: () => state.meetingRoom,

@@ -35,6 +35,67 @@ def test_update_room_title_route_preserves_conversation(tmp_path: Path):
     assert data["conversation"][0]["text"] == "hello"
 
 
+def test_set_chair_route_reassigns_chair(tmp_path: Path):
+    client, manager = _client(tmp_path)
+    room = manager.create_room(
+        participants=["sakura", "kanna"],
+        chair="sakura",
+        created_by="taka",
+        title="t",
+    )
+
+    response = client.put(f"/rooms/{room.room_id}/chair", json={"name": "kanna"})
+
+    assert response.status_code == 200
+    assert response.json()["chair"] == "kanna"
+    assert manager.get_room(room.room_id).chair == "kanna"
+
+
+def test_set_chair_route_rejects_non_participant(tmp_path: Path):
+    client, manager = _client(tmp_path)
+    room = manager.create_room(
+        participants=["sakura", "kanna"],
+        chair="sakura",
+        created_by="taka",
+        title="t",
+    )
+
+    response = client.put(f"/rooms/{room.room_id}/chair", json={"name": "ghost"})
+
+    assert response.status_code == 400
+    assert manager.get_room(room.room_id).chair == "sakura"
+
+
+def test_set_chair_route_rejects_closed_room(tmp_path: Path):
+    client, manager = _client(tmp_path)
+    room = manager.create_room(
+        participants=["sakura", "kanna"],
+        chair="sakura",
+        created_by="taka",
+        title="t",
+    )
+    manager.close_room(room.room_id)
+
+    response = client.put(f"/rooms/{room.room_id}/chair", json={"name": "kanna"})
+
+    assert response.status_code == 400
+
+
+def test_set_chair_persists_across_manager_reload(tmp_path: Path):
+    client, manager = _client(tmp_path)
+    room = manager.create_room(
+        participants=["sakura", "kanna"],
+        chair="sakura",
+        created_by="taka",
+        title="t",
+    )
+
+    assert client.put(f"/rooms/{room.room_id}/chair", json={"name": "kanna"}).status_code == 200
+
+    reloaded = RoomManager(tmp_path / "meetings")
+    assert reloaded.load_room(room.room_id).chair == "kanna"
+
+
 def test_list_rooms_includes_session_metadata(tmp_path: Path):
     client, manager = _client(tmp_path)
     room = manager.create_room(

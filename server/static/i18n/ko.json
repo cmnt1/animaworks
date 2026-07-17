@@ -849,6 +849,7 @@
   "meeting.no_animas": "사용 가능한 Anima가 없습니다",
   "meeting.start": "미팅 시작",
   "meeting.add": "추가",
+  "meeting.make_chair": "의장으로 지정",
   "meeting.remove": "삭제",
   "meeting.end": "종료",
   "meeting.default_title": "미팅",

@@ -263,6 +263,12 @@ class AddParticipantRequest(BaseModel):
     name: str
 
 
+class SetChairRequest(BaseModel):
+    """Request body for reassigning the meeting chair."""
+
+    name: str
+
+
 class UpdateRoomRequest(BaseModel):
     """Request body for updating meeting room metadata."""
 
@@ -822,6 +828,16 @@ def create_room_router() -> APIRouter:
             return {"ok": True}
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from None
+
+    @router.put("/{room_id}/chair")
+    async def set_chair(room_id: str, body: SetChairRequest, request: Request):
+        """Reassign the meeting chair (takes effect from the next round)."""
+        room_manager = _get_room_manager(request)
+        try:
+            room = room_manager.set_chair(room_id, body.name)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        return _room_payload(room)
 
     @router.post("/{room_id}/close")
     async def close_room(room_id: str, request: Request):
