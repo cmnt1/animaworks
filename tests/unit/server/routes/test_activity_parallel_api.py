@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from core.memory.task_queue import TaskQueueManager
+from core.time_utils import now_local
 from server.routes.system import create_system_router
 
 
@@ -142,7 +143,7 @@ class TestRecentActivityContextCompatibility:
         app = _app(tmp_path, ["alice"])
         anima_dir = app.state.animas_dir / "alice"
         anima_dir.mkdir()
-        now = datetime.now().astimezone()  # local tz so file dates match _load_entries
+        now = now_local()  # same tz as _load_entries so file date lookup matches
         _write_activity(
             anima_dir,
             [
