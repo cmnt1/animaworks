@@ -269,7 +269,7 @@ class TestCheckA1BashCommand:
     def test_cp_to_other_anima_blocked(
         self, anima_dir: Path, other_anima_dir: Path,
     ):
-        cmd = f"cp {other_anima_dir}/identity.md ./stolen.md"
+        cmd = f"cp {other_anima_dir.as_posix()}/identity.md ./stolen.md"
         result = _check_a1_bash_command(cmd, anima_dir)
         assert result is not None
         assert "other anima" in result.lower()
@@ -277,7 +277,7 @@ class TestCheckA1BashCommand:
     def test_mv_to_other_anima_blocked(
         self, anima_dir: Path, other_anima_dir: Path,
     ):
-        cmd = f"mv ./file.md {other_anima_dir}/file.md"
+        cmd = f"mv ./file.md {other_anima_dir.as_posix()}/file.md"
         result = _check_a1_bash_command(cmd, anima_dir)
         assert result is not None
         assert "other anima" in result.lower()
@@ -291,7 +291,7 @@ class TestCheckA1BashCommand:
         assert result is None
 
     def test_cp_within_own_dir_allowed(self, anima_dir: Path):
-        cmd = f"cp {anima_dir}/file1.md {anima_dir}/file2.md"
+        cmd = f"cp {anima_dir.as_posix()}/file1.md {anima_dir.as_posix()}/file2.md"
         result = _check_a1_bash_command(cmd, anima_dir)
         assert result is None
 
