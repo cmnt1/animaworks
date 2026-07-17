@@ -158,6 +158,18 @@ export function createMeetingController(ctx) {
     return (DEPARTMENT_ALIASES[selectedDepartment] || []).includes(dept);
   }
 
+  function _titleRoleLabel(a) {
+    return `${a?.title || ""} ${a?.role || ""}`;
+  }
+
+  function _isCoo(a) {
+    return _titleRoleLabel(a).toUpperCase().includes("COO");
+  }
+
+  function _isLeader(a) {
+    return _isCoo(a) || _titleRoleLabel(a).includes("リーダー");
+  }
+
   function _selectDepartmentMembers(department) {
     if (!department) return;
     const members = state.animas.filter(
@@ -169,10 +181,7 @@ export function createMeetingController(ctx) {
     const selected = new Set(members.map((a) => a.name));
     state.meetingParticipants = [...selected];
     if (!state.meetingChair || !selected.has(state.meetingChair)) {
-      const leader = members.find((a) =>
-        `${a.title || ""} ${a.role || ""}`.toUpperCase().includes("COO") ||
-        `${a.title || ""} ${a.role || ""}`.includes("リーダー")
-      );
+      const leader = members.find(_isLeader);
       state.meetingChair = (leader || members[0]).name;
     }
   }
@@ -398,8 +407,6 @@ export function createMeetingController(ctx) {
   }
 
   function _renderSetupPanel(panel) {
-    const isCoo = (a) =>
-      `${a.title || ""} ${a.role || ""}`.toUpperCase().includes("COO");
     const DEPARTMENT_ORDER = ["全社", "Administration", "Property", "Finance", "Affiliate"];
     const deptRank = (a) => {
       const idx = DEPARTMENT_ORDER.indexOf((a.department || "").trim());
@@ -416,7 +423,7 @@ export function createMeetingController(ctx) {
       .filter((a) => a.status === "running" || a.status === "idle")
       .sort(
         (a, b) =>
-          (isCoo(b) ? 1 : 0) - (isCoo(a) ? 1 : 0) ||
+          (_isCoo(b) ? 1 : 0) - (_isCoo(a) ? 1 : 0) ||
           deptRank(a) - deptRank(b) ||
           (a.department || "").localeCompare(b.department || "", "ja") ||
           titleRank(a) - titleRank(b) ||
