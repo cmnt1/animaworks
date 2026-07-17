@@ -216,6 +216,19 @@ class InboxRateLimiter:
             self._pending_trigger = False
             return
 
+        # Shared gate for poll / deferred timer / lock-released paths.
+        # Disabled → leave inbox unread; clear pending so watcher can resume.
+        if not _read_anima_enabled(self._anima.anima_dir):
+            now = time.monotonic()
+            if now - self._last_disabled_skip_log >= _DISABLED_SKIP_LOG_COOLDOWN_SEC:
+                logger.info(
+                    "Inbox processing skip: anima disabled (%s); messages left unread",
+                    self._anima_name,
+                )
+                self._last_disabled_skip_log = now
+            self._pending_trigger = False
+            return
+
         if self._scheduler_mgr.heartbeat_running:
             logger.info("Message-triggered inbox SKIPPED (heartbeat already running): %s", self._anima_name)
             self._pending_trigger = False
