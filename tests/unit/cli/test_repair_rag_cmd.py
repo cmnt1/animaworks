@@ -20,7 +20,7 @@ def test_repair_rag_requires_full(capsys: pytest.CaptureFixture[str]) -> None:
     assert "requires --full" in capsys.readouterr().err
 
 
-def test_repair_rag_success(capsys: pytest.CaptureFixture[str]) -> None:
+def test_repair_rag_success(capsys: pytest.CaptureFixture[str], data_dir) -> None:
     from cli.commands.repair_rag_cmd import repair_rag_command
 
     service = MagicMock()
@@ -46,7 +46,7 @@ def test_repair_rag_success(capsys: pytest.CaptureFixture[str]) -> None:
     assert "RAG repair succeeded" in capsys.readouterr().out
 
 
-def test_repair_rag_failure_exits_one(capsys: pytest.CaptureFixture[str]) -> None:
+def test_repair_rag_failure_exits_one(capsys: pytest.CaptureFixture[str], data_dir) -> None:
     from cli.commands.repair_rag_cmd import repair_rag_command
 
     service = MagicMock()
@@ -91,7 +91,7 @@ def test_repair_rag_list_suspects_does_not_require_full(capsys: pytest.CaptureFi
     assert "sora" in capsys.readouterr().out
 
 
-def test_repair_rag_suspect_only_runs_bulk_repair(capsys: pytest.CaptureFixture[str]) -> None:
+def test_repair_rag_suspect_only_runs_bulk_repair(capsys: pytest.CaptureFixture[str], data_dir) -> None:
     from cli.commands.repair_rag_cmd import repair_rag_command
 
     service = MagicMock()

@@ -264,6 +264,7 @@ class TestMachineWorkspaceResolution:
 
         with (
             patch("core.workspace.resolve_workspace", return_value=Path(resolved_path)) as mock_resolve,
+            patch("core.tools.machine._is_fs_sandboxed", return_value=False),
             patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"),
             patch(
                 "core.tools.machine.subprocess.Popen",

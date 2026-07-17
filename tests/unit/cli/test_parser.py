@@ -460,7 +460,7 @@ class TestNewLazyWrappers:
 class TestCliMainToolFallback:
     """Tests for cli_main() fallback routing to tool dispatch."""
 
-    def test_forwards_tool_name_to_cli_dispatch(self):
+    def test_forwards_tool_name_to_cli_dispatch(self, data_dir):
         """animaworks slack send → cli_dispatch() called."""
         import sys
 
@@ -472,7 +472,7 @@ class TestCliMainToolFallback:
                     cli_main()
         mock_dispatch.assert_called_once()
 
-    def test_forwards_submit_to_cli_dispatch(self):
+    def test_forwards_submit_to_cli_dispatch(self, data_dir):
         """animaworks submit image_gen ... → cli_dispatch() called."""
         import sys
 
@@ -484,7 +484,7 @@ class TestCliMainToolFallback:
                     cli_main()
         mock_dispatch.assert_called_once()
 
-    def test_does_not_forward_known_subcommands(self):
+    def test_does_not_forward_known_subcommands(self, data_dir):
         """animaworks anima list → NOT forwarded (handled by argparse)."""
         import sys
 
@@ -498,7 +498,7 @@ class TestCliMainToolFallback:
                         cli_main()
         mock_dispatch.assert_not_called()
 
-    def test_does_not_forward_flags(self):
+    def test_does_not_forward_flags(self, data_dir):
         """animaworks --help → NOT forwarded (flag, not tool name)."""
         import sys
 
