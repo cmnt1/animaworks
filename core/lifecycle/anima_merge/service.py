@@ -1290,6 +1290,8 @@ class AnimaMergeService:
                     and source not in deduplicated
                     # indexerは*.mdのみ索引する(facts/skillsを除く)。非mdはprobe不能
                     and str(source).lower().endswith(".md")
+                    # 隠しディレクトリ配下(.archive等)は索引対象外
+                    and not any(part.startswith(".") for part in Path(str(source)).parts)
                 ][:3]
                 for source, target in selected:
                     source_path = self.source_dir / source
