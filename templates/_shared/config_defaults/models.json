@@ -20,6 +20,8 @@
   "openai/gpt-5.4*":        { "mode": "A", "context_window": 272000 },
   "openai/gpt-4.1*":        { "mode": "A", "context_window": 1000000 },
   "openai/qwen3.5*":        { "mode": "A", "context_window": 64000 },
+  "openai/qwen3.6-27b*":    { "mode": "A", "context_window": 32768 },
+  "openai/qwen3.6-35b*":    { "mode": "A", "context_window": 32768 },
   "openai/zai.glm*":        { "mode": "A", "context_window": 131072 },
   "openai/*":                { "mode": "A", "context_window": 128000 },
 
