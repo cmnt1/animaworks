@@ -3483,7 +3483,8 @@
   filter: grayscale(1);
   transition: opacity 0.15s ease;
 }
-.meeting-participant-chip:hover .chip-make-chair {
+.meeting-participant-chip:hover .chip-make-chair,
+.meeting-participant-chip:active .chip-make-chair {
   opacity: 0.55;
 }
 .meeting-participant-chip .chip-make-chair:hover,

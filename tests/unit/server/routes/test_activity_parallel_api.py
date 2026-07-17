@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -142,7 +142,7 @@ class TestRecentActivityContextCompatibility:
         app = _app(tmp_path, ["alice"])
         anima_dir = app.state.animas_dir / "alice"
         anima_dir.mkdir()
-        now = datetime.now(UTC)
+        now = datetime.now().astimezone()  # local tz so file dates match _load_entries
         _write_activity(
             anima_dir,
             [
@@ -169,9 +169,7 @@ class TestRecentActivityContextCompatibility:
         ) as client:
             flat = await client.get("/api/activity/recent?hours=1")
             grouped = await client.get("/api/activity/recent?hours=1&grouped=true")
-            semantic = await client.get(
-                "/api/activity/recent?hours=1&grouped=true&replay=true&semantic=true"
-            )
+            semantic = await client.get("/api/activity/recent?hours=1&grouped=true&replay=true&semantic=true")
 
         assert flat.status_code == 200
         events = flat.json()["events"]
@@ -180,11 +178,7 @@ class TestRecentActivityContextCompatibility:
         assert legacy.get("ctx", "") == ""
 
         assert grouped.status_code == 200
-        grouped_events = [
-            event
-            for group in grouped.json()["groups"]
-            for event in group["events"]
-        ]
+        grouped_events = [event for group in grouped.json()["groups"] for event in group["events"]]
         assert next(e for e in grouped_events if e["summary"] == "Context-aware event")["ctx"] == "task:task-a"
         legacy = next(e for e in grouped_events if e["summary"] == "Context-free legacy event")
         assert legacy.get("ctx", "") == ""
