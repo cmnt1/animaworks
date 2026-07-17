@@ -49,6 +49,19 @@ class MergeResult:
     snapshot_path: Path | None = None
 
 
+def _copy2_ignore_vanished(src: str, dst: str) -> None:
+    # quiesce直後でもcodex等の子プロセス由来の一時ファイルがコピー中に消えることがある。
+    # snapshotは静止点の近似で十分なので、消えたファイルはスキップする。
+    try:
+        shutil.copy2(src, dst)
+    except FileNotFoundError:
+        pass
+
+
+def _copytree_tolerant(src: Path, dst: Path) -> None:
+    shutil.copytree(src, dst, dirs_exist_ok=True, copy_function=_copy2_ignore_vanished)
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -670,7 +683,7 @@ class AnimaMergeService:
             (self.target, self.target_dir, snapshot_dir / "animas" / self.target),
         ):
             del name
-            shutil.copytree(source_path, destination, dirs_exist_ok=True, copy_function=shutil.copy2)
+            _copytree_tolerant(source_path, destination)
             copied.append(str(destination))
 
         config_path = self.data_dir / "config.json"
@@ -683,7 +696,7 @@ class AnimaMergeService:
             inbox = self.data_dir / "shared" / "inbox" / name
             if inbox.is_dir():
                 destination = snapshot_dir / "shared" / "inbox" / name
-                shutil.copytree(inbox, destination, dirs_exist_ok=True, copy_function=shutil.copy2)
+                _copytree_tolerant(inbox, destination)
                 copied.append(str(destination))
         copied.extend(self._snapshot_reference_state(snapshot_dir))
         return {"snapshot_path": str(snapshot_dir), "snapshot_files": copied}
@@ -741,7 +754,7 @@ class AnimaMergeService:
         events = self.data_dir / "run" / "events" / self.source
         if events.is_dir():
             destination = snapshot_dir / events.relative_to(self.data_dir)
-            shutil.copytree(events, destination, dirs_exist_ok=True, copy_function=shutil.copy2)
+            _copytree_tolerant(events, destination)
             copied.append(str(destination))
         return copied
 
