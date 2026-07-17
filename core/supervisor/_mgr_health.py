@@ -522,6 +522,16 @@ class HealthMixin:
         handle.state = ProcessState.RESTARTING
 
         try:
+            # Disabled before any retry/max-retry logic: clean stop, no pollution.
+            if not self.read_anima_enabled(self.animas_dir / anima_name):
+                logger.info(
+                    "Skip restart: anima disabled: %s",
+                    anima_name,
+                )
+                if anima_name in self.processes:
+                    await self.stop_anima(anima_name)
+                return
+
             # Check restart count (supervisor-level, survives handle recreation)
             count = self._restart_counts.get(anima_name, 0)
             if count >= self.restart_policy.max_retries:
