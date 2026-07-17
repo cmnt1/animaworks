@@ -333,7 +333,10 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         """
         lock = self._lifecycle_locks.setdefault(anima_name, asyncio.Lock())
         async with lock:
-            # Re-check under lock: disable may have completed while we waited.
+            # Re-check under lock: shutdown / disable may have raced while we waited.
+            if self._shutdown:
+                logger.info("skip start during shutdown: %s", anima_name)
+                return
             if not self.read_anima_enabled(self.animas_dir / anima_name):
                 logger.warning("Refusing to start disabled anima: %s", anima_name)
                 return
