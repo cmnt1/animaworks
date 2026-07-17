@@ -14,7 +14,11 @@ from pathlib import Path
 
 def _object_keys(path: Path, *, nested: str | None = None) -> set[str]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        # vault移行後の credentials.json は0バイト残骸のことがある。空は空ストア扱い。
+        if not text.strip():
+            return set()
+        value = json.loads(text)
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"Invalid credential store {path}: {exc}") from exc
     if not isinstance(value, dict):

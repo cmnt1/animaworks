@@ -1358,3 +1358,11 @@ def test_repair_in_progress_unreadable_is_blocking(tmp_path: Path) -> None:
     path = tmp_path / "rag_repair.json"
     path.write_text("not-json", encoding="utf-8")
     assert AnimaMergeService._repair_in_progress(path) is True
+
+
+def test_credential_discovery_tolerates_empty_store(tmp_path: Path) -> None:
+    from core.lifecycle.anima_merge.credential_refs import discover_slack_credential_candidates
+
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "shared" / "credentials.json").write_text("", encoding="utf-8")
+    assert discover_slack_credential_candidates(tmp_path, "source") == []
