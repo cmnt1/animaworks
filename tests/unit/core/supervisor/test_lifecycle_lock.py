@@ -406,3 +406,47 @@ class TestRespawnDuringShutdown:
         assert name not in supervisor._permanently_failed
         assert name not in supervisor._failure_reasons
         assert name not in supervisor._start_fail_counts
+
+
+class TestFailureMachineryNoOpDuringShutdown:
+    """Invariant: during shutdown the failure/restart machinery is a no-op."""
+
+    @pytest.mark.asyncio
+    async def test_handle_process_failure_noop_even_at_max_retries(
+        self,
+        supervisor: ProcessSupervisor,
+    ) -> None:
+        """Entrance guard blocks the direct _mark_process_error path too."""
+        from core.supervisor.process_handle import ProcessState
+
+        name = "test-anima"
+        _write_status(supervisor.animas_dir, name, enabled=True)
+        supervisor.restart_policy.max_retries = 3
+        supervisor._restart_counts[name] = 3  # already exhausted
+        supervisor._shutdown = True
+
+        handle = MagicMock()
+        handle.state = ProcessState.FAILED
+        supervisor._respawn_anima_transaction = AsyncMock()
+
+        await supervisor._handle_process_failure(name, handle)
+
+        supervisor._respawn_anima_transaction.assert_not_awaited()
+        assert name not in supervisor._permanently_failed
+        assert name not in supervisor._failure_reasons
+        assert name not in supervisor._restarting
+        # Entrance guard fires before state is flipped to RESTARTING.
+        assert handle.state == ProcessState.FAILED
+
+    @pytest.mark.asyncio
+    async def test_mark_process_error_noop_during_shutdown(
+        self,
+        supervisor: ProcessSupervisor,
+    ) -> None:
+        name = "test-anima"
+        supervisor._shutdown = True
+
+        await supervisor._mark_process_error(name, "boom")
+
+        assert name not in supervisor._permanently_failed
+        assert name not in supervisor._failure_reasons

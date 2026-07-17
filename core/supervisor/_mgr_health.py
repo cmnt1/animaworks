@@ -514,6 +514,13 @@ class HealthMixin:
         Runs as an independent task so the health-check loop is not blocked
         by backoff sleeps.  A per-anima guard prevents duplicate restarts.
         """
+        # Entrance guard: during shutdown the whole failure/restart machinery
+        # is a no-op — shutdown_all stops every process anyway, and any state
+        # recorded here (_restart_counts, _permanently_failed, ...) would only
+        # pollute the next server start.
+        if self._shutdown:
+            logger.info("Skip failure handling during shutdown: %s", anima_name)
+            return
         if anima_name in self._restarting:
             return
         self._restarting.add(anima_name)

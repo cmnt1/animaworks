@@ -714,6 +714,11 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
 
     async def _mark_process_error(self, anima_name: str, reason: str, handle: ProcessHandle | None = None) -> None:
         """Record a visible process error even when no live handle remains."""
+        # Second safety net behind _handle_process_failure's entrance guard:
+        # never record permanent failures while the server is shutting down.
+        if self._shutdown:
+            logger.debug("Skip error marking during shutdown: %s", anima_name)
+            return
         if handle is None:
             handle = self.processes.get(anima_name)
         if handle is not None:
