@@ -45,7 +45,13 @@ _STALE_ACTIVITY_REPLACEMENT: int = 100
 
 def invalidate_cache() -> None:
     """Reset the module-level singleton cache."""
-    global _config, _config_path, _config_mtime, _config_vault_values, _promotion_flag_warned, _stale_activity_level_checked
+    global \
+        _config, \
+        _config_path, \
+        _config_mtime, \
+        _config_vault_values, \
+        _promotion_flag_warned, \
+        _stale_activity_level_checked
     _config = None
     _config_path = None
     _config_mtime = 0.0
