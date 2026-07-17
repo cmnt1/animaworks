@@ -152,6 +152,16 @@ class TestFindServerPidByProcess:
 
 
 class TestStopServer:
+    @pytest.fixture(autouse=True)
+    def _no_real_supervisor_shutdown(self):
+        # _stop_server() posts to the real 127.0.0.1:18500 server if one is
+        # listening; never let unit tests reach a live instance.
+        with patch(
+            "cli.commands.server._request_supervisor_shutdown", return_value=False
+        ) as mock_shutdown:
+            self.mock_supervisor_shutdown = mock_shutdown
+            yield
+
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
     @patch("cli.commands.server._read_pid", return_value=None)
