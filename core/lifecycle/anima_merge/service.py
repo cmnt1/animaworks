@@ -56,6 +56,15 @@ def _copy2_ignore_vanished(src: str, dst: str) -> None:
         shutil.copy2(src, dst)
     except FileNotFoundError:
         pass
+    except PermissionError:
+        # resume時、前回snapshotが読み取り専用ファイル(git pack等)をコピー済みだと
+        # 上書きできない。除去してから再コピーする。
+        try:
+            os.chmod(dst, 0o644)
+            os.remove(dst)
+            shutil.copy2(src, dst)
+        except FileNotFoundError:
+            pass
 
 
 def _copytree_tolerant(src: Path, dst: Path) -> None:
@@ -1229,6 +1238,13 @@ class AnimaMergeService:
                 hits_found = self._search_memory_probe(query, str(probe["scope"]))
                 matched = self._probe_results_match(hits_found, probe)
                 hits = len(hits_found)
+                method = "search"
+                if not matched:
+                    # semantic top-kは類似コンテンツ飽和で偽陰性になる。索引メンバーシップを直接照合。
+                    matched = self._probe_index_contains(str(probe["scope"]), str(probe["target"]))
+                    if matched:
+                        method = "index_lookup"
+                probe["method"] = method
             status = "passed" if matched else "failed"
             result = {**probe, "status": status, "hits": hits}
             results.append(result)
@@ -1383,6 +1399,23 @@ class AnimaMergeService:
             common_knowledge_dir=self.data_dir / "common_knowledge",
             result_limit=20,
         )
+
+    def _probe_index_contains(self, scope: str, target_rel: str) -> bool:
+        if scope not in {"knowledge", "episodes", "procedures", "skills"}:
+            return False
+        from core.memory.rag.singleton import get_vector_store
+
+        try:
+            store = get_vector_store(self.target)
+        except Exception:
+            return False
+        if store is None:
+            return False
+        try:
+            results = store.get_by_metadata(f"{self.target}_{scope}", {"source_file": target_rel}, limit=1)
+        except Exception:
+            return False
+        return bool(results)
 
     def _verify_entity_probe(self, query: str, expected: str) -> bool:
         # 検証目的は「sourceのエンティティがtargetのregistryへ移行済みか」。
