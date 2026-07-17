@@ -77,7 +77,7 @@ class ReconcileMixin:
                 "Reconciliation: recovering permanently failed process %s (cooldown elapsed, resetting retries)",
                 name,
             )
-            del self.processes[name]
+            self.processes.pop(name, None)
             self._restart_counts.pop(name, None)
             self._permanently_failed.discard(name)
             self._failed_log_times.pop(name, None)

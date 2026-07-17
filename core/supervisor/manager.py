@@ -109,6 +109,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         self.reconciliation_config = reconciliation_config or ReconciliationConfig()
 
         self.processes: dict[str, ProcessHandle] = {}
+        self._stop_locks: dict[str, asyncio.Lock] = {}
         self._health_check_task: asyncio.Task | None = None
         self._reconciliation_task: asyncio.Task | None = None
         self._inbox_wake_task: asyncio.Task | None = None
@@ -635,15 +636,24 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 uses the process-handle default. Non-urgent stops (RAG repair)
                 pass a longer bound so a response is not cut off mid-turn.
         """
-        handle = self.processes.get(anima_name)
-        if not handle:
-            logger.warning("Process not found: %s", anima_name)
-            return
+        lock = self._stop_locks.setdefault(anima_name, asyncio.Lock())
+        async with lock:
+            handle = self.processes.get(anima_name)
+            if not handle:
+                # Late arrival after a concurrent stop already finished, or
+                # stop requested for a process that is not running — both are
+                # normal no-ops under concurrent disable/reconcile callers.
+                logger.debug("Process not found (no-op stop): %s", anima_name)
+                return
 
-        await handle.stop(timeout=10.0, drain_streams=drain_streams, drain_timeout=drain_timeout)
-        del self.processes[anima_name]
-        self._recently_stopped[anima_name] = time.monotonic()
-        logger.info("Anima process stopped: %s", anima_name)
+            await handle.stop(
+                timeout=10.0,
+                drain_streams=drain_streams,
+                drain_timeout=drain_timeout,
+            )
+            self.processes.pop(anima_name, None)
+            self._recently_stopped[anima_name] = time.monotonic()
+            logger.info("Anima process stopped: %s", anima_name)
 
     async def restart_anima(
         self,
