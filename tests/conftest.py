@@ -9,11 +9,15 @@ mock/live switching for all test modules.
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
+import shutil
 import signal
+import socket
 import subprocess
 import sys
+import tempfile
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,6 +36,106 @@ from tests.helpers.filesystem import (
 # Load .env at module level so API keys are available before fixtures run.
 # main.py calls load_dotenv() for CLI usage; tests need it here.
 load_dotenv()
+
+# ── Production-environment isolation ──────────────────────
+#
+# Two guards keep the suite from touching the production runtime at
+# ~/.animaworks or the live server on 127.0.0.1:18500:
+#
+# 1. pytest_configure() forces ANIMAWORKS_DATA_DIR to a session-scoped temp
+#    directory BEFORE any test module is imported.  Without this, any code
+#    path that resolves core.paths.get_data_dir() while the env var is unset
+#    (e.g. cli_main() -> setup_logging()) attaches root-logger file handlers
+#    pointing at the production ~/.animaworks/logs/errors.log, which then
+#    receive WARNING+ records from every subsequent test in the session.
+#
+# 2. _block_production_server_port() makes any real TCP connect to port
+#    18500 fail with ECONNREFUSED, so a test that accidentally issues a live
+#    HTTP request (e.g. POST /shutdown-supervisor) behaves as if no server
+#    is running instead of hitting the production instance.
+
+_session_tmp_data_dir: str | None = None
+
+_PRODUCTION_SERVER_PORT = 18500
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Redirect the AnimaWorks data dir to a throwaway session temp dir.
+
+    Runs before collection, so even module-level ``get_data_dir()`` calls in
+    test imports resolve to the temp dir.  The per-test ``data_dir`` fixture
+    still narrows this further via ``monkeypatch.setenv``.  Set
+    ``ANIMAWORKS_TEST_KEEP_DATA_DIR=1`` to opt out (e.g. for manual runs
+    against a deliberately prepared data dir).
+    """
+    global _session_tmp_data_dir
+    if os.environ.get("ANIMAWORKS_TEST_KEEP_DATA_DIR") == "1":
+        return
+    _session_tmp_data_dir = tempfile.mkdtemp(prefix="animaworks-test-data-")
+    os.environ["ANIMAWORKS_DATA_DIR"] = _session_tmp_data_dir
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    global _session_tmp_data_dir
+    if _session_tmp_data_dir is not None:
+        # Log handlers may still hold files open on Windows; best-effort only.
+        shutil.rmtree(_session_tmp_data_dir, ignore_errors=True)
+        _session_tmp_data_dir = None
+
+
+@pytest.fixture(autouse=True)
+def _ensure_isolated_data_dir():
+    """Re-assert the session data-dir redirect before every test.
+
+    Some tests pop ``ANIMAWORKS_DATA_DIR`` from ``os.environ`` without
+    restoring it (e.g. via ``os.environ.pop`` in a ``finally`` block), which
+    would silently re-enable the production ``~/.animaworks`` fallback for
+    the rest of the session.  Tests that intentionally unset the var inside
+    their own body are unaffected — this only restores the baseline at test
+    start.
+    """
+    if _session_tmp_data_dir is not None and os.environ.get("ANIMAWORKS_DATA_DIR") is None:
+        os.environ["ANIMAWORKS_DATA_DIR"] = _session_tmp_data_dir
+    yield
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _block_production_server_port():
+    """Refuse real TCP connections to the production server port (18500).
+
+    Simulates connection-refused so code under test takes its normal
+    "server offline" branch deterministically, regardless of whether a
+    production server happens to be running on this machine.  Covers all
+    sync HTTP clients (urllib, requests, httpx) via socket.socket.connect;
+    in-process ASGI TestClient traffic is unaffected because it never opens
+    a socket.
+    """
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+
+    def _is_blocked(address: object) -> bool:
+        return isinstance(address, tuple) and len(address) >= 2 and address[1] == _PRODUCTION_SERVER_PORT
+
+    def guarded_connect(self: socket.socket, address):  # type: ignore[no-untyped-def]
+        if _is_blocked(address):
+            raise ConnectionRefusedError(
+                errno.ECONNREFUSED,
+                f"test guard: connection to production server port {_PRODUCTION_SERVER_PORT} blocked ({address!r})",
+            )
+        return real_connect(self, address)
+
+    def guarded_connect_ex(self: socket.socket, address):  # type: ignore[no-untyped-def]
+        if _is_blocked(address):
+            return errno.ECONNREFUSED
+        return real_connect_ex(self, address)
+
+    socket.socket.connect = guarded_connect  # type: ignore[method-assign]
+    socket.socket.connect_ex = guarded_connect_ex  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        socket.socket.connect = real_connect  # type: ignore[method-assign]
+        socket.socket.connect_ex = real_connect_ex  # type: ignore[method-assign]
 
 # ── Optional dependency detection ────────────────────────
 
