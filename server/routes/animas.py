@@ -523,6 +523,14 @@ def create_animas_router() -> APIRouter:
             return {"status": "already_running", "current_status": current}
 
         await supervisor.start_anima(name)
+        # Concurrent disable/shutdown may refuse start without raising.
+        if name not in supervisor.processes:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Anima '{name}' was not started (disabled or refused). Call POST /api/animas/{name}/enable first."
+                ),
+            )
         if name not in anima_names:
             anima_names.append(name)
         return {"status": "started", "name": name}
