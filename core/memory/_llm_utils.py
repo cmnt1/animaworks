@@ -104,6 +104,19 @@ def _get_provider_for_model(model: str) -> str:
     return model.split("/", 1)[0].lower()
 
 
+def _normalize_litellm_model(model: str) -> str:
+    """Rewrite aggregator prefixes that LiteLLM has no provider for.
+
+    nanoGPT is an OpenAI-compatible aggregator, so ``nanogpt/<model>`` is
+    routed as ``openai/<model>`` against the credential's ``base_url``
+    (mirrors the rewrite in ``core.execution._litellm_context``).  Without
+    this, LiteLLM raises BadRequestError("LLM Provider NOT provided").
+    """
+    if model.startswith("nanogpt/"):
+        return "openai/" + model[len("nanogpt/") :]
+    return model
+
+
 def _get_api_key_for_provider(cfg: Any, provider: str) -> str | None:
     cred = cfg.credentials.get(provider) if provider else None
     api_key = cred.api_key if cred else None
@@ -192,6 +205,8 @@ def get_llm_kwargs_for_model(model: str, *, credential: str = "") -> dict[str, A
     if cred and cred.base_url:
         kwargs["api_base"] = cred.base_url
 
+    kwargs["model"] = _normalize_litellm_model(str(kwargs["model"]))
+
     return kwargs
 
 
@@ -244,7 +259,7 @@ def get_llm_kwargs_for_model_config(model_config: Any) -> dict[str, Any]:
 
     resolved_model = getattr(model_config, "model", "") or ""
     kwargs = get_llm_kwargs_for_model(resolved_model)
-    kwargs["model"] = resolved_model
+    kwargs["model"] = _normalize_litellm_model(resolved_model)
 
     api_key = getattr(model_config, "api_key", None)
     api_key_env = getattr(model_config, "api_key_env", "")
@@ -521,6 +536,7 @@ async def _try_codex_sdk(
     full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
     proc = None
+    stderr_task: asyncio.Future[None] | None = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -536,12 +552,32 @@ async def _try_codex_sdk(
         await proc.stdin.drain()
         proc.stdin.close()
 
+        # Drain stderr concurrently: an undrained PIPE fills up and blocks the
+        # CLI mid-write, which then surfaces here as a bogus stdout timeout.
+        stderr_chunks: list[bytes] = []
+
+        async def _drain_stderr() -> None:
+            if proc.stderr is None:
+                return
+            while True:
+                chunk = await proc.stderr.read(8192)
+                if not chunk:
+                    return
+                if len(stderr_chunks) < 64:
+                    stderr_chunks.append(chunk)
+
+        stderr_task = asyncio.ensure_future(_drain_stderr())
+
         parts: list[str] = []
         while True:
             try:
                 line = await asyncio.wait_for(proc.stdout.readline(), timeout=120.0)
             except TimeoutError:
-                logger.warning("Codex one-shot timed out waiting for output")
+                stderr_tail = b"".join(stderr_chunks)[-2000:].decode("utf-8", errors="replace").strip()
+                logger.warning(
+                    "Codex one-shot timed out waiting for output; stderr tail: %s",
+                    stderr_tail or "<empty>",
+                )
                 return None
             if not line:
                 break
@@ -572,6 +608,8 @@ async def _try_codex_sdk(
                 await asyncio.wait_for(proc.wait(), timeout=5.0)
             except (TimeoutError, Exception):
                 logger.debug("Codex one-shot subprocess cleanup issue", exc_info=True)
+        if stderr_task is not None and not stderr_task.done():
+            stderr_task.cancel()
 
 
 # Inline retry stays on the live-response budget: a wait longer than this

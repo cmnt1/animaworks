@@ -242,7 +242,23 @@ class EntityResolver:
             candidates_json=candidates_json,
         )
 
-        from core.memory._llm_utils import get_memory_llm_kwargs_for_model
+        from core.memory._llm_utils import (
+            _is_codex_model,
+            get_memory_llm_kwargs_for_model,
+            one_shot_completion,
+        )
+
+        if _is_codex_model(self._model):
+            # codex/* models have no LiteLLM provider; use the Codex CLI
+            # one-shot transport.  None → dedupe skipped (treated as new).
+            codex_text = await one_shot_completion(
+                user_prompt,
+                system_prompt=prompts.DEDUPE_SYSTEM,
+                model=self._model,
+                credential=self._credential,
+                max_tokens=512,
+            )
+            return self._parse_dedupe_response(codex_text) if codex_text else None
 
         llm_kwargs = get_memory_llm_kwargs_for_model(self._model, self._llm_extra, credential=self._credential)
         resolved_model = llm_kwargs.pop("model", self._model)

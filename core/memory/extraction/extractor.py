@@ -201,7 +201,25 @@ class FactExtractor:
         """
         import litellm
 
-        from core.memory._llm_utils import get_memory_llm_kwargs_for_model
+        from core.memory._llm_utils import (
+            _is_codex_model,
+            get_memory_llm_kwargs_for_model,
+            one_shot_completion,
+        )
+
+        if _is_codex_model(self._model):
+            # codex/* models have no LiteLLM provider; route through the Codex
+            # CLI one-shot transport instead of a guaranteed BadRequestError.
+            text = await one_shot_completion(
+                user_prompt,
+                system_prompt=system_prompt,
+                model=self._model,
+                credential=self._credential,
+                max_tokens=2048,
+            )
+            if text is None:
+                raise RuntimeError(f"Codex one-shot completion returned no output (model={self._model})")
+            return text
 
         llm_kwargs = get_memory_llm_kwargs_for_model(
             self._model,

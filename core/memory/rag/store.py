@@ -27,6 +27,18 @@ _SQLITE_LIGHTWEIGHT_RETRY_STATUSES = {"ok", "busy"}
 _persistent_client_init_lock = threading.Lock()
 _lightweight_failure_marker_lock = threading.Lock()
 
+
+def _is_missing_collection_error(error: Exception) -> bool:
+    """Return True when *error* means the collection was never created.
+
+    Chroma raises "Collection [name] does not exist" (NotFoundError in 1.x);
+    older builds used "not found" wording.  Matched textually so the check
+    stays version-independent.
+    """
+    text = str(error).lower()
+    return "collection" in text and ("does not exist" in text or "not found" in text)
+
+
 # ── Data structures ────────────────────────────────────────────────
 
 
@@ -203,6 +215,7 @@ class ChromaVectorStore(VectorStore):
         self.anima_name = anima_name
         self._closed = False
         self._lightweight_self_heal_failures = 0
+        self._missing_collections_logged: set[str] = set()
         post_init_pragma = configure_chroma_sqlite_pragmas(persist_dir)
         if not post_init_pragma.ok and post_init_pragma.status != "missing":
             logger.warning(
@@ -619,6 +632,20 @@ class ChromaVectorStore(VectorStore):
                 lambda store: store._query_once(collection, embedding, top_k, filter_metadata),
             )
         except Exception as e:
+            if _is_missing_collection_error(e):
+                # A collection that has never received data (e.g. an anima with
+                # no indexed facts yet) is a normal empty-result case, not a DB
+                # failure.  Searches hit it on every retrieval, so log loudly
+                # only the first time per collection to keep errors.log usable.
+                level = logging.DEBUG if collection in self._missing_collections_logged else logging.INFO
+                self._missing_collections_logged.add(collection)
+                logger.log(
+                    level,
+                    "Collection '%s' does not exist yet; returning empty query result (owner=%s)",
+                    collection,
+                    self._owner_label(),
+                )
+                return []
             self._report_chroma_error(collection, e, "query")
             logger.warning(
                 "ChromaDB query failed for collection '%s': owner=%s db_path=%s error=%s",

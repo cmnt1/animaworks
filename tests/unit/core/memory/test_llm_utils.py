@@ -452,3 +452,50 @@ class TestStripProviderPrefix:
         assert llm_utils._strip_provider_prefix("anthropic/claude-sonnet-4-6") == "claude-sonnet-4-6"
         assert llm_utils._strip_provider_prefix("bedrock/jp.anthropic.claude-sonnet-4-6") == "claude-sonnet-4-6"
         assert llm_utils._strip_provider_prefix("vertex_ai/claude-sonnet-4-6") == "claude-sonnet-4-6"
+
+
+class TestNanogptNormalization:
+    """nanogpt/ models must be rewritten to openai/ for LiteLLM routing.
+
+    LiteLLM has no "nanogpt" provider; without the rewrite every memory
+    extraction call fails with BadRequestError("LLM Provider NOT provided").
+    """
+
+    def test_normalize_litellm_model(self) -> None:
+        assert llm_utils._normalize_litellm_model("nanogpt/qwen/qwen3-coder") == "openai/qwen/qwen3-coder"
+        assert llm_utils._normalize_litellm_model("codex/gpt-5.4-mini") == "codex/gpt-5.4-mini"
+        assert llm_utils._normalize_litellm_model("anthropic/claude-sonnet-4-6") == "anthropic/claude-sonnet-4-6"
+        assert llm_utils._normalize_litellm_model("") == ""
+
+    def test_get_llm_kwargs_rewrites_nanogpt_with_credential(self) -> None:
+        """Provider-prefix resolution keeps the nanogpt credential, model is rewritten."""
+        cred = _make_cred(api_key="ng-key", base_url="https://nano-gpt.example/v1")
+        cfg = _make_config(credentials={"nanogpt": cred})
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_llm_kwargs_for_model("nanogpt/qwen/qwen3-coder")
+        assert result["model"] == "openai/qwen/qwen3-coder"
+        assert result["api_key"] == "ng-key"
+        assert result["api_base"] == "https://nano-gpt.example/v1"
+
+    def test_memory_kwargs_rewrites_nanogpt_with_explicit_credential(self) -> None:
+        """status.json-style explicit credential='nanogpt' also gets the rewrite."""
+        cred = _make_cred(api_key="ng-key", base_url="https://nano-gpt.example/v1")
+        cfg = _make_config(credentials={"nanogpt": cred})
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_memory_llm_kwargs_for_model("nanogpt/zai-org/glm-4.7", credential="nanogpt")
+        assert result["model"] == "openai/zai-org/glm-4.7"
+        assert result["api_key"] == "ng-key"
+        assert result["api_base"] == "https://nano-gpt.example/v1"
+
+    def test_model_config_path_rewrites_nanogpt(self) -> None:
+        """get_llm_kwargs_for_model_config keeps the rewrite after the model override."""
+        cred = _make_cred(api_key="ng-key", base_url="https://nano-gpt.example/v1")
+        cfg = _make_config(credentials={"nanogpt": cred})
+        model_config = MagicMock()
+        model_config.model = "nanogpt/google/gemma-4-31b-it"
+        model_config.api_key = None
+        model_config.api_key_env = ""
+        model_config.api_base_url = None
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_llm_kwargs_for_model_config(model_config)
+        assert result["model"] == "openai/google/gemma-4-31b-it"
