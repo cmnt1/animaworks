@@ -430,7 +430,9 @@ export function createMeetingController(ctx) {
     let animaListHtml = "";
     let prevGroupKey = null;
     for (const a of animas) {
-      const groupKey = `${a.department || ""}${a.title || ""}${a.role || ""}`;
+      // 役職は個人ごとにほぼ一意なので改行キーに含めると一人一行になってしまう。
+      // 改行は部門の変わり目のみとし、同部門は横に連ねる。
+      const groupKey = (a.department || "").trim();
       if (prevGroupKey !== null && groupKey !== prevGroupKey) {
         animaListHtml += `<span class="meeting-setup-anima-break" aria-hidden="true"></span>`;
       }
