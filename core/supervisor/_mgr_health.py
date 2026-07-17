@@ -589,16 +589,17 @@ class HealthMixin:
                     self.restart_policy.max_retries,
                 )
             else:
-                # Disabled mid-respawn is a clean skip (respawn returns None
-                # without marking permanently failed). Roll back the count
-                # increment so a later re-enable starts from a clean slate.
-                if not self.read_anima_enabled(self.animas_dir / anima_name):
+                # Disabled/shutdown mid-respawn is a clean skip (respawn
+                # returns None without marking permanently failed). Roll back
+                # the count increment so a later re-enable/restart starts
+                # from a clean slate.
+                if self._shutdown or not self.read_anima_enabled(self.animas_dir / anima_name):
                     if count == 0:
                         self._restart_counts.pop(anima_name, None)
                     else:
                         self._restart_counts[anima_name] = count
                     logger.info(
-                        "Restart skipped (anima disabled): %s",
+                        "Restart skipped (disabled or shutdown): %s",
                         anima_name,
                     )
                     return

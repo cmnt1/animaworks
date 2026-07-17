@@ -341,3 +341,68 @@ class TestDisableMidRespawnCountRollback:
         assert name not in supervisor._restart_counts
         assert name not in supervisor._permanently_failed
         assert name not in supervisor._restarting
+
+
+class TestShutdownBarrier:
+    """shutdown_all must not return while an in-flight start is cleaning up."""
+
+    @pytest.mark.asyncio
+    async def test_shutdown_all_waits_for_in_flight_start_cleanup(
+        self,
+        supervisor: ProcessSupervisor,
+    ) -> None:
+        """Real shutdown_all barrier: start suspended in handle.start() when
+        shutdown begins → shutdown_all returns only after the start task has
+        stopped its own (never-registered) handle."""
+        name = "test-anima"
+        _write_status(supervisor.animas_dir, name, enabled=True)
+
+        start_entered = asyncio.Event()
+        allow_start_finish = asyncio.Event()
+
+        async def slow_start(*_args, **_kwargs):
+            start_entered.set()
+            await allow_start_finish.wait()
+
+        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+            mock_handle = AsyncMock()
+            mock_handle.start = AsyncMock(side_effect=slow_start)
+            mock_handle.stop = AsyncMock()
+            mock_handle.get_pid = MagicMock(return_value=333)
+            MockHandle.return_value = mock_handle
+
+            start_task = asyncio.create_task(supervisor.start_anima(name))
+            await asyncio.wait_for(start_entered.wait(), timeout=2.0)
+
+            shutdown_task = asyncio.create_task(supervisor.shutdown_all())
+            await asyncio.sleep(0.05)
+            # Barrier must be blocking on the lifecycle lock held by start.
+            assert not shutdown_task.done()
+
+            allow_start_finish.set()
+            await asyncio.wait_for(shutdown_task, timeout=2.0)
+            await asyncio.wait_for(start_task, timeout=2.0)
+
+        # shutdown_all returned only after the start task stopped its handle.
+        mock_handle.stop.assert_awaited_once()
+        assert name not in supervisor.processes
+
+
+class TestRespawnDuringShutdown:
+    """Respawn during shutdown is a clean skip, not a spawn failure."""
+
+    @pytest.mark.asyncio
+    async def test_respawn_shutdown_clean_skip(
+        self,
+        supervisor: ProcessSupervisor,
+    ) -> None:
+        name = "test-anima"
+        _write_status(supervisor.animas_dir, name, enabled=True)
+        supervisor._shutdown = True
+
+        result = await supervisor._respawn_anima_transaction(name)
+
+        assert result is None
+        assert name not in supervisor._permanently_failed
+        assert name not in supervisor._failure_reasons
+        assert name not in supervisor._start_fail_counts

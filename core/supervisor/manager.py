@@ -740,8 +740,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         retry_interval = max(0.0, float(self.restart_policy.backoff_base_sec))
 
         for attempt in range(1, max_attempts + 1):
-            if not self.read_anima_enabled(self.animas_dir / anima_name):
-                logger.info("skip respawn: anima disabled: %s", anima_name)
+            if self._shutdown or not self.read_anima_enabled(self.animas_dir / anima_name):
+                logger.info("skip respawn (shutdown or disabled): %s", anima_name)
                 if anima_name in self.processes:
                     await self.stop_anima(anima_name)
                 return None
@@ -751,10 +751,10 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 await self.start_anima(anima_name)
                 new_handle = self.processes.get(anima_name)
                 if new_handle is None:
-                    # start_anima may have refused (disabled) between our
-                    # check and the spawn; treat as clean skip, not failure.
-                    if not self.read_anima_enabled(self.animas_dir / anima_name):
-                        logger.info("skip respawn: anima disabled: %s", anima_name)
+                    # start_anima may have refused (disabled or shutdown)
+                    # between our check and the spawn; clean skip, not failure.
+                    if self._shutdown or not self.read_anima_enabled(self.animas_dir / anima_name):
+                        logger.info("skip respawn (shutdown or disabled): %s", anima_name)
                         return None
                     raise ProcessError(f"spawn completed without a process handle for {anima_name}")
                 self._start_fail_counts.pop(anima_name, None)
@@ -832,6 +832,13 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         # whole-server stop).
         tasks = [self.stop_anima(name, drain_streams=False) for name in list(self.processes.keys())]
         await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Barrier: an in-flight start_anima cleans up its own handle under the
+        # lifecycle lock when it observes _shutdown. Acquire every lock once so
+        # this method does not return while such a cleanup is still running.
+        for lock in list(self._lifecycle_locks.values()):
+            async with lock:
+                pass
 
         logger.info("All processes shut down")
 
