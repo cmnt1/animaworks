@@ -18,6 +18,7 @@ work starts promptly without waiting for the next scheduled heartbeat.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -83,6 +84,8 @@ def _make_limiter(messages: list[Message], anima_name: str = "alice") -> InboxRa
     run_heartbeat is an AsyncMock.
     """
     mock_anima = MagicMock()
+    # Nonexistent status.json → _read_anima_enabled defaults to True.
+    mock_anima.anima_dir = Path("/nonexistent") / anima_name
     mock_anima.messenger = MagicMock()
     mock_anima.messenger.receive.return_value = messages
     mock_anima._lock = asyncio.Lock()
