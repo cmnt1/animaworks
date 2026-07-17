@@ -36,6 +36,8 @@ def _make_inbox_limiter(
 ) -> InboxRateLimiter:
     """Create an InboxRateLimiter with minimal dependencies."""
     mock_anima = MagicMock()
+    # Nonexistent status.json → _read_anima_enabled defaults to True.
+    mock_anima.anima_dir = tmp_path / "animas" / "alice"
     mock_anima.run_heartbeat = AsyncMock()
     mock_anima.messenger.receive.return_value = []
     mock_anima._lock = asyncio.Lock()
