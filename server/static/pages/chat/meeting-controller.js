@@ -22,6 +22,7 @@ export function createMeetingController(ctx) {
     state.meetingSpeakerQueue = [];
     state.meetingCompletedSpeakers = [];
     state.meetingCurrentSpeaker = "";
+    state.meetingSpeakerStartedAt = null;
     state.meetingRoundStatus = "";
     state.meetingActionPanelOpen = false;
     state.meetingActionItems = [];
@@ -89,6 +90,7 @@ export function createMeetingController(ctx) {
     } else {
       _renderSetupPanel(panel);
     }
+    _syncRoundTicker();
   }
 
   function _updateAnimaTabsVisibility() {
@@ -253,6 +255,33 @@ export function createMeetingController(ctx) {
     return localOnly.length ? [...serverMessages, ...localOnly] : serverMessages;
   }
 
+  function _formatElapsed(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return m > 0 ? `${m}分${s}秒` : `${s}秒`;
+  }
+
+  let _roundTicker = null;
+
+  function _syncRoundTicker() {
+    const active = Boolean(state.meetingCurrentSpeaker && state.meetingSpeakerStartedAt);
+    if (active && !_roundTicker) {
+      _roundTicker = setInterval(() => {
+        if (!state.meetingCurrentSpeaker || !state.meetingSpeakerStartedAt) {
+          clearInterval(_roundTicker);
+          _roundTicker = null;
+          return;
+        }
+        const el = document.querySelector('[data-chat-id="meetingRoundElapsed"]');
+        if (el) el.textContent = `応答生成中 ${_formatElapsed(Date.now() - state.meetingSpeakerStartedAt)}`;
+      }, 1000);
+    } else if (!active && _roundTicker) {
+      clearInterval(_roundTicker);
+      _roundTicker = null;
+    }
+  }
+
   function _meetingRoundStatusHtml() {
     const current = state.meetingCurrentSpeaker || "";
     const queue = state.meetingSpeakerQueue || [];
@@ -270,10 +299,17 @@ export function createMeetingController(ctx) {
       label = "発言者を確認中";
     }
     if (!label) return "";
+    const elapsedHtml =
+      current && state.meetingSpeakerStartedAt
+        ? `<span class="meeting-round-elapsed" data-chat-id="meetingRoundElapsed">応答生成中 ${escapeHtml(
+            _formatElapsed(Date.now() - state.meetingSpeakerStartedAt)
+          )}</span>`
+        : "";
     const rest = remaining.length > 1 ? `残り: ${remaining.slice(1).join(", ")}` : "";
     return `<div class="meeting-round-status ${current ? "is-speaking" : ""}">
       <span class="meeting-round-dot"></span>
       <span class="meeting-round-main">${escapeHtml(label)}</span>
+      ${elapsedHtml}
       ${rest ? `<span class="meeting-round-rest">${escapeHtml(rest)}</span>` : ""}
     </div>`;
   }
@@ -982,6 +1018,11 @@ export function createMeetingController(ctx) {
       if (input) input.placeholder = room.closed ? _label("meeting.closed_placeholder", "このミーティングは終了済みです") : t("meeting.placeholder");
       ctx.controllers.renderer?.renderChat();
       ctx.controllers.streaming?.updateSendButton?.();
+      if (room.active_round?.active && !state.meetingStreaming) {
+        // A round is still running server-side (e.g. this is a reload
+        // mid-round) — re-attach so progress stays visible.
+        ctx.controllers.streaming?.attachMeetingRound?.(room);
+      }
     } catch (err) {
       deps.logger?.error?.("Failed to load meeting room", err);
     }

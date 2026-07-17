@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -43,6 +45,185 @@ async def _with_wall_timeout(stream: AsyncIterator[Any], timeout: float) -> Asyn
     async with asyncio.timeout(timeout):
         async for item in stream:
             yield item
+
+
+# ── Active round registry ────────────────────────────────────
+#
+# A meeting round (chair → participants) can take many minutes.  It runs as a
+# background task so a client reload or network blip does not abort the
+# remaining speakers.  Connected clients subscribe to the round's event feed;
+# a reloaded client re-attaches via GET /rooms/{room_id}/chat/attach and polls
+# state from the room payload's "active_round" field.
+
+ROUND_STATUS_INTERVAL_S = 5.0
+
+_SSE_EVENT_RE = re.compile(r"^event: (?P<event>[^\n]+)\ndata: (?P<data>.*)\n\n$", re.DOTALL)
+
+
+def _parse_sse_event(frame: str) -> tuple[str, dict[str, Any]]:
+    """Recover (event, payload) from a frame produced by _format_sse."""
+    m = _SSE_EVENT_RE.match(frame)
+    if not m:
+        return "", {}
+    try:
+        payload = json.loads(m.group("data"))
+    except json.JSONDecodeError:
+        payload = {}
+    return m.group("event"), payload if isinstance(payload, dict) else {}
+
+
+class _ActiveRound:
+    """State + subscriber fan-out for one in-flight meeting round."""
+
+    def __init__(self, room_id: str) -> None:
+        self.room_id = room_id
+        self.task: asyncio.Task[None] | None = None
+        self.listeners: set[asyncio.Queue[str | None]] = set()
+        self.speakers: list[str] = []
+        self.completed: list[str] = []
+        self.current_speaker: str = ""
+        self.started_at: float = time.monotonic()
+        self.speaker_started_at: float | None = None
+        self.done = False
+
+    def subscribe(self) -> asyncio.Queue[str | None]:
+        q: asyncio.Queue[str | None] = asyncio.Queue()
+        self.listeners.add(q)
+        return q
+
+    def unsubscribe(self, q: asyncio.Queue[str | None]) -> None:
+        self.listeners.discard(q)
+
+    def publish(self, frame: str | None) -> None:
+        for q in list(self.listeners):
+            q.put_nowait(frame)
+
+    def note_event(self, event: str, payload: dict[str, Any]) -> None:
+        """Track round progress from the SSE event flow."""
+        if event == "speaker_queue":
+            self.speakers = [str(s) for s in (payload.get("speakers") or [])]
+        elif event == "speaker_start":
+            speaker = str(payload.get("speaker") or "")
+            self.current_speaker = speaker
+            self.speaker_started_at = time.monotonic()
+            if speaker and speaker not in self.speakers:
+                self.speakers.append(speaker)  # redirect targets join mid-round
+        elif event == "speaker_end":
+            speaker = str(payload.get("speaker") or "")
+            if speaker and speaker not in self.completed:
+                self.completed.append(speaker)
+            self.current_speaker = ""
+            self.speaker_started_at = None
+
+    def status_payload(self) -> dict[str, Any]:
+        now = time.monotonic()
+        return {
+            "active": not self.done,
+            "current_speaker": self.current_speaker,
+            "speakers": list(self.speakers),
+            "completed": list(self.completed),
+            "remaining": [s for s in self.speakers if s != self.current_speaker and s not in self.completed],
+            "round_elapsed_s": round(now - self.started_at, 1),
+            "speaker_elapsed_s": (
+                round(now - self.speaker_started_at, 1) if self.speaker_started_at is not None else None
+            ),
+        }
+
+
+_ACTIVE_ROUNDS: dict[str, _ActiveRound] = {}
+
+
+async def _run_meeting_round(
+    round_: _ActiveRound,
+    room_id: str,
+    message: str,
+    from_person: str,
+    room_manager: RoomManager,
+    supervisor: Any,
+) -> None:
+    """Drive one meeting round to completion, independent of any client."""
+
+    async def _ticker() -> None:
+        while not round_.done:
+            await asyncio.sleep(ROUND_STATUS_INTERVAL_S)
+            if round_.done:
+                return
+            round_.publish(_format_sse("round_status", round_.status_payload()))
+
+    ticker = asyncio.create_task(_ticker())
+    try:
+        async for frame in _meeting_stream(room_id, message, from_person, room_manager, supervisor):
+            event, payload = _parse_sse_event(frame)
+            round_.note_event(event, payload)
+            round_.publish(frame)
+    except Exception:
+        logger.exception("Meeting round failed for room %s", room_id)
+        round_.publish(
+            _format_sse(
+                "error",
+                {"code": "ROUND_FAILED", "message": "Meeting round failed unexpectedly"},
+            )
+        )
+        round_.publish(_format_sse("done", {"summary": "Meeting round aborted"}))
+    finally:
+        round_.done = True
+        ticker.cancel()
+        round_.publish(None)  # sentinel: close all listener feeds
+        if _ACTIVE_ROUNDS.get(room_id) is round_:
+            _ACTIVE_ROUNDS.pop(room_id, None)
+
+
+def _start_meeting_round(
+    room_id: str,
+    message: str,
+    from_person: str,
+    room_manager: RoomManager,
+    supervisor: Any,
+) -> _ActiveRound:
+    """Register and launch a background round. Raises 409 if one is running."""
+    existing = _ACTIVE_ROUNDS.get(room_id)
+    if existing is not None and not existing.done:
+        raise HTTPException(status_code=409, detail="A meeting round is already in progress for this room")
+    round_ = _ActiveRound(room_id)
+    _ACTIVE_ROUNDS[room_id] = round_
+    round_.task = asyncio.create_task(
+        _run_meeting_round(round_, room_id, message, from_person, room_manager, supervisor)
+    )
+    return round_
+
+
+async def _round_event_feed(
+    round_: _ActiveRound,
+    *,
+    snapshot: bool,
+    queue: asyncio.Queue[str | None] | None = None,
+) -> AsyncIterator[str]:
+    """Yield SSE frames from an active round until it completes.
+
+    Disconnecting a feed only unsubscribes this listener; the round task
+    keeps running and its messages keep landing in the room history.
+
+    Pass a pre-subscribed *queue* to guarantee no events are missed between
+    starting the round and consuming the response (subscription must happen
+    synchronously before the round task first runs).
+    """
+    fresh_subscription = queue is None
+    q = round_.subscribe() if queue is None else queue
+    try:
+        if snapshot:
+            yield _format_sse("round_status", round_.status_payload())
+        if fresh_subscription and round_.done:
+            # Subscribed after completion: the sentinel was already published,
+            # so the queue would never terminate — finish immediately instead.
+            yield _format_sse("done", {"summary": "Meeting round complete"})
+            return
+        while True:
+            frame = await q.get()
+            if frame is None:
+                return
+            yield frame
+    finally:
+        round_.unsubscribe(q)
 
 
 # ── Pydantic Models ──────────────────────────────────────────
@@ -145,6 +326,8 @@ def _room_payload(room: MeetingRoom, *, include_conversation: bool = False) -> d
         "project_task_title": room.project_task_title,
         "action_items": room.action_items,
     }
+    active = _ACTIVE_ROUNDS.get(room.room_id)
+    payload["active_round"] = active.status_payload() if active is not None and not active.done else None
     if include_conversation:
         payload["conversation"] = room.conversation
     return payload
@@ -718,7 +901,12 @@ def create_room_router() -> APIRouter:
         body: MeetingChatRequest,
         request: Request,
     ):
-        """Main SSE streaming endpoint for meeting chat."""
+        """Start a meeting round and stream its SSE events.
+
+        The round itself runs as a background task, so a client disconnect
+        (page reload, network blip) does not abort the remaining speakers.
+        Returns 409 while a round is already in progress for the room.
+        """
         room_manager = _get_room_manager(request)
         supervisor = request.app.state.supervisor
 
@@ -726,14 +914,49 @@ def create_room_router() -> APIRouter:
         if hasattr(request.state, "user"):
             from_person = request.state.user.username
 
+        round_ = _start_meeting_round(
+            room_id,
+            body.message,
+            from_person,
+            room_manager,
+            supervisor,
+        )
+        # Subscribe synchronously so no early events are lost before the
+        # response body starts being consumed.
+        listener = round_.subscribe()
         return StreamingResponse(
-            _meeting_stream(
-                room_id,
-                body.message,
-                from_person,
-                room_manager,
-                supervisor,
-            ),
+            _round_event_feed(round_, snapshot=False, queue=listener),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @router.get("/{room_id}/chat/attach")
+    async def meeting_chat_attach(room_id: str, request: Request):
+        """Re-attach to an in-flight meeting round after a reload.
+
+        Emits an immediate round_status snapshot, then live events until the
+        round completes.  When no round is active, emits done immediately —
+        the caller should render from the room conversation instead.
+        """
+        _get_room_manager(request)  # 503 guard when feature unavailable
+
+        round_ = _ACTIVE_ROUNDS.get(room_id)
+        if round_ is None or round_.done:
+
+            async def _no_round() -> AsyncIterator[str]:
+                yield _format_sse("round_status", {"active": False})
+                yield _format_sse("done", {"summary": "No active round"})
+
+            feed = _no_round()
+        else:
+            feed = _round_event_feed(round_, snapshot=True)
+
+        return StreamingResponse(
+            feed,
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

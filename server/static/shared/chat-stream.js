@@ -172,6 +172,36 @@ export async function streamMeetingChat(roomId, body, signal, callbacks) {
 }
 
 /**
+ * Attach to an in-flight meeting round (e.g. after a page reload).
+ *
+ * The server keeps the round running in the background; this GET stream
+ * emits an immediate round_status snapshot followed by live events until
+ * the round completes.  When no round is active it emits done right away.
+ *
+ * @param {string} roomId - Meeting room ID
+ * @param {AbortSignal|null} signal - Optional AbortSignal for cancellation
+ * @param {object} callbacks - Event callbacks (same as streamMeetingChat)
+ * @returns {Promise<void>}
+ */
+export async function attachMeetingRound(roomId, signal, callbacks) {
+  const url = `${basePath}/api/rooms/${encodeURIComponent(roomId)}/chat/attach`;
+  const start = performance.now();
+  logger.info(`[SSE-FE] attachMeetingRound START roomId=${roomId}`);
+
+  const res = await fetch(url, { ...(signal ? { signal } : {}) });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    logger.error(`[SSE-FE] attachMeetingRound fetch FAILED status=${res.status} body=${text.slice(0, 200)}`);
+    throw new Error(`API ${res.status}: ${text}`);
+  }
+
+  await _processStream(res, callbacks, () => {}, () => {}, signal);
+
+  const elapsed = ((performance.now() - start) / 1000).toFixed(1);
+  logger.info(`[SSE-FE] attachMeetingRound COMPLETE roomId=${roomId} elapsed=${elapsed}s`);
+}
+
+/**
  * Process a ReadableStream response, parsing SSE events.
  */
 async function _processStream(res, callbacks, setResponseId, setLastEventId, signal) {
@@ -328,6 +358,10 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
 
           case "speaker_queue":
             callbacks.onSpeakerQueue?.({ speakers: Array.isArray(data.speakers) ? data.speakers : [] });
+            break;
+
+          case "round_status":
+            callbacks.onRoundStatus?.(data);
             break;
 
           case "meeting_redirect":

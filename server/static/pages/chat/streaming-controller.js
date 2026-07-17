@@ -5,7 +5,7 @@ import {
 } from "./ctx.js";
 import { getDescendants } from "../../shared/chat/org-utils.js";
 import { TextAnimator, stripThinkTags } from "../../shared/chat/render-utils.js";
-import { streamMeetingChat } from "../../shared/chat-stream.js";
+import { attachMeetingRound, streamMeetingChat } from "../../shared/chat-stream.js";
 
 const SEND_BTN_ICONS = {
   send: `<svg class="chat-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5 12l7-7 7 7" /></svg>`,
@@ -685,6 +685,181 @@ export function createStreamingController(ctx) {
     }
   }
 
+  function _makeMeetingRoundHandlers(roomId, room) {
+    let currentStreamingMsg = null;
+    let _meetingTextAnimator = null;
+    const isVisible = () => Boolean(state.meetingMode && state.meetingRoom?.room_id === roomId);
+    const renderBubble = (msg, zone = "all") => {
+      if (isVisible()) ctx.controllers.renderer?.renderStreamingBubble?.(msg, zone);
+    };
+    const renderFull = () => {
+      if (isVisible()) ctx.controllers.renderer?.renderChat?.(!ctx.controllers.renderer?.isUserDetached?.());
+    };
+    let _rafPending = false;
+    let _rafZone = "all";
+    const _scheduleRender = (msg, zone = "text") => {
+      if (_rafZone !== "all") _rafZone = zone;
+      if (_rafPending) return;
+      _rafPending = true;
+      requestAnimationFrame(() => {
+        _rafPending = false;
+        renderBubble(msg, _rafZone);
+      });
+    };
+
+    // resetTimer=false when the bubble is created lazily mid-turn (attach
+    // after reload): the reconstructed server-side start time must survive.
+    const _beginSpeaker = (speaker, speakerRole, resetTimer = true) => {
+      state.meetingCurrentSpeaker = speaker || "";
+      if (resetTimer) state.meetingSpeakerStartedAt = Date.now();
+      state.meetingRoundStatus = "speaking";
+      ctx.controllers.meeting?.updatePanel?.();
+      currentStreamingMsg = {
+        role: "assistant",
+        speaker,
+        speakerRole: speakerRole || "participant",
+        from_person: speaker,
+        text: "",
+        streaming: true,
+        timestamp: new Date().toISOString(),
+        streamId: `meeting-${roomId}-${speaker}-${Date.now()}`,
+      };
+      mgr.getSession("meeting", roomId).messages.push(currentStreamingMsg);
+      renderFull();
+    };
+
+    const callbacks = {
+      onSpeakerQueue: ({ speakers }) => {
+        state.meetingSpeakerQueue = speakers || [];
+        state.meetingCompletedSpeakers = [];
+        state.meetingCurrentSpeaker = "";
+        state.meetingRoundStatus = "waiting";
+        ctx.controllers.meeting?.updatePanel?.();
+      },
+      onSpeakerStart: ({ speaker, role: speakerRole }) => {
+        _beginSpeaker(speaker, speakerRole);
+      },
+      onRoundStatus: (statusData) => {
+        // Periodic server snapshot (also the first event on attach).
+        // Reconciles round state so a reloaded client shows live progress
+        // even while no text is streaming (agentic tool-use phase).
+        if (!statusData) return;
+        if (Array.isArray(statusData.speakers) && statusData.speakers.length) {
+          state.meetingSpeakerQueue = statusData.speakers;
+        }
+        if (Array.isArray(statusData.completed)) {
+          state.meetingCompletedSpeakers = statusData.completed;
+        }
+        const current = statusData.current_speaker || "";
+        if (current) {
+          state.meetingCurrentSpeaker = current;
+          state.meetingRoundStatus = "speaking";
+          if (typeof statusData.speaker_elapsed_s === "number") {
+            state.meetingSpeakerStartedAt = Date.now() - statusData.speaker_elapsed_s * 1000;
+          }
+        }
+        ctx.controllers.meeting?.updatePanel?.();
+      },
+      onTextDelta: (text) => {
+        if (!currentStreamingMsg?.streaming) {
+          // Attach mid-turn: no speaker_start was seen, create the bubble now.
+          if (!state.meetingCurrentSpeaker) return;
+          _beginSpeaker(state.meetingCurrentSpeaker, "participant", false);
+        }
+        currentStreamingMsg.text += text;
+        if (!_meetingTextAnimator) {
+          _meetingTextAnimator = new TextAnimator({
+            onUpdate: (displayText) => {
+              if (!currentStreamingMsg) return;
+              currentStreamingMsg._displayText = displayText;
+              _scheduleRender(currentStreamingMsg, "text");
+            },
+          });
+          _meetingTextAnimator.start();
+        }
+        _meetingTextAnimator.push(text);
+      },
+      onSpeakerEnd: ({ speaker }) => {
+        if (_meetingTextAnimator) {
+          _meetingTextAnimator.flush();
+          _meetingTextAnimator.stop();
+          _meetingTextAnimator = null;
+        }
+        if (currentStreamingMsg) {
+          delete currentStreamingMsg._displayText;
+          currentStreamingMsg.streaming = false;
+          renderFull();
+        }
+        if (speaker) {
+          const done = new Set(state.meetingCompletedSpeakers || []);
+          done.add(speaker);
+          state.meetingCompletedSpeakers = [...done];
+        }
+        state.meetingCurrentSpeaker = "";
+        state.meetingSpeakerStartedAt = null;
+        state.meetingRoundStatus = "waiting";
+        ctx.controllers.meeting?.updatePanel?.();
+        currentStreamingMsg = null;
+      },
+      onMeetingRedirect: ({ from, to, content }) => {
+        if (_meetingTextAnimator) {
+          _meetingTextAnimator.flush();
+          _meetingTextAnimator.stop();
+          _meetingTextAnimator = null;
+        }
+        if (currentStreamingMsg) {
+          delete currentStreamingMsg._displayText;
+          currentStreamingMsg.streaming = false;
+          currentStreamingMsg = null;
+        }
+        mgr.getSession("meeting", roomId).messages.push({
+          role: "assistant",
+          speaker: from || "",
+          speakerRole: from === room.chair ? "chair" : "participant",
+          from_person: from || "",
+          text: `@${to || ""} ${content || ""}`.trim(),
+          timestamp: new Date().toISOString(),
+        });
+        renderFull();
+      },
+      onDone: () => {
+        if (_meetingTextAnimator) {
+          _meetingTextAnimator.flush();
+          _meetingTextAnimator = null;
+        }
+        if (currentStreamingMsg) {
+          delete currentStreamingMsg._displayText;
+          currentStreamingMsg.streaming = false;
+        }
+        state.meetingCurrentSpeaker = "";
+        state.meetingSpeakerStartedAt = null;
+        state.meetingRoundStatus = "done";
+        ctx.controllers.meeting?.updatePanel?.();
+        renderFull();
+      },
+      onError: ({ message: errorMsg }) => {
+        if (currentStreamingMsg) {
+          if (!currentStreamingMsg.text) currentStreamingMsg.text = "";
+          currentStreamingMsg.text += `\n${t("chat.error_prefix")} ${errorMsg}`;
+          delete currentStreamingMsg._displayText;
+          currentStreamingMsg.streaming = false;
+          renderFull();
+        }
+      },
+    };
+
+    return {
+      callbacks,
+      notifyStreamError(message) {
+        if (currentStreamingMsg) {
+          currentStreamingMsg.text += `\n${t("chat.error_prefix")} ${message}`;
+          currentStreamingMsg.streaming = false;
+          renderFull();
+        }
+      },
+    };
+  }
+
   async function sendMeetingChat(message, overrideImages = null) {
     const room = ctx.controllers.meeting?.getRoom?.();
     if (!room?.room_id || (!message?.trim() && !(overrideImages?.images?.length))) return;
@@ -715,6 +890,7 @@ export function createStreamingController(ctx) {
     state.meetingSpeakerQueue = [];
     state.meetingCompletedSpeakers = [];
     state.meetingCurrentSpeaker = "";
+    state.meetingSpeakerStartedAt = null;
     state.meetingRoundStatus = "waiting";
     const abortController = new AbortController();
 
@@ -722,26 +898,8 @@ export function createStreamingController(ctx) {
     if (input && !overrideImages) state.imageInputManager?.clearImages();
     ctx.controllers.renderer?.reattach?.();
 
-    let currentStreamingMsg = null;
-    let _meetingTextAnimator = null;
-    const isVisible = () => Boolean(state.meetingMode && state.meetingRoom?.room_id === roomId);
-    const renderBubble = (msg, zone = "all") => {
-      if (isVisible()) ctx.controllers.renderer?.renderStreamingBubble?.(msg, zone);
-    };
-    const renderFull = () => {
-      if (isVisible()) ctx.controllers.renderer?.renderChat?.(!ctx.controllers.renderer?.isUserDetached?.());
-    };
-    let _rafPending = false;
-    let _rafZone = "all";
-    const _scheduleRender = (msg, zone = "text") => {
-      if (_rafZone !== "all") _rafZone = zone;
-      if (_rafPending) return;
-      _rafPending = true;
-      requestAnimationFrame(() => {
-        _rafPending = false;
-        renderBubble(msg, _rafZone);
-      });
-    };
+    const handlers = _makeMeetingRoundHandlers(roomId, room);
+    let attachAfter = false;
 
     try {
       const body = JSON.stringify({
@@ -750,125 +908,22 @@ export function createStreamingController(ctx) {
         ...(images.length ? { images } : {}),
       });
 
-      await streamMeetingChat(roomId, body, abortController.signal, {
-        onSpeakerQueue: ({ speakers }) => {
-          state.meetingSpeakerQueue = speakers || [];
-          state.meetingCompletedSpeakers = [];
-          state.meetingCurrentSpeaker = "";
-          state.meetingRoundStatus = "waiting";
-          ctx.controllers.meeting?.updatePanel?.();
-        },
-        onSpeakerStart: ({ speaker, role: speakerRole }) => {
-          state.meetingCurrentSpeaker = speaker || "";
-          state.meetingRoundStatus = "speaking";
-          ctx.controllers.meeting?.updatePanel?.();
-          currentStreamingMsg = {
-            role: "assistant",
-            speaker,
-            speakerRole: speakerRole || "participant",
-            from_person: speaker,
-            text: "",
-            streaming: true,
-            timestamp: new Date().toISOString(),
-            streamId: `meeting-${roomId}-${speaker}-${Date.now()}`,
-          };
-          mgr.getSession("meeting", roomId).messages.push(currentStreamingMsg);
-          renderFull();
-        },
-        onTextDelta: (text) => {
-          if (!currentStreamingMsg?.streaming) return;
-          currentStreamingMsg.text += text;
-          if (!_meetingTextAnimator) {
-            _meetingTextAnimator = new TextAnimator({
-              onUpdate: (displayText) => {
-                if (!currentStreamingMsg) return;
-                currentStreamingMsg._displayText = displayText;
-                _scheduleRender(currentStreamingMsg, "text");
-              },
-            });
-            _meetingTextAnimator.start();
-          }
-          _meetingTextAnimator.push(text);
-        },
-        onSpeakerEnd: ({ speaker }) => {
-          if (_meetingTextAnimator) {
-            _meetingTextAnimator.flush();
-            _meetingTextAnimator.stop();
-            _meetingTextAnimator = null;
-          }
-          if (currentStreamingMsg) {
-            delete currentStreamingMsg._displayText;
-            currentStreamingMsg.streaming = false;
-            renderFull();
-          }
-          if (speaker) {
-            const done = new Set(state.meetingCompletedSpeakers || []);
-            done.add(speaker);
-            state.meetingCompletedSpeakers = [...done];
-          }
-          state.meetingCurrentSpeaker = "";
-          state.meetingRoundStatus = "waiting";
-          ctx.controllers.meeting?.updatePanel?.();
-          currentStreamingMsg = null;
-        },
-        onMeetingRedirect: ({ from, to, content }) => {
-          if (_meetingTextAnimator) {
-            _meetingTextAnimator.flush();
-            _meetingTextAnimator.stop();
-            _meetingTextAnimator = null;
-          }
-          if (currentStreamingMsg) {
-            delete currentStreamingMsg._displayText;
-            currentStreamingMsg.streaming = false;
-            currentStreamingMsg = null;
-          }
-          mgr.getSession("meeting", roomId).messages.push({
-            role: "assistant",
-            speaker: from || "",
-            speakerRole: from === room.chair ? "chair" : "participant",
-            from_person: from || "",
-            text: `@${to || ""} ${content || ""}`.trim(),
-            timestamp: new Date().toISOString(),
-          });
-          renderFull();
-        },
-        onDone: () => {
-          if (_meetingTextAnimator) {
-            _meetingTextAnimator.flush();
-            _meetingTextAnimator = null;
-          }
-          if (currentStreamingMsg) {
-            delete currentStreamingMsg._displayText;
-            currentStreamingMsg.streaming = false;
-          }
-          state.meetingCurrentSpeaker = "";
-          state.meetingRoundStatus = "done";
-          ctx.controllers.meeting?.updatePanel?.();
-          renderFull();
-        },
-        onError: ({ message: errorMsg }) => {
-          if (currentStreamingMsg) {
-            if (!currentStreamingMsg.text) currentStreamingMsg.text = "";
-            currentStreamingMsg.text += `\n${t("chat.error_prefix")} ${errorMsg}`;
-            delete currentStreamingMsg._displayText;
-            currentStreamingMsg.streaming = false;
-            renderFull();
-          }
-        },
-      });
+      await streamMeetingChat(roomId, body, abortController.signal, handlers.callbacks);
     } catch (err) {
       if (err.name !== "AbortError") {
         logger.error("Meeting chat stream error", { roomId, error: err.message });
-        if (currentStreamingMsg) {
-          currentStreamingMsg.text += `\n${t("chat.error_prefix")} ${err.message}`;
-          currentStreamingMsg.streaming = false;
-          renderFull();
+        if (String(err.message || "").includes("API 409")) {
+          // A round is already running server-side — attach instead of failing.
+          attachAfter = true;
+        } else {
+          handlers.notifyStreamError(err.message);
         }
       }
     } finally {
       state.meetingStreaming = false;
       if (state.meetingRoundStatus !== "done") {
         state.meetingCurrentSpeaker = "";
+        state.meetingSpeakerStartedAt = null;
         state.meetingRoundStatus = "";
       }
       if (input && state.meetingMode) {
@@ -877,15 +932,53 @@ export function createStreamingController(ctx) {
       }
       updateSendButton();
       ctx.controllers.meeting?.updatePanel?.();
-      const pending = mgr.getPendingQueue("meeting", roomId);
-      if (pending.length > 0) {
-        const next = mgr.dequeue("meeting", roomId);
-        if (mgr.getPendingQueue("meeting", roomId).length === 0) hidePendingIndicator();
-        setTimeout(() => sendMeetingChat(next.text, {
-          images: next.images,
-          displayImages: next.displayImages,
-          skipLocalEcho: !!next.skipLocalEcho,
-        }), 150);
+      if (attachAfter) {
+        attachToMeetingRound(room);
+      } else {
+        const pending = mgr.getPendingQueue("meeting", roomId);
+        if (pending.length > 0) {
+          const next = mgr.dequeue("meeting", roomId);
+          if (mgr.getPendingQueue("meeting", roomId).length === 0) hidePendingIndicator();
+          setTimeout(() => sendMeetingChat(next.text, {
+            images: next.images,
+            displayImages: next.displayImages,
+            skipLocalEcho: !!next.skipLocalEcho,
+          }), 150);
+        }
+      }
+    }
+  }
+
+  async function attachToMeetingRound(room) {
+    const roomId = room?.room_id;
+    if (!roomId) return;
+    if (state.meetingStreaming) return;
+
+    state.meetingStreaming = true;
+    state.meetingRoundStatus = "waiting";
+    const abortController = new AbortController();
+    const handlers = _makeMeetingRoundHandlers(roomId, room);
+    logger.info("Attaching to in-flight meeting round", { roomId });
+
+    try {
+      await attachMeetingRound(roomId, abortController.signal, handlers.callbacks);
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        logger.error("Meeting round attach error", { roomId, error: err.message });
+      }
+    } finally {
+      state.meetingStreaming = false;
+      const completedRound = state.meetingRoundStatus === "done";
+      if (!completedRound) {
+        state.meetingCurrentSpeaker = "";
+        state.meetingSpeakerStartedAt = null;
+        state.meetingRoundStatus = "";
+      }
+      updateSendButton();
+      ctx.controllers.meeting?.updatePanel?.();
+      if (completedRound && state.meetingRoom?.room_id === roomId) {
+        // Replace partially-captured bubbles with the authoritative history.
+        ctx.controllers.meeting?.loadRoom?.(roomId);
       }
     }
   }
@@ -1028,6 +1121,7 @@ export function createStreamingController(ctx) {
 
   return {
     submitChat, sendChat, resumeActiveStream,
+    attachMeetingRound: attachToMeetingRound,
     stopStreaming, addToQueue,
     showPendingIndicator, hidePendingIndicator,
     updateSendButton, updateContextRing, restoreContextRing,

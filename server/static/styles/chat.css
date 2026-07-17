@@ -3420,6 +3420,11 @@
   color: var(--aw-color-text-muted, #8a8f98);
 }
 
+.meeting-round-elapsed {
+  color: var(--aw-color-text-muted, #8a8f98);
+  font-variant-numeric: tabular-nums;
+}
+
 .meeting-participant-chip {
   display: inline-flex;
   align-items: center;
