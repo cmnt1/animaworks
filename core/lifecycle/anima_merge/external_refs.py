@@ -147,10 +147,7 @@ class ExternalRefsRewriter:
         if relationships.get(self.target) == self.target:
             errors.append(f"self-reference: {self.target} -> {self.target}")
 
-        current_relationships = {
-            name: read_anima_supervisor(self.animas_dir / name)
-            for name in relationships
-        }
+        current_relationships = {name: read_anima_supervisor(self.animas_dir / name) for name in relationships}
         old_cycles = {_canonical_cycle(item) for item in _cycles(current_relationships)}
         for cycle in _cycles(relationships):
             canonical = _canonical_cycle(cycle)
@@ -160,9 +157,7 @@ class ExternalRefsRewriter:
 
         if errors:
             details = "\n- ".join(errors)
-            raise ReferenceRewriteError(
-                "Organization rewrite requires human resolution:\n- " + details
-            )
+            raise ReferenceRewriteError("Organization rewrite requires human resolution:\n- " + details)
         return OrganizationRewritePlan(
             relationships=relationships,
             status_updates=tuple(status_updates),
@@ -260,9 +255,7 @@ class ExternalRefsRewriter:
                 zoom = external.get("zoom")
                 if isinstance(zoom, dict):
                     if "default_anima" in zoom:
-                        zoom["default_anima"], count = _replace_name(
-                            zoom["default_anima"], self.source, self.target
-                        )
+                        zoom["default_anima"], count = _replace_name(zoom["default_anima"], self.source, self.target)
                         changed += count
                     meetings = zoom.get("meeting_mapping")
                     if isinstance(meetings, dict):
@@ -290,9 +283,7 @@ class ExternalRefsRewriter:
                 data = _read_json_object(path)
                 if "members" not in data:
                     continue
-                data["members"], changed = _replace_list(
-                    data["members"], self.source, self.target
-                )
+                data["members"], changed = _replace_list(data["members"], self.source, self.target)
                 if not changed:
                     continue
                 _write_json(path, data)
@@ -309,14 +300,10 @@ class ExternalRefsRewriter:
                     continue
                 changed = 0
                 if "participants" in data:
-                    data["participants"], count = _replace_list(
-                        data["participants"], self.source, self.target
-                    )
+                    data["participants"], count = _replace_list(data["participants"], self.source, self.target)
                     changed += count
                 if "chair" in data:
-                    data["chair"], count = _replace_name(
-                        data["chair"], self.source, self.target
-                    )
+                    data["chair"], count = _replace_name(data["chair"], self.source, self.target)
                     changed += count
                 if not changed:
                     continue
@@ -345,15 +332,11 @@ class ExternalRefsRewriter:
         """Rewrite ephemeral routing/state and remove stale source run files."""
 
         changed_files: list[str] = []
-        notification_updates = self._rewrite_notification_map(
-            self.data_dir / "run" / "notification_map.json"
-        )
+        notification_updates = self._rewrite_notification_map(self.data_dir / "run" / "notification_map.json")
         if notification_updates:
             changed_files.append("run/notification_map.json")
 
-        discord_updates = self._rewrite_entry_anima_map(
-            self.data_dir / "run" / "discord_thread_map.json"
-        )
+        discord_updates = self._rewrite_entry_anima_map(self.data_dir / "run" / "discord_thread_map.json")
         if discord_updates:
             changed_files.append("run/discord_thread_map.json")
 
@@ -361,9 +344,7 @@ class ExternalRefsRewriter:
         usage_path = self.data_dir / "usage_governor_state.json"
         if usage_path.is_file():
             usage = _read_json_object(usage_path)
-            suspended, changed = _replace_list(
-                usage.get("suspended_animas"), self.source, self.target
-            )
+            suspended, changed = _replace_list(usage.get("suspended_animas"), self.source, self.target)
             if changed:
                 usage["suspended_animas"] = suspended
                 _write_json(usage_path, usage)

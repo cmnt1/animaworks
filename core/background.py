@@ -414,9 +414,7 @@ class BackgroundTaskManager:
         evicted_ids = {
             task_id
             for task_id, task in self._tasks.items()
-            if task.status in terminal_statuses
-            and task.completed_at is not None
-            and task.completed_at <= cutoff
+            if task.status in terminal_statuses and task.completed_at is not None and task.completed_at <= cutoff
         }
 
         retained_terminal = [

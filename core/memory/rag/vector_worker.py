@@ -372,11 +372,7 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
                 return None
         result = action(store)
         consume_failure = getattr(type(store), "consume_lightweight_self_heal_failure", None)
-        if (
-            not callable(consume_failure)
-            or not consume_failure(store)
-            or not _record_self_heal_failure(anima_name)
-        ):
+        if not callable(consume_failure) or not consume_failure(store) or not _record_self_heal_failure(anima_name):
             return result
 
         owner = anima_name or "shared"
@@ -488,8 +484,7 @@ def _before_vector_write(anima_name: str | None, collection: str) -> JSONRespons
     suppressed_count = int(state.get("suppressed_count") or 0)
     if not last_logged_at or now - last_logged_at >= _CIRCUIT_REJECTION_LOG_INTERVAL_SECONDS:
         logger.error(
-            "Vector write circuit breaker open: owner=%s collection=%s failures=%s "
-            "retry_after=%ss suppressed=%d",
+            "Vector write circuit breaker open: owner=%s collection=%s failures=%s retry_after=%ss suppressed=%d",
             anima_name or "shared",
             collection,
             state.get("consecutive_failures", 0),

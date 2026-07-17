@@ -364,9 +364,7 @@ class ChromaVectorStore(VectorStore):
             return action(self)
         except Exception as retry_error:
             with _lightweight_failure_marker_lock:
-                self._lightweight_self_heal_failures = (
-                    int(getattr(self, "_lightweight_self_heal_failures", 0)) + 1
-                )
+                self._lightweight_self_heal_failures = int(getattr(self, "_lightweight_self_heal_failures", 0)) + 1
             self._report_chroma_error(collection, retry_error, operation)
             logger.warning(
                 "ChromaDB lightweight self-heal retry failed during %s: owner=%s db_path=%s collection=%s error=%s",

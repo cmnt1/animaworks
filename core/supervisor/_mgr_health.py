@@ -119,8 +119,7 @@ class HealthMixin:
             return
         warned[anima_name] = now_mono
         logger.warning(
-            "Streaming exceeds max duration for %s (%.0fs > %ds) but progress "
-            "is fresh (idle=%.0fs) — not killing",
+            "Streaming exceeds max duration for %s (%.0fs > %ds) but progress is fresh (idle=%.0fs) — not killing",
             anima_name,
             streaming_sec,
             self._max_streaming_duration_sec,

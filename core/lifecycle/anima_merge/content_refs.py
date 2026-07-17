@@ -339,9 +339,7 @@ def rewrite_memory_references(
         qualified_only=True,
     )
     source_documents = {
-        destination
-        for destination in file_mapping.values()
-        if destination.startswith(("episodes/", "knowledge/"))
+        destination for destination in file_mapping.values() if destination.startswith(("episodes/", "knowledge/"))
     }
     qualified_files, qualified_count = _rewrite_markdown(
         Path(target_dir),
@@ -363,10 +361,7 @@ def rewrite_memory_references(
 
     dangling: list[dict[str, str]] = []
     old_values = [old for old, new in combined.items() if old != new]
-    qualified_old_values = [
-        old
-        for old, _new in qualified_replacements
-    ]
+    qualified_old_values = [old for old, _new in qualified_replacements]
     for category in ("episodes", "knowledge"):
         root = Path(target_dir) / category
         if not root.is_dir():

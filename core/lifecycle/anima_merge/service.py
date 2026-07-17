@@ -464,9 +464,7 @@ class AnimaMergeService:
         for path in _files(self.source_dir / "attachments"):
             relative = _safe_relative(path, self.source_dir / "attachments")
             if relative in target_attachments:
-                result["attachments"].append(
-                    {"source": _safe_relative(path, self.source_dir), "basename": path.name}
-                )
+                result["attachments"].append({"source": _safe_relative(path, self.source_dir), "basename": path.name})
         return result
 
     @staticmethod
@@ -569,7 +567,9 @@ class AnimaMergeService:
         base = output_dir / f"merge_{self.source}_{self.target}_{stamp}"
         json_path = base.with_suffix(".json")
         markdown_path = base.with_suffix(".md")
-        json_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        json_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         markdown_path.write_text(self._manifest_markdown(manifest), encoding="utf-8")
         return json_path, markdown_path
 
@@ -644,7 +644,9 @@ class AnimaMergeService:
                     response = requests.post(f"{self.gateway_url}/api/animas/{name}/disable", timeout=10)
                     response.raise_for_status()
                 except Exception as exc:
-                    raise AnimaMergeError(f"Server is running, but anima '{name}' could not be disabled: {exc}") from exc
+                    raise AnimaMergeError(
+                        f"Server is running, but anima '{name}' could not be disabled: {exc}"
+                    ) from exc
                 disabled.append(name)
 
         for name in (self.source, self.target):
@@ -825,9 +827,7 @@ class AnimaMergeService:
         mapping: dict[str, str] = {}
         deduplicated: list[str] = []
         target_dates = {
-            match.group(1)
-            for path in _files(target_root)
-            if (match := _DATE_PREFIX.match(path.name)) is not None
+            match.group(1) for path in _files(target_root) if (match := _DATE_PREFIX.match(path.name)) is not None
         }
         for source_path in _files(source_root):
             relative = source_path.relative_to(source_root)
@@ -916,9 +916,7 @@ class AnimaMergeService:
         ):
             if not isinstance(value, dict):
                 raise AnimaMergeError(f"Invalid {label} in MERGE_MEMORY journal artifacts")
-        if not isinstance(facts_appended_ids, list) or not all(
-            isinstance(value, str) for value in facts_appended_ids
-        ):
+        if not isinstance(facts_appended_ids, list) or not all(isinstance(value, str) for value in facts_appended_ids):
             raise AnimaMergeError("Invalid facts_appended_ids in MERGE_MEMORY journal artifacts")
 
         self._run_rewrite_substep(
@@ -986,6 +984,7 @@ class AnimaMergeService:
                 task_mapping,
             ),
         )
+
         def rewrite_ancillary_state() -> dict[str, Any]:
             artifacts = external.rewrite_ancillary_state(
                 wake_target=bool(inbox.get("messages_moved", 0)),
@@ -1210,9 +1209,7 @@ class AnimaMergeService:
             raise AnimaMergeError(f"Reference-integrity scan failed: {exc}") from exc
         residual = references["residual_references"]
         if residual:
-            raise AnimaMergeError(
-                "VERIFY found residual source references:\n- " + "\n- ".join(residual)
-            )
+            raise AnimaMergeError("VERIFY found residual source references:\n- " + "\n- ".join(residual))
         smoke = self._smoke_check_target()
         return {
             "memory_probes": probe_result,
@@ -1252,8 +1249,7 @@ class AnimaMergeService:
                 failures.append(f"{probe['category']}:{probe['source']}")
         if failures:
             raise AnimaMergeError(
-                "VERIFY memory probes could not find migrated source content:\n- "
-                + "\n- ".join(failures)
+                "VERIFY memory probes could not find migrated source content:\n- " + "\n- ".join(failures)
             )
         by_category: dict[str, dict[str, int]] = {}
         for result in results:
@@ -1322,9 +1318,7 @@ class AnimaMergeService:
         appended_ids = artifacts.get("facts_appended_ids", [])
         appended = {str(value) for value in appended_ids if isinstance(value, str)}
         source_facts = [
-            record
-            for record in iter_fact_records(self.source_dir, include_expired=True)
-            if record.fact_id in appended
+            record for record in iter_fact_records(self.source_dir, include_expired=True) if record.fact_id in appended
         ]
         for record in source_facts[:3]:
             probes.append(
@@ -1550,9 +1544,7 @@ class AnimaMergeService:
                             child,
                             target_skills / "quarantine" / child.name,
                         )
-                        mapping[f"skills/quarantine/{child.name}"] = (
-                            f"skills/quarantine/{destination.name}"
-                        )
+                        mapping[f"skills/quarantine/{child.name}"] = f"skills/quarantine/{destination.name}"
                 continue
             destination = self._copy_skill_directory(source_path, target_skills / source_path.name)
             mapping[f"skills/{source_path.name}"] = f"skills/{destination.name}"

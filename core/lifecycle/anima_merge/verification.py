@@ -26,9 +26,7 @@ _ATTRIBUTION_FIELDS = frozenset(
     }
 )
 _INTRINSIC_SOURCE_FIELDS = frozenset({"anima", "anima_name", "name"})
-_CONTENT_FIELDS = frozenset(
-    {"content", "description", "message", "notes", "original_instruction", "summary", "text"}
-)
+_CONTENT_FIELDS = frozenset({"content", "description", "message", "notes", "original_instruction", "summary", "text"})
 _TOKEN_BOUNDARY = r"(?<![0-9A-Za-z_.-]){}(?![0-9A-Za-z_.-])"
 
 
@@ -107,8 +105,9 @@ def source_reference_report(data_dir: Path, source: str) -> dict[str, Any]:
             "config.json",
             residual,
             allowed,
-            allow=lambda path, _key: path == f"config.json.animas.{source}"
-            or path.startswith(f"config.json.animas.{source}."),
+            allow=lambda path, _key: (
+                path == f"config.json.animas.{source}" or path.startswith(f"config.json.animas.{source}.")
+            ),
         )
 
     animas_dir = data_dir / "animas"

@@ -123,7 +123,9 @@ class HttpVectorStore(VectorStore):
             delay = 1
         self._write_circuit_retry_at[collection] = time.monotonic() + delay
 
-    def _clear_post_failures(self, path: str, collection: str, *, keep: tuple[str, int | str, str] | None = None) -> None:
+    def _clear_post_failures(
+        self, path: str, collection: str, *, keep: tuple[str, int | str, str] | None = None
+    ) -> None:
         for key in list(self._post_failure_states):
             if key[0] == path and key[2] == collection and key != keep:
                 self._post_failure_states.pop(key, None)

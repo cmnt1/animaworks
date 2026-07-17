@@ -34,10 +34,7 @@ def discover_slack_credential_candidates(
 ) -> list[dict[str, str]]:
     """Return source credential locations and key names, never values."""
     data_dir = Path(data_dir)
-    wanted = {
-        f"{base}__{source}"
-        for base in ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN")
-    }
+    wanted = {f"{base}__{source}" for base in ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN")}
     found: set[tuple[str, str]] = set()
 
     vault_path = data_dir / "vault.json"
@@ -65,7 +62,4 @@ def discover_slack_credential_candidates(
             raise ValueError(f"Could not inspect {env_path}: {exc}") from exc
 
     found.update(("environment", key) for key in wanted if key in os.environ)
-    return [
-        {"storage": storage, "key": key}
-        for storage, key in sorted(found)
-    ]
+    return [{"storage": storage, "key": key} for storage, key in sorted(found)]

@@ -67,10 +67,7 @@ def rewrite_taskboard(
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("BEGIN IMMEDIATE")
-        tables = {
-            str(row[0])
-            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        }
+        tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "taskboard_metadata" in tables:
             rows = conn.execute("SELECT * FROM taskboard_metadata ORDER BY anima_name, task_id").fetchall()
             columns = [str(item[1]) for item in conn.execute("PRAGMA table_info(taskboard_metadata)")]

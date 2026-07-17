@@ -98,12 +98,7 @@ def _result_ids(anima_dir: Path) -> set[str]:
 
 
 def _all_owned_ids(anima_dir: Path, db_path: Path, anima_name: str) -> set[str]:
-    return (
-        _queue_ids(anima_dir)
-        | _pending_ids(anima_dir)
-        | _result_ids(anima_dir)
-        | taskboard_ids(db_path, anima_name)
-    )
+    return _queue_ids(anima_dir) | _pending_ids(anima_dir) | _result_ids(anima_dir) | taskboard_ids(db_path, anima_name)
 
 
 def _validate_mapping(mapping: dict[str, str], source_ids: set[str]) -> None:
@@ -178,7 +173,9 @@ class TaskReferenceRewriter:
         # journaled mapping may consequently be a strict superset.
         if not source_ids.issubset(resolved):
             _validate_mapping(resolved, source_ids)
-        if any(not isinstance(old, str) or not isinstance(new, str) or not old or not new for old, new in resolved.items()):
+        if any(
+            not isinstance(old, str) or not isinstance(new, str) or not old or not new for old, new in resolved.items()
+        ):
             raise ValueError("Task ID mapping keys and values must be non-empty strings")
         if len(set(resolved.values())) != len(resolved):
             raise ValueError("Task ID mapping contains duplicate target IDs")
@@ -353,6 +350,7 @@ class TaskReferenceRewriter:
             )
         return {"task_results_copied": copied}
 
+
 def _replay_queue(path: Path) -> dict[str, TaskEntry]:
     if not path.is_file():
         return {}
@@ -439,7 +437,7 @@ def _rewrite_value(
             if key == "anima_dir":
                 source_suffix = f"/animas/{source}"
                 if value.endswith(source_suffix):
-                    return f"{value[:-len(source_suffix)]}/animas/{target}"
+                    return f"{value[: -len(source_suffix)]}/animas/{target}"
         return value
 
     dict_owner_is_source = owner_is_source or value.get("anima_name") == source
@@ -475,7 +473,7 @@ def _rewrite_anima_paths(value: Any, source_dir: Path, target_dir: Path) -> Any:
         return str(target_dir)
     prefix = f"{source_text}/"
     if value.startswith(prefix):
-        return f"{target_dir}/{value[len(prefix):]}"
+        return f"{target_dir}/{value[len(prefix) :]}"
     return value
 
 

@@ -113,9 +113,7 @@ def _cmd_status(vm) -> None:
         if not isinstance(entries, dict):
             sections[section] = {"entries": 0, "encrypted": 0, "plaintext_like": 0, "invalid": 1}
             continue
-        encrypted = sum(
-            1 for value in entries.values() if isinstance(value, str) and vm.is_encrypted_value(value)
-        )
+        encrypted = sum(1 for value in entries.values() if isinstance(value, str) and vm.is_encrypted_value(value))
         count = len(entries)
         entry_count += count
         sections[section] = {

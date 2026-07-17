@@ -205,16 +205,8 @@ class AnimaMergeFinalizeService:
         enforce_rollback_window: bool,
     ) -> dict[str, Any]:
         merge = self._load_merge_journal()
-        tombstone_artifacts = (
-            merge.get("phases", {})
-            .get(MergePhase.TOMBSTONE.value, {})
-            .get("artifacts", {})
-        )
-        deadline_text = (
-            tombstone_artifacts.get("rollback_deadline")
-            if isinstance(tombstone_artifacts, dict)
-            else None
-        )
+        tombstone_artifacts = merge.get("phases", {}).get(MergePhase.TOMBSTONE.value, {}).get("artifacts", {})
+        deadline_text = tombstone_artifacts.get("rollback_deadline") if isinstance(tombstone_artifacts, dict) else None
         if not isinstance(deadline_text, str) or not deadline_text:
             raise AnimaMergeError("Merge TOMBSTONE is missing rollback_deadline")
         try:
@@ -223,9 +215,7 @@ class AnimaMergeFinalizeService:
             raise AnimaMergeError(f"Invalid TOMBSTONE rollback_deadline: {deadline_text}") from exc
         rollback_ready = now_local() >= rollback_deadline
         if enforce_rollback_window and not rollback_ready:
-            raise AnimaMergeError(
-                f"Rollback window is still active until {rollback_deadline.isoformat()}"
-            )
+            raise AnimaMergeError(f"Rollback window is still active until {rollback_deadline.isoformat()}")
         source_exists = self.source_dir.is_dir()
         if source_exists:
             status = _read_json(self.source_dir / "status.json")
@@ -279,10 +269,7 @@ class AnimaMergeFinalizeService:
     def _source_backend(self) -> str:
         merge = self._load_merge_journal()
         backend = (
-            merge.get("phases", {})
-            .get(MergePhase.PREFLIGHT.value, {})
-            .get("artifacts", {})
-            .get("memory_backend", {})
+            merge.get("phases", {}).get(MergePhase.PREFLIGHT.value, {}).get("artifacts", {}).get("memory_backend", {})
         )
         return str(backend.get("source", "legacy")) if isinstance(backend, dict) else "legacy"
 

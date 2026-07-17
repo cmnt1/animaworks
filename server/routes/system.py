@@ -1145,8 +1145,7 @@ def create_system_router() -> APIRouter:
         if reload_manager is not None:
             reload_result = await reload_manager.reload_all()
             config_reloaded = not any(
-                isinstance(item, dict) and item.get("status") == "error"
-                for item in reload_result.values()
+                isinstance(item, dict) and item.get("status") == "error" for item in reload_result.values()
             )
 
         result = {
