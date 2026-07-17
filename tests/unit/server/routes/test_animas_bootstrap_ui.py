@@ -119,7 +119,13 @@ class TestStartAnima:
         app.state.supervisor.get_process_status.return_value = {
             "status": "not_found",
         }
-        app.state.supervisor.start_anima = AsyncMock()
+        supervisor = app.state.supervisor
+        supervisor.processes = {}
+
+        async def _start(name: str) -> None:
+            supervisor.processes[name] = MagicMock()
+
+        supervisor.start_anima = AsyncMock(side_effect=_start)
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -128,7 +134,7 @@ class TestStartAnima:
         assert resp.status_code == 200
         data = resp.json()
         assert data == {"status": "started", "name": "alice"}
-        app.state.supervisor.start_anima.assert_awaited_once_with("alice")
+        supervisor.start_anima.assert_awaited_once_with("alice")
 
     async def test_start_already_running_anima(self, tmp_path):
         """Starting an anima already running should return already_running without calling start."""
@@ -183,7 +189,13 @@ class TestStartAnima:
         app.state.supervisor.get_process_status.return_value = {
             "status": "stopped",
         }
-        app.state.supervisor.start_anima = AsyncMock()
+        supervisor = app.state.supervisor
+        supervisor.processes = {}
+
+        async def _start(name: str) -> None:
+            supervisor.processes[name] = MagicMock()
+
+        supervisor.start_anima = AsyncMock(side_effect=_start)
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -192,4 +204,4 @@ class TestStartAnima:
         assert resp.status_code == 200
         data = resp.json()
         assert data == {"status": "started", "name": "alice"}
-        app.state.supervisor.start_anima.assert_awaited_once_with("alice")
+        supervisor.start_anima.assert_awaited_once_with("alice")

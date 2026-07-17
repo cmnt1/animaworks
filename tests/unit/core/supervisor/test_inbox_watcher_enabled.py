@@ -155,3 +155,74 @@ class TestInboxWatcherEnabledGuard:
                 pass
 
         assert triggered.is_set()
+
+
+class TestDeferredTriggerEnabledGuard:
+    """deferred timer → try_deferred_trigger → message_triggered_inbox must respect enabled."""
+
+    @pytest.mark.asyncio
+    async def test_deferred_path_skips_when_disabled(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """message_triggered_inbox entry (deferred destination) bails when disabled."""
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text(
+            json.dumps({"enabled": False}),
+            encoding="utf-8",
+        )
+
+        limiter = _make_limiter(anima_dir)
+        limiter._anima.messenger.has_unread.return_value = True
+        msg = MagicMock()
+        msg.source = "human"
+        msg.intent = "request"
+        msg.from_person = "bob"
+        limiter._anima.messenger.receive.return_value = [msg]
+        limiter._pending_trigger = True
+
+        with patch("core.supervisor.inbox_rate_limiter.load_config") as mock_cfg:
+            cfg = MagicMock()
+            cfg.heartbeat.actionable_intents = ["request"]
+            mock_cfg.return_value = cfg
+            await limiter.message_triggered_inbox()
+
+        limiter._anima.process_inbox_message.assert_not_awaited()
+        assert limiter._pending_trigger is False
+
+    @pytest.mark.asyncio
+    async def test_try_deferred_trigger_disabled_does_not_process(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Full deferred chain: try_deferred_trigger → message_triggered_inbox skips disabled."""
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text(
+            json.dumps({"enabled": False}),
+            encoding="utf-8",
+        )
+
+        limiter = _make_limiter(anima_dir)
+        limiter._anima.messenger.has_unread.return_value = True
+        msg = MagicMock()
+        msg.source = "human"
+        msg.intent = "request"
+        msg.from_person = "bob"
+        limiter._anima.messenger.receive.return_value = [msg]
+
+        # Bypass cooldown so try_deferred_trigger proceeds to create the task
+        limiter._last_msg_heartbeat_end = 0.0
+        limiter._cooldown_sec = 0.0
+
+        with patch("core.supervisor.inbox_rate_limiter.load_config") as mock_cfg:
+            cfg = MagicMock()
+            cfg.heartbeat.actionable_intents = ["request"]
+            mock_cfg.return_value = cfg
+            await limiter.try_deferred_trigger()
+            # message_triggered_inbox is scheduled as a task
+            await asyncio.sleep(0.1)
+
+        limiter._anima.process_inbox_message.assert_not_awaited()
+        assert limiter._pending_trigger is False

@@ -104,39 +104,79 @@ class TestStartStopLifecycleLock:
 
 
 class TestStopHandleIdentityGuard:
-    """stop_anima must not pop a replaced handle."""
+    """stop_anima must not remove a handle installed after the stop completes."""
 
     @pytest.mark.asyncio
-    async def test_stop_does_not_pop_replaced_handle(
+    async def test_concurrent_stop_then_start_leaves_new_handle(
         self,
         supervisor: ProcessSupervisor,
     ) -> None:
-        """During old handle drain, processes[name] is swapped → new handle remains."""
+        """Real lock order: stop holds lifecycle lock during drain; start waits.
+
+        After stop pops the old handle and releases the lock, start registers a
+        new handle. The new handle must remain (stop must not leave processes empty).
+        """
         name = "test-anima"
+        _write_status(supervisor.animas_dir, name, enabled=True)
+
         drain_started = asyncio.Event()
         allow_drain_finish = asyncio.Event()
 
         old_handle = MagicMock()
-        new_handle = MagicMock()
-        new_handle.stop = AsyncMock()
 
         async def slow_stop(*_args, **_kwargs):
             drain_started.set()
-            # Simulate concurrent start replacing the handle mid-drain
-            supervisor.processes[name] = new_handle
             await allow_drain_finish.wait()
 
         old_handle.stop = AsyncMock(side_effect=slow_stop)
         supervisor.processes[name] = old_handle
 
-        stop_task = asyncio.create_task(supervisor.stop_anima(name))
-        await asyncio.wait_for(drain_started.wait(), timeout=2.0)
-        allow_drain_finish.set()
-        await stop_task
+        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+            new_handle = AsyncMock()
+            new_handle.start = AsyncMock()
+            new_handle.stop = AsyncMock()
+            new_handle.get_pid = MagicMock(return_value=222)
+            new_handle.send_request = AsyncMock(
+                return_value=MagicMock(error=None, result={"needs_bootstrap": False}),
+            )
+            MockHandle.return_value = new_handle
 
-        assert supervisor.processes.get(name) is new_handle
+            stop_task = asyncio.create_task(supervisor.stop_anima(name))
+            await asyncio.wait_for(drain_started.wait(), timeout=2.0)
+
+            # start queues on the same lifecycle lock held by stop
+            start_task = asyncio.create_task(supervisor.start_anima(name))
+            await asyncio.sleep(0.05)
+            # While stop drains under lock, processes still has old handle
+            assert supervisor.processes.get(name) is old_handle
+            assert not start_task.done()
+
+            allow_drain_finish.set()
+            results = await asyncio.gather(stop_task, start_task, return_exceptions=True)
+
+        assert all(r is None for r in results), f"unexpected: {results}"
         old_handle.stop.assert_awaited_once()
-        new_handle.stop.assert_not_awaited()
+        # New handle from start remains after stop's identity-safe pop of old
+        assert supervisor.processes.get(name) is new_handle
+
+
+class TestStartDuringShutdown:
+    """start_anima must not register processes while supervisor is shutting down."""
+
+    @pytest.mark.asyncio
+    async def test_start_anima_skips_when_shutdown(
+        self,
+        supervisor: ProcessSupervisor,
+    ) -> None:
+        name = "test-anima"
+        _write_status(supervisor.animas_dir, name, enabled=True)
+        supervisor._shutdown = True
+
+        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+            await supervisor.start_anima(name)
+
+        MockHandle.assert_not_called()
+        assert name not in supervisor.processes
 
 
 class TestRespawnDisabledCleanSkip:
@@ -195,3 +235,35 @@ class TestRespawnDisabledCleanSkip:
         assert name not in supervisor._permanently_failed
         assert name not in supervisor._start_fail_counts
         assert name not in supervisor._failure_reasons
+
+    @pytest.mark.asyncio
+    async def test_handle_process_failure_disabled_at_max_retries_no_permanent(
+        self,
+        supervisor: ProcessSupervisor,
+    ) -> None:
+        """Disabled + already at max retries must not enter _permanently_failed."""
+        from core.supervisor.process_handle import ProcessState
+
+        name = "test-anima"
+        _write_status(supervisor.animas_dir, name, enabled=False)
+        supervisor.restart_policy.max_retries = 3
+        # Already exhausted retries — previously would hit _mark_process_error first
+        supervisor._restart_counts[name] = 3
+
+        old_handle = MagicMock()
+        old_handle.state = ProcessState.FAILED
+        supervisor.processes[name] = old_handle
+
+        async def mock_stop(anima_name: str, **_kwargs) -> None:
+            supervisor.processes.pop(anima_name, None)
+
+        supervisor.stop_anima = AsyncMock(side_effect=mock_stop)
+
+        with patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock):
+            await supervisor._handle_process_failure(name, old_handle)
+
+        assert name not in supervisor.processes
+        assert name not in supervisor._restarting
+        assert name not in supervisor._permanently_failed
+        assert name not in supervisor._failure_reasons
+        supervisor.stop_anima.assert_awaited_once_with(name)
