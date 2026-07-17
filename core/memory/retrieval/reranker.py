@@ -30,6 +30,17 @@ class CrossEncoderReranker:
             return False
         if self._model is not None:
             return True
+        with self._lock:
+            return self._load_model_locked()
+
+    def _load_model_locked(self) -> bool:
+        # Double-check under the lock: concurrent first-use callers used to
+        # each load their own CrossEncoder (observed as triple simultaneous
+        # "Loading weights" bursts per process), leaking the extra copies.
+        if not self._available:
+            return False
+        if self._model is not None:
+            return True
         try:
             from sentence_transformers import CrossEncoder
 
@@ -159,11 +170,13 @@ class CrossEncoderReranker:
 
 
 _reranker: CrossEncoderReranker | None = None
+_reranker_lock = threading.Lock()
 
 
 def get_reranker(model_name: str = _DEFAULT_MODEL) -> CrossEncoderReranker:
     """Get or create singleton reranker instance."""
     global _reranker  # noqa: PLW0603
-    if _reranker is None or _reranker._model_name != model_name:
-        _reranker = CrossEncoderReranker(model_name)
-    return _reranker
+    with _reranker_lock:
+        if _reranker is None or _reranker._model_name != model_name:
+            _reranker = CrossEncoderReranker(model_name)
+        return _reranker

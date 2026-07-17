@@ -317,11 +317,20 @@ class GrokCLIExecutor(BaseExecutor):
                 # ACP expects EnvVariable objects, not a plain mapping
                 # (a dict fails schema validation: "did not match any variant
                 # of untagged enum McpServer").
+                # The MCP server runs with ONLY these variables — without the
+                # embed/vector URLs it silently falls back to loading
+                # SentenceTransformer models in-process (2026-07-17 OOM:
+                # a 61.8GB python3 killed the whole fleet).
                 "env": [
                     {"name": "ANIMAWORKS_ANIMA_DIR", "value": str(self._anima_dir)},
                     {"name": "ANIMAWORKS_PROJECT_DIR", "value": str(PROJECT_DIR)},
                     {"name": "PYTHONPATH", "value": str(PROJECT_DIR)},
                     {"name": "PATH", "value": os.environ.get("PATH", "/usr/bin:/bin")},
+                    *(
+                        {"name": key, "value": os.environ[key]}
+                        for key in ("ANIMAWORKS_EMBED_URL", "ANIMAWORKS_VECTOR_URL")
+                        if os.environ.get(key)
+                    ),
                 ],
             }
         ]

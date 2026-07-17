@@ -286,23 +286,25 @@ def get_embedding_model(model_name: str | None = None) -> SentenceTransformer:
 
     device = "cpu" if is_component_degraded("embedding") else resolve_device("embedding")
 
-    # Fast path: already loaded with the same model name
-    if _embedding_model is not None and _embedding_model_name == resolved_name and _embedding_model_device == device:
+    # Fast path: already loaded with the same model name.
+    #
+    # The device is deliberately NOT part of this check: ``resolve_device``
+    # re-probes CUDA on every call, and a flapping probe (driver stress,
+    # sandboxed child) used to discard and reload the model on each flip —
+    # torch never returns freed arenas to the OS, so RSS ratcheted up by
+    # ~0.5GB per reload (2026-07-17 OOM incident). Device changes now only
+    # happen through the explicit CUDA-failure fallback below and in
+    # ``thread_safe_encode``.
+    if _embedding_model is not None and _embedding_model_name == resolved_name:
         return _embedding_model
 
     with _lock:
         # Double-check after acquiring lock
-        if (
-            _embedding_model is not None
-            and _embedding_model_name == resolved_name
-            and _embedding_model_device == device
-        ):
+        if _embedding_model is not None and _embedding_model_name == resolved_name:
             return _embedding_model
 
         # Different model requested → discard and reload
-        if _embedding_model is not None and (
-            _embedding_model_name != resolved_name or _embedding_model_device != device
-        ):
+        if _embedding_model is not None and _embedding_model_name != resolved_name:
             logger.info(
                 "Embedding model changed: %s/%s -> %s/%s; reloading",
                 _embedding_model_name,
