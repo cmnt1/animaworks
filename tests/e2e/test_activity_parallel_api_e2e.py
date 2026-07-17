@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
 from core.memory.task_queue import TaskQueueManager
+from core.time_utils import now_local
 
 
 def _create_app(tmp_path: Path):
@@ -78,10 +78,11 @@ async def test_parallel_activity_data_through_application_router(tmp_path: Path)
         encoding="utf-8",
     )
 
-    now = datetime.now(UTC).isoformat()
+    now_dt = now_local()  # use app tz so file date matches _load_entries cutoff check
+    now = now_dt.isoformat()
     activity_dir = anima_dir / "activity_log"
     activity_dir.mkdir()
-    activity_dir.joinpath(f"{now[:10]}.jsonl").write_text(
+    activity_dir.joinpath(f"{now_dt.date().isoformat()}.jsonl").write_text(
         "\n".join(
             [
                 json.dumps(
@@ -131,5 +132,9 @@ async def test_parallel_activity_data_through_application_router(tmp_path: Path)
     }
     assert recent.status_code == 200
     events = recent.json()["events"]
-    assert next(e for e in events if e["summary"] == "E2E context event")["ctx"] == "task:e2e-task"
-    assert next(e for e in events if e["summary"] == "E2E legacy event").get("ctx", "") == ""
+    ctx_events = [e for e in events if e["summary"] == "E2E context event"]
+    assert ctx_events, f"Expected 'E2E context event' in events: {events}"
+    assert ctx_events[0]["ctx"] == "task:e2e-task"
+    legacy_events = [e for e in events if e["summary"] == "E2E legacy event"]
+    assert legacy_events, f"Expected 'E2E legacy event' in events: {events}"
+    assert legacy_events[0].get("ctx", "") == ""
